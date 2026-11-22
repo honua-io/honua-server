@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -16,6 +18,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Services;
 using Honua.Io.Export.Writers;
 using Honua.Plugins.Abstractions;
 using Honua.ServiceDefaults;
@@ -39,7 +42,7 @@ internal static partial class ExportEndpoints
 
         _ = group.MapGet("", HandleExport)
             .WithName("ExportLayerData")
-            .WithSummary("Export layer data as Shapefile, GeoPackage, or CSV");
+            .WithSummary("Export layer data as Shapefile, GeoPackage, GeoParquet, or CSV");
     }
 
     private static async Task<IResult> HandleExport(
@@ -60,8 +63,8 @@ internal static partial class ExportEndpoints
     {
         var logger = httpContext.RequestServices.GetRequiredService<ILogger<ExportEndpointsLog>>();
 
-        // Validate format. Built-in formats (csv/shapefile/gpkg) plus any active, licensed
-        // plugin-contributed output format (ADR-0067) are accepted.
+        // Validate format. Built-in formats (csv/shapefile/gpkg/geoparquet/parquet) plus any
+        // active, licensed plugin-contributed output format (ADR-0067) are accepted.
         var builtInFormat = BuiltInExportFormats.Resolve(format);
         var isBuiltInFormat = builtInFormat.HasValue;
         var pluginFormatResolved = !isBuiltInFormat
@@ -76,7 +79,7 @@ internal static partial class ExportEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg{advertised}");
+                $"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg, geoparquet{advertised}");
         }
 
         // Validate service + layer against the Metadata v2 graph.
@@ -148,6 +151,16 @@ internal static partial class ExportEndpoints
                 queryError);
         }
 
+        var outputSrid = outSR ?? layerSrid;
+        if (builtInFormat == BuiltInExportFormat.GeoParquet
+            && GetGeoParquetCrsError(resource.Spatial, geometryType, outputSrid) is { } geoParquetCrsError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                geoParquetCrsError);
+        }
+
         var query = ApplyOutputFieldProjection(countQuery, selectedFields, outFields);
         var count = await CountFeaturesAsync(featureReader,
             new(storageLayerId, countQuery, cancellationToken)
@@ -159,8 +172,6 @@ internal static partial class ExportEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, count);
 
         ExportLog.ExportRequested(logger, serviceName, serviceLayerIndex, format, count);
-
-        var outputSrid = outSR ?? layerSrid;
 
         // Async path for large exports. Restricted to built-in formats: the durable export-job
         // pipeline dispatches the built-in writers by format string, so a plugin-contributed format
@@ -197,6 +208,7 @@ internal static partial class ExportEndpoints
                 query, selectedFields, outputSrid, count, geometryType, submitter)
             {
                 ServiceLayerIndex = serviceLayerIndex,
+                GeoParquetSpatial = builtInFormat == BuiltInExportFormat.GeoParquet ? resource.Spatial : null
             };
 
             try
@@ -261,6 +273,26 @@ internal static partial class ExportEndpoints
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
                 BuiltInExportFormat.GeoPackage => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, serviceLayerIndex, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
+                BuiltInExportFormat.GeoParquet => await WriteGeoParquetResponseAsync(
+                    httpContext, features,
+                    new GeoParquetResponseRequest
+                    {
+                        ServiceName = serviceName,
+                        ServiceLayerIndex = serviceLayerIndex,
+                        Stopwatch = sw,
+                        Activity = activity,
+                        CancellationToken = cancellationToken,
+                        Export = new GeoParquetExportRequest
+                        {
+                            LayerName = layerName,
+                            Fields = selectedFields,
+                            GeometryType = geometryType,
+                            OutputSrid = outputSrid,
+                            SourceSpatial = resource.Spatial,
+                            Limits = httpContext.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions(),
+                            Logger = logger
+                        }
+                    }),
                 _ => ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status400BadRequest,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
@@ -419,6 +451,102 @@ internal static partial class ExportEndpoints
         }
     }
 
+    private static string? GetGeoParquetCrsError(
+        MetadataV2ObjectSpatial? spatial, ExportGeometryType geometryType, int outputSrid)
+    {
+        try
+        {
+            _ = GeoParquetFeatureWriter.ResolveGeoParquetCrsProjJson(
+                geometryType != ExportGeometryType.None, outputSrid);
+            return geometryType != ExportGeometryType.None
+                && spatial?.StorageCrsCoordinateEpoch is { } epoch
+                && (!double.IsFinite(epoch) || spatial.StorageCrs?.ResolveSrid() != outputSrid)
+                ? GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage
+                : null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    private sealed record GeoParquetResponseRequest
+    {
+        public required string ServiceName { get; init; }
+        public required int ServiceLayerIndex { get; init; }
+        public required Stopwatch Stopwatch { get; init; }
+        public Activity? Activity { get; init; }
+        public required CancellationToken CancellationToken { get; init; }
+        public required GeoParquetExportRequest Export { get; init; }
+    }
+
+    private static async Task<IResult> WriteGeoParquetResponseAsync(
+        HttpContext httpContext,
+        IAsyncEnumerable<Feature> features,
+        GeoParquetResponseRequest request)
+    {
+        var serviceName = request.ServiceName;
+        var serviceLayerIndex = request.ServiceLayerIndex;
+        var sw = request.Stopwatch;
+        var activity = request.Activity;
+        var export = request.Export;
+        var cancellationToken = request.CancellationToken;
+        var layerName = export.LayerName;
+        var logger = export.Logger;
+        try
+        {
+            var (payload, writtenCount) = await GeoParquetExportWriter.EncodeStreamAsync(
+                features, export, cancellationToken).ConfigureAwait(false);
+
+            await using (payload.ConfigureAwait(false))
+            {
+                var response = httpContext.Response;
+                response.ContentType = GeoParquetFeatureWriter.ContentType;
+                response.Headers["Content-Disposition"] =
+                    $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.parquet\"";
+                if (payload.CanSeek)
+                {
+                    response.ContentLength = payload.Length;
+                }
+
+                response.StatusCode = StatusCodes.Status200OK;
+                await payload.CopyToAsync(response.Body, 64 * 1024, cancellationToken).ConfigureAwait(false);
+            }
+
+            ExportLog.ExportCompleted(logger, serviceName, serviceLayerIndex, "geoparquet", writtenCount,
+                sw.Elapsed.TotalMilliseconds);
+            HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(writtenCount));
+            HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
+            return Results.Empty;
+        }
+        catch (GeoParquetLimitExceededException) when (!httpContext.Response.HasStarted)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status413PayloadTooLarge,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status413PayloadTooLarge),
+                GeoParquetLimitExceededException.ClientMessage);
+        }
+        catch (ParquetRuntimeUnavailableException) when (!httpContext.Response.HasStarted)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status501NotImplemented,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status501NotImplemented),
+                ParquetRuntimeUnavailableException.CapabilityMessage);
+        }
+        catch (ServiceUnavailableException ex) when (!httpContext.Response.HasStarted)
+        {
+            if (ex.RetryAfterSeconds is > 0)
+            {
+                httpContext.Response.Headers.RetryAfter = ex.RetryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status503ServiceUnavailable,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                ex.Message);
+        }
+    }
+
     private static bool TryBuildQuery(
         string? where,
         string? bbox,
@@ -561,4 +689,5 @@ internal sealed record ExportJob(
     JobSecurityContext? Submitter = null)
 {
     public required int ServiceLayerIndex { get; init; }
+    public MetadataV2ObjectSpatial? GeoParquetSpatial { get; init; }
 }

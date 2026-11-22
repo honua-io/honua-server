@@ -40,7 +40,8 @@ public static class WorkTaskStateMachine
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(actor);
 
-        return [.. WorkTaskAction.Transitions.Where(action => CheckPrecondition(task, action, actor) is null)];
+        return [.. WorkTaskAction.Transitions.Append(WorkTaskAction.Complete)
+            .Where(action => CheckPrecondition(task, action, actor) is null)];
     }
 
     // Null when the actor may perform the action from the task's current state.

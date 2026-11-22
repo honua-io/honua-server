@@ -128,12 +128,14 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp tools/call honua_publish_service")]
-    public async Task RedisOffProduction_BootstrapPublish_RequiresApprovalWithoutPublishing()
+    public async Task Production_BootstrapPublish_IsDeniedWithoutPublishing()
     {
         using var admin = ApiKeyClient(AdminPassword);
         var output = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"));
 
-        output.GetProperty("status").GetString().Should().Be("RequiresApproval", output.GetRawText());
+        output.GetProperty("status").GetString().Should().Be("Denied", output.GetRawText());
+        output.GetProperty("message").GetString().Should().Contain("/api/v1/admin/api-keys");
+        output.TryGetProperty("proposalId", out _).Should().BeFalse();
         await _publishing.DidNotReceive().PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }

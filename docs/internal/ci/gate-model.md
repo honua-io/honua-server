@@ -3248,6 +3248,29 @@ Shard filters are unchanged, so every case runs in the same shards on selected P
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
 
+### OData client integration host lifetime
+
+`ODataClientIntegrationTests` initializes its Pro-licensed, `odata.yaml`-seeded
+application once per class instead of once per case. All 44 cases only read the
+seed. Each case still creates and disposes a fresh HTTP client and creates its
+own OData context; all 98 assertions and endpoint attributes are unchanged.
+The existing `Database` collection still serializes these cases. The separate
+`ODataClientCertificationTests` fixture retains its own schema, authentication
+configuration and mutable certification data.
+
+Every case remains in the OData Client Certification shard on selected PR runs
+and twice-daily full trunk runs. Runner count, shard filters, required check names
+and the required aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Two paired build-host runs of the complete 56-case owning shard passed with no
+failures or skips and identical test identities. Median summed class duration
+fell from 14.80 to 2.95 seconds. Median shard wall time, including fixture setup
+and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runner
+minutes) with one runner before and after. Individual baseline/candidate shard
+pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
+time and do not claim a reduction in the parallel PR Gate's critical path.
+
 ### Observability endpoint fixture initialization
 
 `ObservabilityEndpointsTests` starts its default private host only in the five
