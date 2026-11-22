@@ -95,11 +95,7 @@ public sealed class PostgresFixtureResetTests
         await fixture.InitializeAsync();
         await fixture.DisposeAsync();
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (state.SharedInitialized && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(25);
-        }
+        await container.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         state.SharedInitialized.Should().BeFalse();
         container.DisposeCalls.Should().Be(1);
@@ -108,10 +104,13 @@ public sealed class PostgresFixtureResetTests
     private sealed class CleanupResource(bool failCleanup) : IAsyncDisposable
     {
         internal int DisposeCalls { get; private set; }
+        internal TaskCompletionSource DisposalCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ValueTask DisposeAsync()
         {
             DisposeCalls++;
+            if (!failCleanup)
+                DisposalCompleted.TrySetResult();
             return failCleanup
                 ? ValueTask.FromException(new InvalidOperationException("cleanup failed"))
                 : ValueTask.CompletedTask;
