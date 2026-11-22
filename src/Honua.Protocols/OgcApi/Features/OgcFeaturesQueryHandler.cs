@@ -29,6 +29,7 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Net.Http.Headers;
 using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
@@ -502,34 +503,26 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (pagedRawPointResult.HasValue)
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
-                {
-                    var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
-                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
-                }
-
-                return Results.Bytes(payload, contentType);
+                var payload = CreateRawPointFeatureCollectionPayloadWithHashLength(
+                    pagedRawPointResult.Value.Items,
+                    new RawPayloadContext(resource, links, queryTotalCount));
+                var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
+                return await CreateCollectionJsonResultAsync(
+                    context,
+                    new CollectionJsonResponse(payload.Bytes, outputFormat, contentETag, canCache, cacheKey, cacheTtl),
+                    cancellationToken);
             }
 
             if (pagedRawResult.HasValue)
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = CreateRawFeatureCollectionPayload(pagedRawResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
-                {
-                    var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
-                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
-                }
-
-                return Results.Bytes(payload, contentType);
+                var payload = CreateRawFeatureCollectionPayloadWithHashLength(
+                    pagedRawResult.Value.Items,
+                    new RawPayloadContext(resource, links, queryTotalCount));
+                var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
+                return await CreateCollectionJsonResultAsync(
+                    context,
+                    new CollectionJsonResponse(payload.Bytes, outputFormat, contentETag, canCache, cacheKey, cacheTtl),
+                    cancellationToken);
             }
 
             var response = OgcGeoJsonFeatureBuilder.CreateCollectionWithOwnedFeatures(features, queryTotalCount, links);
@@ -552,18 +545,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
-            if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+            if (string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase))
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
-                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
-                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+                return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
             }
 
-            return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
+            var jsonPayload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
+            var jsonETag = ComputeStableFeatureCollectionETag(response, _etagService);
+            return await CreateCollectionJsonResultAsync(
+                context,
+                new CollectionJsonResponse(jsonPayload, outputFormat, jsonETag, canCache, cacheKey, cacheTtl),
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1120,12 +1112,65 @@ internal sealed partial class OgcFeaturesQueryHandler(
             || (hasMore && reportedTotal <= numberReturned)
             || (!hasMore && offset > 0 && reportedTotal == numberReturned);
 
+    private readonly record struct CollectionJsonResponse(
+        ReadOnlyMemory<byte> Payload,
+        string OutputFormat,
+        string ContentETag,
+        bool CanCache,
+        string? CacheKey,
+        TimeSpan CacheTtl);
+
+    private async Task<IResult> CreateCollectionJsonResultAsync(
+        HttpContext context,
+        CollectionJsonResponse response,
+        CancellationToken cancellationToken)
+    {
+        var contentType = string.Equals(response.OutputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
+            ? MediaTypes.GeoJson
+            : MediaTypes.Json;
+        if (response.CanCache && response.CacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+        {
+            var cachedResponse = new CachedResponse(response.Payload.ToArray(), contentType, response.ContentETag);
+            await _responseCache.SetAsync(response.CacheKey, cachedResponse, response.CacheTtl, cancellationToken);
+            return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+        }
+
+        return Results.Bytes(response.Payload, contentType, entityTag: EntityTagHeaderValue.Parse(response.ContentETag));
+    }
+
+    internal readonly record struct OgcCollectionPayload(ReadOnlyMemory<byte> Bytes, int StableHashLength);
+
+    internal readonly record struct RawPayloadContext(
+        MetadataV2Object Resource,
+        ImmutableArray<Link> Links,
+        long? NumberMatched);
+
+    internal static string ComputeWeakETag(ReadOnlySpan<byte> stableBytes, IETagService etagService)
+        => EnsureWeakETag(etagService.ComputeETag(stableBytes));
+
+    internal static string ComputeStableFeatureCollectionETag(FeatureCollection collection, IETagService etagService)
+    {
+        var stable = collection.TimeStamp.HasValue ? collection with { TimeStamp = null } : collection;
+        return EnsureWeakETag(etagService.ComputeETag(stable, OgcJsonContext.Default.FeatureCollection));
+    }
+
+    private static string EnsureWeakETag(string tag)
+        => tag.StartsWith("W/", StringComparison.Ordinal) ? tag : "W/" + tag;
+
     internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,
         MetadataV2Object resource,
         ImmutableArray<Link> links,
         long? numberMatched)
+        => CreateRawFeatureCollectionPayloadWithHashLength(features, new RawPayloadContext(resource, links, numberMatched)).Bytes;
+
+    internal static OgcCollectionPayload CreateRawFeatureCollectionPayloadWithHashLength(
+        ImmutableArray<RawGeoJsonFeature> features,
+        RawPayloadContext context)
     {
+        var resource = context.Resource;
+        var links = context.Links;
+        var numberMatched = context.NumberMatched;
         var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var propertyFields = resource.SchemaFields
             .Where(field => !field.Hidden)
@@ -1169,11 +1214,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
+        writer.Flush();
+        var stableHashLength = buffer.WrittenCount;
         writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
-        return buffer.WrittenMemory;
+        return new OgcCollectionPayload(buffer.WrittenMemory, stableHashLength);
     }
 
     internal static ReadOnlyMemory<byte> CreateRawPointFeatureCollectionPayload(
@@ -1181,7 +1228,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
         MetadataV2Object resource,
         ImmutableArray<Link> links,
         long? numberMatched)
+        => CreateRawPointFeatureCollectionPayloadWithHashLength(features, new RawPayloadContext(resource, links, numberMatched)).Bytes;
+
+    internal static OgcCollectionPayload CreateRawPointFeatureCollectionPayloadWithHashLength(
+        ImmutableArray<RawGeoServicesFeature> features,
+        RawPayloadContext context)
     {
+        var resource = context.Resource;
+        var links = context.Links;
+        var numberMatched = context.NumberMatched;
         var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var propertyFields = resource.SchemaFields
             .Where(field => !field.Hidden)
@@ -1225,11 +1280,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
+        writer.Flush();
+        var stableHashLength = buffer.WrittenCount;
         writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
-        return buffer.WrittenMemory;
+        return new OgcCollectionPayload(buffer.WrittenMemory, stableHashLength);
     }
 
     private static string? ResolveRawPublicIdPropertyName(MetadataV2Object resource)

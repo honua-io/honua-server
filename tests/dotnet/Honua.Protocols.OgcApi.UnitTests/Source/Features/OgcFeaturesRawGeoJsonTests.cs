@@ -7,8 +7,10 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Caching;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -155,6 +157,112 @@ public sealed class OgcFeaturesRawGeoJsonTests
         rawFeature.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
         rawFeature.GetProperty("properties").GetProperty("category").GetString().Should().Be("park");
         rawFeature.GetProperty("properties").TryGetProperty("internal_secret", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void CreateRawFeatureCollectionPayloadWithHashLength_StablePrefixExcludesVolatileTimeStamp()
+    {
+        var etagService = new ETagService();
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
+        var feature = RawGeoJsonFeature.Create(
+            id: 987,
+            geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
+            propertiesJson: "{\"category\":\"park\"}");
+        var context = new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, 1);
+
+        var first = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([feature], context);
+        Thread.Sleep(5);
+        var second = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([feature], context);
+
+        var firstTag = OgcFeaturesQueryHandler.ComputeWeakETag(first.Bytes.Span[..first.StableHashLength], etagService);
+        var secondTag = OgcFeaturesQueryHandler.ComputeWeakETag(second.Bytes.Span[..second.StableHashLength], etagService);
+
+        first.Bytes.Span.SequenceEqual(second.Bytes.Span).Should().BeFalse();
+        firstTag.Should().StartWith("W/\"");
+        secondTag.Should().Be(firstTag);
+
+        var mutated = RawGeoJsonFeature.Create(
+            id: 987,
+            geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
+            propertiesJson: "{\"category\":\"plaza\"}");
+        var third = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([mutated], context);
+        var thirdTag = OgcFeaturesQueryHandler.ComputeWeakETag(third.Bytes.Span[..third.StableHashLength], etagService);
+        thirdTag.Should().NotBe(firstTag);
+    }
+
+    [UnitTest]
+    public void CreateRawPointFeatureCollectionPayloadWithHashLength_StablePrefixExcludesVolatileTimeStamp()
+    {
+        var etagService = new ETagService();
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
+        var feature = RawGeoServicesFeature.Create(
+            id: 987,
+            attributesJson: "{\"category\":\"park\"}",
+            x: 1.25,
+            y: 2.5);
+        var context = new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, 1);
+
+        var first = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([feature], context);
+        Thread.Sleep(5);
+        var second = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([feature], context);
+
+        var firstTag = OgcFeaturesQueryHandler.ComputeWeakETag(first.Bytes.Span[..first.StableHashLength], etagService);
+        var secondTag = OgcFeaturesQueryHandler.ComputeWeakETag(second.Bytes.Span[..second.StableHashLength], etagService);
+
+        first.Bytes.Span.SequenceEqual(second.Bytes.Span).Should().BeFalse();
+        firstTag.Should().StartWith("W/\"");
+        secondTag.Should().Be(firstTag);
+
+        var mutated = RawGeoServicesFeature.Create(
+            id: 987,
+            attributesJson: "{\"category\":\"plaza\"}",
+            x: 1.25,
+            y: 2.5);
+        var third = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([mutated], context);
+        var thirdTag = OgcFeaturesQueryHandler.ComputeWeakETag(third.Bytes.Span[..third.StableHashLength], etagService);
+        thirdTag.Should().NotBe(firstTag);
+    }
+
+    [UnitTest]
+    public void ComputeStableFeatureCollectionETag_IgnoresTimeStampAndChangesOnMutation()
+    {
+        var etagService = new ETagService();
+        var featureA = new GeoJsonFeature
+        {
+            Id = 1,
+            Properties = new Dictionary<string, object?> { ["category"] = "park" },
+        };
+        var featureB = new GeoJsonFeature
+        {
+            Id = 1,
+            Properties = new Dictionary<string, object?> { ["category"] = "plaza" },
+        };
+
+        var collection1 = new FeatureCollection
+        {
+            Features = [featureA],
+            NumberMatched = 1,
+            NumberReturned = 1,
+            TimeStamp = new DateTimeOffset(2026, 11, 22, 8, 0, 0, TimeSpan.Zero),
+        };
+        var collection2 = collection1 with
+        {
+            TimeStamp = new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero),
+        };
+        var collection3 = collection1 with
+        {
+            Features = [featureB],
+        };
+
+        var tag1 = OgcFeaturesQueryHandler.ComputeStableFeatureCollectionETag(collection1, etagService);
+        var tag2 = OgcFeaturesQueryHandler.ComputeStableFeatureCollectionETag(collection2, etagService);
+        var tag3 = OgcFeaturesQueryHandler.ComputeStableFeatureCollectionETag(collection3, etagService);
+
+        tag1.Should().StartWith("W/\"");
+        tag2.Should().Be(tag1);
+        tag3.Should().NotBe(tag1);
     }
 
     private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
