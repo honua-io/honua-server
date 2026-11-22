@@ -1708,44 +1708,26 @@ internal static partial class FeatureServerEndpoints
         var sqlType = GetValueString(values, "sqlType");
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
+        // A dialect selector (standard|native) or an omitted sqlType validates as a where clause.
+        var clauseType = "where";
         if (!string.IsNullOrWhiteSpace(sqlType) && !IsSqlDialectType(sqlType))
         {
-            var clauseType = NormalizeServiceSqlType(sqlType);
+            clauseType = NormalizeServiceSqlType(sqlType);
             if (!IsSupportedServiceSqlType(clauseType))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid sqlType parameter",
                     ["sqlType must be a SQL dialect ('standard'/'native') or a clause type ('where'/'orderBy'/'expression', or the canonical 'esriSQLType*' enum)."]);
             }
-
-            var (isValid, validationError) = ValidateServiceSql(filterService, sqlExpression, clauseType, resource);
-            var clauseResponse = new ValidateSqlResponse
-            {
-                IsValidSql = isValid,
-                ValidationError = isValid ? null : validationError
-            };
-            return Results.Json(clauseResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
         }
 
-        // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
-        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
-
-        if (!parseResult.IsSuccess)
+        var (isValid, validationError) = ValidateServiceSql(filterService, sqlExpression, clauseType, resource);
+        var response = new ValidateSqlResponse
         {
-            var response = new ValidateSqlResponse
-            {
-                IsValidSql = false,
-                ValidationError = parseResult.ErrorMessage ?? "Invalid SQL syntax."
-            };
-            return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
-        }
-
-        var validResponse = new ValidateSqlResponse
-        {
-            IsValidSql = true,
-            ValidationError = null
+            IsValidSql = isValid,
+            ValidationError = isValid ? null : validationError
         };
-        return Results.Json(validResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+        return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
     }
 
     private static bool IsSqlDialectType(string sqlType)
