@@ -402,7 +402,7 @@ public sealed class PublicExportRevocationTests
         harness.StateStore.Promoted.Keys.Should().Equal("roads");
     }
 
-    private static ICloudFileStorage CreatePrivateExportStorage(IReadOnlyDictionary<string, byte[]> objects)
+    private static ICloudFileStorage CreatePrivateExportStorage(Dictionary<string, byte[]> objects)
     {
         var storage = new Mock<ICloudFileStorage>();
         storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
