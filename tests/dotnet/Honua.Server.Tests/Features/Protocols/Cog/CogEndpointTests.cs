@@ -121,6 +121,57 @@ public class CogEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTheory]
+    [InlineData("name", "bad\r\n[ERR] forged")]
+    [InlineData("description", "desc\r\nforged")]
+    [InlineData("bucket", "../../169.254.169.254/latest/meta-data/")]
+    [InlineData("bucket", "http://169.254.169.254/latest")]
+    [InlineData("bucket", "<script>alert(1)</script>")]
+    [InlineData("bucket", "test-bucket\r\nforged")]
+    [InlineData("bucket", ".")]
+    [InlineData("objectKey", "../../etc/passwd")]
+    [InlineData("objectKey", "/leading/slash.tif")]
+    [InlineData("objectKey", "back\\slash.tif")]
+    [InlineData("objectKey", "file:///etc/passwd")]
+    [InlineData("objectKey", "http://169.254.169.254/latest/meta-data/")]
+    [InlineData("objectKey", "test\r\nforged.tif")]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCog_WithUnsafeInputFields_Returns400BeforeLayerLookup(string field, string value)
+    {
+        // Use a non-existent layerId (99999) to verify validation rejects with 400 before layer lookup (404).
+        var request = new
+        {
+            layerId = 99999,
+            name = field == "name" ? value : "valid-cog",
+            description = field == "description" ? value : null,
+            provider = "AwsS3",
+            bucket = field == "bucket" ? value : "test-bucket",
+            objectKey = field == "objectKey" ? value : "test.tif"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCog_WithOverLengthFields_Returns400()
+    {
+        var request = new
+        {
+            layerId = 99999,
+            name = new string('a', 256),
+            provider = "AwsS3",
+            bucket = "test-bucket",
+            objectKey = "test.tif"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/cloud-rasters")]
     public async Task RegisterCog_WithMissingLayer_Returns404()

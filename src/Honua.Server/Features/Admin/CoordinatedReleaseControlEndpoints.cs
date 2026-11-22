@@ -157,6 +157,13 @@ internal static class CoordinatedReleaseControlEndpoints
                 CoordinatedReleaseJsonContext.Default.CoordinatedReleaseOperationResponse,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (ArgumentException ex)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                ex.Message);
+        }
         catch (ResourceConflictException)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(

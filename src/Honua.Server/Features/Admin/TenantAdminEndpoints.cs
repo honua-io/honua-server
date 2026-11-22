@@ -171,6 +171,11 @@ internal static partial class TenantAdminEndpoints
                 BuildActor(context),
                 context.RequestAborted);
 
+            if (result.Outcome == TenantLifecycleOutcome.Invalid)
+            {
+                return MapFailure(result);
+            }
+
             Log.TenantOperation(logger, request.TenantId, "create", result.Outcome);
             if (!result.Success)
             {
@@ -252,6 +257,11 @@ internal static partial class TenantAdminEndpoints
         try
         {
             var result = await transition(tenantId, BuildActor(context), context.RequestAborted);
+            if (result.Outcome == TenantLifecycleOutcome.Invalid)
+            {
+                return MapFailure(result);
+            }
+
             Log.TenantOperation(logger, tenantId, operation, result.Outcome);
             if (!result.Success)
             {

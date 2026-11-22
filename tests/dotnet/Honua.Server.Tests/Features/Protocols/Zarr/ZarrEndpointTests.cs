@@ -64,6 +64,53 @@ public class ZarrEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTheory]
+    [InlineData("name", "bad\r\n[ERR] forged")]
+    [InlineData("description", "desc\r\nforged")]
+    [InlineData("bucket", "../../169.254.169.254/latest/meta-data/")]
+    [InlineData("bucket", "test-bucket\r\nforged")]
+    [InlineData("bucket", "test..bucket")]
+    [InlineData("bucket", ".")]
+    [InlineData("rootPath", "datasets/example\r\nforged.zarr")]
+    [InlineData("rootPath", "http://169.254.169.254/latest/meta-data/")]
+    [InlineData("rootPath", "file:///etc/passwd")]
+    [Endpoint("POST /api/v1/admin/zarr-stores")]
+    public async Task RegisterZarr_WithUnsafeInputFields_Returns400BeforeLayerLookup(string field, string value)
+    {
+        // Use a non-existent layerId (99999) to verify validation rejects with 400 before layer lookup (404).
+        var request = new
+        {
+            layerId = 99999,
+            name = field == "name" ? value : "valid-name",
+            description = field == "description" ? value : null,
+            provider = "AwsS3",
+            bucket = field == "bucket" ? value : "test-bucket",
+            rootPath = field == "rootPath" ? value : "datasets/example.zarr"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/zarr-stores", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/zarr-stores")]
+    public async Task RegisterZarr_WithOverLengthName_Returns400()
+    {
+        var request = new
+        {
+            layerId = 99999,
+            name = new string('a', 256),
+            provider = "AwsS3",
+            bucket = "test-bucket",
+            rootPath = "datasets/example.zarr"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/zarr-stores", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/zarr-stores")]
     public async Task RegisterZarr_WithMissingLayer_Returns404()

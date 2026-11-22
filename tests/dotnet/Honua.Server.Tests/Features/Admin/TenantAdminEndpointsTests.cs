@@ -114,6 +114,26 @@ public sealed class TenantAdminEndpointsTests : IAsyncLifetime
             .Should().Be(HttpStatusCode.Conflict);
     }
 
+    [IntegrationTheory]
+    [InlineData("../etc/passwd")]
+    [InlineData("<script>alert(1)</script>")]
+    [InlineData("t1'; DROP TABLE honua.layers;--")]
+    [InlineData("eval3-t\r\nX-Injected: 1")]
+    [InlineData("-leading-dash")]
+    [Endpoint("POST /api/v1/admin/tenants")]
+    public async Task CreateTenant_WithHostileOrInvalidTenantId_ReturnsBadRequestWithoutPersisting(string tenantId)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/tenants",
+            new { tenantId, displayName = "Hostile" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var listResponse = await _client.GetAsync("/api/v1/admin/tenants");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await listResponse.Content.ReadAsStringAsync()).Should().NotContain(tenantId);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/tenants/usage")]
     public async Task TenantUsage_ReturnsBillingUsageEnvelope()
