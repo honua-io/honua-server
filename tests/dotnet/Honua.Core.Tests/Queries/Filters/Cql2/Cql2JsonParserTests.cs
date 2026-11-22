@@ -34,6 +34,32 @@ public class Cql2JsonParserTests
 
     [Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("\"just a string\"")]
+    [InlineData("42")]
+    [InlineData("null")]
+    [InlineData("[1,2]")]
+    [InlineData("""{"property":"name"}""")]
+    [InlineData("""{"interval":["2020-01-01",".."]}""")]
+    public void Parse_RootIsNotAPredicate_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>().WithMessage("CQL2-JSON filter must be a predicate*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("true")]
+    [InlineData("""{"op":"isNull","args":[{"property":"name"}]}""")]
+    public void Parse_RootIsBooleanOrPredicate_IsAccepted(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().NotThrow();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
     [InlineData("and")]
     [InlineData("or")]
     public void Parse_FlatLogicalOperatorBeyondOperandLimit_ThrowsArgumentException(string op)
