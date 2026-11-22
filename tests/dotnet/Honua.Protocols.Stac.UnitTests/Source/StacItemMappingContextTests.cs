@@ -23,12 +23,14 @@ public sealed class StacItemMappingContextTests
         {
             Id = 1,
             ObjectId = 1,
+            Geometry = null,
             Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Alpha").Add("area", 10)
         };
         var f2 = new Feature
         {
             Id = 2,
             ObjectId = 2,
+            Geometry = null,
             Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Beta").Add("area", 20)
         };
 
@@ -46,10 +48,10 @@ public sealed class StacItemMappingContextTests
 
         Assert.Equal(direct.Id, item1.Id);
         Assert.Equal(direct.Collection, item1.Collection);
-        Assert.Equal(direct.Properties["name"], item1.Properties["name"]);
-        Assert.Equal(direct.Links[0].Href, item1.Links[0].Href);
-        Assert.Same(item1.Links[1], item2.Links[1]);
-        Assert.Same(item1.Links[2], item2.Links[2]);
-        Assert.Same(item1.Links[3], item2.Links[3]);
+        Assert.Equal(direct.Properties!["name"], item1.Properties!["name"]);
+        Assert.Equal(direct.Links!.Value[0].Href, item1.Links!.Value[0].Href);
+        Assert.Same(item1.Links.Value[1], item2.Links!.Value[1]);
+        Assert.Same(item1.Links.Value[2], item2.Links.Value[2]);
+        Assert.Same(item1.Links.Value[3], item2.Links.Value[3]);
     }
 }
