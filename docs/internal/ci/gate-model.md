@@ -3425,6 +3425,15 @@ still installs its own deployment profile, metadata graph and clients. Folder-pa
 cases only read the seed. Borrowers stop before the owner drops the schema.
 The three standalone profile cases retain their private schemas and hosts.
 
+Four interleaved complete Capabilities shard runs passed the same 103 cases,
+including all 11 class cases, with zero skips. Class test-duration median changed
+from 32.864138 to 30.715827 seconds. Fixture-inclusive shard median changed from
+62.444438 to 60.571979 seconds, saving 1.872459 seconds / 0.031208 runner-minutes
+on one runner before and after. Individual shard pairs were 63.240212/56.698306
+and 61.648663/64.445651 seconds: the second pair regressed 2.796988 seconds, so
+the modest median saving is subject to shared-host variability. Cold compilation
+and process time are separate; no PR critical-path saving is established.
+
 All test methods, assertions, theory rows and endpoint metadata remain unchanged.
 Every case remains in the Capabilities shard on selected PRs and full trunk runs.
 No workflow, shard filter, runner count, required check name or aggregate `needs`
