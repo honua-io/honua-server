@@ -147,6 +147,8 @@ public static class CapabilityKeyCatalog
         // Provider-neutral response formats
         new("format.geoarrow", "GeoArrow Response Format", Categories.Format,
             HonuaEdition.Community, "Return FeatureServer query results as Arrow IPC with GeoArrow extension metadata through the shared provider-neutral response formatter.", Status: "live"),
+        new("format.geoparquet", "GeoParquet Format", Categories.Format,
+            HonuaEdition.Community, "Import, export, and query features as GeoParquet 1.1.0 with WKB geometry and spatial covering metadata through the shared provider-neutral writer.", Status: "live"),
 
         // Process
         new("process.geoprocessing", "Geoprocessing Task Execution", Categories.Process,
