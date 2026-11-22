@@ -143,11 +143,9 @@ Reading the matrix:
 
 | Consumer ↓ \ Provider → | Abstr | Core | Aws | Azure | Hosting | Jobs | Server | SvcDef |
 |--------------------------|:-----:|:----:|:---:|:-----:|:-------:|:----:|:------:|:------:|
-| **AppHost**              |       |      |     |       |         |      |        |   ✓    |
 | **Worker.Gdal**          |   ✓   |  ✓   |  ✓  |   ✓   |         |  ✓   |        |        |
 
-`AppHost` is the Aspire-orchestration entry point; it carries no business
-logic and references only `ServiceDefaults`. `Worker.Gdal` is the GDAL/OGR
+`Worker.Gdal` is the GDAL/OGR
 side-car process; per ADR-0038 it deliberately does **not** reference
 `Honua.Server` and composes Abstractions + Core + Jobs and the cloud satellites.
 
