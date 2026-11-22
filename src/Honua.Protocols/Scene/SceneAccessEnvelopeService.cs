@@ -5,7 +5,9 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Infrastructure.Caching;
 using Honua.Protocols.Scene.Models;
+using Honua.Scene;
 using Honua.Scene.Assets;
 using Microsoft.Extensions.Options;
 
@@ -15,6 +17,20 @@ namespace Honua.Protocols.Scene;
 internal sealed class SceneAccessEnvelopeService
 {
     private static readonly IReadOnlyList<string> AllowedMethods = new[] { "GET", "HEAD" };
+
+    private static readonly IReadOnlyList<SceneAccessCredentialTransport> DefaultTransports =
+    [
+        new SceneAccessCredentialTransport(
+            Kind: "header",
+            Name: BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader,
+            ValueTemplate: "{token}",
+            Preferred: true),
+        new SceneAccessCredentialTransport(
+            Kind: "query",
+            Name: BypassOutputCacheOnSceneAccessTokenPolicy.TokenQueryParameter,
+            ValueTemplate: "{token}",
+            Preferred: false)
+    ];
 
     private readonly TimeProvider _timeProvider;
     private readonly IOptionsMonitor<SceneAccessSigningOptions> _optionsMonitor;
@@ -63,6 +79,9 @@ internal sealed class SceneAccessEnvelopeService
     }
 
     public SceneAccessEnvelope Issue(string sceneId)
+        => Issue(sceneId, baseUrl: null);
+
+    public SceneAccessEnvelope Issue(string sceneId, string? baseUrl)
     {
         ArgumentException.ThrowIfNullOrEmpty(sceneId);
 
@@ -73,13 +92,37 @@ internal sealed class SceneAccessEnvelopeService
         var refreshAfter = now + (ttl * refreshFraction);
 
         var token = SignToken(sceneId, expiresAt.ToUnixTimeSeconds(), signingKey);
+        var assetScopes = BuildAssetScopes(sceneId, baseUrl);
 
         return new SceneAccessEnvelope(
             SceneId: sceneId,
             Token: token,
             ExpiresAt: expiresAt,
             RefreshAfter: refreshAfter,
-            AllowedMethods: AllowedMethods);
+            AllowedMethods: AllowedMethods,
+            ContractVersion: SceneAccessEnvelope.CurrentContractVersion,
+            Transports: DefaultTransports,
+            AssetScopes: assetScopes);
+    }
+
+    private static IReadOnlyList<SceneAccessAssetScope>? BuildAssetScopes(string sceneId, string? baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl)
+            || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return null;
+        }
+
+        return
+        [
+            new SceneAccessAssetScope(
+                Scheme: uri.Scheme.ToLowerInvariant(),
+                Host: uri.IdnHost.ToLowerInvariant(),
+                Port: uri.Port,
+                PathPrefix: SceneUrls.SceneAssetPathPrefix(sceneId))
+        ];
     }
 
     public EnvelopeValidationResult Validate(string rawToken, string requestedSceneId)

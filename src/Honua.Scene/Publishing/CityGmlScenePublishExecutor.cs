@@ -366,6 +366,8 @@ internal sealed partial class CityGmlScenePublishExecutor
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
+            ServingFormat = SceneServingFormat.ThreeDTiles,
+            ContentKind = SceneContentKind.Buildings,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
             // BSL coordinates are placed on the WGS-84 ellipsoid with ellipsoidal
             // height in meters, so the registered CRS is the 3D geographic 4979.

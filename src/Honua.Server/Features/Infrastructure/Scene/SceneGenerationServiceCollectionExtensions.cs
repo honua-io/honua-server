@@ -54,6 +54,7 @@ internal static class SceneGenerationServiceCollectionExtensions
         if (scenePointCloudEnabled)
         {
             services.TryAddScoped<PointCloudScenePublishExecutor>();
+            services.TryAddScoped<CopcScenePublishExecutor>();
         }
 
         if (scenePointCloudEnabled)

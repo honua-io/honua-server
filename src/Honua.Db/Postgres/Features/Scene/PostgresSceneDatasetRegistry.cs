@@ -76,7 +76,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         extent_xmin, extent_ymin, extent_xmax, extent_ymax, crs,
         cache_max_age_seconds, cache_no_store, edition_gate, requires_auth, is_public,
         allowed_roles, status, validation_message, revision, created_at, created_by, updated_at,
-        asset_storage_prefix
+        asset_storage_prefix, serving_format, content_kind
         """;
 
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
@@ -172,13 +172,13 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
                 extent_xmin, extent_ymin, extent_xmax, extent_ymax, crs,
                 cache_max_age_seconds, cache_no_store, edition_gate, requires_auth, is_public,
                 allowed_roles, status, validation_message, revision, created_at, created_by, updated_at,
-                asset_storage_prefix
+                asset_storage_prefix, serving_format, content_kind
             ) VALUES (
                 @dataset_id, @id, @name, @description, @asset_root, @tileset_file_name, @dataset_type,
                 @extent_xmin, @extent_ymin, @extent_xmax, @extent_ymax, @crs,
                 @cache_max_age_seconds, @cache_no_store, @edition_gate, @requires_auth, @is_public,
                 @allowed_roles, @status, @validation_message, @revision, @created_at, @created_by, @updated_at,
-                @asset_storage_prefix
+                @asset_storage_prefix, @serving_format, @content_kind
             )
             """;
 
@@ -311,6 +311,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
                 asset_storage_prefix  = @asset_storage_prefix,
                 tileset_file_name     = @tileset_file_name,
                 dataset_type          = @dataset_type,
+                serving_format        = @serving_format,
+                content_kind          = @content_kind,
                 extent_xmin           = @extent_xmin,
                 extent_ymin           = @extent_ymin,
                 extent_xmax           = @extent_xmax,
@@ -400,7 +402,10 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             Name = record.Name,
             Description = record.Description,
             AssetRoot = canonicalAssetRoot,
+            AssetStoragePrefix = record.AssetStoragePrefix,
             TilesetFileName = record.TilesetFileName,
+            ServingFormat = SceneServingProjection.ResolveServingFormat(record),
+            ContentKind = SceneServingProjection.ResolveContentKind(record),
             AccessPolicy = SceneServingProjection.ToAccessPolicy(record),
             CachePolicy = record.CachePolicy
         };
@@ -457,6 +462,14 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         var createdBy = reader.GetString(22);
         var updatedAt = reader.IsDBNull(23) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(23);
         var assetStoragePrefix = reader.IsDBNull(24) ? null : reader.GetString(24);
+        SceneServingFormat? servingFormat = !reader.IsDBNull(25)
+            && SceneServingProjection.TryParseServingFormat(reader.GetString(25), out var parsedFormat)
+            ? parsedFormat
+            : null;
+        SceneContentKind? contentKind = !reader.IsDBNull(26)
+            && SceneServingProjection.TryParseContentKind(reader.GetString(26), out var parsedKind)
+            ? parsedKind
+            : null;
 
         return new SceneDatasetRecord
         {
@@ -468,6 +481,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = tilesetFileName,
             DatasetType = datasetType,
+            ServingFormat = servingFormat,
+            ContentKind = contentKind,
             Extent = extent,
             Crs = crs,
             CachePolicy = new SceneCachePolicy(cacheMaxAge, cacheNoStore),
@@ -499,6 +514,10 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         command.Parameters.Add(new NpgsqlParameter("@tileset_file_name",
             string.IsNullOrWhiteSpace(record.TilesetFileName) ? "tileset.json" : record.TilesetFileName));
         command.Parameters.Add(new NpgsqlParameter("@dataset_type", ToDatabaseValue(record.DatasetType)));
+        command.Parameters.Add(new NpgsqlParameter("@serving_format",
+            record.ServingFormat is { } format ? SceneServingProjection.ToWireValue(format) : DBNull.Value));
+        command.Parameters.Add(new NpgsqlParameter("@content_kind",
+            record.ContentKind is { } kind ? SceneServingProjection.ToWireValue(kind) : DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@extent_xmin", (object?)record.Extent?.XMin ?? DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@extent_ymin", (object?)record.Extent?.YMin ?? DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("@extent_xmax", (object?)record.Extent?.XMax ?? DBNull.Value));

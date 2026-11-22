@@ -10,13 +10,24 @@ public static class SceneUrls
     private const string ScenePrefix = "/scenes/";
     private const string SceneApiPrefix = "/api/scenes/";
     private const string TilesetSuffix = "/tileset.json";
+    private const string CopcSuffix = "/copc";
+    private const string AccessEnvelopeSuffix = "/access-envelope";
     private const string ResolveSuffix = "/resolve";
 
     public static string TilesetRelativePath(string sceneId)
         => string.Create(CultureInfo.InvariantCulture, $"{ScenePrefix}{sceneId}{TilesetSuffix}");
 
+    public static string CopcRelativePath(string sceneId)
+        => string.Create(CultureInfo.InvariantCulture, $"{ScenePrefix}{sceneId}{CopcSuffix}");
+
     public static string AbsoluteTilesetUrl(string baseUrl, string sceneId)
         => BuildAbsolute(baseUrl, ScenePrefix, sceneId, TilesetSuffix);
+
+    public static string AbsoluteCopcUrl(string baseUrl, string sceneId)
+        => BuildAbsolute(baseUrl, ScenePrefix, sceneId, CopcSuffix);
+
+    public static string AbsoluteAccessEnvelopeUrl(string baseUrl, string sceneId)
+        => BuildAbsolute(baseUrl, ScenePrefix, sceneId, AccessEnvelopeSuffix);
 
     public static string AbsoluteSceneUrl(string baseUrl, string sceneId, string suffix)
         => BuildAbsolute(baseUrl, ScenePrefix, sceneId, suffix);
@@ -26,6 +37,9 @@ public static class SceneUrls
 
     public static string AbsoluteSceneResolveUrl(string baseUrl, string sceneId)
         => BuildAbsolute(baseUrl, SceneApiPrefix, sceneId, ResolveSuffix);
+
+    public static string SceneAssetPathPrefix(string sceneId)
+        => string.Create(CultureInfo.InvariantCulture, $"{ScenePrefix}{Uri.EscapeDataString(sceneId)}/");
 
     private static string BuildAbsolute(string baseUrl, string prefix, string sceneId, string? suffix)
     {

@@ -13,6 +13,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
+using Honua.Scene;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -112,6 +113,31 @@ internal static partial class ScenePointCloudIngestEndpoints
             using var buffer = new MemoryStream(file.Length > 0 ? (int)file.Length : 0);
             await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             document = buffer.ToArray();
+        }
+
+        var rawServingFormat = NullIfBlank(form["servingFormat"]);
+        if (rawServingFormat is not null)
+        {
+            if (!SceneServingProjection.TryParseServingFormat(rawServingFormat, out var requestedFormat)
+                || requestedFormat is not (SceneServingFormat.ThreeDTiles or SceneServingFormat.Copc))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    $"Unsupported point-cloud servingFormat '{rawServingFormat}'. Allowed: 3d-tiles, copc.");
+            }
+
+            if (requestedFormat == SceneServingFormat.Copc)
+            {
+                return await HandleDirectCopcIngestAsync(
+                    context,
+                    form,
+                    document,
+                    cacheMaxAge,
+                    requiresAuth ?? false,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         // Auto-dispatch: a compressed (LAZ/COPC) buffer or a projected
@@ -215,6 +241,76 @@ internal static partial class ScenePointCloudIngestEndpoints
             ScenePointCloudIngestLog.IngestFailed(logger, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to ingest LAS point cloud.");
+        }
+    }
+
+    private static async Task<IResult> HandleDirectCopcIngestAsync(
+        HttpContext context,
+        IFormCollection form,
+        byte[] document,
+        int? cacheMaxAge,
+        bool requiresAuth,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!LasPointCloudReader.TryReadCopcInfo(document, out _, out var copcError))
+        {
+            if (PointCloudCompressionDetector.HasLasfSignature(document))
+            {
+                ScenePointCloudIngestLog.IngestRejected(logger, "COPC_CONVERSION_REQUIRED", copcError);
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status409Conflict,
+                    $"Untiled LAS/LAZ cannot be registered directly as COPC without conversion: {copcError}");
+            }
+
+            ScenePointCloudIngestLog.IngestRejected(logger, SceneGenerationErrorCodes.ModelAssetInvalid, copcError);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"{SceneGenerationErrorCodes.ModelAssetInvalid}: {copcError}");
+        }
+
+        var request = new CopcSceneIngestRequest(
+            Source: document,
+            SceneId: NullIfBlank(form["sceneId"]),
+            DisplayName: NullIfBlank(form["displayName"]),
+            Description: NullIfBlank(form["description"]),
+            EditionGate: NullIfBlank(form["editionGate"]),
+            CacheMaxAgeSeconds: cacheMaxAge,
+            RequiresAuth: requiresAuth,
+            CreatedBy: context.User.Identity?.Name);
+
+        var executor = context.RequestServices.GetRequiredService<CopcScenePublishExecutor>();
+        try
+        {
+            var outcome = await executor.IngestAsync(request, cancellationToken).ConfigureAwait(false);
+            await InvalidateSceneCacheAsync(context, outcome.SceneId, logger, cancellationToken).ConfigureAwait(false);
+
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var copcUrl = SceneUrls.AbsoluteCopcUrl(baseUrl, outcome.SceneId);
+            var response = new PointCloudIngestResponse
+            {
+                SceneId = outcome.SceneId,
+                TilesetUrl = string.Empty,
+                CopcUrl = copcUrl,
+                ServingFormat = SceneServingProjection.CopcWireFormat,
+                ContentKind = SceneServingProjection.PointCloudWireContentKind,
+                PointCount = outcome.CopcInfo.PointCount > int.MaxValue ? int.MaxValue : (int)outcome.CopcInfo.PointCount,
+                TileCount = 1,
+                HasColor = outcome.CopcInfo.HasColor,
+                BoundingRegionDegrees = outcome.BoundsDegrees
+            };
+
+            return Results.Json(
+                response,
+                ScenePointCloudIngestJsonContext.Default.PointCloudIngestResponse,
+                statusCode: StatusCodes.Status201Created);
+        }
+        catch (ValidationException vex)
+        {
+            var (status, detail) = ClassifyValidationError(vex.Message);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);
         }
     }
 

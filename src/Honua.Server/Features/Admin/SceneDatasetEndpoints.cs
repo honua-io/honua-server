@@ -4,7 +4,9 @@
 using System.Globalization;
 using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Scene.PointCloud;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -141,6 +143,12 @@ internal static partial class SceneDatasetEndpoints
         {
             SceneDatasetEndpointsLog.RegisterValidationFailed(logger, request.Id ?? "<unknown>", SceneAssetRootPolicy.Refusal);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
+        }
+
+        if (!TryValidateCopcSource(record, out var copcStatus, out var copcError))
+        {
+            SceneDatasetEndpointsLog.RegisterValidationFailed(logger, request.Id ?? "<unknown>", copcError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, copcStatus, copcError);
         }
 
         try
@@ -340,26 +348,42 @@ internal static partial class SceneDatasetEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var tilesetUrl = string.Concat(
-                baseUrl.AsSpan().TrimEnd('/'),
-                "/scenes/".AsSpan(),
-                record.Id.AsSpan(),
-                "/tileset.json".AsSpan());
+            var canonical = SceneCatalog.ResolveEndpoints(SceneCatalog.ToEntry(record), baseUrl);
+            var tilesetUrl = canonical.TilesetUrl ?? string.Empty;
+            var copcUrl = canonical.Endpoints
+                .FirstOrDefault(e => string.Equals(e.EndpointFormat, SceneServingProjection.CopcWireFormat, StringComparison.Ordinal))
+                ?.Url;
 
             var response = new SceneDatasetResolveResponse
             {
                 DatasetId = record.DatasetId,
                 Id = record.Id,
                 Name = record.Name,
+                ServingFormat = SceneServingProjection.ToWireValue(canonical.ServingFormat),
+                ContentKind = SceneServingProjection.ToWireValue(canonical.ContentKind),
                 TilesetUrl = tilesetUrl,
+                CopcUrl = copcUrl,
+                Endpoints = canonical.Endpoints
+                    .Select(static e => new SceneDatasetResolvedEndpointDto
+                    {
+                        Kind = e.Kind,
+                        EndpointFormat = e.EndpointFormat,
+                        Url = e.Url,
+                        MediaType = e.MediaType,
+                        RequiresAuthentication = e.RequiresAuthentication,
+                        AccessSession = e.AccessSession is { } session
+                            ? new SceneDatasetAccessSessionDto { Href = session.Href, Method = session.Method }
+                            : null
+                    })
+                    .ToArray(),
                 Extent = ToDto(record.Extent),
                 Crs = record.Crs,
                 CachePolicy = ToDto(record.CachePolicy),
                 IsPublic = record.IsPublic,
                 RequiresAuth = record.RequiresAuth,
                 Status = StatusToWire(record.Status),
-                CesiumJsSnippet = SceneSnippetGenerator.BuildCesiumJs(tilesetUrl),
-                HonuaSceneSnippet = SceneSnippetGenerator.BuildHonuaSceneTag(tilesetUrl)
+                CesiumJsSnippet = string.IsNullOrEmpty(tilesetUrl) ? string.Empty : SceneSnippetGenerator.BuildCesiumJs(tilesetUrl),
+                HonuaSceneSnippet = string.IsNullOrEmpty(tilesetUrl) ? string.Empty : SceneSnippetGenerator.BuildHonuaSceneTag(tilesetUrl)
             };
 
             return Results.Json(response, SceneDatasetJsonContext.Default.SceneDatasetResolveResponse);
@@ -449,6 +473,31 @@ internal static partial class SceneDatasetEndpoints
             return false;
         }
 
+        if (!TryParseOptionalServingFormat(request.ServingFormat, out var servingFormat, out var formatError))
+        {
+            error = formatError;
+            return false;
+        }
+
+        if (!TryParseOptionalContentKind(request.ContentKind, out var contentKind, out var kindError))
+        {
+            error = kindError;
+            return false;
+        }
+
+        var tilesetFileName = string.IsNullOrWhiteSpace(request.TilesetFileName)
+            ? DefaultTilesetFileName
+            : request.TilesetFileName!;
+        if (servingFormat is null && SceneServingProjection.IsCopcFileName(tilesetFileName))
+        {
+            servingFormat = SceneServingFormat.Copc;
+        }
+
+        if (contentKind is null && servingFormat == SceneServingFormat.Copc)
+        {
+            contentKind = SceneContentKind.PointCloud;
+        }
+
         record = new SceneDatasetRecord
         {
             DatasetId = Guid.NewGuid(),
@@ -456,10 +505,10 @@ internal static partial class SceneDatasetEndpoints
             Name = request.Name,
             Description = NormalizeOptional(request.Description),
             AssetRoot = request.AssetRoot,
-            TilesetFileName = string.IsNullOrWhiteSpace(request.TilesetFileName)
-                ? DefaultTilesetFileName
-                : request.TilesetFileName!,
+            TilesetFileName = tilesetFileName,
             DatasetType = datasetType,
+            ServingFormat = servingFormat,
+            ContentKind = contentKind,
             Extent = extent,
             Crs = NormalizeOptional(request.Crs),
             CachePolicy = cachePolicy,
@@ -569,6 +618,26 @@ internal static partial class SceneDatasetEndpoints
             return false;
         }
 
+        var servingFormat = existing.ServingFormat;
+        if (!string.IsNullOrWhiteSpace(request.ServingFormat))
+        {
+            if (!TryParseOptionalServingFormat(request.ServingFormat, out servingFormat, out var formatError))
+            {
+                error = formatError;
+                return false;
+            }
+        }
+
+        var contentKind = existing.ContentKind;
+        if (!string.IsNullOrWhiteSpace(request.ContentKind))
+        {
+            if (!TryParseOptionalContentKind(request.ContentKind, out contentKind, out var kindError))
+            {
+                error = kindError;
+                return false;
+            }
+        }
+
         IReadOnlyList<string>? allowedRoles;
         if (request.ClearAllowedRoles == true)
         {
@@ -592,6 +661,8 @@ internal static partial class SceneDatasetEndpoints
                 ? existing.TilesetFileName
                 : request.TilesetFileName!,
             DatasetType = datasetType,
+            ServingFormat = servingFormat,
+            ContentKind = contentKind,
             Extent = extent,
             Crs = crs,
             CachePolicy = cachePolicy,
@@ -709,6 +780,8 @@ internal static partial class SceneDatasetEndpoints
         Name = record.Name,
         Description = record.Description,
         DatasetType = DatasetTypeToWire(record.DatasetType),
+        ServingFormat = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveServingFormat(record)),
+        ContentKind = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveContentKind(record)),
         IsPublic = record.IsPublic,
         RequiresAuth = record.RequiresAuth,
         Status = StatusToWire(record.Status),
@@ -724,6 +797,8 @@ internal static partial class SceneDatasetEndpoints
         Name = record.Name,
         Description = record.Description,
         DatasetType = DatasetTypeToWire(record.DatasetType),
+        ServingFormat = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveServingFormat(record)),
+        ContentKind = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveContentKind(record)),
         AssetRoot = record.AssetRoot,
         TilesetFileName = record.TilesetFileName,
         Extent = ToDto(record.Extent),
@@ -740,6 +815,111 @@ internal static partial class SceneDatasetEndpoints
         CreatedBy = record.CreatedBy,
         UpdatedAt = record.UpdatedAt
     };
+
+    private static bool TryParseOptionalServingFormat(string? value, out SceneServingFormat? format, out string error)
+    {
+        format = null;
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (SceneServingProjection.TryParseServingFormat(value, out var parsed))
+        {
+            format = parsed;
+            return true;
+        }
+
+        error = $"Unknown servingFormat '{value}'. Allowed: 3d-tiles, i3s, copc, quantized-mesh, terrain-rgb.";
+        return false;
+    }
+
+    private static bool TryParseOptionalContentKind(string? value, out SceneContentKind? kind, out string error)
+    {
+        kind = null;
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (SceneServingProjection.TryParseContentKind(value, out var parsed))
+        {
+            kind = parsed;
+            return true;
+        }
+
+        error = $"Unknown contentKind '{value}'. Allowed: mesh, buildings, point-cloud, terrain, vector-3d, unclassified.";
+        return false;
+    }
+
+    private static bool TryValidateCopcSource(SceneDatasetRecord record, out int statusCode, out string error)
+    {
+        statusCode = StatusCodes.Status200OK;
+        error = string.Empty;
+        if (SceneServingProjection.ResolveServingFormat(record) != SceneServingFormat.Copc)
+        {
+            return true;
+        }
+
+        var fileName = record.TilesetFileName;
+        var candidatePath = Path.Join(record.AssetRoot, fileName);
+        if (File.Exists(candidatePath))
+        {
+            var header = ReadFilePrefix(candidatePath, 65_536);
+            if (LasPointCloudReader.TryReadCopcInfo(header, out _, out var copcError))
+            {
+                return true;
+            }
+
+            if (PointCloudCompressionDetector.HasLasfSignature(header))
+            {
+                statusCode = StatusCodes.Status409Conflict;
+                error = $"Untiled LAS/LAZ cannot be registered for direct COPC serving without conversion: {copcError}";
+                return false;
+            }
+
+            statusCode = StatusCodes.Status400BadRequest;
+            error = $"Invalid COPC file '{fileName}': {copcError}";
+            return false;
+        }
+
+        if (fileName.EndsWith(".las", StringComparison.OrdinalIgnoreCase)
+            || (fileName.EndsWith(".laz", StringComparison.OrdinalIgnoreCase)
+                && !SceneServingProjection.IsCopcFileName(fileName)))
+        {
+            statusCode = StatusCodes.Status409Conflict;
+            error = "Untiled LAS/LAZ sources cannot be registered for direct COPC serving without conversion to .copc.laz or 3D Tiles.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static byte[] ReadFilePrefix(string path, int maxBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var length = (int)Math.Min(stream.Length, maxBytes);
+        var buffer = new byte[length];
+        var read = 0;
+        while (read < length)
+        {
+            var n = stream.Read(buffer, read, length - read);
+            if (n == 0)
+            {
+                break;
+            }
+            read += n;
+        }
+
+        if (read < length)
+        {
+            Array.Resize(ref buffer, read);
+        }
+
+        return buffer;
+    }
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;

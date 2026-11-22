@@ -106,6 +106,8 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
+        MapCopcEndpoint(endpoints);
+
         endpoints.MapMethods(
                 "/scenes/{sceneId}/{*assetPath}",
                 ["GET", "HEAD"],
@@ -190,7 +192,7 @@ internal static partial class SceneEndpoints
             // the catch could intercept it.
             var envelopeService = context.RequestServices
                 .GetRequiredService<SceneAccessEnvelopeService>();
-            envelope = envelopeService.Issue(scene.Id);
+            envelope = envelopeService.Issue(scene.Id, BaseUrlResolver.GetBaseUrl(context));
         }
         catch (InvalidOperationException ex)
         {
@@ -373,89 +375,11 @@ internal static partial class SceneEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
         }
 
-        // A scene with no access policy is public. The shared
-        // AccessPolicyEvaluator treats "both policies null" as
-        // require-authentication, which is the correct safe default for
-        // catalog layers but wrong for hosted scene assets — Cesium browser
-        // clients cannot attach credentials to nested asset URLs. Skip the
-        // auth check when the scene explicitly opted out by leaving its
-        // access policy unset.
         var isProtected = scene.AccessPolicy is not null;
-        var tokenTransport = SceneAccessTokenTransport.None;
-        if (scene.AccessPolicy is { } accessPolicy)
+        var (denied, tokenTransport) = AuthorizeSceneRead(context, scene, logger);
+        if (denied is not null)
         {
-            var policyDecision = AccessPolicyHelpers.EvaluateAccess(
-                context,
-                layerPolicy: accessPolicy,
-                servicePolicy: null,
-                scope: AccessScope.Read);
-
-            if (!policyDecision.IsAllowed)
-            {
-                // Bearer/API-key auth missing or insufficient. Try the
-                // signed-envelope path before failing — Cesium browser
-                // clients cannot attach Authorization headers to nested
-                // asset fetches and rely entirely on the envelope token.
-                var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(
-                    context,
-                    out var extractedTokenTransport);
-                if (!string.IsNullOrEmpty(rawToken))
-                {
-                    EnvelopeValidationResult validation;
-                    try
-                    {
-                        // SceneAccessEnvelopeService throws
-                        // InvalidOperationException from its constructor
-                        // when any binding option is invalid (signing key
-                        // unset, TTL or refresh fraction out of range).
-                        // Resolving inside this try block keeps verifier
-                        // configuration state from escaping as a server error.
-                        var envelopeService = context.RequestServices
-                            .GetRequiredService<SceneAccessEnvelopeService>();
-                        validation = envelopeService.Validate(rawToken, scene.Id);
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
-                        return StandardErrorHelpers.CreateUnauthorized(
-                            context,
-                            "Scene access credential is invalid.");
-                    }
-
-                    switch (validation)
-                    {
-                        case EnvelopeValidationResult.Allowed:
-                            tokenTransport = extractedTokenTransport;
-                            // Envelope authorization does not attach a principal.
-                            // Notify the final cache policy so a fresh private
-                            // response cannot outlive the token's authorization.
-                            AuthenticationResponseCachePolicy.MarkAuthenticated(context);
-                            break;
-                        case EnvelopeValidationResult.Expired:
-                            SceneAccessLog.TokenExpired(logger, scene.Id);
-                            return StandardErrorHelpers.CreateUnauthorized(
-                                context,
-                                "Scene access envelope has expired.");
-                        case EnvelopeValidationResult.Tampered:
-                            SceneAccessLog.TokenTampered(logger, scene.Id);
-                            return StandardErrorHelpers.CreateUnauthorized(
-                                context,
-                                "Scene access envelope is invalid.");
-                        case EnvelopeValidationResult.WrongScene:
-                            SceneAccessLog.TokenWrongScene(logger, scene.Id);
-                            return StandardErrorHelpers.CreateForbidden(
-                                context,
-                                "Scene access envelope is bound to a different scene.");
-                    }
-                }
-
-                if (tokenTransport is SceneAccessTokenTransport.None)
-                {
-                    SceneAccessLog.TokenMissing(logger, scene.Id);
-                    return AccessPolicyHelpers.CreateAccessDeniedResult(context, policyDecision)
-                        ?? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
-                }
-            }
+            return denied;
         }
 
         var resolvedAssetPath = assetPath ?? scene.TilesetFileName;
@@ -470,6 +394,23 @@ internal static partial class SceneEndpoints
 
         if (!SceneAssetResolver.TryResolve(scene, resolvedAssetPath, out var resolved, out var error))
         {
+            if (error == SceneAssetResolutionError.NotFound && !string.IsNullOrWhiteSpace(scene.AssetStoragePrefix))
+            {
+                var originReader = context.RequestServices.GetService<ISceneObjectOriginReader>();
+                if (originReader is not null)
+                {
+                    return await ServeFromObjectOriginAsync(
+                        context,
+                        scene,
+                        resolvedAssetPath,
+                        originReader,
+                        cacheMaxAge,
+                        isProtected,
+                        tokenTransport,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+
             return MapResolutionError(context, scene, resolvedAssetPath, error, activity, logger);
         }
 
@@ -498,6 +439,132 @@ internal static partial class SceneEndpoints
             lastModified: resolved.File.LastWriteTimeUtc,
             entityTag: EntityTagHeaderValue.Parse(etag),
             enableRangeProcessing: true);
+    }
+
+    private static (IResult? Denied, SceneAccessTokenTransport TokenTransport) AuthorizeSceneRead(
+        HttpContext context,
+        SceneDataset scene,
+        ILogger logger)
+    {
+        if (scene.AccessPolicy is not { } accessPolicy)
+        {
+            return (null, SceneAccessTokenTransport.None);
+        }
+
+        var policyDecision = AccessPolicyHelpers.EvaluateAccess(
+            context,
+            layerPolicy: accessPolicy,
+            servicePolicy: null,
+            scope: AccessScope.Read);
+        if (policyDecision.IsAllowed)
+        {
+            return (null, SceneAccessTokenTransport.None);
+        }
+
+        var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(context, out var extractedTransport);
+        if (!string.IsNullOrEmpty(rawToken))
+        {
+            return ValidateEnvelopeToken(context, scene.Id, rawToken, extractedTransport, logger);
+        }
+
+        SceneAccessLog.TokenMissing(logger, scene.Id);
+        var missingResult = AccessPolicyHelpers.CreateAccessDeniedResult(context, policyDecision)
+            ?? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        return (missingResult, SceneAccessTokenTransport.None);
+    }
+
+    private static (IResult? Denied, SceneAccessTokenTransport TokenTransport) ValidateEnvelopeToken(
+        HttpContext context,
+        string sceneId,
+        string rawToken,
+        SceneAccessTokenTransport extractedTransport,
+        ILogger logger)
+    {
+        EnvelopeValidationResult validation;
+        try
+        {
+            var envelopeService = context.RequestServices.GetRequiredService<SceneAccessEnvelopeService>();
+            validation = envelopeService.Validate(rawToken, sceneId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            SceneAccessLog.OptionsMisconfigured(logger, sceneId, ex.Message);
+            return (StandardErrorHelpers.CreateUnauthorized(context, "Scene access credential is invalid."),
+                SceneAccessTokenTransport.None);
+        }
+
+        switch (validation)
+        {
+            case EnvelopeValidationResult.Allowed:
+                AuthenticationResponseCachePolicy.MarkAuthenticated(context);
+                return (null, extractedTransport);
+            case EnvelopeValidationResult.Expired:
+                SceneAccessLog.TokenExpired(logger, sceneId);
+                return (StandardErrorHelpers.CreateUnauthorized(context, "Scene access envelope has expired."),
+                    SceneAccessTokenTransport.None);
+            case EnvelopeValidationResult.WrongScene:
+                SceneAccessLog.TokenWrongScene(logger, sceneId);
+                return (StandardErrorHelpers.CreateForbidden(context, "Scene access envelope is bound to a different scene."),
+                    SceneAccessTokenTransport.None);
+            default:
+                SceneAccessLog.TokenTampered(logger, sceneId);
+                return (StandardErrorHelpers.CreateUnauthorized(context, "Scene access envelope is invalid."),
+                    SceneAccessTokenTransport.None);
+        }
+    }
+
+    private static async Task<IResult> ServeFromObjectOriginAsync(
+        HttpContext context,
+        SceneDataset scene,
+        string resolvedAssetPath,
+        ISceneObjectOriginReader originReader,
+        TimeSpan cacheMaxAge,
+        bool isProtected,
+        SceneAccessTokenTransport tokenTransport,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await originReader
+            .GetMetadataAsync(scene, resolvedAssetPath, cancellationToken)
+            .ConfigureAwait(false);
+        if (metadata is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene asset was not found.");
+        }
+
+        var etag = await ConfigurationResponseETag
+            .ForResponseAsync(context, metadata.ETag, metadata.ContentType)
+            .ConfigureAwait(false);
+        SetMetadataCacheHeaders(
+            context,
+            etag,
+            metadata.LastModifiedUtc,
+            cacheMaxAge,
+            isProtected,
+            scene.CachePolicy,
+            tokenTransport);
+
+        var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
+        if (!context.RequestServices.GetRequiredService<IETagService>().IsModified(ifNoneMatch, etag))
+        {
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        if (HttpMethods.IsHead(context.Request.Method))
+        {
+            context.Response.ContentType = metadata.ContentType;
+            context.Response.ContentLength = metadata.ContentLength;
+            return Results.Empty;
+        }
+
+        await using var read = await originReader
+            .OpenReadAsync(scene, resolvedAssetPath, range: null, cancellationToken)
+            .ConfigureAwait(false);
+        return await StreamOriginReadResultAsync(
+            context,
+            read,
+            metadata.ContentType,
+            StatusCodes.Status200OK,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static IResult MapResolutionError(
@@ -534,10 +601,20 @@ internal static partial class SceneEndpoints
         bool isProtected,
         SceneCachePolicy? scenePolicy,
         SceneAccessTokenTransport tokenTransport)
+        => SetMetadataCacheHeaders(context, etag, file.LastWriteTimeUtc, maxAge, isProtected, scenePolicy, tokenTransport);
+
+    private static void SetMetadataCacheHeaders(
+        HttpContext context,
+        string etag,
+        DateTimeOffset lastModifiedUtc,
+        TimeSpan maxAge,
+        bool isProtected,
+        SceneCachePolicy? scenePolicy,
+        SceneAccessTokenTransport tokenTransport)
     {
         var headers = context.Response.Headers;
         headers[HeaderNames.ETag] = etag;
-        headers[HeaderNames.LastModified] = file.LastWriteTimeUtc.ToString("R");
+        headers[HeaderNames.LastModified] = lastModifiedUtc.ToString("R");
 
         // A registered scene may pin its own cache policy (e.g. shorter
         // max-age for previews, no-store for rotated debug datasets); honor

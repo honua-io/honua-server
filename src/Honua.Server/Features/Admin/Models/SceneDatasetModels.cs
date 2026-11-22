@@ -17,6 +17,10 @@ public sealed class SceneDatasetSummary
 
     public string DatasetType { get; set; } = "hosted_tiles";
 
+    public string ServingFormat { get; set; } = "3d-tiles";
+
+    public string ContentKind { get; set; } = "unclassified";
+
     public bool IsPublic { get; set; }
 
     public bool RequiresAuth { get; set; }
@@ -41,6 +45,10 @@ public sealed class SceneDatasetDetail
     public string? Description { get; set; }
 
     public string DatasetType { get; set; } = "hosted_tiles";
+
+    public string ServingFormat { get; set; } = "3d-tiles";
+
+    public string ContentKind { get; set; } = "unclassified";
 
     public string AssetRoot { get; set; } = string.Empty;
 
@@ -81,7 +89,15 @@ public sealed class SceneDatasetResolveResponse
 
     public string Name { get; set; } = string.Empty;
 
+    public string ServingFormat { get; set; } = "3d-tiles";
+
+    public string ContentKind { get; set; } = "unclassified";
+
     public string TilesetUrl { get; set; } = string.Empty;
+
+    public string? CopcUrl { get; set; }
+
+    public SceneDatasetResolvedEndpointDto[] Endpoints { get; set; } = [];
 
     public SceneExtentDto? Extent { get; set; }
 
@@ -98,6 +114,28 @@ public sealed class SceneDatasetResolveResponse
     public string CesiumJsSnippet { get; set; } = string.Empty;
 
     public string HonuaSceneSnippet { get; set; } = string.Empty;
+}
+
+public sealed class SceneDatasetResolvedEndpointDto
+{
+    public string Kind { get; set; } = string.Empty;
+
+    public string EndpointFormat { get; set; } = string.Empty;
+
+    public string Url { get; set; } = string.Empty;
+
+    public string? MediaType { get; set; }
+
+    public bool RequiresAuthentication { get; set; }
+
+    public SceneDatasetAccessSessionDto? AccessSession { get; set; }
+}
+
+public sealed class SceneDatasetAccessSessionDto
+{
+    public string Href { get; set; } = string.Empty;
+
+    public string Method { get; set; } = "POST";
 }
 
 public sealed class SceneExtentDto
@@ -132,6 +170,10 @@ public sealed class RegisterSceneDatasetRequest
 
     public string? DatasetType { get; set; }
 
+    public string? ServingFormat { get; set; }
+
+    public string? ContentKind { get; set; }
+
     public SceneExtentDto? Extent { get; set; }
 
     public string? Crs { get; set; }
@@ -158,6 +200,10 @@ public sealed class UpdateSceneDatasetRequest
     public string? TilesetFileName { get; set; }
 
     public string? DatasetType { get; set; }
+
+    public string? ServingFormat { get; set; }
+
+    public string? ContentKind { get; set; }
 
     public SceneExtentDto? Extent { get; set; }
 
