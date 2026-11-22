@@ -17,9 +17,6 @@ public static class SceneUrls
     public static string TilesetRelativePath(string sceneId)
         => string.Create(CultureInfo.InvariantCulture, $"{ScenePrefix}{sceneId}{TilesetSuffix}");
 
-    public static string CopcRelativePath(string sceneId)
-        => string.Create(CultureInfo.InvariantCulture, $"{ScenePrefix}{sceneId}{CopcSuffix}");
-
     public static string AbsoluteTilesetUrl(string baseUrl, string sceneId)
         => BuildAbsolute(baseUrl, ScenePrefix, sceneId, TilesetSuffix);
 
