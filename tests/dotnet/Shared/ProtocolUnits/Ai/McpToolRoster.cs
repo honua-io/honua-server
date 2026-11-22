@@ -5,13 +5,29 @@ using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 internal static class McpToolRoster
 {
+    internal static IMcpTool[] DraftAuthoring(IGeoprocessingJobService jobService) =>
+    [
+        new CreateMapTool(
+            jobService,
+            new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
+            NullLogger<CreateMapTool>.Instance),
+        new CreateAppTool(
+            jobService,
+            new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
+            NullLogger<CreateAppTool>.Instance),
+    ];
+
     internal static IMcpTool[] Studio(IGeoprocessingJobService jobService) =>
     [
         new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),

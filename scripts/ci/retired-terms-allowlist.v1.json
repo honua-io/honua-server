@@ -2980,7 +2980,7 @@
     {
       "path": "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.Vocabulary.cs",
       "rule": "app-envelope",
-      "line": "    [InlineData(StudioPackageFamily.App, \"appPackageId\", \"appId\", \"honua_app_package.v1\", \"honua_app.v1\")]",
+      "line": "    [InlineData(StudioPackageFamily.App, \"honua_app_package.v1\", \"honua_app.v1\")]",
       "reason": "Regression fixture asserts legacy immutable history reopens with canonical identities, rejects conflicting identities and preserves historical bytes."
     },
     {
@@ -3004,7 +3004,7 @@
     {
       "path": "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.Vocabulary.cs",
       "rule": "map-envelope",
-      "line": "    [InlineData(StudioPackageFamily.Map, \"mapPackageId\", \"mapId\", \"honua_map_package.v1\", \"honua_map.v1\")]",
+      "line": "    [InlineData(StudioPackageFamily.Map, \"honua_map_package.v1\", \"honua_map.v1\")]",
       "reason": "Regression fixture asserts legacy immutable history reopens with canonical identities, rejects conflicting identities and preserves historical bytes."
     },
     {
@@ -3198,6 +3198,12 @@
       "rule": "map-envelope",
       "line": "| 230 | Report Map embeds use `mapUri` in place of `mapPackageUri`. |",
       "reason": "Upgrade table identifies the retired field so operators can understand the forward-only rename."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.Vocabulary.cs",
+      "rule": "app-envelope",
+      "line": "        var oldId = family == StudioPackageFamily.App ? \"appPackageId\" : \"mapPackageId\";",
+      "reason": "Regression fixture asserts legacy immutable history reopens with canonical identities, rejects conflicting identities and preserves historical bytes."
     }
   ]
 }

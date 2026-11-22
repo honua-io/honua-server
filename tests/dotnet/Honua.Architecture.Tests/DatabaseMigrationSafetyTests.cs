@@ -176,25 +176,32 @@ public sealed class DatabaseMigrationSafetyTests
         foreach (var file in scripts)
         {
             var name = Path.GetFileName(file);
-            var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
             if (boundaryHashes.ContainsKey(name))
             {
-                var expected = boundary.RootElement.GetProperty("readerIncompatibleReasons").TryGetProperty(name, out var reason)
-                    ? MigrationReaderCompatibilityClassification.ReaderIncompatible
-                    : MigrationReaderCompatibilityClassification.Contract;
-                if (expected == MigrationReaderCompatibilityClassification.ReaderIncompatible)
-                {
-                    reason.GetString().Should().NotBeNullOrWhiteSpace($"{name}: reader-incompatible migrations require a recorded reason");
-                }
-                declaration.Classification.Should().Be(expected);
-                MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeFalse();
+                AssertPinnedMigrationCompatibility(file, boundary.RootElement, floor);
                 continue;
             }
+            var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
             declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand,
                 $"{name}: every migration above the pre-rc.2 boundary must declare expand");
             MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeTrue(
                 $"{name}: the rc.2 reader must accept every later migration");
         }
+    }
+
+    private static void AssertPinnedMigrationCompatibility(string file, JsonElement boundary, int floor)
+    {
+        var name = Path.GetFileName(file);
+        var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
+        var expected = boundary.GetProperty("readerIncompatibleReasons").TryGetProperty(name, out var reason)
+            ? MigrationReaderCompatibilityClassification.ReaderIncompatible
+            : MigrationReaderCompatibilityClassification.Contract;
+        if (expected == MigrationReaderCompatibilityClassification.ReaderIncompatible)
+        {
+            reason.GetString().Should().NotBeNullOrWhiteSpace($"{name}: reader-incompatible migrations require a recorded reason");
+        }
+        declaration.Classification.Should().Be(expected);
+        MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeFalse();
     }
 
     private static bool IsAfterReleaseBoundary(string path, int serverFloor, int rasterFloor)

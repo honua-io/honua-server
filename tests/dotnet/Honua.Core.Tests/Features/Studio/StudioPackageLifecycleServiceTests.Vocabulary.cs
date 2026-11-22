@@ -12,11 +12,13 @@ public partial class StudioPackageLifecycleServiceTests
 {
     [Theory]
     [Trait("Tier", "Fast")]
-    [InlineData(StudioPackageFamily.Map, "mapPackageId", "mapId", "honua_map_package.v1", "honua_map.v1")]
-    [InlineData(StudioPackageFamily.App, "appPackageId", "appId", "honua_app_package.v1", "honua_app.v1")]
+    [InlineData(StudioPackageFamily.Map, "honua_map_package.v1", "honua_map.v1")]
+    [InlineData(StudioPackageFamily.App, "honua_app_package.v1", "honua_app.v1")]
     public async Task ReopenAndRestore_NormalizeHistoricalIdentityWithoutChangingHistory(
-        StudioPackageFamily family, string oldId, string newId, string oldFormat, string newFormat)
+        StudioPackageFamily family, string oldFormat, string newFormat)
     {
+        var oldId = family == StudioPackageFamily.App ? "appPackageId" : "mapPackageId";
+        var newId = family == StudioPackageFamily.App ? "appId" : "mapId";
         using var provider = BuildServiceProvider();
         var store = provider.GetRequiredService<IStudioPackageStore>();
         var envelope = new StudioPackageEnvelope
@@ -50,10 +52,7 @@ public partial class StudioPackageLifecycleServiceTests
         Assert.NotNull(restored);
         Assert.Equal(newFormat, restored.Envelope.Format);
         Assert.Equal(reopened.Envelope.Body.Value.GetRawText(), restored.Envelope.Body!.Value.GetRawText());
-        var revision = await store.GetDraftRevisionAsync(originalDraft.DraftId, originalDraft.Generation);
-        Assert.NotNull(revision);
-        Assert.Equal(oldFormat, revision.Envelope.Format);
-        Assert.Equal(envelope.Body.Value.GetRawText(), revision.Envelope.Body!.Value.GetRawText());
+        await AssertHistoricalDraftUnchangedAsync(store, originalDraft);
     }
 
     [Theory]
@@ -106,6 +105,14 @@ public partial class StudioPackageLifecycleServiceTests
         Assert.Equal("map-one", body.GetProperty("mapId").GetString());
         Assert.False(body.TryGetProperty("mapPackageId", out _));
         Assert.Equal("honua_app.v1", reopened.Envelope.Format);
+    }
+
+    private static async Task AssertHistoricalDraftUnchangedAsync(IStudioPackageStore store, StudioPackageDraft originalDraft)
+    {
+        var revision = await store.GetDraftRevisionAsync(originalDraft.DraftId, originalDraft.Generation);
+        Assert.NotNull(revision);
+        Assert.Equal(originalDraft.Envelope.Format, revision.Envelope.Format);
+        Assert.Equal(originalDraft.Envelope.Body!.Value.GetRawText(), revision.Envelope.Body!.Value.GetRawText());
     }
 
     private static async Task<StudioContentVersion> StoreHistoricalVersionAsync(

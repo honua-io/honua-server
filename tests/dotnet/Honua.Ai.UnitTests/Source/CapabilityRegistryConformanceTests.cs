@@ -410,16 +410,7 @@ public sealed class CapabilityRegistryConformanceTests
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new AdminServerStatusTool(),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            new CreateMapTool(
-                jobService,
-                new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
-                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateMapTool>.Instance),
-            new CreateAppTool(
-                jobService,
-                new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
-                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateAppTool>.Instance),
+            ..McpToolRoster.DraftAuthoring(jobService),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,

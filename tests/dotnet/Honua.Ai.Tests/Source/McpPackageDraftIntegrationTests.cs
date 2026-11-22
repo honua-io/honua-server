@@ -166,7 +166,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
                 "name":"honua_create_map",
                 "arguments":{"templateId":"analysis_default"}
             }}
-            """, "mapId", "map_", "honua://maps/");
+            """, new DraftContract("mapId", "map_", "honua://maps/"));
 
         var body = await ReadResourceAsync(resourceUri);
 
@@ -189,7 +189,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
                 "name":"honua_create_app",
                 "arguments":{"templateId":"analysis_dashboard"}
             }}
-            """, "appId", "app_", "honua://apps/");
+            """, new DraftContract("appId", "app_", "honua://apps/"));
 
         var body = await ReadResourceAsync(resourceUri);
 
@@ -226,7 +226,9 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         isNotFound.Should().BeTrue();
     }
 
-    private async Task<string> CreateAndReadUriAsync(string createRequest, string idProperty, string idPrefix, string uriPrefix)
+    private sealed record DraftContract(string IdProperty, string IdPrefix, string UriPrefix);
+
+    private async Task<string> CreateAndReadUriAsync(string createRequest, DraftContract contract)
     {
         var response = await PostRpcAsync(createRequest);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -234,11 +236,11 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         using var document = await ReadJsonAsync(response);
         var structured = document.RootElement.GetProperty("result").GetProperty("structuredContent");
 
-        var packageId = structured.GetProperty(idProperty).GetString();
-        packageId.Should().StartWith(idPrefix);
+        var packageId = structured.GetProperty(contract.IdProperty).GetString();
+        packageId.Should().StartWith(contract.IdPrefix);
 
         var resourceUri = structured.GetProperty("resourceUri").GetString();
-        resourceUri.Should().Be(uriPrefix + packageId);
+        resourceUri.Should().Be(contract.UriPrefix + packageId);
         return resourceUri!;
     }
 

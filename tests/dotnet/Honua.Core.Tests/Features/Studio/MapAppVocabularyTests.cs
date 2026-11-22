@@ -52,28 +52,30 @@ public sealed class MapAppVocabularyTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void StudioValidator_CanonicalBody_AcceptsCurrentFormat(bool app)
+    [InlineData(StudioPackageFamily.Map)]
+    [InlineData(StudioPackageFamily.App)]
+    public void StudioValidator_CanonicalBody_AcceptsCurrentFormat(StudioPackageFamily family)
     {
-        Assert.Equal(StudioPackageValidationStatus.Valid, ValidateBody(app, legacy: false).Status);
+        Assert.Equal(StudioPackageValidationStatus.Valid, ValidateBody(family, BodyVocabulary.Current).Status);
     }
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void StudioValidator_RetiredBody_RejectsNewWrites(bool app)
+    [InlineData(StudioPackageFamily.Map)]
+    [InlineData(StudioPackageFamily.App)]
+    public void StudioValidator_RetiredBody_RejectsNewWrites(StudioPackageFamily family)
     {
-        Assert.Equal(StudioPackageValidationStatus.Invalid, ValidateBody(app, legacy: true).Status);
+        Assert.Equal(StudioPackageValidationStatus.Invalid, ValidateBody(family, BodyVocabulary.Retired).Status);
     }
 
-    private static StudioValidationSummary ValidateBody(bool app, bool legacy)
+    private enum BodyVocabulary { Current, Retired }
+
+    private static StudioValidationSummary ValidateBody(StudioPackageFamily family, BodyVocabulary vocabulary)
     {
-        var body = app
+        var body = family == StudioPackageFamily.App
             ? """{"appId":"app-stable","mapId":"map-stable","targetSdk":"js","format":"honua_app.v1","status":"Draft","createdAt":"2026-11-17T00:00:00Z"}"""
             : """{"mapId":"map-stable","format":"honua_map.v1","sourceBindings":[]}""";
-        if (legacy)
+        if (vocabulary == BodyVocabulary.Retired)
         {
             body = body.Replace("mapId", "mapPackageId", StringComparison.Ordinal)
                 .Replace("appId", "appPackageId", StringComparison.Ordinal)
@@ -84,9 +86,9 @@ public sealed class MapAppVocabularyTests
         using var json = JsonDocument.Parse(body);
         var envelope = new StudioPackageEnvelope
         {
-            Family = app ? StudioPackageFamily.App : StudioPackageFamily.Map,
+            Family = family,
             SchemaVersion = "1.0",
-            Format = app ? "honua_app.v1" : "honua_map.v1",
+            Format = family == StudioPackageFamily.App ? "honua_app.v1" : "honua_map.v1",
             Body = json.RootElement.Clone()
         };
         var validator = new StudioPackageValidator(new StudioPackageFamilyRegistry(new InMemoryStudioPackageStore()), TimeProvider.System);
@@ -95,17 +97,17 @@ public sealed class MapAppVocabularyTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false, "map")]
-    [InlineData(true, "app")]
-    public void DeploymentSource_SerializedIdentity_PreservesSourceId(bool app, string expectedKind)
+    [InlineData(StudioPackageFamily.Map, "map")]
+    [InlineData(StudioPackageFamily.App, "app")]
+    public void DeploymentSource_SerializedIdentity_PreservesSourceId(StudioPackageFamily family, string expectedKind)
     {
-        var source = app
+        var source = family == StudioPackageFamily.App
             ? DeploymentSource.FromApp("app-stable", "map-stable")
             : DeploymentSource.FromMap("map-stable");
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(source, DeploymentJsonContext.Default.DeploymentSource));
 
         Assert.Equal(expectedKind, json.RootElement.GetProperty("kind").GetString());
-        Assert.Equal(app ? "app-stable" : "map-stable", json.RootElement.GetProperty("sourceId").GetString());
+        Assert.Equal(family == StudioPackageFamily.App ? "app-stable" : "map-stable", json.RootElement.GetProperty("sourceId").GetString());
         Assert.Equal("map-stable", json.RootElement.GetProperty("mapId").GetString());
         Assert.False(json.RootElement.TryGetProperty("mapPackageId", out _));
         Assert.False(json.RootElement.TryGetProperty("appPackageId", out _));

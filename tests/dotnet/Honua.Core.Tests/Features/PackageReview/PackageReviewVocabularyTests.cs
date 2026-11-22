@@ -11,12 +11,17 @@ public sealed class PackageReviewVocabularyTests
 {
     [Theory]
     [Trait("Tier", "Fast")]
-    [InlineData("map", true)]
-    [InlineData("app", true)]
-    [InlineData("map_package", false)]
-    [InlineData("app_package", false)]
-    public void ReviewFamilies_UseCanonicalNames(string family, bool expected)
-        => PackageReviewFamilies.IsKnown(family).Should().Be(expected);
+    [InlineData("map")]
+    [InlineData("app")]
+    public void ReviewFamilies_AcceptCanonicalNames(string family)
+        => PackageReviewFamilies.IsKnown(family).Should().BeTrue();
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("map_package")]
+    [InlineData("app_package")]
+    public void ReviewFamilies_RejectRetiredNames(string family)
+        => PackageReviewFamilies.IsKnown(family).Should().BeFalse();
 
     [Theory]
     [Trait("Tier", "Fast")]
