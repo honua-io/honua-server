@@ -30,4 +30,18 @@ internal static partial class PostgresTerrainLog
         int layerId,
         int rasterCount,
         bool supported);
+
+    [LoggerMessage(
+        EventId = 29102,
+        Level = LogLevel.Debug,
+        Message = "Sampled geographic terrain grid for layer {LayerId} z={Z} x={X} y={Y} gridSize={GridSize}; rasters={RasterCount}, allNoData={AllNoData}")]
+    public static partial void QuantizedMeshGridSampled(
+        ILogger logger,
+        int layerId,
+        int z,
+        int x,
+        int y,
+        int gridSize,
+        int rasterCount,
+        bool allNoData);
 }

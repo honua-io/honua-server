@@ -52,6 +52,137 @@ public sealed partial class FeatureServerQueryExecutorTests
         await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task StreamPbfQueryAsync_WithRequestedOutputSridAlias_MatchesMaterializedPbf()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        var items = CreatePbfStreamingFeatures();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsyncPbfFeatures(items));
+
+        var metadata = CreatePbfStreamingMetadata(withGeometry: true);
+        var context = new DefaultHttpContext();
+        using var responseStream = new MemoryStream();
+        context.Response.Body = responseStream;
+
+        await CreateSut(featureReader, streamingStore).StreamPbfQueryAsync(
+            new FeatureServerQueryExecutor.PbfStreamQueryRequest
+            {
+                Service = metadata.Service,
+                Resource = metadata.Resource,
+                Publication = metadata.Publication,
+                StorageLayerId = 7,
+                Query = new FeatureQuery { Limit = 2, OutputSrid = 3857 },
+                QueryParams = new QueryParameters { ReturnGeometry = false, OutFields = "name" },
+                OutputSrid = 3857,
+                RequestedOutputSrid = 102100,
+                Context = context
+            },
+            CancellationToken.None);
+
+        var pbfFormatter = new PbfQueryFormatter(Options.Create(new LimitsOptions()));
+        var expectedResult = QueryResult<Feature>.Create(2, items.Take(2).ToImmutableArray(), hasMoreResults: true);
+        var (expectedBytes, _) = pbfFormatter.FormatAsPbf(
+            expectedResult,
+            metadata.Resource,
+            returnGeometry: false,
+            outputSrid: 3857,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: ["name"],
+            requestedOutputSrid: 102100);
+
+        context.Response.ContentType.Should().Be("application/x-protobuf");
+        context.Response.ContentLength.Should().Be(expectedBytes.Length);
+        responseStream.ToArray().Should().Equal(expectedBytes);
+    }
+
+    [UnitTest]
+    public async Task StreamParquetQueryAsync_StreamsDirectlyWithoutMaterializingAndMatchesMaterializedParquet()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        var items = CreatePbfStreamingFeatures();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsyncPbfFeatures(items));
+
+        var metadata = CreatePbfStreamingMetadata();
+        var context = new DefaultHttpContext();
+        using var responseStream = new MemoryStream();
+        context.Response.Body = responseStream;
+
+        await CreateSut(featureReader, streamingStore).StreamParquetQueryAsync(
+            new FeatureServerQueryExecutor.ParquetStreamQueryRequest
+            {
+                Service = metadata.Service,
+                Resource = metadata.Resource,
+                Publication = metadata.Publication,
+                StorageLayerId = 7,
+                Query = new FeatureQuery { Limit = 3 },
+                QueryParams = new QueryParameters { ReturnGeometry = false, OutFields = "name" },
+                Context = context
+            },
+            CancellationToken.None);
+
+        var (expectedBytes, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(items.Length, items),
+            metadata.Resource,
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits(),
+            outFields: ["name"]);
+
+        context.Response.ContentType.Should().Be("application/vnd.apache.parquet");
+        context.Response.ContentLength.Should().Be(expectedBytes.Length);
+        responseStream.ToArray().Should().Equal(expectedBytes);
+        await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task StreamParquetQueryAsync_ExceedingResponseByteCap_ThrowsLimitExceededBeforeStartingResponse()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        var items = CreatePbfStreamingFeatures();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsyncPbfFeatures(items));
+
+        var metadata = CreatePbfStreamingMetadata();
+        var context = new DefaultHttpContext();
+        using var responseStream = new MemoryStream();
+        context.Response.Body = responseStream;
+        var limits = Options.Create(new LimitsOptions
+        {
+            GeoParquet = new GeoParquetLimits { MaxResponseBytes = 32 }
+        });
+
+        var executor = new FeatureServerQueryExecutor(
+            featureReader,
+            streamingStore,
+            new StreamingQueryFormatter(limits));
+
+        var act = () => executor.StreamParquetQueryAsync(
+            new FeatureServerQueryExecutor.ParquetStreamQueryRequest
+            {
+                Service = metadata.Service,
+                Resource = metadata.Resource,
+                Publication = metadata.Publication,
+                StorageLayerId = 7,
+                Query = new FeatureQuery { Limit = 3 },
+                QueryParams = new QueryParameters { ReturnGeometry = false, OutFields = "name" },
+                Context = context
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Infrastructure.Services.GeoParquetLimitExceededException>();
+        responseStream.Length.Should().Be(0);
+    }
+
     private static FeatureServerQueryExecutor.PbfStreamQueryRequest BuildPbfStreamRequest(
         (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication) metadata,
         HttpContext context)
@@ -75,12 +206,19 @@ public sealed partial class FeatureServerQueryExecutorTests
         ];
 
     private static (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
-        CreatePbfStreamingMetadata()
+        CreatePbfStreamingMetadata(bool withGeometry = false)
     {
         var service = CreateService();
         var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "Parcels" },
+            Spatial = withGeometry
+                ? new MetadataV2ObjectSpatial
+                {
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SpatialReference = new MetadataV2SpatialReference { Srid = 4326 }
+                }
+                : null,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },

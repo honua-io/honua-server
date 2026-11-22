@@ -2,22 +2,23 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Domain;
 
 public static class MultidimensionalCoverageValidation
 {
-    public const int MaxBucketLength = 255;
+    public const int MaxBucketLength = CloudRasterRegistrationValidation.MaxBucketLength;
 
-    public const int MaxObjectKeyLength = 1024;
+    public const int MaxObjectKeyLength = CloudRasterRegistrationValidation.MaxObjectKeyLength;
 
     public const int MaxVariableNameLength = 255;
 
     public const int MaxVariables = 64;
 
-    public const int MaxNameLength = 255;
+    public const int MaxNameLength = CloudRasterRegistrationValidation.MaxNameLength;
 
-    public const int MaxDescriptionLength = 4000;
+    public const int MaxDescriptionLength = CloudRasterRegistrationValidation.MaxDescriptionLength;
 
     private static readonly string[] AllowedHdfExtensions = [".h5", ".hdf5"];
     private static readonly string[] AllowedNetCdfExtensions = [".nc", ".nc4"];
@@ -29,21 +30,9 @@ public static class MultidimensionalCoverageValidation
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.LayerId <= 0)
+        if (CloudRasterRegistrationValidation.ValidateMetadata(request.LayerId, request.Name, request.Description) is { } metadataError)
         {
-            error = "layerId must be a positive integer.";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > MaxNameLength)
-        {
-            error = $"name is required and must be {MaxNameLength} characters or fewer.";
-            return false;
-        }
-
-        if (request.Description is { Length: > MaxDescriptionLength })
-        {
-            error = $"description must be {MaxDescriptionLength} characters or fewer.";
+            error = metadataError;
             return false;
         }
 
@@ -65,27 +54,9 @@ public static class MultidimensionalCoverageValidation
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Bucket) || request.Bucket.Length > MaxBucketLength)
+        if (CloudRasterRegistrationValidation.ValidateStorageLocation(request.Bucket, request.ObjectKey, "objectKey") is { } storageError)
         {
-            error = $"bucket is required and must be {MaxBucketLength} characters or fewer.";
-            return false;
-        }
-
-        if (!IsSafeBucket(request.Bucket))
-        {
-            error = "bucket contains characters that are not allowed.";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(request.ObjectKey) || request.ObjectKey.Length > MaxObjectKeyLength)
-        {
-            error = $"objectKey is required and must be {MaxObjectKeyLength} characters or fewer.";
-            return false;
-        }
-
-        if (!IsSafeObjectKey(request.ObjectKey))
-        {
-            error = "objectKey contains characters or path segments that are not allowed.";
+            error = storageError;
             return false;
         }
 
@@ -151,36 +122,6 @@ public static class MultidimensionalCoverageValidation
         };
 
         return allowed.Any(ext => objectKey.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsSafeBucket(string bucket)
-    {
-        foreach (var ch in bucket)
-        {
-            if (char.IsLetterOrDigit(ch) || ch is '-' or '.' or '_')
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsSafeObjectKey(string key)
-    {
-        if (key.StartsWith('/'))
-        {
-            return false;
-        }
-
-        if (key.Contains("..", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return !key.Any(ch => ch is < (char)32 or (char)127);
     }
 
     private static bool IsSafeVariableName(string variable)

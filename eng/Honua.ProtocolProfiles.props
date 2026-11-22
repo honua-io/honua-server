@@ -121,6 +121,7 @@
       <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
       <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
       <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
+      <Compile Remove="Features\Protocols\Terrain\QuantizedMesh\**\*.cs" />
       <Content Remove="fixtures\scenes\**\*" />
       <None Remove="fixtures\scenes\**\*" />
     </ItemGroup>

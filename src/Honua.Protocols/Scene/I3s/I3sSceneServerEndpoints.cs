@@ -241,6 +241,40 @@ internal static partial class I3sSceneServerEndpoints
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
+
+        // Symbolic root-node geometry aliases consumed by third-party I3S 1.7/1.8 clients;
+        // scene-level AccessPolicy is enforced inside HandleGetNodeGeometry.
+        endpoints.MapGet(
+                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}",
+                HandleGetRootNodeGeometry)
+            .AllowAnonymous()
+            .WithName("GetGeoServicesSceneRootNodeGeometry")
+            .WithDisplayName("Get GeoServices SceneServer Root Node Geometry")
+            .WithSummary("Get the Esri I3S root node geometry buffer at the GeoServices path")
+            .WithDescription("Returns the I3S Default PerAttributeArray root node geometry binary (symbolic alias of nodes/0/geometries/{geometryId}). Enterprise entitlement required.")
+            .WithTags(ScenesTag)
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
+            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
+
+        endpoints.MapGet(
+                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}",
+                HandleGetRootNodeGeometry)
+            .AllowAnonymous()
+            .WithName("GetI3sSceneRootNodeGeometry")
+            .WithDisplayName("Get I3S Scene Root Node Geometry")
+            .WithSummary("Get the Esri I3S root node geometry buffer for a hosted scene")
+            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/root/geometries/{geometryId}. Enterprise entitlement required.")
+            .WithTags(ScenesTag)
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
+            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
     }
 
     private static void MapNodeAttributeEndpoints(IEndpointRouteBuilder endpoints)
@@ -312,6 +346,15 @@ internal static partial class I3sSceneServerEndpoints
         CancellationToken cancellationToken)
         => HandleStatisticsAsync(sceneId, layerId, fieldKey, context, registry, cancellationToken);
 
+    private static Task<IResult> HandleGetRootNodeGeometry(
+        string sceneId,
+        int layerId,
+        int geometryId,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        CancellationToken cancellationToken)
+        => HandleGetNodeGeometry(sceneId, layerId, nodeId: 0, geometryId, context, registry, cancellationToken);
+
     private static async Task<IResult> HandleGetNodeGeometry(
         string sceneId,
         int layerId,
@@ -373,6 +416,11 @@ internal static partial class I3sSceneServerEndpoints
             if (resources?.Nodes.TryGetValue(nodeId, out var node) == true)
             {
                 return BinaryResponse(context, scene, node.Geometry.Buffer, I3sGeometryContentType);
+            }
+
+            if (nodeId == 0 && resources?.RootGeometry is { } rootGeometry)
+            {
+                return BinaryResponse(context, scene, rootGeometry.Buffer, I3sGeometryContentType);
             }
 
             return StandardErrorHelpers.CreateNotFound(context, "Node geometry is not available for this scene.");
@@ -508,9 +556,11 @@ internal static partial class I3sSceneServerEndpoints
         {
             var resources = await ResolveResourcesAsync(context, scene, cancellationToken).ConfigureAwait(false);
             var persistedType = await ResolveDatasetTypeAsync(context, scene, cancellationToken).ConfigureAwait(false);
-            var persistedLayer = I3sSceneServiceBuilder.BuildPersistedLayer(scene, resources, persistedType);
+            var persistedExtent = resources?.Extent
+                ?? await ResolveExtentAsync(context, scene, cancellationToken).ConfigureAwait(false);
+            var persistedLayer = I3sSceneServiceBuilder.BuildPersistedLayer(scene, resources, persistedType, persistedExtent);
             if (layerId is not null) { return SerializeLayer(persistedLayer); }
-            var persistedService = I3sSceneServiceBuilder.BuildService(scene, resources?.Extent);
+            var persistedService = I3sSceneServiceBuilder.BuildService(scene, persistedExtent);
             persistedService.Layers = [persistedLayer];
             return SerializeService(persistedService);
         }

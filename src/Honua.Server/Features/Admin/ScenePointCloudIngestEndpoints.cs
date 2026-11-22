@@ -15,6 +15,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
 using Honua.Scene;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Scene;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
@@ -45,9 +46,12 @@ internal static partial class ScenePointCloudIngestEndpoints
         _ = group.MapPost("/pointcloud", HandleIngestPointCloud)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("IngestPointCloudScene")
-            .WithSummary("Ingest a LAS point cloud into a servable 3D Tiles point tileset (Enterprise).")
+            .WithSummary("Ingest a point cloud as 3D Tiles or direct COPC (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<PointCloudIngestResponse>(StatusCodes.Status201Created)
+            .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -78,7 +82,7 @@ internal static partial class ScenePointCloudIngestEndpoints
         }
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
-        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        var file = SceneIngestRequestHelpers.FindUpload(form);
         if (file is null || file.Length == 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
@@ -107,37 +111,53 @@ internal static partial class ScenePointCloudIngestEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, epsgError!);
         }
 
-        byte[] document;
-        await using (var stream = file.OpenReadStream())
+        var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
+        if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
         {
-            using var buffer = new MemoryStream(file.Length > 0 ? (int)file.Length : 0);
-            await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            document = buffer.ToArray();
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
         }
 
+        var requestedFormat = SceneServingFormat.ThreeDTiles;
         var rawServingFormat = NullIfBlank(form["servingFormat"]);
-        if (rawServingFormat is not null)
+        if (rawServingFormat is not null &&
+            (!SceneServingProjection.TryParseServingFormat(rawServingFormat, out requestedFormat)
+             || requestedFormat is not (SceneServingFormat.ThreeDTiles or SceneServingFormat.Copc)))
         {
-            if (!SceneServingProjection.TryParseServingFormat(rawServingFormat, out var requestedFormat)
-                || requestedFormat is not (SceneServingFormat.ThreeDTiles or SceneServingFormat.Copc))
-            {
-                return ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    $"Unsupported point-cloud servingFormat '{rawServingFormat}'. Allowed: 3d-tiles, copc.");
-            }
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Unsupported point-cloud servingFormat '{rawServingFormat}'. Allowed: 3d-tiles, copc.");
+        }
 
-            if (requestedFormat == SceneServingFormat.Copc)
-            {
-                return await HandleDirectCopcIngestAsync(
-                    context,
-                    form,
-                    document,
-                    cacheMaxAge,
-                    requiresAuth ?? false,
-                    logger,
-                    cancellationToken).ConfigureAwait(false);
-            }
+        if (asyncRequested && requestedFormat == SceneServingFormat.Copc)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Direct COPC ingest requires synchronous execution.");
+        }
+
+        var coordinator = asyncRequested
+            ? context.RequestServices.GetService<SceneJobCoordinator>()
+            : null;
+        using var admission = coordinator?.TryReserve(file.Length);
+        if (coordinator is not null && admission is null)
+        {
+            return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+        }
+
+        var document = await SceneIngestRequestHelpers.ReadUploadAsync(file, cancellationToken).ConfigureAwait(false);
+
+        if (requestedFormat == SceneServingFormat.Copc)
+        {
+            return await HandleDirectCopcIngestAsync(
+                context,
+                form,
+                document,
+                cacheMaxAge,
+                requiresAuth ?? false,
+                logger,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // Auto-dispatch: a compressed (LAZ/COPC) buffer or a projected
@@ -175,6 +195,11 @@ internal static partial class ScenePointCloudIngestEndpoints
             }
         }
 
+        if (admission is not null && !admission.TryUpdateUploadBytes(document.LongLength))
+        {
+            return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+        }
+
         var request = new PointCloudSceneIngestRequest(
             Source: document,
             SourceCrs: sourceCrs,
@@ -186,10 +211,31 @@ internal static partial class ScenePointCloudIngestEndpoints
             RequiresAuth: requiresAuth ?? false,
             CreatedBy: context.User.Identity?.Name);
 
-        var executor = context.RequestServices.GetRequiredService<PointCloudScenePublishExecutor>();
+        if (admission is not null)
+        {
+            var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var job = admission.Submit(
+                sourceKind: "pointcloud",
+                requestedSceneId: request.SceneId,
+                displayName: request.DisplayName,
+                baseUrl: asyncBaseUrl,
+                work: async (services, ct) =>
+                {
+                    var scopedExecutor = services.GetRequiredService<PointCloudScenePublishExecutor>();
+                    var asyncOutcome = await scopedExecutor.IngestAsync(request, ct).ConfigureAwait(false);
+                    return new SceneJobExecutionResult(
+                        asyncOutcome.SceneId,
+                        TileCount: asyncOutcome.TileCount,
+                        FileCount: asyncOutcome.TileCount + 1,
+                        ByteSize: null,
+                        Warnings: Array.Empty<string>());
+                });
+            return SceneIngestRequestHelpers.CreateAcceptedJobResult(context, job);
+        }
 
         try
         {
+            var executor = context.RequestServices.GetRequiredService<PointCloudScenePublishExecutor>();
             var outcome = await executor.IngestAsync(request, cancellationToken).ConfigureAwait(false);
             await InvalidateSceneCacheAsync(context, outcome.SceneId, logger, cancellationToken).ConfigureAwait(false);
 

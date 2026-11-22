@@ -23,6 +23,8 @@ public sealed class GenerateSceneRequest
     public int? CacheMaxAgeSeconds { get; set; }
 
     public string? EditionGate { get; set; }
+
+    public bool Async { get; set; }
 }
 
 public sealed class GenerateSceneResponse

@@ -14,6 +14,9 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
+#if !HONUA_EXCLUDE_SCENE
+using Honua.Server.Features.Protocols.Terrain.QuantizedMesh;
+#endif
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -23,9 +26,11 @@ namespace Honua.Server.Features.Protocols.Terrain;
 
 internal static class TerrainEndpoints
 {
-    private const string JsonContentType = "application/json";
+    internal const string JsonContentType = "application/json";
     private const string PngContentType = "image/png";
     private const string TerrainProtocolName = "Terrain";
+    private const string TerrainRgbCapabilityKey = "raster.terrain-rgb";
+    private const string QuantizedMeshCapabilityKey = "serve.terrain-quantized-mesh";
 
     public static IEndpointRouteBuilder MapTerrainEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -58,6 +63,10 @@ internal static class TerrainEndpoints
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status422UnprocessableEntity);
+
+#if !HONUA_EXCLUDE_SCENE
+        endpoints.MapQuantizedMeshTerrainEndpoints();
+#endif
 
         return endpoints;
     }
@@ -155,7 +164,7 @@ internal static class TerrainEndpoints
         }
     }
 
-    private static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
+    internal static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
@@ -192,6 +201,131 @@ internal static class TerrainEndpoints
             StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
     }
 
+    internal static (int MinZoom, int MaxZoom) ResolveZoomLimits(TileLimits tileLimits)
+    {
+        var minZoom = Math.Clamp(tileLimits.MinTileZoom, 0, TileMath.MaxSupportedZoomLevel);
+        var maxZoom = Math.Clamp(tileLimits.MaxTileZoom, minZoom, TileMath.MaxSupportedZoomLevel);
+        return (minZoom, maxZoom);
+    }
+
+    internal static TerrainSourceMetadata BuildSourceMetadata(string datasetId, int layerId, TerrainDatasetMetadata metadata)
+    {
+        var sourceSrid = metadata.SourceSrid is > 0 ? metadata.SourceSrid.Value : (int?)null;
+        return new TerrainSourceMetadata
+        {
+            DatasetId = datasetId,
+            LayerId = layerId,
+            RasterIds = metadata.RasterIds,
+            RasterCount = metadata.RasterCount,
+            SourceSrid = sourceSrid,
+            SourceCrs = sourceSrid.HasValue ? $"EPSG:{sourceSrid.Value}" : null,
+            SourceExtent = sourceSrid.HasValue && metadata.SourceExtent is { } extent
+                ? new TerrainExtentMetadata
+                {
+                    XMin = extent.XMin,
+                    YMin = extent.YMin,
+                    XMax = extent.XMax,
+                    YMax = extent.YMax,
+                    Srid = extent.Srid
+                }
+                : null,
+            PixelType = metadata.PixelType,
+            BandCount = metadata.BandCount,
+            VerticalUnit = metadata.VerticalUnit,
+            VerticalDatum = metadata.VerticalDatum
+        };
+    }
+
+    internal static TerrainCoverageMetadata BuildCoverage(TerrainDatasetMetadata metadata, int minZoom, int maxZoom)
+        => new()
+        {
+            Wgs84Bounds = metadata.Wgs84Bounds,
+            MinZoom = minZoom,
+            MaxZoom = maxZoom,
+            RasterCount = metadata.RasterCount,
+            HasCoverage = metadata.IsSupported && metadata.Wgs84Bounds is { Length: 4 }
+        };
+
+    internal static TerrainCapabilitiesMetadata BuildCapabilities(string baseUrl, string escapedDatasetId, TerrainDatasetMetadata metadata)
+    {
+        var tileJsonUrl = $"{baseUrl}/terrain/{escapedDatasetId}/tile.json";
+        var layerJsonUrl = $"{baseUrl}/terrain/{escapedDatasetId}/layer.json";
+        var reasons = metadata.IsSupported ? [] : metadata.UnsupportedReasons;
+
+        var terrainRgb = new TerrainCapabilityStatus
+        {
+            Capability = TerrainRgbCapabilityKey,
+            Format = "terrain-rgb",
+            Available = metadata.IsSupported,
+            Status = metadata.IsSupported ? "available" : "unavailable",
+            Href = tileJsonUrl,
+            Reasons = reasons
+        };
+
+#if !HONUA_EXCLUDE_SCENE
+        var quantizedMesh = new TerrainCapabilityStatus
+        {
+            Capability = QuantizedMeshCapabilityKey,
+            Format = "quantized-mesh-1.0",
+            Available = metadata.IsSupported,
+            Status = metadata.IsSupported ? "available" : "unavailable",
+            Href = layerJsonUrl,
+            Reasons = reasons
+        };
+#else
+        var quantizedMesh = new TerrainCapabilityStatus
+        {
+            Capability = QuantizedMeshCapabilityKey,
+            Format = "quantized-mesh-1.0",
+            Available = false,
+            Status = "unavailable",
+            Href = null,
+            Reasons = ["Quantized-mesh terrain is excluded by the active server protocol profile."]
+        };
+#endif
+
+        return new TerrainCapabilitiesMetadata
+        {
+            TerrainRgb = terrainRgb,
+            QuantizedMesh = quantizedMesh
+        };
+    }
+
+    internal static TerrainLinkMetadata[] BuildLinks(string baseUrl, string escapedDatasetId, bool selfIsQuantizedMesh)
+    {
+        var tileJsonLink = new TerrainLinkMetadata
+        {
+            Rel = selfIsQuantizedMesh ? "alternate" : "self",
+            Href = $"{baseUrl}/terrain/{escapedDatasetId}/tile.json",
+            Type = JsonContentType,
+            Format = "terrain-rgb",
+            Title = "Terrain-RGB TileJSON metadata"
+        };
+
+#if !HONUA_EXCLUDE_SCENE
+        var layerJsonLink = new TerrainLinkMetadata
+        {
+            Rel = selfIsQuantizedMesh ? "self" : "alternate",
+            Href = $"{baseUrl}/terrain/{escapedDatasetId}/layer.json",
+            Type = JsonContentType,
+            Format = "quantized-mesh-1.0",
+            Title = "Cesium quantized-mesh-1.0 layer.json metadata"
+        };
+        return selfIsQuantizedMesh ? [layerJsonLink, tileJsonLink] : [tileJsonLink, layerJsonLink];
+#else
+        return [tileJsonLink];
+#endif
+    }
+
+    internal static IResult MapTerrainException(HttpContext context, TerrainTileException exception)
+        => exception.FailureKind switch
+        {
+            TerrainTileFailureKind.SourceUnavailable => StandardErrorHelpers.CreateNotFound(context, exception.Message),
+            TerrainTileFailureKind.UnknownCrs or TerrainTileFailureKind.UnsupportedSource =>
+                StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
+            _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
+        };
+
     private static IResult? ValidateTileCoordinates(HttpContext context, int z, int x, int y, TileLimits tileLimits)
     {
         var (minZoom, maxZoom) = ResolveZoomLimits(tileLimits);
@@ -213,13 +347,6 @@ internal static class TerrainEndpoints
         return null;
     }
 
-    private static (int MinZoom, int MaxZoom) ResolveZoomLimits(TileLimits tileLimits)
-    {
-        var minZoom = Math.Clamp(tileLimits.MinTileZoom, 0, TileMath.MaxSupportedZoomLevel);
-        var maxZoom = Math.Clamp(tileLimits.MaxTileZoom, minZoom, TileMath.MaxSupportedZoomLevel);
-        return (minZoom, maxZoom);
-    }
-
     private static TerrainMetadataResponse BuildMetadataResponse(
         string datasetId,
         MetadataV2Object resource,
@@ -236,57 +363,29 @@ internal static class TerrainEndpoints
         var center = bounds == null
             ? null
             : new[] { (bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0, (double)minZoom };
-        var sourceSrid = metadata.SourceSrid is > 0 ? metadata.SourceSrid.Value : (int?)null;
 
         return new TerrainMetadataResponse
         {
             Name = resource.Metadata.Title ?? resource.Metadata.Name,
             Description = resource.Metadata.Description,
+            Attribution = resource.Metadata.Attribution,
             Tiles = [tileUrl],
             MinZoom = minZoom,
             MaxZoom = maxZoom,
             Bounds = bounds,
             Center = center,
             Encoding = new TerrainEncodingMetadata(),
-            Source = new TerrainSourceMetadata
-            {
-                DatasetId = datasetId,
-                LayerId = layerId,
-                RasterIds = metadata.RasterIds,
-                RasterCount = metadata.RasterCount,
-                SourceSrid = sourceSrid,
-                SourceCrs = sourceSrid.HasValue ? $"EPSG:{sourceSrid.Value}" : null,
-                SourceExtent = sourceSrid.HasValue && metadata.SourceExtent is { } extent
-                    ? new TerrainExtentMetadata
-                    {
-                        XMin = extent.XMin,
-                        YMin = extent.YMin,
-                        XMax = extent.XMax,
-                        YMax = extent.YMax,
-                        Srid = extent.Srid
-                    }
-                    : null,
-                PixelType = metadata.PixelType,
-                BandCount = metadata.BandCount,
-                VerticalUnit = metadata.VerticalUnit,
-                VerticalDatum = metadata.VerticalDatum
-            },
+            Source = BuildSourceMetadata(datasetId, layerId, metadata),
             NoData = new TerrainNoDataMetadata
             {
                 SourceNoDataValue = metadata.SourceNoDataValue,
                 TerrainRgbSentinelMeters = metadata.TerrainNoDataValue
             },
+            Coverage = BuildCoverage(metadata, minZoom, maxZoom),
+            Capabilities = BuildCapabilities(baseUrl, escapedDatasetId, metadata),
+            Links = BuildLinks(baseUrl, escapedDatasetId, selfIsQuantizedMesh: false),
             Supported = metadata.IsSupported,
             UnsupportedReasons = metadata.UnsupportedReasons
         };
     }
-
-    private static IResult MapTerrainException(HttpContext context, TerrainTileException exception)
-        => exception.FailureKind switch
-        {
-            TerrainTileFailureKind.SourceUnavailable => StandardErrorHelpers.CreateNotFound(context, exception.Message),
-            TerrainTileFailureKind.UnknownCrs or TerrainTileFailureKind.UnsupportedSource =>
-                StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
-            _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
-        };
 }
