@@ -543,6 +543,13 @@ internal sealed partial class FeatureDataAccess
 
     public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
     {
+        using var pooled = await GetMvtTilePooledAsync(query, maxTileSize, cancellationToken).ConfigureAwait(false);
+        return pooled is null ? null : pooled.Span.ToArray();
+    }
+
+    internal async Task<Honua.Core.Features.Tiles.PooledTileData?> GetMvtTilePooledAsync(
+        CoreParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
+    {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateSafeCommand(connection, query.Sql);
 
@@ -552,7 +559,7 @@ internal sealed partial class FeatureDataAccess
         }
         ApplyCommandTimeout(command, _tileTimeoutSeconds);
 
-        return await PostgresMvtReader.ReadAsync(command, maxTileSize, cancellationToken).ConfigureAwait(false);
+        return await PostgresMvtReader.ReadPooledAsync(command, maxTileSize, cancellationToken).ConfigureAwait(false);
     }
 
     internal static DateTimeOffset? ReadTemporalValue(NpgsqlDataReader reader, int ordinal)
