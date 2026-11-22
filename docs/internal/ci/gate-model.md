@@ -3270,3 +3270,27 @@ and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runne
 minutes) with one runner before and after. Individual baseline/candidate shard
 pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
 time and do not claim a reduction in the parallel PR Gate's critical path.
+
+### Observability endpoint fixture initialization
+
+`ObservabilityEndpointsTests` starts its default private host only in the five
+migration/error cases that use it. The five telemetry cases retain their separately
+configured private hosts and no longer start an unused default host. All 10 cases,
+79 assertions, endpoint metadata and configuration isolation are retained.
+
+Two interleaved base/head Release runs of the unchanged owning Admin Observability /
+Operations shard on one build-host runner passed the same 123 cases in each run
+(zero skipped). Fixture-inclusive TRX session seconds were 92.572 / 93.402 at base
+and 86.363 / 88.605 at head: median 92.987 to 87.484 seconds, saving 5.503 seconds
+(0.092 runner-minutes). Both pairs improved, by 6.209 and 4.797 seconds.
+`ObservabilityEndpointsTests` summed TRX case seconds were 13.497 / 17.553 at base
+and 44.454 / 45.573 at head (medians 15.525 to 45.013). Those class figures are
+not directly comparable: moving initialization from `IAsyncLifetime.InitializeAsync`
+into the five consuming test bodies makes that initialization visible in case time.
+The fixture-inclusive shard measurement includes setup and teardown in both versions;
+compilation is excluded. This is a small measured shard saving, not evidence of an
+end-to-end CI critical-path improvement.
+
+The shard filter, test selection, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case still runs in its existing selected PR
+shard and full trunk runs; no assertions or gate coverage move to another schedule.
