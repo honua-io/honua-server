@@ -1,0 +1,111 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Exports;
+using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.FileStorage;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Honua.Server.Features.Admin.Exports;
+
+internal static class ExportReadEndpoints
+{
+    internal static IEndpointRouteBuilder MapExportReadEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/api/v1/exports/{exportId}")
+            .WithTags("Exports").CacheOutput(policy => policy.NoCache());
+        group.MapMethods("/current.json", ["GET", "HEAD"], CurrentAsync)
+            .WithName("GetCurrentExportVersion")
+            .WithSummary("Resolve an Export to its current Version's collection document");
+        group.MapMethods("/{version}/{fileName}", ["GET", "HEAD"], VersionAsync)
+            .WithName("GetExportVersionFile")
+            .WithSummary("Read an authorized Export collection document or file with byte ranges");
+        return endpoints;
+    }
+
+    private static async Task<IResult> CurrentAsync(
+        string exportId, HttpContext context, [FromServices] ExportReader reader, CancellationToken cancellationToken)
+    {
+        var unauthorized = RequireAuthentication(context);
+        if (unauthorized is not null)
+        {
+            return unauthorized;
+        }
+        var target = await reader.ResolveCurrentAsync(exportId, cancellationToken).ConfigureAwait(false);
+        var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
+        return error ?? Results.Redirect(
+            $"{context.Request.PathBase}/api/v1/exports/{exportId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
+            permanent: false, preserveMethod: true);
+    }
+
+    private static async Task<IResult> VersionAsync(
+        string exportId, string version, string fileName, HttpContext context,
+        [FromServices] ExportReader reader, [FromServices] ArtifactByteReader byteReader, CancellationToken cancellationToken)
+    {
+        var unauthorized = RequireAuthentication(context);
+        if (unauthorized is not null)
+        {
+            return unauthorized;
+        }
+        var current = await reader.ResolveCurrentAsync(exportId, cancellationToken).ConfigureAwait(false);
+        var error = await RequireAccessAsync(context, current, cancellationToken).ConfigureAwait(false);
+        if (error is not null)
+        {
+            return error;
+        }
+        var target = await reader.ResolvePinnedAsync(current!, version, cancellationToken).ConfigureAwait(false);
+        if (target is null || !ExportReader.IsAllowedFile(target.Descriptor, fileName))
+        {
+            return Results.NotFound();
+        }
+        var metadata = await reader.GetFileAsync(target, fileName, cancellationToken).ConfigureAwait(false);
+        return metadata is null ? Results.NotFound() :
+            await ArtifactHttpResponse.ServeAsync(context, metadata, byteReader, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IResult? RequireAuthentication(HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "private, no-store";
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            return null;
+        }
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+    }
+
+    private static async Task<IResult?> RequireAccessAsync(
+        HttpContext context, ExportReadTarget? target, CancellationToken cancellationToken)
+    {
+        if (target is null || !TenantScopeHelpers.IsPublicationVisible(
+            context, target.Source.Publication, target.Source.Resource, target.Source.Service))
+        {
+            return Results.NotFound();
+        }
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, target.Source.Resource, AuthorizationOperation.Export, target.Source.Service, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
+        // Immutable archives cannot apply request-specific read policies. Resolve the
+        // same current policy as feature reads before redirects, conditions or bytes.
+        var services = context.RequestServices;
+        var security = new LayerReadSecurityResolver(
+            null,
+            services.GetRequiredService<IFilterExpressionService>(),
+            services.GetRequiredService<IRowLevelSecurityFilterSource>(),
+            services.GetRequiredService<IFieldMaskSource>());
+        var query = await security.ApplyAsync(target.Source.Resource, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        return query.EnforcedSqlFilter is not null || query.EnforcedMaskedFields is { IsDefaultOrEmpty: false }
+            ? StandardErrorHelpers.CreateForbidden(context, "This Export cannot satisfy the current read policy.")
+            : null;
+    }
+}

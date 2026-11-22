@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
+using Honua.TestKit.Attributes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
@@ -161,6 +162,29 @@ public sealed class TemporalExtentHelpersTests
             resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryResolveOptInTemporalFieldsV2_ExactTimestampFields_SelectsThem()
+    {
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "exact_layer" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "Observed_At", Type = MetadataV2FieldType.TimestampOffset },
+                new MetadataV2Field { Name = "Closed_At", Type = MetadataV2FieldType.TimestampOffset },
+            ],
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed_at", EndTimeField = "closed_at" },
+        };
+
+        var resolved = TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection);
+
+        resolved.Should().BeTrue();
+        selection.StartFieldName.Should().Be("Observed_At");
+        selection.EndFieldName.Should().Be("Closed_At");
     }
 
     private static MetadataV2Object BuildResourceWithIntervalTemporal()

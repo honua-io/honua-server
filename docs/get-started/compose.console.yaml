@@ -1,6 +1,9 @@
 # Console is a static browser bundle (console/ in this package). The console service is
 # an HTTPS edge that serves it at /console/ and forwards every other path to the serving
 # API, so browser sign-in, CSRF and the OIDC callback share one origin.
+# The console-manager service is the same edge in front of compose-manager, on 127.0.0.1
+# so its session cookie never replaces the serving one. Operators approve manager
+# proposals there, signed in with the manager's own administrator credential.
 services:
   honua:
     environment:
@@ -24,7 +27,19 @@ services:
       # Both members have fixed addresses, so the server can never take the edge's.
       console-edge:
         ipv4_address: ${HONUA_CONSOLE_EDGE_SERVER_ADDRESS:-172.31.250.243}
-  console:
+  compose-manager:
+    environment:
+      HONUA_ADMIN_UI_CORS_ORIGINS: "https://127.0.0.1:${HONUA_MANAGER_CONSOLE_PORT:-18084}"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      ForwardedHeaders__KnownProxies__0: ${HONUA_MANAGER_EDGE_ADDRESS:-172.31.250.250}
+      Oidc__AdminAuthCallbackUri: "https://127.0.0.1:${HONUA_MANAGER_CONSOLE_PORT:-18084}/admin/auth/callback"
+      Mcp__ApprovalConsoleUrl: "https://127.0.0.1:${HONUA_MANAGER_CONSOLE_PORT:-18084}/console/"
+    networks:
+      default: {}
+      manager-edge:
+        ipv4_address: ${HONUA_MANAGER_EDGE_SERVER_ADDRESS:-172.31.250.251}
+  console: &console-edge
     image: ${HONUA_CONSOLE_WEB_IMAGE:?The package image lock must include an immutable Console web image}
     profiles: [console]
     # Secret files are group-owned by gid 1001 (keyring-init); the web server runs as uid 101.
@@ -57,12 +72,28 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=20m
 
+  console-manager:
+    <<: *console-edge
+    ports:
+      - "127.0.0.1:${HONUA_MANAGER_CONSOLE_PORT:-18084}:8444"
+    networks:
+      manager-edge:
+        ipv4_address: ${HONUA_MANAGER_EDGE_ADDRESS:-172.31.250.250}
+    depends_on:
+      compose-manager:
+        condition: service_healthy
+
 networks:
   # Only the Console edge and the serving API join this network.
   console-edge:
     ipam:
       config:
         - subnet: ${HONUA_CONSOLE_EDGE_SUBNET:-172.31.250.240/29}
+  # Only the manager edge and compose-manager join this network.
+  manager-edge:
+    ipam:
+      config:
+        - subnet: ${HONUA_MANAGER_EDGE_SUBNET:-172.31.250.248/29}
 
 secrets:
   console_tls_certificate:

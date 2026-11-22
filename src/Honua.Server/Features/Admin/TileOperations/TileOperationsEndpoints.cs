@@ -8,7 +8,6 @@ using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Honua.Server.Features.Admin.PairedPublications;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -20,13 +19,13 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/paired-publish job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish, paired-publish) for asynchronous execution");
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish) for asynchronous execution");
 
         _ = group.MapGet("/jobs/{jobId}", HandleGetJobStatus)
             .WithName("GetTileOperationJobStatus")
@@ -175,7 +174,16 @@ internal static class TileOperationsEndpoints
         [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        var retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+        string? retryJobId;
+        try
+        {
+            retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+        }
+        catch (ExportRetryConflictException ex)
+        {
+            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+        }
+
         if (retryJobId == null)
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -205,8 +213,8 @@ internal static class TileOperationsEndpoints
             return null;
         }
 
-        var detail = operation is not ("archive" or "publish" or TileCacheExecutionSpecBuilder.PairedPublishOperation)
-            ? "Property 'tileCompression' applies only to archive, publish and paired-publish operations."
+        var detail = operation is not ("archive" or "publish" or TileCacheExecutionSpecBuilder.ExportOperation)
+            ? "Property 'tileCompression' applies only to archive, publish and export operations."
             : !TileArchiveCompression.IsSupported(tileCompression)
                 ? $"Property 'tileCompression' must be one of: {TileArchiveCompression.SupportedValues}."
                 : null;
@@ -281,14 +289,13 @@ internal static class TileOperationsEndpoints
                 "Publish operations require 'layerId'.");
         }
 
-        if (operation is TileCacheExecutionSpecBuilder.PairedPublishOperation
-            && PairedPublishRequestRules.Problem(request) is { } pairedProblem)
+        if (operation is TileCacheExecutionSpecBuilder.ExportOperation or "paired-publish")
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(
                 context,
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                pairedProblem);
+                "Export a Layer as files with POST /api/v1/admin/exports.");
         }
 
         return null;

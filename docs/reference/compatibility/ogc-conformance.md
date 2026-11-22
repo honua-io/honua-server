@@ -25,7 +25,9 @@ the canonical passed/total counts and pass rate per suite, including the WFS
   the seeded fixture. Any spec-compliant OAPIF client (QGIS, GDAL/OGR, OpenLayers)
   can discover collections, page items, filter with CQL2, and request alternate CRSs.
 - **OGC API Tiles** — vector and raster tile delivery against the seeded tile matrix
-  sets; 7 conformance classes.
+  sets; 8 Tiles conformance classes (core, tileset, tilesets-list, dataset-tilesets,
+  geodata-tilesets, mvt, png, oas30), declared at `/ogc/tiles/conformance` with the
+  OGC API - Common classes.
 - **OGC API - EDR** — Preview surface in release 2026.1. Its remaining CRS,
   temporal-selection, output-format, and MULTIPOINT coordinate behavior is deferred
   to release 2026.2 and is not a GA conformance claim.

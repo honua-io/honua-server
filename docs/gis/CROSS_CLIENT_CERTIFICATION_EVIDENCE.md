@@ -145,7 +145,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 
 The JS lane covers FeatureServer direct JS tests and OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 via Vitest, plus browser rendering via Playwright for MVT and an OGC API Maps image-source smoke. The OpenLayers lane emits `*-js-ogc-features.cert.json`, `*-js-ogc-maps.cert.json`, `*-js-mvt.cert.json`, `*-js-wfs.cert.json`, `*-js-wms.cert.json`, and `*-js-wmts.cert.json` evidence files. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
-The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
+The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
 The automated PyQGIS nightly lane (`pyqgis-client-compat-nightly.yml`) produces `*-desktop-qgis-ogc-features.cert.json` and `*-desktop-qgis-wfs.cert.json` envelopes under `artifacts/test-results/`. These are uploaded as CI artifacts and use the `desktop-qgis` client lane value.
 
@@ -233,7 +233,7 @@ Use `scripts/client-compat/refresh-baselines.sh` to bump baselines after an inte
 
 ## Integration Mapping
 
-This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). CERT-ID-specific markers described below are proposed conventions to be added in a follow-up implementation ticket.
+This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). The CERT-ID markers below are live where the table says so; rows marked Planned are not implemented yet.
 
 | Source | Lane | How It Feeds the Envelope |
 |---|---|---|
@@ -241,8 +241,8 @@ This section describes how each evidence source will map to the evidence envelop
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
 | OpenLayers OGC API Maps test | JS (OGC Maps) | Automated: `tests/js/openlayers/maps/` configures `ol/source/ImageStatic` against `/ogc/maps`, records discovery/error handling, and records render as `skip` when the live collection has no raster fixture |
 | Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
-| pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
-| xUnit attributes | CLI | Live (OData lane): each test in `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `artifacts/test-results/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
+| pytest markers | Analyst clients, Desktop (PyQGIS), CLI | Live: `@pytest.mark.cert("CERT-…")` maps each test to its result entries in the analyst-client suites (`tests/python/{duckdb_client,geopandas_client,owslib_client,stac_client}`) and in `tests/python/pyqgis`, which emits under `desktop-qgis`. Planned for the CLI lane's FeatureServer and OGC API Features files |
+| xUnit attributes | CLI | Live (OData lane): each test in `tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `artifacts/test-results/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/maplibre/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
@@ -340,7 +340,7 @@ The reporter seeds the full 24-ID common-core matrix into every envelope it emit
 - All remaining common-core IDs (DISC, SCHM, QFLT, PAGE, GEOM, ERRH-02, RNDR-02) are recorded as `not-applicable` because they do not list MVT in their protocol column.
 - `JS-EXT-01` (PBF/MVT decode fidelity) and `JS-EXT-02` (tile load pipeline) are recorded in the `extensions` array from `tile-rendering.spec.ts`.
 
-Envelopes are written to `tests/js-browser/test-results/<run-id>-js-mvt.cert.json`. Runbook and prerequisite details live in [`docs/contributor/testing-maplibre-browser.md`](../internal/contributor/testing-maplibre-browser.md).
+Envelopes are written to `tests/js-browser/test-results/<run-id>-js-mvt.cert.json`. Runbook and prerequisite details live in [`docs/internal/contributor/testing-maplibre-browser.md`](../internal/contributor/testing-maplibre-browser.md).
 
 ### MapLibre MVT Manual Workflow
 

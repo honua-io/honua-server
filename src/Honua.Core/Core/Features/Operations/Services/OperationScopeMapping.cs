@@ -54,10 +54,11 @@ public static class OperationScopeMapping
                 "admin.ai.admission.stop" or "admin.ai.admission.resume" => OperatorOperation.Update,
             "admin.layer.publish" => OperatorOperation.Publish,
             "admin.connections.list" or "admin.connections.tables.discover" or
-                "admin.connections.layers.list" or "admin.connections.objects.list" => OperatorOperation.Read,
-            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
+                "admin.connections.layers.list" or "admin.connections.objects.list" or
+                "admin.exports.list" or "admin.exports.get" => OperatorOperation.Read,
+            "admin.connections.create" or "admin.exports.create" or "admin.import.upload" or "admin.import.upload-url" or
                 "admin.import.upload-object" => OperatorOperation.Create,
-            "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
+            "admin.connections.delete" or "admin.exports.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
             "admin.layer.set-enabled" or "admin.layer.fields.set" or "admin.layer.filter.set" or
                 "admin.layer.popup-info.set" or "admin.layer.drawing-info.set" or
                 "admin.layer.style.set" or "admin.layer.style.import-sld" or

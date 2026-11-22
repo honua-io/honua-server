@@ -1165,7 +1165,8 @@ internal static class SearchEndpoints
                 if (availableFields.TryGetValue(candidate, out var temporalField) &&
                     temporalField.Type is MetadataV2FieldType.Date
                         or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time)
+                        or MetadataV2FieldType.Time
+                        or MetadataV2FieldType.TimestampOffset)
                 {
                     fieldName = temporalField.Name;
                     fieldType = temporalField.Type;
@@ -1378,7 +1379,8 @@ internal static class SearchEndpoints
                 if (availableFields.TryGetValue(candidate, out var field) &&
                     field.Type is MetadataV2FieldType.Date
                         or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time &&
+                        or MetadataV2FieldType.Time
+                        or MetadataV2FieldType.TimestampOffset &&
                     !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 {
                     queryFields = queryFields.Add(candidate);

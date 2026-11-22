@@ -101,8 +101,8 @@ Root keys, in sort order:
 | `$schema`      | yes      | Fixed URL identifying this grammar version.              |
 | `capabilities` | yes      | Operator catalog capability version (`{ operators }`).   |
 | `compute`      | —        | Ordered array of compute steps (preserves declaration order; not keyed by id so user-chosen ids don't have to alphabetize). |
-| `grammar`      | yes      | Grammar SemVer (`vMAJOR.MINOR`). Server accepts within current major, warns when minor is newer than the server. |
-| `kind`         | —        | `analysis` \| `map` \| `app`. `map`/`app` are reserved for S2/S3 and emit warnings at S1. |
+| `grammar`      | yes      | Grammar SemVer (`vMAJOR.MINOR`). Server accepts versions within its current major up to its own minor; a newer minor or another major raises `UnsupportedGrammarVersion` (error). |
+| `kind`         | —        | `analysis` \| `map` \| `app`. `map`/`app` are reserved for S2/S3; S1 accepts them without layer or viewport validation. |
 | `map`          | —        | Map section (S2 validates layers/viewport; S1 accepts free-form). |
 | `meta`         | —        | Sidecar metadata. `meta.comments` keys are JSON-Pointers. |
 | `outputs`      | —        | Ordered array of output bindings.                        |
@@ -110,8 +110,10 @@ Root keys, in sort order:
 | `sources`      | yes      | Ordered array of source bindings.                        |
 | `title`        | —        | Optional human title.                                    |
 
-`map.layers` uses canonical string ids such as `["rivers", "schools"]`
-rather than `@`-prefixed reference tokens.
+`map.layers` is an array of layer ids written as plain strings, such as
+`["rivers", "schools"]`. The canonicalizer writes the entries as given and does
+not rewrite `@`-prefixed reference tokens, so write bare ids. The S1 schema also
+accepts object entries.
 
 ### Unit and geometry encoding
 
@@ -146,9 +148,12 @@ values, not exceptions, so IDEs see a partial AST even when input is broken.
 | `CatalogUnavailable`        | warning  | resolver         | external catalog snapshot is empty (structural-only validation)         |
 | `UnknownOperator`           | error    | type checker     | `op = …` names an operator not in the catalog                           |
 | `TypeMismatch`              | error/warn | type checker   | input/parameter type doesn't satisfy the operator signature             |
-| `MissingRequiredParameter`  | error    | type checker     | required input/parameter not supplied                                   |
+| `MissingRequiredParameter`  | error    | parser / type checker | required input/parameter not supplied                                   |
 | `CrsUnitMismatch`           | error/warn | semantic       | distance/area literal used with no CRS or a geographic CRS              |
-| `UnsupportedGrammarVersion` | error    | semantic         | `grammar` directive is missing or outside the current major             |
+| `UnsupportedGrammarVersion` | error    | semantic         | `grammar` directive is missing, outside the current major, or a newer minor |
+
+`MissingSection` and `CapabilityVersionDrift` are reserved codes: they are
+defined but v1.0 does not emit them.
 
 The `line` value is 1-based. This is deliberately an improvement over the
 existing CQL2 diagnostic surface (which only exposes character offsets).

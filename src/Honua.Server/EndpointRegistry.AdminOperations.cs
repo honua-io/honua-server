@@ -108,6 +108,10 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/field-workflows/exports"),
 
         new("POST", "/api/v1/admin/raster-artifacts/cog"),
+        new("GET", "/api/v1/admin/exports"),
+        new("GET", "/api/v1/admin/exports/{exportId}"),
+        new("POST", "/api/v1/admin/exports"),
+        new("DELETE", "/api/v1/admin/exports/{exportId}"),
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),
