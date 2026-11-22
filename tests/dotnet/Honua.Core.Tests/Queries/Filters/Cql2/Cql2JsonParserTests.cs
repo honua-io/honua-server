@@ -349,6 +349,10 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"%","args":[5,2]}""")]
     [InlineData("""{"op":"^","args":[2,3]}""")]
     [InlineData("""{"op":"ST_Buffer","args":[{"property":"geom"},50]}""")]
+    [InlineData("""{"op":"iif","args":[true,true,1]}""")]
+    [InlineData("""{"op":"iif","args":[true,null,null]}""")]
+    [InlineData("""{"op":"nullif","args":[true,1]}""")]
+    [InlineData("""{"op":"nullif","args":[null,null]}""")]
     public void Parse_ScalarOrArithmeticRoot_ThrowsArgumentException(string json)
     {
         var act = () => _parser.Parse(json);
@@ -390,7 +394,7 @@ public class Cql2JsonParserTests
     [Theory]
     [InlineData("""{"op":"between","args":["a",1,2]}""")]
     [InlineData("""{"op":"notBetween","args":["a",1,2]}""")]
-    [InlineData("""{"op":"between","args":[{"property":"name"},"a",2]}""")]
+    [InlineData("""{"op":"between","args":[{"op":"ST_Distance","args":[{"property":"a"},{"property":"b"}]},"a",2]}""")]
     [InlineData("""{"op":"between","args":[{"op":"+","args":[1,2]},"a","z"]}""")]
     [InlineData("""{"op":">=","args":["a",1]}""")]
     public void Parse_BetweenOrComparisonWithIncompatibleLiteralTypes_ThrowsArgumentException(string json)
@@ -425,7 +429,12 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"ST_IsValid","args":[{"property":"geom"}]}""")]
     [InlineData("""{"op":"coalesce","args":[true,false]}""")]
     [InlineData("""{"op":"iif","args":[true,true,false]}""")]
+    [InlineData("""{"op":"iif","args":[true,true,null]}""")]
+    [InlineData("""{"op":"iif","args":[true,null,false]}""")]
+    [InlineData("""{"op":"nullif","args":[true,null]}""")]
+    [InlineData("""{"op":"between","args":[{"property":"amount"},"0.1",1]}""")]
     [InlineData("""{"op":"=","args":[{"op":"/","args":[4,2]},2]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"-","args":[{"op":"*","args":[{"op":"/","args":[1,2]},2]},1]}]},-1]}""")]
     [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"-","args":[9007199254740993,9007199254740992]}]},1]}""")]
     public void Parse_ValidPredicatesAndArithmetic_Succeed(string json)
     {

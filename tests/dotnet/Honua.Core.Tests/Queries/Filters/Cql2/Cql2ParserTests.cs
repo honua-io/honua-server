@@ -661,10 +661,25 @@ public class Cql2ParserTests
     [InlineData("1 / (2 - 2) = 1")] // Constant-folded division by zero
     [InlineData("1 / ABS(0) = 1")] // Function-folded division by zero
     [InlineData("MOD(1, 0) = 0")] // MOD function division by zero
+    [InlineData("IIF(TRUE, TRUE, 1)")] // Non-boolean IIF branch
+    [InlineData("NULLIF(TRUE, 1)")] // Non-boolean NULLIF branch
     public void Parse_InvalidSyntax_ThrowsArgumentException(string cql)
     {
         // Act & Assert
         var action = () => _parser.Parse(cql);
         action.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("IIF(TRUE, TRUE, NULL)")]
+    [InlineData("IIF(TRUE, NULL, FALSE)")]
+    [InlineData("NULLIF(TRUE, NULL)")]
+    [InlineData("1 / ((1 / 2) * 2 - 1) = -1")]
+    [InlineData("amount BETWEEN '0.1' AND 1")]
+    public void Parse_ValidConditionalNullBranchesAndIntegerDivision_Succeeds(string cql)
+    {
+        var action = () => _parser.Parse(cql);
+        action.Should().NotThrow();
     }
 }

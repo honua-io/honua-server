@@ -53,16 +53,34 @@ internal static class Cql2BooleanExpression
         if (function.FunctionName.Equals("IIF", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count == 3)
         {
             return IsPredicate(function.Arguments[0])
-                && IsPredicate(function.Arguments[1])
-                && IsPredicate(function.Arguments[2]);
+                && HasPredicateBranch(function.Arguments[1], function.Arguments[2]);
         }
 
         if (function.FunctionName.Equals("NULLIF", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count == 2)
         {
-            return IsPredicate(function.Arguments[0]) && IsPredicate(function.Arguments[1]);
+            return HasPredicateBranch(function.Arguments[0], function.Arguments[1]);
         }
 
         return false;
+    }
+
+    private static bool HasPredicateBranch(FilterExpression first, FilterExpression second)
+    {
+        var firstIsNull = first is Literal { Type: LiteralType.Null };
+        var firstIsPredicate = !firstIsNull && IsPredicate(first);
+        if (!firstIsNull && !firstIsPredicate)
+        {
+            return false;
+        }
+
+        var secondIsNull = second is Literal { Type: LiteralType.Null };
+        var secondIsPredicate = !secondIsNull && IsPredicate(second);
+        if (!secondIsNull && !secondIsPredicate)
+        {
+            return false;
+        }
+
+        return firstIsPredicate || secondIsPredicate;
     }
 
     private static bool IsBooleanCoalesce(IReadOnlyList<FilterExpression> arguments)

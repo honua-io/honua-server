@@ -81,13 +81,52 @@ internal static class FilterParserGuard
         {
             Literal { Type: LiteralType.Null } => null,
             Literal literal => literal.Type,
-            BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply
-                or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power }
-                => LiteralType.Number,
+            BinaryExpression binary => InferBinaryArithmeticType(binary),
             UnaryExpression { Operator: UnaryOperator.Negate } => LiteralType.Number,
             FunctionCall function => InferStaticFunctionType(function.FunctionName),
             _ => null
         };
+
+    private static LiteralType? InferBinaryArithmeticType(BinaryExpression binary)
+    {
+        if (binary.Operator is BinaryOperator.Add or BinaryOperator.Subtract)
+        {
+            var leftType = InferStaticExpressionType(binary.Left);
+            var rightType = InferStaticExpressionType(binary.Right);
+            if (leftType == LiteralType.Number && rightType == LiteralType.Number)
+            {
+                return LiteralType.Number;
+            }
+
+            if (leftType is LiteralType.Date or LiteralType.DateTime && IsIntervalCall(binary.Right))
+            {
+                return LiteralType.DateTime;
+            }
+
+            if (binary.Operator == BinaryOperator.Add
+                && IsIntervalCall(binary.Left)
+                && rightType is LiteralType.Date or LiteralType.DateTime)
+            {
+                return LiteralType.DateTime;
+            }
+
+            return null;
+        }
+
+        if (binary.Operator is BinaryOperator.Multiply or BinaryOperator.Divide
+            or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power)
+        {
+            return IsIntervalCall(binary.Left) || IsIntervalCall(binary.Right)
+                ? null
+                : LiteralType.Number;
+        }
+
+        return null;
+    }
+
+    private static bool IsIntervalCall(FilterExpression expression)
+        => expression is FunctionCall function
+            && function.FunctionName.Equals("INTERVAL", StringComparison.OrdinalIgnoreCase);
 
     private static LiteralType? InferStaticFunctionType(string functionName)
         => functionName.ToUpperInvariant() switch
@@ -247,7 +286,9 @@ internal static class FilterParserGuard
             BinaryOperator.Multiply => checked(left * right),
             BinaryOperator.Divide => right == 0m
                 ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
-                : left / right,
+                : left % right == 0m
+                    ? left / right
+                    : null,
             BinaryOperator.Div => right == 0m
                 ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
                 : Math.Truncate(left / right),
