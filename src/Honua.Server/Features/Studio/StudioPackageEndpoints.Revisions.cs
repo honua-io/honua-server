@@ -22,24 +22,24 @@ internal static partial class StudioPackageEndpoints
 
     private static void MapStudioDraftRevisionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/studio/package-drafts/{draftId:guid}/revisions")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/studio/drafts/{draftId:guid}/revisions")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
 
         group.MapGet(string.Empty, HandleListDraftRevisions)
-            .WithDisplayName("List Studio Package Draft Revisions")
+            .WithDisplayName("List Studio Draft Revisions")
             .WithSummary("Lists retained Studio draft revision summaries in descending generation order.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/{generation:long}", HandleGetDraftRevision)
-            .WithDisplayName("Get Studio Package Draft Revision")
+            .WithDisplayName("Get Studio Draft Revision")
             .WithSummary("Returns one retained Studio draft revision envelope.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/{generation:long}/restore", HandleRestoreDraftRevision)
-            .WithDisplayName("Restore Studio Package Draft Revision")
+            .WithDisplayName("Restore Studio Draft Revision")
             .WithSummary("Restores a retained Studio draft revision through the canonical mutation runtime.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }

@@ -15,12 +15,12 @@ namespace Honua.Server.Tests.Features.Studio;
 public sealed partial class StudioPackageEndpointsTests
 {
     [IntegrationTest]
-    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}/revisions")]
-    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}/revisions/{generation}")]
+    [Endpoint("GET /api/v1/studio/drafts/{draftId}/revisions")]
+    [Endpoint("GET /api/v1/studio/drafts/{draftId}/revisions/{generation}")]
     public async Task StudioDraftRevisionsEndpoints_PageRevisionsAndReturnRetainedEnvelope()
     {
         var current = await CreateDraftWithThreeGenerationsAsync(BuildStyledRoadsEnvelope());
-        var revisionsPath = $"/api/v1/studio/package-drafts/{current.DraftId:D}/revisions";
+        var revisionsPath = $"/api/v1/studio/drafts/{current.DraftId:D}/revisions";
 
         var page1Response = await _client.GetAsync($"{revisionsPath}?limit=1");
         page1Response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -44,11 +44,11 @@ public sealed partial class StudioPackageEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/revisions/{generation}/restore")]
+    [Endpoint("POST /api/v1/studio/drafts/{draftId}/revisions/{generation}/restore")]
     public async Task StudioDraftRevisionsEndpoints_RejectStaleOrMissingRestore()
     {
         var current = await CreateDraftWithThreeGenerationsAsync(BuildStyledRoadsEnvelope());
-        var revisionsPath = $"/api/v1/studio/package-drafts/{current.DraftId:D}/revisions";
+        var revisionsPath = $"/api/v1/studio/drafts/{current.DraftId:D}/revisions";
 
         var staleResponse = await PostAsync(
             $"{revisionsPath}/1/restore",
@@ -70,7 +70,7 @@ public sealed partial class StudioPackageEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/revisions/{generation}/restore")]
+    [Endpoint("POST /api/v1/studio/drafts/{draftId}/revisions/{generation}/restore")]
     public async Task StudioDraftRevisionsEndpoints_RefuseIdempotencyKeyReusedForDifferentRevision()
     {
         var current = await CreateDraftWithThreeGenerationsAsync(BuildStyledRoadsEnvelope());
@@ -80,7 +80,7 @@ public sealed partial class StudioPackageEndpointsTests
 
         using var reusedKey = new HttpRequestMessage(
             HttpMethod.Post,
-            $"/api/v1/studio/package-drafts/{current.DraftId:D}/revisions/2/restore")
+            $"/api/v1/studio/drafts/{current.DraftId:D}/revisions/2/restore")
         {
             Content = JsonContent(
                 new RestoreStudioDraftRevisionRequest { ExpectedGeneration = current.Generation },
@@ -91,7 +91,7 @@ public sealed partial class StudioPackageEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/revisions/{generation}/restore")]
+    [Endpoint("POST /api/v1/studio/drafts/{draftId}/revisions/{generation}/restore")]
     public async Task StudioDraftRevisionsEndpoints_RestoreAsNewGenerationAndReplayIdempotently()
     {
         var originalEnvelope = BuildStyledRoadsEnvelope();
@@ -123,9 +123,9 @@ public sealed partial class StudioPackageEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}/revisions")]
-    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}/revisions/{generation}")]
-    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/revisions/{generation}/restore")]
+    [Endpoint("GET /api/v1/studio/drafts/{draftId}/revisions")]
+    [Endpoint("GET /api/v1/studio/drafts/{draftId}/revisions/{generation}")]
+    [Endpoint("POST /api/v1/studio/drafts/{draftId}/revisions/{generation}/restore")]
     public async Task StudioDraftRevisionsEndpoints_RefuseCrossOwnerReadsAndRestoreWithoutWrites()
     {
         await using var endUserFixture = await CreateEndUserFixtureAsync();
@@ -136,7 +136,7 @@ public sealed partial class StudioPackageEndpointsTests
         using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
         var draftId = await CreateDraftWithTwoGenerationsAsync(aliceClient);
-        var revisionsPath = $"/api/v1/studio/package-drafts/{draftId:D}/revisions";
+        var revisionsPath = $"/api/v1/studio/drafts/{draftId:D}/revisions";
 
         (await bobClient.GetAsync(revisionsPath)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await bobClient.GetAsync($"{revisionsPath}/1")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -237,7 +237,7 @@ public sealed partial class StudioPackageEndpointsTests
     {
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"/api/v1/studio/package-drafts/{current.DraftId:D}/revisions/1/restore")
+            $"/api/v1/studio/drafts/{current.DraftId:D}/revisions/1/restore")
         {
             Content = JsonContent(
                 new RestoreStudioDraftRevisionRequest { ExpectedGeneration = current.Generation },
