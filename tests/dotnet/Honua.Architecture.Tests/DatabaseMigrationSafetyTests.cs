@@ -19,7 +19,13 @@ public sealed class DatabaseMigrationSafetyTests
         "142_CreateAiFinancialAccounting.sql",
         "144_RenameGeoServicesRestSourceKind.sql",
         "145_ProtectImportDependencies.sql",
-        "183_RemoveUnusedFeatureIndexes.sql"
+        "183_RemoveUnusedFeatureIndexes.sql",
+        "226_RenameMapAppDraftIdentities.sql",
+        "227_RenameMapAppDeploymentSources.sql",
+        "228_RenameMapAppResultReferences.sql",
+        "229_RenameMapAppStudioDraftBodies.sql",
+        "230_RenameMapAppReportReferences.sql",
+        "231_AdoptContentPublicationVocabulary.sql"
     ];
 
     [ArchitectureTest]
@@ -173,7 +179,14 @@ public sealed class DatabaseMigrationSafetyTests
             var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
             if (boundaryHashes.ContainsKey(name))
             {
-                declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+                var expected = boundary.RootElement.GetProperty("readerIncompatibleReasons").TryGetProperty(name, out var reason)
+                    ? MigrationReaderCompatibilityClassification.ReaderIncompatible
+                    : MigrationReaderCompatibilityClassification.Contract;
+                if (expected == MigrationReaderCompatibilityClassification.ReaderIncompatible)
+                {
+                    reason.GetString().Should().NotBeNullOrWhiteSpace($"{name}: reader-incompatible migrations require a recorded reason");
+                }
+                declaration.Classification.Should().Be(expected);
                 MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeFalse();
                 continue;
             }

@@ -256,6 +256,33 @@ class ReviewedIndexRemovalBoundary(unittest.TestCase):
         self.assertEqual(outcome, "expected-refusal-missing")
 
 
+class MapAppForwardOnlyBoundary(unittest.TestCase):
+    """The six forward-only scripts have exact pins for the existing N-1 machinery."""
+
+    def test_pinned_migrations_require_refusal_and_reject_changed_bytes(self) -> None:
+        boundary = json.loads((n1.REPO_ROOT / n1.RELEASE_BOUNDARY).read_text())
+        reasons = boundary["readerIncompatibleReasons"]
+        self.assertEqual({int(name.split("_", 1)[0]) for name in reasons}, set(range(226, 232)))
+        for name, reason in reasons.items():
+            with self.subTest(migration=name):
+                self.assertTrue(reason.strip())
+                sql = (n1.REPO_ROOT / "src/Honua.Server/Migrations" / name).read_text()
+                self.assertIn("-- honua:reader-incompatible reason=" + reason, sql)
+                refusal = n1.parse_refusal(
+                    "schema_reader_incompatible: this server cannot verify compatibility with applied migration(s): "
+                    f"Honua.Server.Migrations.{name}. Start a compatible server or restore the database backup "
+                    "matching this revision. Application rollback does not reverse database migrations.\n")
+                values = dict(journal_delta=[name], classifications={name: "reader-incompatible"},
+                              script_text={name: sql}, boundary_hashes=boundary["migrations"],
+                              refusal=refusal, ready=False, serve_ok=False)
+                outcome, why = n1.classify(evidence(**values))
+                self.assertEqual(outcome, "expected-refusal", why)
+                values.update(refusal=None, ready=True, serve_ok=True)
+                self.assertEqual(n1.classify(evidence(**values))[0], "expected-refusal-missing")
+                values.update(script_text={name: sql + "\nSELECT 1;\n"})
+                self.assertEqual(n1.classify(evidence(**values))[0], "release-boundary-violation")
+
+
 class Applies(unittest.TestCase):
     def test_paths(self) -> None:
         for path in ("src/Honua.Server/Migrations/136_AddX.sql",
