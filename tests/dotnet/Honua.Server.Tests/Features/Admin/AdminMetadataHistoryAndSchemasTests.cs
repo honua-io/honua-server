@@ -67,12 +67,15 @@ public sealed class AdminMetadataHistoryAndSchemasTests : IAsyncLifetime
         var after = await ReadDiscoveryAsync(client, "/api/v1/admin/metadata/layers/0/discovery");
         after.Title.Should().Be("Updated Parcel Title");
         after.RecentHistory.Should().Contain(entry =>
-            entry.FieldPath is ["title"] && entry.NewValue?.GetString() == "Updated Parcel Title" && entry.Actor != "system:metadata-publisher");
+            entry.FieldPath.Count == 1 && entry.FieldPath[0] == "title"
+            && entry.NewValue.HasValue && entry.NewValue.Value.GetString() == "Updated Parcel Title"
+            && entry.Actor != "system:metadata-publisher");
 
         using var historyResponse = await client.GetAsync("/api/v1/admin/metadata/layers/0/history?field=title");
         historyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         (await ReadHistoryAsync(historyResponse)).Items.Should().Contain(entry =>
-            entry.FieldPath is ["title"] && entry.NewValue?.GetString() == "Updated Parcel Title");
+            entry.FieldPath.Count == 1 && entry.FieldPath[0] == "title"
+            && entry.NewValue.HasValue && entry.NewValue.Value.GetString() == "Updated Parcel Title");
 
         using var serviceHistoryResponse = await client.GetAsync("/api/v1/admin/services/test/history?limit=5");
         serviceHistoryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
