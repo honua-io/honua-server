@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,12 +16,14 @@ public sealed class FeatureServerNullSourceIdFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await App.InitializeAsync();
-        App.RestoreV2ResourceSchemaFields(0,
-        [
-            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false },
-            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
-            new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true }
-        ]);
+        var graph = App.GetCurrentV2GraphSnapshot().Graph;
+        var publication = graph.Publications.First(candidate => candidate.LayerIndex == WebAppFixture.TestLayerId);
+        var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+        // Retain fields referenced by the seeded spatial and temporal metadata.
+        App.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId,
+            resource.SchemaFields.Select(field => field.Name == "objectid"
+                ? field with { Name = "id" }
+                : field).ToArray());
         var schema = App.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await using var connection = await App.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
@@ -53,11 +54,13 @@ public sealed class FeatureServerQueryNullSourceIdTests(FeatureServerNullSourceI
     [InlineData("geojson", "id,name")]
     public async Task Query_NullSourceId_EmitsNonNullDeclaredObjectId(string format, string outFields)
     {
+        var where = Uri.EscapeDataString("name IN ('null-source-id','missing-source-id','present-source-id','zero-source-id')");
         using var response = await fixture.App.Client.GetAsync(
-            $"/rest/services/test/FeatureServer/0/query?objectIds=900001,900002,900003,900004&outFields={outFields}&returnGeometry=false&f={format}");
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where={where}&outFields={outFields}&returnGeometry=false&f={format}");
         var body = await response.Content.ReadAsStringAsync();
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
         var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
         features.Should().HaveCount(4, body);
         foreach (var feature in features)
