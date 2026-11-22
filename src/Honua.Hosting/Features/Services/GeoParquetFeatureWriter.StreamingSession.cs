@@ -41,18 +41,20 @@ public static partial class GeoParquetFeatureWriter
             var batch = new List<Feature>(Math.Min(encoding.Limits.MaxRowsPerBatch, 256));
             long totalBytes = 0;
             long batchBytes = 0;
+            var batchLimit = encoding.Scratch is null ? encoding.Limits.MaxEstimatedBatchBytes
+                : Math.Min(encoding.Limits.MaxEstimatedBatchBytes, encoding.Limits.MaxEstimatedInputBytes);
 
             await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 var columnCount = encoding.Resource.SchemaFields.Count + _runtimeFields.Count + 6;
                 var bytes = EstimateFeatureBytes(feature, columnCount);
                 totalBytes += bytes;
-                if (bytes > encoding.Limits.MaxEstimatedBatchBytes || totalBytes > encoding.Limits.MaxEstimatedInputBytes)
+                if (bytes > batchLimit || (encoding.Scratch is null && totalBytes > encoding.Limits.MaxEstimatedInputBytes))
                 {
                     throw new GeoParquetLimitExceededException();
                 }
 
-                if (batch.Count > 0 && (batch.Count == encoding.Limits.MaxRowsPerBatch || batchBytes + bytes > encoding.Limits.MaxEstimatedBatchBytes))
+                if (batch.Count > 0 && (batch.Count == encoding.Limits.MaxRowsPerBatch || batchBytes + bytes > batchLimit))
                 {
                     await FlushBatchAsync(batch, cancellationToken).ConfigureAwait(false);
                     batch.Clear();
@@ -72,7 +74,7 @@ public static partial class GeoParquetFeatureWriter
 
         public Stream Complete()
         {
-            if (!_hasWrittenRows)
+            if (!_hasWrittenRows && encoding.Scratch is null)
             {
                 DisposeWriterOnly();
                 var (emptyStream, _) = CreateEmptyGeoParquet(
@@ -81,6 +83,10 @@ public static partial class GeoParquetFeatureWriter
                 return emptyStream;
             }
 
+            if (!_hasWrittenRows)
+            {
+                OpenWriterForCurrentSchema();
+            }
             CloseWriter();
             _stream!.Position = 0;
             var finished = _stream;
@@ -90,9 +96,16 @@ public static partial class GeoParquetFeatureWriter
 
         public Exception AbortAndTranslate(Exception ex)
         {
-            var limitExceeded = _stream?.LimitExceeded == true;
+            var limitExceeded = _stream?.LimitExceeded == true || encoding.Scratch?.LimitExceeded == true;
             var storageFull = _stream?.StorageFull == true || IsStorageFull(ex);
-            DisposeAll();
+            try
+            {
+                DisposeAll();
+            }
+            catch (Exception cleanupError) when (limitExceeded || storageFull || IsStorageFull(cleanupError))
+            {
+                storageFull |= IsStorageFull(cleanupError);
+            }
 
             if (limitExceeded)
             {
@@ -112,10 +125,14 @@ public static partial class GeoParquetFeatureWriter
             return ex;
         }
 
+        // The spill pass sees every feature before output starts, so the complete schema
+        // is available without any large-spool schema rewrites.
+        public void InspectSpillFeature(Feature feature) => InspectBatch([feature]);
+
         private async Task FlushBatchAsync(List<Feature> batch, CancellationToken cancellationToken)
         {
             var batchFeatures = ImmutableArray.CreateRange(batch);
-            var schemaChanged = InspectBatch(batchFeatures);
+            var schemaChanged = encoding.Scratch is null && InspectBatch(batchFeatures);
 
             if (!_hasWrittenRows)
             {
@@ -219,7 +236,7 @@ public static partial class GeoParquetFeatureWriter
             {
                 FileMetadata = encoding.Options.FileMetadata,
                 Limits = encoding.Limits,
-                RowOrder = SourceOrder,
+                RowOrder = encoding.Scratch is not null ? HilbertBboxCenterOrder : SourceOrder,
             });
             _fieldsToInclude = built.fieldsToInclude;
             _resolvedObjectIdFieldName = built.objectIdFieldName;
@@ -305,7 +322,9 @@ public static partial class GeoParquetFeatureWriter
         {
             try
             {
-                return new BoundedParquetStream(checked((int)OutputByteCap(encoding.Limits)));
+                return encoding.Scratch is null
+                    ? new BoundedParquetStream(checked((int)OutputByteCap(encoding.Limits)))
+                    : new BoundedParquetStream(checked((int)OutputByteCap(encoding.Limits)), encoding.Scratch.Create());
             }
             catch (IOException ex) when (IsStorageFull(ex))
             {
@@ -357,19 +376,31 @@ public static partial class GeoParquetFeatureWriter
 
         private void DisposeWriterOnly()
         {
-            _writer?.Dispose();
-            _writer = null;
-            _writerProperties?.Dispose();
-            _writerProperties = null;
-            _arrowProperties?.Dispose();
-            _arrowProperties = null;
+            try
+            {
+                _writer?.Dispose();
+            }
+            finally
+            {
+                _writer = null;
+                _writerProperties?.Dispose();
+                _writerProperties = null;
+                _arrowProperties?.Dispose();
+                _arrowProperties = null;
+            }
         }
 
         private void DisposeAll()
         {
-            DisposeWriterOnly();
-            _stream?.Dispose();
-            _stream = null;
+            try
+            {
+                DisposeWriterOnly();
+            }
+            finally
+            {
+                _stream?.Dispose();
+                _stream = null;
+            }
         }
     }
 }

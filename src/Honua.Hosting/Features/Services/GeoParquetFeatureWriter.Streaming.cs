@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using Apache.Arrow;
 using Honua.Core.Configuration;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -41,47 +39,30 @@ public static partial class GeoParquetFeatureWriter
             Srid = srid
         };
 
-        if (limits.OrderByBboxHilbert && includeGeometry)
+        using var ordering = limits.OrderByBboxHilbert && includeGeometry
+            ? new ExternalHilbertOrder(encoding) : null;
+        if (ordering is not null)
         {
-            var materialized = await CollectFeaturesWithinBudgetAsync(
-                features, encoding, cancellationToken).ConfigureAwait(false);
-            return FormatAsGeoParquetStream(
-                QueryResult<Feature>.Create(materialized.Length, materialized), resource, options);
+            encoding = encoding with { Scratch = ordering.Scratch };
         }
 
         var session = new StreamingParquetSession(encoding);
         try
         {
+            if (ordering is not null)
+            {
+                await ordering.PrepareAsync(features, session.InspectSpillFeature, cancellationToken).ConfigureAwait(false);
+                features = ordering.ReadOrderedAsync(cancellationToken);
+            }
+
             await session.WriteAllAsync(features, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return (session.Complete(), ContentType);
         }
         catch (Exception ex)
         {
             throw session.AbortAndTranslate(ex);
         }
-    }
-
-    private static async Task<ImmutableArray<Feature>> CollectFeaturesWithinBudgetAsync(
-        IAsyncEnumerable<Feature> features,
-        StreamingEncoding encoding,
-        CancellationToken cancellationToken)
-    {
-        var collected = ImmutableArray.CreateBuilder<Feature>();
-        long totalBytes = 0;
-        var columnCount = encoding.Resource.SchemaFields.Count + 6;
-        await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
-        {
-            var bytes = EstimateFeatureBytes(feature, columnCount);
-            totalBytes += bytes;
-            if (bytes > encoding.Limits.MaxEstimatedBatchBytes || totalBytes > encoding.Limits.MaxEstimatedInputBytes)
-            {
-                throw new GeoParquetLimitExceededException();
-            }
-
-            collected.Add(feature);
-        }
-
-        return collected.ToImmutable();
     }
 
     private sealed record StreamingEncoding
@@ -91,6 +72,7 @@ public static partial class GeoParquetFeatureWriter
         public required GeoParquetLimits Limits { get; init; }
         public required bool IncludeGeometry { get; init; }
         public required int Srid { get; init; }
+        public ScratchBudget? Scratch { get; init; }
     }
 
     private readonly record struct GeneratedColumns(string? Geometry, string? Bbox);

@@ -220,6 +220,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch. A query response starts one Parquet row group per batch. |
 | `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
 | `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
+| `Limits__GeoParquet__MaxScratchBytes` | `536870912` (512 MiB) | Combined disk ceiling for streaming Hilbert feature/index scratch files and encoded output (including simultaneous spools during schema upgrades). Streaming Hilbert exports spill to disk; `MaxEstimatedInputBytes` bounds their in-memory batch estimate rather than cumulative input. Scratch files are private and deleted on close. |
 | `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded HTTP GeoParquet payload ceiling, including footer. Query responses ignore `MaxArtifactBytes`. |
 | `Limits__GeoParquet__RowsPerRowGroup` | unset | Stored-artifact row-group length. Unset uses 16384. Values outside 1–150000 fail startup. HTTP GeoParquet responses ignore this and keep one row group per batch. |
 | `Limits__GeoParquet__MaxArtifactBytes` | unset | Byte cap for a stored GeoParquet artifact. Unset uses `MaxResponseBytes`. It does not raise the HTTP response cap. |

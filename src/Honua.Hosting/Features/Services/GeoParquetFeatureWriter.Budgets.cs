@@ -14,7 +14,7 @@ public static partial class GeoParquetFeatureWriter
     private static void ValidateEncodingLimits(GeoParquetLimits limits)
     {
         if (limits.MaxRowsPerBatch is < 1 or > 10000 || limits.MaxEstimatedBatchBytes < 1 ||
-            limits.MaxEstimatedInputBytes < 1 || limits.MaxResponseBytes < 1 ||
+            limits.MaxEstimatedInputBytes < 1 || limits.MaxResponseBytes < 1 || limits.MaxScratchBytes < 1 ||
             limits.RowsPerRowGroup is < 1 or > GeoParquetLimits.SpecMaxRowsPerRowGroup ||
             (limits.MaxArtifactBytes is long artifactBytes &&
              (artifactBytes < 1 || artifactBytes > Array.MaxLength)))

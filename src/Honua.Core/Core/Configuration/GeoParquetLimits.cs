@@ -23,6 +23,9 @@ public sealed class GeoParquetLimits
     [Range(1, int.MaxValue)]
     public int MaxResponseBytes { get; set; } = 64 * 1024 * 1024;
 
+    [Range(1, long.MaxValue)]
+    public long MaxScratchBytes { get; set; } = 512L * 1024 * 1024;
+
     public int? RowsPerRowGroup { get; set; }
 
     public long? MaxArtifactBytes { get; set; }
@@ -37,6 +40,7 @@ public sealed class GeoParquetLimits
         MaxEstimatedBatchBytes = MaxEstimatedBatchBytes,
         MaxEstimatedInputBytes = MaxEstimatedInputBytes,
         MaxResponseBytes = MaxResponseBytes,
+        MaxScratchBytes = MaxScratchBytes,
     };
 
     public static GeoParquetLimits ForArtifact(long maxArtifactBytes) => new()
@@ -56,6 +60,7 @@ public sealed class GeoParquetLimits
             MaxEstimatedBatchBytes = configured.MaxEstimatedBatchBytes,
             MaxEstimatedInputBytes = configured.MaxEstimatedInputBytes,
             MaxResponseBytes = configured.MaxResponseBytes,
+            MaxScratchBytes = configured.MaxScratchBytes,
             RowsPerRowGroup = configured.RowsPerRowGroup ?? DefaultArtifactRowsPerRowGroup,
             // MaxResponseBytes may be int.MaxValue. The artifact is materialized as a byte[],
             // so the copied cap stops at Array.MaxLength instead of failing the capture.
