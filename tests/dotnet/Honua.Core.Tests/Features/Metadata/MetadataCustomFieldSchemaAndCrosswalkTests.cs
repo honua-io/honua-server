@@ -5,13 +5,14 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Core.Tests.Features.Metadata;
 
 public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
 {
-    [Fact]
+    [UnitTest]
     public void ValidateSchemas_AcceptsValidDefinitionsAndRejectsInvalidOnes()
     {
         var validErrors = new List<string>();
@@ -50,7 +51,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         invalidErrors.Should().Contain(e => e.Contains("bogus", StringComparison.Ordinal));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("steward\n")]
     [InlineData("steward.department")]
     public void ValidateSchemas_RejectsNamesWithTrailingNewlineOrDots(string name)
@@ -60,7 +61,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         errors.Should().ContainSingle().Which.Should().Contain("lowercase ASCII");
     }
 
-    [Fact]
+    [UnitTest]
     public void GraphValidation_RequiredCustomFieldMissing_DoesNotBlockOtherSaves()
     {
         var graph = new MetadataV2Graph
@@ -97,7 +98,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         new() { Name = "programs", Type = MetadataV2CustomFieldTypes.TextList },
     ];
 
-    [Fact]
+    [UnitTest]
     public void ValidateRequiredItemCustomFields_RequiredFieldOnlyAppliesToDeclaredKinds()
     {
         var serviceErrors = new List<string>();
@@ -111,7 +112,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         missingErrors.Should().ContainSingle().Which.Should().Contain("steward is required");
     }
 
-    [Fact]
+    [UnitTest]
     public void ValidateDeclaredItemCustomFields_AcceptsValuesMatchingTheirTypes()
     {
         var fields = new Dictionary<string, JsonElement>
@@ -128,7 +129,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         errors.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public void ValidateDeclaredItemCustomFields_RejectsWrongTypesAndUndeclaredKeys()
     {
         var fields = new Dictionary<string, JsonElement>
@@ -178,7 +179,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
         return DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], null));
     }
 
-    [Fact]
+    [UnitTest]
     public void CrosswalkWriters_EmitCustomFieldsInExtensionOutput()
     {
         var descriptive = ParcelsDescriptive();
@@ -196,7 +197,7 @@ public sealed class MetadataCustomFieldSchemaAndCrosswalkTests
             .Should().Be(expected);
     }
 
-    [Fact]
+    [UnitTest]
     public void CrosswalkWriters_OmitExtensionOutput_WhenCustomFieldsAreEmpty()
     {
         var empty = ParcelsDescriptive() with { CustomFields = new Dictionary<string, JsonElement>() };
