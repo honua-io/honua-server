@@ -20,4 +20,7 @@ public readonly record struct FormTargetMetadataResolution(
 {
     // The target publication is served from a source table, so the managed writer cannot edit it.
     public bool ServedFromSourceTable { get; init; }
+    public MetadataV2GraphSnapshot? Snapshot { get; init; }
+    public MetadataV2StorageBinding? StorageBinding { get; init; }
+    public MetadataV2Connection? Connection { get; init; }
 }

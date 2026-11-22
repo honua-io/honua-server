@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Assets;
 // Real API keys, no dev-auth bypass: planners hold admin:write, crew hold write:<service>, outsiders another service.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class WorkTaskCrewAccessTests : IAsyncLifetime
+public sealed partial class WorkTaskCrewAccessTests : IAsyncLifetime
 {
     private const string TasksPath = "/api/v1/tasks";
 
@@ -88,6 +88,7 @@ public sealed class WorkTaskCrewAccessTests : IAsyncLifetime
                 ExpectedVersion = 3,
                 ObservedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
                 Form = _form,
+                Answers = JsonElement.Parse("""{"name":"Branch removed"}"""),
                 Notes = "Branch removed from the trail.",
             },
             AssetsJsonContext.Default.WorkTaskCompletionRequest);

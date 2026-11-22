@@ -20,7 +20,7 @@ internal static class AssetTestData
     public static async Task ResetAsync(WebAppFixture fixture)
     {
         string[] tables = ["asset_inspections", "asset_service_records", "work_task_history",
-            "asset_command_receipts", "asset_summaries", "work_tasks", "asset_profiles"];
+            "asset_command_receipts", "asset_summaries", "work_task_attachments", "work_tasks", "asset_profiles"];
         await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
         await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
@@ -78,16 +78,19 @@ internal static class AssetTestData
         return assets;
     }
 
-    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture)
+    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture, FormFieldDefinition[]? fields = null)
     {
         using var scope = fixture.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+        fields ??= [new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true }];
         var draft = await store.SaveDraftAsync(
             new FormPackageDocument
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
-                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
+                AttachmentPolicy = new FormAttachmentPolicy { Enabled = fields.Any(static field => field.Type is "attachment" or "media") },
+                Fields = fields,
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields.Select(static field => field.FieldId).OfType<string>().ToArray() }],
             },
             "test-admin");
         var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")
