@@ -47,6 +47,11 @@ internal sealed partial class CopcScenePublishExecutor
         ArgumentNullException.ThrowIfNull(request.Source);
 
         var copcInfo = LasPointCloudReader.ReadCopcInfo(request.Source);
+        if (!copcInfo.TryValidateFileLength(request.Source.LongLength, out var lengthError))
+        {
+            throw new ValidationException($"{SceneGenerationErrorCodes.ModelAssetInvalid}: {lengthError}");
+        }
+
         var intentId = Guid.NewGuid().ToString("N");
         var sceneId = ResolveSceneId(request.SceneId, intentId);
         var displayName = ResolveDisplayName(request.DisplayName, sceneId);

@@ -867,10 +867,17 @@ internal static partial class SceneDatasetEndpoints
         var candidatePath = Path.Join(record.AssetRoot, fileName);
         if (File.Exists(candidatePath))
         {
-            var header = ReadFilePrefix(candidatePath, 65_536);
-            if (LasPointCloudReader.TryReadCopcInfo(header, out _, out var copcError))
+            var header = ReadFilePrefix(candidatePath, 65_536, out var fileLength);
+            if (LasPointCloudReader.TryReadCopcInfo(header, out var info, out var copcError))
             {
-                return true;
+                if (info.TryValidateFileLength(fileLength, out var lengthError))
+                {
+                    return true;
+                }
+
+                statusCode = StatusCodes.Status400BadRequest;
+                error = $"Invalid COPC file '{fileName}': {lengthError}";
+                return false;
             }
 
             if (PointCloudCompressionDetector.HasLasfSignature(header))
@@ -897,10 +904,11 @@ internal static partial class SceneDatasetEndpoints
         return true;
     }
 
-    private static byte[] ReadFilePrefix(string path, int maxBytes)
+    private static byte[] ReadFilePrefix(string path, int maxBytes, out long fileLength)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var length = (int)Math.Min(stream.Length, maxBytes);
+        fileLength = stream.Length;
+        var length = (int)Math.Min(fileLength, maxBytes);
         var buffer = new byte[length];
         var read = 0;
         while (read < length)

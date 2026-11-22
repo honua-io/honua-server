@@ -42,6 +42,24 @@ public sealed class CopcPointCloudReaderTests
     }
 
     [UnitTest]
+    public void TryValidateFileLength_GenuineFixture_RejectsTruncatedObject()
+    {
+        var path = RepositoryPaths.Resolve(
+            "tests", "dotnet", "Honua.Worker.Gdal.Tests", "Fixtures", "PointCloudProof", "genuine-6.copc.laz");
+        var bytes = File.ReadAllBytes(path);
+        var prefix = bytes.AsSpan(0, 600);
+        var info = LasPointCloudReader.ReadCopcInfo(prefix);
+
+        info.TryValidateFileLength(bytes.LongLength, out _).Should().BeTrue();
+        info.TryValidateFileLength(prefix.Length, out var pointError).Should().BeFalse();
+        pointError.Should().Contain("point data");
+        info.TryValidateFileLength(bytes.LongLength - 1, out var hierarchyError).Should().BeFalse();
+        hierarchyError.Should().Contain("root hierarchy");
+        (info with { RootHierarchySize = ulong.MaxValue })
+            .TryValidateFileLength(bytes.LongLength, out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void TryReadCopcInfo_UntiledRawLas_ReturnsFalseWhilePreservingLasfSignature()
     {
         var path = RepositoryPaths.Resolve(

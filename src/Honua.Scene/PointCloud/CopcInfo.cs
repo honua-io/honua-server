@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Honua.Core.Features.Scene.PointCloud;
 
 public sealed record CopcInfo
@@ -48,4 +50,24 @@ public sealed record CopcInfo
     public required double GpsTimeMaximum { get; init; }
 
     public bool HasColor => PointDataRecordFormat is 7 or 8;
+
+    internal bool TryValidateFileLength(long length, [NotNullWhen(false)] out string? error)
+    {
+        var fileLength = (ulong)length;
+        if (OffsetToPointData < HeaderSize || OffsetToPointData >= fileLength)
+        {
+            error = "COPC point data offset is outside the file.";
+            return false;
+        }
+
+        if (RootHierarchyOffset < OffsetToPointData || RootHierarchyOffset >= fileLength
+            || RootHierarchySize > fileLength - RootHierarchyOffset)
+        {
+            error = "COPC root hierarchy is outside the file.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
 }
