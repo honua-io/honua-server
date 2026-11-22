@@ -50,6 +50,25 @@ public sealed class CogPublicationBindingTests
         byIndex!.Metadata.Id.Should().Be("pub-single");
     }
 
+    [UnitTest]
+    public void Resolve_AmbiguousStorageId_FailsClosedWithoutFallingBackToLayerIndex()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services = [Service("svc-a"), Service("svc-b")],
+            Resources = [Resource("res-a", "bind-a"), Resource("res-b", "bind-b")],
+            StorageBindings = [Binding("bind-a", "res-a", 10), Binding("bind-b", "res-b", 10)],
+            Publications =
+            [
+                Publication("pub-a", "a", layerIndex: 10),
+                Publication("pub-b", "b", layerIndex: 1),
+            ],
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"cog-ambiguous-storage\"", DateTimeOffset.UtcNow);
+
+        CogPublicationBinding.Resolve(snapshot, 10).Should().BeNull();
+    }
+
     private static MetadataV2GraphSnapshot BuildTwoServiceRasterSnapshot()
     {
         var graph = new MetadataV2Graph

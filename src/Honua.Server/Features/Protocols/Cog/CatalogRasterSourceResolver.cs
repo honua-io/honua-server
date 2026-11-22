@@ -257,10 +257,10 @@ internal sealed class CatalogRasterSourceResolver(
                 .Select(publication => publication.LayerIndex)
                 .Where(layerIndex => layerIndex is not null)
                 .Select(layerIndex => layerIndex!.Value)
-                // A service-local index can collide across services. Only query indexes
-                // whose live publications all resolve to this same storage layer; otherwise
-                // the registration row has no service id with which to disambiguate it.
-                .Where(layerIndex => ResolveStorageLayerId(snapshot, layerIndex) == storageLayerId)
+                .Prepend(storageLayerId)
+                // Query the storage layer id plus any non-colliding service-local index whose
+                // live publication resolves back to this same storage layer.
+                .Where(candidateLayerId => ResolveStorageLayerId(snapshot, candidateLayerId) == storageLayerId)
                 .Distinct()
                 .ToArray();
 

@@ -24,8 +24,9 @@ internal sealed record ImageServerCogResolution(RasterInfo[] Rasters, IResult? R
 }
 
 // Describes a layer whose imagery is only registered cloud COGs as rasters, so the service
-// document reports the COG grid the tile route serves. Registrations bind by publication layer
-// index exactly as the tile fallback does, and only scanned registrations have a grid to report.
+// document reports the COG grid the tile route serves. Registrations bind by storage layer id
+// first (falling back to publication layer index when unbound) exactly as the tile fallback does,
+// and only scanned registrations have a grid to report.
 internal static class ImageServerCogRasters
 {
     public const string Entitlement = "raster.cloud-cog-serving";
