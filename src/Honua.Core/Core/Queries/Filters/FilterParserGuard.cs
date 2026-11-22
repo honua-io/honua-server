@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-
 namespace Honua.Core.Queries.Filters;
 
 internal static class FilterParserGuard
@@ -61,25 +59,58 @@ internal static class FilterParserGuard
 
     internal static void EnsureCompatibleLiteralComparison(FilterExpression left, FilterExpression right)
     {
-        if (left is not Literal leftLiteral || right is not Literal rightLiteral)
+        var leftType = InferStaticExpressionType(left);
+        var rightType = InferStaticExpressionType(right);
+        if (leftType is null || rightType is null)
         {
             return;
         }
 
-        if (leftLiteral.Type == LiteralType.Null || rightLiteral.Type == LiteralType.Null)
-        {
-            return;
-        }
-
-        var compatible = leftLiteral.Type == rightLiteral.Type
-            || (leftLiteral.Type is LiteralType.Date or LiteralType.DateTime
-                && rightLiteral.Type is LiteralType.Date or LiteralType.DateTime);
+        var compatible = leftType == rightType
+            || (leftType is LiteralType.Date or LiteralType.DateTime
+                && rightType is LiteralType.Date or LiteralType.DateTime);
         if (!compatible)
         {
             throw new ArgumentException(
-                $"Incompatible literal types in comparison: {leftLiteral.Type} and {rightLiteral.Type}.");
+                $"Incompatible literal types in comparison: {leftType} and {rightType}.");
         }
     }
+
+    internal static LiteralType? InferStaticExpressionType(FilterExpression expression)
+        => expression switch
+        {
+            Literal { Type: LiteralType.Null } => null,
+            Literal literal => literal.Type,
+            BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply
+                or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power }
+                => LiteralType.Number,
+            BinaryExpression => LiteralType.Boolean,
+            UnaryExpression { Operator: UnaryOperator.Negate } => LiteralType.Number,
+            UnaryExpression => LiteralType.Boolean,
+            SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate => LiteralType.Boolean,
+            FunctionCall function => InferStaticFunctionType(function.FunctionName),
+            _ => null
+        };
+
+    private static LiteralType? InferStaticFunctionType(string functionName)
+        => functionName.ToUpperInvariant() switch
+        {
+            "UPPER" or "LOWER" or "TRIM" or "LTRIM" or "RTRIM" or "SUBSTRING" or "SUBSTR"
+                or "REPLACE" or "CONCAT" or "LEFT" or "RIGHT" or "CASEI" or "ACCENTI"
+                or "ST_GEOMETRYTYPE" => LiteralType.Text,
+            "LENGTH" or "LEN" or "CHAR_LENGTH" or "CHARACTER_LENGTH" or "POSITION"
+                or "ABS" or "CEIL" or "CEILING" or "FLOOR" or "ROUND" or "SIGN"
+                or "POWER" or "MOD" or "SQRT" or "SIN" or "COS" or "TAN" or "LOG" or "EXP"
+                or "COUNT" or "SUM" or "AVG" or "ST_AREA" or "ST_LENGTH" or "ST_PERIMETER"
+                or "ST_DISTANCE" or "ST_NUMGEOMETRIES" or "ST_SRID" or "ST_X" or "ST_Y"
+                or "GEODISTANCE" or "GEOLENGTH" or "YEAR" or "MONTH" or "DAY"
+                or "HOUR" or "MINUTE" or "SECOND" or "FRACTIONALSECONDS" or "TOTALOFFSETMINUTES"
+                or "EXTRACT_DOW" or "EXTRACT_DOY" or "EXTRACT_QUARTER" or "EXTRACT_WEEK"
+                or "EXTRACT_EPOCH" => LiteralType.Number,
+            "NOW" or "CURRENT_TIMESTAMP" or "MINDATETIME" or "MAXDATETIME" => LiteralType.DateTime,
+            "CURRENT_DATE" or "DATE" => LiteralType.Date,
+            _ => null
+        };
 
     private static void EnsureSemanticGuards(FilterExpression expression)
     {
@@ -123,65 +154,112 @@ internal static class FilterParserGuard
     }
 
     private static bool IsConstantZero(FilterExpression expression)
-        => TryEvaluateConstantNumber(expression, out var value) && value == 0d;
+        => EvaluateConstantDecimal(expression) == 0m;
 
-    private static bool TryEvaluateConstantNumber(FilterExpression expression, out double value)
+    private static decimal? EvaluateConstantDecimal(FilterExpression expression)
     {
-        switch (expression)
+        try
         {
-            case Literal { Type: LiteralType.Number, Value: not null } literal:
-                value = Convert.ToDouble(literal.Value, CultureInfo.InvariantCulture);
-                return double.IsFinite(value);
-            case UnaryExpression { Operator: UnaryOperator.Negate } unary
-                when TryEvaluateConstantNumber(unary.Operand, out var inner):
-                value = -inner;
-                return true;
-            case BinaryExpression binary
-                when TryEvaluateConstantNumber(binary.Left, out var left)
-                     && TryEvaluateConstantNumber(binary.Right, out var right):
-                return TryEvaluateConstantBinary(binary.Operator, left, right, out value);
-            default:
-                value = 0d;
-                return false;
+            return expression switch
+            {
+                Literal { Type: LiteralType.Number } literal => TryLiteralToExactDecimal(literal.Value),
+                UnaryExpression { Operator: UnaryOperator.Negate } unary =>
+                    EvaluateConstantDecimal(unary.Operand) is { } inner ? checked(-inner) : null,
+                BinaryExpression binary when EvaluateConstantDecimal(binary.Left) is { } left
+                    && EvaluateConstantDecimal(binary.Right) is { } right =>
+                    EvaluateConstantBinary(binary.Operator, left, right),
+                FunctionCall function => EvaluateConstantFunction(function),
+                _ => null
+            };
+        }
+        catch (OverflowException)
+        {
+            return null;
         }
     }
 
-    private static bool TryEvaluateConstantBinary(BinaryOperator op, double left, double right, out double value)
-    {
-        switch (op)
+    private static decimal? TryLiteralToExactDecimal(object? value)
+        => value switch
         {
-            case BinaryOperator.Add:
-                value = left + right;
-                return double.IsFinite(value);
-            case BinaryOperator.Subtract:
-                value = left - right;
-                return double.IsFinite(value);
-            case BinaryOperator.Multiply:
-                value = left * right;
-                return double.IsFinite(value);
-            case BinaryOperator.Divide:
-            case BinaryOperator.Div:
-            case BinaryOperator.Modulo:
-                if (right == 0d)
-                {
-                    throw new ArgumentException("Division by zero is not allowed in filter expressions.");
-                }
+            int i => i,
+            long l => l,
+            decimal m => m,
+            double d when d == 0d => 0m,
+            float f when f == 0f => 0m,
+            _ => null
+        };
 
-                value = op switch
-                {
-                    BinaryOperator.Divide => left / right,
-                    BinaryOperator.Div => Math.Truncate(left / right),
-                    _ => left % right
-                };
-                return double.IsFinite(value);
-            case BinaryOperator.Power:
-                value = Math.Pow(left, right);
-                return double.IsFinite(value);
-            default:
-                value = 0d;
-                return false;
+    private static decimal? EvaluateConstantFunction(FunctionCall function)
+    {
+        var name = function.FunctionName.ToUpperInvariant();
+        if (name == "COALESCE")
+        {
+            return EvaluateCoalesceDecimal(function.Arguments);
         }
+
+        if (function.Arguments.Count == 1 && EvaluateConstantDecimal(function.Arguments[0]) is { } single)
+        {
+            return name switch
+            {
+                "ABS" => Math.Abs(single),
+                "FLOOR" => Math.Floor(single),
+                "CEIL" or "CEILING" => Math.Ceiling(single),
+                "ROUND" => Math.Round(single, MidpointRounding.AwayFromZero),
+                "SIGN" => Math.Sign(single),
+                _ => null
+            };
+        }
+
+        if (function.Arguments.Count == 2
+            && EvaluateConstantDecimal(function.Arguments[0]) is { } first
+            && EvaluateConstantDecimal(function.Arguments[1]) is { } second)
+        {
+            return name switch
+            {
+                "MOD" => second == 0m
+                    ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                    : first % second,
+                "NULLIF" => first == second ? null : first,
+                _ => null
+            };
+        }
+
+        return null;
     }
+
+    private static decimal? EvaluateCoalesceDecimal(IReadOnlyList<FilterExpression> arguments)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[i] is Literal { Type: LiteralType.Null })
+            {
+                continue;
+            }
+
+            return EvaluateConstantDecimal(arguments[i]);
+        }
+
+        return null;
+    }
+
+    private static decimal? EvaluateConstantBinary(BinaryOperator op, decimal left, decimal right)
+        => op switch
+        {
+            BinaryOperator.Add => checked(left + right),
+            BinaryOperator.Subtract => checked(left - right),
+            BinaryOperator.Multiply => checked(left * right),
+            BinaryOperator.Divide => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : left / right,
+            BinaryOperator.Div => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : Math.Truncate(left / right),
+            BinaryOperator.Modulo => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : left % right,
+            BinaryOperator.Power when left == 0m && right > 0m => 0m,
+            _ => null
+        };
 
     // Each IN/NOT IN value is its own SQL parameter. A single list is already capped;
     // several lists in one expression share that budget so the statement stays under

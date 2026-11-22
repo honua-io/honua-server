@@ -34,9 +34,53 @@ internal static class Cql2BooleanExpression
             UnaryExpression unary => unary.Operator is UnaryOperator.Not or UnaryOperator.IsNull or UnaryOperator.IsNotNull,
             SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate => true,
             Literal { Type: LiteralType.Boolean } => true,
-            FunctionCall function => BooleanFunctionNames.Contains(function.FunctionName),
+            FunctionCall function => IsBooleanFunctionCall(function),
             _ => false
         };
+
+    private static bool IsBooleanFunctionCall(FunctionCall function)
+    {
+        if (BooleanFunctionNames.Contains(function.FunctionName))
+        {
+            return true;
+        }
+
+        if (function.FunctionName.Equals("COALESCE", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count > 0)
+        {
+            var hasPredicate = false;
+            for (var i = 0; i < function.Arguments.Count; i++)
+            {
+                var arg = function.Arguments[i];
+                if (arg is Literal { Type: LiteralType.Null })
+                {
+                    continue;
+                }
+
+                if (!IsPredicate(arg))
+                {
+                    return false;
+                }
+
+                hasPredicate = true;
+            }
+
+            return hasPredicate;
+        }
+
+        if (function.FunctionName.Equals("IIF", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count == 3)
+        {
+            return IsPredicate(function.Arguments[0])
+                && IsPredicate(function.Arguments[1])
+                && IsPredicate(function.Arguments[2]);
+        }
+
+        if (function.FunctionName.Equals("NULLIF", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count == 2)
+        {
+            return IsPredicate(function.Arguments[0]) && IsPredicate(function.Arguments[1]);
+        }
+
+        return false;
+    }
 
     internal static void EnsurePredicateOperands(string operatorName, IReadOnlyList<FilterExpression> operands)
     {
@@ -70,7 +114,7 @@ internal static class Cql2BooleanExpression
             BinaryExpression => false,
             UnaryExpression => false,
             SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate => false,
-            _ => true
+            _ => FilterParserGuard.InferStaticExpressionType(expression) is null or LiteralType.Text
         };
 
     internal static bool IsPatternExpression(FilterExpression expression)

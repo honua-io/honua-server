@@ -652,11 +652,14 @@ public class Cql2ParserTests
     [InlineData("TRUE AND 1")] // Non-boolean AND operand
     [InlineData("FALSE OR 'abc'")] // Non-boolean OR operand
     [InlineData("123 LIKE '%a%'")] // Non-string LIKE target
+    [InlineData("LENGTH('a') LIKE 'a%'")] // Numeric function LIKE target
     [InlineData("'a' BETWEEN 1 AND 2")] // Incompatible BETWEEN literal types
+    [InlineData("(1 + 2) BETWEEN 'a' AND 'z'")] // Arithmetic target with string BETWEEN bounds
     [InlineData("1 / 0 = 1")] // Division by zero
     [InlineData("1 % 0 = 0")] // Modulo by zero
     [InlineData("1 DIV 0 = 1")] // Integer division by zero
     [InlineData("1 / (2 - 2) = 1")] // Constant-folded division by zero
+    [InlineData("1 / ABS(0) = 1")] // Function-folded division by zero
     [InlineData("MOD(1, 0) = 0")] // MOD function division by zero
     public void Parse_InvalidSyntax_ThrowsArgumentException(string cql)
     {

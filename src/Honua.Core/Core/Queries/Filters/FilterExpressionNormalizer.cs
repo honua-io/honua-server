@@ -77,15 +77,7 @@ public static class FilterExpressionNormalizer
 
         if (binary.Operator is BinaryOperator.Like or BinaryOperator.NotLike)
         {
-            if (left is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
-            {
-                throw new ArgumentException("LIKE requires a string operand.");
-            }
-
-            if (right is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
-            {
-                throw new ArgumentException("LIKE pattern must be a string literal.");
-            }
+            ValidateLikeOperands(left, right);
         }
 
         if (binary.Operator == BinaryOperator.In && left is PropertyReference listProperty && right is ValueList values)
@@ -96,6 +88,19 @@ public static class FilterExpressionNormalizer
         }
 
         return new BinaryExpression(left, binary.Operator, right);
+    }
+
+    private static void ValidateLikeOperands(FilterExpression left, FilterExpression right)
+    {
+        if (left is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+        {
+            throw new ArgumentException("LIKE requires a string operand.");
+        }
+
+        if (right is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+        {
+            throw new ArgumentException("LIKE pattern must be a string literal.");
+        }
     }
 
     private static TemporalPredicate NormalizeTemporalPredicate(TemporalPredicate temporal, FilterFieldSchema schema)

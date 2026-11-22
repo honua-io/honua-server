@@ -377,6 +377,7 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"like","args":[{"property":"name"},123]}""")]
     [InlineData("""{"op":"like","args":[{"property":"name"},true]}""")]
     [InlineData("""{"op":"like","args":[123,"%a%"]}""")]
+    [InlineData("""{"op":"like","args":[{"op":"length","args":["a"]},"a%"]}""")]
     [InlineData("""{"op":"notLike","args":[{"property":"name"},123]}""")]
     public void Parse_LikeWithInvalidOperandType_ThrowsArgumentException(string json)
     {
@@ -390,6 +391,7 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"between","args":["a",1,2]}""")]
     [InlineData("""{"op":"notBetween","args":["a",1,2]}""")]
     [InlineData("""{"op":"between","args":[{"property":"name"},"a",2]}""")]
+    [InlineData("""{"op":"between","args":[{"op":"+","args":[1,2]},"a","z"]}""")]
     [InlineData("""{"op":">=","args":["a",1]}""")]
     public void Parse_BetweenOrComparisonWithIncompatibleLiteralTypes_ThrowsArgumentException(string json)
     {
@@ -406,6 +408,7 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"=","args":[{"op":"%","args":[1,0]},0]}""")]
     [InlineData("""{"op":"=","args":[{"op":"div","args":[1,0]},1]}""")]
     [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"-","args":[2,2]}]},1]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"abs","args":[0]}]},1]}""")]
     [InlineData("""{"op":"=","args":[{"op":"mod","args":[1,0]},0]}""")]
     public void Parse_DivisionByZero_ThrowsArgumentException(string json)
     {
@@ -420,7 +423,10 @@ public class Cql2JsonParserTests
     [InlineData("""{"op":"like","args":[{"property":"name"},{"op":"casei","args":["%foo%"]}]}""")]
     [InlineData("""{"op":"between","args":[{"property":"count"},1,5]}""")]
     [InlineData("""{"op":"ST_IsValid","args":[{"property":"geom"}]}""")]
+    [InlineData("""{"op":"coalesce","args":[true,false]}""")]
+    [InlineData("""{"op":"iif","args":[true,true,false]}""")]
     [InlineData("""{"op":"=","args":[{"op":"/","args":[4,2]},2]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"-","args":[9007199254740993,9007199254740992]}]},1]}""")]
     public void Parse_ValidPredicatesAndArithmetic_Succeed(string json)
     {
         var act = () => _parser.Parse(json);
