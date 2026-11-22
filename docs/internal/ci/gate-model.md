@@ -3411,3 +3411,17 @@ were 33.220638 / 31.768553 at base and 28.079612 / 25.437050 at head: median
 Both pairs improved, by 3.765254 and 7.059794 seconds. Compilation is excluded;
 this is a measured shard saving, not evidence of an end-to-end CI critical-path
 improvement.
+
+### Streaming unsupported-owner seed lifetime
+
+The nine `Capabilities_UnsupportedOwner_OmitsLayer` theory rows keep private Pro
+application hosts and independently patched metadata providers while borrowing the
+already initialized class fixture's feature schema. These requests reject the
+unsupported metadata owner before reading features; they do not write features or
+read the stream event log. Each borrower is disposed within its case, before the
+class fixture drops its owned schema. The SSE and WebSocket rejection cases keep
+their existing private fixtures and all assertions and test attributes are intact.
+
+The shard filter, selected cases, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case continues to run in its selected PR
+shard and full trunk runs. No test or gate coverage moves to another schedule.
