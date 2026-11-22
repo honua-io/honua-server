@@ -14,15 +14,13 @@ when you need additional database stores. File-format support is a separate conc
 the import/export readers, including GeoPackage, Shapefile, GeoTIFF and Parquet.
 Importing a GeoPackage does not require a SQLite database-store provider.
 
-**Availability:** the image split is awaiting image-build evidence and
-publication. Do not add `-full` to an older tag and assume that tag exists.
-Select only an image listed in the release's published artifacts, verify its
-revision, and pin its digest. Current general-purpose images are not evidence
-that the new PostGIS-only boundary is installed.
+**Tag selection:** do not add `-full` to an older pre-rc.2 tag and assume that
+tag exists. Select only an image listed in the release's published artifacts,
+verify its revision, and pin its digest.
 
 ## Choose a variant
 
-| Your data sources | Choice after the split is published |
+| Your data sources | Variant |
 |---|---|
 | PostGIS tables and supported file imports | Default serving image |
 | DuckDB, SQL Server, MySQL, Oracle, Redshift, Snowflake, Databricks, or REST read-through | Matching JIT full image |
@@ -38,8 +36,8 @@ and Snowflake retain their JIT runtime requirement. Check each provider's
 1. Inventory the primary store, optional store configuration, warehouse gates,
    and Connections already saved in this installation. Include stores you
    intend to keep after the upgrade.
-2. Select the same release revision in the required variant. The planned
-   nightly full tag is `nightly-jit-<candidate-sha7>-full`; release full tags
+2. Select the same release revision in the required variant. The nightly full
+   tag is `nightly-jit-<candidate-sha7>-full`; release full tags
    use the `-full` suffix. Confirm actual publication before use and
    retain the immutable digest for deployment and rollback.
 3. Back up the installation and follow your normal

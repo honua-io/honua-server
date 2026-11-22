@@ -86,7 +86,12 @@ def author_cog() -> dict:
     band.SetNoDataValue(0)
     band.WriteRaster(0, 0, 256, 256, bytes((40 + (x // 16) * 8) & 0xFF for _ in range(256) for x in range(256)))
     target = f"/vsis3/{BUCKET}/{COG_KEY}"
-    gdal.Translate(target, source, format="COG", creationOptions=["TILING_SCHEME=GoogleMapsCompatible", "COMPRESS=DEFLATE"])
+    gdal.Translate(
+        target,
+        source,
+        format="COG",
+        creationOptions=["TILING_SCHEME=GoogleMapsCompatible", "COMPRESS=DEFLATE", "RESAMPLING=NEAREST"],
+    )
     dataset = gdal.Open(target)
     described = {"key": COG_KEY, "size": [dataset.RasterXSize, dataset.RasterYSize],
                  "geotransform": dataset.GetGeoTransform(), "layout": dataset.GetMetadata("IMAGE_STRUCTURE"),

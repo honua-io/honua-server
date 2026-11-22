@@ -6,6 +6,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -29,14 +30,22 @@ internal static partial class AdminLayerAuthoringEndpoints
             .WithTags("Admin", "Metadata", "Authoring")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{storageLayerId:int}/display", HandleGetDisplay).WithName("GetAdminLayerDisplay");
-        _ = group.MapPut("/{storageLayerId:int}/display", HandleSetDisplay).WithName("SetAdminLayerDisplay");
-        _ = group.MapGet("/{storageLayerId:int}/spatial", HandleGetSpatial).WithName("GetAdminLayerSpatial");
-        _ = group.MapPut("/{storageLayerId:int}/spatial", HandleSetSpatial).WithName("SetAdminLayerSpatial");
-        _ = group.MapGet("/{storageLayerId:int}/popup-info", HandleGetPopupInfo).WithName("GetAdminLayerPopupInfo");
-        _ = group.MapPut("/{storageLayerId:int}/popup-info", HandleSetPopupInfo).WithName("SetAdminLayerPopupInfo");
-        _ = group.MapGet("/{storageLayerId:int}/drawing-info", HandleGetDrawingInfo).WithName("GetAdminLayerDrawingInfo");
-        _ = group.MapPut("/{storageLayerId:int}/drawing-info", HandleSetDrawingInfo).WithName("SetAdminLayerDrawingInfo");
+        var getDisplay = AdminHttpOperationRouteBinding.ForApi("admin.layer.display.get", "/metadata/layers", "/{storageLayerId:int}/display");
+        _ = group.MapMethods(getDisplay.RoutePattern, getDisplay.Methods, HandleGetDisplay).WithAdminOperation(getDisplay.Definition);
+        var setDisplay = AdminHttpOperationRouteBinding.ForApi("admin.layer.display.set", "/metadata/layers", "/{storageLayerId:int}/display");
+        _ = group.MapMethods(setDisplay.RoutePattern, setDisplay.Methods, HandleSetDisplay).WithAdminOperation(setDisplay.Definition);
+        var getSpatial = AdminHttpOperationRouteBinding.ForApi("admin.layer.spatial.get", "/metadata/layers", "/{storageLayerId:int}/spatial");
+        _ = group.MapMethods(getSpatial.RoutePattern, getSpatial.Methods, HandleGetSpatial).WithAdminOperation(getSpatial.Definition);
+        var setSpatial = AdminHttpOperationRouteBinding.ForApi("admin.layer.spatial.set", "/metadata/layers", "/{storageLayerId:int}/spatial");
+        _ = group.MapMethods(setSpatial.RoutePattern, setSpatial.Methods, HandleSetSpatial).WithAdminOperation(setSpatial.Definition);
+        var getPopup = AdminHttpOperationRouteBinding.ForApi("admin.layer.popup-info.get", "/metadata/layers", "/{storageLayerId:int}/popup-info");
+        _ = group.MapMethods(getPopup.RoutePattern, getPopup.Methods, HandleGetPopupInfo).WithAdminOperation(getPopup.Definition);
+        var setPopup = AdminHttpOperationRouteBinding.ForApi("admin.layer.popup-info.set", "/metadata/layers", "/{storageLayerId:int}/popup-info");
+        _ = group.MapMethods(setPopup.RoutePattern, setPopup.Methods, HandleSetPopupInfo).WithAdminOperation(setPopup.Definition);
+        var getDrawing = AdminHttpOperationRouteBinding.ForApi("admin.layer.drawing-info.get", "/metadata/layers", "/{storageLayerId:int}/drawing-info");
+        _ = group.MapMethods(getDrawing.RoutePattern, getDrawing.Methods, HandleGetDrawingInfo).WithAdminOperation(getDrawing.Definition);
+        var setDrawing = AdminHttpOperationRouteBinding.ForApi("admin.layer.drawing-info.set", "/metadata/layers", "/{storageLayerId:int}/drawing-info");
+        _ = group.MapMethods(setDrawing.RoutePattern, setDrawing.Methods, HandleSetDrawingInfo).WithAdminOperation(setDrawing.Definition);
         _ = group.MapGet("/{storageLayerId:int}/relationships", HandleGetRelationships).WithName("GetAdminLayerRelationships");
         _ = group.MapPut("/{storageLayerId:int}/relationships", HandleSetRelationships).WithName("SetAdminLayerRelationships");
         _ = group.MapPut("/relationships/batch", HandleSetRelationshipsBatch).WithName("SetAdminLayerRelationshipsBatch");

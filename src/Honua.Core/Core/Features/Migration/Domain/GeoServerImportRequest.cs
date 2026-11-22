@@ -145,6 +145,10 @@ public sealed record GeoServerImportResult
 
     public MigrationRunMetricsArtifact? RunMetrics { get; init; }
 
+    public string? MigrationRunId { get; init; }
+
+    public GeoServerReconciliationBundle? ReconciliationBundle { get; init; }
+
     public bool WasDryRun { get; init; }
 
     public static GeoServerImportResult CreateSuccess(

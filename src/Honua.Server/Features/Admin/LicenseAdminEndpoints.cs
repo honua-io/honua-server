@@ -4,6 +4,7 @@
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
@@ -27,9 +28,10 @@ internal static class LicenseAdminEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        group.MapGet("/status", HandleGetLicenseStatus)
+        var status = AdminHttpOperationRouteBinding.ForOperate("admin.license.status", "/license");
+        group.MapMethods(status.RoutePattern, status.Methods, HandleGetLicenseStatus)
+            .WithAdminOperation(status.Definition)
             .WithDisplayName("Get License Status")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<LicenseStatusResponse>>();
 
         group.MapGet("/features", HandleGetEntitlements)
@@ -37,9 +39,10 @@ internal static class LicenseAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<LicenseEntitlementsResponse>>();
 
-        group.MapPost("/upload", HandleUploadLicense)
+        var upload = AdminHttpOperationRouteBinding.ForOperate("admin.license.upload", "/license");
+        group.MapMethods(upload.RoutePattern, upload.Methods, HandleUploadLicense)
+            .WithAdminOperation(upload.Definition)
             .WithDisplayName("Upload License File")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<LicenseUploadResponse>>()
             .Produces<ApiResponse<LicenseUploadResponse>>(StatusCodes.Status400BadRequest);
     }

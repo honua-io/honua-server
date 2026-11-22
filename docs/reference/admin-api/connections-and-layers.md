@@ -151,9 +151,9 @@ Other protocols and exports keep working on such a layer: GeoServices, PBF, GeoA
 | PUT | `/api/v1/admin/services/{serviceName}/mapserver` | Update MapServer defaults and limits |
 | PUT | `/api/v1/admin/services/{serviceName}/access-policy` | Update service access policy (read/write roles, anonymous access) |
 | PUT | `/api/v1/admin/services/{serviceName}/timeinfo` | Update service-level temporal metadata |
-| PUT | `/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata` | Patch layer-level governance, editing bindings, access policy, time info, and raster mosaic defaults |
+| PUT | `/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata` | Patch layer-level governance, editing bindings, access policy, and time info |
 
-Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
+Sending a non-null `rasterMosaic` payload on `PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata` currently returns `501 Not Implemented` (`Raster mosaic settings have no Metadata v2 representation yet.`), refusing the entire request so no unpersisted merge strategy is echoed; omit `rasterMosaic` (or pass `null`) when patching other fields.
 
 The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). A license-only patch derives or refreshes the canonical link for a standalone SPDX identifier unless an explicit custom license URL already exists. Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
 
@@ -198,10 +198,11 @@ relationships remain read-only even when the underlying storage supports edits.
 
 To turn on editor tracking, name the fields in `editing`: `creatorField` and
 `editorField` must be declared String fields, and `createdAtField` and
-`updatedAtField` must be declared Date, DateTime, String, BigInteger or Double
-fields. Omitted or null fields keep their value and an empty string clears one.
-Every edit protocol then stamps these fields from the caller and the server
-clock; they appear in GeoServices `editFieldsInfo` and in gRPC `DescribeLayer`.
+`updatedAtField` must be declared Date, DateTime, TimestampOffset, String,
+BigInteger or Double fields. Omitted or null fields keep their value and an
+empty string clears one. GeoServices FeatureServer, OGC API Features and gRPC
+edits then stamp these fields from the caller and the server clock; they appear
+in GeoServices `editFieldsInfo` and in gRPC `DescribeLayer`.
 A field of another type, or an unknown property in `editing`, returns `400` and
 changes nothing.
 

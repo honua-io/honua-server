@@ -4,29 +4,29 @@
     "net11.0": {
       "MaxRev.Gdal.Core": {
         "type": "Direct",
-        "requested": "[3.12.4.520, )",
-        "resolved": "3.12.4.520",
-        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal": {
         "type": "Direct",
-        "requested": "[3.12.4.520, )",
-        "resolved": "3.12.4.520",
-        "contentHash": "pEP8UVyT1xi9HJ0tuUUBUDj8VPfbcfFlC2oOKpFimRDVMcoHgG7Nd2ItPjt6Bs9B9/UBgRF8LlpCV0blCglRMw==",
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "nwFdYc//woYlQr+VmKxWAg9WFs1/6sBWvbvxMt9mri8HJO4o2jlr0IEDbIzOCDAZJKD13wN5k8UspfVqiqEFxw==",
         "dependencies": {
-          "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": "3.12.4.520",
-          "MaxRev.Gdal.LinuxRuntime.Minimal.x64": "3.12.4.520"
+          "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": "3.13.3.611",
+          "MaxRev.Gdal.LinuxRuntime.Minimal.x64": "3.13.3.611"
         }
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
         "type": "Transitive",
-        "resolved": "3.12.4.520",
-        "contentHash": "zZn9YmiQAUllozPf6VeOea/XxFmPe4THFOXOaryXPHJPgKFHBpnz6wuSkyRtcg/ZQrSzMgFdroRxuyF+8W1t1A=="
+        "resolved": "3.13.3.611",
+        "contentHash": "gkBotOx4o78VJmcQrifRmGEEFIvEtZLLBl1TEM66QseJSOgwr01p3oibgqVAPLP3sWxkN4GNV76IcWlPb77J2Q=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
         "type": "Transitive",
-        "resolved": "3.12.4.520",
-        "contentHash": "4ggVXh8zGsk+t4g7ex/h2LTST235DqyJrp8NfX2bCNUUwqFrkX2l9STA+2TD68W1MOoNY5c4JiH7SE5itxhSyA=="
+        "resolved": "3.13.3.611",
+        "contentHash": "IpJaHMg3G7Uh7Y9jb6W7FhnD2sXWf/oRlnlCUNdwCoV9SaNXGHQbtvm85ZFY+J/N3pIysju/Jw7v5vlF6EJxLQ=="
       },
       "honua.customcode.sdk": {
         "type": "Project"
@@ -35,19 +35,19 @@
     "net11.0/linux-x64": {
       "MaxRev.Gdal.Core": {
         "type": "Direct",
-        "requested": "[3.12.4.520, )",
-        "resolved": "3.12.4.520",
-        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
         "type": "Transitive",
-        "resolved": "3.12.4.520",
-        "contentHash": "zZn9YmiQAUllozPf6VeOea/XxFmPe4THFOXOaryXPHJPgKFHBpnz6wuSkyRtcg/ZQrSzMgFdroRxuyF+8W1t1A=="
+        "resolved": "3.13.3.611",
+        "contentHash": "gkBotOx4o78VJmcQrifRmGEEFIvEtZLLBl1TEM66QseJSOgwr01p3oibgqVAPLP3sWxkN4GNV76IcWlPb77J2Q=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
         "type": "Transitive",
-        "resolved": "3.12.4.520",
-        "contentHash": "4ggVXh8zGsk+t4g7ex/h2LTST235DqyJrp8NfX2bCNUUwqFrkX2l9STA+2TD68W1MOoNY5c4JiH7SE5itxhSyA=="
+        "resolved": "3.13.3.611",
+        "contentHash": "IpJaHMg3G7Uh7Y9jb6W7FhnD2sXWf/oRlnlCUNdwCoV9SaNXGHQbtvm85ZFY+J/N3pIysju/Jw7v5vlF6EJxLQ=="
       }
     }
   }

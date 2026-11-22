@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -46,46 +47,46 @@ internal static partial class RateLimitEndpoints
             .WithTags("Admin", "Rate Limits")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListPolicies)
-            .WithDisplayName("List Rate Limit Policies")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.list", "/rate-limits");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListPolicies)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Rate Limit Policies");
 
-        group.MapPost("/", HandleCreatePolicy)
-            .WithDisplayName("Create Rate Limit Policy")
-            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.create", "/rate-limits");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreatePolicy)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName);
 
-        group.MapGet("/{id:guid}", HandleGetPolicy)
-            .WithDisplayName("Get Rate Limit Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.get", "/rate-limits", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetPolicy)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get Rate Limit Policy");
 
-        group.MapPut("/{id:guid}", HandleUpdatePolicy)
-            .WithDisplayName("Update Rate Limit Policy")
-            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+        var update = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.update", "/rate-limits", "/{id:guid}");
+        group.MapMethods(update.RoutePattern, update.Methods, HandleUpdatePolicy)
+            .WithAdminOperation(update.Definition).WithDisplayName("Update Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName);
 
-        group.MapDelete("/{id:guid}", HandleDeletePolicy)
-            .WithDisplayName("Delete Rate Limit Policy")
-            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.delete", "/rate-limits", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeletePolicy)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName);
 
-        group.MapGet("/status", HandleGetStatus)
-            .WithDisplayName("Get Rate Limit Status")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var status = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.status", "/rate-limits");
+        group.MapMethods(status.RoutePattern, status.Methods, HandleGetStatus)
+            .WithAdminOperation(status.Definition).WithDisplayName("Get Rate Limit Status");
 
         MapPolicyHistory(group);
     }
 
     private static void MapPolicyHistory(IVersionedEndpointRouteBuilder group)
     {
-        group.MapGet("/{id:guid}/revisions", HandleListPolicyRevisions)
-            .WithDisplayName("List Rate Limit Policy Revisions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var revisions = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.revisions", "/rate-limits", "/{id:guid}/revisions");
+        group.MapMethods(revisions.RoutePattern, revisions.Methods, HandleListPolicyRevisions)
+            .WithAdminOperation(revisions.Definition).WithDisplayName("List Rate Limit Policy Revisions");
 
-        group.MapPost("/{id:guid}/undo", HandleUndoPolicyChange)
-            .WithDisplayName("Undo Rate Limit Policy Change")
-            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var undo = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.undo", "/rate-limits", "/{id:guid}/undo");
+        group.MapMethods(undo.RoutePattern, undo.Methods, HandleUndoPolicyChange)
+            .WithAdminOperation(undo.Definition).WithDisplayName("Undo Rate Limit Policy Change")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName);
     }
 
     private static Task<Results<Ok<ApiResponse<IReadOnlyList<SettingsRevisionResponse>>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>>>

@@ -67,7 +67,7 @@ Expected: a row/column tuple such as `(5, 12)` with a populated `geometry` colum
 ## Troubleshoot
 
 - **400 `not supported by the configured feature store` on `f=fgb`/`f=geobuf`** — the layer's backing store cannot emit encoded output; check `supportedQueryFormats` on the layer metadata and fall back to `f=geojson`.
-- **400 on `f=parquet` with `returnM=true`** — GeoParquet 1.1.0 supports only XY/XYZ; drop `returnM`.
+- **GeoServices `error.code=400` (HTTP `200` JSON envelope) on `f=parquet` with `returnM=true`** — GeoParquet 1.1.0 supports only XY and XYZ geometries; drop `returnM`.
 - **400 `Shapefile format does not support mixed geometry types`** — bulk-export mixed-geometry layers as `gpkg` or `csv` instead.
 - **503 `Large exports require cloud storage`** — the async export path needs a configured cloud storage provider; reduce the export scope with `where`/`bbox` or configure storage.
 - **503 `Export queue is full`** — five background exports are already queued or running across the deployment; retry after one finishes.

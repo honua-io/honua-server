@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -27,35 +28,35 @@ internal static partial class AdminApiKeyEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        group.MapGet("/", HandleListApiKeys)
-            .WithDisplayName("List Admin API Keys")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.list", "/api-keys");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListApiKeys)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Admin API Keys");
 
         // Issuing, rotating, revoking or replacing restrictions needs full-admin credential
         // authority; general admin write (admin:write, admin:manage) keeps the read routes only.
-        group.MapPost("/", HandleCreateApiKey)
-            .WithDisplayName("Create Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.create", "/api-keys");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateApiKey)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPost("/{id:guid}/rotate", HandleRotateApiKey)
-            .WithDisplayName("Rotate Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var rotate = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.rotate", "/api-keys", "/{id:guid}/rotate");
+        group.MapMethods(rotate.RoutePattern, rotate.Methods, HandleRotateApiKey)
+            .WithAdminOperation(rotate.Definition).WithDisplayName("Rotate Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPost("/{id:guid}/revoke", HandleRevokeApiKey)
-            .WithDisplayName("Revoke Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var revoke = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.revoke", "/api-keys", "/{id:guid}/revoke");
+        group.MapMethods(revoke.RoutePattern, revoke.Methods, HandleRevokeApiKey)
+            .WithAdminOperation(revoke.Definition).WithDisplayName("Revoke Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPatch("/{id:guid}/restrictions", HandleUpdateApiKeyRestrictions)
-            .WithDisplayName("Update Admin API Key Restrictions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+        var restrictions = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.update-restrictions", "/api-keys", "/{id:guid}/restrictions");
+        group.MapMethods(restrictions.RoutePattern, restrictions.Methods, HandleUpdateApiKeyRestrictions)
+            .WithAdminOperation(restrictions.Definition).WithDisplayName("Update Admin API Key Restrictions")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapGet("/{id:guid}/effective-permissions", HandleGetEffectivePermissions)
-            .WithDisplayName("Get Admin API Key Effective Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var effective = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.effective-permissions", "/api-keys", "/{id:guid}/effective-permissions");
+        group.MapMethods(effective.RoutePattern, effective.Methods, HandleGetEffectivePermissions)
+            .WithAdminOperation(effective.Definition).WithDisplayName("Get Admin API Key Effective Permissions");
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<AdminApiKeyResponse>>>> HandleListApiKeys(

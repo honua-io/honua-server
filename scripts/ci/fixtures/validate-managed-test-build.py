@@ -98,6 +98,20 @@ class ManagedBuildTests(unittest.TestCase):
         self.assertEqual(str(self.root / 'Honua.sln'), result['path'])
         self.assertEqual(sorted(self.literal.values()), result['projects'])
 
+    def test_filter_skips_affected_projects_outside_solution_but_rejects_requested_ones(self):
+        harness = 'docker/worker-customcode-dotnet/harness/src/Harness/Harness.csproj'
+        requested = self.root / 'requested.json'
+        requested.write_text(json.dumps([self.a]))
+        base = self.root / 'base.slnf'
+        base.write_text(json.dumps({'solution': {'projects': [self.b, harness]}}))
+        target, standalone = self.root / 'affected.slnf', self.root / 'standalone.json'
+        self.invoke('filter', '--projects-file', str(requested), '--base-filter', str(base),
+                    '--output', str(target), '--standalone-output', str(standalone))
+        self.assertEqual(sorted(self.literal.values()), json.loads(target.read_text())['solution']['projects'])
+        self.assertEqual([], json.loads(standalone.read_text()))
+        with self.assertRaises(ValueError):
+            managed.write_filter(self.root, [self.a, harness], self.root / 'invalid.slnf')
+
     def test_fallback_restore_and_build_use_same_missing_filter(self):
         calls = []
 

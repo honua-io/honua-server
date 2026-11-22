@@ -93,7 +93,7 @@ services:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
-    image: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
+    image: ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
@@ -267,7 +267,9 @@ require(result['objectIdFieldName'] == 'id', 'Unexpected object ID field')
 require(len(result['features']) == 2, 'Expected exactly two published features')
 observed = {}
 for feature in result['features']:
-    attributes, geometry = feature['attributes']['properties'], feature['geometry']
+    raw_properties = feature['attributes']['properties']
+    attributes = json.loads(raw_properties) if isinstance(raw_properties, str) else raw_properties
+    geometry = feature['geometry']
     name = attributes['name']
     require(name not in observed and name in expected, 'Unexpected or duplicate feature name')
     value, lon, lat = expected[name]

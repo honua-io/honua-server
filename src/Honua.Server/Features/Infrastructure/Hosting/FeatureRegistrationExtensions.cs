@@ -287,7 +287,15 @@ internal static class FeatureRegistrationExtensions
     {
         services.AddSingleton<PMTilesProxyService>();
         services.AddSingleton<Honua.Server.Features.Infrastructure.FileStorage.ArtifactByteReader>();
-        services.AddScoped<Honua.Server.Features.Admin.PairedPublications.PairedPublicationReader>();
+        services.AddScoped<Honua.Server.Features.Admin.Exports.ExportReader>();
+        services.AddScoped(provider => new Honua.Server.Features.Admin.Exports.ExportCatalog(
+            new Honua.Server.Features.Admin.Exports.ExportCatalogDependencies
+            {
+                Storage = provider.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>(),
+                Options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Features.Infrastructure.Domain.CloudStorageOptions>>(),
+                Jobs = provider.GetRequiredService<Honua.Server.Features.Admin.TileOperations.ITileCacheJobService>(),
+                PublicRevocation = provider.GetService<Honua.Server.Features.Admin.Exports.PublicExportRevocationService>()
+            }));
         services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
         // Lets a protocol assembly advertise a published COG without referencing the
         // server: Honua.Server references the protocols, never the reverse, so STAC

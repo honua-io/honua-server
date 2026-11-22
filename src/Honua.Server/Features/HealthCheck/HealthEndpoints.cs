@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Realtime;
@@ -11,9 +12,6 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 
 namespace Honua.Server.Features.HealthCheck;
-
-using Honua.Core.Features.Infrastructure.Health;
-
 
 internal static class HealthEndpoints
 {

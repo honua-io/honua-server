@@ -259,6 +259,20 @@ internal ref struct ProtobufWriter
         _position += byteCount;
     }
 
+    public void WriteBytesAlways(int fieldNumber, ReadOnlySpan<byte> value)
+    {
+        WriteTag(fieldNumber, 2);
+        WriteRawVarint((uint)value.Length);
+        if (value.IsEmpty)
+        {
+            return;
+        }
+
+        EnsureCapacity(value.Length);
+        value.CopyTo(_buffer.AsSpan(_position));
+        _position += value.Length;
+    }
+
     // ── Packed repeated fields ────────────────────────────────
 
     public void WritePackedUInt32(int fieldNumber, ReadOnlySpan<uint> values)

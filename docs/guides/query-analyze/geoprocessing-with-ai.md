@@ -161,7 +161,6 @@ For a Python-only agent, the [SDK quickstart](gp-local-dev-quickstart.md#2-submi
 is an alternative to MCP. Native functions use the same discovery and job
 lifecycle after a native worker is available. AWS Batch and Kubernetes are
 execution targets selected by deployment configuration, not different agent tools.
-Azure remains experimental; it is outside this local/RC journey.
 
 ## Troubleshoot
 

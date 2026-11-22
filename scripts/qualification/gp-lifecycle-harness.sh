@@ -1204,10 +1204,10 @@ run_retry_exhaustion() {
 run_output_size_cap() {
   local scenario=output-size-cap job terminal state
   export HONUA_GP_MAX_ARTIFACT_BYTES=1024
-  compose up -d --force-recreate server >/dev/null; wait_ready || return 1
-  job="$(submit_async)" || { unset HONUA_GP_MAX_ARTIFACT_BYTES; return 1; }
+  compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || { unset HONUA_GP_MAX_ARTIFACT_BYTES; return 1; }
+  job="$(submit_async)" || { unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || true; return 1; }
   terminal="$(wait_terminal "${job}")" || true; state="$(jq -r '.status // empty' <<<"${terminal:-{}}" 2>/dev/null || true)"
-  unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server >/dev/null; wait_ready || return 1
+  unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || return 1
   [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: oversized artifact was not rejected" "${job}" "${state}"; return 1; }
   result_digest "${job}" >/dev/null 2>&1 && { write_receipt "${scenario}" fail "FINDING: rejected oversized artifact exposed output" "${job}" "${state}"; return 1; }
   write_receipt "${scenario}" pass "MaxArtifactBytes=1024" "${job}" "${state}"
@@ -1231,7 +1231,9 @@ run_tenant_limits() {
 }
 
 run_soak() {
-  local scenario=sustained-soak duration="${HONUA_GP_SOAK_SECONDS:-900}" concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}" end=$((SECONDS+duration)) submitted=0 verified=0 failed=0 job terminal before after; local -a jobs
+  local scenario=sustained-soak duration="${HONUA_GP_SOAK_SECONDS:-900}" concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}" submitted=0 verified=0 failed=0 job terminal before after
+  local end=$((SECONDS+duration))
+  local -a jobs
   while ((SECONDS<end)); do jobs=(); for ((i=0;i<concurrency;i++)); do job="$(submit_async)" && jobs+=("${job}") && submitted=$((submitted+1)) || failed=$((failed+1)); done; for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { failed=$((failed+1)); continue; }; before="$(result_digest "${job}" 2>/dev/null || true)"; compose restart server >/dev/null; wait_ready || true; after="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${before}" && "${before}" == "${after}" ]] && verified=$((verified+1)) || failed=$((failed+1)); done; done
   [[ ${submitted} -gt 0 && ${failed} -eq 0 && ${verified} -eq ${submitted} ]] || { write_receipt "${scenario}" fail "FINDING: duration=${duration};concurrency=${concurrency};submitted=${submitted};verified=${verified};failed=${failed}"; return 1; }
   write_receipt "${scenario}" pass "duration=${duration};concurrency=${concurrency};submitted=${submitted};durable_outputs_verified=${verified}"

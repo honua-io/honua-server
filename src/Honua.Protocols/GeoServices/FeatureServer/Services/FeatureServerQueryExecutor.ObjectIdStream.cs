@@ -18,16 +18,31 @@ internal sealed partial class FeatureServerQueryExecutor
     private static async Task StreamObjectIdsWithValidationAsync(IObjectIdStreamingReader reader, ObjectIdStreamRequest request)
     {
         var cancellationToken = request.Response.CancellationToken;
+        int? requestedLimit = request.Query.Limit is int limit and >= 0 and < int.MaxValue ? limit : null;
+        var streamQuery = requestedLimit is int boundedLimit
+            ? request.Query with { Limit = checked(boundedLimit + 1), ReturnPublicObjectIds = true }
+            : request.Query with { ReturnPublicObjectIds = true };
         var objectIds = reader
-            .StreamObjectIdsAsync(request.LayerId, request.Query with { ReturnPublicObjectIds = true }, cancellationToken)
+            .StreamObjectIdsAsync(request.LayerId, streamQuery, cancellationToken)
             .GetAsyncEnumerator(cancellationToken);
         await using (objectIds.ConfigureAwait(false))
         {
-            var leadingIds = await ReadLeadingObjectIdsAsync(objectIds).ConfigureAwait(false);
-            var remainingIds = leadingIds.Count == IdsReadBeforeStatus ? objectIds : null;
+            var leadingCap = requestedLimit is int cap
+                ? Math.Min(IdsReadBeforeStatus, checked(cap + 1))
+                : IdsReadBeforeStatus;
+            var leadingIds = await ReadLeadingObjectIdsAsync(objectIds, leadingCap).ConfigureAwait(false);
+            var (remainingIds, response) = ResolveLeadingWindow(
+                leadingIds,
+                objectIds,
+                new ObjectIdLeadingWindowOptions
+                {
+                    LeadingCap = leadingCap,
+                    RequestedLimit = requestedLimit,
+                    BaseResponse = request.Response
+                });
             try
             {
-                await WriteObjectIdsAsync(leadingIds, remainingIds, request.Response).ConfigureAwait(false);
+                await WriteObjectIdsAsync(leadingIds, remainingIds, response).ConfigureAwait(false);
             }
             catch when (request.Response.Context.Response.HasStarted)
             {
@@ -39,15 +54,44 @@ internal sealed partial class FeatureServerQueryExecutor
         }
     }
 
+    private static (IAsyncEnumerator<long>? RemainingIds, ObjectIdResponse Response) ResolveLeadingWindow(
+        List<long> leadingIds,
+        IAsyncEnumerator<long> objectIds,
+        ObjectIdLeadingWindowOptions options)
+    {
+        if (options.RequestedLimit is not int limitCap)
+        {
+            var remaining = leadingIds.Count == IdsReadBeforeStatus ? objectIds : null;
+            return (remaining, options.BaseResponse with { LeadingCount = leadingIds.Count });
+        }
+
+        if (leadingIds.Count > limitCap)
+        {
+            leadingIds.RemoveRange(limitCap, leadingIds.Count - limitCap);
+            return (null, options.BaseResponse with { ExceededTransferLimit = true, LeadingCount = leadingIds.Count });
+        }
+
+        if (leadingIds.Count == options.LeadingCap)
+        {
+            return (objectIds, options.BaseResponse with
+            {
+                RemainingLimit = limitCap - leadingIds.Count,
+                LeadingCount = leadingIds.Count
+            });
+        }
+
+        return (null, options.BaseResponse with { ExceededTransferLimit = false, LeadingCount = leadingIds.Count });
+    }
+
     // A failing query, including a row-time database error within the first page of ids, surfaces here
     // before anything is written, so it still becomes a normal error response. A failure after that point
     // aborts the started response, as for every streamed query result.
-    private static async Task<List<long>> ReadLeadingObjectIdsAsync(IAsyncEnumerator<long> objectIds)
+    private static async Task<List<long>> ReadLeadingObjectIdsAsync(IAsyncEnumerator<long> objectIds, int maxCount)
     {
         var leadingIds = new List<long>();
         try
         {
-            while (leadingIds.Count < IdsReadBeforeStatus && await objectIds.MoveNextAsync().ConfigureAwait(false))
+            while (leadingIds.Count < maxCount && await objectIds.MoveNextAsync().ConfigureAwait(false))
             {
                 leadingIds.Add(objectIds.Current);
             }
@@ -90,22 +134,46 @@ internal sealed partial class FeatureServerQueryExecutor
             await FlushIfDueAsync(writer, ++idsWritten, response).ConfigureAwait(false);
         }
 
-        while (remainingIds is not null && await remainingIds.MoveNextAsync().ConfigureAwait(false))
+        var exceededTransferLimit = response.ExceededTransferLimit;
+        if (remainingIds is not null)
         {
-            writer.WriteNumberValue(remainingIds.Current);
-            await FlushIfDueAsync(writer, ++idsWritten, response).ConfigureAwait(false);
+            exceededTransferLimit = await WriteRemainingObjectIdsAsync(
+                writer, remainingIds, response with { LeadingCount = idsWritten }).ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
-        if (response.ExceededTransferLimit is { } exceededTransferLimit)
+        if (exceededTransferLimit is { } exceeded)
         {
-            writer.WriteBoolean("exceededTransferLimit", exceededTransferLimit);
+            writer.WriteBoolean("exceededTransferLimit", exceeded);
         }
 
         writer.WriteEndObject();
 
         await writer.FlushAsync(response.CancellationToken).ConfigureAwait(false);
         await context.Response.CompleteAsync().ConfigureAwait(false);
+    }
+
+    private static async Task<bool?> WriteRemainingObjectIdsAsync(
+        Utf8JsonWriter writer,
+        IAsyncEnumerator<long> remainingIds,
+        ObjectIdResponse response)
+    {
+        var idsWritten = response.LeadingCount;
+        var remainingAllowed = response.RemainingLimit;
+        var remainingWritten = 0;
+        while (await remainingIds.MoveNextAsync().ConfigureAwait(false))
+        {
+            if (remainingAllowed is int allowed && remainingWritten >= allowed)
+            {
+                return true;
+            }
+
+            writer.WriteNumberValue(remainingIds.Current);
+            remainingWritten++;
+            await FlushIfDueAsync(writer, ++idsWritten, response).ConfigureAwait(false);
+        }
+
+        return remainingAllowed.HasValue ? false : response.ExceededTransferLimit;
     }
 
     private static async Task FlushIfDueAsync(Utf8JsonWriter writer, long idsWritten, ObjectIdResponse response)
@@ -123,11 +191,22 @@ internal sealed partial class FeatureServerQueryExecutor
         }
     }
 
-    private readonly record struct ObjectIdResponse(
-        string ObjectIdFieldName,
-        HttpContext Context,
-        CancellationToken CancellationToken,
-        bool? ExceededTransferLimit = null);
+    private readonly record struct ObjectIdResponse
+    {
+        public required string ObjectIdFieldName { get; init; }
+        public required HttpContext Context { get; init; }
+        public CancellationToken CancellationToken { get; init; }
+        public bool? ExceededTransferLimit { get; init; }
+        public int? RemainingLimit { get; init; }
+        public long LeadingCount { get; init; }
+    }
+
+    private readonly record struct ObjectIdLeadingWindowOptions
+    {
+        public int LeadingCap { get; init; }
+        public int? RequestedLimit { get; init; }
+        public ObjectIdResponse BaseResponse { get; init; }
+    }
 
     private readonly record struct ObjectIdStreamRequest(int LayerId, FeatureQuery Query, ObjectIdResponse Response);
 }

@@ -13,6 +13,8 @@ relations:
   - predicate: relates_to
     target: "/concepts/domain/layer.md"
   - predicate: relates_to
+    target: "/concepts/domain/export.md"
+  - predicate: relates_to
     target: "/concepts/domain/map.md"
   - predicate: relates_to
     target: "/concepts/domain/crs.md"

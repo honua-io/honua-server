@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -62,54 +63,54 @@ internal static partial class OidcProviderEndpoints
             // already-configured providers keeps working regardless of edition.
             .AddEndpointFilter(ApplyProviderEntitlementGatesAsync);
 
-        group.MapGet("/", HandleListProviders)
-            .WithDisplayName("List OIDC Providers")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.list", "/oidc/providers");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListProviders)
+            .WithAdminOperation(list.Definition).WithDisplayName("List OIDC Providers");
 
-        group.MapPost("/", HandleCreateProvider)
-            .WithDisplayName("Create OIDC Provider")
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.create", "/oidc/providers");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateProvider)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create OIDC Provider")
             .Produces<ApiResponse<OidcProviderResponse>>(StatusCodes.Status201Created)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .RequireAdminCredentialManagementAuthorization()
             .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(CreateProviderRoute.Instance);
 
-        group.MapGet("/{id:guid}", HandleGetProvider)
-            .WithDisplayName("Get OIDC Provider")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.get", "/oidc/providers", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetProvider)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get OIDC Provider");
 
-        group.MapPut("/{id:guid}", HandleUpdateProvider)
-            .WithDisplayName("Update OIDC Provider")
+        var update = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.update", "/oidc/providers", "/{id:guid}");
+        group.MapMethods(update.RoutePattern, update.Methods, HandleUpdateProvider)
+            .WithAdminOperation(update.Definition).WithDisplayName("Update OIDC Provider")
             .RequireAdminCredentialManagementAuthorization()
-            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName);
 
-        group.MapDelete("/{id:guid}", HandleDeleteProvider)
-            .WithDisplayName("Delete OIDC Provider")
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.delete", "/oidc/providers", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteProvider)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete OIDC Provider")
             .RequireAdminCredentialManagementAuthorization()
-            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName);
 
-        group.MapPost("/{id:guid}/test", HandleTestProvider)
-            .WithDisplayName("Test OIDC Provider Connection")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var test = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.test", "/oidc/providers", "/{id:guid}/test");
+        group.MapMethods(test.RoutePattern, test.Methods, HandleTestProvider)
+            .WithAdminOperation(test.Definition).WithDisplayName("Test OIDC Provider Connection");
 
         MapProviderHistory(group);
     }
 
     private static void MapProviderHistory(IVersionedEndpointRouteBuilder group)
     {
-        group.MapGet("/{id:guid}/revisions", HandleListProviderRevisions)
-            .WithDisplayName("List OIDC Provider Revisions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var revisions = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.revisions", "/oidc/providers", "/{id:guid}/revisions");
+        group.MapMethods(revisions.RoutePattern, revisions.Methods, HandleListProviderRevisions)
+            .WithAdminOperation(revisions.Definition).WithDisplayName("List OIDC Provider Revisions");
 
-        group.MapPost("/{id:guid}/undo", HandleUndoProviderChange)
-            .WithDisplayName("Undo OIDC Provider Change")
+        var undo = AdminHttpOperationRouteBinding.ForAccess("admin.oidc-provider.undo", "/oidc/providers", "/{id:guid}/undo");
+        group.MapMethods(undo.RoutePattern, undo.Methods, HandleUndoProviderChange)
+            .WithAdminOperation(undo.Definition).WithDisplayName("Undo OIDC Provider Change")
             .RequireAdminCredentialManagementAuthorization()
-            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName);
     }
 
     // The create route is marked in endpoint metadata because a trailing-slash test path still matches and a path-suffix check would classify it as a create.

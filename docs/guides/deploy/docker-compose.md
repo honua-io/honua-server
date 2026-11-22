@@ -18,8 +18,8 @@ database.
 
 **Deploying to a cloud account instead?** That path is
 [honua-iac](https://github.com/honua-io/honua-iac) — public Terraform modules for
-ECS/Fargate, Lambda, EKS and AKS. See
-[Deploy on AWS and Azure](cloud-deployments.md) to pick a pattern, then
+ECS/Fargate, Lambda and EKS. See
+[Cloud deployments](cloud-deployments.md) to pick a pattern, then
 [the operator deployment guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/operator-deployment.md) to stand it up.
 Nothing below applies to those; they do not use Compose.
 
@@ -283,9 +283,11 @@ the coordinated [backup and restore policy](backup-and-restore.md) before using
 this recipe with live customer data.
 
 Write the binary files inside the containers and copy them out, rather than
-redirecting binary streams through the shell. The one-off archive container runs
-as root with file-ownership capabilities so the storage owner is preserved; the
-running server keeps its unprivileged, dropped-capabilities configuration. Keep
+redirecting binary streams through the shell. Because the chiseled `honua`
+serving image ships no shell or `tar`, the one-off storage archive container
+uses the pinned Alpine utility image (`alpine:3.24`) as root with
+file-ownership capabilities so the storage owner is preserved; the running
+server keeps its unprivileged, dropped-capabilities configuration. Keep
 `$Backup` — the restore needs it.
 
 Take the backup:
@@ -298,7 +300,12 @@ cp quickstart.py journey.py published-layer.json installed-packages.txt "$Backup
 dc stop honua
 dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
 dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
-dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+StorageVol="$(docker inspect "$(dc ps -aq honua)" --format '{{range .Mounts}}{{if eq .Destination "/var/lib/honua/storage"}}{{.Name}}{{end}}{{end}}')"
+docker run --rm --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER \
+  -v "${StorageVol:?Missing storage volume}:/var/lib/honua/storage:ro" \
+  -v "$Backup:/backup" \
+  alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf \
+  tar -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
 sha256sum "$Backup/database.dump" "$Backup/storage.tar.gz"
 dc start honua
 dc up -d --wait --wait-timeout 180
@@ -320,7 +327,13 @@ dc stop honua
 try {
     dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
     dc cp postgres:/tmp/honua-backup.dump (Join-Path $Backup 'database.dump')
-    dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+    $StorageVol = docker inspect (dc ps -aq honua) --format '{{range .Mounts}}{{if eq .Destination "/var/lib/honua/storage"}}{{.Name}}{{end}}{{end}}'
+    if (-not $StorageVol) { throw 'Missing storage volume' }
+    docker run --rm --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER `
+        -v "${StorageVol}:/var/lib/honua/storage:ro" `
+        -v "${Backup}:/backup" `
+        alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf `
+        tar -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Backup 'database.dump'), (Join-Path $Backup 'storage.tar.gz') | Format-Table
 } finally { dc start honua }
 dc up -d --wait --wait-timeout 180
@@ -355,7 +368,12 @@ dc stop honua
 dc cp "$Backup/database.dump" postgres:/tmp/honua-restore.dump
 dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "$Backup:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
+StorageVol="$(docker inspect "$(dc ps -aq honua)" --format '{{range .Mounts}}{{if eq .Destination "/var/lib/honua/storage"}}{{.Name}}{{end}}{{end}}')"
+docker run --rm --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER \
+  -v "${StorageVol:?Missing storage volume}:/var/lib/honua/storage" \
+  -v "$Backup:/backup:ro" \
+  alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf \
+  sh -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
 dc up -d --wait --wait-timeout 180
 ```
@@ -373,7 +391,13 @@ dc stop honua
 dc cp (Join-Path $Backup 'database.dump') postgres:/tmp/honua-restore.dump
 dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "${Backup}:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
+$StorageVol = docker inspect (dc ps -aq honua) --format '{{range .Mounts}}{{if eq .Destination "/var/lib/honua/storage"}}{{.Name}}{{end}}{{end}}'
+if (-not $StorageVol) { throw 'Missing storage volume' }
+docker run --rm --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER `
+    -v "${StorageVol}:/var/lib/honua/storage" `
+    -v "${Backup}:/backup:ro" `
+    alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf `
+    sh -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
 dc up -d --wait --wait-timeout 180
 ```

@@ -120,7 +120,7 @@ from the image. A source edit reaches a worker only after that image is rebuilt
 and the container is recreated. Section 4 has the commands.
 
 `honua-gp-devkit doctor` reports the prerequisite for this profile: Docker
-Compose v2, with host ports 5432, 6379, 8080, and 8081 free. It also reports
+Compose v2, with host ports 5432, 8080, and 8081 free. It also reports
 whether `docker`, `kind`, `kubectl`, and `helm` are on PATH, each as `found` or
 `missing` with one remediation line. A missing tool does not fail doctor.
 Doctor still exits 0 only when the managed probe succeeds and, unless

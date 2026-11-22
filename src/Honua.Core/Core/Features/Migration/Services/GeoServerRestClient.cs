@@ -132,6 +132,9 @@ internal sealed partial class GeoServerRestClient
             // Get advertised OGC service endpoints when GeoServer REST exposes service settings
             var serviceEndpoints = await GetServiceEndpointsAsync(baseUrl, cancellationToken);
 
+            // Get per-layer security rules when GeoServer REST exposes /security/acl/layers.json
+            var securityRules = await GetSecurityRulesAsync(baseUrl, cancellationToken);
+
             // Perform compatibility analysis
             var compatibility = includeCompatibilityAnalysis
                 ? PerformCompatibilityAnalysis(dataStores, coverageStores, layers, styles)
@@ -151,6 +154,7 @@ internal sealed partial class GeoServerRestClient
                 LayerGroups = layerGroups,
                 Styles = styles,
                 ServiceEndpoints = serviceEndpoints,
+                SecurityRules = securityRules,
                 CompatibilityAssessment = compatibility,
                 DiscoveredAt = DateTimeOffset.UtcNow
             };
@@ -506,9 +510,10 @@ internal sealed partial class GeoServerRestClient
             }
 
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
+            var (timeDimension, elevationDimension) = ExtractDimensionsFromMetadata(layerElement);
             var compatibility = AssessLayerCompatibility(layerElement);
 
-            return new GeoServerLayerInfo
+            var layer = new GeoServerLayerInfo
             {
                 Name = layerElement.GetProperty("name").GetString() ?? string.Empty,
                 WorkspaceName = workspaceName,
@@ -523,6 +528,8 @@ internal sealed partial class GeoServerRestClient
                 NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
                 LatLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox"),
                 NativeBoundingBox = GetOptionalBoundingBox(layerElement, "nativeBoundingBox"),
+                TimeDimension = timeDimension,
+                ElevationDimension = elevationDimension,
                 Enabled = GetOptionalBoolProperty(layerElement, "enabled") ?? true,
                 Queryable = GetOptionalBoolProperty(layerElement, "queryable") ?? true,
                 Opaque = GetOptionalBoolProperty(layerElement, "opaque") ?? false,
@@ -530,6 +537,8 @@ internal sealed partial class GeoServerRestClient
                 Metadata = metadata,
                 Compatibility = compatibility
             };
+
+            return await EnrichLayerFromResourceAsync(baseUrl, layer, cancellationToken).ConfigureAwait(false);
         }
 
         throw new InvalidOperationException($"GeoServer layer '{workspaceName}/{layerName}' was returned without a layer payload.");
@@ -1488,6 +1497,12 @@ internal sealed partial class GeoServerRestClient
 
         [LoggerMessage(7988, LogLevel.Debug, "GeoServer {Protocol} service settings were unavailable during inventory scan")]
         public static partial void ServiceSettingsUnavailable(ILogger logger, string protocol, Exception exception);
+
+        [LoggerMessage(7989, LogLevel.Debug, "GeoServer security ACL rules were unavailable during discovery")]
+        public static partial void SecurityRulesUnavailable(ILogger logger, Exception exception);
+
+        [LoggerMessage(7990, LogLevel.Debug, "GeoServer featureType/coverage metadata was unavailable for {WorkspaceName}/{LayerName}")]
+        public static partial void FeatureTypeMetadataUnavailable(ILogger logger, string workspaceName, string layerName, Exception exception);
     }
 }
 

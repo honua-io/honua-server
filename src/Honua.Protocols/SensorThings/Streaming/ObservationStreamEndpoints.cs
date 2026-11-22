@@ -17,12 +17,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-internal static class ObservationStreamEndpoints
+internal static partial class ObservationStreamEndpoints
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
-    // A client that has stopped reading must not pin the handler, so a gap-frame write that overruns its budget aborts the transport.
-    private static readonly TimeSpan GapWriteBudget = TimeSpan.FromSeconds(2);
+    // A client that has stopped reading must not pin the handler, so a terminal write that overruns its budget aborts the transport.
+    private static readonly TimeSpan TransportWriteBudget = TimeSpan.FromSeconds(2);
 
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -245,76 +245,6 @@ internal static class ObservationStreamEndpoints
         }
     }
 
-    private static async Task HandleWebSocketAsync(
-        HttpContext context,
-        ObservationStreamSession session,
-        long? datastreamId)
-    {
-        using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, session.DisconnectToken);
-        var ct = linkedCts.Token;
-        var clientGone = false;
-
-        try
-        {
-            await SendSocketAsync(
-                socket,
-                JsonSerializer.Serialize(
-                    ObservationStreamStatus.Connected(datastreamId),
-                    ObservationStreamJsonContext.Default.ObservationStreamStatus),
-                ct).ConfigureAwait(false);
-
-            while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
-            {
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                var readTask = session.Reader.WaitToReadAsync(readCts.Token).AsTask();
-                var timeoutTask = Task.Delay(HeartbeatInterval, readCts.Token);
-                var completed = await Task.WhenAny(readTask, timeoutTask).ConfigureAwait(false);
-                readCts.Cancel();
-
-                if (completed == timeoutTask)
-                {
-                    await SwallowAsync(readTask).ConfigureAwait(false);
-                    await SendSocketAsync(socket, "{\"heartbeat\":true}", ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                await SwallowAsync(timeoutTask).ConfigureAwait(false);
-                if (!await readTask.ConfigureAwait(false))
-                {
-                    break;
-                }
-
-                while (session.Reader.TryRead(out var frame))
-                {
-                    var message = FormatDelivery(frame);
-                    await SendSocketAsync(socket, message.Json, ct).ConfigureAwait(false);
-                    if (frame is RealtimeDelivery.Reset) return;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // The session token or the request ended. A slow-consumer cancel still
-            // needs a gap frame, and that write must not use the cancelled token.
-        }
-        catch (ChannelClosedException)
-        {
-            // Provider closes the subscription when delivery cannot continue.
-        }
-        catch (WebSocketException)
-        {
-            clientGone = true;
-        }
-
-        if (!clientGone)
-        {
-            await WriteSlowConsumerGapAsync(context, session, datastreamId, socket).ConfigureAwait(false);
-        }
-    }
-
     private static async Task WriteSlowConsumerGapAsync(
         HttpContext context,
         ObservationStreamSession session,
@@ -331,7 +261,7 @@ internal static class ObservationStreamEndpoints
             ObservationStreamStatus.SlowConsumerGap(datastreamId),
             ObservationStreamJsonContext.Default.ObservationStreamStatus);
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        budget.CancelAfter(GapWriteBudget);
+        budget.CancelAfter(TransportWriteBudget);
         try
         {
             if (socket is null)

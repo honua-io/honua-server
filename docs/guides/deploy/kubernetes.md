@@ -24,8 +24,9 @@ moving branch.
 ## Prerequisites
 
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
-- A PostGIS endpoint reachable from the cluster. Jobs, coordination and caches
-  are stored in PostGIS; no other data service is needed.
+- A PostGIS endpoint reachable from the cluster. Jobs and coordination are
+  stored in PostGIS and each replica keeps its cache in memory; no other data
+  service is needed.
 - A default StorageClass for the single-node persistent volume.
 - From 2026.1, x64 nodes need an x86-64-v2 CPU; check each node pool with
   [the CPU baseline preflight](troubleshooting.md#cpu-baseline-x86-64-v2).
@@ -508,4 +509,4 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 
 - [Monitor Honua Server](monitoring.md)
 - [Scale and tune performance](scaling-and-performance.md)
-- [Deploy on AWS and Azure](cloud-deployments.md)
+- [Cloud deployments](cloud-deployments.md)
