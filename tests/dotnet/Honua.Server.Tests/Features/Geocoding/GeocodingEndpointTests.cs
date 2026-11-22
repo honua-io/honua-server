@@ -940,8 +940,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_WhenGeocodingDisabled_Returns404()
     {
-        using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        using var factory = ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1058,8 +1059,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         var nominatimOverride = new FailingGeocodeProvider("nominatim");
         var azureOverride = new FailingGeocodeProvider("azuremaps");
         var amazonOverride = new FailingGeocodeProvider("amazonlocation");
-        using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        using var factory = ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1682,8 +1684,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     // Community and need no license at all.
     private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider, bool grantEnterpriseForBatch = false)
     {
-        return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        return ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1725,8 +1728,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
             SupportsStructuredInput: false,
             SupportsBiasing: true));
 
-        return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        return ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
