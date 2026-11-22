@@ -152,6 +152,7 @@ internal static partial class SceneBimIngestEndpoints
 
         try
         {
+            var executor = context.RequestServices.GetRequiredService<CityGmlScenePublishExecutor>();
             var outcome = await executor.IngestAsync(request, cancellationToken).ConfigureAwait(false);
             await InvalidateSceneCacheAsync(context, outcome.SceneId, logger, cancellationToken).ConfigureAwait(false);
 

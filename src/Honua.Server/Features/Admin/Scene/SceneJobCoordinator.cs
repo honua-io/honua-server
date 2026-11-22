@@ -105,15 +105,17 @@ internal sealed partial class SceneJobCoordinator : IDisposable
 
         public bool TryUpdateUploadBytes(long bytes)
         {
-            lock (coordinator._admissionLock)
+            var owner = _owner
+                ?? throw new InvalidOperationException("Scene job admission has already been used.");
+            lock (owner._admissionLock)
             {
                 var increase = bytes - UploadBytes;
-                if (increase > MaxAdmittedUploadBytes - coordinator._admittedUploadBytes)
+                if (increase > MaxAdmittedUploadBytes - owner._admittedUploadBytes)
                 {
                     return false;
                 }
 
-                coordinator._admittedUploadBytes += increase;
+                owner._admittedUploadBytes += increase;
                 UploadBytes = bytes;
                 return true;
             }

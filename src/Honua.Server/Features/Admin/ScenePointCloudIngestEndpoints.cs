@@ -202,6 +202,7 @@ internal static partial class ScenePointCloudIngestEndpoints
 
         try
         {
+            var executor = context.RequestServices.GetRequiredService<PointCloudScenePublishExecutor>();
             var outcome = await executor.IngestAsync(request, cancellationToken).ConfigureAwait(false);
             await InvalidateSceneCacheAsync(context, outcome.SceneId, logger, cancellationToken).ConfigureAwait(false);
 
