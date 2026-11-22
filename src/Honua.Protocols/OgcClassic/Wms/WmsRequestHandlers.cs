@@ -248,7 +248,7 @@ internal static partial class WmsRequestHandlers
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) || !ResourceHasGeometry(resource!)
+            if (!snapshot.IsRoutable(publication) || !OgcClassicRasterSupport.IsRenderableResource(resource!)
                 || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
             {
                 continue;
@@ -314,19 +314,6 @@ internal static partial class WmsRequestHandlers
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
-
-    private static bool ResourceHasGeometry(MetadataV2Object resource)
-    {
-        if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
-        {
-            return true;
-        }
-
-        // V2 graphs that don't fill in the typed Spatial slot still surface geometry through
-        // the schema (Geometry/Geography field). Match the WCS/WMTS V2 ports — both are
-        // treated as "this layer is renderable".
-        return resource.FindPrimaryGeometryField() is not null;
-    }
 
     private static string GetWmsLayerDisplayName(WmsLayer layer)
         => layer.Identifier;
@@ -444,7 +431,8 @@ internal static partial class WmsRequestHandlers
         var hasTemporalLayer = false;
         for (var i = 0; i < layers.Length; i++)
         {
-            if (!HasDeclaredTimeDimension(layers[i]) &&
+            if (!OgcClassicRasterSupport.IsRasterResource(layers[i].Resource) &&
+                !HasDeclaredTimeDimension(layers[i]) &&
                 TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layers[i].Resource, out var selection))
             {
                 // Match GetCapabilities' effective gate, not just the presence of
@@ -743,6 +731,12 @@ internal static partial class WmsRequestHandlers
             if (string.IsNullOrWhiteSpace(token))
             {
                 continue;
+            }
+
+            if (OgcClassicRasterSupport.IsRasterResource(layers[i].Resource))
+            {
+                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                    "FILTER is not supported for raster layers."));
             }
 
             var (filter, error) = TranslateWmsLayerFilter(

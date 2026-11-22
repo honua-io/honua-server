@@ -17,7 +17,7 @@ Honua exposes layers and features as an OData v4 service at `/odata`, so BI tool
 | GET | `/odata/Layers`, `/odata/Layers/$count`, `/odata/Layers({layerId})` | Layer catalog. |
 | GET | `/odata/Layers({layerId})/Features`, `.../Features/$count` | Layer-scoped feature query. |
 | GET | `/odata/Features`, `/odata/Features/$count` | Cross-layer feature query (requires a `LayerId` filter). |
-| GET | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | Single feature by canonical key (also `/$ref`, `/$value`). |
+| GET | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | Single feature by canonical key (also `/$ref`). |
 | POST | `/odata/Features`, `/odata/Layers({layerId})/Features` | Create feature. |
 | PATCH | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | Partial update. |
 | PUT | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | Replace feature. |
@@ -121,7 +121,7 @@ paging. Child grouping observes request cancellation.
 | Category | Supported |
 | --- | --- |
 | Logical | `and`, `or`, `not` |
-| Comparison | `eq`, `ne`, `gt`, `ge`, `lt`, `le` (including `eq null` / `ne null`) |
+| Comparison | `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in` (including `eq null` / `ne null`) |
 | Arithmetic | `add`, `sub`, `mul`, `div`, `mod` |
 | String functions | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` |
 | Numeric functions | `round`, `floor`, `ceiling`, `abs` |
@@ -129,7 +129,7 @@ paging. Child grouping observes request cancellation.
 | Spatial functions | `geo.distance`, `geo.intersects`, and `geo.length` (geodesic length in meters) with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. `geo.length` takes the geography or geometry property, not a literal. |
 | Typed literals | `date'...'`, `datetime'...'`/`datetimeoffset'...'`, `geography'...'`/`geometry'...'` |
 
-Not supported (rejected with 400): `has`, `in`, `any`, `all` operators; `cast`/`isof`; any `geo.*` function beyond `geo.distance`, `geo.intersects`, and `geo.length`; `$levels`.
+Not supported (rejected with 400): `has`, `any`, `all` operators; `cast`/`isof`; any `geo.*` function beyond `geo.distance`, `geo.intersects`, and `geo.length`; `$levels`.
 
 ## $apply aggregation
 

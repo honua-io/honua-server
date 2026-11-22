@@ -740,7 +740,7 @@ public sealed class FormPackageValidator
         JsonElement value,
         List<FormValidationIssue> issues)
     {
-        if (!IsCompatibleJsonKind(value, layerField.Type))
+        if (!IsCompatibleJsonKind(value, layerField.Type) || !IsValidExactValue(value, layerField.Type))
         {
             AddError(issues, "fieldValueTypeMismatch", $"Submitted value for '{field.FieldId}' is not compatible with target field '{layerField.Name}'.", field.FieldId);
         }
@@ -1101,10 +1101,11 @@ public sealed class FormPackageValidator
         {
             "text" or "string" or "email" or "barcode" or "choice" => layerType == MetadataV2FieldType.String,
             "integer" or "int" => layerType is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger,
-            "number" or "decimal" or "double" => layerType is MetadataV2FieldType.Double or MetadataV2FieldType.Float,
+            "number" or "decimal" or "double" => layerType is MetadataV2FieldType.Double or MetadataV2FieldType.Float
+                or MetadataV2FieldType.Decimal,
             "boolean" or "bool" => layerType == MetadataV2FieldType.Boolean,
             "date" => layerType is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime,
-            "datetime" => layerType == MetadataV2FieldType.DateTime,
+            "datetime" => layerType is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset,
             "uuid" or "guid" => layerType == MetadataV2FieldType.Uuid,
             "json" => layerType == MetadataV2FieldType.Json,
             _ => false
@@ -1114,7 +1115,9 @@ public sealed class FormPackageValidator
     private static bool IsCompatibleJsonKind(JsonElement value, MetadataV2FieldType layerType)
         => layerType switch
         {
-            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time => value.ValueKind == JsonValueKind.String,
+            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset => value.ValueKind == JsonValueKind.String,
+            MetadataV2FieldType.Decimal => value.ValueKind is JsonValueKind.Number or JsonValueKind.String,
             MetadataV2FieldType.Integer => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _),
             MetadataV2FieldType.BigInteger => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
             MetadataV2FieldType.Double => TryReadFiniteJsonNumber(value, out _),
@@ -1123,6 +1126,41 @@ public sealed class FormPackageValidator
             MetadataV2FieldType.Json => true,
             _ => true
         };
+
+    // Form submissions reach the feature writer without the attribute validator, so exact values are
+    // parsed here: a TimestampOffset needs RFC 3339 text with an offset, a Decimal exact base-10 digits
+    // (decimal text, or a JSON number that converts exactly) within the decimal range.
+    private static bool IsValidExactValue(JsonElement value, MetadataV2FieldType layerType)
+    {
+        if (layerType is not (MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Decimal))
+        {
+            return true;
+        }
+
+        var text = value.ValueKind == JsonValueKind.String ? value.GetString() : ExactAttributeValues.FormatDecimalNumber(value);
+        if (text is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (layerType == MetadataV2FieldType.Decimal)
+            {
+                _ = ExactAttributeValues.ParseDecimal(text);
+            }
+            else
+            {
+                _ = ExactAttributeValues.ParseTimestampOffset(text);
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+        {
+            return false;
+        }
+    }
 
     private static bool TryReadFiniteJsonNumber(JsonElement value, out double result)
     {

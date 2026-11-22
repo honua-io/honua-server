@@ -16,7 +16,7 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
+public sealed partial class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
 {
     // The class host by default; a case that writes switches to its own private host.
     private WebAppFixture _fixture;
@@ -623,7 +623,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("objectIds parameter is required"));
+            .Should().Contain(detail => detail.Contains("objectIds or globalIds parameter is required"));
     }
 
     [IntegrationTest]

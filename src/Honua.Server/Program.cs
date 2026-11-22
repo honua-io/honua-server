@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -705,7 +705,7 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
     builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
 }
 #endif
-Honua.Server.Features.Admin.PairedPublications.PublicPublicationDestinationServiceCollectionExtensions
+Honua.Server.Features.Admin.Exports.PublicPublicationDestinationServiceCollectionExtensions
     .AddPublicPublicationDestination(builder.Services, builder.Configuration);
 
 // Configure file upload security limits
@@ -2055,7 +2055,8 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
-app.MapPairedPublicationReadEndpoints();
+app.MapExportReadEndpoints();
+app.MapExportAdminEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();

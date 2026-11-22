@@ -24,8 +24,8 @@ The exact server digest is `server.image` in that release's
 | npm | `@honua/sdk-js@0.4.0` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.2.5` | Application scaffolding CLI | None |
 | npm | `@honua/mcp-server@0.6.1` | Alternative MCP proxy | None |
-| NuGet | `Honua.Sdk` `1.12.0` | Alternative .NET SDK | None |
-| NuGet | `Honua.Sdk.Admin` `1.12.0` | Dedicated .NET control-plane SDK | None |
+| NuGet | `Honua.Sdk` `2.2.0` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `2.2.0` | Dedicated .NET control-plane SDK | None |
 
 Pick the one for your language; you do not need the others. The npm and NuGet
 pins are alternative client selections, not a claim that the Python quickstart
@@ -39,7 +39,7 @@ anonymously:
 
 ```bash
 dotnet new console
-dotnet add package Honua.Sdk --version 1.12.0
+dotnet add package Honua.Sdk --version 2.2.0
 ```
 
 No feed to add, no token, no package-source mapping. The same builds are also

@@ -688,8 +688,11 @@ public sealed partial class PbfQueryFormatterTests
                     offset += 8;
                     break;
                 case 2:
-                    offset += checked((int)ReadVarint(message, ref offset));
-                    break;
+                    {
+                        var length = checked((int)ReadVarint(message, ref offset));
+                        offset += length;
+                        break;
+                    }
                 case 5:
                     offset += 4;
                     break;
@@ -723,8 +726,11 @@ public sealed partial class PbfQueryFormatterTests
 
                     break;
                 case 2:
-                    offset += checked((int)ReadVarint(message, ref offset));
-                    break;
+                    {
+                        var length = checked((int)ReadVarint(message, ref offset));
+                        offset += length;
+                        break;
+                    }
                 case 5:
                     offset += 4;
                     break;

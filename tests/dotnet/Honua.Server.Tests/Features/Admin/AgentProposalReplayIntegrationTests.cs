@@ -27,6 +27,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
@@ -376,7 +377,10 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
 
     private async Task<bool[]> AllowAnonymousAsync()
     {
+        // Read in the schema the clients and the approved replay use. The test graph follows the
+        // ambient schema, which only the concrete context sets; it reverts when this method returns.
         using var scope = _fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<SchemaContext>().CurrentSchema = _fixture.CurrentSchema;
         var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
         var services = snapshot.Graph.Services.Where(service => service.Metadata.Name == ServiceName).ToArray();
         services.Should().NotBeEmpty();

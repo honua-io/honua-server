@@ -54,13 +54,11 @@ PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested conf
 | --- | --- | --- |
 | `postgis` | Yes | Spatial operations, geometry types, spatial indexing. |
 | `postgis_raster` | For raster features | Raster data storage and analysis. |
-| `pgcrypto` | Yes | Cryptographic functions for secure identifiers. |
 | `unaccent` | Yes | Accent-insensitive text search normalization. |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_raster;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 ```
 
@@ -137,14 +135,14 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 ## AWS Aurora PostgreSQL
 
 1. Create a custom DB cluster parameter group (or modify the default); Aurora bundles PostGIS — enable it via the parameter group. Optionally include `pg_stat_statements` in `shared_preload_libraries` for monitoring.
-2. Create the four extensions listed above on your database.
+2. Create the extensions listed above on your database (`postgis` and `unaccent`, plus `postgis_raster` if using raster features).
 3. Connection pooling: Aurora provides a built-in PgBouncer-compatible endpoint. Use the cluster writer endpoint for Honua's connection.
 4. Failover: Aurora automatic failover updates the cluster DNS endpoint; no application-level changes are needed.
 
 ## Azure Database for PostgreSQL Flexible Server
 
-1. In **Server parameters**, set `azure.extensions` to include `POSTGIS`, `POSTGIS_RASTER`, `PGCRYPTO`, `UNACCENT` (may require a restart).
-2. Create the four extensions on your database.
+1. In **Server parameters**, set `azure.extensions` to include `POSTGIS`, `POSTGIS_RASTER`, `UNACCENT` (may require a restart).
+2. Create the extensions on your database (`postgis` and `unaccent`, plus `postgis_raster` if using raster features).
 3. Connection pooling: Flexible Server supports built-in PgBouncer; Honua works with both direct and pooled connections.
 4. High availability: configure zone-redundant HA. Honua connects to the primary endpoint; failover is transparent at the DNS level.
 
@@ -223,7 +221,7 @@ starts when the last lease returns. Minimum pool size applies while the source
 pool remains active; a later request recreates an expired pool. Active leases
 finish normally, and the primary default database pool is unaffected.
 
-The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
+The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool` (requires admin authentication).
 
 ## Indexing numeric source columns
 

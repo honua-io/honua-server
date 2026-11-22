@@ -248,6 +248,7 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
 
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
     {
+        ControlPlaneEnumValidation.Validate(options, failures);
         ValidateCustomCodeWorkloadsAreBatchOnly(options.ExecutionWorkloads, failures);
         ValidateWorkloadTargetKindsMatchBackends(options.ExecutionWorkloads, failures);
 

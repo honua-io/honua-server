@@ -33,24 +33,7 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        // The seeded created_date field is a calendar date; last_edited_date is a timestamp.
-        await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
-        {
-            Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with
-            {
-                CreatorField = "created_user",
-                CreatedAtField = "created_date",
-                EditorField = "last_edited_user",
-                UpdatedAtField = "last_edited_date",
-            },
-            SchemaFields =
-            [
-                .. resource.SchemaFields,
-                new MetadataV2Field { Name = "created_user", Type = MetadataV2FieldType.String, Nullable = true },
-                new MetadataV2Field { Name = "last_edited_user", Type = MetadataV2FieldType.String, Nullable = true },
-                new MetadataV2Field { Name = "last_edited_date", Type = MetadataV2FieldType.DateTime, Nullable = true },
-            ],
-        });
+        await TrackEditsAsync(WebAppFixture.TestLayerId);
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {
             HttpHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler())
@@ -102,6 +85,61 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
         Instant(updated, "last_edited_date").Should().BeOnOrAfter(insertedAt);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits")]
+    public async Task ApplyServiceEdits_ForgedTrackingValues_GetOneStampAcrossLayers()
+    {
+        await TrackEditsAsync(layerId: 1);
+        var before = DateTimeOffset.UtcNow;
+        var request = new Proto.ApplyServiceEditsRequest { ServiceId = WebAppFixture.TestServiceId, RollbackOnFailure = true };
+        foreach (var layerId in new[] { WebAppFixture.TestLayerId, 1 })
+        {
+            var add = ForgedFeature(id: 0, name: "service tracked");
+            add.Geometry = new Proto.Geometry { Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 } };
+            request.Edits.Add(new Proto.ServiceLayerEdits { LayerId = layerId, Adds = { add } });
+        }
+
+        var response = await _client!.ApplyServiceEditsAsync(request, _headers);
+
+        var stored = new List<Proto.Feature>();
+        foreach (var layer in response.Results)
+        {
+            var added = layer.Results.AddResults.Should().ContainSingle().Subject;
+            added.Success.Should().BeTrue();
+            stored.Add(await ReadAsync(added.ObjectId, layer.LayerId));
+        }
+        stored.Should().HaveCount(2).And.OnlyContain(feature => Text(feature, "created_user") != Forged);
+        stored.Select(feature => Text(feature, "last_edited_user")).Distinct().Should().ContainSingle();
+        Instant(stored[0], "last_edited_date").Should().BeOnOrAfter(before.AddMilliseconds(-1))
+            .And.Be(Instant(stored[1], "last_edited_date"));
+    }
+
+    // The seeded created_date field is a calendar date; last_edited_date is a timestamp.
+    // Fields a layer already declares are kept, so the same setup fits every test layer.
+    private Task TrackEditsAsync(int layerId) => _fixture.UpdateV2ResourceAsync(layerId, resource => resource with
+    {
+        Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with
+        {
+            CreatorField = "created_user",
+            CreatedAtField = "created_date",
+            EditorField = "last_edited_user",
+            UpdatedAtField = "last_edited_date",
+        },
+        SchemaFields =
+        [
+            .. resource.SchemaFields,
+            .. new[]
+            {
+                new MetadataV2Field { Name = "created_user", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date, Nullable = true },
+                new MetadataV2Field { Name = "last_edited_user", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "last_edited_date", Type = MetadataV2FieldType.DateTime, Nullable = true },
+            }.Where(field => resource.SchemaFields.All(existing => existing.Name != field.Name)),
+        ],
+    });
+
     private static Proto.Feature ForgedFeature(long id, string name)
     {
         var feature = new Proto.Feature { Id = id };
@@ -113,12 +151,12 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
         return feature;
     }
 
-    private async Task<Proto.Feature> ReadAsync(long objectId)
+    private async Task<Proto.Feature> ReadAsync(long objectId, int layerId = WebAppFixture.TestLayerId)
     {
         var request = new Proto.QueryFeaturesRequest
         {
             ServiceId = WebAppFixture.TestServiceId,
-            LayerId = WebAppFixture.TestLayerId,
+            LayerId = layerId,
             Where = $"objectid = {objectId.ToString(CultureInfo.InvariantCulture)}",
             OutFields = { "*" },
             ReturnGeometry = false

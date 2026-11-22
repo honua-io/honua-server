@@ -29,10 +29,10 @@ public sealed class LayerResponse
     public GeoServicesGovernanceLink[]? Links { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public required string? GeometryType { get; init; }
+    public string? GeometryType { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public required SpatialReferenceInfo? SpatialReference { get; init; }
+    public SpatialReferenceInfo? SpatialReference { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasZ")]

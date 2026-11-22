@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Features.Admin.Services;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
@@ -96,6 +97,16 @@ public sealed class ConfigurationDocumentationCredentialTests
             .Should().Be(code.Geometry.MaxVerticesPerGeometry.ToString(CultureInfo.InvariantCulture));
         EnvironmentDefault(documentation, "Limits__Connections__MaxConcurrentQueries")
             .Should().Be(code.Connections.MaxConcurrentQueries.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [UnitTest]
+    public void BuildDocumentation_SecurityHeadersDefaultsMatchOptions()
+    {
+        var documentation = CreateService(new LimitsOptions()).BuildDocumentation();
+        var defaults = new SecurityHeadersOptions();
+
+        Property(documentation, "SecurityHeaders:EnableHsts").DefaultValue.Should().Be(defaults.EnableHsts);
+        Property(documentation, "SecurityHeaders:HstsMaxAge").DefaultValue.Should().Be(defaults.HstsMaxAge);
     }
 
     // Each documented limit: its path, how to read it from LimitsOptions and the value ConfiguredLimits sets.

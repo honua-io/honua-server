@@ -76,7 +76,7 @@ public enum ObjectStorageCreateOutcome
 
 public interface IObjectStorageConnectionStore
 {
-    // False when the minter or the installation already holds the maximum number of open setups.
+    // A minter at maxOpenForMinter supersedes its own oldest open setups; false when the installation is full.
     Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken);
 
     // Returns the setup only while it is unexpired and unconsumed.
@@ -154,7 +154,7 @@ public sealed class ObjectStorageConnectionOptions
 
     public TimeSpan SetupLifetime { get; set; } = TimeSpan.FromHours(24);
 
-    // Open setups one principal may hold at once; the installation-wide cap still applies.
+    // Open setups one principal may hold at once; a new setup supersedes that principal's oldest. The installation-wide cap still applies.
     public int MaxOpenSetupsPerPrincipal { get; set; } = 5;
 
     public ObjectStorageBuiltInOptions BuiltIn { get; set; } = new();

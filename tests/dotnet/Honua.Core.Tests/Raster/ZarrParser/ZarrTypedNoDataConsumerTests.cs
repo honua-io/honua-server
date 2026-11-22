@@ -37,8 +37,8 @@ public sealed class ZarrTypedNoDataConsumerTests
             new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] }),
             YDimensionIndex: 1, XDimensionIndex: 2, GridXMin: 0, GridYMax: 2, CellWidth: 1, CellHeight: 1);
         var image = MiniPngDecoder.Decode(ZarrTileRenderer.RenderWithTypedFill(subset, slice, 2, fillValue: fill));
-        image.Pixel(0, 0).Item4.Should().Be(0, "the exact typed sentinel is transparent");
-        image.Pixel(1, 0).Item4.Should().Be(255, "its distinct adjacent integer is real data");
+        image.Pixel(0, 0).A.Should().Be(0, "the exact typed sentinel is transparent");
+        image.Pixel(1, 0).A.Should().Be(255, "its distinct adjacent integer is real data");
 
     }
 
@@ -98,10 +98,10 @@ public sealed class ZarrTypedNoDataConsumerTests
         var slice = new ZarrTileSlicePlan(new ZarrCoverageSubsetPlan(metadata.Arrays[0], request),
             YDimensionIndex: 1, XDimensionIndex: 2, GridXMin: 0, GridYMax: 2, CellWidth: 1, CellHeight: 1);
         var optOut = MiniPngDecoder.Decode(ZarrTileRenderer.Render(subset, slice, 2, fillValue: null));
-        optOut.Pixel(0, 0).Item4.Should().Be(255, "null opts out of finite nodata masking despite array metadata");
+        optOut.Pixel(0, 0).A.Should().Be(255, "null opts out of finite nodata masking despite array metadata");
         var overridden = MiniPngDecoder.Decode(ZarrTileRenderer.Render(subset, slice, 2, fillValue: 10d));
-        overridden.Pixel(0, 0).Item4.Should().Be(255, "the metadata sentinel must not override an explicit caller policy");
-        overridden.Pixel(1, 1).Item4.Should().Be(0, "the explicit override is the selected sentinel");
+        overridden.Pixel(0, 0).A.Should().Be(255, "the metadata sentinel must not override an explicit caller policy");
+        overridden.Pixel(1, 1).A.Should().Be(0, "the explicit override is the selected sentinel");
     }
 
     [Theory]

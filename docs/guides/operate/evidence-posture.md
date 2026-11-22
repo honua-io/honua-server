@@ -14,13 +14,13 @@ The 2026.1 operational read surfaces add an `evidencePosture` object to their ex
 
 - Completeness: `complete`, `partial`, `unavailable`, `notConfigured`.
 - Backend kinds: `inProcess`, `durableStore`, `configProjection`, `composite`, `unverified`.
-- Reason codes: `sourceUnavailable`, `neverSucceeded`, `stale`, `missingObservationTime`, `malformedObservationTime`, `futureObservationTime`, `partialResult`, `incompleteCoverage`, `truncated`, `backendUnverified`, `notConfigured`.
+- Reason codes: `sourceUnavailable`, `targetUnready`, `readbackIncomplete`, `neverSucceeded`, `stale`, `missingObservationTime`, `malformedObservationTime`, `futureObservationTime`, `partialResult`, `incompleteCoverage`, `truncated`, `backendUnverified`, `notConfigured`.
 - Top-level source ids: `honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`, `honua_deploy_operations`.
 
 Two composite reads also publish the section sources they are built from, alongside the top-level id:
 
 - `honua_ops_health` covers `honua_ops_health.health_checks`, `honua_ops_health.serving_latency`, `honua_ops_health.gp_queue`, `honua_ops_health.alert_dispatch`, `honua_ops_health.deploy_release`, and `honua_ops_health.database_cache`.
-- `honua_ops_findings` covers `honua_ops_findings.alert_dispatch`, `honua_ops_findings.control_plane`, `honua_ops_findings.deploy_preflight`, `honua_ops_findings.gp_queue`, `honua_ops_findings.workflow_operations`, `honua_ops_findings.serving_latency_rollup`, `honua_ops_findings.database_pressure`, `honua_ops_findings.batch_backends`, and `honua_ops_findings.catalog_rollbacks`.
+- `honua_ops_findings` covers `honua_ops_findings.alert_dispatch`, `honua_ops_findings.control_plane`, `honua_ops_findings.deploy_preflight`, `honua_ops_findings.gp_queue`, `honua_ops_findings.external_events`, `honua_ops_findings.workflow_operations`, `honua_ops_findings.serving_latency_rollup`, `honua_ops_findings.admission_pressure`, `honua_ops_findings.database_pressure`, `honua_ops_findings.batch_backends`, `honua_ops_findings.catalog_rollbacks`, and per-component `honua_ops_findings.self-check.<component>` sources.
 
 A composite source is `complete` only when every section it declares is individually actionable. Its `coverage.expectedComponentIds`/`coverage.includedComponentIds` name the sections it declared and the sections it actually covered, and its `observedAt` is no fresher than the oldest section it summarizes.
 

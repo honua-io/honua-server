@@ -14,6 +14,8 @@ namespace Honua.Ai.Grounding.Spec;
 
 internal static class SpecGroundingEndpointExtensions
 {
+    private static readonly string[] ArraySections = ["sources", "scope", "compute", "outputs"];
+
     private const string RoutePrefix = "/v1/grounding/spec";
     private const string JsonMimeType = "application/json";
 
@@ -361,6 +363,13 @@ internal static class SpecGroundingEndpointExtensions
             return false;
         }
 
+        if (FindWrongTypedSection(spec) is { } sectionError)
+        {
+            document = CreateEmptySpecDocument();
+            error = sectionError;
+            return false;
+        }
+
         try
         {
             document = spec.EnumerateObject().Any()
@@ -387,6 +396,24 @@ internal static class SpecGroundingEndpointExtensions
             error = $"spec could not be read: {ex.Message}";
             return false;
         }
+    }
+
+    // SpecJsonReader skips sections of the wrong JSON type; reject them here so a
+    // malformed spec is not summarized or mutated as if the section were absent.
+    // JSON null still means the section is absent.
+    private static string? FindWrongTypedSection(JsonElement spec)
+    {
+        foreach (var section in ArraySections)
+        {
+            if (spec.TryGetProperty(section, out var value) && value.ValueKind is not (JsonValueKind.Array or JsonValueKind.Null))
+            {
+                return $"spec.{section} must be a JSON array.";
+            }
+        }
+
+        return spec.TryGetProperty("map", out var map) && map.ValueKind is not (JsonValueKind.Object or JsonValueKind.Null)
+            ? "spec.map must be a JSON object."
+            : null;
     }
 
     private static SpecDocument CreateEmptySpecDocument()
