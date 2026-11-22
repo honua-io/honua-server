@@ -94,6 +94,25 @@ public sealed class SaveStudioContentVersionRequest
     public string? ChangeNote { get; init; }
 }
 
+public sealed class RestoreStudioDraftRevisionRequest
+{
+    [Range(1, long.MaxValue)]
+    [JsonPropertyName("expectedGeneration")]
+    public required long ExpectedGeneration { get; init; }
+}
+
+public sealed class StudioDraftRevisionListResponse
+{
+    [JsonPropertyName("draftId")]
+    public required Guid DraftId { get; init; }
+
+    [JsonPropertyName("currentGeneration")]
+    public required long CurrentGeneration { get; init; }
+
+    [JsonPropertyName("items")]
+    public required IReadOnlyList<StudioDraftRevisionSummary> Items { get; init; }
+}
+
 public sealed class CompareStudioContentVersionsRequest
 {
     [Required]
