@@ -10,19 +10,23 @@ namespace Honua.Server.Tests.Features.Forms;
 public sealed class FormPackageIdentifierTests
 {
     [UnitTheory]
-    [InlineData(null, true)]
-    [InlineData("form-0123abcd", true)]
-    [InlineData("Site_Inspection-2", true)]
-    [InlineData("../evil", false)]
-    [InlineData("a/b", false)]
-    [InlineData("a.b", false)]
-    [InlineData("a b", false)]
-    [InlineData("tab\there", false)]
-    [InlineData("café", false)]
-    [InlineData("", false)]
-    [InlineData("IMPORT", false)]
-    public void IsAcceptable_AllowsOnlySafeRouteSegments(string? formId, bool expected)
-        => FormPackageIdentifier.IsAcceptable(formId).Should().Be(expected);
+    [InlineData(null)]
+    [InlineData("form-0123abcd")]
+    [InlineData("Site_Inspection-2")]
+    public void IsAcceptable_SafeOrAbsentId_IsAccepted(string? formId)
+        => FormPackageIdentifier.IsAcceptable(formId).Should().BeTrue();
+
+    [UnitTheory]
+    [InlineData("../evil")]
+    [InlineData("a/b")]
+    [InlineData("a.b")]
+    [InlineData("a b")]
+    [InlineData("tab\there")]
+    [InlineData("caf\u00e9")]
+    [InlineData("")]
+    [InlineData("IMPORT")]
+    public void IsAcceptable_UnsafeOrReservedId_IsRejected(string formId)
+        => FormPackageIdentifier.IsAcceptable(formId).Should().BeFalse();
 
     [UnitTest]
     public void IsAcceptable_BoundsLength()

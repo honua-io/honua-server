@@ -5,11 +5,9 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Server.Features.Forms;
 
-/// <summary>
-/// A caller-supplied form id becomes a URL path segment on the admin and runtime form routes,
-/// so it is limited to ASCII letters, digits, hyphens and underscores (1-128 characters).
-/// An absent id is allowed: the store generates one.
-/// </summary>
+// A caller-supplied form id becomes a URL path segment on the admin and runtime form routes,
+// so it is limited to ASCII letters, digits, hyphens and underscores (1-128 characters).
+// An absent id is allowed: the store generates one.
 internal static partial class FormPackageIdentifier
 {
     internal const int MaxLength = 128;
