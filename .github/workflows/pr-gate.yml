@@ -1383,8 +1383,8 @@ jobs:
         timeout-minutes: 20
         run: |
           set -euo pipefail
-          scripts/ci/dotnet-restore-retry.sh src/Honua.Server/Honua.Server.csproj
-          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+          scripts/ci/dotnet-restore-retry.sh src/Honua.Server/Honua.Server.csproj /p:PublishAot=false
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore /p:PublishAot=false /p:TreatWarningsAsErrors=true
 
       - name: Log in to GHCR for the prior image
         if: steps.applies.outputs.applies == 'true'
