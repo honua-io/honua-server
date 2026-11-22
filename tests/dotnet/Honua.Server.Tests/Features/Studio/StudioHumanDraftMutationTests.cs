@@ -208,7 +208,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         using var scope = _fixture.Services.CreateScope();
         var proposal = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
         proposal.Should().NotBeNull();
-        proposal!.RequestedBy.Should().Be($"ApiKey:api-key:{key.ApiKey.Id:D}");
+        proposal!.RequestedBy.Should().Be($"apikey:api-key:{key.ApiKey.Id:D}");
     }
 
     private async Task AssertBootstrapRefusedAsync(HttpResponseMessage response)
