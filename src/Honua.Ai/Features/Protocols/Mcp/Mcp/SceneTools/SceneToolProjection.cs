@@ -94,7 +94,7 @@ internal static class SceneToolProjection
         if (!decision.IsAllowed)
         {
             throw new GeoprocessingAuthorizationException(
-                decision.Reason ?? $"Caller is not authorized to read scene '{entry.Id}'.");
+                decision.FailureReason ?? $"Caller is not authorized to read scene '{entry.Id}'.");
         }
     }
 
