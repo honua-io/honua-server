@@ -61,7 +61,7 @@ public sealed class ETagEndpointFilterTests
         jsonOptions.Value.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
         var filter = new ETagEndpointFilter(NullLogger<ETagEndpointFilter>.Instance, jsonOptions);
 
-        var etagService = new ETagService(NullLogger<ETagService>.Instance);
+        var etagService = new ETagService();
         using var services = new ServiceCollection()
             .AddSingleton<IETagService>(etagService)
             .BuildServiceProvider();
