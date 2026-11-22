@@ -91,46 +91,51 @@ public sealed partial class AdminOperationRequestContractTests
         foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
         {
             var queryParams = ConnectImportQueryParameterNames(root, definition.OpenApiOperationId);
-            if (queryParams.Length == 0)
+            if (queryParams.Length > 0)
             {
-                continue;
+                await AssertConnectImportQueryForwardingAsync(definition, queryParams);
             }
+        }
+    }
 
-            var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
-            var routeNames = definition.Path.Split('/')
-                .Where(static segment => segment.StartsWith('{') && segment.EndsWith('}'))
-                .Select(static segment => segment[1..^1])
-                .ToArray();
-            foreach (var routeName in routeNames)
-            {
-                parameters[routeName] = "route-val";
-            }
+    private static async Task AssertConnectImportQueryForwardingAsync(
+        AdminConnectImportOperationCatalog.Definition definition,
+        string[] queryParams)
+    {
+        var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var routeNames = definition.Path.Split('/')
+            .Where(static segment => segment.StartsWith('{') && segment.EndsWith('}'))
+            .Select(static segment => segment[1..^1])
+            .ToArray();
+        foreach (var routeName in routeNames)
+        {
+            parameters[routeName] = "route-val";
+        }
 
-            foreach (var queryName in queryParams)
-            {
-                parameters[queryName] = "query-val";
-            }
+        foreach (var queryName in queryParams)
+        {
+            parameters[queryName] = "query-val";
+        }
 
-            using var capture = new CaptureHandler();
-            using var client = new HttpClient(capture);
-            var executor = CreateConnectImport(definition.OperationId, client);
-            await executor.SubmitAsync(new OperationRequest
-            {
-                OperationId = definition.OperationId,
-                Parameters = parameters,
-            }, new OperationPolicyContext());
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateConnectImport(definition.OperationId, client);
+        await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = parameters,
+        }, new OperationPolicyContext());
 
-            foreach (var queryName in queryParams)
-            {
-                capture.Uri!.Query.Should().Contain($"{queryName}=query-val",
-                    $"{definition.OperationId} must forward query parameter '{queryName}'");
-            }
+        foreach (var queryName in queryParams)
+        {
+            capture.Uri!.Query.Should().Contain($"{queryName}=query-val",
+                $"{definition.OperationId} must forward query parameter '{queryName}'");
+        }
 
-            foreach (var routeName in routeNames)
-            {
-                capture.Uri!.Query.Should().NotContain($"{routeName}=",
-                    $"{definition.OperationId} must not leak route parameter '{routeName}' into the query string");
-            }
+        foreach (var routeName in routeNames)
+        {
+            capture.Uri!.Query.Should().NotContain($"{routeName}=",
+                $"{definition.OperationId} must not leak route parameter '{routeName}' into the query string");
         }
     }
 
