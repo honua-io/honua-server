@@ -306,9 +306,16 @@ public sealed class SceneRoundTripAndI3sConformanceTests : IDisposable
     private static void AssertValidI3sRootGeometry(I3sSceneResources resources)
     {
         resources.Pages.Should().NotBeEmpty();
-        resources.RootGeometry.Should().NotBeNull("root-node geometry must be populated for I3S 1.7/1.8 renderability");
+        var geometry = resources.Nodes.TryGetValue(0, out var directRoot)
+            ? directRoot.Geometry
+            : resources.RootGeometry;
+        geometry.Should().NotBeNull("root-node geometry must be available for I3S 1.7/1.8 renderability");
+        if (directRoot is not null)
+        {
+            resources.RootGeometry.Should().BeNull("direct root geometry is stored only in node zero");
+        }
 
-        var rootGeom = resources.RootGeometry!;
+        var rootGeom = geometry!;
         rootGeom.VertexCount.Should().BeGreaterThan(0);
         rootGeom.FeatureCount.Should().BeGreaterThan(0);
 

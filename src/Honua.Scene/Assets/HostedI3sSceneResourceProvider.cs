@@ -174,20 +174,25 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
 
             var all = meshes.SelectMany(mesh => mesh.Triangles.SelectMany(triangle => new[] { triangle.A.Position, triangle.B.Position, triangle.C.Position }))
                 .Select(point => EcefCoordinateTransform.FromEcef(point.X, point.Y, point.Z)).ToArray();
-            var rootGeometry = BuildRootCompositeGeometry(meshes, features, _nodes[0].Entry.Obb!, attributes, resources, cancellationToken);
             var pages = _nodes.Select(node => node.Entry).Chunk(I3sNodePageProjector.NodesPerPage)
                 .Select(entries => new I3sNodePageDocument { Nodes = entries }).ToArray();
             var result = new I3sSceneResources(pages, resources, attributes, I3sPersistedResourceEncoder.BuildFields(attributes), materials, textures,
                 I3sPersistedResourceEncoder.Statistics(features, attributes),
                 new(all.Min(p => p.Longitude), all.Min(p => p.Latitude), all.Max(p => p.Longitude), all.Max(p => p.Latitude), all.Min(p => p.Height), all.Max(p => p.Height)),
-                _assets.ToArray(),
-                rootGeometry);
+                _assets.ToArray());
             if (result.ByteSize > ByteBudget || !result.Assets.All(asset => IsCurrent(scene, asset)))
             {
                 throw new InvalidDataException("Scene revision changed or exceeds the derived resource budget.");
             }
 
-            return result;
+            if (resources.ContainsKey(0))
+            {
+                return result;
+            }
+
+            var remainingBytes = ByteBudget - result.ByteSize;
+            var rootGeometry = BuildRootCompositeGeometry(meshes, features, _nodes[0].Entry.Obb!, attributes, remainingBytes, cancellationToken);
+            return result with { RootGeometry = rootGeometry };
         }
 
         private static I3sNodeGeometry? BuildRootCompositeGeometry(
@@ -195,15 +200,12 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
             SceneCachedFeature[] features,
             I3sOrientedBoundingBox rootObb,
             IReadOnlyList<I3sAttributeStorageInfo> attributes,
-            Dictionary<int, I3sNodeResources> existingNodes,
+            long remainingBytes,
             CancellationToken cancellationToken)
         {
-            if (existingNodes.TryGetValue(0, out var directRoot))
-            {
-                return directRoot.Geometry;
-            }
-
-            if (meshes.Length == 0 || features.Length == 0)
+            var triangleCount = meshes.Sum(mesh => mesh.Triangles.Count);
+            var vertexCount = triangleCount * 3L;
+            if (I3sPersistedResourceEncoder.UncompressedGeometrySize(vertexCount, features.Length) > remainingBytes)
             {
                 return null;
             }
@@ -214,7 +216,7 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
                 featureIndexById[features[i].Id] = i;
             }
 
-            var mergedTriangles = new List<SceneMeshTriangle>(meshes.Sum(m => m.Triangles.Count));
+            var mergedTriangles = new List<SceneMeshTriangle>(triangleCount);
             foreach (var mesh in meshes)
             {
                 foreach (var triangle in mesh.Triangles)

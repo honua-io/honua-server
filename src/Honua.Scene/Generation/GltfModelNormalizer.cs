@@ -238,8 +238,10 @@ internal static class GltfModelNormalizer
             ?? throw new ValidationException(
                 $"{SceneGenerationErrorCodes.ModelAssetInvalid}: glTF buffer entry must be an object.");
 
-        var uri = bufferObj["uri"]?.GetValue<string>();
-        if (string.IsNullOrWhiteSpace(uri) || !TryDecodeBase64DataUri(uri, out var binaryBuffer))
+        if (bufferObj["uri"] is not JsonValue bufferUri
+            || !bufferUri.TryGetValue<string>(out var uri)
+            || string.IsNullOrWhiteSpace(uri)
+            || !TryDecodeBase64DataUri(uri, out var binaryBuffer))
         {
             throw new ValidationException(
                 $"{SceneGenerationErrorCodes.ModelAssetInvalid}: glTF buffer must be an embedded base64 data URI; external buffer URIs are not permitted.");
@@ -282,14 +284,12 @@ internal static class GltfModelNormalizer
 
         foreach (var item in images)
         {
-            if (item is JsonObject imageObj && imageObj["uri"] is JsonValue uriNode)
+            if (item is JsonObject image && image["uri"] is { } uriNode
+                && (uriNode is not JsonValue value || !value.TryGetValue<string>(out var uri)
+                    || uri is null || !uri.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)))
             {
-                var uri = uriNode.GetValue<string>();
-                if (!uri.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new ValidationException(
-                        $"{SceneGenerationErrorCodes.ModelAssetInvalid}: External image URI '{uri}' is not permitted; embed images in the glTF/GLB.");
-                }
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.ModelAssetInvalid}: glTF image URIs must be embedded data:image URIs.");
             }
         }
     }
@@ -333,7 +333,7 @@ internal static class GltfModelNormalizer
                 _ => throw new InvalidDataException("External relative assets are not permitted in single-file model ingest."),
                 cancellationToken);
         }
-        catch (Exception ex) when (ex is InvalidDataException or JsonException or KeyNotFoundException or FormatException or OverflowException or IndexOutOfRangeException)
+        catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException or IndexOutOfRangeException)
         {
             throw new ValidationException(
                 $"{SceneGenerationErrorCodes.ModelAssetInvalid}: Model GLB validation failed: {ex.Message}",

@@ -163,13 +163,15 @@ public sealed class ModelScenePublishExecutorTests : IDisposable
         writtenGlb.AsSpan(0, 4).SequenceEqual("glTF"u8).Should().BeTrue();
     }
 
-    [UnitTest]
-    public async Task IngestAsync_GltfWithExternalBufferUri_RejectsWithModelAssetInvalid()
+    [Theory]
+    [InlineData("\"external.bin\"")]
+    [InlineData("42")]
+    public async Task IngestAsync_GltfWithInvalidBufferUri_RejectsWithModelAssetInvalid(string uriJson)
     {
-        var externalGltf = Encoding.UTF8.GetBytes("""
+        var externalGltf = Encoding.UTF8.GetBytes($$"""
             {
               "asset": { "version": "2.0" },
-              "buffers": [ { "uri": "external.bin", "byteLength": 36 } ]
+              "buffers": [ { "uri": {{uriJson}}, "byteLength": 36 } ]
             }
             """);
 

@@ -486,6 +486,44 @@ internal sealed partial class SceneTilesetArchiveImporter
         string tilesetFileName,
         HashSet<string> extractedFiles)
     {
+        var visited = new HashSet<string>(extractedFiles.Comparer);
+        var active = new HashSet<string>(extractedFiles.Comparer);
+        return Visit(tilesetFileName, 0);
+
+        TilesetInspectionResult Visit(string path, int depth)
+        {
+            if (depth > 16 || !active.Add(path))
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: External tileset references contain a cycle or exceed the supported depth.");
+            }
+
+            var inspection = InspectTileset(stagingDirectory, path, uri =>
+            {
+                var target = ResolveContentPath(path, uri);
+                if (!extractedFiles.Contains(target))
+                {
+                    throw new ValidationException(
+                        $"{SceneGenerationErrorCodes.OptionsInvalid}: Tileset '{path}' references missing content file '{uri}'.");
+                }
+
+                if (target.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && !visited.Contains(target))
+                {
+                    Visit(target, depth + 1);
+                }
+            });
+
+            active.Remove(path);
+            visited.Add(path);
+            return inspection;
+        }
+    }
+
+    private static TilesetInspectionResult InspectTileset(
+        string stagingDirectory,
+        string tilesetFileName,
+        Action<string> validateContentUri)
+    {
         var tilesetPath = Path.Join(stagingDirectory, tilesetFileName);
         if (!File.Exists(tilesetPath))
         {
@@ -546,7 +584,7 @@ internal sealed partial class SceneTilesetArchiveImporter
 
             var warnings = new List<string>();
             var extent = TryExtractExtent(tileRoot, boundingVolume, warnings);
-            ValidateContentReferences(tileRoot, extractedFiles, depth: 0);
+            ValidateContentReferences(tileRoot, validateContentUri, depth: 0);
 
             return new TilesetInspectionResult(version, extent, warnings.AsReadOnly());
         }
@@ -554,7 +592,7 @@ internal sealed partial class SceneTilesetArchiveImporter
 
     private static void ValidateContentReferences(
         JsonElement tile,
-        HashSet<string> extractedFiles,
+        Action<string> validateContentUri,
         int depth)
     {
         if (depth > 128)
@@ -565,7 +603,7 @@ internal sealed partial class SceneTilesetArchiveImporter
 
         if (tile.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object)
         {
-            ValidateSingleContentUri(content, extractedFiles);
+            ValidateSingleContentUri(content, validateContentUri);
         }
 
         if (tile.TryGetProperty("contents", out var contents) && contents.ValueKind == JsonValueKind.Array)
@@ -574,7 +612,7 @@ internal sealed partial class SceneTilesetArchiveImporter
             {
                 if (entry.ValueKind == JsonValueKind.Object)
                 {
-                    ValidateSingleContentUri(entry, extractedFiles);
+                    ValidateSingleContentUri(entry, validateContentUri);
                 }
             }
         }
@@ -585,13 +623,13 @@ internal sealed partial class SceneTilesetArchiveImporter
             {
                 if (child.ValueKind == JsonValueKind.Object)
                 {
-                    ValidateContentReferences(child, extractedFiles, depth + 1);
+                    ValidateContentReferences(child, validateContentUri, depth + 1);
                 }
             }
         }
     }
 
-    private static void ValidateSingleContentUri(JsonElement content, HashSet<string> extractedFiles)
+    private static void ValidateSingleContentUri(JsonElement content, Action<string> validateContentUri)
     {
         string? uri = null;
         if (content.TryGetProperty("uri", out var uriProp) && uriProp.ValueKind == JsonValueKind.String)
@@ -603,27 +641,47 @@ internal sealed partial class SceneTilesetArchiveImporter
             uri = urlProp.GetString();
         }
 
-        if (string.IsNullOrWhiteSpace(uri))
+        if (!string.IsNullOrWhiteSpace(uri))
         {
-            return;
+            validateContentUri(uri);
+        }
+    }
+
+    private static string ResolveContentPath(string documentPath, string uri)
+    {
+        ValidationException InvalidPath() => new(
+            $"{SceneGenerationErrorCodes.OptionsInvalid}: Tileset content URI '{uri}' must be a safe archive-relative path.");
+
+        var decoded = Uri.UnescapeDataString(uri.Split('?', '#')[0]);
+        if (decoded.Length == 0 || decoded.StartsWith('/') || decoded.Contains('\\') || decoded.Contains(':'))
+        {
+            throw InvalidPath();
         }
 
-        if (uri.Contains("://", StringComparison.Ordinal)
-            || uri.StartsWith('/')
-            || uri.StartsWith('\\')
-            || uri.Contains("..", StringComparison.Ordinal))
+        var segments = documentPath.Split('/').SkipLast(1).ToList();
+        foreach (var segment in decoded.Split('/'))
         {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Tileset content URI '{uri}' must be a safe archive-relative path.");
+            if (segment is "" or ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                if (segments.Count == 0)
+                {
+                    throw InvalidPath();
+                }
+
+                segments.RemoveAt(segments.Count - 1);
+            }
+            else
+            {
+                segments.Add(segment);
+            }
         }
 
-        var normalized = Uri.UnescapeDataString(uri.Split('?', '#')[0]).Replace('\\', '/').TrimStart('.');
-        normalized = normalized.TrimStart('/');
-        if (!extractedFiles.Contains(normalized))
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Tileset references missing content file '{uri}'.");
-        }
+        return string.Join('/', segments);
     }
 
     private static SceneExtent? TryExtractExtent(

@@ -16,7 +16,8 @@ internal static class SceneAssetStorageUploader
         ICloudFileStorage? storage,
         string sourceDirectory,
         string sceneId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? publicationId = null)
     {
         if (storage is null)
         {
@@ -24,6 +25,11 @@ internal static class SceneAssetStorageUploader
         }
 
         var prefix = SceneAssetHydration.BuildPrefix(sceneId);
+        if (publicationId is { } id)
+        {
+            prefix = $"{prefix}/{id:N}";
+        }
+
         var relativePaths = EnumerateRelativePaths(sourceDirectory);
 
         foreach (var relativePath in relativePaths)

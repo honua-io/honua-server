@@ -132,7 +132,7 @@ internal static class ScenePublishHelper
     {
         var newDatasetId = Guid.NewGuid();
         var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
-            commit.Storage, commit.StagingDirectory, commit.SceneId, cancellationToken).ConfigureAwait(false);
+            commit.Storage, commit.StagingDirectory, commit.SceneId, cancellationToken, newDatasetId).ConfigureAwait(false);
         if (storagePrefix is not null)
         {
             await SceneOutputGuard.RunAsync(() => SceneAssetHydration.WriteMarkerAsync(

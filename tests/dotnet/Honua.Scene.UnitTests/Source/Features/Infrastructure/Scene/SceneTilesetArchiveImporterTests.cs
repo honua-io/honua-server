@@ -205,6 +205,54 @@ public sealed class SceneTilesetArchiveImporterTests : IDisposable
         ex.Which.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
     }
 
+    [UnitTest]
+    public async Task ImportAsync_ExternalTileset_ResolvesContentRelativeToItsDocument()
+    {
+        var zip = CreateZip(
+            ("tileset.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson("nested/child.json"))),
+            ("nested/child.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson("../shared/tile.glb"))),
+            ("shared/tile.glb", BuildSampleGlb()));
+
+        await _importer.ImportAsync(new(zip, SceneId: "nested-valid"), CancellationToken.None);
+
+        _registration.Records.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("missing.glb", "missing content file")]
+    [InlineData("../tileset.json", "cycle")]
+    [InlineData("../../tile.glb", "safe archive-relative path")]
+    public async Task ImportAsync_InvalidExternalTileset_RejectsArchive(string contentUri, string error)
+    {
+        var zip = CreateZip(
+            ("tileset.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson("nested/child.json"))),
+            ("nested/child.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson(contentUri))));
+
+        var act = () => _importer.ImportAsync(new(zip, SceneId: "nested-invalid"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Message.Should().Contain(error);
+        _registration.Records.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task UploadTreeAsync_ConcurrentPublicationsForSameScene_UseSeparateAssetKeys()
+    {
+        Directory.CreateDirectory(_outputRoot);
+        await File.WriteAllTextAsync(Path.Join(_outputRoot, "tileset.json"), "{}");
+        var storage = new InMemoryCloudFileStorage();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        var prefixes = await Task.WhenAll(
+            SceneAssetStorageUploader.UploadTreeAsync(storage, _outputRoot, "publish-race", CancellationToken.None, first),
+            SceneAssetStorageUploader.UploadTreeAsync(storage, _outputRoot, "publish-race", CancellationToken.None, second));
+
+        prefixes.Should().Equal($"scenes/publish-race/{first:N}", $"scenes/publish-race/{second:N}");
+        storage.Keys.Should().Contain($"scenes/publish-race/{first:N}/tileset.json");
+        storage.Keys.Should().Contain($"scenes/publish-race/{second:N}/tileset.json");
+    }
+
     private static byte[] BuildSampleGlb()
         => ObjToGlbConverter.Convert(Encoding.UTF8.GetBytes("v 0 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n")).GlbBytes;
 
