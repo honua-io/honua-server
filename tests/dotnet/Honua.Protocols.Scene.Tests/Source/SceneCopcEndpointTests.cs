@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -179,15 +180,15 @@ public sealed class SceneCopcEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData("bytes={0}-")]
+    [InlineData("bytes=-64")]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/copc")]
-    public async Task GetCopc_BoundedOpenEndedOrSuffixRange_Returns206WithExactBytes(bool suffix)
+    public async Task GetCopc_BoundedOpenEndedOrSuffixRange_Returns206WithExactBytes(string rangeTemplate)
     {
         var start = _copcBytes.Length - 64;
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/scenes/{PublicCopcSceneId}/copc");
-        request.Headers.Range = suffix ? new RangeHeaderValue(null, 64) : new RangeHeaderValue(start, null);
+        request.Headers.Range = RangeHeaderValue.Parse(string.Format(CultureInfo.InvariantCulture, rangeTemplate, start));
 
         using var response = await _fixture.Client.SendAsync(request);
 
