@@ -24,6 +24,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
@@ -1281,6 +1282,11 @@ internal static partial class WmsRequestHandlers
         var exceptionsValue = context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS");
         if (IsWmsImageExceptionFormat(exceptionsValue))
         {
+            if (context is not null)
+            {
+                SharedCacheResponse.DoNotShare(context);
+            }
+
             return CreateWmsImageException(context, code, message, exceptionsValue);
         }
 
