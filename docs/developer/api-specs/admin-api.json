@@ -54433,7 +54433,8 @@
         "properties": {
           "etag": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Optimistic concurrency token supplied by the caller from the current layer discovery metadata."
           },
           "title": {
             "type": "string",
