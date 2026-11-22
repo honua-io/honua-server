@@ -48,9 +48,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            resource,
-            ImmutableArray<Link>.Empty,
-            numberMatched: null);
+            new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, null)).Bytes;
 
         using var document = JsonDocument.Parse(payload);
         var rawFeature = document.RootElement.GetProperty("features")[0];
@@ -72,9 +70,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            resource,
-            ImmutableArray<Link>.Empty,
-            numberMatched: null);
+            new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, null)).Bytes;
 
         using var document = JsonDocument.Parse(payload);
         var rawFeature = document.RootElement.GetProperty("features")[0];
@@ -96,9 +92,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            resource,
-            ImmutableArray<Link>.Empty,
-            numberMatched: null);
+            new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, null)).Bytes;
 
         using var document = JsonDocument.Parse(payload);
         var rawFeature = document.RootElement.GetProperty("features")[0];
@@ -118,9 +112,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload(
             [feature],
-            resource,
-            ImmutableArray<Link>.Empty,
-            numberMatched: null);
+            new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, null)).Bytes;
 
         using var document = JsonDocument.Parse(payload);
         var rawFeature = document.RootElement.GetProperty("features")[0];
@@ -147,9 +139,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload(
             [feature],
-            resource,
-            ImmutableArray<Link>.Empty,
-            numberMatched: null);
+            new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, null)).Bytes;
 
         using var document = JsonDocument.Parse(payload);
         var rawFeature = document.RootElement.GetProperty("features")[0];
@@ -160,7 +150,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
     }
 
     [UnitTest]
-    public void CreateRawFeatureCollectionPayloadWithHashLength_StablePrefixExcludesVolatileTimeStamp()
+    public void CreateRawFeatureCollectionPayload_StablePrefixExcludesVolatileTimeStamp()
     {
         var etagService = new ETagService();
         var resource = CreateResource(
@@ -171,9 +161,9 @@ public sealed class OgcFeaturesRawGeoJsonTests
             propertiesJson: "{\"category\":\"park\"}");
         var context = new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, 1);
 
-        var first = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([feature], context);
+        var first = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload([feature], context);
         Thread.Sleep(5);
-        var second = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([feature], context);
+        var second = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload([feature], context);
 
         var firstTag = OgcFeaturesQueryHandler.ComputeWeakETag(first.Bytes.Span[..first.StableHashLength], etagService);
         var secondTag = OgcFeaturesQueryHandler.ComputeWeakETag(second.Bytes.Span[..second.StableHashLength], etagService);
@@ -186,13 +176,13 @@ public sealed class OgcFeaturesRawGeoJsonTests
             id: 987,
             geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
             propertiesJson: "{\"category\":\"plaza\"}");
-        var third = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayloadWithHashLength([mutated], context);
+        var third = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload([mutated], context);
         var thirdTag = OgcFeaturesQueryHandler.ComputeWeakETag(third.Bytes.Span[..third.StableHashLength], etagService);
         thirdTag.Should().NotBe(firstTag);
     }
 
     [UnitTest]
-    public void CreateRawPointFeatureCollectionPayloadWithHashLength_StablePrefixExcludesVolatileTimeStamp()
+    public void CreateRawPointFeatureCollectionPayload_StablePrefixExcludesVolatileTimeStamp()
     {
         var etagService = new ETagService();
         var resource = CreateResource(
@@ -204,9 +194,9 @@ public sealed class OgcFeaturesRawGeoJsonTests
             y: 2.5);
         var context = new OgcFeaturesQueryHandler.RawPayloadContext(resource, ImmutableArray<Link>.Empty, 1);
 
-        var first = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([feature], context);
+        var first = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload([feature], context);
         Thread.Sleep(5);
-        var second = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([feature], context);
+        var second = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload([feature], context);
 
         var firstTag = OgcFeaturesQueryHandler.ComputeWeakETag(first.Bytes.Span[..first.StableHashLength], etagService);
         var secondTag = OgcFeaturesQueryHandler.ComputeWeakETag(second.Bytes.Span[..second.StableHashLength], etagService);
@@ -220,7 +210,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
             attributesJson: "{\"category\":\"plaza\"}",
             x: 1.25,
             y: 2.5);
-        var third = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayloadWithHashLength([mutated], context);
+        var third = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload([mutated], context);
         var thirdTag = OgcFeaturesQueryHandler.ComputeWeakETag(third.Bytes.Span[..third.StableHashLength], etagService);
         thirdTag.Should().NotBe(firstTag);
     }
