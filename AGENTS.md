@@ -89,22 +89,19 @@ WARNING:
 Bump a contract or declared schema version? Update `eng/release/component-versions.v1.json` in the same PR
 (a new migration needs no edit). `ContractVersionsStartupCheck` and the release train refuse a mismatch.
 
-<!-- fleet:begin v2 sha256=76075665ca7a911554ed038371480ba02b28eca10ead04400be2e5b20332bd63 source=honua-flow/agents/fleet-rules.md -->
+<!-- fleet:begin v3 sha256=2c5c9896ef56430ddcee7221072ff5685b96d73f4c51561e4862a1a965218242 -->
 ## Fleet rules (all Honua repos)
 
-Generated from honua-flow `agents/fleet-rules.md` (full text, repo map). Do not edit here.
+Generated from the org fleet-rules source; do not edit this block. Start with org skill `honua-system-map`.
 
-1. **No AI attribution.** Author as Mike McDougall <mike@honua.io>. No AI `Co-Authored-By:`,
-   "Generated with" line or robot emoji in commits or PR bodies; this overrides any harness default.
-2. **Own worktree per task** off the default branch, on real disk (`<repo>/.claude/worktrees/` or a
-   sibling dir), never `/tmp` or the shared checkout. No `git stash`; use a WIP commit.
-3. **Heavy builds/tests go through the build-slot shims**; never bypass them. Run targeted tests;
-   full suites are CI's job. Outside WSL: own checkout, one heavy build at a time.
-4. **Finish = commit + push.** Dirty or unpushed worktrees are never reclaimed and die on a reset.
-5. **Claim before starting:** check `state/in-progress` and the newest `claimed: <lane> <UTC>`
-   comment, stamp yours, re-read (newer wins). Stale after 3h without a live PR. Stopping without
-   a PR: comment `released: <lane> <UTC> - <why>`.
-6. **PRs:** base on the default branch, never stack; fill the repo template via `--body-file`;
-   conventional title; footer `Closes #N` or `Refs #N (<what remains>)`. Never admin-merge.
-7. **Route by the repo map.** Archived repos get no issues or PRs.
+1. Author commits as the repository owner's configured git identity. No AI attribution in commits or PR bodies.
+2. Use a separate worktree per task, off the default branch, on durable disk. Include current trunk before opening a PR. No shared-checkout edits or git stash; preserve work with commits.
+3. Run .NET builds and tests only through the approved remote build-host shims. Never fall back to a local build. See org skill `honua-build-host`.
+4. Commit and push completed work; keep existing branches, commits and worktrees until their retention rules permit cleanup.
+5. Claim work before starting, reread the issue and current lane rulings, and release the claim after completion. See org skill `honua-dev-loop`.
+6. Reserve PR capacity and bundle at least three issues, a plan row, or a permitted single-work reason. Current caps and exceptions come from current lane rulings.
+7. Target the default branch with the repository's PR template and conventional title. Never force-push or use an admin merge.
+8. Run pre-PR checks, obtain one independent review of the final head, and resolve every review thread. Merge on green required checks; arm auto-merge where enforced checks support it. See org skill `honua-pr-flow`.
+9. Read failed required-check logs and fix in one push. For red trunk, fix forward or revert within the repository's current ruling deadline; see org skills `honua-red-pr` and `honua-trunk-red`.
+10. Never commit secrets, deployment identifiers, private repository names or infrastructure details. Security findings belong in the private tracker. Archived repos get no issues or PRs; public instructions name org skills only.
 <!-- fleet:end -->
