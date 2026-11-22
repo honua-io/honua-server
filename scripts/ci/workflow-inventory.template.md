@@ -2311,3 +2311,14 @@ This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before 
 after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
 these small local shard measurements do not establish parallel PR Gate critical-path
 savings. The other WPS shard selections and their private hosts remain unchanged.
+
+### WFS configured metadata seed ownership
+
+Five read-only `Wfs20EndpointsTests` Pro applications borrow the existing class
+schema while preserving their individual metadata providers, licenses, services,
+clients and disposal. Mutation cases retain private schemas. All 440 assertion
+lines and 400 metadata lines remain; the WFS Endpoints owning shard runs every
+case on selected PRs and twice-daily full trunk runs. See
+[WFS 2.0 endpoint fixture lifetime](gate-model.md#wfs-20-endpoint-fixture-lifetime).
+No workflow, shard filter, runner count, required check name or aggregate `needs`
+dependency changes.
