@@ -84,10 +84,7 @@ internal static class FilterParserGuard
             BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply
                 or BinaryOperator.Divide or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power }
                 => LiteralType.Number,
-            BinaryExpression => LiteralType.Boolean,
             UnaryExpression { Operator: UnaryOperator.Negate } => LiteralType.Number,
-            UnaryExpression => LiteralType.Boolean,
-            SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate => LiteralType.Boolean,
             FunctionCall function => InferStaticFunctionType(function.FunctionName),
             _ => null
         };
