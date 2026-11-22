@@ -23,7 +23,7 @@ internal static class ObjectStorageConnectionEndpoints
     internal const string ConnectorUnavailableMessage = "Object storage is not available on this host.";
 
     internal const string TooManySetupsMessage =
-        "Too many object storage setups are open. Finish or abandon one; unused setups expire after a day.";
+        "Too many object storage setups are open on this server. Unused setups expire a day after they are created; try again later.";
 
     private const string QuickCreateBase = "https://console.aws.amazon.com/cloudformation/home#/stacks/quickcreate";
 

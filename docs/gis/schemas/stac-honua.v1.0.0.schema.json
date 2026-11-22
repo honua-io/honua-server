@@ -366,7 +366,7 @@
         "pmtiles_property",
         "geoparquet_column"
       ],
-      "description": "Stable feature identity, kept as text so leading zeros survive: a rendered tile feature resolves to its GeoParquet row through these names, never through tile geometry.",
+      "description": "Feature identity, kept as text so leading zeros survive: a rendered tile feature resolves to its GeoParquet row through these names, never through tile geometry. stable is true when the field is the Layer's declared text key and can be joined across Versions, and false when the identity is the object id rendered as text, which a reload can renumber. An omitted stable means true.",
       "properties": {
         "field": {
           "type": "string",
@@ -379,6 +379,9 @@
         "geoparquet_column": {
           "type": "string",
           "minLength": 1
+        },
+        "stable": {
+          "type": "boolean"
         }
       }
     },

@@ -14,7 +14,7 @@ You'll connect an S3 bucket prefix as a Connection and import an object from it 
 
 ## Connect the bucket
 
-1. Run `POST /api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/`. The response has `externalId`, `roleNamePrefix` (`honua-connection-`), and `quickCreateUrl` when the operator set `Connections__ObjectStorage__QuickCreateTemplateUrl`. The external id works once, only for the caller who requested it, and expires after 24 hours. One caller may hold five open setups at a time.
+1. Run `POST /api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/`. The response has `externalId`, `roleNamePrefix` (`honua-connection-`), and `quickCreateUrl` when the operator set `Connections__ObjectStorage__QuickCreateTemplateUrl`. The external id works once, only for the caller who requested it, and expires after 24 hours. One caller may hold five open setups at a time; a sixth replaces that caller's oldest, whose external id then stops working.
 2. Create a role named `honua-connection-*` in your account (the quick-create link does this). Its trust policy names this installation's principal and requires `sts:ExternalId` equal to the external id. Grant it `s3:GetObject` on `arn:aws:s3:::customer-imports/parcels/*`, `s3:ListBucket` on the bucket, and `s3:GetBucketLocation`.
 3. Run `POST /api/v1/admin/connections` with `kind`, `provider`, `name`, `bucket`, `prefix`, `region`, `roleArn` and the `externalId` from step 1:
 

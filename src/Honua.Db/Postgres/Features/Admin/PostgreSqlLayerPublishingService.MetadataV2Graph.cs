@@ -3491,7 +3491,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var field = fields.FirstOrDefault(candidate =>
             candidate.Name.Equals(requested.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime))
+        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "TemporalColumn must reference a published date or date-time column.");

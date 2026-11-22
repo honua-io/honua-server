@@ -839,14 +839,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
-passing job duration, rounded half-to-even to 0.1 minute, over the nine full trunk
-runs that started server test children, counting a sample only when its filter
-and project selection match the current definition (gate-model.md, "Measured
-ranks"). Full run 44013566836 passed all 225 children and gives every current
-definition at least one matching measurement, so no split-child estimate
-remains. Ranks sum to 1,522.3 runner-minutes, previously 1,581.4; 203 children
-fit the unchanged 10-minute PR shard budget, previously 196. These are
+Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the 26 "CI full"
+trunk runs completed after the previous record that supplied samples, counting a sample
+only when its filter and project selection match the current definition
+(gate-model.md, "Measured ranks"). Scheduled run 44819335862 passed all 225
+children; every split child has 20 to 26 matching samples, so no
+split-child estimate remains. Following that measurement, 11 over-split parents
+(33 children whose combined `Run server test shard` step times on full run
+44921455496 totaled 1.20–3.30 minutes) were re-packed back into 11 single jobs
+(225 → 203 shards, saving 22 runner setups; 192 measured ranks plus 11 conservative
+estimates of 3.7–5.8 minutes; scheduling rank sum 827.1 runner-minutes, previously
+877.5; all 203 shards fit the unchanged 10-minute PR shard budget). These are
 scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.

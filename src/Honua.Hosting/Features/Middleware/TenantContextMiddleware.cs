@@ -33,8 +33,8 @@ internal sealed class TenantContextMiddleware(
             principal.FindFirst("api_key_id") is not null)
         {
             var approvedTenant = principal.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)?.Value;
-            var approvedContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
-            if (approvedContext is null || approvedTenant is null ||
+            if (context.RequestServices.GetService<ITenantContext>() is not RequestTenantContext approvedContext ||
+                approvedTenant is null ||
                 approvedTenant.Length > _options.MaxTenantIdLength || !IsSafeTenantId(approvedTenant))
             {
                 await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
@@ -48,8 +48,7 @@ internal sealed class TenantContextMiddleware(
         }
 
         // Resolve the per-request context object via DI so handlers see the same instance.
-        var tenantContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
-        if (tenantContext is null)
+        if (context.RequestServices.GetService<ITenantContext>() is not RequestTenantContext tenantContext)
         {
             // Tenant context was not registered (e.g. tests that did not call
             // AddHonuaTenantContext); skip resolution rather than fail the request.

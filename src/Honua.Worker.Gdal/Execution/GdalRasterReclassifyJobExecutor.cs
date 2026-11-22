@@ -57,13 +57,13 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
 
         if (!GdalJobInputReader.TryGetInput(parameters, "remap", out var remap) || string.IsNullOrWhiteSpace(remap))
         {
-            return JobExecutionResult.Failed("Invalid reclassify inputs: missing required input 'remap'.");
+            return JobExecutionResult.InvalidInput("Invalid reclassify inputs: missing required input 'remap'.");
         }
 
         if (!TryBuildCalc(remap, parameters, out var calc, out var remapError))
         {
             Log.InvalidInputs(logger, job.OperationId, remapError);
-            return JobExecutionResult.Failed($"Invalid reclassify inputs: {remapError}");
+            return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {remapError}");
         }
 
         string? dataType = null;
@@ -71,18 +71,18 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
             && !string.IsNullOrWhiteSpace(dataTypeRaw)
             && !GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
         {
-            return JobExecutionResult.Failed($"Invalid reclassify inputs: {dataTypeError}");
+            return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {dataTypeError}");
         }
 
         if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
         {
-            return JobExecutionResult.Failed($"Invalid reclassify inputs: {noDataError}");
+            return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {noDataError}");
         }
 
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid reclassify inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -100,7 +100,7 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
-                return JobExecutionResult.Failed($"Invalid reclassify inputs: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

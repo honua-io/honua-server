@@ -723,7 +723,7 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("SecurityHeaders:EnableHsts", "SecurityHeaders__EnableHsts", "boolean",
                     "Enable HTTP Strict Transport Security", true),
                 BuildProperty("SecurityHeaders:HstsMaxAge", "SecurityHeaders__HstsMaxAge", "integer",
-                    "HSTS max age in seconds", 31536000)
+                    "HSTS max age in seconds", 63072000)
             ]
         };
     }

@@ -153,6 +153,17 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return null;
         }
 
+        await using (var scope = _scopeFactory.CreateAsyncScope())
+        {
+            var blocked = await Honua.Server.Features.Admin.Exports.ExportUnpublishGuard
+                .TryGetRetryBlockedMessageAsync(scope.ServiceProvider, job, cancellationToken)
+                .ConfigureAwait(false);
+            if (blocked is not null)
+            {
+                throw new ExportRetryConflictException(blocked);
+            }
+        }
+
         return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName), cancellationToken)
             .ConfigureAwait(false);
     }
@@ -204,7 +215,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
             {
                 [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(
-                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId))
+                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with { ExportId = request.ExportId })
             }
         };
     }
@@ -213,7 +224,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     private Task SeedProgressAsync(string jobId, TileOperationStartRequest request, CancellationToken cancellationToken)
         => _progressStore.SetProgressAsync(
             jobId,
-            TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId),
+            TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with { ExportId = request.ExportId },
             ProgressRetention,
             cancellationToken);
 
@@ -380,3 +391,5 @@ internal sealed record TileOperationSubmission(
     string? SchemaName = null);
 
 internal enum TileOperationListScope { All, Active }
+
+internal sealed class ExportRetryConflictException(string message) : InvalidOperationException(message);

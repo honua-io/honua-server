@@ -6,7 +6,7 @@ resource: "honua://capability/collaboration.map-sessions"
 ---
 # Saved-map collaborative edit operation log
 
-Server-owned durable ordering and conflict behavior for multi-user saved-map editing. Where presence and live cursors are ephemeral ([collaboration session transport](#related-surfaces)), saved-map edits are durable: every accepted edit is appended to a per-map operation log, assigned a monotonic server cursor, and replayable for reconnecting clients. This page is the contract for `honua-sdk-js` and Portal consumers.
+Server-owned durable ordering and conflict behavior for multi-user saved-map editing. Where presence and live cursors are ephemeral ([collaboration session transport](#related-surfaces)), saved-map edits are durable: every accepted edit is appended to a per-map operation log, assigned a monotonic server cursor, and replayable for reconnecting clients. This page is the contract for `honua-sdk-js`, Honua Console, and Honua Studio consumers.
 
 ## Endpoints
 
@@ -15,7 +15,7 @@ Server-owned durable ordering and conflict behavior for multi-user saved-map edi
 | `POST` | `/api/v1/maps/{mapId}/collaboration/operations` | Append one edit operation. |
 | `GET` | `/api/v1/maps/{mapId}/collaboration/operations?since={cursor}` | Replay operations after a known cursor. |
 
-Both routes require an authenticated principal **and** a per-map capability grant — see [Authorization](#authorization). Responses use the standard `ApiResponse<T>` envelope (`data`, `success`, `error`).
+Both routes require an authenticated principal **and** a per-map capability grant — see [Authorization](#authorization). Success (`200`) and conflict (`409`) responses use the standard `ApiResponse<T>` envelope (`success`, `data`, `message`, `timestamp`); validation, authentication, authorization, and unavailability errors (`400`, `401`, `403`, `503`) return RFC 7807 `ProblemDetails`. In a declared multi-replica deployment backed by a process-local operation log, both `POST` and `GET` fail closed with `503 Service Unavailable` rather than issuing or replaying non-authoritative node-local cursors.
 
 ## Operation envelope
 
@@ -26,7 +26,7 @@ A client submits an append request; the server stamps it into a durable envelope
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `operationId` | string (≤200) | yes | Client-generated, stable id. Re-submitting the same id is idempotent per map. |
-| `actorId` | string | no | Defaults to the authenticated principal's stable identifier (`sub`/name id). |
+| `actorId` | string | no | Ignored for attribution; the server always resolves the actor from the authenticated principal (`NameIdentifier`, `sub`, or `api_key_id`). |
 | `baseCursor` | int64 | no | Server cursor the edit was authored against. Defaults to `0` (empty-log base). |
 | `kind` | enum | yes | Operation kind (see [families](#operation-families)). |
 | `payload` | JSON | no | Stored opaquely; the MVP log does not interpret WebMapDoc fields. |
@@ -56,6 +56,7 @@ The append response `status` is one of:
 
 - **`accepted`** — the operation entered the log. `operation.serverCursor` is the assigned cursor and `headCursor` is the new log head. A replayed duplicate is also `accepted` with `isDuplicate: true` and the **original** cursor (a duplicate never advances the head). HTTP `200`.
 - **`conflict`** — the operation could not be merged safely from its `baseCursor`. The body carries a [conflict payload](#conflict-semantics); no operation is appended. HTTP `409`.
+- **`idempotencyMismatch`** — the supplied `operationId` or `idempotencyKey` was already accepted for a different operation (different kind or payload). No operation is appended. HTTP `409`.
 - **`resyncRequired`** — `baseCursor` is ahead of the head or older than the retained replay window. The caller must [resync](#snapshot-compaction-and-resync) from a full document snapshot. HTTP `409`.
 
 ### Idempotency
@@ -73,6 +74,7 @@ Duplicate detection is keyed on `operationId` and, when supplied, `idempotencyKe
 | `headCursor` | Current log head; the cursor to resume from. |
 | `minimumReplayCursor` | Earliest cursor the retained log can replay from. |
 | `operations` | Envelopes after `sinceCursor`. |
+| `message` | Optional human-readable status message (for example when `resyncRequired`). |
 
 `since=0` against an empty or unknown map returns `ok` with no operations. A `since` value above the head or below `minimumReplayCursor` returns `resyncRequired` — the client must reload the saved-map document and resume from `headCursor`.
 

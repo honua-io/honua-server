@@ -38,7 +38,7 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             var tracker = _fixture.GetService<IChangeTracker>();
             var baseline = await tracker.GetCurrentGenerationAsync();
             Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.Current.Should().BeNull();
-            Feature MakeFeature(string name, double x, double y) => Feature.Create(0,
+            static Feature MakeFeature(string name, double x, double y) => Feature.Create(0,
                 new NetTopologySuite.IO.WKBWriter().Write(new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 }),
                 System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty.Add("name", name));
 
@@ -404,7 +404,7 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             }
 
             var reader = (IPreChangeImageReader)_fixture.GetService<IFeatureReader>();
-            FeatureQuery Query(DateTimeOffset creation, DateTimeOffset update) => new()
+            static FeatureQuery Query(DateTimeOffset creation, DateTimeOffset update) => new()
             {
                 SqlFilter = new SqlFragment("created_at = @p0", [creation]),
                 EnforcedSqlFilter = new SqlFragment("updated_at = @p0", [update])

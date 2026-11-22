@@ -31,6 +31,7 @@ namespace Honua.Server.Tests.Admin;
 public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private const string AdminPassword = "admin-realtime-groups-password";
+    private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(20);
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/live")]
@@ -95,25 +96,27 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var response = await client.GetAsync("/api/v1/admin/live?topics=operate-events", HttpCompletionOption.ResponseHeadersRead);
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
-        (await ReadFrameAsync(reader)).Kind.Should().Be("status");
+        (await ReadFrameAsync(reader, log)).Kind.Should().Be("status");
         var timeline = new ReleaseTimelineBuffer();
         var store = new TransitionObservingWorkflowOperationStore(
             host.Services.GetRequiredService<IWorkflowOperationStore>(),
             [new ReleaseTimelineTransitionListener(timeline)],
-            NullLogger<TransitionObservingWorkflowOperationStore>.Instance);
+            log.CaptureLogger<TransitionObservingWorkflowOperationStore>());
         var operation = BuildTransition("timeline-identity", WorkflowOperationTransitionKind.Created).Operation;
         operation = operation with { UpdatedAt = operation.UpdatedAt.AddMinutes(-1) };
 
         (await store.TryCreateAsync(operation)).Should().BeTrue();
-        var created = await ReadFrameAsync(reader);
-        created.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        var created = await ReadFrameAsync(reader, log);
+        timeline.Snapshot().Should().NotBeEmpty("{0}", log.Diagnostics);
+        created.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId, "{0}", log.Diagnostics);
         created.Payload.GetProperty("occurredAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
         var persisted = (await store.GetAsync(operation.OperationId))!;
         var updated = persisted with { Status = WorkflowOperationStatus.Succeeded, UpdatedAt = operation.UpdatedAt.AddSeconds(1) };
 
         (await store.TrySetAsync(updated)).Should().BeTrue();
-        var promoted = await ReadFrameAsync(reader);
-        promoted.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        var promoted = await ReadFrameAsync(reader, log);
+        timeline.Snapshot().Should().NotBeEmpty("{0}", log.Diagnostics);
+        promoted.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId, "{0}", log.Diagnostics);
         promoted.Payload.GetProperty("eventId").GetString().Should().NotBe(created.Payload.GetProperty("eventId").GetString());
         await tail.StopAsync(default);
     }
@@ -256,9 +259,28 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
 
     private sealed record LiveFactorySeed(IRealtimeFanoutProvider Provider, ControlPlaneStorage? Storage);
 
+    private static async Task<SseFrame> ReadFrameAsync(StreamReader reader, RealtimeLogHarness log)
+    {
+        try
+        {
+            return await ReadFrameAsync(reader);
+        }
+        catch (OperationCanceledException timeout)
+        {
+            throw NoFrame(log, timeout);
+        }
+        catch (EndOfStreamException closed)
+        {
+            throw NoFrame(log, closed);
+        }
+    }
+
+    private static TimeoutException NoFrame(RealtimeLogHarness log, Exception cause)
+        => new($"No SSE frame within {FrameTimeout}. Realtime warnings and errors:{Environment.NewLine}{log.Diagnostics}", cause);
+
     private static async Task<SseFrame> ReadFrameAsync(StreamReader reader)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var timeout = new CancellationTokenSource(FrameTimeout);
         string? id = null;
         string? kind = null;
         string? data = null;

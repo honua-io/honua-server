@@ -103,6 +103,8 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream"),
         new(Grpc, "geospatial.v1.FeatureService/ApplyEdits"),
+        new(Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits"),
+        new(Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords"),
         new(Grpc, "geospatial.v1.FeatureService/AbortAttachmentUpload"),
         new(Grpc, "geospatial.v1.FeatureService/BeginAttachmentUpload"),
         new(Grpc, "geospatial.v1.FeatureService/CommitAttachmentUpload"),

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Alerts;
 using Honua.Alerts.Ops;
 using Honua.ControlPlane;
@@ -38,15 +39,17 @@ internal sealed class OpsNotificationReminderRunner(
         // Composite posture includes unconfigured sources, so inspect the individual sources instead.
         var sources = evaluation.Posture.Sources.Where(source =>
             source.BackendKind != EvidencePostureVocabulary.BackendKinds.Composite).ToArray();
+        var actionableSubjects = actionable.Keys.ToArray();
         if (sources.Length > 0 && sources.All(source =>
             source.Completeness == EvidencePostureVocabulary.Completeness.NotConfigured ||
             EvidencePostureFactory.IsActionable(EvidencePostureFactory.Validate(source, now))))
         {
-            await schedules.CloseMissingFindingsAsync(actionable.Keys.ToArray(), now, cancellationToken)
+            await schedules.CloseMissingFindingsAsync(actionableSubjects, now, cancellationToken)
                 .ConfigureAwait(false);
         }
         await schedules.ObserveAwaitingAsync(100, cancellationToken).ConfigureAwait(false);
-        var due = await schedules.ListDueAsync(now, 100, cancellationToken).ConfigureAwait(false);
+        var due = await schedules.ListDueForDispatchAsync(new(now, 100, actionableSubjects), cancellationToken)
+            .ConfigureAwait(false);
         foreach (var schedule in due)
         {
             await DispatchAsync(schedule, actionable, cancellationToken).ConfigureAwait(false);
@@ -70,8 +73,8 @@ internal sealed class OpsNotificationReminderRunner(
         }
         else if (!findings.ContainsKey(schedule.SubjectId))
         {
-            await schedules.TryDeferAsync(schedule, timeProvider.GetUtcNow().AddMinutes(1), cancellationToken)
-                .ConfigureAwait(false);
+            // Leave findings absent from this replica's evaluation untouched so another replica
+            // that observes the finding can dispatch it on schedule without being deferred.
             return;
         }
 
@@ -98,7 +101,22 @@ internal sealed class OpsNotificationReminderRunner(
         }
     }
 
-    private static OpsNotification BuildNotification(OpsNotificationSchedule schedule, OperationProposal? proposal)
+    // A notice can reach the inbox well after it fell due (delivery retries through an outage), so it states when the
+    // subject started and which reminder it is.
+    private static string BuildBody(OpsNotificationSchedule schedule, OperationProposal? proposal)
+    {
+        var since = schedule.FirstSeenAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        var timing = (schedule.Source, proposal?.Status) switch
+        {
+            ("proposal", OperationProposalStatus.Expired) => $"requested {since} UTC",
+            ("proposal", _) => $"awaiting approval since {since} UTC",
+            _ => $"open since {since} UTC",
+        };
+        return $"{schedule.Source} {schedule.SubjectId}, {timing}; notice {schedule.NoticeNumber + 1}. "
+            + "Review in the authenticated operations console at /operate/copilot.";
+    }
+
+    internal static OpsNotification BuildNotification(OpsNotificationSchedule schedule, OperationProposal? proposal)
     {
         var terminal = proposal?.Status == OperationProposalStatus.Expired;
         return new OpsNotification
@@ -107,7 +125,7 @@ internal sealed class OpsNotificationReminderRunner(
             Severity = schedule.Severity == OpsFindingSeverity.Critical ? AlertSeverity.Critical : AlertSeverity.Warning,
             Title = terminal ? "Approval expired without execution" :
                 schedule.Source == "proposal" ? "Human approval required" : "Operational finding remains open",
-            Body = $"{schedule.Source} {schedule.SubjectId}. Review in the authenticated operations console at /operate/copilot.",
+            Body = BuildBody(schedule, proposal),
             DedupeIdentifier = $"{schedule.Source}:{schedule.SubjectId}:{schedule.EpisodeId:N}:{schedule.Severity}:{schedule.NoticeNumber}",
             ProposalId = proposal?.ProposalId,
             OperationInstanceId = proposal?.Audit?.OperationInstanceId,
