@@ -47,7 +47,11 @@ public sealed partial class FeatureStreamEndpointsTests
         };
         using var socket = await client.ConnectAsync(new Uri(
             $"ws://localhost/api/v1/streaming/features?layers=0&token={token}"), timeout.Token);
-        _ = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        var connected = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        connected.GetProperty("status").GetString().Should().Be("connected");
+        var initialSubscription = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        initialSubscription.GetProperty("status").GetString().Should().Be("subscribed");
+        initialSubscription.GetProperty("subscriptionId").GetString().Should().Be("default");
 
         await SendWebSocketJsonAsync(socket,
             $$"""{"type":"subscribe","subscriptionId":"denied",{{deniedScope}}}""", timeout.Token);
