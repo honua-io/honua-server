@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -203,42 +204,60 @@ internal static class CollectionsEndpoints
             }
 
             var visiblePublications = publicationsByResource.Values.ToList();
-            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                visiblePublications,
-                (entry, ct) => CreateCollectionAsync(
-                    entry.Resource,
-                    entry.Publication,
-                    entry.Service,
-                    snapshot,
-                    baseUrl,
-                    featureReader,
-                    crsRegistry,
-                    coordinateTransformService,
-                    ct),
-                cancellationToken).ConfigureAwait(false);
-
-            var links = OgcCommonUtilities.BuildFormatLinks(
-                    request,
-                    $"{baseUrl}/ogc/features/collections",
-                    outputFormat,
-                    OgcCommonUtilities.MetadataFormats,
-                    "Collections")
-                .ToBuilder();
-
-            // Parent (landing page)
-            links.Add(Link.Create(
-                href: $"{baseUrl}/ogc/features",
-                rel: "parent",
-                type: MediaTypes.Json,
-                title: "Landing page"));
-
-            var response = new Collections
+            async Task<Collections> BuildCollectionsAsync()
             {
-                CollectionList = collections,
-                Links = links.ToImmutable()
-            };
+                var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+                    visiblePublications,
+                    (entry, ct) => CreateCollectionAsync(
+                        entry.Resource,
+                        entry.Publication,
+                        entry.Service,
+                        snapshot,
+                        baseUrl,
+                        featureReader,
+                        crsRegistry,
+                        coordinateTransformService,
+                        ct),
+                    cancellationToken).ConfigureAwait(false);
 
-            OgcFeaturesLog.CollectionsReturned(logger, collections.Length);
+                var links = OgcCommonUtilities.BuildFormatLinks(
+                        request,
+                        $"{baseUrl}/ogc/features/collections",
+                        outputFormat,
+                        OgcCommonUtilities.MetadataFormats,
+                        "Collections")
+                    .ToBuilder();
+
+                links.Add(Link.Create(
+                    href: $"{baseUrl}/ogc/features",
+                    rel: "parent",
+                    type: MediaTypes.Json,
+                    title: "Landing page"));
+
+                return new Collections
+                {
+                    CollectionList = collections,
+                    Links = links.ToImmutable()
+                };
+            }
+
+            if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
+            {
+                var cacheKey = CollectionsCacheHelper.BuildCollectionsKey(snapshot, context, visiblePublications);
+                var cachedResult = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                    context,
+                    new JsonMetadataCacheRequest<Collections>
+                    {
+                        CacheKey = cacheKey,
+                        TypeInfo = OgcJsonContext.Default.Collections,
+                        BuildAsync = BuildCollectionsAsync
+                    }).ConfigureAwait(false);
+                OgcFeaturesLog.CollectionsReturned(logger, visiblePublications.Count);
+                return cachedResult;
+            }
+
+            var response = await BuildCollectionsAsync().ConfigureAwait(false);
+            OgcFeaturesLog.CollectionsReturned(logger, response.CollectionList.Length);
             return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
         }
         catch (OperationCanceledException)
@@ -332,28 +351,48 @@ internal static class CollectionsEndpoints
             var service = validation.Service;
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var collection = await CreateCollectionAsync(
-                resource,
-                publication,
-                service,
-                snapshot,
-                baseUrl,
-                featureReader,
-                crsRegistry,
-                coordinateTransformService,
-                cancellationToken);
-            var collectionSegment = Uri.EscapeDataString(collectionId);
-            var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
-            var selfHref = $"{basePath}{request.QueryString}";
-            var updatedLinks = collection.Links.Select(link =>
-                    string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
-                        ? link with { Href = selfHref, Type = outputFormat }
-                        : link)
-                .ToImmutableArray();
+            async Task<CollectionInfo> BuildCollectionAsync()
+            {
+                var built = await CreateCollectionAsync(
+                    resource,
+                    publication,
+                    service,
+                    snapshot,
+                    baseUrl,
+                    featureReader,
+                    crsRegistry,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false);
+                var collectionSegment = Uri.EscapeDataString(collectionId);
+                var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
+                var selfHref = $"{basePath}{request.QueryString}";
+                var updatedLinks = built.Links.Select(link =>
+                        string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
+                            ? link with { Href = selfHref, Type = outputFormat }
+                            : link)
+                    .ToImmutableArray();
 
-            updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
-            collection = collection with { Links = updatedLinks };
+                updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
+                return built with { Links = updatedLinks };
+            }
 
+            if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
+            {
+                var cacheKey = CollectionsCacheHelper.BuildCollectionKey(
+                    snapshot, context, new OgcCollectionCacheEntry(publication, service, resource));
+                var cachedResult = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                    context,
+                    new JsonMetadataCacheRequest<CollectionInfo>
+                    {
+                        CacheKey = cacheKey,
+                        TypeInfo = OgcJsonContext.Default.CollectionInfo,
+                        BuildAsync = BuildCollectionAsync
+                    }).ConfigureAwait(false);
+                OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
+                return cachedResult;
+            }
+
+            var collection = await BuildCollectionAsync().ConfigureAwait(false);
             OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
