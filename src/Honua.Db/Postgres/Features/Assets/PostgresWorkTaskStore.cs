@@ -37,13 +37,7 @@ internal sealed class PostgresWorkTaskStore : IWorkTaskStore
                 ORDER BY t.object_id LIMIT @limit
                 """),
             connection);
-        command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, query.ServiceId);
-        command.Parameters.AddWithValue("after", NpgsqlDbType.Bigint, query.AfterObjectId);
-        command.Parameters.AddWithValue("allowed_layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, query.AllowedLayerIds?.ToArray() ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("status", NpgsqlDbType.Text, (object?)query.Status ?? DBNull.Value);
-        command.Parameters.AddWithValue("assignee", NpgsqlDbType.Text, (object?)query.Assignee ?? DBNull.Value);
-        command.Parameters.AddWithValue("task_type", NpgsqlDbType.Text, (object?)query.Type ?? DBNull.Value);
-        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit + 1);
+        AddListParameters(command, query);
 
         var items = new List<WorkTask>();
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
@@ -183,5 +177,16 @@ internal sealed class PostgresWorkTaskStore : IWorkTaskStore
         }
 
         return [.. changed];
+    }
+
+    private static void AddListParameters(NpgsqlCommand command, WorkTaskQuery query)
+    {
+        command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, query.ServiceId);
+        command.Parameters.AddWithValue("after", NpgsqlDbType.Bigint, query.AfterObjectId);
+        command.Parameters.AddWithValue("allowed_layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, query.AllowedLayerIds?.ToArray() ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("status", NpgsqlDbType.Text, (object?)query.Status ?? DBNull.Value);
+        command.Parameters.AddWithValue("assignee", NpgsqlDbType.Text, (object?)query.Assignee ?? DBNull.Value);
+        command.Parameters.AddWithValue("task_type", NpgsqlDbType.Text, (object?)query.Type ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit + 1);
     }
 }
