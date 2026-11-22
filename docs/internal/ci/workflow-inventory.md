@@ -316,7 +316,7 @@ adding a compiled consumer of any of these files restores runtime validation.
 | `auto-merge-ready.yml` | auto-merge ready pull requests | `pull_request_target` | Repository-scoped bot App requests ruleset-governed auto-merge for eligible same-repository trunk PRs; new requests default to squash for single commits and merge for bundles. Eligible existing requests retain their merge method; live hold, draft and base checks revoke ineligible requests. |
 | `ci.yml` | CI | `schedule`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context validates scheduled or manually dispatched integration runs. Runtime proofs and import/export fidelity require the managed producer; native GDAL/PDAL and raster receipts run in the existing Worker job. Managed build producer, independent required full-solution format job, test and both architecture suites, CI-router validation, JS typecheck, and Postgres compatibility. Foundation families and selected server shards need the producer, restore verified outputs with MVC and static-asset runtime content roots relocated to the consumer checkout, and compile only their missing project union. Source architecture runs after projection regeneration; the full collector remains in the foundation server family. See the [artifact contract](server-test-binary-artifacts.md). Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. On a managed-artifact miss, the existing legacy cache path remains available: `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The shared quarantine filter runner records `HONUA_QUARANTINE_FILTER` in retained test logs with the effective filter, excluded methods, owning issues and expiry times. `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 | `trunk-affected.yml` | Trunk affected run | `push`, `workflow_dispatch` | Stage 3 of the [gate model](gate-model.md#verification-stages). Resolves the head of the most recently completed `CI` run on trunk (success only, excluding failures and cancellations; newest 100 runs ordered by completion update time) that is an ancestor of the pushed head and dispatches `ci.yml` with `selective_base` set to it, titled `CI affected <base>..<head>`, so only the shards and lanes the new merges touch run. Runs queue in one concurrency group without cancellation; a run whose push is no longer the trunk tip exits, because the newer push's run covers it. Writes the separate culprit range since the last full green ancestor (successful affected runs cannot clear earlier failures) (commits and pull requests) to its summary; passes that ancestor separately as `investigation_base` so the dispatched run's `changes` job writes the same culprit range to its log and summary for the lane investigating the failure. Missing green history is reported as unknown. Affected runs never certify a sha for the nightly image (`select-certified-nightly-sha.py` ignores their title). Not a required check. Needs only `actions: write` and `contents: read`. Admission and execution recheck a conservative 40-job total bound (33 side jobs plus selected shards); full routing or unknown history defer coverage to scheduled full CI without a successful CI baseline; the `Record coverage deferred to scheduled full CI` step marks that head, and later pushes start from the newest marked ancestor so a deferred range does not hold back later merges. Affected server-shard concurrency is two. An active PR Gate neither defers nor cancels an affected run. |
-| `trunk-signal-watchdog.yml` | Trunk signal watchdog | `schedule`, `workflow_dispatch` | Opens or updates a `trunk-signal` issue and fails when a running run has not produced a result within 4 h of its first job starting on a runner, the last result is older than 16 h, a run or child job queued over 45 min, at least 6 of the last 10 runs created in the last 6 h were cancelled, or no scheduled full CI run started in 14 h. Queries scheduled runs separately so selective traffic cannot hide missed delivery; a queued workflow counts as started only when job runner assignment proves execution, and child queues remain monitored; closes the issue only when all signals recover. |
+| `trunk-signal-watchdog.yml` | Trunk signal watchdog | `schedule`, `workflow_run`, `workflow_dispatch` | Opens or updates a `trunk-signal` issue and fails when a running run has not produced a result within 4 h of its first job starting on a runner, the last result is older than 22 h, a run or child job queued over 45 min, at least 6 of the last 10 runs created in the last 6 h were cancelled, or no scheduled full CI run started in 20 h. Queries scheduled runs separately so selective traffic cannot hide missed delivery; a queued workflow counts as started only when job runner assignment proves execution, and child queues remain monitored; closes the issue only when all signals recover. |
 | `full-ci-dispatch.yml` | Full CI dispatch | `push`, `schedule`, `workflow_dispatch` | Dispatches one full `ci.yml` run on trunk between 22:00 and 03:00 Pacific (PST or PDT) when none is queued or running, trunk head has no full result and the night has had fewer than two full runs that were not cancelled. GitHub delivers this repository's cron events hours late, so the `ci.yml` crons alone often land in the daytime window. A night with no trunk push before 03:00 Pacific relies on those crons. `HONUA_FULL_CI_DISPATCH=off` disables it. |
 | `native-tools-publish.yml` | Publish trusted native tools | `push`, `schedule`, `workflow_dispatch` | Trusted trunk-only production `native-tools` image publisher; dedicated image/cache, exact input identity and immutable digest attestation. Consumers verify provenance and retain the bounded production build on any miss. No merge authority; existing native/AOT execution proofs remain required. See [native tools reuse](native-tools-reuse.md). |
 | `gp-devkit-publish.yml` | Publish GP Devkit | `workflow_dispatch` | Packs `Honua.Geoprocessing.Cli` at the repository version and pushes it to GitHub Packages only for an explicit canonical-trunk dispatch. The publication identity is retained for honua-release#615. Pull requests and installed-authoring candidates do not publish. |
@@ -349,6 +349,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | `pull_request`, `workflow_dispatch`, `release` | PR governance for the control-plane SDK surface, separate from release publishing. |
 | `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | `pull_request`, `workflow_dispatch` | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) with pass/fail fixtures. |
 | `capability-matrix-aggregation.yml` | Capability Matrix Aggregation | `pull_request`, `schedule`, `workflow_dispatch` | Joins `feature-catalog.json`, `docs/cite-status.md`, the GeoServices REST parity index, capability crosswalks, and committed client-compat envelopes into `docs/gis/data/capability-matrix.v1.json` (#2892/#2893). Generator/input validation is strict; committed-file drift is advisory. PR inputs include the licensing constants in `FeatureCatalog.cs` used to resolve manifest entitlements. PR operation-capability completeness, registry resolution and authored artifact checks run in the existing PR Gate architecture job after canonical catalog regeneration; scheduled/manual aggregation runs audit the committed catalog. |
+| `install-images.yml` | Install Images | `pull_request`, `push`, `schedule`, `workflow_dispatch` | Builds the small images installs run beside the server: `docker/postgres-client` (psql for the Launch Stack start-up containers) and `docker/console-web` (the Compose quickstart Console web server) and `docker/compose-postgres` (the Compose installs' PostgreSQL 17 / PostGIS / pgRouting database). Pull requests build, smoke and block fixable HIGH/CRITICAL findings on linux/amd64 and linux/arm64, and `database-upgrade` runs `scripts/docker/test-compose-postgres-upgrade.sh` (a volume created on the previous base starts with refreshed collation versions). Trunk, schedule and dispatch runs pass `publish-authorization.yml`, push one multi-platform digest per image to the public `honua-server` package, run `scripts/ci/trivy-release-gate.sh` on each platform of that digest, then assign `<image>` tags, attest and verify anonymous pull. |
 | `serving-image-boundary.yml` | Serving Image Boundary | `pull_request`, `workflow_dispatch` | Pull requests build and boundary-verify the PostGIS serving image only. Manual dispatch still builds PostGIS and Lambda. Lambda native-AOT is not a pull-request build; `nightly-container-build.yml` and `deploy-platform-images.yml` keep it. Since #3204 the trigger carries only inputs that DEFINE the image (the serving Dockerfiles, `.dockerignore`, the in-image restore helper, the boundary verifier and its fixture harness, this workflow); managed source (`src/**`, `eng/**`, solution, build props) is deliberately not a trigger and is placed on the lanes in the table below. The trigger paths and the in-workflow variant `case` arms are parsed and cross-checked by `scripts/ci/native-image-impact.py`, which fails closed on drift from `.github/native-image-impact.json`. Exact v3 content addresses may reuse a successful per-variant verification marker only when `HONUA_SERVING_IMAGE_SKIP` is exactly `true`; absent/false is full verification, and every digest/decision is recorded in the run summary. Promotion and one-variable rollback are documented in `serving-image-content-addressed-skip.md`. Deliberately isolated from the required lean `PR Gate`. |
 | `store-image-size.yml` | Store Image Size | `pull_request`, `workflow_dispatch`, `workflow_call` | Builds PostGIS JIT/AOT and full JIT images, records before/after byte counts and compiler inputs, rejects excluded stores and satellites, and proves startup refusal, format import/export, label rendering and security scanning. Scheduled CI and manual `full_ci=true` runs call it on their own commit; `CI Gate` requires its success when selected. Evidence is uploaded as run artifacts. |
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request`, `schedule`, `workflow_dispatch` | Builds the GDAL worker image, proves native handoff/PDAL/public API execution, and enforces unchanged Trivy policy; publishes SARIF. Explicit canonical-trunk dispatch can publish the exact tested amd64 bytes under a unique nightly tag with verified source provenance, including a trunk-reachable `candidate_sha` whose nightly tag and image revision name that commit while the attestation stays on the trunk workflow SHA; PR/schedule runs never publish images and receipts are qualification:false. |
@@ -531,7 +532,7 @@ which is why both the run count and exact observed span are recorded.
 | `flaky-detection.yml` | Flaky Test Detection | `schedule`, `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Test commands run in dedicated process groups; cancellation cleans up the group and snapshotted descendants, including those that leave the group, with a bounded half-second escalation. Group escalation reaches children forked after the snapshot. Signal handlers are installed before child creation and record cancellation for cleanup outside the active child wait, checked every 0.1 seconds; this also preserves cancellation during startup without reentering the subprocess wait lock. Reports only; it never gates. Also runs the validated issue-backed quarantine in a separate non-gating matrix, without retries or exclusions. |
 | `flake-quarantine.yml` | Publish Flaky Test Quarantine | `schedule`, `workflow_dispatch` | Trusted same-repository publisher: validates raw first/retry TRX and candidate hashes; requires unambiguous identities within selected failed methods (including passing siblings) and all retry rows, files one bot issue per project/method, and maintains at most 25 active issue-backed exclusions expiring within 14 days. Reads one shard artifact per shard: the highest `-attempt-<n>` (unsuffixed names count as attempt 0). A coalescing publisher sweeps the CI and PR Gate run histories and reads artifacts per completed trusted source run, avoiding the repository-wide artifact listing. An overlap watermark preserves old-run reruns and deferred batches; each sweep inspects at most 25 source runs (including empty ones), rechecks completion/attempt identity after artifact listing, and checkpoints completed run versions so equal-timestamp backlogs advance, with twice-hourly scheduled recovery. Never checks out triggering code or executes downloaded artifacts. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | `schedule`, `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
-| `load-soak-nightly.yml` | Load/Soak Diagnostics (manual) | `workflow_dispatch` | Diagnostic load tests only. The unsourced nightly schedule was retired in favor of candidate capacity qualification (#5314). |
+| `load-soak-nightly.yml` | Load/Soak Diagnostics | `schedule`, `workflow_dispatch` | Nightly load/soak diagnostics against trunk source with per-run credentials. Reports regressions between candidates; release qualification stays with `capacity-soak-candidate.yml` (#5314). |
 | `capacity-soak-candidate.yml` | capacity-soak-candidate | `workflow_dispatch`, `workflow_call` | Runs at the manifest candidate source and image, collects complete raw observations, and attests a bounded evidence ZIP. The release checker independently recomputes all eight signals and binds the exact producer attestation. See docs/internal/operations/capacity-soak-runbook.md. |
 | `capacity-evidence-contract.yml` | Capacity evidence contract | `pull_request`, `workflow_dispatch` | Real HTTP outcome fixtures, analytical population assertions, and positive/negative ZIP checks against the pinned independent release verifier (#5314). No qualification or signing permissions. |
 | `security-nightly.yml` | Security Nightly | `schedule`, `pull_request`, `workflow_dispatch` | Consolidated NuGet vulnerability scan (annotates High/Critical and opens a tracking issue, reports Moderate; advisories never fail the job, an unreadable report does), Trivy filesystem scan, container security scan (Hadolint, Trivy with the committed OpenVEX decisions, structure tests, runtime constraints), and a by-digest rescan of every supported release image in `eng/security/supported-images.json` that uploads SARIF and files fixable High/Critical findings privately. |
@@ -745,7 +746,12 @@ unknown or invalid routing still fails closed. A full-build fallback retains
 these Stage 0 CPU limits and disables build analyzers; its validation scope is
 unchanged. Stage 0 uses
 `HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
-and test durations separately. Host queue/sync timings are reported by the
+and test durations separately. After the one build, the no-build test commands
+(affected unit projects and every selected shard, including integration shards
+under `--integration`) run concurrently, `HONUA_STAGE0_TEST_PARALLELISM` at a
+time (default 3, at most the Stage 0 CPU count, checked before the build). Every
+command keeps its own log and TRX check. A failure or interrupt starts no queued
+command, and the run fails once the running ones finish. Host queue/sync timings are reported by the
 local lane runner; they are separate from execution time.
 
 Trailing `selective_base` dispatches use their verified base for the managed
@@ -833,14 +839,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
-passing job duration, rounded half-to-even to 0.1 minute, over the nine full trunk
-runs that started server test children, counting a sample only when its filter
-and project selection match the current definition (gate-model.md, "Measured
-ranks"). Full run 44013566836 passed all 225 children and gives every current
-definition at least one matching measurement, so no split-child estimate
-remains. Ranks sum to 1,522.3 runner-minutes, previously 1,581.4; 203 children
-fit the unchanged 10-minute PR shard budget, previously 196. These are
+Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the 26 "CI full"
+trunk runs completed after the previous record that supplied samples, counting a sample
+only when its filter and project selection match the current definition
+(gate-model.md, "Measured ranks"). Scheduled run 44819335862 passed all 225
+children; every split child has 20 to 26 matching samples, so no
+split-child estimate remains. Following that measurement, 11 over-split parents
+(33 children whose combined `Run server test shard` step times on full run
+44921455496 totaled 1.20–3.30 minutes) were re-packed back into 11 single jobs
+(225 → 203 shards, saving 22 runner setups; 192 measured ranks plus 11 conservative
+estimates of 3.7–5.8 minutes; scheduling rank sum 827.1 runner-minutes, previously
+877.5; all 203 shards fit the unchanged 10-minute PR shard budget). These are
 scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.
@@ -955,6 +965,9 @@ helper checks out no contributor code and queues without cancellation. It runs o
 version of the file, and the environment's trunk-only rule guards the bot App key
 once the key moves there from the repository secrets.
 Conflicted PRs are not armed; they are armed after the branch is updated.
+The release App key (`HONUA_RELEASE_APP_ID`, `HONUA_RELEASE_APP_PRIVATE_KEY`) is held the
+same way: only the trunk run of the nightly `select-candidate` job and the normalization
+consumer's `validate` job enter `bot-app`.
 
 Admission requires both the triggering event and the live PR to be non-draft and
 free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
@@ -984,8 +997,9 @@ them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
 
 PR Gate heavy shard routing also requires current-instance, fresh version-1 heavy
-pool availability, independently of the two-producer idle threshold. The existing
-even/odd split and required dependencies remain. Missing or invalid additive
+pool availability, independently of the two-producer idle threshold. Only entries
+the selector marked `heavy` take the pool (the longest shard of each producer lane
+stays hosted); required dependencies remain. Missing or invalid additive
 heartbeat proof selects hosted runners; deployment is MAIN-owned.
 
 ### Managed producer memory budget
@@ -2129,9 +2143,76 @@ unchanged, so every case runs in the same shards on selected PR runs and
 twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
 
+### Isolated test host boot and teardown overhead
+
+Three changes cut per-host boot and teardown cost across all isolated `WebAppFixture`
+integration suites without reducing any assertion:
+- `ResourceLeakDetector` (#9097): when `_trackedResources` is empty, `ScanForLeaksAsync`
+  returns the same empty `ResourceLeakScanResult` immediately instead of running two
+  forced blocking gen-2 collections and `GC.WaitForPendingFinalizers()` on every
+  Test/Development host stop. Scans with tracked resources are unchanged.
+- `PostgresFixture` (#9110): `GlobalSharedState` retains its shared data source and
+  migrated pool across a 30-second idle grace (`ReleaseIdleNowAsync` plus `ProcessExit`
+  hook) instead of tearing down and re-running extensions/migrations between sequential
+  isolated cases. Private `PostgresSharedState` instances keep `TimeSpan.Zero`.
+- Request Delegate Generator (#9123): enabled `EnableRequestDelegateGenerator` on
+  `Honua.Server` and the 11 endpoint Web SDK libraries so Minimal API delegates are
+  source-generated at compile time rather than JIT-compiled on each isolated host boot.
+- `McpSessionManager.StopAsync`: made idempotent under concurrent host stops exposed by
+  faster teardown.
+
+Measured on the build host (Release, 3 interleaved base/head rounds of the
+`Server Features Capabilities` shard filter, 100/100 passing on all 6 runs):
+- Shard wall time: base 524.8 / 477.5 / 370.2 s (median 477.5 s, 7.96 min) to
+  head 74.8 / 67.6 / 56.1 s (median 67.6 s, 1.13 min); median saving 6.83 min
+  (5.24 min on the lowest-load pair).
+- Per-class median TRX case time (total 1039.0 to 178.3 s):
+  `CapabilityManifestEndpointTests` (40) 411.8 to 45.2 s;
+  `ExperimentalCapabilityGatingIntegrationTests` (34) 263.8 to 35.2 s;
+  `DeploymentCapabilityProfileIntegrationTests` (11) 151.8 to 36.6 s;
+  `CapabilityManifestEndpointTests+RollbackTargets` (5) 111.9 to 31.1 s;
+  `DeploymentCapabilityProfileManifestTests` (4) 80.8 to 28.4 s;
+  `CapabilityManifestEndpointTests+ProductionJobSubstrate` (1) 9.7 to 1.0 s;
+  `CapabilityGateEndpointFilterTests` (3) 0.2 to 0.3 s;
+  `CapabilityGateOpenApiDocumentTransformerTests` (2) 0.4 to 0.3 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR runs
+and twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
+
+### Auth host sharing and job-resilience gating (#9175, #9176, #9177)
+
+- `AdminAuthEndpointsTests` (#9175): `BaseSessionHost` lazily initializes and shares
+  the five repeated OIDC host configurations (Azure AD, generic OIDC, Production
+  generic OIDC, public-base-URL/pinned-callback OIDC, and operator-bearer) with
+  `StubHttpClientFactory.Reset()` on borrow and non-disposing `HttpClient` wrappers
+  around a shared handler (also fixing a latent `ObjectDisposedException` flake in
+  `AdminAuthEndpointsTests+BrowserSessions`).
+- `ApiKeyAuthenticationTests` (#9176): removed the unused per-test `WebAppFixture`
+  (22 wasted boots and DB seeds), shared the identical Production admin and Basic-auth
+  HTTPS hosts via `IClassFixture<ApiKeyHosts>`, and disposed both root and derived
+  `WebApplicationFactory<Program>` instances via `ManagedFactory`.
+- `PostgresJobExecutionResilienceTests` (#9177): shared one dedicated restartable
+  PostGIS container via `IClassFixture<RestartableSubstrate>` (isolating jobs by
+  `operationId`) and replaced fixed 15 s / 30 s `CountingDelayedExecutor` sleeps with
+  a deterministic `GatedExecutor` released after outage recovery (and after a
+  post-grace `SweepLoop` sweep in the reconciliation test).
+
+Measured on the build host (Release, post-#9168 trunk, 2 head + 2 base runs of the
+57 cases across the 3 classes, 57/57 passing on all 4 runs):
+- Combined wall time: base 101.4 / 103.7 s (VSTest 1m 32s / 1m 35s) to head
+  82.5 / 63.9 s (VSTest 59s / 46s); ~29–40 s wall saved.
+- Per-class TRX case time (total 125.2 / 124.9 s to 55.5 / 61.7 s, ~66.5 s saved):
+  `AdminAuthEndpointsTests` (33) 46.3 / 40.1 s to 21.5 / 23.9 s;
+  `PostgresJobExecutionResilienceTests` (2) 66.4 / 73.8 s to 26.1 / 23.7 s;
+  `ApiKeyAuthenticationTests` (22) 12.5 / 11.1 s to 8.0 / 14.0 s.
+
+Shard filters, workflows, required check names, and aggregate `needs` are unchanged.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `advisory-runner-select.yml` | Advisory heavy runner selection | `workflow_call` | |
+| `arm64-gc-benchmark.yml` | Arm64 GC Benchmark (manual) | `workflow_dispatch` | |
 | `server-nuget-locks.yml` | Server NuGet Locks | `pull_request`, `workflow_dispatch` | |

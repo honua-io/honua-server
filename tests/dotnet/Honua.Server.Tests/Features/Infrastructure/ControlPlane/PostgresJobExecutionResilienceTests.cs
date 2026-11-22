@@ -128,9 +128,15 @@ public sealed class PostgresJobExecutionResilienceTests(
 
         public async ValueTask DisposeAsync()
         {
-            await _stopping.CancelAsync();
-            await _loop;
-            _stopping.Dispose();
+            try
+            {
+                await _stopping.CancelAsync();
+                await _loop;
+            }
+            finally
+            {
+                _stopping.Dispose();
+            }
         }
 
         private async Task RunAsync(JobReconciliationService reconciler)
@@ -139,9 +145,10 @@ public sealed class PostgresJobExecutionResilienceTests(
             {
                 try
                 {
+                    var sweepStarted = System.Diagnostics.Stopwatch.GetTimestamp();
                     await reconciler.SweepActiveJobsAsync(CancellationToken.None);
                     var graceEnds = Volatile.Read(ref _graceEndsTimestamp);
-                    if (graceEnds > 0 && System.Diagnostics.Stopwatch.GetTimestamp() >= graceEnds)
+                    if (graceEnds > 0 && sweepStarted >= graceEnds)
                     {
                         _postGraceSweep.TrySetResult();
                     }
@@ -197,26 +204,34 @@ public sealed class PostgresJobExecutionResilienceTests(
 
         public async Task InitializeAsync()
         {
-            // A fixed host port: the mapping of a dynamically published port can change across
-            // a stop and start, which would leave the pool pointing at a dead port.
-            _container = new PostgreSqlBuilder()
-                .WithImage("postgis/postgis:18-3.6")
-                .WithPortBinding(ReserveLoopbackPort(), 5432)
-                .Build();
-            await _container.StartAsync();
-            _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
-            await using (var migrate = _dataSource.CreateCommand(
-                             $"CREATE SCHEMA {JobStoreDatabase.DefaultSchemaName}; "
-                             + ReadMigration().Replace("$HonuaSchema$", JobStoreDatabase.DefaultSchemaName, StringComparison.Ordinal)))
+            try
             {
-                await migrate.ExecuteNonQueryAsync();
-            }
+                // A fixed host port: the mapping of a dynamically published port can change across
+                // a stop and start, which would leave the pool pointing at a dead port.
+                _container = new PostgreSqlBuilder()
+                    .WithImage("postgis/postgis:18-3.6")
+                    .WithPortBinding(ReserveLoopbackPort(), 5432)
+                    .Build();
+                await _container.StartAsync();
+                _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+                await using (var migrate = _dataSource.CreateCommand(
+                                 $"CREATE SCHEMA {JobStoreDatabase.DefaultSchemaName}; "
+                                 + ReadMigration().Replace("$HonuaSchema$", JobStoreDatabase.DefaultSchemaName, StringComparison.Ordinal)))
+                {
+                    await migrate.ExecuteNonQueryAsync();
+                }
 
-            var database = new JobStoreDatabase(_dataSource);
-            var options = Options.Create(new JobStoreOptions());
-            JobStore = new PostgresExecutionJobStore(database, options, NullLogger<PostgresExecutionJobStore>.Instance);
-            Queue = new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance);
-            LogStore = new PostgresExecutionLogStore(database, options, NullLogger<PostgresExecutionLogStore>.Instance);
+                var database = new JobStoreDatabase(_dataSource);
+                var options = Options.Create(new JobStoreOptions());
+                JobStore = new PostgresExecutionJobStore(database, options, NullLogger<PostgresExecutionJobStore>.Instance);
+                Queue = new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance);
+                LogStore = new PostgresExecutionLogStore(database, options, NullLogger<PostgresExecutionLogStore>.Instance);
+            }
+            catch
+            {
+                await DisposeAsync();
+                throw;
+            }
         }
 
         internal JobExecutionService CreateWorker(IJobExecutor executor, IJobTerminalCallback callback)

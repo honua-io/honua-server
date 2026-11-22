@@ -3247,3 +3247,32 @@ Measured on the build host (Release, 3 interleaved base/head rounds of the
 Shard filters are unchanged, so every case runs in the same shards on selected PR runs
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Auth host sharing and job-resilience gating (#9175, #9176, #9177)
+
+- `AdminAuthEndpointsTests` (#9175): `BaseSessionHost` lazily initializes and shares
+  the five repeated OIDC host configurations (Azure AD, generic OIDC, Production
+  generic OIDC, public-base-URL/pinned-callback OIDC, and operator-bearer) with
+  `StubHttpClientFactory.Reset()` on borrow and non-disposing `HttpClient` wrappers
+  around a shared handler (also fixing a latent `ObjectDisposedException` flake in
+  `AdminAuthEndpointsTests+BrowserSessions`).
+- `ApiKeyAuthenticationTests` (#9176): removed the unused per-test `WebAppFixture`
+  (22 wasted boots and DB seeds), shared the identical Production admin and Basic-auth
+  HTTPS hosts via `IClassFixture<ApiKeyHosts>`, and disposed both root and derived
+  `WebApplicationFactory<Program>` instances via `ManagedFactory`.
+- `PostgresJobExecutionResilienceTests` (#9177): shared one dedicated restartable
+  PostGIS container via `IClassFixture<RestartableSubstrate>` (isolating jobs by
+  `operationId`) and replaced fixed 15 s / 30 s `CountingDelayedExecutor` sleeps with
+  a deterministic `GatedExecutor` released after outage recovery (and after a
+  post-grace `SweepLoop` sweep in the reconciliation test).
+
+Measured on the build host (Release, post-#9168 trunk, 2 head + 2 base runs of the
+57 cases across the 3 classes, 57/57 passing on all 4 runs):
+- Combined wall time: base 101.4 / 103.7 s (VSTest 1m 32s / 1m 35s) to head
+  82.5 / 63.9 s (VSTest 59s / 46s); ~29–40 s wall saved.
+- Per-class TRX case time (total 125.2 / 124.9 s to 55.5 / 61.7 s, ~66.5 s saved):
+  `AdminAuthEndpointsTests` (33) 46.3 / 40.1 s to 21.5 / 23.9 s;
+  `PostgresJobExecutionResilienceTests` (2) 66.4 / 73.8 s to 26.1 / 23.7 s;
+  `ApiKeyAuthenticationTests` (22) 12.5 / 11.1 s to 8.0 / 14.0 s.
+
+Shard filters, workflows, required check names, and aggregate `needs` are unchanged.
