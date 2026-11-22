@@ -60,6 +60,7 @@ public sealed class SceneCopcEndpointTests : IAsyncLifetime
                         ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
 
                         ["Scenes:ObjectOrigin:MaxRangeReadBytes"] = "512",
+                        ["Scenes:ObjectOrigin:MaxCopcFullResponseBytes"] = "512",
                         ["Honua:SceneAccessSigning:SigningKey"] = SigningKey,
                         ["Honua:SceneAccessSigning:TokenTtlMinutes"] = "15"
                     });
