@@ -84,15 +84,19 @@ internal static class GeometryOutputProcessor
     }
 
     // The same limits for geometries in geometrySrid, used when a geometry was decoded without one.
-    public static GeometryLimits ForGeometrySrid(GeometryLimits limits, int? geometrySrid) => new RequestGeometryLimits
+    public static GeometryLimits ForGeometrySrid(GeometryLimits limits, int? geometrySrid)
     {
-        GeometrySrid = geometrySrid,
-        MaxVerticesPerGeometry = limits.MaxVerticesPerGeometry,
-        MaxGeometrySize = limits.MaxGeometrySize,
-        MaxCoordinatePrecision = limits.MaxCoordinatePrecision,
-        MaxOverlayCandidatePairs = limits.MaxOverlayCandidatePairs,
-        SimplifyTolerance = limits.SimplifyTolerance,
-    };
+        ArgumentNullException.ThrowIfNull(limits);
+        return new RequestGeometryLimits
+        {
+            GeometrySrid = geometrySrid,
+            MaxVerticesPerGeometry = limits.MaxVerticesPerGeometry,
+            MaxGeometrySize = limits.MaxGeometrySize,
+            MaxCoordinatePrecision = limits.MaxCoordinatePrecision,
+            MaxOverlayCandidatePairs = limits.MaxOverlayCandidatePairs,
+            SimplifyTolerance = limits.SimplifyTolerance,
+        };
+    }
 
     public static Geometry ApplyDimensionFilter(Geometry geometry, bool includeZ, bool includeM)
     {
@@ -125,7 +129,7 @@ internal static class GeometryOutputProcessor
         }
 
         // OGC WKB carries no SRID, so a geometry decoded from it takes the SRID the request resolved.
-        var srid = geometry.SRID != 0 ? geometry.SRID : (limits as RequestGeometryLimits)?.GeometrySrid ?? 0;
+        var srid = geometry.SRID > 0 ? geometry.SRID : (limits as RequestGeometryLimits)?.GeometrySrid ?? 0;
         return srid switch
         {
             4326 => ConvertMetersToDegrees(simplifyToleranceMeters, geometry.EnvelopeInternal),

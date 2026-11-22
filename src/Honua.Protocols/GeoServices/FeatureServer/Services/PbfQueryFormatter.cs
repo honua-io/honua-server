@@ -237,16 +237,16 @@ internal sealed partial class PbfQueryFormatter
         QuantizationTransform? quantizationTransform = null,
         int? requestedOutputSrid = null)
     {
+        var srid = outputSrid ?? resource.ReadSrid() ?? 4326;
         var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
             GeometryOutputProcessor.CreateEffectiveLimits(
                 _geometryLimits,
                 geometryPrecision,
                 maxAllowableOffset,
                 forceSimplify: maxAllowableOffset is > 0),
-            outputSrid ?? resource.ReadSrid() ?? 4326);
+            srid);
 
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        var srid = outputSrid ?? resource.ReadSrid() ?? 4326;
 
         var writer = new ProtobufWriter(result.Items.Length * 256);
         try

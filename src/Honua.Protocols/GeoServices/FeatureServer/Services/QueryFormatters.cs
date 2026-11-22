@@ -1174,11 +1174,13 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteStartArray("features");
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            SpatialReference.WGS84.Wkid);
         var featuresSinceFlush = 0;
 
         while (hasFeature)
