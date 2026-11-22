@@ -126,78 +126,39 @@ public sealed class Wfs20CqlFilterTests
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     [Endpoint("GET /wfs")]
-    public async Task LegacyGetFeature_ValidAndInvalidCqlFilter_BehavesAsExpected()
+    public async Task LegacyGetFeature_ValidCqlFilter_PassesSqlFilter()
     {
         FeatureQuery? capturedQuery = null;
         var (handler, _) = CreateHandler(query => capturedQuery = query);
 
-        await using var okServices = new ServiceCollection()
-            .AddLogging()
-            .AddOptions()
-            .AddValidationServices()
-            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
-            .BuildServiceProvider();
-        var okContext = new DefaultHttpContext
-        {
-            RequestServices = okServices
-        };
-        okContext.Request.Scheme = "https";
-        okContext.Request.Host = new HostString("example.test");
-        okContext.Request.Path = "/wfs";
-        okContext.Response.Body = new MemoryStream();
-
-        var okResult = await handler.HandleLegacyGetFeatureAsync(
-            okContext,
-            version: "1.1.0",
-            typeNames: "cities",
-            outputFormat: null,
-            maxFeatures: null,
-            sortBy: null,
-            bbox: null,
-            filter: null,
-            featureId: null,
-            propertyName: null,
-            srsName: null,
-            resultType: null,
-            cqlFilter: "population > 100",
-            cancellationToken: CancellationToken.None);
-        await okResult.ExecuteAsync(okContext);
-        okContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var (status, _) = await ExecuteLegacyGetFeatureAsync(handler, "population > 100");
+        status.Should().Be(StatusCodes.Status200OK);
         capturedQuery.Should().NotBeNull();
         capturedQuery!.Value.SqlFilter.Should().NotBeNull();
+    }
 
-        await using var errServices = new ServiceCollection()
-            .AddLogging()
-            .AddOptions()
-            .AddValidationServices()
-            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
-            .BuildServiceProvider();
-        var errContext = new DefaultHttpContext
-        {
-            RequestServices = errServices
-        };
-        errContext.Response.Body = new MemoryStream();
-        var errResult = await handler.HandleLegacyGetFeatureAsync(
-            errContext,
-            version: "1.1.0",
-            typeNames: "cities",
-            outputFormat: null,
-            maxFeatures: null,
-            sortBy: null,
-            bbox: null,
-            filter: null,
-            featureId: null,
-            propertyName: null,
-            srsName: null,
-            resultType: null,
-            cqlFilter: "population >>>",
-            cancellationToken: CancellationToken.None);
-        await errResult.ExecuteAsync(errContext);
-        errContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        errContext.Response.Body.Position = 0;
-        using var sr = new StreamReader(errContext.Response.Body, Encoding.UTF8);
-        var errBody = await sr.ReadToEndAsync();
-        errBody.Should().Contain("InvalidParameterValue");
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [Endpoint("GET /wfs")]
+    public async Task LegacyGetFeature_InvalidCqlFilter_ReturnsInvalidParameterValueException()
+    {
+        var (handler, _) = CreateHandler(_ => { });
+
+        var (status, body) = await ExecuteLegacyGetFeatureAsync(handler, "population >>>");
+        status.Should().Be(StatusCodes.Status400BadRequest);
+        body.Should().Contain("InvalidParameterValue");
+    }
+
+    private static async Task<(int Status, string Body)> ExecuteLegacyGetFeatureAsync(
+        Wfs20Handler handler,
+        string cqlFilter)
+    {
+        await using var services = CreateWfsHttpServices();
+        var context = CreateWfsHttpContext(services, cqlFilter);
+        var result = await handler.HandleLegacyGetFeatureAsync(
+            context, "1.1.0", "cities", null, null, null, null, null, null, null, null, null, CancellationToken.None);
+        return await ExecuteResultAsync(context, result);
     }
 
     private (Wfs20Handler Handler, IFeatureReader Reader) CreateHandler(Action<FeatureQuery> onQuery)
@@ -333,37 +294,34 @@ public sealed class Wfs20CqlFilterTests
         string? filter = null,
         string? cqlFilter = null)
     {
-        await using var services = new ServiceCollection()
+        await using var services = CreateWfsHttpServices();
+        var context = CreateWfsHttpContext(services, cqlFilter);
+        var result = await handler.HandleGetFeatureAsync(
+            context, "cities", "application/geo+json", null, null, null, null, filter, null, null, null, null, CancellationToken.None);
+        return await ExecuteResultAsync(context, result);
+    }
+
+    private static ServiceProvider CreateWfsHttpServices()
+        => new ServiceCollection()
             .AddLogging()
             .AddOptions()
             .AddValidationServices()
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
             .BuildServiceProvider();
-        var context = new DefaultHttpContext
-        {
-            RequestServices = services
-        };
+
+    private static DefaultHttpContext CreateWfsHttpContext(IServiceProvider services, string? cqlFilter)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("example.test");
         context.Request.Path = "/wfs";
         context.Response.Body = new MemoryStream();
+        WfsCqlFilterHelper.SetRequestCqlFilter(context, cqlFilter);
+        return context;
+    }
 
-        var result = await handler.HandleGetFeatureAsync(
-            context,
-            typeNames: "cities",
-            outputFormat: "application/geo+json",
-            count: null,
-            startIndex: null,
-            sortBy: null,
-            bbox: null,
-            filter: filter,
-            resourceId: null,
-            propertyName: null,
-            srsName: null,
-            resultType: null,
-            cqlFilter: cqlFilter,
-            cancellationToken: CancellationToken.None);
-
+    private static async Task<(int Status, string Body)> ExecuteResultAsync(HttpContext context, IResult result)
+    {
         await result.ExecuteAsync(context);
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, Encoding.UTF8);

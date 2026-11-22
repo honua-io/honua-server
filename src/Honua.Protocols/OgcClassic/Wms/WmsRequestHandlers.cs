@@ -53,9 +53,6 @@ internal static partial class WmsRequestHandlers
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
     private const double WmsWebMercatorMax = SpatialConstants.WebMercatorExtent;
-    // OGC WMS 1.3.0 §7.2.4.6.9 standard pixel size is 0.28 mm (~90.714 DPI).
-    private const double DefaultWmsDpi = 0.0254 / SpatialConstants.PixelSizeMeters;
-    private const double MaxWmsDpi = 1200.0;
     private const string WmsWarningHeaderName = "Warning";
     private const string WmsProtocolName = "Wms";
     private static readonly Version _wms13SemanticVersion = new(1, 3, 0);
@@ -710,8 +707,6 @@ internal static partial class WmsRequestHandlers
         IQueryCollection query,
         WmsLayer[] layers)
     {
-        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter (semicolon-delimited FES XML per layer),
-        // and GeoServer vendor extension CQL_FILTER (semicolon-delimited CQL2 text per layer).
         var filterParam = GetQueryValue(query, "FILTER");
         var cqlFilterParam = GetQueryValue(query, "CQL_FILTER");
         var hasFesFilter = !string.IsNullOrWhiteSpace(filterParam);
@@ -728,40 +723,9 @@ internal static partial class WmsRequestHandlers
                 "FILTER and CQL_FILTER cannot be combined in the same request."));
         }
 
-        var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var layerFilters = new SqlFragment?[layers.Length];
-
         if (hasCqlFilter)
         {
-            var cqlTokens = SplitWmsCqlFilterTokens(cqlFilterParam!);
-            if (cqlTokens.Length != 1 && cqlTokens.Length != layers.Length)
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    $"CQL_FILTER must contain exactly 1 or {layers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS."));
-            }
-
-            for (var i = 0; i < layers.Length; i++)
-            {
-                var token = cqlTokens.Length == 1 ? cqlTokens[0] : cqlTokens[i];
-                if (string.IsNullOrWhiteSpace(token))
-                {
-                    continue;
-                }
-
-                var (filter, error) = TranslateWmsLayerCqlFilter(
-                    context,
-                    filterExpressionService,
-                    layers[i].Resource,
-                    token);
-                if (error is not null)
-                {
-                    return (null, error);
-                }
-
-                layerFilters[i] = filter;
-            }
-
-            return (layerFilters, null);
+            return ParseWmsCqlLayerFilters(context, layers, cqlFilterParam!);
         }
 
         var filterTokens = SplitWmsFilterTokens(filterParam!);
@@ -770,6 +734,9 @@ internal static partial class WmsRequestHandlers
             return (null, CreateWmsServiceException(context, "InvalidParameterValue",
                 $"FILTER must contain exactly 1 or {layers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS."));
         }
+
+        var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var layerFilters = new SqlFragment?[layers.Length];
 
         for (var i = 0; i < layers.Length; i++)
         {
@@ -799,137 +766,6 @@ internal static partial class WmsRequestHandlers
         }
 
         return (layerFilters, null);
-    }
-
-    internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerCqlFilter(
-        HttpContext context,
-        IFilterExpressionService filterExpressionService,
-        MetadataV2Object resource,
-        string token)
-    {
-        var parseResult = filterExpressionService.Parse(FilterLanguage.Cql2Text, token);
-        if (!parseResult.IsSuccess || parseResult.Expression is null)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                $"Invalid CQL_FILTER expression: {parseResult.ErrorMessage ?? "syntax error."}"));
-        }
-
-        var expression = parseResult.Expression;
-        var publicResource = resource.WithoutHiddenSchemaFields();
-        try
-        {
-            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
-                expression,
-                publicResource,
-                propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
-            expression = filterExpressionService.Normalize(expression, publicResource);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue", ex.Message));
-        }
-
-        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                "CQL_FILTER expression must be a boolean predicate."));
-        }
-
-        var translation = filterExpressionService.Translate(expression, publicResource);
-        if (!translation.IsSuccess)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                translation.ErrorMessage ?? "Invalid CQL_FILTER expression."));
-        }
-
-        return (translation.SqlFilter, null);
-    }
-
-    internal static string[] SplitWmsCqlFilterTokens(string cqlFilterParam)
-    {
-        var tokens = new List<string>();
-        var start = 0;
-        var inSingleQuote = false;
-        var inDoubleQuote = false;
-
-        for (var i = 0; i < cqlFilterParam.Length; i++)
-        {
-            var c = cqlFilterParam[i];
-            if (c == '\'' && !inDoubleQuote)
-            {
-                if (inSingleQuote && i + 1 < cqlFilterParam.Length && cqlFilterParam[i + 1] == '\'')
-                {
-                    i++;
-                    continue;
-                }
-
-                inSingleQuote = !inSingleQuote;
-            }
-            else if (c == '"' && !inSingleQuote)
-            {
-                if (inDoubleQuote && i + 1 < cqlFilterParam.Length && cqlFilterParam[i + 1] == '"')
-                {
-                    i++;
-                    continue;
-                }
-
-                inDoubleQuote = !inDoubleQuote;
-            }
-            else if (c == ';' && !inSingleQuote && !inDoubleQuote)
-            {
-                tokens.Add(cqlFilterParam[start..i].Trim());
-                start = i + 1;
-            }
-        }
-
-        if (start <= cqlFilterParam.Length)
-        {
-            tokens.Add(cqlFilterParam[start..].Trim());
-        }
-
-        return tokens.ToArray();
-    }
-
-    internal static bool TryParseWmsFormatOptionsDpi(string? formatOptions, out double? dpi, out string error)
-    {
-        dpi = null;
-        error = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(formatOptions))
-        {
-            return true;
-        }
-
-        var pairs = formatOptions.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var pair in pairs)
-        {
-            var separatorIndex = pair.IndexOf(':');
-            if (separatorIndex <= 0 || separatorIndex == pair.Length - 1)
-            {
-                error = "FORMAT_OPTIONS entries must use key:value syntax separated by semicolons.";
-                return false;
-            }
-
-            var key = pair[..separatorIndex].Trim();
-            var value = pair[(separatorIndex + 1)..].Trim();
-            if (!string.Equals(key, "dpi", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDpi) ||
-                !double.IsFinite(parsedDpi) ||
-                parsedDpi < 1.0 ||
-                parsedDpi > MaxWmsDpi)
-            {
-                error = $"FORMAT_OPTIONS dpi must be a number between 1 and {MaxWmsDpi.ToString(CultureInfo.InvariantCulture)}.";
-                return false;
-            }
-
-            dpi = parsedDpi;
-        }
-
-        return true;
     }
 
     internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
@@ -1165,47 +1001,15 @@ internal static partial class WmsRequestHandlers
 
     private static bool TryNormalizeWmsMapFormat(string value, out string imageFormat, out string contentType)
     {
-        imageFormat = string.Empty;
-        contentType = string.Empty;
-
-        var normalized = value.Trim();
-        if (string.Equals(normalized, "image/png", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "png", StringComparison.OrdinalIgnoreCase))
+        (imageFormat, contentType) = value.Trim().ToLowerInvariant() switch
         {
-            imageFormat = "png";
-            contentType = "image/png";
-            return true;
-        }
-
-        if (string.Equals(normalized, "image/png8", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "png8", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "image/png; mode=8bit", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "image/png;mode=8bit", StringComparison.OrdinalIgnoreCase))
-        {
-            imageFormat = "png8";
-            contentType = "image/png";
-            return true;
-        }
-
-        if (string.Equals(normalized, "image/jpeg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "image/jpg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "jpeg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "jpg", StringComparison.OrdinalIgnoreCase))
-        {
-            imageFormat = "jpg";
-            contentType = "image/jpeg";
-            return true;
-        }
-
-        if (string.Equals(normalized, "image/webp", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "webp", StringComparison.OrdinalIgnoreCase))
-        {
-            imageFormat = "webp";
-            contentType = "image/webp";
-            return true;
-        }
-
-        return false;
+            "image/png" or "png" => ("png", "image/png"),
+            "image/png8" or "png8" or "image/png; mode=8bit" or "image/png;mode=8bit" => ("png8", "image/png"),
+            "image/jpeg" or "image/jpg" or "jpeg" or "jpg" => ("jpg", "image/jpeg"),
+            "image/webp" or "webp" => ("webp", "image/webp"),
+            _ => (string.Empty, string.Empty)
+        };
+        return imageFormat.Length > 0;
     }
 
     private static bool IsSupportedWmsExceptionFormat(string? exceptionsValue)

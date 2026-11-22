@@ -51,30 +51,13 @@ internal static partial class WmsPopupHtmlFormatter
     private static void AppendFeatureSection(StringBuilder sb, FeatureEntry entry)
     {
         var popupInfo = ResolvePopupInfo(entry.Resource);
-        var defaultTitle = entry.Resource.Metadata.Title
-            ?? entry.Resource.Metadata.Name
-            ?? entry.LayerName;
-
-        var titleTemplate = TryGetStringProperty(popupInfo, "title");
-        var resolvedTitle = !string.IsNullOrWhiteSpace(titleTemplate)
-            ? InterpolateTemplate(titleTemplate, entry.Attributes)
-            : defaultTitle;
-        if (string.IsNullOrWhiteSpace(resolvedTitle))
-        {
-            resolvedTitle = defaultTitle;
-        }
-
-        var descriptionTemplate = TryGetStringProperty(popupInfo, "description");
-        var resolvedDescription = !string.IsNullOrWhiteSpace(descriptionTemplate)
-            ? InterpolateTemplate(descriptionTemplate, entry.Attributes)
-            : null;
+        var resolvedTitle = ResolveTitle(entry, popupInfo);
+        var resolvedDescription = ResolveDescription(entry, popupInfo);
 
         sb.Append("  <section class=\"honua-feature-info\" data-layer=\"")
             .Append(WebUtility.HtmlEncode(entry.LayerName))
             .AppendLine("\">");
-        sb.Append("    <h2>")
-            .Append(WebUtility.HtmlEncode(resolvedTitle))
-            .AppendLine("</h2>");
+        sb.Append("    <h2>").Append(WebUtility.HtmlEncode(resolvedTitle)).AppendLine("</h2>");
 
         if (!string.IsNullOrWhiteSpace(resolvedDescription))
         {
@@ -83,31 +66,73 @@ internal static partial class WmsPopupHtmlFormatter
                 .AppendLine("</p>");
         }
 
-        var rows = ResolveRows(entry.Resource, entry.Attributes, popupInfo);
-        if (rows.Count > 0)
-        {
-            sb.AppendLine("    <table>");
-            sb.AppendLine("      <tbody>");
-            foreach (var (label, value) in rows)
-            {
-                sb.Append("        <tr><th>")
-                    .Append(WebUtility.HtmlEncode(label))
-                    .Append("</th><td>")
-                    .Append(WebUtility.HtmlEncode(value))
-                    .AppendLine("</td></tr>");
-            }
+        AppendRowsTable(sb, ResolveRows(entry.Resource, entry.Attributes, popupInfo));
+        sb.AppendLine("  </section>");
+    }
 
-            sb.AppendLine("      </tbody>");
-            sb.AppendLine("    </table>");
+    private static string ResolveTitle(FeatureEntry entry, JsonElement? popupInfo)
+    {
+        var defaultTitle = entry.Resource.Metadata.Title ?? entry.Resource.Metadata.Name ?? entry.LayerName;
+        var titleTemplate = TryGetStringProperty(popupInfo, "title");
+        if (string.IsNullOrWhiteSpace(titleTemplate))
+        {
+            return defaultTitle;
         }
 
-        sb.AppendLine("  </section>");
+        var interpolated = InterpolateTemplate(titleTemplate, entry.Attributes);
+        return string.IsNullOrWhiteSpace(interpolated) ? defaultTitle : interpolated;
+    }
+
+    private static string? ResolveDescription(FeatureEntry entry, JsonElement? popupInfo)
+    {
+        var descriptionTemplate = TryGetStringProperty(popupInfo, "description");
+        return !string.IsNullOrWhiteSpace(descriptionTemplate)
+            ? InterpolateTemplate(descriptionTemplate, entry.Attributes)
+            : null;
+    }
+
+    private static void AppendRowsTable(StringBuilder sb, List<(string Label, string Value)> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("    <table>");
+        sb.AppendLine("      <tbody>");
+        foreach (var (label, value) in rows)
+        {
+            sb.Append("        <tr><th>")
+                .Append(WebUtility.HtmlEncode(label))
+                .Append("</th><td>")
+                .Append(WebUtility.HtmlEncode(value))
+                .AppendLine("</td></tr>");
+        }
+
+        sb.AppendLine("      </tbody>");
+        sb.AppendLine("    </table>");
     }
 
     private static List<(string Label, string Value)> ResolveRows(
         MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes,
         JsonElement? popupInfo)
+    {
+        var aliases = BuildFieldAliases(resource);
+        if (popupInfo is { ValueKind: JsonValueKind.Object } popup &&
+            popup.TryGetProperty("fieldInfos", out var fieldInfos) &&
+            fieldInfos.ValueKind == JsonValueKind.Array)
+        {
+            return ResolveConfiguredRows(fieldInfos, attributes, aliases);
+        }
+
+        return attributes
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(pair => (aliases.TryGetValue(pair.Key, out var alias) ? alias : pair.Key, FormatFeatureInfoValue(pair.Value)))
+            .ToList();
+    }
+
+    private static Dictionary<string, string> BuildFieldAliases(MetadataV2Object resource)
     {
         var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
@@ -118,53 +143,40 @@ internal static partial class WmsPopupHtmlFormatter
             }
         }
 
+        return aliases;
+    }
+
+    private static List<(string Label, string Value)> ResolveConfiguredRows(
+        JsonElement fieldInfos,
+        IReadOnlyDictionary<string, object?> attributes,
+        Dictionary<string, string> aliases)
+    {
         var rows = new List<(string Label, string Value)>();
-        if (popupInfo is { ValueKind: JsonValueKind.Object } popup &&
-            popup.TryGetProperty("fieldInfos", out var fieldInfos) &&
-            fieldInfos.ValueKind == JsonValueKind.Array)
+        foreach (var fieldInfo in fieldInfos.EnumerateArray())
         {
-            foreach (var fieldInfo in fieldInfos.EnumerateArray())
+            if (fieldInfo.ValueKind != JsonValueKind.Object || IsHiddenFieldInfo(fieldInfo))
             {
-                if (fieldInfo.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                if (fieldInfo.TryGetProperty("visible", out var visibleProp) &&
-                    visibleProp.ValueKind == JsonValueKind.False)
-                {
-                    continue;
-                }
-
-                var fieldName = TryGetStringProperty(fieldInfo, "fieldName");
-                if (string.IsNullOrWhiteSpace(fieldName) || !attributes.TryGetValue(fieldName, out var rawValue))
-                {
-                    continue;
-                }
-
-                var configuredLabel = TryGetStringProperty(fieldInfo, "label");
-                var label = !string.IsNullOrWhiteSpace(configuredLabel)
-                    ? configuredLabel
-                    : aliases.TryGetValue(fieldName, out var schemaAlias)
-                        ? schemaAlias
-                        : fieldName;
-
-                rows.Add((label, FormatFeatureInfoValue(rawValue)));
+                continue;
             }
 
-            return rows;
-        }
+            var fieldName = TryGetStringProperty(fieldInfo, "fieldName");
+            if (string.IsNullOrWhiteSpace(fieldName) || !attributes.TryGetValue(fieldName, out var rawValue))
+            {
+                continue;
+            }
 
-        foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var label = aliases.TryGetValue(attribute.Key, out var schemaAlias)
-                ? schemaAlias
-                : attribute.Key;
-            rows.Add((label, FormatFeatureInfoValue(attribute.Value)));
+            var configuredLabel = TryGetStringProperty(fieldInfo, "label");
+            var label = !string.IsNullOrWhiteSpace(configuredLabel)
+                ? configuredLabel
+                : aliases.TryGetValue(fieldName, out var schemaAlias) ? schemaAlias : fieldName;
+            rows.Add((label, FormatFeatureInfoValue(rawValue)));
         }
 
         return rows;
     }
+
+    private static bool IsHiddenFieldInfo(JsonElement fieldInfo)
+        => fieldInfo.TryGetProperty("visible", out var visibleProp) && visibleProp.ValueKind == JsonValueKind.False;
 
     private static JsonElement? ResolvePopupInfo(MetadataV2Object resource)
     {

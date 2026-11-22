@@ -123,36 +123,10 @@ internal sealed partial class Wfs20Handler
         int offset,
         int count,
         CancellationToken cancellationToken,
-        string? wfsVersion = null,
-        string? cqlFilter = null)
+        string? wfsVersion = null)
     {
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
-        string?[]? perTypeCqlFilters = null;
-        if (!string.IsNullOrWhiteSpace(cqlFilter))
-        {
-            if (!string.IsNullOrWhiteSpace(filter))
-            {
-                throw new WfsQueryException(
-                    "InvalidParameterValue",
-                    "FILTER and CQL_FILTER cannot be combined in the same request.",
-                    "cql_filter");
-            }
-
-            var tokens = Wms.WmsRequestHandlers.SplitWmsCqlFilterTokens(cqlFilter);
-            if (tokens.Length != 1 && tokens.Length != featureTypes.Count)
-            {
-                throw new WfsQueryException(
-                    "InvalidParameterValue",
-                    $"CQL_FILTER must contain exactly 1 or {featureTypes.Count.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of TYPENAMES.",
-                    "cql_filter");
-            }
-
-            perTypeCqlFilters = new string?[featureTypes.Count];
-            for (var i = 0; i < featureTypes.Count; i++)
-            {
-                perTypeCqlFilters[i] = tokens.Length == 1 ? tokens[0] : tokens[i];
-            }
-        }
+        var perTypeCqlFilters = WfsCqlFilterHelper.ResolvePerTypeFilters(WfsCqlFilterHelper.Current, filter, featureTypes.Count);
 
         // The per-feature-type query build + count has no cross-type dependency, so run
         // every feature type's build+count pair concurrently instead of one at a time.
@@ -162,6 +136,7 @@ internal sealed partial class Wfs20Handler
         // precomputed results in the original order.
         var perTypeResults = await Task.WhenAll(featureTypes.Select(async (featureType, index) =>
         {
+            using var typeCqlScope = WfsCqlFilterHelper.BeginScope(perTypeCqlFilters?[index]);
             var query = await BuildFeatureQueryAsync(
                 featureType,
                 propertyName,
@@ -177,8 +152,7 @@ internal sealed partial class Wfs20Handler
                 enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
-                wfsVersion: wfsVersion,
-                cqlFilter: perTypeCqlFilters?[index]);
+                wfsVersion: wfsVersion);
 
             var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
             var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
@@ -251,22 +225,14 @@ internal sealed partial class Wfs20Handler
         bool enforceResourceIdTypeMatch,
         bool requireResourceIdQualifier,
         CancellationToken cancellationToken,
-        string? wfsVersion = null,
-        string? cqlFilter = null)
+        string? wfsVersion = null)
     {
         var resource = descriptor.Resource;
         var projectedFields = ResolveProjectedFields(resource, propertyName);
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
-        if (!string.IsNullOrWhiteSpace(normalizedFilter) && !string.IsNullOrWhiteSpace(cqlFilter))
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                "FILTER and CQL_FILTER cannot be combined in the same request.",
-                "cql_filter");
-        }
-
+        var cqlFilter = WfsCqlFilterHelper.Current;
         var sqlFilter = !string.IsNullOrWhiteSpace(cqlFilter)
-            ? TranslateCqlFilter(resource, cqlFilter)
+            ? WfsCqlFilterHelper.Translate(_filterExpressionService, resource, (cqlFilter, normalizedFilter))
             : TranslateFesFilter(resource, normalizedFilter);
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
         var resourceIds = ParseResourceIds(
@@ -349,61 +315,6 @@ internal sealed partial class Wfs20Handler
         if (!translation.IsSuccess)
         {
             throw new ArgumentException(translation.ErrorMessage ?? "Invalid filter expression.");
-        }
-
-        return translation.SqlFilter;
-    }
-
-    private SqlFragment? TranslateCqlFilter(MetadataV2Object resource, string? cqlFilter)
-    {
-        if (string.IsNullOrWhiteSpace(cqlFilter))
-        {
-            return null;
-        }
-
-        var parseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Text, cqlFilter);
-        if (!parseResult.IsSuccess || parseResult.Expression is null)
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                $"Invalid CQL_FILTER expression: {parseResult.ErrorMessage ?? "syntax error."}",
-                "cql_filter");
-        }
-
-        var publicResource = resource with
-        {
-            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
-        };
-
-        FilterExpression expression;
-        try
-        {
-            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
-                parseResult.Expression,
-                publicResource,
-                propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
-            expression = _filterExpressionService.Normalize(expression, publicResource);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            throw new WfsQueryException("InvalidParameterValue", ex.Message, "cql_filter");
-        }
-
-        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                "CQL_FILTER expression must be a boolean predicate.",
-                "cql_filter");
-        }
-
-        var translation = _filterExpressionService.Translate(expression, publicResource);
-        if (!translation.IsSuccess)
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                translation.ErrorMessage ?? "Invalid CQL_FILTER expression.",
-                "cql_filter");
         }
 
         return translation.SqlFilter;

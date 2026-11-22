@@ -30,9 +30,9 @@ internal sealed partial class Wfs20Handler
         string? propertyName,
         string? srsName,
         string? resultType,
-        string? cqlFilter = null,
         CancellationToken cancellationToken = default)
     {
+        using var cqlScope = WfsCqlFilterHelper.BeginScope(WfsCqlFilterHelper.GetRequestCqlFilter(context));
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             "wfs20.get_feature", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
@@ -165,7 +165,8 @@ internal sealed partial class Wfs20Handler
                     .ConfigureAwait(false);
                 if (ReaderSupportsPagedGetFeatureFastPath(resolvedReader, normalizedFormat))
                 {
-                    var singleCqlFilter = ResolveSingleTypeCqlFilter(cqlFilter, filter);
+                    using var singleCqlScope = WfsCqlFilterHelper.BeginScope(
+                        WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.Current, filter));
                     var query = (await BuildFeatureQueryAsync(
                         descriptor,
                         propertyName,
@@ -176,8 +177,7 @@ internal sealed partial class Wfs20Handler
                         srsName,
                         enforceResourceIdTypeMatch: true,
                         requireResourceIdQualifier: selectedTypes.Length > 1,
-                        cancellationToken: cancellationToken,
-                        cqlFilter: singleCqlFilter).ConfigureAwait(false)) with
+                        cancellationToken: cancellationToken).ConfigureAwait(false)) with
                     {
                         Offset = offset,
                         Limit = maxFeatures
@@ -209,8 +209,7 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 offset,
                 maxFeatures,
-                cancellationToken,
-                cqlFilter: cqlFilter);
+                cancellationToken);
 
             if (planSet.TotalMatched == 0)
             {
@@ -333,33 +332,6 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.GetFeature, ex.Message);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetFeature request.");
         }
-    }
-
-    private static string? ResolveSingleTypeCqlFilter(string? cqlFilter, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(cqlFilter))
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                "FILTER and CQL_FILTER cannot be combined in the same request.",
-                "cql_filter");
-        }
-
-        var tokens = Wms.WmsRequestHandlers.SplitWmsCqlFilterTokens(cqlFilter);
-        if (tokens.Length != 1)
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                "CQL_FILTER must contain exactly 1 filter matching the requested feature type.",
-                "cql_filter");
-        }
-
-        return tokens[0];
     }
 
     private async Task<IResult> HandleGetFeatureXmlQueriesAsync(

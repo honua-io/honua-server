@@ -126,9 +126,9 @@ internal sealed partial class Wfs20Handler
         string? propertyName,
         string? srsName,
         string? resultType,
-        string? cqlFilter = null,
         CancellationToken cancellationToken = default)
     {
+        using var cqlScope = WfsCqlFilterHelper.BeginScope(WfsCqlFilterHelper.GetRequestCqlFilter(context));
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             IsWfs10(version) ? "wfs10.get_feature" : "wfs11.get_feature",
             ActivityKind.Internal);
@@ -198,8 +198,7 @@ internal sealed partial class Wfs20Handler
                 offset: 0,
                 count: limit,
                 cancellationToken,
-                wfsVersion: version,
-                cqlFilter: cqlFilter).ConfigureAwait(false);
+                wfsVersion: version).ConfigureAwait(false);
 
             if (isHitsRequest)
             {

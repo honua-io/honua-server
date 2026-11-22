@@ -85,10 +85,18 @@ internal static class OgcClassicRequestHelpers
         return value.ToString() ?? string.Empty;
     }
 
-    internal static bool TryNormalizeFeatureInfoFormat(
-        string? format,
-        out string normalizedFormat,
-        bool allowHtml = false)
+    internal static bool TryNormalizeWmsFeatureInfoFormat(string? format, out string normalizedFormat)
+    {
+        if (string.Equals(format, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedFormat = HtmlMimeType;
+            return true;
+        }
+
+        return TryNormalizeFeatureInfoFormat(format, out normalizedFormat);
+    }
+
+    internal static bool TryNormalizeFeatureInfoFormat(string? format, out string normalizedFormat)
     {
         normalizedFormat = PlainTextMimeType;
         if (string.IsNullOrWhiteSpace(format))
@@ -99,12 +107,6 @@ internal static class OgcClassicRequestHelpers
         if (string.Equals(format, PlainTextMimeType, StringComparison.OrdinalIgnoreCase))
         {
             normalizedFormat = PlainTextMimeType;
-            return true;
-        }
-
-        if (allowHtml && string.Equals(format, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedFormat = HtmlMimeType;
             return true;
         }
 

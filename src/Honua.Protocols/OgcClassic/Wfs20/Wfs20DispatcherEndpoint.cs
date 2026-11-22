@@ -289,7 +289,7 @@ internal static class Wfs20DispatcherEndpoint
                 var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
                 var bbox = parameters.Get(Wfs20Utilities.ParameterNames.BBox);
                 var filter = parameters.Get(Wfs20Utilities.ParameterNames.Filter);
-                var cqlFilter = parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter);
+                WfsCqlFilterHelper.SetRequestCqlFilter(context, parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter));
                 var featureId = parameters.Get(
                     Wfs20Utilities.ParameterNames.FeatureId,
                     Wfs20Utilities.ParameterNames.ResourceId);
@@ -312,7 +312,6 @@ internal static class Wfs20DispatcherEndpoint
                     propertyName,
                     srsName,
                     resultType,
-                    cqlFilter,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -550,7 +549,7 @@ internal static class Wfs20DispatcherEndpoint
             var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
             var bbox = parameters.Get(Wfs20Utilities.ParameterNames.BBox);
             var filter = parameters.Get(Wfs20Utilities.ParameterNames.Filter);
-            var cqlFilter = parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter);
+            WfsCqlFilterHelper.SetRequestCqlFilter(context, parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter));
             var resourceId = parameters.Get(
                 Wfs20Utilities.ParameterNames.ResourceId,
                 Wfs20Utilities.ParameterNames.FeatureId);
@@ -581,7 +580,7 @@ internal static class Wfs20DispatcherEndpoint
             // Handle the request
             return await handler.HandleGetFeatureAsync(
                 context, typeNames, outputFormat, count, startIndex, sortBy, bbox, filter, resourceId, propertyName, srsName, resultType,
-                cqlFilter, cancellationToken);
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

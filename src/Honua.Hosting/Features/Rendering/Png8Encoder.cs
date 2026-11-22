@@ -8,11 +8,6 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Encodes a Skia render surface as an 8-bit indexed-color (palette) PNG (<c>image/png8</c>).
-/// Preserves exact colors when the image uses at most 256 distinct RGBA values and quantizes
-/// larger images onto a deterministic 6x6x6 RGB palette with an explicit transparent entry.
-/// </summary>
 internal static class Png8Encoder
 {
     private const int MaxPaletteEntries = 256;
@@ -24,11 +19,25 @@ internal static class Png8Encoder
         ArgumentNullException.ThrowIfNull(surface);
 
         using var snapshot = surface.Snapshot();
+        var (width, height, pixelBytes) = ReadRgbaPixels(snapshot);
+        var (palette, indices) = BuildPaletteAndIndices(pixelBytes, width, height);
+
+        using var output = new MemoryStream(checked(width * height + 1024));
+        output.Write(PngSignature);
+        WriteIhdrChunk(output, width, height);
+        WritePaletteChunks(output, palette);
+        WriteIdatChunk(output, indices, width, height);
+        WriteChunk(output, "IEND"u8, ReadOnlySpan<byte>.Empty);
+        return output.ToArray();
+    }
+
+    private static (int Width, int Height, byte[] Pixels) ReadRgbaPixels(SKImage snapshot)
+    {
         var width = snapshot.Width;
         var height = snapshot.Height;
         if (width <= 0 || height <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(surface), "Render surface dimensions must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(snapshot), "Render surface dimensions must be positive.");
         }
 
         var pixelBytes = new byte[checked(width * height * 4)];
@@ -40,13 +49,11 @@ internal static class Png8Encoder
         }
 
         Marshal.Copy(bitmap.GetPixels(), pixelBytes, 0, pixelBytes.Length);
+        return (width, height, pixelBytes);
+    }
 
-        var (palette, indices) = BuildPaletteAndIndices(pixelBytes, width, height);
-
-        using var output = new MemoryStream(checked(width * height + 1024));
-        output.Write(PngSignature);
-
-        // IHDR: width, height, bitDepth=8, colorType=3 (indexed), compression=0, filter=0, interlace=0.
+    private static void WriteIhdrChunk(Stream output, int width, int height)
+    {
         Span<byte> ihdr = stackalloc byte[13];
         BinaryPrimitives.WriteUInt32BigEndian(ihdr[0..4], (uint)width);
         BinaryPrimitives.WriteUInt32BigEndian(ihdr[4..8], (uint)height);
@@ -56,8 +63,10 @@ internal static class Png8Encoder
         ihdr[11] = 0;
         ihdr[12] = 0;
         WriteChunk(output, "IHDR"u8, ihdr);
+    }
 
-        // PLTE: 3 bytes (R, G, B) per palette entry.
+    private static void WritePaletteChunks(Stream output, uint[] palette)
+    {
         var plte = new byte[palette.Length * 3];
         var lastNonOpaqueIndex = -1;
         for (var i = 0; i < palette.Length; i++)
@@ -71,38 +80,37 @@ internal static class Png8Encoder
                 lastNonOpaqueIndex = i;
             }
         }
+
         WriteChunk(output, "PLTE"u8, plte);
-
-        // tRNS: alpha values up to the last non-opaque palette entry.
-        if (lastNonOpaqueIndex >= 0)
+        if (lastNonOpaqueIndex < 0)
         {
-            var trns = new byte[lastNonOpaqueIndex + 1];
-            for (var i = 0; i <= lastNonOpaqueIndex; i++)
-            {
-                trns[i] = (byte)((palette[i] >> 24) & 0xFF);
-            }
-            WriteChunk(output, "tRNS"u8, trns);
+            return;
         }
 
-        // IDAT: zlib-compressed scanlines (filter byte 0 + width palette indices per row).
-        using (var idatBuffer = new MemoryStream())
+        var trns = new byte[lastNonOpaqueIndex + 1];
+        for (var i = 0; i <= lastNonOpaqueIndex; i++)
         {
-            using (var zlib = new ZLibStream(idatBuffer, CompressionLevel.Fastest, leaveOpen: true))
-            {
-                var row = new byte[width + 1];
-                row[0] = 0;
-                for (var y = 0; y < height; y++)
-                {
-                    Buffer.BlockCopy(indices, y * width, row, 1, width);
-                    zlib.Write(row, 0, row.Length);
-                }
-            }
-
-            WriteChunk(output, "IDAT"u8, idatBuffer.ToArray());
+            trns[i] = (byte)((palette[i] >> 24) & 0xFF);
         }
 
-        WriteChunk(output, "IEND"u8, ReadOnlySpan<byte>.Empty);
-        return output.ToArray();
+        WriteChunk(output, "tRNS"u8, trns);
+    }
+
+    private static void WriteIdatChunk(Stream output, byte[] indices, int width, int height)
+    {
+        using var idatBuffer = new MemoryStream();
+        using (var zlib = new ZLibStream(idatBuffer, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            var row = new byte[width + 1];
+            row[0] = 0;
+            for (var y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(indices, y * width, row, 1, width);
+                zlib.Write(row, 0, row.Length);
+            }
+        }
+
+        WriteChunk(output, "IDAT"u8, idatBuffer.ToArray());
     }
 
     private static (uint[] Palette, byte[] Indices) BuildPaletteAndIndices(byte[] rgba, int width, int height)

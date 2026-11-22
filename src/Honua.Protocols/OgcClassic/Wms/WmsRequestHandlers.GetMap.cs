@@ -112,7 +112,8 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png, image/png8, image/jpeg, or image/webp.");
         }
 
-        if (!TryParseWmsFormatOptionsDpi(GetQueryValue(query, "FORMAT_OPTIONS"), out var requestedDpi, out var formatOptionsError))
+        var (requestedDpi, formatOptionsError) = ParseWmsFormatOptionsDpi(GetQueryValue(query, "FORMAT_OPTIONS"));
+        if (formatOptionsError is not null)
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", formatOptionsError);
         }
@@ -233,27 +234,8 @@ internal static partial class WmsRequestHandlers
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
 
         var hasDpiScaling = requestedDpi.HasValue;
-        var dpiScale = hasDpiScaling ? requestedDpi!.Value / DefaultWmsDpi : 1.0;
-        Func<double, double, SKPoint> transformFn;
-        int zoomImageWidth;
-        int zoomImageHeight;
-
-        if (hasDpiScaling)
-        {
-            var logicalWidth = imageWidth / dpiScale;
-            var logicalHeight = imageHeight / dpiScale;
-            canvas.Save();
-            canvas.Scale((float)dpiScale, (float)dpiScale);
-            transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, logicalWidth, logicalHeight);
-            zoomImageWidth = Math.Max(1, (int)Math.Round(logicalWidth));
-            zoomImageHeight = Math.Max(1, (int)Math.Round(logicalHeight));
-        }
-        else
-        {
-            transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
-            zoomImageWidth = imageWidth;
-            zoomImageHeight = imageHeight;
-        }
+        var (transformFn, zoomImageWidth, zoomImageHeight) = PrepareDpiCanvas(
+            canvas, (requestedExtent, imageWidth, imageHeight), requestedDpi);
 
         // BBOX + WIDTH/HEIGHT + CRS (and optional FORMAT_OPTIONS=dpi:) fix the scale the map is
         // drawn at, which is what a style's minzoom/maxzoom is authored against.
@@ -273,27 +255,10 @@ internal static partial class WmsRequestHandlers
 
             if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
             {
-                if (hasDpiScaling)
-                {
-                    canvas.Save();
-                    canvas.ResetMatrix();
-                }
-
-                try
-                {
-                    totalFeatureCount += await TryDrawWmsRasterLayerAsync(
-                        context,
-                        (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
-                        cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    if (hasDpiScaling)
-                    {
-                        canvas.Restore();
-                    }
-                }
-
+                var rasterTarget = (canvas, (layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight));
+                totalFeatureCount += hasDpiScaling
+                    ? await DrawWmsRasterLayerUnscaledAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false)
+                    : await TryDrawWmsRasterLayerAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 

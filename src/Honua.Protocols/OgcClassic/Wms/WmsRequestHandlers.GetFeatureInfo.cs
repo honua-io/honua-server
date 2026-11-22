@@ -175,7 +175,7 @@ internal static partial class WmsRequestHandlers
             return nonQueryableError;
         }
 
-        if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat, allowHtml: true))
+        if (!TryNormalizeWmsFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
         {
             return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain, text/html, application/vnd.ogc.gml, and application/json.");
         }
@@ -397,8 +397,7 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            var html = WmsPopupHtmlFormatter.BuildHtml(htmlFeatures);
-            return Results.Content(html, HtmlMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+            return Results.Content(WmsPopupHtmlFormatter.BuildHtml(htmlFeatures), HtmlMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
 
         var body = plainText.Length > 0
