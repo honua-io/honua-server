@@ -3270,3 +3270,27 @@ and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runne
 minutes) with one runner before and after. Individual baseline/candidate shard
 pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
 time and do not claim a reduction in the parallel PR Gate's critical path.
+
+### OIDC bearer authentication host lifetime
+
+`OidcAuthenticationTests` reuses a lazy class host for seven bearer-token read
+cases with identical OIDC settings. Each case still creates and disposes its own
+HTTP client and sets its own request headers and token. The existing database
+collection serializes the cases. xUnit disposes the shared factory after the
+class finishes. Replay, certificate, production-mode, tenant-specific and
+mutating admin scenarios retain their private factories and configuration.
+
+All 27 OIDC cases, 125 assertion calls and endpoint metadata remain unchanged.
+Every case stays in the existing Admin & Infrastructure 1 shard on selected PR
+runs and twice-daily full trunk runs. Runner count, shard filters, required check
+names and the aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Four interleaved build-host runs of the complete 39-case owning shard passed
+without failures or skips and with identical case outcomes. Median summed OIDC
+class duration fell from 26.39 to 22.24 seconds; both pairs improved. Median
+fixture-inclusive shard wall time fell from 48.45 to 41.50 seconds, saving 6.95
+seconds (0.116 runner minutes), with one runner before and after. Individual
+baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
+pair was slightly slower, so the shard saving is variable. Build time is excluded;
+these results do not establish a reduction in the parallel PR Gate critical path.
