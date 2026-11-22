@@ -120,7 +120,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         // versioning.branch, which remains built-experimental.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "versioning.branch");
+            perCapabilityEnabled: "versioning.branch").ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -152,7 +152,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: true);
+        var fixture = CreateFixture(experimentalGlobalEnabled: true)
+            .ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -198,7 +199,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [InlineData("serve.ogc-api-edr")]
     public async Task Manifest_WhenAdoptedCapabilityIsIndividuallyOptedIn_IsRuntimeEligible(string capabilityId)
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId);
+        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId)
+            .ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -511,6 +513,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         public Task InitializeAsync() => _fixture.InitializeAsync();
 
         public Task DisposeAsync() => _fixture.DisposeAsync();
+
+        internal WebAppFixture SchemaOwner => _fixture;
 
         internal SharedHost Share() => new(_fixture);
     }
