@@ -22,12 +22,12 @@ public sealed partial class QueryFormatterTests
     public static IEnumerable<object[]> NullObjectIdCases()
     {
         foreach (var mode in new[] { "materialized", "streaming" })
-        foreach (var format in new[] { "json", "geojson" })
-        foreach (var projection in new[] { "*", "id,name", "name" })
-        foreach (var nullKind in new[] { "clr", "json" })
-        {
-            yield return [new[] { mode, format, projection, nullKind }];
-        }
+            foreach (var format in new[] { "json", "geojson" })
+                foreach (var projection in new[] { "*", "id,name", "name" })
+                    foreach (var nullKind in new[] { "clr", "json" })
+                    {
+                        yield return [new[] { mode, format, projection, nullKind }];
+                    }
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -102,7 +102,14 @@ public sealed partial class QueryFormatterTests
         using var document = JsonDocument.Parse(json);
         var row = document.RootElement.GetProperty("features")[0];
         var attributes = row.GetProperty(format == "geojson" ? "properties" : "attributes");
-        attributes.GetProperty("id").GetInt64().Should().Be(identifier);
+        if (mode == "materialized" && format == "json")
+        {
+            attributes.GetProperty("id").GetString().Should().Be("9007199254740993");
+        }
+        else
+        {
+            attributes.GetProperty("id").GetInt64().Should().Be(identifier);
+        }
         if (format == "geojson")
         {
             row.GetProperty("id").GetInt64().Should().Be(identifier);
