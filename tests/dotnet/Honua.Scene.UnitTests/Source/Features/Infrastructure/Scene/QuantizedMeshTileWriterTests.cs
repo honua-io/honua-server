@@ -12,7 +12,10 @@ public sealed class QuantizedMeshTileWriterTests
 {
     private static readonly TerrainGeographicBounds MauiTileBounds = new()
     {
-        West = -156.75, South = 20.5, East = -156.25, North = 21.0
+        West = -156.75,
+        South = 20.5,
+        East = -156.25,
+        North = 21.0
     };
 
     [UnitTest]
