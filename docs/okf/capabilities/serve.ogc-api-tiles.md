@@ -16,7 +16,6 @@ Serve vector and raster tiles through OGC API - Tiles.
 | Capability key | `serve.ogc-api-tiles` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 13 implemented |
 | Registry entries | 13 |
 | Proving tests | 79 |

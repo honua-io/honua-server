@@ -16,7 +16,6 @@ Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Docume
 | Capability key | `dr.rto-rpo-reporting` |
 | Category | DisasterRecovery |
 | Edition | Enterprise |
-| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

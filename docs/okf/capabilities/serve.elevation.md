@@ -16,7 +16,6 @@ Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sig
 | Capability key | `serve.elevation` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 29 |

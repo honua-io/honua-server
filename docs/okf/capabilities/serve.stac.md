@@ -16,7 +16,6 @@ Search and browse spatiotemporal asset catalogs through the STAC API.
 | Capability key | `serve.stac` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 11 implemented |
 | Registry entries | 11 |
 | Proving tests | 151 |

@@ -16,7 +16,6 @@ Metrics and monitoring surfaces for operational visibility.
 | Capability key | `ops.observability` |
 | Category | Ops |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 16 implemented |
 | Registry entries | 16 |
 | Proving tests | 45 |

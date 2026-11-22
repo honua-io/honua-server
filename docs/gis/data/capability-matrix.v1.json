@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 442,
-      "provingTestCount": 2044,
+      "entryCount": 433,
+      "provingTestCount": 1998,
       "maturity": {
-        "implemented": 439,
+        "implemented": 430,
         "experimental": 3
       },
       "noSurface": null,
@@ -121,7 +121,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 14,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 2
       },
@@ -819,7 +819,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 189,
+      "provingTestCount": 181,
       "maturity": {
         "implemented": 6
       },
@@ -856,10 +856,10 @@
       "category": "FieldOps",
       "edition": "Community",
       "status": null,
-      "entryCount": 27,
-      "provingTestCount": 60,
+      "entryCount": 21,
+      "provingTestCount": 37,
       "maturity": {
-        "implemented": 27
+        "implemented": 21
       },
       "noSurface": null,
       "cite": [],
@@ -1155,7 +1155,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 79,
-      "provingTestCount": 294,
+      "provingTestCount": 293,
       "maturity": {
         "implemented": 79
       },
@@ -1377,7 +1377,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 10,
-      "provingTestCount": 204,
+      "provingTestCount": 202,
       "maturity": {
         "preview": 10
       },
@@ -1673,7 +1673,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 633,
+      "provingTestCount": 624,
       "maturity": {
         "implemented": 49
       },
@@ -1823,7 +1823,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 487,
+      "provingTestCount": 463,
       "maturity": {
         "implemented": 45,
         "preview": 2
@@ -1890,7 +1890,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 140,
+      "provingTestCount": 135,
       "maturity": {
         "implemented": 21
       },
@@ -1914,7 +1914,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 47,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 9
       },
@@ -2231,7 +2231,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 64,
-      "provingTestCount": 251,
+      "provingTestCount": 250,
       "maturity": {
         "preview": 64
       },
@@ -2267,7 +2267,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 116,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 11
       },
@@ -2323,7 +2323,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 168,
+      "provingTestCount": 165,
       "maturity": {
         "implemented": 2
       },
@@ -2453,7 +2453,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 1,
-      "provingTestCount": 17,
+      "provingTestCount": 16,
       "maturity": {
         "preview": 1
       },
@@ -2658,10 +2658,10 @@
       "category": "Styling",
       "edition": "Community",
       "status": null,
-      "entryCount": 9,
-      "provingTestCount": 86,
+      "entryCount": 8,
+      "provingTestCount": 76,
       "maturity": {
-        "implemented": 9
+        "implemented": 8
       },
       "noSurface": null,
       "cite": [],
@@ -2717,7 +2717,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 25,
+      "provingTestCount": 24,
       "maturity": {
         "implemented": 6
       },

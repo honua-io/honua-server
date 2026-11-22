@@ -16,7 +16,6 @@ Expose the read-only /sharing/rest Portal facade (info, portals/self, search, co
 | Capability key | `identity.portal-sharing` |
 | Category | Identity |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 25 implemented |
 | Registry entries | 25 |
 | Proving tests | 121 |

@@ -16,7 +16,6 @@ Advertise the server's capability manifest for SDK/agent discovery (#1186).
 | Capability key | `discovery.capability-manifest` |
 | Category | Discovery |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 60 |

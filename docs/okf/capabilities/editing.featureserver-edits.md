@@ -16,10 +16,9 @@ Create, update, and delete features through the Esri GeoServices FeatureServer w
 | Capability key | `editing.featureserver-edits` |
 | Category | Editing |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 6 implemented |
 | Registry entries | 6 |
-| Proving tests | 189 |
+| Proving tests | 181 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

@@ -16,7 +16,6 @@ SAML 2.0 service-provider metadata, assertion consumer, and single-logout endpoi
 | Capability key | `identity.saml` |
 | Category | Identity |
 | Edition | Enterprise |
-| Status | ga |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
 | Proving tests | 39 |

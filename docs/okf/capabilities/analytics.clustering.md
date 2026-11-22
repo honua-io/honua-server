@@ -16,7 +16,6 @@ Server-side DBSCAN and K-Means clustering with optional cluster hulls.
 | Capability key | `analytics.clustering` |
 | Category | Analytics |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 16 |

@@ -16,7 +16,6 @@ Retrieve generated analysis reports.
 | Capability key | `analytics.reporting` |
 | Category | Analytics |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 6 |

@@ -16,7 +16,6 @@ Expose timeInfo, dedicated extent endpoint, and OGC time dimension metadata for 
 | Capability key | `temporal.extent-discovery` |
 | Category | Temporal |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 7 |

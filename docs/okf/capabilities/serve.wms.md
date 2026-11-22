@@ -16,7 +16,6 @@ Serve map images through WMS 1.3 (GetMap, GetFeatureInfo, GetCapabilities).
 | Capability key | `serve.wms` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 30 |

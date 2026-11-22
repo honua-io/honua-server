@@ -16,7 +16,6 @@ Aggregate features into H3 cells and publish H3 vector tiles.
 | Capability key | `analytics.h3` |
 | Category | Analytics |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
 | Proving tests | 36 |

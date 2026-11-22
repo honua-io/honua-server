@@ -16,7 +16,6 @@ Render static map images up to 4096x4096 pixels.
 | Capability key | `staticmap.large-dimensions` |
 | Category | StaticMap |
 | Edition | Pro |
-| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

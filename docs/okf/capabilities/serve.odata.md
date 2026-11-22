@@ -16,7 +16,6 @@ Query and edit features through the OData v4 protocol surface.
 | Capability key | `serve.odata` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 30 implemented |
 | Registry entries | 30 |
 | Proving tests | 256 |

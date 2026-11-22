@@ -16,7 +16,6 @@ Count features per time bucket using calendar or fixed bins for animation frame 
 | Capability key | `temporal.histogram` |
 | Category | Temporal |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 9 |

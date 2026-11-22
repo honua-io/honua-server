@@ -16,7 +16,6 @@ Render maps through OGC API - Maps.
 | Capability key | `serve.ogc-api-maps` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
 | Proving tests | 152 |

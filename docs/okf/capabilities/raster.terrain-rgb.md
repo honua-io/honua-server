@@ -16,7 +16,6 @@ Serve Terrain-RGB encoded elevation tiles.
 | Capability key | `raster.terrain-rgb` |
 | Category | Raster |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 16 |
@@ -26,4 +25,3 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Publish terrain and elevation](../../guides/publish/publish-terrain-and-elevation.md)
-- [Terrain and elevation](../../reference/protocols/terrain-and-elevation.md)

@@ -16,7 +16,6 @@ Cross-layer spatial join with intersects/contains/within/dwithin predicates.
 | Capability key | `analytics.spatial-join` |
 | Category | Analytics |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 11 |

@@ -16,7 +16,6 @@ Compute solar position from date/time/location and cast the shadow extent agains
 | Capability key | `analytics.sun-shadow` |
 | Category | Analytics |
 | Edition | Pro |
-| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 5 |

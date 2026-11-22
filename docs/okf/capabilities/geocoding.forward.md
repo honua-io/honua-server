@@ -16,7 +16,6 @@ Convert a freeform address to coordinates using configured providers.
 | Capability key | `geocoding.forward` |
 | Category | Geocoding |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 11 implemented |
 | Registry entries | 11 |
 | Proving tests | 64 |

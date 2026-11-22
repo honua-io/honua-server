@@ -16,7 +16,6 @@ The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, 
 | Capability key | `serve.grpc` |
 | Category | Serve |
 | Edition | Community |
-| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

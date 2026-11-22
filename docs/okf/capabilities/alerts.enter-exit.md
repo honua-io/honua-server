@@ -16,7 +16,6 @@ Trigger alerts when features enter or exit geofence zones.
 | Capability key | `alerts.enter-exit` |
 | Category | Alerts |
 | Edition | Pro |
-| Status | preview |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

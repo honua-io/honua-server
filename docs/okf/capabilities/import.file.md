@@ -16,10 +16,9 @@ Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage).
 | Capability key | `import.file` |
 | Category | Import |
 | Edition | Community |
-| Status | ga |
 | Surface maturity | 79 implemented |
 | Registry entries | 79 |
-| Proving tests | 294 |
+| Proving tests | 293 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
