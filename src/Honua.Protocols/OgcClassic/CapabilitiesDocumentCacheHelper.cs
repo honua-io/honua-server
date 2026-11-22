@@ -63,6 +63,14 @@ internal static class CapabilitiesDocumentCacheHelper
             return hit.ToResult();
         }
 
+        var (cached, isDegraded) = await BuildDocumentAsync(context, buildAsync).ConfigureAwait(false);
+        return isDegraded ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
+    }
+
+    private static async Task<(CachedMetadataDocument Document, bool IsDegraded)> BuildDocumentAsync(
+        HttpContext context,
+        Func<Task<PooledUtf8ContentResult>> buildAsync)
+    {
         PooledUtf8ContentResult result;
         bool isDegraded;
         using (var degradation = CapabilitiesBuildDegradation.Begin())
@@ -71,20 +79,18 @@ internal static class CapabilitiesDocumentCacheHelper
             isDegraded = degradation.IsDegraded;
         }
 
-        CachedMetadataDocument cached;
         try
         {
-            cached = MetadataDocumentByteCache.CreateDocument(
+            var document = MetadataDocumentByteCache.CreateDocument(
                 result.Content.Span,
                 result.ContentType,
                 context.RequestServices.GetService<IETagService>());
+            return (document, isDegraded);
         }
         finally
         {
             await result.ReleaseAsync().ConfigureAwait(false);
         }
-
-        return isDegraded ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
     }
 
     internal static string BuildWmtsKey(WmtsCapabilitiesCacheRequest request, ReadOnlySpan<CachedLayerIdentity> layers)
