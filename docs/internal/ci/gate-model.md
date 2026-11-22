@@ -1941,9 +1941,11 @@ After the existing scoped restore, each test analyzer job evaluates `IsTestProje
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
 
-### Server-test shard disk-headroom guard
+### Server-test shard disk-headroom guard and measured shard re-packing
 
 `scripts/ci/server-test-shard-free-disk.sh` checks available space on `/` (`HONUA_FREE_DISK_PATH`, default `/`) before spawning the background `sudo rm -rf` cleanup of preinstalled Android, Swift, GHCup, and CodeQL toolchains. When available space already meets `HONUA_MIN_FREE_DISK_GB` (default `40` GiB; invalid values fall back to `40`), the helper removes any stale PID file, logs the current `df -h` reading, and returns immediately so `Wait for free disk space` (`--await`) finishes without waiting on toolchain deletion. If `df -Pk` fails, returns non-numeric output, or reports less than the threshold, the helper fails safe and runs the existing background cleanup and `--await` barrier unchanged. Measured baseline on full trunk run `44819335862` (`225` `ubuntu-latest` server-test shards with `145` GiB root volumes): `Wait for free disk space` consumed `142.43` runner-minutes total (`36.0` s median, `72.0` s p90, `171.0` s max). Covered by `scripts/ci/fixtures/test-server-test-shard-free-disk.py`.
+
+Eleven over-split full-run capacity parents whose combined `Run server test shard` step durations on full trunk run `44921455496` totaled `1.20`–`3.30` minutes (`33` child shards, 26-run median rank sum `103.6` runner-minutes) are re-packed back into their original single-job definitions (`225` → `203` server shards, saving `22` runner setups; remaining `28` full-run capacity contracts intact; `192` shards keep measured ranks and the `11` restored parents use conservative `2.5 + sum(run_m)` estimates of `3.7`–`5.8` minutes, bringing the scheduling rank sum from `877.5` to `827.1` runner-minutes). Every filter, path list, timeout, and report flag is conserved and checked by `check-server-test-shard-coverage.py` and `test-full-run-capacity-partitions.py`.
 
 ### SensorThings collection host lifetime
 

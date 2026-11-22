@@ -1296,7 +1296,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer 1","GeoServices ImageServer 2","GeoServices ImageServer 3","GeoServices ImageServer 4","GeoServices ImageServer 5","GeoServices ImageServer 6","OGC API Tiles Coverages and Processes 1","OGC API Tiles Coverages and Processes 2","OGC API Tiles Coverages and Processes 3","OGC API Tiles Coverages and Processes 4","OGC Classic WMTS 1","OGC Classic WMTS 2","Protocol and Host Components","Protocol Units"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes 1","OGC API Tiles Coverages and Processes 2","OGC API Tiles Coverages and Processes 3","OGC API Tiles Coverages and Processes 4","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
@@ -1877,7 +1877,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Elevation and Terrain Analysis 1" \
+    "Elevation and Terrain Analysis" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1941,11 +1941,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataFilterMatrixTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
-    "OData Advanced and Filters 2" \
+    "OData Advanced and Filters" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Tiles Endpoints and CRS 1" \
+    "OGC API Tiles Endpoints and CRS" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1985,7 +1985,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Platform and Connections 2" \
+    "Server Features Admin Platform and Connections" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
