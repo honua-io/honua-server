@@ -131,6 +131,10 @@ public sealed class VerticalSliceIsolationTests
             "Progress",
             "Raster",
             "RateLimiting",
+            "Realtime",         // Hosting-resident RealtimeStreamAdmission: shared stream
+                                // shutdown-drain admission, 503 Retry-After, and SSE/WebSocket
+                                // reconnect hints used by both Honua.Protocols.SensorThings and
+                                // Honua.Server transports so neither owns the drain seam.
             "Rendering",
             "Resilience",
             "Scene",
