@@ -27,8 +27,8 @@ public sealed class DatabaseMigrationSafetyTests
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         var baselineJson = File.ReadAllText(Path.Join(root, "eng", "schema", "schema-reader-baseline.v1.json"));
-        MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
-            "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
+        MigrationHash(baselineJson).Should().Be("B284AEC259B9EBB5550A193AFB013D045A9D76AFDDAF66E55901ADD931C2363F",
+            "the reader baseline permits only the established licence notice correction; new migrations belong in the ongoing ledger");
         var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
         var scripts = EnumerateMigrationFiles().ToDictionary(
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);

@@ -2,6 +2,7 @@
 """Preserve trusted migration hashes and reject colliding new migration numbers."""
 
 import argparse
+import hashlib
 from pathlib import PurePosixPath
 import re
 import subprocess
@@ -30,7 +31,32 @@ def changed_existing_pins(ancestor, head, trunk):
     # Ignore pins added only on newer trunk, which a stale branch need not carry.
     # Any trunk pin present on the branch must retain its trusted contents.
     changed = git_paths("diff", "--no-renames", "--diff-filter=MDTT", "--name-only", "-z", trunk, head, "--", root)
-    return sorted(path for path in changed if path and path in inherited | candidate)
+    return sorted(path for path in changed if path and path in inherited | candidate
+                  and not is_license_notice_update(trunk, head, path))
+
+
+def is_license_notice_update(trunk, head, pin):
+    root = "eng/schema/migration-hashes/"
+    sql = pin.removeprefix(root).removesuffix(".sha256")
+    if not pin.startswith(root) or not pin.endswith(".sha256") or str(PurePosixPath(sql).parent) not in DIRECTORIES:
+        return False
+    contents = []
+    for ref in (trunk, head):
+        for path in (sql, pin):
+            entry = subprocess.check_output(["git", "ls-tree", ref, "--", path], text=True)
+            if not entry.startswith("100644 blob "):
+                return False
+            contents.append(subprocess.check_output(["git", "show", f"{ref}:{path}"]))
+    before, old_pin, after, new_pin = contents
+    old = b"-- Licensed under the Elastic License 2.0. See LICENSE in the project root."
+    new = b"-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root."
+    lines = before.splitlines(keepends=True)
+    if len(lines) < 2 or lines[1].rstrip(b"\r\n") != old:
+        return False
+    expected = lines[0] + lines[1].replace(old, new) + b"".join(lines[2:])
+    old_digest = hashlib.sha256(before.replace(b"\r\n", b"\n")).hexdigest().encode()
+    new_digest = hashlib.sha256(after.replace(b"\r\n", b"\n")).hexdigest().encode()
+    return after == expected and old_pin.strip().lower() == old_digest and new_pin.strip().lower() == new_digest
 
 
 def claim_names_these_paths(trunk, path, expected):
