@@ -1546,7 +1546,7 @@ internal static partial class TilesEndpoints
     {
         if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
         {
-            return await ResolveNumericCollectionLayer(context, snapshot, (collectionId, missingCollectionIsBadRequest), cancellationToken).ConfigureAwait(false);
+            return await ResolveNumericCollectionLayer(context, (snapshot, collectionId, missingCollectionIsBadRequest), cancellationToken).ConfigureAwait(false);
         }
 
         var publication = FindCollectionPublication(context, snapshot, collectionId, requireProtocol: true, out var service);
@@ -1593,10 +1593,10 @@ internal static partial class TilesEndpoints
 
     private static async Task<TileRequestLayerResolution> ResolveNumericCollectionLayer(
         HttpContext context,
-        MetadataV2GraphSnapshot snapshot,
-        (string CollectionId, bool MissingIsBadRequest) lookup,
+        (MetadataV2GraphSnapshot Snapshot, string CollectionId, bool MissingIsBadRequest) lookup,
         CancellationToken cancellationToken)
     {
+        var snapshot = lookup.Snapshot;
         var collectionId = lookup.CollectionId;
         var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context, collectionId, snapshot, requiredProtocol: OgcApiTilesProtocol,
