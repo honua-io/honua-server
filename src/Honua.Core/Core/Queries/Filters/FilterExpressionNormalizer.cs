@@ -39,10 +39,7 @@ public static class FilterExpressionNormalizer
                 Right = NormalizeCore(spatialDistance.Right, schema),
                 Distance = NormalizeCore(spatialDistance.Distance, schema)
             },
-            TemporalPredicate temporal => new TemporalPredicate(
-                temporal.Operator,
-                NormalizeCore(temporal.Left, schema),
-                NormalizeCore(temporal.Right, schema)),
+            TemporalPredicate temporal => NormalizeTemporalPredicate(temporal, schema),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
                 NormalizeCore(array.Left, schema),
@@ -82,6 +79,28 @@ public static class FilterExpressionNormalizer
         }
 
         return new BinaryExpression(left, binary.Operator, right);
+    }
+
+    private static TemporalPredicate NormalizeTemporalPredicate(TemporalPredicate temporal, FilterFieldSchema schema)
+    {
+        EnsureTemporalOperand(temporal.Left, schema);
+        EnsureTemporalOperand(temporal.Right, schema);
+        return new TemporalPredicate(
+            temporal.Operator,
+            NormalizeCore(temporal.Left, schema),
+            NormalizeCore(temporal.Right, schema));
+    }
+
+    private static void EnsureTemporalOperand(FilterExpression operand, FilterFieldSchema schema)
+    {
+        if (operand is PropertyReference property &&
+            schema.TryGetFieldType(property.PropertyName, out var fieldType) &&
+            fieldType is not (MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset
+                or MetadataV2FieldType.Date or MetadataV2FieldType.Time))
+        {
+            throw new ArgumentException(
+                $"Field '{property.PropertyName}' is not a date or time field and cannot be used with temporal predicates.");
+        }
     }
 
     private static void EnsureWithinMaxDepth(FilterExpression expression)
