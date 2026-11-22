@@ -28,13 +28,15 @@ internal static partial class FeatureStreamEndpoints
         var cursor = fromCursor;
         var delivered = 0L;
         await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock) { SessionManager = sessionManager }, fromCursor, cancellationToken)
+            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock)
+        { SessionManager = sessionManager }, fromCursor, cancellationToken)
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
             await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock) { SessionManager = sessionManager }, cursor, cancellationToken)
+                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock)
+            { SessionManager = sessionManager }, cursor, cancellationToken)
                 .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
@@ -109,7 +111,8 @@ internal static partial class FeatureStreamEndpoints
             if (events.Count < batchSize)
             {
                 await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock) { SessionManager = sessionManager }, cursor, cancellationToken)
+                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock)
+                { SessionManager = sessionManager }, cursor, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             }
