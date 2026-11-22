@@ -47,6 +47,8 @@ internal static partial class SceneBimIngestEndpoints
             .WithSummary("Ingest a CityGML document into a servable Building Scene Layer tileset (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<CityGmlIngestResponse>(StatusCodes.Status201Created)
+            .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -77,7 +79,7 @@ internal static partial class SceneBimIngestEndpoints
         }
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
-        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        var file = SceneIngestRequestHelpers.FindUpload(form);
         if (file is null || file.Length == 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
@@ -98,13 +100,16 @@ internal static partial class SceneBimIngestEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, authError!);
         }
 
-        byte[] document;
-        await using (var stream = file.OpenReadStream())
+        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+            ? context.RequestServices.GetService<SceneJobCoordinator>()
+            : null;
+        using var admission = coordinator?.TryReserve(file.Length);
+        if (coordinator is not null && admission is null)
         {
-            using var buffer = new MemoryStream(file.Length > 0 ? (int)file.Length : 0);
-            await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            document = buffer.ToArray();
+            return SceneIngestRequestHelpers.CreateBusyJobResult(context);
         }
+
+        var document = await SceneIngestRequestHelpers.ReadUploadAsync(file, cancellationToken).ConfigureAwait(false);
 
         var request = new CityGmlSceneIngestRequest(
             Document: document,
@@ -116,33 +121,27 @@ internal static partial class SceneBimIngestEndpoints
             RequiresAuth: requiresAuth ?? false,
             CreatedBy: context.User.Identity?.Name);
 
-        if (SceneIngestRequestHelpers.IsAsyncRequested(context, form))
+        if (admission is not null)
         {
-            var coordinator = context.RequestServices.GetService<SceneJobCoordinator>();
-            if (coordinator is not null)
-            {
-                var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var job = coordinator.Submit(
-                    sourceKind: "citygml",
-                    requestedSceneId: request.SceneId,
-                    displayName: request.DisplayName,
-                    baseUrl: asyncBaseUrl,
-                    work: async (services, ct) =>
-                    {
-                        var scopedExecutor = services.GetRequiredService<CityGmlScenePublishExecutor>();
-                        var asyncOutcome = await scopedExecutor.IngestAsync(request, ct).ConfigureAwait(false);
-                        return new SceneJobExecutionResult(
-                            asyncOutcome.SceneId,
-                            TileCount: asyncOutcome.TileCount,
-                            FileCount: asyncOutcome.TileCount + 1,
-                            ByteSize: null,
-                            Warnings: asyncOutcome.Warnings);
-                    });
-                return SceneIngestRequestHelpers.CreateAcceptedJobResult(context, job);
-            }
+            var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var job = admission.Submit(
+                sourceKind: "citygml",
+                requestedSceneId: request.SceneId,
+                displayName: request.DisplayName,
+                baseUrl: asyncBaseUrl,
+                work: async (services, ct) =>
+                {
+                    var scopedExecutor = services.GetRequiredService<CityGmlScenePublishExecutor>();
+                    var asyncOutcome = await scopedExecutor.IngestAsync(request, ct).ConfigureAwait(false);
+                    return new SceneJobExecutionResult(
+                        asyncOutcome.SceneId,
+                        TileCount: asyncOutcome.TileCount,
+                        FileCount: asyncOutcome.TileCount + 1,
+                        ByteSize: null,
+                        Warnings: asyncOutcome.Warnings);
+                });
+            return SceneIngestRequestHelpers.CreateAcceptedJobResult(context, job);
         }
-
-        var executor = context.RequestServices.GetRequiredService<CityGmlScenePublishExecutor>();
 
         try
         {

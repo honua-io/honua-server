@@ -46,6 +46,7 @@ internal static partial class SceneWorkflowEndpoints
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<SceneArchiveIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
@@ -57,6 +58,7 @@ internal static partial class SceneWorkflowEndpoints
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<SceneModelIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
@@ -110,7 +112,17 @@ internal static partial class SceneWorkflowEndpoints
         }
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
-        var (fileBytes, fileError) = await ReadUploadedBytesAsync(form, MaxArchiveUploadBytes, "3D Tiles archive", cancellationToken).ConfigureAwait(false);
+        var file = SceneIngestRequestHelpers.FindUpload(form);
+        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+            ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
+            : null;
+        using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxArchiveUploadBytes ? file.Length : 0);
+        if (coordinator is not null && admission is null)
+        {
+            return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+        }
+
+        var (fileBytes, fileError) = await ReadUploadedBytesAsync(file, MaxArchiveUploadBytes, "3D Tiles archive", cancellationToken).ConfigureAwait(false);
         if (fileError is not null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, fileError);
@@ -138,10 +150,9 @@ internal static partial class SceneWorkflowEndpoints
             CreatedBy: context.User.Identity?.Name);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        if (SceneIngestRequestHelpers.IsAsyncRequested(context, form))
+        if (admission is not null)
         {
-            var coordinator = context.RequestServices.GetRequiredService<SceneJobCoordinator>();
-            var job = coordinator.Submit(
+            var job = admission.Submit(
                 sourceKind: "archive",
                 requestedSceneId: request.SceneId,
                 displayName: request.DisplayName,
@@ -223,7 +234,17 @@ internal static partial class SceneWorkflowEndpoints
         }
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
-        var (fileBytes, fileName, fileError) = await ReadUploadedModelAsync(form, MaxModelUploadBytes, cancellationToken).ConfigureAwait(false);
+        var file = SceneIngestRequestHelpers.FindUpload(form);
+        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+            ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
+            : null;
+        using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxModelUploadBytes ? file.Length : 0);
+        if (coordinator is not null && admission is null)
+        {
+            return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+        }
+
+        var (fileBytes, fileName, fileError) = await ReadUploadedModelAsync(file, MaxModelUploadBytes, cancellationToken).ConfigureAwait(false);
         if (fileError is not null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, fileError);
@@ -257,10 +278,9 @@ internal static partial class SceneWorkflowEndpoints
             CreatedBy: context.User.Identity?.Name);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        if (SceneIngestRequestHelpers.IsAsyncRequested(context, form))
+        if (admission is not null)
         {
-            var coordinator = context.RequestServices.GetRequiredService<SceneJobCoordinator>();
-            var job = coordinator.Submit(
+            var job = admission.Submit(
                 sourceKind: "model",
                 requestedSceneId: request.SceneId,
                 displayName: request.DisplayName,
@@ -443,12 +463,11 @@ internal static partial class SceneWorkflowEndpoints
     }
 
     private static async Task<(byte[]? Bytes, string? Error)> ReadUploadedBytesAsync(
-        IFormCollection form,
+        IFormFile? file,
         long maxBytes,
         string label,
         CancellationToken cancellationToken)
     {
-        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
         if (file is null || file.Length == 0)
         {
             return (null, $"A non-empty 'file' field carrying the {label} is required.");
@@ -459,18 +478,15 @@ internal static partial class SceneWorkflowEndpoints
             return (null, $"{label} exceeds the {maxBytes}-byte upload limit.");
         }
 
-        await using var stream = file.OpenReadStream();
-        using var buffer = new MemoryStream((int)file.Length);
-        await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return (buffer.ToArray(), null);
+        var bytes = await SceneIngestRequestHelpers.ReadUploadAsync(file, cancellationToken).ConfigureAwait(false);
+        return (bytes, null);
     }
 
     private static async Task<(byte[]? Bytes, string? FileName, string? Error)> ReadUploadedModelAsync(
-        IFormCollection form,
+        IFormFile? file,
         long maxBytes,
         CancellationToken cancellationToken)
     {
-        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
         if (file is null || file.Length == 0)
         {
             return (null, null, "A non-empty 'file' field carrying the 3D model is required.");
@@ -481,10 +497,8 @@ internal static partial class SceneWorkflowEndpoints
             return (null, null, $"3D model exceeds the {maxBytes}-byte upload limit.");
         }
 
-        await using var stream = file.OpenReadStream();
-        using var buffer = new MemoryStream((int)file.Length);
-        await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return (buffer.ToArray(), file.FileName ?? "model.glb", null);
+        var bytes = await SceneIngestRequestHelpers.ReadUploadAsync(file, cancellationToken).ConfigureAwait(false);
+        return (bytes, file.FileName ?? "model.glb", null);
     }
 
     private static bool TryParsePlacement(IFormCollection form, out ModelPlacement? placement, out string? error)

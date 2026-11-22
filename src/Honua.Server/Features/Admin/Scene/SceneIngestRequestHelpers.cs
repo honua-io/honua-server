@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Models;
 using Honua.Scene;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,6 +47,24 @@ internal static class SceneIngestRequestHelpers
         }
 
         return false;
+    }
+
+    public static IResult CreateBusyJobResult(HttpContext context)
+    {
+        context.Response.Headers.RetryAfter = "5";
+        return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status429TooManyRequests,
+            "Scene job capacity is exhausted. Retry the request later.");
+    }
+
+    public static IFormFile? FindUpload(IFormCollection form)
+        => form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+
+    public static async Task<byte[]> ReadUploadAsync(IFormFile file, CancellationToken cancellationToken)
+    {
+        await using var stream = file.OpenReadStream();
+        var bytes = new byte[(int)file.Length];
+        await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
+        return bytes;
     }
 
     public static IResult CreateAcceptedJobResult(HttpContext context, SceneJobSnapshot snapshot)

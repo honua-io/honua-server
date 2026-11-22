@@ -18,6 +18,8 @@ namespace Honua.Server.Features.Admin.Scene;
 internal sealed partial class SceneJobCoordinator : IDisposable
 {
     private const int MaxConcurrentJobs = 4;
+    private const int MaxAdmittedJobs = 8;
+    private const long MaxAdmittedUploadBytes = 512L * 1024 * 1024;
     private const int MaxRetainedJobs = 500;
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -25,6 +27,10 @@ internal sealed partial class SceneJobCoordinator : IDisposable
     private readonly ILogger<SceneJobCoordinator> _logger;
     private readonly SemaphoreSlim _concurrencyGate = new(MaxConcurrentJobs, MaxConcurrentJobs);
     private readonly ConcurrentDictionary<string, SceneJobEntry> _jobs = new(StringComparer.Ordinal);
+
+    private readonly object _admissionLock = new();
+    private int _admittedJobs;
+    private long _admittedUploadBytes;
 
     public SceneJobCoordinator(
         IServiceScopeFactory scopeFactory,
@@ -36,7 +42,24 @@ internal sealed partial class SceneJobCoordinator : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public SceneJobSnapshot Submit(
+    public Admission? TryReserve(long uploadBytes = 0)
+    {
+        lock (_admissionLock)
+        {
+            if (_admittedJobs >= MaxAdmittedJobs ||
+                uploadBytes > MaxAdmittedUploadBytes - _admittedUploadBytes)
+            {
+                return null;
+            }
+
+            _admittedJobs++;
+            _admittedUploadBytes += uploadBytes;
+            return new Admission(this, uploadBytes);
+        }
+    }
+
+    private SceneJobSnapshot Submit(
+        long uploadBytes,
         string sourceKind,
         string? requestedSceneId,
         string? displayName,
@@ -60,8 +83,63 @@ internal sealed partial class SceneJobCoordinator : IDisposable
 
         SceneJobCoordinatorLog.JobQueued(_logger, jobId, sourceKind, requestedSceneId ?? "<auto>");
 
-        _ = Task.Run(() => ExecuteJobAsync(entry, work), CancellationToken.None);
-        return entry.ToSnapshot();
+        var snapshot = entry.ToSnapshot();
+        _ = Task.Run(() => ExecuteJobAsync(entry, work, uploadBytes), CancellationToken.None);
+        return snapshot;
+    }
+
+    private void ReleaseAdmission(long uploadBytes)
+    {
+        lock (_admissionLock)
+        {
+            _admittedJobs--;
+            _admittedUploadBytes -= uploadBytes;
+        }
+    }
+
+    internal sealed class Admission(SceneJobCoordinator coordinator, long uploadBytes) : IDisposable
+    {
+        private SceneJobCoordinator? _owner = coordinator;
+
+        internal long UploadBytes { get; private set; } = uploadBytes;
+
+        public bool TryUpdateUploadBytes(long bytes)
+        {
+            lock (coordinator._admissionLock)
+            {
+                var increase = bytes - UploadBytes;
+                if (increase > MaxAdmittedUploadBytes - coordinator._admittedUploadBytes)
+                {
+                    return false;
+                }
+
+                coordinator._admittedUploadBytes += increase;
+                UploadBytes = bytes;
+                return true;
+            }
+        }
+
+        public SceneJobSnapshot Submit(
+            string sourceKind,
+            string? requestedSceneId,
+            string? displayName,
+            string baseUrl,
+            Func<IServiceProvider, CancellationToken, Task<SceneJobExecutionResult>> work)
+        {
+            var owner = Interlocked.Exchange(ref _owner, null)
+                ?? throw new InvalidOperationException("Scene job admission has already been used.");
+            try
+            {
+                return owner.Submit(UploadBytes, sourceKind, requestedSceneId, displayName, baseUrl, work);
+            }
+            catch
+            {
+                owner.ReleaseAdmission(UploadBytes);
+                throw;
+            }
+        }
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseAdmission(UploadBytes);
     }
 
     public SceneJobSnapshot? GetJob(string jobId)
@@ -160,7 +238,8 @@ internal sealed partial class SceneJobCoordinator : IDisposable
 
     private async Task ExecuteJobAsync(
         SceneJobEntry entry,
-        Func<IServiceProvider, CancellationToken, Task<SceneJobExecutionResult>> work)
+        Func<IServiceProvider, CancellationToken, Task<SceneJobExecutionResult>> work,
+        long uploadBytes)
     {
         var token = _lifetime.ApplicationStopping;
         var acquired = false;
@@ -226,9 +305,16 @@ internal sealed partial class SceneJobCoordinator : IDisposable
         }
         finally
         {
-            if (acquired)
+            try
             {
-                _concurrencyGate.Release();
+                if (acquired)
+                {
+                    _concurrencyGate.Release();
+                }
+            }
+            finally
+            {
+                ReleaseAdmission(uploadBytes);
             }
         }
     }

@@ -45,6 +45,7 @@ internal static partial class SceneGenerationEndpoints
             .Accepts<GenerateSceneRequest>("application/json")
             .Produces<GenerateSceneResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -79,8 +80,14 @@ internal static partial class SceneGenerationEndpoints
             var coordinator = context.RequestServices.GetService<SceneJobCoordinator>();
             if (coordinator is not null)
             {
+                using var admission = coordinator.TryReserve();
+                if (admission is null)
+                {
+                    return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+                }
+
                 var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var job = coordinator.Submit(
+                var job = admission.Submit(
                     sourceKind: "feature_layer",
                     requestedSceneId: request.SceneId,
                     displayName: request.DisplayName,

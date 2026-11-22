@@ -9,10 +9,12 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Scene.Generation;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Scene;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -92,6 +94,54 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/archive")]
+    public async Task IngestArchive_AsyncQueueFull_ReturnsRetryAfter()
+    {
+        var coordinator = _fixture.Services.GetRequiredService<SceneJobCoordinator>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            for (var index = 0; index < 8; index++)
+            {
+                using var admission = coordinator.TryReserve();
+                Assert.NotNull(admission);
+                admission.Submit("test", null, null, "https://example.test", async (_, token) =>
+                {
+                    await release.Task.WaitAsync(token);
+                    return new SceneJobExecutionResult("test", null, null, null, []);
+                });
+            }
+
+            using var upload = BuildFileUpload(BuildValidTilesetZip(), "tileset.zip", "application/zip", ("async", "true"));
+            using var response = await _client.PostAsync("/api/v1/admin/scenes/ingest/archive", upload);
+            Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+            Assert.Equal(TimeSpan.FromSeconds(5), response.Headers.RetryAfter?.Delta);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/archive")]
+    public async Task IngestArchive_AsyncUploadBudgetFull_ReturnsRetryAfter()
+    {
+        var coordinator = _fixture.Services.GetRequiredService<SceneJobCoordinator>();
+        using (var admission = coordinator.TryReserve(512L * 1024 * 1024))
+        {
+            Assert.NotNull(admission);
+            using var upload = BuildFileUpload(BuildValidTilesetZip(), "tileset.zip", "application/zip", ("async", "true"));
+            using var response = await _client.PostAsync("/api/v1/admin/scenes/ingest/archive", upload);
+            Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+            Assert.Equal(TimeSpan.FromSeconds(5), response.Headers.RetryAfter?.Delta);
+        }
+
+        using var released = coordinator.TryReserve(512L * 1024 * 1024);
+        Assert.NotNull(released);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes/ingest/model")]
     [Endpoint("GET /api/v1/admin/scenes/jobs")]
     [Endpoint("GET /api/v1/admin/scenes/jobs/{jobId}")]
@@ -164,6 +214,8 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
         Assert.Equal("feature_layer", accepted!.SourceKind);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "MultipartFormDataContent owns and disposes its child content.")]
     private static MultipartFormDataContent BuildFileUpload(
         byte[] contentBytes,
         string fileName,
