@@ -793,7 +793,7 @@
       "displayName": "Branch Versioning",
       "category": "Editing",
       "edition": "Pro",
-      "status": null,
+      "status": "experimental",
       "entryCount": 20,
       "provingTestCount": 96,
       "maturity": {
@@ -911,6 +911,28 @@
       "geobench": []
     },
     {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Format",
+      "category": "Format",
+      "edition": "Community",
+      "status": "live",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "format.geoparquet",
+        "reasonCode": "content-negotiation",
+        "reason": "GeoParquet is selected with f=parquet on FeatureServer, $format=parquet on OData, format=geoparquet on bulk export, and file upload import; it has no separate route.",
+        "category": "Format",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",
@@ -1015,7 +1037,7 @@
       "displayName": "mTLS Client-Certificate Authentication",
       "category": "Identity",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 13,
       "provingTestCount": 35,
       "maturity": {
@@ -1581,7 +1603,7 @@
       "displayName": "CityGML/BIM Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -1599,7 +1621,7 @@
       "displayName": "Scene Catalog",
       "category": "Scene",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 3,
       "provingTestCount": 15,
       "maturity": {
@@ -1617,7 +1639,7 @@
       "displayName": "Point Cloud Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 1,
       "provingTestCount": 11,
       "maturity": {
@@ -1635,7 +1657,7 @@
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 6,
       "provingTestCount": 78,
       "maturity": {
@@ -2229,7 +2251,7 @@
       "displayName": "OGC SensorThings API",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 64,
       "provingTestCount": 250,
       "maturity": {
@@ -2253,6 +2275,22 @@
       "maturity": {
         "implemented": 11
       },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.terrain-quantized-mesh",
+      "displayName": "Quantized-Mesh Terrain",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
       "noSurface": null,
       "cite": [],
       "parity": [],
