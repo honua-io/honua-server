@@ -160,7 +160,7 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
             await ExecuteNonQueryAsync(
                     connection,
                     new DuckDBBootstrapSqlCommand(
-                        $"INSTALL {extension}",
+                        extension == "h3" ? "INSTALL h3 FROM community" : $"INSTALL {extension}",
                         $"install DuckDB {extension} extension"),
                     cancellationToken)
                 .ConfigureAwait(false);

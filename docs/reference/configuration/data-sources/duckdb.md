@@ -80,6 +80,7 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 | `DatabasePath` | `:memory:` | Path to `.duckdb` file. Use absolute paths. |
 | `ReadOnly` | `true` | Open database in read-only mode (recommended). |
 | `SpatialExtensionPath` | `null` | Offline path for DuckDB extension files. When null, DuckDB downloads extensions automatically on first use. The current property name is historical; it is also used for `httpfs` and `azure`. |
+| `EnableH3` | `false` | Enable H3 aggregations and load the DuckDB community `h3` extension. Preinstall the extension for offline deployments. |
 | `HttpFs:S3` | empty | Optional S3-compatible settings applied to each DuckDB connection before external views are created. |
 | `Azure` | empty | Optional Azure Blob/ADLS settings applied to each DuckDB connection before external views are created. |
 

@@ -15,6 +15,8 @@ public sealed class DuckDBOptions
 
     public DuckDBAzureOptions Azure { get; set; } = new();
 
+    public bool EnableH3 { get; set; }
+
     public bool ReadOnly { get; set; } = true;
 
     public DuckDBLayerOptions[] Layers { get; set; } = [];

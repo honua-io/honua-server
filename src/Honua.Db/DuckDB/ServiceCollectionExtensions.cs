@@ -72,7 +72,9 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<DuckDBSpatialBootstrap>(sp =>
             new DuckDBSpatialBootstrap(
                 options.SpatialExtensionPath,
-                DuckDBExternalSourceSql.GetRequiredExtensions(options),
+                options.EnableH3
+                    ? DuckDBExternalSourceSql.GetRequiredExtensions(options).Add("h3")
+                    : DuckDBExternalSourceSql.GetRequiredExtensions(options),
                 DuckDBExternalSourceSql.BuildConnectionSettingCommands(options),
                 DuckDBExternalSourceSql.BuildExternalSourcePlans(options.Layers),
                 sp.GetRequiredService<ILogger<DuckDBSpatialBootstrap>>()));
@@ -131,8 +133,10 @@ internal static class ServiceCollectionExtensions
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
             sp.GetService<IMetadataV2GraphProvider>(),
             sp.GetService<IFilterExpressionService>(),
-            sp.GetService<IObjectStorageConnectionResolver>()));
+            sp.GetService<IObjectStorageConnectionResolver>(),
+            options.EnableH3));
 
+        services.AddSingleton(options);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, DuckDbWarehouseCapabilityDescriptor>());
 
         // Register segregated interfaces

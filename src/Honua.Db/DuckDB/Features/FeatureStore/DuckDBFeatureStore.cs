@@ -31,6 +31,7 @@ internal sealed class DuckDBFeatureStore :
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly IObjectStorageConnectionResolver? _objectStorageResolver;
     private readonly FeatureProviderBinding? _binding;
+    private readonly bool _enableH3;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
@@ -39,8 +40,9 @@ internal sealed class DuckDBFeatureStore :
         LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
         IFilterExpressionService? filterExpressionService = null,
-        IObjectStorageConnectionResolver? objectStorageResolver = null)
-        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, objectStorageResolver, binding: null)
+        IObjectStorageConnectionResolver? objectStorageResolver = null,
+        bool enableH3 = false)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, objectStorageResolver, enableH3, binding: null)
     {
     }
 
@@ -52,6 +54,7 @@ internal sealed class DuckDBFeatureStore :
         IFilterExpressionService? filterExpressionService,
         LayerReadSecurityResolver readSecurity,
         IObjectStorageConnectionResolver? objectStorageResolver,
+        bool enableH3,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -62,6 +65,7 @@ internal sealed class DuckDBFeatureStore :
         _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _objectStorageResolver = objectStorageResolver;
         _binding = binding;
+        _enableH3 = enableH3;
     }
 
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
@@ -75,6 +79,7 @@ internal sealed class DuckDBFeatureStore :
             _filterExpressionService,
             _readSecurity,
             _objectStorageResolver,
+            _enableH3,
             binding);
     }
 
@@ -209,6 +214,11 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
+        if (!_enableH3)
+        {
+            throw new NotSupportedException("DuckDB H3 queries require DuckDB:EnableH3.");
+        }
+
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
