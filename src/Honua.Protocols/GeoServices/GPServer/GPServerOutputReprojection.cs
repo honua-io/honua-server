@@ -238,14 +238,52 @@ internal static class GPServerOutputReprojection
         using var doc = JsonDocument.Parse(featureJson);
         var root = doc.RootElement;
 
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("geometry", out var geometryElement) ||
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new ArgumentException("GeoJSON output must be a JSON object.");
+        }
+
+        var reader = GeoJsonArtifactCodec.CreateReader();
+
+        if (root.TryGetProperty("type", out var typeElement) &&
+            typeElement.ValueKind == JsonValueKind.String &&
+            string.Equals(typeElement.GetString(), "FeatureCollection", StringComparison.Ordinal) &&
+            root.TryGetProperty("features", out var featuresElement) &&
+            featuresElement.ValueKind == JsonValueKind.Array)
+        {
+            var reprojectedGeometries = new string?[featuresElement.GetArrayLength()];
+            var index = 0;
+            foreach (var feature in featuresElement.EnumerateArray())
+            {
+                if (feature.ValueKind == JsonValueKind.Object &&
+                    feature.TryGetProperty("geometry", out var featureGeometryElement) &&
+                    featureGeometryElement.ValueKind == JsonValueKind.Object)
+                {
+                    reprojectedGeometries[index] = ReprojectGeometryElementToJson(reader, featureGeometryElement, fromSrid, toSrid);
+                }
+
+                index++;
+            }
+
+            return SpliceFeatureCollection(root, reprojectedGeometries, toSrid);
+        }
+
+        if (!root.TryGetProperty("geometry", out var geometryElement) ||
             geometryElement.ValueKind != JsonValueKind.Object)
         {
             throw new ArgumentException("GeoJSON output does not contain a geometry object.");
         }
 
-        var reader = GeoJsonArtifactCodec.CreateReader();
+        var geometryJson = ReprojectGeometryElementToJson(reader, geometryElement, fromSrid, toSrid);
+        return SpliceGeometry(root, geometryJson, toSrid);
+    }
+
+    private static string ReprojectGeometryElementToJson(
+        GeoJsonReader reader,
+        JsonElement geometryElement,
+        int fromSrid,
+        int toSrid)
+    {
         var geometry = reader.Read<Geometry>(geometryElement.GetRawText());
         if (geometry is null || geometry.IsEmpty)
         {
@@ -259,19 +297,17 @@ internal static class GPServerOutputReprojection
                 : ReprojectInMemory(geometry, fromSrid, toSrid);
 
         reprojected.SRID = toSrid;
-
-        var geometryJson = RingWindingNormalizer.WriteGeoJson(SharedWriter, reprojected);
-        return SpliceGeometry(root, geometryJson);
+        return RingWindingNormalizer.WriteGeoJson(SharedWriter, reprojected);
     }
 
     // Re-emits a GeoJSON Feature object, replacing its "geometry" member with pre-serialized
     // geometry JSON and preserving all other members (id, properties, bbox, foreign members).
-    private static string SpliceGeometry(JsonElement root, string geometryJson)
+    private static string SpliceGeometry(JsonElement root, string geometryJson, int? targetSrid = null)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
-            WriteObjectWithGeometry(writer, root, geometryJson);
+            WriteObjectWithGeometry(writer, root, geometryJson, targetSrid);
         }
 
         return Encoding.UTF8.GetString(buffer.ToArray());
@@ -279,7 +315,7 @@ internal static class GPServerOutputReprojection
 
     // Re-emits a GeoJSON FeatureCollection object, replacing the "geometry" member of each
     // feature whose index carries replacement JSON and preserving every other member verbatim.
-    private static string SpliceFeatureCollection(JsonElement root, string?[] normalizedGeometryJson)
+    private static string SpliceFeatureCollection(JsonElement root, string?[] normalizedGeometryJson, int? targetSrid = null)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -304,13 +340,19 @@ internal static class GPServerOutputReprojection
                         }
                         else
                         {
-                            WriteObjectWithGeometry(writer, feature, geometryJson);
+                            WriteObjectWithGeometry(writer, feature, geometryJson, targetSrid);
                         }
 
                         index++;
                     }
 
                     writer.WriteEndArray();
+                }
+                else if (targetSrid is > 0 &&
+                         string.Equals(property.Name, FeatureArtifactSpatialReference.MemberName, StringComparison.Ordinal) &&
+                         property.Value.ValueKind == JsonValueKind.Object)
+                {
+                    WriteUpdatedSpatialReference(writer, property.Value, targetSrid.Value);
                 }
                 else
                 {
@@ -326,7 +368,7 @@ internal static class GPServerOutputReprojection
 
     // Writes one JSON object, replacing its "geometry" member with pre-serialized geometry JSON
     // and preserving all other members (id, properties, bbox, foreign members).
-    private static void WriteObjectWithGeometry(Utf8JsonWriter writer, JsonElement obj, string geometryJson)
+    private static void WriteObjectWithGeometry(Utf8JsonWriter writer, JsonElement obj, string geometryJson, int? targetSrid = null)
     {
         writer.WriteStartObject();
         foreach (var property in obj.EnumerateObject())
@@ -337,10 +379,55 @@ internal static class GPServerOutputReprojection
                 using var geometryDoc = JsonDocument.Parse(geometryJson);
                 geometryDoc.RootElement.WriteTo(writer);
             }
+            else if (targetSrid is > 0 &&
+                     string.Equals(property.Name, FeatureArtifactSpatialReference.MemberName, StringComparison.Ordinal) &&
+                     property.Value.ValueKind == JsonValueKind.Object)
+            {
+                WriteUpdatedSpatialReference(writer, property.Value, targetSrid.Value);
+            }
             else
             {
                 property.WriteTo(writer);
             }
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteUpdatedSpatialReference(Utf8JsonWriter writer, JsonElement srObject, int targetSrid)
+    {
+        writer.WritePropertyName(FeatureArtifactSpatialReference.MemberName);
+        writer.WriteStartObject();
+
+        var wroteSrid = false;
+        foreach (var srProp in srObject.EnumerateObject())
+        {
+            if (string.Equals(srProp.Name, "state", StringComparison.Ordinal))
+            {
+                writer.WriteString("state", "known");
+            }
+            else if (string.Equals(srProp.Name, "srid", StringComparison.Ordinal))
+            {
+                writer.WriteNumber("srid", targetSrid);
+                wroteSrid = true;
+            }
+            else if (string.Equals(srProp.Name, "wkid", StringComparison.Ordinal))
+            {
+                writer.WriteNumber("wkid", targetSrid);
+            }
+            else if (string.Equals(srProp.Name, "latestWkid", StringComparison.Ordinal))
+            {
+                writer.WriteNumber("latestWkid", targetSrid);
+            }
+            else
+            {
+                srProp.WriteTo(writer);
+            }
+        }
+
+        if (!wroteSrid)
+        {
+            writer.WriteNumber("srid", targetSrid);
         }
 
         writer.WriteEndObject();

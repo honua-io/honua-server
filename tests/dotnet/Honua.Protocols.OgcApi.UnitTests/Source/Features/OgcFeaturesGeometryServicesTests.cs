@@ -201,6 +201,25 @@ public sealed class OgcFeaturesGeometryServicesTests
             CreateSut().ConvertWkbToSimpleGeometry(valid, AxisOrder.NorthEast));
     }
 
+    [UnitTest]
+    public void ConvertWkbToSimpleGeometry_WithNorthEastAxis_NormalizesRingsBeforeAxisSwap()
+    {
+        var sut = CreateSut();
+        // CW and CCW square in (lon, lat) space must both normalize to CCW in (lon, lat) space
+        // BEFORE axes are swapped to (lat, lon) for NorthEast output.
+        var cwInLonLat = new WKBWriter().Write(new WKTReader().Read("POLYGON ((10 20, 10 30, 15 30, 15 20, 10 20))"));
+        var ccwInLonLat = new WKBWriter().Write(new WKTReader().Read("POLYGON ((10 20, 15 20, 15 30, 10 30, 10 20))"));
+
+        var fromCw = sut.ConvertWkbToSimpleGeometry(cwInLonLat, AxisOrder.NorthEast);
+        var fromCcw = sut.ConvertWkbToSimpleGeometry(ccwInLonLat, AxisOrder.NorthEast);
+
+        fromCw.Should().NotBeNull();
+        fromCcw.Should().NotBeNull();
+        fromCw!.CoordinatesJson.Should().Be(fromCcw!.CoordinatesJson);
+        // First two vertices of CCW in (lon, lat): (10,20) -> (15,20), which after swap to (lat, lon) is [20,10],[20,15]
+        fromCw.CoordinatesJson.Should().Be("[[[20.0,10.0],[20.0,15.0],[30.0,15.0],[30.0,10.0],[20.0,10.0]]]");
+    }
+
     private static OgcFeaturesGeometryServices CreateSut()
         => new(
             new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),

@@ -59,7 +59,7 @@ public sealed class I3sNodePageProjectorTests
     }
 
     [UnitTest]
-    public void BuildPages_Obb_CentersInIndexCrs_WithMetricHalfSizes()
+    public void BuildPages_Obb_CentersInIndexCrs_WithMetricHalfSizes_AndEnuToEcefQuaternion()
     {
         var pages = I3sNodePageProjector.BuildPages(BuildThreeNodeTileset());
 
@@ -67,7 +67,20 @@ public sealed class I3sNodePageProjectorTests
         obb.Should().NotBeNull();
         obb!.Center.Should().HaveCount(3);
         obb.HalfSize.Should().HaveCount(3);
-        obb.Quaternion.Should().BeEquivalentTo(new[] { 0d, 0d, 0d, 1d });
+        obb.Quaternion.Should().HaveCount(4);
+
+        var norm = Math.Sqrt(obb.Quaternion.Sum(c => c * c));
+        norm.Should().BeApproximately(1d, 1e-12, "OBB rotation must be a unit quaternion");
+        obb.Quaternion.Should().NotBeEquivalentTo(new[] { 0d, 0d, 0d, 1d },
+            "ENU-to-ECEF quaternion at non-degenerate lon/lat is not the identity quaternion");
+
+        var expectedQ = I3sNodePageProjector.ComputeEnuToEcefQuaternion(
+            (-1.3197 + -1.31966) / 2d,
+            (0.69886 + 0.69890) / 2d);
+        for (var i = 0; i < 4; i++)
+        {
+            obb.Quaternion[i].Should().BeApproximately(expectedQ[i], 1e-12);
+        }
 
         // Centre longitude/latitude fall in WGS-84 degrees (the index CRS), and
         // the half-sizes are positive metric extents.
@@ -75,6 +88,22 @@ public sealed class I3sNodePageProjectorTests
         obb.Center[1].Should().BeInRange(-90d, 90d);
         obb.HalfSize[0].Should().BeGreaterThan(0d);
         obb.HalfSize[2].Should().BeApproximately(20d, 1e-6, "root vertical half-extent is (40-0)/2 metres");
+    }
+
+    [UnitTest]
+    public void BuildPages_DescendantNodes_ComputePositiveMaxScreenThresholdSq_EvenWhenLeafErrorIsZero()
+    {
+        var document = BuildThreeNodeTileset();
+        document.Root.Children![1].GeometricError = 0.0; // terminal leaf with 0 error
+
+        var pages = I3sNodePageProjector.BuildPages(document);
+
+        var childWithPositiveError = pages[0].Nodes[1];
+        var terminalLeafWithZeroError = pages[0].Nodes[2];
+
+        childWithPositiveError.LodThreshold.Should().BeGreaterThan(100d);
+        terminalLeafWithZeroError.LodThreshold.Should().BeGreaterThan(childWithPositiveError.LodThreshold,
+            "a terminal leaf with 0 geometric error refines at a higher screen-area threshold than a coarse child");
     }
 
     [UnitTest]

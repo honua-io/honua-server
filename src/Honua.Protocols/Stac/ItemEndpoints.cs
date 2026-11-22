@@ -189,7 +189,8 @@ internal static class ItemEndpoints
             var items = itemBuilder.MoveToImmutable();
 
             var stacBase = $"{baseUrl}/stac";
-            var itemsPath = $"{stacBase}/collections/{collectionId}/items";
+            var escapedCollectionId = Uri.EscapeDataString(collectionId);
+            var itemsPath = $"{stacBase}/collections/{escapedCollectionId}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
             var collectionTitle = StacMappingService.ResolveDisplayName(publication, resource, layerId);
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
@@ -199,7 +200,7 @@ internal static class ItemEndpoints
                 type: MediaTypes.GeoJson,
                 title: "Items"));
             linksBuilder.Add(Link.Create(
-                href: $"{stacBase}/collections/{collectionId}",
+                href: $"{stacBase}/collections/{escapedCollectionId}",
                 rel: RelationTypes.Collection,
                 type: MediaTypes.Json,
                 title: collectionTitle));
@@ -268,6 +269,14 @@ internal static class ItemEndpoints
             collectionId,
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
+
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Catalog);
+        if (validationError is not null)
+        {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
 
         try
         {

@@ -130,23 +130,58 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "BBOX is outside the valid range for the requested CRS.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue) ||
-            !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
+        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue))
+        {
+            return CreateWmsServiceException(context, "MissingParameterValue", "WIDTH parameter is required.");
+        }
+
+        if (!int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
             imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue) ||
-            !int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
+        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue))
+        {
+            return CreateWmsServiceException(context, "MissingParameterValue", "HEIGHT parameter is required.");
+        }
+
+        if (!int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
             imageHeight <= 0 || imageHeight > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
-        if (!TryParseWmsFeatureInfoPixel(query, versionValue, imageWidth, imageHeight, out var pixelX, out var pixelY))
+        var exceptionsValue = GetQueryValue(query, "EXCEPTIONS");
+        if (!IsSupportedWmsXmlExceptionFormat(exceptionsValue))
         {
-            var pointParameters = IsWms111Version(versionValue) ? "X/Y" : "I/J";
+            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported EXCEPTIONS format. GetFeatureInfo supports only XML exception formats.");
+        }
+
+        var isWms111 = IsWms111Version(versionValue);
+        var pointParameters = isWms111 ? "X/Y" : "I/J";
+        var xRaw = GetQueryValue(query, isWms111 ? "X" : "I");
+        var yRaw = GetQueryValue(query, isWms111 ? "Y" : "J");
+        if (string.IsNullOrWhiteSpace(xRaw) || string.IsNullOrWhiteSpace(yRaw))
+        {
+            var altX = GetQueryValue(query, isWms111 ? "I" : "X");
+            var altY = GetQueryValue(query, isWms111 ? "J" : "Y");
+            if (!string.IsNullOrWhiteSpace(altX) || !string.IsNullOrWhiteSpace(altY))
+            {
+                return CreateWmsServiceException(context, "InvalidPoint", $"{pointParameters} must be within the request image dimensions.");
+            }
+
+            return CreateWmsServiceException(context, "MissingParameterValue", $"{pointParameters} parameters are required.");
+        }
+
+        if (!int.TryParse(xRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pixelX) ||
+            !int.TryParse(yRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pixelY))
+        {
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"{pointParameters} must be integers.");
+        }
+
+        if (pixelX < 0 || pixelX >= imageWidth || pixelY < 0 || pixelY >= imageHeight)
+        {
             return CreateWmsServiceException(context, "InvalidPoint", $"{pointParameters} must be within the request image dimensions.");
         }
 

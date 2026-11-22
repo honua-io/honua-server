@@ -961,6 +961,10 @@ repository-wide artifact collection. Full creation-ordered histories preserve di
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
 inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
 run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+When more than 25 unprocessed run versions remain, five slots serve the oldest pending
+runs and twenty serve the newest. This preserves historical reconciliation while new
+evidence avoids waiting behind months of empty runs; processed versions do not spend
+either allocation again. Deferred evidence remains behind the watermark.
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
@@ -2042,7 +2046,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
@@ -2053,6 +2059,16 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+A subsequent synchronous-host optimization was measured with four interleaved
+Release runs of the complete owning GPServer Endpoints shard. All four passed
+the same 71 cases without skips. Class-body totals were 34.012 / 32.569 seconds
+before and 27.791 / 31.771 seconds after (medians 33.291 to 29.781 seconds).
+Fixture-inclusive TRX intervals were 46.941 / 53.211 seconds before and
+41.400 / 45.258 seconds after (medians 50.076 to 43.329 seconds). This saves
+6.747 seconds, or 0.112 test-run runner-minutes, with one runner unchanged.
+Compilation, admission and full CI-job time are excluded. The earlier timings
+above describe the separate default-host optimization, not this comparison.
 
 ### Admin authentication default application lifetime
 
@@ -3270,6 +3286,30 @@ and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runne
 minutes) with one runner before and after. Individual baseline/candidate shard
 pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
 time and do not claim a reduction in the parallel PR Gate's critical path.
+
+### Observability endpoint fixture initialization
+
+`ObservabilityEndpointsTests` starts its default private host only in the five
+migration/error cases that use it. The five telemetry cases retain their separately
+configured private hosts and no longer start an unused default host. All 10 cases,
+79 assertions, endpoint metadata and configuration isolation are retained.
+
+Two interleaved base/head Release runs of the unchanged owning Admin Observability /
+Operations shard on one build-host runner passed the same 123 cases in each run
+(zero skipped). Fixture-inclusive TRX session seconds were 92.572 / 93.402 at base
+and 86.363 / 88.605 at head: median 92.987 to 87.484 seconds, saving 5.503 seconds
+(0.092 runner-minutes). Both pairs improved, by 6.209 and 4.797 seconds.
+`ObservabilityEndpointsTests` summed TRX case seconds were 13.497 / 17.553 at base
+and 44.454 / 45.573 at head (medians 15.525 to 45.013). Those class figures are
+not directly comparable: moving initialization from `IAsyncLifetime.InitializeAsync`
+into the five consuming test bodies makes that initialization visible in case time.
+The fixture-inclusive shard measurement includes setup and teardown in both versions;
+compilation is excluded. This is a small measured shard saving, not evidence of an
+end-to-end CI critical-path improvement.
+
+The shard filter, test selection, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case still runs in its existing selected PR
+shard and full trunk runs; no assertions or gate coverage move to another schedule.
 
 ### OIDC bearer authentication host lifetime
 

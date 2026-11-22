@@ -220,10 +220,31 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
+            Fields = BuildDateBinFields(resource, dateBin.OutStatistics ?? ImmutableArray<StatisticDefinition>.Empty),
             Features = responseFeatures
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    internal static GeoServicesFieldInfo[] BuildDateBinFields(
+        MetadataV2Object resource,
+        ImmutableArray<StatisticDefinition> outStatistics)
+    {
+        var fields = new List<GeoServicesFieldInfo>
+        {
+            new()
+            {
+                Name = "boundary",
+                Type = "esriFieldTypeDate",
+                Alias = "boundary",
+                Editable = false,
+                Nullable = true
+            }
+        };
+
+        AppendBinStatisticsFields(fields, resource, outStatistics);
+        return [.. fields];
     }
 
     internal static IResult? RequireProEditionForDateBins(HttpContext context)
@@ -234,7 +255,7 @@ internal static partial class FeatureServerEndpoints
             "Temporal histogram");
     }
 
-    private static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)
+    internal static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)
     {
         dateBin = default;
         error = null;

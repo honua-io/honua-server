@@ -721,6 +721,28 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_StDistanceAndStBufferWithGeometryLiteral_TranslatesGeometryLiteralArguments()
+    {
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var pointLiteral = new GeometryLiteral(wkb, 4326, "POINT(10 20)");
+        var distanceComparison = new BinaryExpression(
+            new FunctionCall("ST_DISTANCE", [new PropertyReference("geom"), pointLiteral]),
+            BinaryOperator.LessThan,
+            new Literal(100, LiteralType.Number));
+
+        var distanceResult = _translator.Translate(distanceComparison, _resource);
+
+        distanceResult.Sql.Should().Be("ST_Distance(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1)) < @p2");
+        distanceResult.Parameters.Should().Equal(wkb, 4326, 100);
+
+        var buffered = new FunctionCall("ST_BUFFER", [pointLiteral, new Literal(50, LiteralType.Number)]);
+        var bufferResult = _translator.Translate(buffered, _resource);
+
+        bufferResult.Sql.Should().Be("ST_Buffer(ST_GeomFromWKB(@p0, @p1), @p2)");
+        bufferResult.Parameters.Should().Equal(wkb, 4326, 50);
+    }
+
+    [Fact]
     public void Translate_ArithmeticExpression_ReturnsCorrectSQL()
     {
         // Arrange

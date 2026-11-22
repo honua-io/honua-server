@@ -218,7 +218,11 @@ internal static class FeatureCatalogGenerator
             return "serve.3d-tiles-scene";
         }
 
-        if (route.StartsWith("/api/v1/admin/scenes/generate", StringComparison.OrdinalIgnoreCase))
+        if (route.StartsWith("/api/v1/admin/scenes/generate", StringComparison.OrdinalIgnoreCase)
+            || route.StartsWith("/api/v1/admin/scenes/ingest/archive", StringComparison.OrdinalIgnoreCase)
+            || route.StartsWith("/api/v1/admin/scenes/ingest/model", StringComparison.OrdinalIgnoreCase)
+            || route.StartsWith("/api/v1/admin/scenes/jobs", StringComparison.OrdinalIgnoreCase)
+            || route.StartsWith("/api/v1/admin/scenes/assets", StringComparison.OrdinalIgnoreCase))
         {
             return "serve.3d-tiles-scene";
         }

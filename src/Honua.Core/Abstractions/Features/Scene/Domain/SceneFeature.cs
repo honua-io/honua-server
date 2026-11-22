@@ -19,6 +19,8 @@ public sealed record SceneFeatureGeometry
     public required SceneGeometryKind Kind { get; init; }
 
     public required IReadOnlyList<SceneVertex> Vertices { get; init; }
+
+    public IReadOnlyList<IReadOnlyList<SceneVertex>>? Parts { get; init; }
 }
 
 public sealed record SceneFeature

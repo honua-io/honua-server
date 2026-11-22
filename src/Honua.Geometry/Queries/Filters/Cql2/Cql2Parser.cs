@@ -796,7 +796,7 @@ public sealed class Cql2Parser
         Consume(Cql2TokenType.RightParen, "Expected ')' after BBOX");
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
-        ValidateGeographicBbox(minX, minY, maxX, maxY);
+        ValidateBbox(minX, minY, maxX, maxY);
         var geometry = CreateBboxGeometry(geometryFactory, minX, minY, maxX, maxY);
         var writer = new WKBWriter();
         var wkb = writer.Write(geometry);
@@ -837,14 +837,19 @@ public sealed class Cql2Parser
             new Coordinate(minX, minY)
             ]);
 
-    private static void ValidateGeographicBbox(double minX, double minY, double maxX, double maxY)
+    private static void ValidateBbox(double minX, double minY, double maxX, double maxY)
     {
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
-            Math.Abs(minX - maxX) < CoordinateEpsilon ||
-            !IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
-            !IsValidLatitude(minY) || !IsValidLatitude(maxY))
+            Math.Abs(minX - maxX) < CoordinateEpsilon)
+        {
+            throw new ArgumentException("Invalid BBOX coordinates");
+        }
+
+        if (minX > maxX &&
+            (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
+             !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
         {
             throw new ArgumentException("Invalid BBOX coordinates");
         }

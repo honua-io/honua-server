@@ -1359,8 +1359,9 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 $"Pre-project the layer to EPSG:4326 or a projected metre-unit CRS before issuing distance filters.");
         }
 
-        // Projected metre-unit CRS: planar ST_DWithin in the layer's native (metre) units is correct.
-        parameters.Add(distanceInMeters);
+        // Projected CRS: planar ST_DWithin in the layer's native linear units.
+        var distanceInCrsUnits = distanceInMeters / Honua.Core.Features.Infrastructure.Crs.CrsLinearUnitFactor.LinearUnitToMeters(mapping.Srid);
+        parameters.Add(distanceInCrsUnits);
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
     }
 

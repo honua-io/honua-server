@@ -37,11 +37,9 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             ["GCS_WGS_1984"] = 4326,
             ["D_WGS_1984"] = 4326,
             ["EPSG:4326"] = 4326,
-            ["4326"] = 4326,
 
             // Web Mercator variants
             ["EPSG:3857"] = 3857,
-            ["3857"] = 3857,
             ["GOOGLE_MERCATOR"] = 3857,
             ["WEB_MERCATOR"] = 3857,
             ["PSEUDO_MERCATOR"] = 3857,
@@ -53,7 +51,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             ["GCS_North_American_1983"] = 4269,
             ["D_North_American_1983"] = 4269,
             ["EPSG:4269"] = 4269,
-            ["4269"] = 4269,
         }
         .ToFrozenDictionary();
 
@@ -66,7 +63,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex _projectedNameRegex = new(
-        @"PROJC(?:S|RS)\s*\[\s*""([^""]+)""",
+        @"(?:PROJC(?:S|RS)|PROJECTEDCRS)\s*\[\s*""([^""]+)""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex _esriUtmNameRegex = new(
@@ -118,8 +115,12 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         // node, which appears AFTER the inner base-geographic block. A code taken from inside the
         // GEOGCS/GEOGCRS/BASEGEOGCRS block (or a first-match bare EPSG reference) is the base
         // geographic code (4326/4269-family) and would georeference projected data as lat/lon.
-        var isProjected = cleanedContent.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
-                          cleanedContent.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase);
+        var isProjected = cleanedContent.Contains("PROJCS[", StringComparison.OrdinalIgnoreCase) ||
+                          cleanedContent.Contains("PROJCRS[", StringComparison.OrdinalIgnoreCase) ||
+                          cleanedContent.Contains("PROJECTEDCRS[", StringComparison.OrdinalIgnoreCase) ||
+                          StartsWithKeyword(cleanedContent, "PROJCS") ||
+                          StartsWithKeyword(cleanedContent, "PROJCRS") ||
+                          StartsWithKeyword(cleanedContent, "PROJECTEDCRS");
         var geographicBlockEnd = isProjected ? FindGeographicBaseBlockEnd(cleanedContent) : -1;
 
         // 1. Authority/ID node extraction. Take the LAST AUTHORITY["EPSG",...]/ID["EPSG",...]
@@ -240,8 +241,11 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         if (StartsWithKeyword(wkt, "COMPD_CS") || StartsWithKeyword(wkt, "COMPOUNDCRS"))
         {
             return ExtractFirstMember(wkt, "PROJCRS")
+                ?? ExtractFirstMember(wkt, "PROJECTEDCRS")
                 ?? ExtractFirstMember(wkt, "PROJCS")
                 ?? ExtractFirstMember(wkt, "GEOGCRS")
+                ?? ExtractFirstMember(wkt, "GEOGRAPHICCRS")
+                ?? ExtractFirstMember(wkt, "GEODCRS")
                 ?? ExtractFirstMember(wkt, "GEOGCS")
                 ?? wkt;
         }
@@ -264,6 +268,21 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         if (TryFindMember(wkt, "BASEGEOGCRS", out _, out var wkt2BaseEnd))
         {
             return wkt2BaseEnd;
+        }
+
+        if (TryFindMember(wkt, "BASEGEODCRS", out _, out var wkt2BaseGeodEnd))
+        {
+            return wkt2BaseGeodEnd;
+        }
+
+        if (TryFindMember(wkt, "GEOGRAPHICCRS", out _, out var wkt2GeographicEnd))
+        {
+            return wkt2GeographicEnd;
+        }
+
+        if (TryFindMember(wkt, "GEODCRS", out _, out var wkt2GeodEnd))
+        {
+            return wkt2GeodEnd;
         }
 
         return TryFindMember(wkt, "GEOGCRS", out _, out var wkt2End) ? wkt2End : -1;

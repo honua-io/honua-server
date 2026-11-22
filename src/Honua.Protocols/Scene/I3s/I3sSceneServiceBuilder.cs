@@ -11,9 +11,10 @@ namespace Honua.Protocols.Scene.I3s;
 internal static class I3sSceneServiceBuilder
 {
     public static I3sSceneLayerDocument BuildPersistedLayer(SceneDataset scene, I3sSceneResources? resources,
-        SceneDatasetType datasetType = SceneDatasetType.HostedTiles)
+        SceneDatasetType datasetType = SceneDatasetType.HostedTiles,
+        SceneExtent? fallbackExtent = null)
     {
-        var layer = BuildLayer(scene, resources?.Extent, datasetType,
+        var layer = BuildLayer(scene, resources?.Extent ?? fallbackExtent, datasetType,
             advertiseNodePages: resources is not null);
         layer.Fields = resources?.Fields ?? [];
         layer.ObjectIdField = resources is not null ? "OBJECTID" : null;
@@ -51,6 +52,7 @@ internal static class I3sSceneServiceBuilder
             Wkid = Wgs84Wkid,
             LatestWkid = Wgs84Wkid,
             VcsWkid = Wgs84EllipsoidVcsWkid,
+            LatestVcsWkid = Wgs84EllipsoidVcsWkid,
         };
 
         I3sFullExtent? fullExtent = extent is null
