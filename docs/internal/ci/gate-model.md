@@ -3395,3 +3395,13 @@ Every assertion, request and endpoint/operation attribute is unchanged.
 All cases remain in the complete GeoServices GPServer Durable and Aliases shard
 on selected PR runs and full trunk runs. No workflow, shard filter, required
 check name or aggregate dependency changes.
+
+Two interleaved base/head Release pairs of that complete shard passed the same
+50 cases in every run, with zero failures or skips (17 cases in the target class).
+Summed class seconds were 29.661 / 29.573 at base and 28.799 / 28.241 at head:
+median 29.617 to 28.520 seconds. Fixture-inclusive TRX session seconds were
+52.821 / 52.634 at base and 52.385 / 50.043 at head: median 52.727 to 51.214
+seconds, saving 1.513 seconds (0.025 runner-minutes). Both pairs improved, by
+0.435 and 2.591 seconds. Runner count stays one. These are small shared-host
+measurements; compilation is excluded, and no parallel PR Gate critical-path
+improvement is claimed.
