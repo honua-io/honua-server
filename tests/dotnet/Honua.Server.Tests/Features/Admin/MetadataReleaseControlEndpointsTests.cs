@@ -92,6 +92,173 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithInvalidFieldName_Returns400()
+    {
+        string[] invalidFieldNames =
+        [
+            "col'; DROP TABLE users;--",
+            "1starts_with_digit",
+            "bad-hyphen",
+            "has space",
+            "col\r\nforged",
+            "owner_email\n"
+        ];
+
+        foreach (var invalidFieldName in invalidFieldNames)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+            {
+                packageId = "pkg-invalid-field",
+                targetEnvironment = "dev",
+                resourceSemanticId = "res-1",
+                newFieldName = invalidFieldName,
+                scriptId = "add-safe-script"
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithInvalidDataPopulateField_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+        {
+            packageId = "pkg-invalid-pop",
+            targetEnvironment = "dev",
+            resourceSemanticId = "res-1",
+            newFieldName = "owner_email",
+            dataPopulateFields = new[] { "owner_email", "bad; DROP TABLE x;--" }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var trailingNewlineResponse = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+        {
+            packageId = "pkg-invalid-pop-lf",
+            targetEnvironment = "dev",
+            resourceSemanticId = "res-1",
+            newFieldName = "owner_email",
+            dataPopulateFields = new[] { "owner_email\n" }
+        });
+
+        trailingNewlineResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithControlCharactersOrOverLengthIdentifiers_Returns400()
+    {
+        object[] invalidPayloads =
+        [
+            new { packageId = "pkg\r\nforged", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev\u2028forged", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res\nforged", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", scriptId = "scr\r\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", newFieldType = "String\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", reason = "ok\r\n[ERR] forged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", idempotencyKey = "idem\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", correlationId = "corr\u0085forged" },
+            new { packageId = new string('p', 129), targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", reason = new string('r', 513) },
+        ];
+
+        foreach (var payload in invalidPayloads)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task CoordinatedReleaseCreate_WithInvalidMetadataFieldName_RejectsBeforeRollout()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var coordinatedService = new Honua.ControlPlane.CoordinatedReleaseControlService([store]);
+        var container = new CoordinatedReleaseContainerSpec
+        {
+            TargetId = "svc-1",
+            DesiredImage = "honua/server:rev-2",
+        };
+        var invalidPlan = CreateInvalidFieldPlan("pkg-coord-invalid", "script-1");
+
+        var act = () => coordinatedService.CreateAsync(
+            container, invalidPlan, "dev", "admin", "test", "idem-1", "corr-1");
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*newFieldName*");
+        (await store.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task CoordinatedMetadataStepExecutor_WhenAlreadySubmittedPlanFailsValidation_ReturnsFailedForUnwind()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var metadataService = new Honua.ControlPlane.MetadataReleaseControlService([store]);
+        var executor = new Honua.ControlPlane.CoordinatedMetadataStepExecutor(
+            metadataService,
+            NSubstitute.Substitute.For<IMetadataReleaseOperationReconciler>(),
+            [store]);
+
+        var invalidPlan = CreateInvalidFieldPlan("pkg-coord-legacy", "script-legacy");
+        var context = new CoordinatedReleaseContext
+        {
+            PackageId = invalidPlan.PackageId,
+            TargetEnvironment = "dev",
+            Container = new CoordinatedReleaseContainerSpec { TargetId = "svc-1", DesiredImage = "honua/server:rev-2" },
+            MetadataPlan = invalidPlan,
+            CurrentStep = CoordinatedReleaseStep.MetadataAndSchema,
+        };
+        var operation = new WorkflowOperationRecord
+        {
+            OperationId = "coord-op-legacy",
+            Kind = WorkflowOperationKind.CoordinatedRelease,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = "admin", CorrelationId = "corr-1" },
+            CoordinatedRelease = context,
+        };
+
+        var result = await executor.StartAsync(context, operation);
+
+        result.Outcome.Should().Be(CoordinatedStepOutcome.Failed);
+        result.Detail.Should().Contain("newFieldName");
+    }
+
+    private static MetadataReleaseExecutionPlan CreateInvalidFieldPlan(string packageId, string scriptId) =>
+        new()
+        {
+            PackageId = packageId,
+            TargetEnvironment = "dev",
+            ResourceSemanticId = "res-1",
+            NewFieldName = "owner-email",
+            Script = new MetadataReleaseScript
+            {
+                ScriptId = scriptId,
+                Reversible = true,
+                ForwardOperations =
+                [
+                    new MetadataReleaseScriptOperation
+                    {
+                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
+                        ResourceSemanticId = "res-1",
+                        FieldName = "owner-email",
+                        FieldType = "String",
+                        Nullable = true,
+                    },
+                ],
+            },
+        };
+
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
