@@ -500,25 +500,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
 
-            var activeCacheKey = canCache ? cacheKey : null;
+            var cacheTarget = new CollectionCacheTarget(outputFormat, canCache ? cacheKey : null, cacheTtl);
 
             if (pagedRawPointResult.HasValue)
             {
                 var payload = CreateRawPointFeatureCollectionPayload(
                     pagedRawPointResult.Value.Items,
                     new RawPayloadContext(resource, links, queryTotalCount));
-                var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
-                return await CreateCollectionJsonResultAsync(
-                    context,
-                    new CollectionJsonResponse
-                    {
-                        Payload = payload.Bytes,
-                        OutputFormat = outputFormat,
-                        ContentETag = contentETag,
-                        CacheKey = activeCacheKey,
-                        CacheTtl = cacheTtl,
-                    },
-                    cancellationToken);
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
             if (pagedRawResult.HasValue)
@@ -526,18 +515,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var payload = CreateRawFeatureCollectionPayload(
                     pagedRawResult.Value.Items,
                     new RawPayloadContext(resource, links, queryTotalCount));
-                var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
-                return await CreateCollectionJsonResultAsync(
-                    context,
-                    new CollectionJsonResponse
-                    {
-                        Payload = payload.Bytes,
-                        OutputFormat = outputFormat,
-                        ContentETag = contentETag,
-                        CacheKey = activeCacheKey,
-                        CacheTtl = cacheTtl,
-                    },
-                    cancellationToken);
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
             var response = OgcGeoJsonFeatureBuilder.CreateCollectionWithOwnedFeatures(features, queryTotalCount, links);
@@ -565,19 +543,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
             }
 
-            var jsonPayload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
-            var jsonETag = ComputeStableFeatureCollectionETag(response, _etagService);
-            return await CreateCollectionJsonResultAsync(
-                context,
-                new CollectionJsonResponse
-                {
-                    Payload = jsonPayload,
-                    OutputFormat = outputFormat,
-                    ContentETag = jsonETag,
-                    CacheKey = activeCacheKey,
-                    CacheTtl = cacheTtl,
-                },
-                cancellationToken);
+            return await CreateMaterializedCollectionResultAsync(context, response, cacheTarget);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

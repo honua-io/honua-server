@@ -14,14 +14,10 @@ namespace Honua.Protocols.Ogc.Api.Features;
 
 internal sealed partial class OgcFeaturesQueryHandler
 {
-    private sealed class CollectionJsonResponse
-    {
-        public required ReadOnlyMemory<byte> Payload { get; init; }
-        public required string OutputFormat { get; init; }
-        public required string ContentETag { get; init; }
-        public string? CacheKey { get; init; }
-        public TimeSpan CacheTtl { get; init; }
-    }
+    private readonly record struct CollectionCacheTarget(
+        string OutputFormat,
+        string? CacheKey,
+        TimeSpan CacheTtl);
 
     internal readonly record struct OgcCollectionPayload(ReadOnlyMemory<byte> Bytes, int StableHashLength);
 
@@ -30,22 +26,43 @@ internal sealed partial class OgcFeaturesQueryHandler
         ImmutableArray<Link> Links,
         long? NumberMatched);
 
-    private async Task<IResult> CreateCollectionJsonResultAsync(
+    private readonly record struct TaggedPayload(ReadOnlyMemory<byte> Bytes, string ETag);
+
+    private Task<IResult> CreateRawCollectionResultAsync(
         HttpContext context,
-        CollectionJsonResponse response,
-        CancellationToken cancellationToken)
+        OgcCollectionPayload payload,
+        CollectionCacheTarget target)
     {
-        var contentType = string.Equals(response.OutputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
+        var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
+        return CreateCollectionBytesResultAsync(context, new TaggedPayload(payload.Bytes, contentETag), target);
+    }
+
+    private Task<IResult> CreateMaterializedCollectionResultAsync(
+        HttpContext context,
+        FeatureCollection response,
+        CollectionCacheTarget target)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
+        var contentETag = ComputeStableFeatureCollectionETag(response, _etagService);
+        return CreateCollectionBytesResultAsync(context, new TaggedPayload(payload, contentETag), target);
+    }
+
+    private async Task<IResult> CreateCollectionBytesResultAsync(
+        HttpContext context,
+        TaggedPayload payload,
+        CollectionCacheTarget target)
+    {
+        var contentType = string.Equals(target.OutputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
             ? MediaTypes.GeoJson
             : MediaTypes.Json;
-        if (response.CacheKey is not null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+        if (target.CacheKey is not null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
         {
-            var cachedResponse = new CachedResponse(response.Payload.ToArray(), contentType, response.ContentETag);
-            await _responseCache.SetAsync(response.CacheKey, cachedResponse, response.CacheTtl, cancellationToken);
+            var cachedResponse = new CachedResponse(payload.Bytes.ToArray(), contentType, payload.ETag);
+            await _responseCache.SetAsync(target.CacheKey, cachedResponse, target.CacheTtl, context.RequestAborted);
             return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
         }
 
-        return Results.Bytes(response.Payload, contentType, entityTag: EntityTagHeaderValue.Parse(response.ContentETag));
+        return Results.Bytes(payload.Bytes, contentType, entityTag: EntityTagHeaderValue.Parse(payload.ETag));
     }
 
     internal static string ComputeWeakETag(ReadOnlySpan<byte> stableBytes, IETagService etagService)
