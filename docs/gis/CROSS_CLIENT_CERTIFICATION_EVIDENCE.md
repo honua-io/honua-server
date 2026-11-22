@@ -233,7 +233,7 @@ Use `scripts/client-compat/refresh-baselines.sh` to bump baselines after an inte
 
 ## Integration Mapping
 
-This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). CERT-ID-specific markers described below are proposed conventions to be added in a follow-up implementation ticket.
+This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). The CERT-ID markers below are live where the table says so; rows marked Planned are not implemented yet.
 
 | Source | Lane | How It Feeds the Envelope |
 |---|---|---|
@@ -241,7 +241,7 @@ This section describes how each evidence source will map to the evidence envelop
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
 | OpenLayers OGC API Maps test | JS (OGC Maps) | Automated: `tests/js/openlayers/maps/` configures `ol/source/ImageStatic` against `/ogc/maps`, records discovery/error handling, and records render as `skip` when the live collection has no raster fixture |
 | Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
-| pytest markers | Analyst clients, CLI | Live in the analyst-client suites (`tests/python/{duckdb_client,geopandas_client,owslib_client,pyqgis}`): `@pytest.mark.cert("CERT-…")` maps each test to its result entries. Planned for the CLI lane's FeatureServer and OGC API Features files |
+| pytest markers | Analyst clients, Desktop (PyQGIS), CLI | Live: `@pytest.mark.cert("CERT-…")` maps each test to its result entries in the analyst-client suites (`tests/python/{duckdb_client,geopandas_client,owslib_client,stac_client}`) and in `tests/python/pyqgis`, which emits under `desktop-qgis`. Planned for the CLI lane's FeatureServer and OGC API Features files |
 | xUnit attributes | CLI | Live (OData lane): each test in `tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `artifacts/test-results/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
