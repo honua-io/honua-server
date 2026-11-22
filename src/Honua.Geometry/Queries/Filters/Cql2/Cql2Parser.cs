@@ -100,8 +100,9 @@ public sealed class Cql2Parser
 
     private FilterExpression ParseBooleanPrimary(bool allowBareScalar)
     {
-        if (Match(Cql2TokenType.LeftParen))
+        if (Check(Cql2TokenType.LeftParen) && !Cql2ScalarLookahead.IsParenthesizedScalarAhead(_tokens, _position))
         {
+            Advance();
             var expr = ParseBooleanExpression(allowBareScalar);
             Consume(Cql2TokenType.RightParen, "Expected ')' after expression");
             return expr;
@@ -1020,7 +1021,7 @@ public sealed class Cql2Parser
         return false;
     }
 
-    private static bool IsComparisonOperator(Cql2TokenType type)
+    internal static bool IsComparisonOperator(Cql2TokenType type)
     {
         return type is Cql2TokenType.Equal or Cql2TokenType.NotEqual or
                Cql2TokenType.LessThan or Cql2TokenType.LessThanOrEqual or
