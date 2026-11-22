@@ -137,6 +137,47 @@ public sealed class QuantizedMeshTileWriterTests
     }
 
     [UnitTest]
+    public void Write_LevelZeroHemispheres_AreVisibleToCesiumAboveTheirSurface()
+    {
+        const int gridSize = 5;
+        foreach (var west in new[] { -180.0, 0.0 })
+        {
+            var bytes = QuantizedMeshTileWriter.Write(new QuantizedMeshTileInput
+            {
+                Bounds = new TerrainGeographicBounds(west, -90.0, west + 180.0, 90.0),
+                GridSize = gridSize,
+                Elevations = BuildSlopedElevations(gridSize, baseHeight: 100.0, eastSlope: 0.0, northSlope: 0.0)
+            });
+            var header = QuantizedMeshTileReader.Read(bytes).Header;
+            var point = (header.HorizonOcclusionPointX, header.HorizonOcclusionPointY, header.HorizonOcclusionPointZ);
+
+            // Cameras above the equator and outside the unit ellipsoid, in scaled coordinates.
+            foreach (var offset in new[] { 1.0, 90.0, 179.0 })
+            {
+                var angle = (west + offset) * Math.PI / 180.0;
+                var camera = (X: 1.1 * Math.Cos(angle), Y: 1.1 * Math.Sin(angle), Z: 0.0);
+                IsVisibleToCesium(point, camera).Should().BeTrue();
+                IsVisibleToCesium((0.0, 0.0, 0.0), camera).Should().BeFalse();
+            }
+        }
+    }
+
+    private static bool IsVisibleToCesium(
+        (double X, double Y, double Z) point,
+        (double X, double Y, double Z) camera)
+    {
+        // Cesium 1.134 EllipsoidalOccluder.isScaledSpacePointVisible, exterior camera case.
+        var vx = point.X - camera.X;
+        var vy = point.Y - camera.Y;
+        var vz = point.Z - camera.Z;
+        var vhSquared = (camera.X * camera.X) + (camera.Y * camera.Y) + (camera.Z * camera.Z) - 1.0;
+        var vtDotVc = -((vx * camera.X) + (vy * camera.Y) + (vz * camera.Z));
+        var occluded = vtDotVc > vhSquared
+            && (vtDotVc * vtDotVc) / ((vx * vx) + (vy * vy) + (vz * vz)) > vhSquared;
+        return !occluded;
+    }
+
+    [UnitTest]
     public void OctEncode_AndOctDecode_RoundTripUnitVectorsAcrossAllHemispheres()
     {
         (double X, double Y, double Z)[] vectors =

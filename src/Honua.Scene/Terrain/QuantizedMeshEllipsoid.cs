@@ -15,6 +15,10 @@ public static class QuantizedMeshEllipsoid
 
     private const double EccentricitySquared = (2.0 * Flattening) - (Flattening * Flattening);
 
+    // The header requires three coordinates. NaN keeps an unbounded tile visible in Cesium's
+    // horizon comparisons while its bounding sphere still participates in visibility tests.
+    private static readonly EcefPoint UnboundedHorizonPoint = new(double.NaN, double.NaN, double.NaN);
+
     private const double DegreesToRadians = Math.PI / 180.0;
 
     internal static EcefPoint GeodeticToEcef(double longitudeDegrees, double latitudeDegrees, double heightMeters)
@@ -70,7 +74,7 @@ public static class QuantizedMeshEllipsoid
         var directionLength = Length(direction);
         if (directionLength <= 1e-12)
         {
-            return default;
+            return UnboundedHorizonPoint;
         }
 
         var unitDirection = new EcefPoint(
@@ -84,14 +88,14 @@ public static class QuantizedMeshEllipsoid
             var magnitude = ComputePointOcclusionMagnitude(ScaleToUnitEllipsoid(positions[i]), unitDirection);
             if (!double.IsFinite(magnitude))
             {
-                return default;
+                return UnboundedHorizonPoint;
             }
 
             maxMagnitude = Math.Max(maxMagnitude, magnitude);
         }
 
         return maxMagnitude <= 0.0
-            ? default
+            ? UnboundedHorizonPoint
             : new EcefPoint(unitDirection.X * maxMagnitude, unitDirection.Y * maxMagnitude, unitDirection.Z * maxMagnitude);
     }
 
