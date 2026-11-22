@@ -299,7 +299,9 @@ public sealed class TypedProposalCurrentApiKeyTests(TypedProposalCurrentApiKeyTe
             });
         string body = await response.Content.ReadAsStringAsync();
         using var assertions = new AssertionScope();
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Denied");
         body.Should().Contain("/api/v1/admin/api-keys");
         (await CountActiveProposalsAsync()).Should().Be(before);
         _executor.Calls.Should().Be(0);
