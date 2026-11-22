@@ -218,7 +218,7 @@ public sealed class SceneTilesetArchiveImporterTests : IDisposable
         _registration.Records.Should().ContainSingle();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("missing.glb", "missing content file")]
     [InlineData("TILE.glb", "missing content file")]
     [InlineData("../tileset.json", "cycle")]

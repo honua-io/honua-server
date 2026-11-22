@@ -183,7 +183,7 @@ public sealed class ModelScenePublishExecutorTests : IDisposable
         writtenGlb.AsSpan(0, 4).SequenceEqual("glTF"u8).Should().BeTrue();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("\"external.bin\"")]
     [InlineData("42")]
     public async Task IngestAsync_GltfWithInvalidBufferUri_RejectsWithModelAssetInvalid(string uriJson)
