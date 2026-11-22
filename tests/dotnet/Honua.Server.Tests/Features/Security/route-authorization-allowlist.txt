@@ -177,6 +177,7 @@ anonymous GET /scim/v2/Users/{id}
 anonymous GET /services
 anonymous GET /sharing/rest
 anonymous GET /sharing/rest/community/groups/{groupId}
+anonymous GET /scenes/{sceneId}/copc
 anonymous GET /sharing/rest/community/self
 anonymous GET /sharing/rest/community/users/{username}
 anonymous GET /sharing/rest/content/groups/{groupId}
@@ -192,6 +193,7 @@ anonymous GET /sharing/rest/portals/self
 anonymous GET /sharing/rest/search
 anonymous GET /wps
 anonymous GET /wps/conformance/results/{token}
+anonymous HEAD /scenes/{sceneId}/copc
 anonymous PATCH /healthz/deep
 anonymous PATCH /odata/Features(LayerId={layerId:int},ObjectId={objectId:long})
 anonymous PATCH /odata/Features({layerId:int},{objectId:long})
