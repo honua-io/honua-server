@@ -79,7 +79,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var publications = graph.Publications.Where(candidate => candidate.ServiceId == service.Metadata.Id).ToArray();
         publications.Should().HaveCount(4);
         publications.Should().OnlyContain(candidate => candidate.Metadata.Namespace == "maps" && candidate.Metadata.Tenant == "public");
-        publications.Select(candidate => candidate.LayerIndex).Distinct().Should().BeEquivalentTo([first.StorageLayerId, second.StorageLayerId]);
+        publications.Select(candidate => candidate.LayerIndex).Distinct().Should().BeEquivalentTo([first.ServiceLayerIndex, second.ServiceLayerIndex]);
     }
 
     [IntegrationTest]

@@ -66,7 +66,7 @@ public sealed partial class LayerPublishingIntegrationTests
 
         using var content = JsonContent.Create(new { editing = new { globalIdField = "gid" } });
         var response = await _client.PutAsync(
-            $"/api/v1/admin/services/{_serviceName}/layers/{_layerId.Value}/metadata",
+            $"/api/v1/admin/services/{_serviceName}/layers/{published.ServiceLayerIndex}/metadata",
             content);
 
         var payload = await response.Content.ReadAsStringAsync();

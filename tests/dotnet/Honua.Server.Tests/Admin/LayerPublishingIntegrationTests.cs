@@ -604,7 +604,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceId = snapshot.Graph.Publications.Single(publication =>
-            publication.LayerIndex == published.StorageLayerId &&
+            snapshot.ResolveStorageLayerId(publication) == published.StorageLayerId &&
             publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ResourceId;
         var publishingServiceIds = snapshot.Graph.Publications
             .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
@@ -733,26 +733,27 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.StorageLayerId;
-        var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var storageLayerId = checked(_layerId.Value + 1_000_000);
 
+        var missingBindingCollectionId = GetPublishedStacPublication(_fixture.GetCurrentV2GraphSnapshot()).Metadata.Id;
         await RemovePublishedStacStorageBindingAsync();
 
-        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={missingBindingCollectionId}&limit=10");
         var failedSearchPayload = await failedSearchResponse.Content.ReadAsStringAsync();
         failedSearchResponse.StatusCode.Should().Be(
             HttpStatusCode.InternalServerError,
             $"a missing explicit binding must fail closed; response: {failedSearchPayload}");
 
-        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{missingBindingCollectionId}/items?limit=10");
         failedItemsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        var failedItemResponse = await _client.GetAsync($"/stac/collections/{missingBindingCollectionId}/items/1");
         failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         // A plain TEXT stac_id column is not an item identity by name alone; the
         // resource must declare it (extensions.stac.idField) for it to win over the key.
         await SetPublishedStacStorageLayerIdAsync(storageLayerId, declaredStacIdField: "stac_id");
+        var collectionId = storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
         await InsertCanonicalIdCollisionAsync();
 
@@ -3097,12 +3098,18 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         await command.ExecuteNonQueryAsync();
     }
 
+    private MetadataV2Layer GetPublishedStacPublication(MetadataV2GraphSnapshot snapshot)
+    {
+        var resourceId = snapshot.Graph.StorageBindings.Single(binding => binding.StorageLayerId == _layerId).ResourceId;
+        return snapshot.Graph.Publications.Single(publication =>
+            publication.ResourceId == resourceId &&
+            publication.PublicationType == MetadataV2LayerType.StacCollection);
+    }
+
     private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId, string? declaredStacIdField = null)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var publication = snapshot.Graph.Publications.Single(publication =>
-            publication.LayerIndex == _layerId &&
-            publication.PublicationType == MetadataV2LayerType.StacCollection);
+        var publication = GetPublishedStacPublication(snapshot);
         var binding = snapshot.ResolveStorageBinding(publication)
             ?? throw new InvalidOperationException("Published STAC collection did not resolve a storage binding.");
         var bindings = snapshot.Graph.StorageBindings
@@ -3144,9 +3151,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     private async Task RemovePublishedStacStorageBindingAsync()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var publication = snapshot.Graph.Publications.Single(publication =>
-            publication.LayerIndex == _layerId &&
-            publication.PublicationType == MetadataV2LayerType.StacCollection);
+        var publication = GetPublishedStacPublication(snapshot);
         var publications = snapshot.Graph.Publications
             .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
                 ? candidate with { StorageBindingId = "missing-stac-binding" }
