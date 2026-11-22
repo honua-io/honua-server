@@ -75,7 +75,7 @@ internal sealed partial class CopcScenePublishExecutor
 
             var newDatasetId = Guid.NewGuid();
             var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
-                _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
+                _storage, stagingDirectory, sceneId, cancellationToken, newDatasetId).ConfigureAwait(false);
             if (storagePrefix is not null)
             {
                 await SceneAssetHydration.WriteMarkerAsync(
