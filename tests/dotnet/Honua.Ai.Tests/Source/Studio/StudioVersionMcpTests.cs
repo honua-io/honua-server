@@ -304,9 +304,7 @@ public sealed class StudioVersionMcpTests
         var read = () => resource.ReadAsync(context, "honua://proposals/proposal-missing", default);
 
         var exception = await read.Should().ThrowAsync<GeoprocessingNotFoundException>();
-        var error = McpErrorMapper.Map(exception.Which);
-        error.Code.Should().Be(McpErrorMapper.JsonRpcResourceNotFound);
-        error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
+        AssertResourceNotFound(exception.Which);
     }
 
     private static async Task AssertPollableResultAsync(OperationHandle operation, IOperationInstanceStore instances)
@@ -347,7 +345,12 @@ public sealed class StudioVersionMcpTests
         proposal = proposal with { RequestedBy = actor, TenantId = "another-tenant" };
         var crossTenant = () => ReadAsync();
         var exception = await crossTenant.Should().ThrowAsync<GeoprocessingNotFoundException>();
-        var error = McpErrorMapper.Map(exception.Which);
+        AssertResourceNotFound(exception.Which);
+    }
+
+    private static void AssertResourceNotFound(GeoprocessingNotFoundException exception)
+    {
+        var error = McpErrorMapper.Map(exception);
         error.Code.Should().Be(McpErrorMapper.JsonRpcResourceNotFound);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
     }
