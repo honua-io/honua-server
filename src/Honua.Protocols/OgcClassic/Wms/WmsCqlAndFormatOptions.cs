@@ -5,9 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Rendering;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
@@ -24,7 +22,7 @@ internal static partial class WmsRequestHandlers
         WmsLayer[] layers,
         string cqlFilterParam)
     {
-        var cqlTokens = SplitWmsCqlFilterTokens(cqlFilterParam);
+        var cqlTokens = OgcClassicCqlFilter.SplitTokens(cqlFilterParam);
         if (cqlTokens.Length != 1 && cqlTokens.Length != layers.Length)
         {
             return (null, CreateWmsServiceException(context, "InvalidParameterValue",
@@ -58,100 +56,10 @@ internal static partial class WmsRequestHandlers
         (IFilterExpressionService Service, MetadataV2Object Resource) target,
         string cqlText)
     {
-        var parseResult = target.Service.Parse(FilterLanguage.Cql2Text, cqlText);
-        if (!parseResult.IsSuccess || parseResult.Expression is null)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                $"Invalid CQL_FILTER expression: {parseResult.ErrorMessage ?? "syntax error."}"));
-        }
-
-        var publicResource = target.Resource with
-        {
-            SchemaFields = target.Resource.SchemaFields.Where(field => !field.Hidden).ToArray()
-        };
-
-        var (normalized, normalizeError) = NormalizeWmsCqlExpression(context, (target.Service, publicResource), parseResult.Expression);
-        if (normalizeError is not null)
-        {
-            return (null, normalizeError);
-        }
-
-        var translation = target.Service.Translate(normalized!, publicResource);
-        if (!translation.IsSuccess)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                translation.ErrorMessage ?? "Invalid CQL_FILTER expression."));
-        }
-
-        return (translation.SqlFilter, null);
-    }
-
-    private static (FilterExpression? Expression, IResult? Error) NormalizeWmsCqlExpression(
-        HttpContext context,
-        (IFilterExpressionService Service, MetadataV2Object PublicResource) target,
-        FilterExpression parsed)
-    {
-        FilterExpression expression;
-        try
-        {
-            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
-                parsed,
-                target.PublicResource,
-                propertyName => WfsPropertyNameResolver.Resolve(target.PublicResource, propertyName, allowGeometryAlias: true));
-            expression = target.Service.Normalize(expression, target.PublicResource);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue", ex.Message));
-        }
-
-        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-        {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                "CQL_FILTER expression must be a boolean predicate."));
-        }
-
-        return (expression, null);
-    }
-
-    internal static string[] SplitWmsCqlFilterTokens(string cqlFilterParam)
-    {
-        var tokens = new List<string>();
-        var start = 0;
-        char activeQuote = '\0';
-
-        for (var i = 0; i < cqlFilterParam.Length; i++)
-        {
-            var c = cqlFilterParam[i];
-            if (activeQuote != '\0')
-            {
-                if (c != activeQuote)
-                {
-                    continue;
-                }
-
-                if (i + 1 < cqlFilterParam.Length && cqlFilterParam[i + 1] == activeQuote)
-                {
-                    i++;
-                }
-                else
-                {
-                    activeQuote = '\0';
-                }
-            }
-            else if (c is '\'' or '"')
-            {
-                activeQuote = c;
-            }
-            else if (c == ';')
-            {
-                tokens.Add(cqlFilterParam[start..i].Trim());
-                start = i + 1;
-            }
-        }
-
-        tokens.Add(cqlFilterParam[start..].Trim());
-        return tokens.ToArray();
+        var (filter, error) = OgcClassicCqlFilter.Translate(target.Service, target.Resource, cqlText);
+        return error is null
+            ? (filter, null)
+            : (null, CreateWmsServiceException(context, "InvalidParameterValue", error));
     }
 
     internal static (double? Dpi, string? Error) ParseWmsFormatOptionsDpi(string? formatOptions)

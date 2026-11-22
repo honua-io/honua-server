@@ -67,6 +67,24 @@ public sealed class Wfs20CqlFilterTests
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     [Endpoint("GET /wfs")]
+    public async Task GetFeature_CqlFilter_IsCarriedOnPagingLinks()
+    {
+        var (handler, _) = CreateHandler(_ => { }, totalCount: 5);
+        await using var services = CreateWfsHttpServices();
+        var context = CreateWfsHttpContext(services, "population > 100");
+
+        var result = await handler.HandleGetFeatureAsync(
+            context, "cities", null, "1", null, null, null, null, null, null, null, "hits", CancellationToken.None);
+        var (status, body) = await ExecuteResultAsync(context, result);
+
+        status.Should().Be(StatusCodes.Status200OK, body);
+        body.Should().Contain("STARTINDEX=1").And.Contain("CQL_FILTER=population%20%3E%20100");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [Endpoint("GET /wfs")]
     public async Task GetFeature_InvalidCqlFilter_ReturnsOgcExceptionReport()
     {
         var (handler, _) = CreateHandler(_ => { });
@@ -161,7 +179,7 @@ public sealed class Wfs20CqlFilterTests
         return await ExecuteResultAsync(context, result);
     }
 
-    private (Wfs20Handler Handler, IFeatureReader Reader) CreateHandler(Action<FeatureQuery> onQuery)
+    private (Wfs20Handler Handler, IFeatureReader Reader) CreateHandler(Action<FeatureQuery> onQuery, long totalCount = 1)
     {
         var pointWkb = new WKBWriter().Write(new Point(-157.8583, 21.3069));
         var feature = new Feature
@@ -179,7 +197,7 @@ public sealed class Wfs20CqlFilterTests
             .Returns(call =>
             {
                 onQuery(call.Arg<FeatureQuery>());
-                return Task.FromResult(1L);
+                return Task.FromResult(totalCount);
             });
         reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>

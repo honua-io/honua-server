@@ -150,47 +150,9 @@ internal static class Png8Encoder
             indices[i] = index;
         }
 
-        if (!overflow)
-        {
-            return (exactPalette.ToArray(), indices);
-        }
-
-        // Fallback for images with >256 distinct RGBA values:
-        // Index 0 = fully transparent, indices 1..216 = 6x6x6 opaque RGB cube (0, 51, 102, 153, 204, 255).
-        var quantizedPalette = new uint[217];
-        quantizedPalette[0] = 0u;
-        var slot = 1;
-        for (var ri = 0; ri < 6; ri++)
-        {
-            var r = (byte)(ri * 51);
-            for (var gi = 0; gi < 6; gi++)
-            {
-                var g = (byte)(gi * 51);
-                for (var bi = 0; bi < 6; bi++)
-                {
-                    var b = (byte)(bi * 51);
-                    quantizedPalette[slot++] = (uint)r | ((uint)g << 8) | ((uint)b << 16) | 0xFF000000u;
-                }
-            }
-        }
-
-        for (var i = 0; i < pixelCount; i++)
-        {
-            var offset = i * 4;
-            var a = rgba[offset + 3];
-            if (a < 128)
-            {
-                indices[i] = 0;
-                continue;
-            }
-
-            var ri = (rgba[offset] * 5 + 127) / 255;
-            var gi = (rgba[offset + 1] * 5 + 127) / 255;
-            var bi = (rgba[offset + 2] * 5 + 127) / 255;
-            indices[i] = (byte)(1 + (ri * 36) + (gi * 6) + bi);
-        }
-
-        return (quantizedPalette, indices);
+        return !overflow
+            ? (exactPalette.ToArray(), indices)
+            : Png8PopularityQuantizer.Quantize(rgba, indices);
     }
 
     private static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)

@@ -937,6 +937,7 @@ internal sealed partial class Wfs20Handler
         AppendQueryPart(queryParts, "SORTBY", sortBy);
         AppendQueryPart(queryParts, "BBOX", bbox);
         AppendQueryPart(queryParts, "FILTER", filter);
+        AppendQueryPart(queryParts, "CQL_FILTER", WfsCqlFilterHelper.Current);
         AppendQueryPart(queryParts, "RESOURCEID", resourceId);
         AppendQueryPart(queryParts, "PROPERTYNAME", propertyName);
         AppendQueryPart(queryParts, "SRSNAME", srsName);

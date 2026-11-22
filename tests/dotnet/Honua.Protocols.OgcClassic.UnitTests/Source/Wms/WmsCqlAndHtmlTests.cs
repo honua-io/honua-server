@@ -91,10 +91,12 @@ public sealed class WmsCqlAndHtmlTests
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public void SplitWmsCqlFilterTokens_PreservesSemicolonsInsideQuotes()
+    public void SplitCqlFilterTokens_PreservesSemicolonsInsideQuotes()
     {
-        WmsRequestHandlers.SplitWmsCqlFilterTokens("name = 'a;b';population > 10")
+        OgcClassicCqlFilter.SplitTokens("name = 'a;b';population > 10")
             .Should().Equal("name = 'a;b'", "population > 10");
+        OgcClassicCqlFilter.SplitTokens("name = 'it''s;here' ; label = \"x;y\"")
+            .Should().Equal("name = 'it''s;here'", "label = \"x;y\"");
     }
 
     [UnitTest]

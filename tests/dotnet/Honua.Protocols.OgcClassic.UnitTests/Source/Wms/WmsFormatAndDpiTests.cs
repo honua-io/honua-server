@@ -94,6 +94,34 @@ public sealed class WmsFormatAndDpiTests
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public void Png8Encoder_QuantizedPalette_KeepsSemiTransparentFills()
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(32, 32, SKColorType.Rgba8888, SKAlphaType.Premul))!;
+        surface.Canvas.Clear(SKColors.Transparent);
+        for (var y = 0; y < 32; y++)
+        {
+            for (var x = 0; x < 16; x++)
+            {
+                using var paint = new SKPaint { Color = new SKColor((byte)(x * 16), (byte)(y * 8), 40, 255) };
+                surface.Canvas.DrawPoint(x, y, paint);
+            }
+        }
+
+        using var fill = new SKPaint { Color = SKColors.SteelBlue.WithAlpha(102), Style = SKPaintStyle.Fill };
+        surface.Canvas.DrawRect(16, 0, 16, 32, fill);
+
+        using var decoded = SKBitmap.Decode(SkiaMapRenderer.EncodeSurface(surface, "png8"));
+        decoded.Should().NotBeNull();
+        var translucent = decoded!.GetPixel(24, 16);
+        translucent.Alpha.Should().BeInRange(86, 118);
+        translucent.Blue.Should().BeInRange(164, 196);
+        decoded.GetPixel(4, 4).Alpha.Should().Be(255);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public void WebpEncoder_ProducesValidDecodableWebp()
     {
         using var surface = SKSurface.Create(new SKImageInfo(32, 32, SKColorType.Rgba8888, SKAlphaType.Premul))!;

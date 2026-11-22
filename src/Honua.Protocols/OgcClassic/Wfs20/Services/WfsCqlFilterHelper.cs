@@ -4,7 +4,6 @@
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
-using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
@@ -61,7 +60,7 @@ internal static class WfsCqlFilterHelper
         }
 
         EnsureNoFesConflict(fesFilter);
-        var tokens = Wms.WmsRequestHandlers.SplitWmsCqlFilterTokens(cqlFilter);
+        var tokens = OgcClassicCqlFilter.SplitTokens(cqlFilter);
         if (tokens.Length != 1 && tokens.Length != typeCount)
         {
             throw new WfsQueryException(
@@ -87,7 +86,7 @@ internal static class WfsCqlFilterHelper
         }
 
         EnsureNoFesConflict(fesFilter);
-        var tokens = Wms.WmsRequestHandlers.SplitWmsCqlFilterTokens(cqlFilter);
+        var tokens = OgcClassicCqlFilter.SplitTokens(cqlFilter);
         if (tokens.Length != 1)
         {
             throw new WfsQueryException(
@@ -97,6 +96,17 @@ internal static class WfsCqlFilterHelper
         }
 
         return tokens[0];
+    }
+
+    internal static void EnsureSingleExpressionForXmlQueries(string? cqlFilter)
+    {
+        if (!string.IsNullOrWhiteSpace(cqlFilter) && OgcClassicCqlFilter.SplitTokens(cqlFilter).Length != 1)
+        {
+            throw new WfsQueryException(
+                "InvalidParameterValue",
+                "CQL_FILTER on an XML GetFeature request must be a single expression; it applies to every Query.",
+                "cql_filter");
+        }
     }
 
     internal static SqlFragment? Translate(
@@ -110,61 +120,8 @@ internal static class WfsCqlFilterHelper
         }
 
         EnsureNoFesConflict(filters.FesFilter);
-        var (expression, publicResource) = ParseAndNormalize(filterExpressionService, resource, filters.CqlFilter);
-        var translation = filterExpressionService.Translate(expression, publicResource);
-        if (!translation.IsSuccess)
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                translation.ErrorMessage ?? "Invalid CQL_FILTER expression.",
-                "cql_filter");
-        }
-
-        return translation.SqlFilter;
-    }
-
-    private static (FilterExpression Expression, MetadataV2Object PublicResource) ParseAndNormalize(
-        IFilterExpressionService filterExpressionService,
-        MetadataV2Object resource,
-        string cqlFilter)
-    {
-        var parseResult = filterExpressionService.Parse(FilterLanguage.Cql2Text, cqlFilter);
-        if (!parseResult.IsSuccess || parseResult.Expression is null)
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                $"Invalid CQL_FILTER expression: {parseResult.ErrorMessage ?? "syntax error."}",
-                "cql_filter");
-        }
-
-        var publicResource = resource with
-        {
-            SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
-        };
-
-        FilterExpression expression;
-        try
-        {
-            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
-                parseResult.Expression,
-                publicResource,
-                propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
-            expression = filterExpressionService.Normalize(expression, publicResource);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            throw new WfsQueryException("InvalidParameterValue", ex.Message, "cql_filter");
-        }
-
-        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-        {
-            throw new WfsQueryException(
-                "InvalidParameterValue",
-                "CQL_FILTER expression must be a boolean predicate.",
-                "cql_filter");
-        }
-
-        return (expression, publicResource);
+        var (filter, error) = OgcClassicCqlFilter.Translate(filterExpressionService, resource, filters.CqlFilter);
+        return error is null ? filter : throw new WfsQueryException("InvalidParameterValue", error, "cql_filter");
     }
 
     private static void EnsureNoFesConflict(string? fesFilter)

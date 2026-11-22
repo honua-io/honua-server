@@ -349,6 +349,7 @@ internal sealed partial class Wfs20Handler
         bool isHitsRequest,
         CancellationToken cancellationToken)
     {
+        WfsCqlFilterHelper.EnsureSingleExpressionForXmlQueries(WfsCqlFilterHelper.Current);
         var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
         if (ValidateQueryCount(context, xmlQueries, publishedTypes) is { } queryCountError)
         {
