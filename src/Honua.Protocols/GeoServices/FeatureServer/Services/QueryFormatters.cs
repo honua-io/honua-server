@@ -1276,8 +1276,9 @@ internal sealed class StreamingQueryFormatter
                 if (string.Equals(fieldName, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 {
                     objectIdWritten = true;
-                    var objectId = GeoServicesAttributeProjection.ToEsriValue(kvp.Value)
-                        ?? GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName);
+                    var objectId = kvp.Value is null or JsonElement { ValueKind: JsonValueKind.Null }
+                        ? GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName)
+                        : kvp.Value;
                     WriteJsonValue(writer, fieldName, objectId, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);
                     continue;
                 }

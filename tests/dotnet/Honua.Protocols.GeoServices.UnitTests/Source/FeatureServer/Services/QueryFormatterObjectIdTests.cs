@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed partial class QueryFormatterTests
 {
-    private sealed record NullObjectIdCase(string Mode, string Format, string Projection, string NullKind);
+    private sealed record NullObjectIdCase(string Format, string Projection, string NullKind);
 
     public static IEnumerable<object[]> NullObjectIdCases()
     {
@@ -35,14 +35,14 @@ public sealed partial class QueryFormatterTests
     [MemberData(nameof(NullObjectIdCases))]
     public async Task Query_NullDeclaredObjectId_UsesCanonicalIdentity(string[] values)
     {
-        var testCase = new NullObjectIdCase(values[0], values[1], values[2], values[3]);
+        var testCase = new NullObjectIdCase(values[1], values[2], values[3]);
         var feature = Feature.Create(479, geometry: null,
             new Dictionary<string, object?>
             {
                 ["id"] = testCase.NullKind == "json" ? JsonSerializer.SerializeToElement<object?>(null) : null,
                 ["name"] = "nearby-row"
             }.ToImmutableDictionary());
-        var json = testCase.Mode == "streaming"
+        var json = values[0] == "streaming"
             ? await SerializeNullObjectIdStreamingAsync(testCase, feature)
             : await SerializeNullObjectIdMaterializedAsync(testCase, feature);
 
@@ -56,6 +56,28 @@ public sealed partial class QueryFormatterTests
         {
             row.GetProperty("id").GetInt64().Should().Be(479);
         }
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("*")]
+    [InlineData("id,name")]
+    [InlineData("name")]
+    public async Task Query_ValidJsonObjectId_PreservesNumericWireType(string projection)
+    {
+        var feature = Feature.Create(479, geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = JsonSerializer.SerializeToElement(123L),
+                ["name"] = "nearby-row"
+            }.ToImmutableDictionary());
+        var testCase = new NullObjectIdCase("json", projection, "json");
+        var json = await SerializeNullObjectIdStreamingAsync(testCase, feature);
+        using var document = JsonDocument.Parse(json);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Number);
+        attributes.GetProperty("id").GetInt64().Should().Be(123);
+        attributes.GetProperty("name").GetString().Should().Be("nearby-row");
     }
 
     private static async Task<string> SerializeNullObjectIdMaterializedAsync(NullObjectIdCase testCase, Feature feature)
