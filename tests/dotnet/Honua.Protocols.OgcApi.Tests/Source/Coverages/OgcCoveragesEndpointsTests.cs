@@ -183,6 +183,31 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             "a narrower bbox must not produce the same payload as the full footprint");
     }
 
+    [IntegrationTheory]
+    [InlineData("Lat(37.8)")]
+    [InlineData("Lon(170:-170),Lat(-10:10)")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_SpatialSubsetContract(string subset)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?subset={Uri.EscapeDataString(subset)}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_ContentCrsUsesCanonicalIdentifier()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs=EPSG:3857");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Crs").Single().Should()
+            .Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]

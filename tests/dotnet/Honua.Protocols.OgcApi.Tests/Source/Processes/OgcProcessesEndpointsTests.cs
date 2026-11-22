@@ -28,6 +28,39 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
     public OgcProcessesEndpointsTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("/ogc/processes")]
+    [InlineData("/ogc/processes/conformance")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes")]
+    [Endpoint("GET /ogc/processes/conformance")]
+    public async Task MetadataLinks_AreAbsolute(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        foreach (var link in json.RootElement.GetProperty("links").EnumerateArray())
+        {
+            Uri.TryCreate(link.GetProperty("href").GetString(), UriKind.Absolute, out var uri).Should().BeTrue();
+            uri!.Scheme.Should().BeOneOf("http", "https");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_OffsetPage_HasPreviousLink()
+    {
+        using var response = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=1&offset=2");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var previous = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "prev");
+        previous.GetProperty("href").GetString().Should().Contain("offset=1").And.Contain("limit=1");
+        using var previousResponse = await _fixture.Client.GetAsync(previous.GetProperty("href").GetString());
+        previousResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // -----------------------------------------------------------------------
     // Landing page
     // -----------------------------------------------------------------------

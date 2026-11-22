@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -20,7 +21,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Records;
 
-internal static class OgcRecordsEndpoints
+internal static partial class OgcRecordsEndpoints
 {
     internal const string CatalogCollectionId = "honua-catalog";
     private const int DefaultLimit = 10;
@@ -258,10 +259,20 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!TryGetGeoJsonOutputFormat(context, f, out var formatError))
+        if (!OgcCommonUtilities.TryGetOutputFormat(
+                f, context,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["json"] = MediaTypes.GeoJson,
+                    ["geojson"] = MediaTypes.GeoJson,
+                },
+                [MediaTypes.GeoJson, MediaTypes.Json], MediaTypes.GeoJson,
+                out _, out var formatError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Invalid format.");
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
+
+        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Accept);
 
         if (!TryParseLimitOffset(limit, offset, out var pageLimit, out var pageOffset, out var pageError))
         {
@@ -777,18 +788,6 @@ internal static class OgcRecordsEndpoints
             out outputFormat,
             out errorResult);
 
-    private static bool TryGetGeoJsonOutputFormat(HttpContext context, string? f, out string? error)
-    {
-        error = null;
-        if (string.IsNullOrWhiteSpace(f) || string.Equals(f, "json", StringComparison.OrdinalIgnoreCase) || string.Equals(f, "geojson", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        error = $"Unsupported format '{f}'. Supported formats: json, geojson.";
-        return false;
-    }
-
     private static bool TryParseLimitOffset(int? limit, int? offset, out int pageLimit, out int pageOffset, out string? error)
     {
         pageLimit = limit ?? DefaultLimit;
@@ -833,7 +832,9 @@ internal static class OgcRecordsEndpoints
         // minX > maxX is permitted: per RFC 7946 §5.2 and the OGC API bbox parameter,
         // west > east means the box crosses the antimeridian and must be honored.
         var (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
-        if (minY > maxY)
+        if (minY > maxY || minX is < -180 or > 180 || maxX is < -180 or > 180 ||
+            minY is < -90 or > 90 || maxY is < -90 or > 90 ||
+            (parsed.Ordinates.Length == 6 && parsed.Ordinates[2] > parsed.Ordinates[5]))
         {
             error = "bbox values must be finite and ordered as minx,miny,maxx,maxy.";
             return false;
@@ -872,6 +873,12 @@ internal static class OgcRecordsEndpoints
             return false;
         }
 
+        if (start is null && end is null)
+        {
+            error = "datetime must contain at least one RFC 3339 instant.";
+            return false;
+        }
+
         filter = new DateTimeFilter(start, end);
         if (filter.Start is not null && filter.End is not null && filter.Start.Value > filter.End.Value)
         {
@@ -891,7 +898,8 @@ internal static class OgcRecordsEndpoints
             return true;
         }
 
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        if (Rfc3339DateTime().IsMatch(value) &&
+            DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
         {
             result = parsed;
             return true;
@@ -899,6 +907,9 @@ internal static class OgcRecordsEndpoints
 
         return false;
     }
+
+    [GeneratedRegex(@"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex Rfc3339DateTime();
 
     private static ImmutableArray<double>? CombineBboxes(IEnumerable<ImmutableArray<double>?> extents)
     {
