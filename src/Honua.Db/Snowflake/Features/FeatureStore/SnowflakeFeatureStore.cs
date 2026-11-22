@@ -181,9 +181,13 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryBinsAsync), layerId);
 
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
-        => throw NotSupported(nameof(QueryH3Async), layerId);
+    {
+        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildH3AggregationQuery(mapping, query, h3Query);
+        return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<(SnowflakeLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,
