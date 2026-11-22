@@ -7,28 +7,24 @@ internal static class CacheInvalidationValidation
 {
     internal const int MaxFieldLength = 256;
 
-    internal static bool TryValidateOptionalField(string? value, string fieldName, out string? error)
+    internal static string? ValidateOptionalField(string? value, string fieldName)
     {
         if (value is null)
         {
-            error = null;
-            return true;
+            return null;
         }
 
         if (value.Length > MaxFieldLength)
         {
-            error = $"{fieldName} must be {MaxFieldLength} characters or fewer.";
-            return false;
+            return $"{fieldName} must be {MaxFieldLength} characters or fewer.";
         }
 
         if (ContainsControlOrLineBreak(value))
         {
-            error = $"{fieldName} must not contain control characters.";
-            return false;
+            return $"{fieldName} must not contain control characters.";
         }
 
-        error = null;
-        return true;
+        return null;
     }
 
     internal static bool ContainsControlOrLineBreak(string value)

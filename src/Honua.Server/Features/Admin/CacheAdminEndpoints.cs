@@ -70,29 +70,27 @@ internal static class CacheAdminEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        if (!TryValidateRequest(request, out var normalizedScope, out var validationError))
+        var validation = ValidateRequest(request);
+        if (validation.Error is not null)
         {
-            return CreateBadRequest(validationError!);
+            return CreateBadRequest(validation.Error);
         }
 
+        var normalizedScope = validation.NormalizedScope!;
         var user = context.User.Identity?.Name ?? "unknown";
-        AdminLog.CacheInvalidationRequested(logger, normalizedScope!, user);
+        AdminLog.CacheInvalidationRequested(logger, normalizedScope, user);
 
         try
         {
-            await ExecuteInvalidationAsync(
-                normalizedScope!,
-                request,
-                invalidationService,
-                graphProvider,
-                cancellationToken).ConfigureAwait(false);
+            var invalidationContext = new InvalidationContext(invalidationService, graphProvider, cancellationToken);
+            await ExecuteInvalidationAsync(normalizedScope, request, invalidationContext).ConfigureAwait(false);
 
-            AdminLog.CacheInvalidationCompleted(logger, normalizedScope!);
+            AdminLog.CacheInvalidationCompleted(logger, normalizedScope);
 
             var response = new CacheInvalidationResponse
             {
                 Success = true,
-                Scope = normalizedScope!,
+                Scope = normalizedScope,
                 Message = $"Cache invalidation completed for scope '{normalizedScope}'.",
                 Timestamp = DateTimeOffset.UtcNow
             };
@@ -103,12 +101,12 @@ internal static class CacheAdminEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            AdminLog.CacheInvalidationFailed(logger, ex, normalizedScope!);
+            AdminLog.CacheInvalidationFailed(logger, ex, normalizedScope);
 
             var errorResponse = new CacheInvalidationResponse
             {
                 Success = false,
-                Scope = normalizedScope!,
+                Scope = normalizedScope,
                 Message = CacheInvalidationFailedMessage,
                 Timestamp = DateTimeOffset.UtcNow
             };
@@ -120,85 +118,59 @@ internal static class CacheAdminEndpoints
         }
     }
 
-    private static bool TryValidateRequest(
-        CacheInvalidationRequest request,
-        out string? normalizedScope,
-        out string? error)
+    private static (string? NormalizedScope, string? Error) ValidateRequest(CacheInvalidationRequest request)
     {
-        normalizedScope = null;
         if (string.IsNullOrWhiteSpace(request.Scope))
         {
-            error = "Scope is required.";
-            return false;
+            return (null, "Scope is required.");
         }
 
-        if (!CacheInvalidationValidation.TryValidateOptionalField(request.Scope, "Scope", out error))
+        var fieldError = CacheInvalidationValidation.ValidateOptionalField(request.Scope, "Scope")
+            ?? CacheInvalidationValidation.ValidateOptionalField(request.ServiceId, "ServiceId")
+            ?? CacheInvalidationValidation.ValidateOptionalField(request.CollectionId, "CollectionId");
+        if (fieldError is not null)
         {
-            return false;
+            return (null, fieldError);
         }
 
         var candidate = request.Scope.Trim().ToLowerInvariant();
-        if (candidate is not ("layer" or "service" or "collection" or "ogc-metadata" or "all"))
-        {
-            error = "Unknown invalidation scope. Valid scopes: layer, service, collection, ogc-metadata, all.";
-            return false;
-        }
-
-        if (!CacheInvalidationValidation.TryValidateOptionalField(request.ServiceId, "ServiceId", out error) ||
-            !CacheInvalidationValidation.TryValidateOptionalField(request.CollectionId, "CollectionId", out error))
-        {
-            return false;
-        }
-
-        if (candidate == "layer" && (string.IsNullOrWhiteSpace(request.ServiceId) || request.LayerId is null))
-        {
-            error = "ServiceId and LayerId are required for layer scope.";
-            return false;
-        }
-
-        if (candidate == "service" && string.IsNullOrWhiteSpace(request.ServiceId))
-        {
-            error = "ServiceId is required for service scope.";
-            return false;
-        }
-
-        if (candidate == "collection" && string.IsNullOrWhiteSpace(request.CollectionId))
-        {
-            error = "CollectionId is required for collection scope.";
-            return false;
-        }
-
-        normalizedScope = candidate;
-        error = null;
-        return true;
+        var scopeError = ValidateScopeRequirements(candidate, request);
+        return scopeError is not null ? (null, scopeError) : (candidate, null);
     }
+
+    private static string? ValidateScopeRequirements(string normalizedScope, CacheInvalidationRequest request)
+        => normalizedScope switch
+        {
+            "layer" when string.IsNullOrWhiteSpace(request.ServiceId) || request.LayerId is null
+                => "ServiceId and LayerId are required for layer scope.",
+            "service" when string.IsNullOrWhiteSpace(request.ServiceId)
+                => "ServiceId is required for service scope.",
+            "collection" when string.IsNullOrWhiteSpace(request.CollectionId)
+                => "CollectionId is required for collection scope.",
+            "layer" or "service" or "collection" or "ogc-metadata" or "all" => null,
+            _ => "Unknown invalidation scope. Valid scopes: layer, service, collection, ogc-metadata, all.",
+        };
 
     private static Task ExecuteInvalidationAsync(
         string normalizedScope,
         CacheInvalidationRequest request,
-        OutputCacheInvalidationService invalidationService,
-        IMetadataV2GraphProvider graphProvider,
-        CancellationToken cancellationToken)
+        InvalidationContext invalidation)
         => normalizedScope switch
         {
-            "layer" => invalidationService.InvalidateLayerAsync(request.ServiceId!, request.LayerId, cancellationToken),
-            "service" => InvalidateServiceAsync(request.ServiceId!, invalidationService, graphProvider, cancellationToken),
-            "collection" => invalidationService.InvalidateCollectionAsync(request.CollectionId!, cancellationToken),
-            "ogc-metadata" => invalidationService.InvalidateOgcMetadataAsync(cancellationToken),
+            "layer" => invalidation.Service.InvalidateLayerAsync(request.ServiceId!, request.LayerId, invalidation.CancellationToken),
+            "service" => InvalidateServiceAsync(request.ServiceId!, invalidation),
+            "collection" => invalidation.Service.InvalidateCollectionAsync(request.CollectionId!, invalidation.CancellationToken),
+            "ogc-metadata" => invalidation.Service.InvalidateOgcMetadataAsync(invalidation.CancellationToken),
             _ => Task.WhenAll(
-                invalidationService.InvalidateLayerAsync(null, null, cancellationToken),
-                invalidationService.InvalidateServiceCatalogAsync(null, null, cancellationToken),
-                invalidationService.InvalidateOgcMetadataAsync(cancellationToken)),
+                invalidation.Service.InvalidateLayerAsync(null, null, invalidation.CancellationToken),
+                invalidation.Service.InvalidateServiceCatalogAsync(null, null, invalidation.CancellationToken),
+                invalidation.Service.InvalidateOgcMetadataAsync(invalidation.CancellationToken)),
         };
 
-    private static async Task InvalidateServiceAsync(
-        string serviceId,
-        OutputCacheInvalidationService invalidationService,
-        IMetadataV2GraphProvider graphProvider,
-        CancellationToken cancellationToken)
+    private static async Task InvalidateServiceAsync(string serviceId, InvalidationContext invalidation)
     {
-        var layerIds = await ResolveServiceLayerIdsAsync(graphProvider, serviceId, cancellationToken).ConfigureAwait(false);
-        await invalidationService.InvalidateServiceCatalogAsync(serviceId, layerIds, cancellationToken).ConfigureAwait(false);
+        var layerIds = await ResolveServiceLayerIdsAsync(invalidation.GraphProvider, serviceId, invalidation.CancellationToken).ConfigureAwait(false);
+        await invalidation.Service.InvalidateServiceCatalogAsync(serviceId, layerIds, invalidation.CancellationToken).ConfigureAwait(false);
     }
 
     private static IResult CreateBadRequest(string message)
@@ -206,6 +178,11 @@ internal static class CacheAdminEndpoints
             ApiResponse<object>.Failure(message),
             CacheAdminJsonContext.Default.ApiResponseObject,
             statusCode: StatusCodes.Status400BadRequest);
+
+    private readonly record struct InvalidationContext(
+        OutputCacheInvalidationService Service,
+        IMetadataV2GraphProvider GraphProvider,
+        CancellationToken CancellationToken);
 
     private static async Task<int[]> ResolveServiceLayerIdsAsync(
         IMetadataV2GraphProvider graphProvider,
