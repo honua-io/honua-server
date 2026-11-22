@@ -19,6 +19,8 @@ internal static class AssetsServiceCollectionExtensions
         services.AddScoped<Tasks.WorkTaskAssetGeometry>();
         services.AddScoped<Tasks.WorkTaskFormBinding>();
         services.AddScoped<Tasks.WorkTaskService>();
+        services.AddScoped<Tasks.WorkTaskCompletionValidator>();
+        services.AddScoped<Tasks.WorkTaskCompletionService>();
         return services;
     }
 }
