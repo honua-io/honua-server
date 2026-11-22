@@ -19,6 +19,16 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed class ODataCloudNativeRegressionTests
 {
     [Theory]
+    [InlineData(false, "")]
+    [InlineData(true, "/$entity")]
+    public void ContextUrl_WithExpansion_IdentifiesNavigationProperty(bool isSingle, string suffix)
+    {
+        ODataUtilityService.BuildContextUrl("https://example.test", "Features", isSingle,
+                select: "ObjectId", expand: "Landmarks")
+            .Should().Be("https://example.test/odata/$metadata#Features(ObjectId,Landmarks())" + suffix);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void NextLink_Bbox_PreservesWindow(bool useSkipToken)

@@ -21,6 +21,28 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
 
     public StacQueryablesTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("/stac/collections/{0}")]
+    [InlineData("/stac/queryables")]
+    [InlineData("/stac/collections/{0}/queryables")]
+    [InlineData("/stac/collections/{0}/items/{1}")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    [Endpoint("GET /stac/queryables")]
+    [Endpoint("GET /stac/collections/{collectionId}/queryables")]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    public async Task MetadataAndItem_UnknownQueryParameter_ReturnsBadRequest(string pathTemplate)
+    {
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Query validation item");
+        var path = string.Format(CultureInfo.InvariantCulture, pathTemplate, WebAppFixture.TestLayerId, featureId);
+
+        using var validResponse = await _fixture.Client.GetAsync(path + "?f=json");
+        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var invalidResponse = await _fixture.Client.GetAsync(path + "?unsupported=value");
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /stac/queryables")]

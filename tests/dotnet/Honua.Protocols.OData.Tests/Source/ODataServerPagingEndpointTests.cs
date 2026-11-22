@@ -36,6 +36,23 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData("/odata/Features(0)")]
+    [InlineData("/odata/Layers(0)/Features")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Features_WithExpansion_ContextIdentifiesNavigationProperty(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path + "?$select=ObjectId&$expand=Landmarks&$top=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("value").EnumerateArray().Should().NotBeEmpty();
+        document.RootElement.GetProperty("@odata.context").GetString()
+            .Should().EndWith("/odata/$metadata#Features(ObjectId,Landmarks())");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers")]
