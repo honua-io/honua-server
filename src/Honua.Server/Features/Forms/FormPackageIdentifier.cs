@@ -20,6 +20,6 @@ internal static partial class FormPackageIdentifier
             || (IdentifierPattern().IsMatch(formId)
                 && !ReservedSegments.Contains(formId, StringComparer.OrdinalIgnoreCase));
 
-    [GeneratedRegex("^[A-Za-z0-9_-]{1,128}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z0-9_-]{1,128}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdentifierPattern();
 }

@@ -25,6 +25,7 @@ public sealed class FormPackageIdentifierTests
     [InlineData("caf\u00e9")]
     [InlineData("")]
     [InlineData("IMPORT")]
+    [InlineData("trailing-newline\n")]
     public void IsAcceptable_UnsafeOrReservedId_IsRejected(string formId)
         => FormPackageIdentifier.IsAcceptable(formId).Should().BeFalse();
 
