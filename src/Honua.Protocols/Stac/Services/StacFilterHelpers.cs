@@ -316,7 +316,7 @@ internal static class StacFilterHelpers
     }
 
     private static bool IsOpenIntervalBound(string value)
-        => string.Equals(value, "..", StringComparison.Ordinal);
+        => value.Length == 0 || string.Equals(value, "..", StringComparison.Ordinal);
 
     private static bool TryParseRfc3339DateTime(string value, out DateTimeOffset timestamp)
     {

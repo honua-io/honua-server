@@ -10,14 +10,6 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 public sealed class StacDatetimeBoundaryTests
 {
     [UnitTheory]
-    [InlineData("/2023-01-02T00:00:00Z")]
-    [InlineData("2023-01-02T00:00:00Z/")]
-    public void DatetimeSyntax_WithEmptyIntervalBound_IsInvalid(string datetime)
-    {
-        StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeFalse(datetime);
-    }
-
-    [UnitTheory]
     [InlineData("2023-01-02T00:00Z")]
     [InlineData("2023-01-02T00:00+01:00")]
     [InlineData("2023-01-02T00:00.123Z")]
@@ -37,6 +29,8 @@ public sealed class StacDatetimeBoundaryTests
     [InlineData("2023-01-02t00:00:00z")]
     [InlineData("2023-01-02T00:00:00.123456789Z")]
     [InlineData("2023-01-02T00:00:00+01:00")]
+    [InlineData("/2023-01-02T00:00:00Z")]
+    [InlineData("2023-01-02T00:00:00Z/")]
     [InlineData("../2023-01-02T00:00:00Z")]
     [InlineData("2023-01-02T00:00:00Z/..")]
     public void DatetimeSyntax_WithCompleteTime_IsValid(string datetime)

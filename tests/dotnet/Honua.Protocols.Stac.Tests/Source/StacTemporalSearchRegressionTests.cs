@@ -52,28 +52,28 @@ public sealed class StacTemporalSearchRegressionTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("items", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
-    [InlineData("get", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
-    [InlineData("post", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
-    [InlineData("items", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
-    [InlineData("get", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
-    [InlineData("post", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
-    [InlineData("items", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
-    [InlineData("get", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
-    [InlineData("post", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
-    [InlineData("items", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
-    [InlineData("get", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
-    [InlineData("post", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
+    [InlineData("items", "/2023-01-02T00:00:00Z")]
+    [InlineData("get", "/2023-01-02T00:00:00Z")]
+    [InlineData("post", "/2023-01-02T00:00:00Z")]
+    [InlineData("items", "2023-01-02T00:00:00Z/")]
+    [InlineData("get", "2023-01-02T00:00:00Z/")]
+    [InlineData("post", "2023-01-02T00:00:00Z/")]
+    [InlineData("items", "../2023-01-02T00:00:00Z")]
+    [InlineData("get", "../2023-01-02T00:00:00Z")]
+    [InlineData("post", "../2023-01-02T00:00:00Z")]
+    [InlineData("items", "2023-01-02T00:00:00Z/..")]
+    [InlineData("get", "2023-01-02T00:00:00Z/..")]
+    [InlineData("post", "2023-01-02T00:00:00Z/..")]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     [Endpoint("GET /stac/search")]
     [Endpoint("POST /stac/search")]
-    public async Task Datetime_OpenInterval_RequiresExplicitBoundMarker(
-        string route, string datetime, HttpStatusCode expectedStatus)
+    public async Task Datetime_WithEmptyOrExplicitOpenBound_IsAccepted(
+        string route, string datetime)
     {
         using var response = await SearchAsync(route, datetime);
 
-        response.StatusCode.Should().Be(expectedStatus);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTheory]
