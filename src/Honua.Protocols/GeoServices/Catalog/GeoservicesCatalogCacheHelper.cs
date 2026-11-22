@@ -4,8 +4,9 @@
 using System.Text.Json;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Geocoding.Features.Geocoding.Abstractions;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -67,20 +68,26 @@ internal static class GeoservicesCatalogCacheHelper
         }
     }
 
-    internal static async ValueTask<(DirectoryCacheSlot? Slot, CachedMetadataDocument? Hit)> TryLookupAsync(
-        HttpContext context,
-        string cacheKey)
+    internal static async ValueTask<(MetadataV2GraphSnapshot? Snapshot, DirectoryCacheSlot? Slot, CachedMetadataDocument? Hit)>
+        TryLookupAnonymousDirectoryAsync(
+            HttpContext context,
+            IMetadataV2GraphProvider graphProvider,
+            ILicenseStatusProvider licenseStatusProvider)
     {
-        if (context.RequestServices.GetService<MetadataDocumentByteCache>() is not { } cache)
+        if (!CanCacheAnonymousDirectory(context) ||
+            context.RequestServices.GetService<MetadataDocumentByteCache>() is not { } cache)
         {
-            return (null, null);
+            return (null, null, null);
         }
 
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var cacheKey = BuildAnonymousDirectoryKey(context, snapshot, licenseStatusProvider);
         var generation = await MetadataDocumentByteCache
             .ResolveConfigGenerationAsync(context, context.RequestAborted)
             .ConfigureAwait(false);
         var stamp = cache.CaptureStamp(generation);
-        return (new DirectoryCacheSlot(cache, stamp, cacheKey), cache.Get(stamp, cacheKey));
+        return (snapshot, new DirectoryCacheSlot(cache, stamp, cacheKey), cache.Get(stamp, cacheKey));
     }
 
     internal static IResult StoreAndReturn(

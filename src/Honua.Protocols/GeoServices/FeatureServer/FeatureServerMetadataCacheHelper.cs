@@ -120,7 +120,12 @@ internal static class FeatureServerMetadataCacheHelper
         }
 
         var sorted = new string[hidden.Count];
-        hidden.CopyTo(sorted);
+        var index = 0;
+        foreach (var fieldName in hidden)
+        {
+            sorted[index++] = fieldName;
+        }
+
         Array.Sort(sorted, StringComparer.OrdinalIgnoreCase);
         sb.Append("|h:");
         for (var i = 0; i < sorted.Length; i++)

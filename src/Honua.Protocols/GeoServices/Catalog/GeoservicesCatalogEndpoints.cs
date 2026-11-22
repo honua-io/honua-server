@@ -883,7 +883,8 @@ internal static class GeoservicesCatalogEndpoints
             entries,
             accessError,
             accessStatusCode,
-            imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
+            imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0,
+            failedImageServerProbes > 0);
     }
 
     private static void AppendGeocodeServerEntry(
@@ -979,21 +980,12 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        DirectoryCacheSlot? cacheSlot = null;
-        MetadataV2GraphSnapshot? scopedSnapshot = null;
-        if (GeoservicesCatalogCacheHelper.CanCacheAnonymousDirectory(context))
+        var (scopedSnapshot, cacheSlot, hit) = await GeoservicesCatalogCacheHelper
+            .TryLookupAnonymousDirectoryAsync(context, graphProvider, licenseStatusProvider)
+            .ConfigureAwait(false);
+        if (hit is not null)
         {
-            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            scopedSnapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var cacheKey = GeoservicesCatalogCacheHelper.BuildAnonymousDirectoryKey(
-                context, scopedSnapshot, licenseStatusProvider);
-            var (slot, hit) = await GeoservicesCatalogCacheHelper.TryLookupAsync(context, cacheKey).ConfigureAwait(false);
-            if (hit is not null)
-            {
-                return hit.ToResult();
-            }
-
-            cacheSlot = slot;
+            return hit.ToResult();
         }
 
         var projection = await BuildServiceDirectoryProjectionAsync(
@@ -1017,7 +1009,7 @@ internal static class GeoservicesCatalogEndpoints
 
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
 
-        if (cacheSlot is { } activeSlot && !projection.AllImageServerProbesFailed)
+        if (cacheSlot is { } activeSlot && !projection.AnyImageServerProbeFailed)
         {
             return GeoservicesCatalogCacheHelper.StoreAndReturn(context, activeSlot, response);
         }
@@ -1349,7 +1341,8 @@ internal static class GeoservicesCatalogEndpoints
         IReadOnlyList<ServiceDirectoryEntry> Entries,
         IResult? AccessError,
         int? AccessStatusCode,
-        bool AllImageServerProbesFailed);
+        bool AllImageServerProbesFailed,
+        bool AnyImageServerProbeFailed = false);
 
     private sealed record ImageServerProbeCandidate(
         MetadataV2Service Service,
