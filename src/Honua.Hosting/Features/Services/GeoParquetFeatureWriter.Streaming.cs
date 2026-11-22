@@ -8,7 +8,6 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using ParquetSharp.Arrow;
 
 namespace Honua.Infrastructure.Services;
 
@@ -95,22 +94,6 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private readonly record struct GeneratedColumns(string? Geometry, string? Bbox);
-
-    private static ArrowReaderProperties CreateSafeArrowReaderProperties()
-    {
-        var properties = ArrowReaderProperties.GetDefault();
-        try
-        {
-            properties.PreBuffer = false;
-            properties.UseThreads = false;
-            return properties;
-        }
-        catch
-        {
-            properties.Dispose();
-            throw;
-        }
-    }
 
     private static Dictionary<string, int> MapUpgradeColumns(
         Schema sourceSchema, GeneratedColumns previous, GeneratedColumns current)

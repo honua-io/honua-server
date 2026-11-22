@@ -242,7 +242,9 @@ public static partial class GeoParquetFeatureWriter
             try
             {
                 OpenWriterForCurrentSchema();
-                using var readerProps = CreateSafeArrowReaderProperties();
+                using var readerProps = ArrowReaderProperties.GetDefault();
+                readerProps.PreBuffer = false;
+                readerProps.UseThreads = false;
                 using var reader = new FileReader(previousStream, arrowProperties: readerProps, leaveOpen: true);
                 using var batches = reader.GetRecordBatchReader();
                 var sourceColumns = MapUpgradeColumns(batches.Schema, previousColumns, GetGeneratedColumns());
