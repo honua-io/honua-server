@@ -77,6 +77,11 @@ internal static partial class SceneGenerationEndpoints
         var intent = BuildIntent(request, context);
         if (SceneIngestRequestHelpers.IsAsyncRequested(context, bodyAsync: request.Async))
         {
+            if (!SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+            {
+                return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+            }
+
             var coordinator = context.RequestServices.GetService<SceneJobCoordinator>();
             if (coordinator is not null)
             {

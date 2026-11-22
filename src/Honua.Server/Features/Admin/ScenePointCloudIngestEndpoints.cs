@@ -50,6 +50,7 @@ internal static partial class ScenePointCloudIngestEndpoints
             .Produces<PointCloudIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -109,7 +110,13 @@ internal static partial class ScenePointCloudIngestEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, epsgError!);
         }
 
-        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+        var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
+        if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+        {
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+        }
+
+        var coordinator = asyncRequested
             ? context.RequestServices.GetService<SceneJobCoordinator>()
             : null;
         using var admission = coordinator?.TryReserve(file.Length);

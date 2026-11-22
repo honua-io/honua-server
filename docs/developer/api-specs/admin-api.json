@@ -17533,7 +17533,7 @@
           "Scenes"
         ],
         "summary": "Generate Scene From Feature Layer",
-        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Runs synchronously by default; the response carries the routable tileset URL plus feature/tile counts. Request async execution in the query or JSON body, or send Prefer: respond-async. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable. Async admission is limited per server instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Runs synchronously by default; the response carries the routable tileset URL plus feature/tile counts. Request experimental async execution in the query or JSON body, or send Prefer: respond-async. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable or experimental async is disabled. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "generateScene",
         "parameters": [
           {
@@ -17621,7 +17621,7 @@
           "Scenes"
         ],
         "summary": "List scene jobs",
-        "description": "Lists jobs admitted by this server instance. Job state is held in memory and is lost on restart.",
+        "description": "Lists jobs admitted by this server instance. Job state is held in memory and is lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
         "operationId": "listSceneJobs",
         "parameters": [
           {
@@ -17661,6 +17661,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -17671,7 +17674,7 @@
           "Scenes"
         ],
         "summary": "Get a scene job",
-        "description": "Poll the same server instance that accepted the job. Completed job records are held in memory and lost on restart.",
+        "description": "Poll the same server instance that accepted the job. Completed job records are held in memory and lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
         "operationId": "getSceneJob",
         "parameters": [
           {
@@ -17705,6 +17708,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -17799,9 +17805,9 @@
         "tags": [
           "Scenes"
         ],
-        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive Async admission is limited per server instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestArchiveScene",
-        "description": "Runs synchronously unless async is true or the request sends Prefer: respond-async.",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async.",
         "parameters": [
           {
             "name": "async",
@@ -17907,6 +17913,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -17916,9 +17925,9 @@
         "tags": [
           "Scenes"
         ],
-        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model Async admission is limited per server instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestModelScene",
-        "description": "Runs synchronously unless async is true or the request sends Prefer: respond-async.",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async.",
         "parameters": [
           {
             "name": "async",
@@ -18063,6 +18072,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -18073,7 +18085,7 @@
           "Scenes"
         ],
         "summary": "Ingest CityGML Scene",
-        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402. Async admission is limited per server instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestCityGmlScene",
         "parameters": [
           {
@@ -18187,6 +18199,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -18197,7 +18212,7 @@
           "Scenes"
         ],
         "summary": "Ingest Point Cloud Scene",
-        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Async admission is limited per server instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestPointCloudScene",
         "parameters": [
           {
@@ -18329,6 +18344,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }

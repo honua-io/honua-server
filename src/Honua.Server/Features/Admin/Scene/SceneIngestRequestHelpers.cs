@@ -5,9 +5,11 @@ using System.Globalization;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Scene;
 using Honua.Scene;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Scene;
 
@@ -48,6 +50,14 @@ internal static class SceneIngestRequestHelpers
 
         return false;
     }
+
+    public static bool IsExperimentalAsyncEnabled(HttpContext context)
+        => context.RequestServices.GetRequiredService<IOptions<SceneGenerationServerOptions>>()
+            .Value.EnableExperimentalAsyncJobs;
+
+    public static IResult CreateAsyncDisabledResult(HttpContext context)
+        => ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status503ServiceUnavailable,
+            "Experimental asynchronous scene jobs are disabled on this server.");
 
     public static IResult CreateBusyJobResult(HttpContext context)
     {

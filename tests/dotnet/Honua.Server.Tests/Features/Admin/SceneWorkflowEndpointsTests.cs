@@ -8,6 +8,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Scene.Generation;
+using Honua.Infrastructure.Scene;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Scene;
 using Honua.TestKit;
@@ -15,6 +16,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -97,6 +99,7 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/scenes/ingest/archive")]
     public async Task IngestArchive_AsyncQueueFull_ReturnsRetryAfter()
     {
+        EnableExperimentalAsyncJobs();
         var coordinator = _fixture.Services.GetRequiredService<SceneJobCoordinator>();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
@@ -127,6 +130,7 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/scenes/ingest/archive")]
     public async Task IngestArchive_AsyncUploadBudgetFull_ReturnsRetryAfter()
     {
+        EnableExperimentalAsyncJobs();
         var coordinator = _fixture.Services.GetRequiredService<SceneJobCoordinator>();
         using (var admission = coordinator.TryReserve(512L * 1024 * 1024))
         {
@@ -148,6 +152,7 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/scenes/assets")]
     public async Task IngestModel_AsyncSubmission_Returns202AndCompletesWithLifecycleView()
     {
+        EnableExperimentalAsyncJobs();
         var sceneId = $"model-it-{Guid.NewGuid():N}"[..24];
         using var upload = BuildFileUpload(
             Encoding.UTF8.GetBytes(SampleObj),
@@ -202,6 +207,7 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/scenes/jobs/{jobId}")]
     public async Task GenerateScene_AsyncFlag_Returns202WithStatusLocation()
     {
+        EnableExperimentalAsyncJobs();
         using var response = await _client.PostAsJsonAsync(
             "/api/v1/admin/scenes/generate",
             new GenerateSceneRequest { LayerId = int.MaxValue, Async = true },
@@ -213,6 +219,31 @@ public class SceneWorkflowEndpointsTests : IAsyncLifetime
         Assert.NotNull(accepted);
         Assert.Equal("feature_layer", accepted!.SourceKind);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/generate")]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/model")]
+    [Endpoint("GET /api/v1/admin/scenes/jobs")]
+    public async Task AsyncJobs_WithoutExperimentalOptIn_ReturnServiceUnavailable()
+    {
+        using var generate = await _client.PostAsJsonAsync(
+            "/api/v1/admin/scenes/generate",
+            new GenerateSceneRequest { LayerId = int.MaxValue, Async = true },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, generate.StatusCode);
+        Assert.Contains("Experimental asynchronous scene jobs are disabled", await generate.Content.ReadAsStringAsync());
+
+        using var upload = BuildFileUpload(Encoding.UTF8.GetBytes(SampleObj), "sample.obj", "text/plain");
+        using var ingest = await _client.PostAsync("/api/v1/admin/scenes/ingest/model?async=true", upload);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ingest.StatusCode);
+
+        using var list = await _client.GetAsync("/api/v1/admin/scenes/jobs");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, list.StatusCode);
+    }
+
+    private void EnableExperimentalAsyncJobs()
+        => _fixture.Services.GetRequiredService<IOptions<SceneGenerationServerOptions>>()
+            .Value.EnableExperimentalAsyncJobs = true;
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
         Justification = "MultipartFormDataContent owns and disposes its child content.")]

@@ -47,6 +47,7 @@ internal static partial class SceneWorkflowEndpoints
             .Produces<SceneArchiveIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
@@ -59,6 +60,7 @@ internal static partial class SceneWorkflowEndpoints
             .Produces<SceneModelIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
@@ -72,12 +74,14 @@ internal static partial class SceneWorkflowEndpoints
         _ = jobsGroup.MapGet("/", HandleListJobs)
             .WithName("ListSceneJobs")
             .WithSummary("List asynchronous scene generation and ingest jobs.")
-            .Produces<SceneJobStatusResponse[]>(StatusCodes.Status200OK);
+            .Produces<SceneJobStatusResponse[]>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         _ = jobsGroup.MapGet("/{jobId}", HandleGetJob)
             .WithName("GetSceneJob")
             .WithSummary("Get the status of an asynchronous scene generation or ingest job.")
             .Produces<SceneJobStatusResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         var assetsGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/scenes/assets")
@@ -113,7 +117,13 @@ internal static partial class SceneWorkflowEndpoints
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
         var file = SceneIngestRequestHelpers.FindUpload(form);
-        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+        var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
+        if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+        {
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+        }
+
+        var coordinator = asyncRequested
             ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
             : null;
         using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxArchiveUploadBytes ? file.Length : 0);
@@ -235,7 +245,13 @@ internal static partial class SceneWorkflowEndpoints
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
         var file = SceneIngestRequestHelpers.FindUpload(form);
-        var coordinator = SceneIngestRequestHelpers.IsAsyncRequested(context, form)
+        var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
+        if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+        {
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+        }
+
+        var coordinator = asyncRequested
             ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
             : null;
         using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxModelUploadBytes ? file.Length : 0);
@@ -351,10 +367,16 @@ internal static partial class SceneWorkflowEndpoints
     }
 
     private static IResult HandleListJobs(
+        HttpContext context,
         [FromServices] SceneJobCoordinator coordinator,
         [FromQuery] string? sceneId,
         [FromQuery] string? status)
     {
+        if (!SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+        {
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+        }
+
         var jobs = coordinator.ListJobs(sceneId, status)
             .Select(SceneIngestRequestHelpers.ToStatusResponse)
             .ToArray();
@@ -366,6 +388,11 @@ internal static partial class SceneWorkflowEndpoints
         HttpContext context,
         [FromServices] SceneJobCoordinator coordinator)
     {
+        if (!SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+        {
+            return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+        }
+
         var job = coordinator.GetJob(jobId);
         if (job is null)
         {
