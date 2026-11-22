@@ -21,14 +21,22 @@ Enterprise, plus a few Community entries).
 RoutedPreviewKeys ++ RoutedDependentKeys ++ DescriptiveKeys ++ FeatureCatalog.All`,
 with any `FeatureCatalog` key that `RoutedPreviewKeys` redefines taken from
 `RoutedPreviewKeys`). Community keys describe capabilities that ship ungated.
-`RoutedExperimentalKeys` and `RoutedPreviewKeys` carry an explicit `status` for
-routed surfaces that are not GA. `RoutedDependentKeys` have no entitlement of
-their own: every route they name is gated by the keys in their `Requires` list. Descriptive keys capture minimum
-edition and release posture for runtime-gated surfaces, such as the
-off-by-default warehouse providers, without adding an entitlement-enforcement
-path. Adding either kind of key is a description-layer change only.
+`RoutedExperimentalKeys` and `RoutedPreviewKeys` hold routed keys above Community
+edition that are not in `FeatureCatalog`. `RoutedDependentKeys` have no
+entitlement of their own: every route they name is gated by the keys in their
+`Requires` list. Descriptive keys capture minimum edition and release posture
+for runtime-gated surfaces, such as the off-by-default warehouse providers,
+without a route or an entitlement-enforcement path.
 
-Both lists share one naming rule: every key is dot-namespaced lowercase,
+A key's `status` can come from any of these lists: it is set inline on the key
+(for example the Community `serve.wmts`, `serve.ogc-api-edr` and
+`format.geoarrow`, the descriptive warehouse providers, and `admin.multi-tenancy`
+in `RoutedPreviewKeys`, which is `internal`), or, for a `FeatureCatalog` key, it
+is derived from its category (Streaming is `experimental`; Alerts and Channels
+are `preview`). Adding a key or a status is a description-layer change; a routed
+key also needs its routes mapped (see [Regenerating](#regenerating)).
+
+Every list shares one naming rule: every key is dot-namespaced lowercase,
 `<category>.<name>` (e.g. `editing.featureserver-edits`, `serve.wms`,
 `import.file`). `CapabilityKeyCatalogTests` in `Honua.Core.Tests` enforces it
 for `CommunityKeys`; every key in `capability-keys.v1.json` follows it today.
@@ -177,8 +185,8 @@ There are exactly two levers, and they answer different questions:
 2. **[`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json)**
    — the *claim* lever, for a key outside that roster whose routes should keep serving
    exactly as they do today while the capability stops being advertised as GA for this
-   release. `CapabilityMaturityOverrides.ResolveEffective` (which wraps
-   `FeatureCatalogGenerator.ResolveMaturity`) takes the **lower** of the
+   release. `CapabilityMaturityOverrides.ResolveEffective`, applied to the result of
+   `FeatureCatalogGenerator.ResolveMaturity`, takes the **lower** of the
    registry-resolved tier and the override tier, so a row can only demote, never promote.
    Every row carries a reason code, a verifiable reason, and the decision it implements;
    `CapabilityKeyDriftTests` fails the build on a row that promotes, matches no catalog
@@ -232,11 +240,13 @@ in lockstep with `CapabilityKeyCatalog.cs` by the drift tests above (unlike
 `feature-catalog.json`, they are not emitted by a `[Fact]`). When you add a
 capability key:
 
-1. Add it to `CapabilityKeyCatalog.CommunityKeys`; for an entitlement-gated key,
-   to `FeatureCatalog.All`; for a routed key that is not GA, to
-   `RoutedExperimentalKeys` or `RoutedPreviewKeys` with its `status`; for a key
-   gated only by other entitlements, to `RoutedDependentKeys`; for a
-   description-only key with no route, to `DescriptiveKeys`.
+1. Add it to `CapabilityKeyCatalog.CommunityKeys` (with `Status:` if it is not
+   GA); for an entitlement-gated key, to `FeatureCatalog.All` (Alerts, Channels
+   and Streaming entries take their status from the category); for a Pro or
+   Enterprise routed key outside `FeatureCatalog`, to `RoutedExperimentalKeys` or
+   `RoutedPreviewKeys` with its `status`; for a key gated only by other
+   entitlements, to `RoutedDependentKeys`; for a description-only key with no
+   route, to `DescriptiveKeys`.
 2. Add a rule to `capability-route-mapping.v1.json` for every route family it
    should claim, or add it to `capability-no-surface-allowlist.v1.json` with a
    reason if it has no distinct route.

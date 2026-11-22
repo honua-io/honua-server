@@ -53,6 +53,7 @@ file (drift gate), printing the regeneration command above.
 
 ```json
 {
+  "unjoinedCiteSuites": [ "GML 3.2", "GeoPackage 1.2", "KML 2.2", "WFS 2.0 Transactional", "WMS 1.1.1" ],
   "schemaVersion": "1.2.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
   "trackingIssue": "#2893",
@@ -69,7 +70,6 @@ file (drift gate), printing the regeneration command above.
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
-  "unjoinedCiteSuites": [ "GML 3.2", "GeoPackage 1.2", "KML 2.2", "WFS 2.0 Transactional", "WMS 1.1.1" ],
   "capabilities": [
     {
       "key": "serve.wms",
