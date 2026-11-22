@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -152,6 +154,7 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
             .AddPublication("pub-stac-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection, storageBindingId: "bind-b")
             .Build();
         var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         return context;

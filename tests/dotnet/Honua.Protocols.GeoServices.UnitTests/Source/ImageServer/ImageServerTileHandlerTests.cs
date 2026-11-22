@@ -348,7 +348,7 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetImageTileAsync_CogFallbackUsesPublicationLayerIndex()
+    public async Task GetImageTileAsync_CogFallbackUsesStorageLayerId()
     {
         var graphProvider = new TestMetadataV2GraphBuilder()
             .AddResource("resource-cog", "cog-layer", MetadataV2ObjectType.RasterDataset)
@@ -365,7 +365,7 @@ public class ImageServerTileHandlerTests
             .BuildProvider();
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
-                7, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
+                42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns(new CogTileLookup(new RasterResult
             {
                 Data = [0x89, 0x50, 0x4E, 0x47],
@@ -397,14 +397,14 @@ public class ImageServerTileHandlerTests
         await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
         result.Should().BeOfType<FileContentHttpResult>();
         await cogResolver.Received(1).GetTileForLayerAsync(
-            7, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>());
+            42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>());
         await cogResolver.DidNotReceive().GetTileForLayerAsync(
-            42, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<RasterFormat>(), Arg.Any<CancellationToken>());
+            7, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<RasterFormat>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetImageTileAsync_CogFallbackRejectsAmbiguousPublicationIndex()
+    public async Task GetImageTileAsync_CogFallbackResolvesByStorageLayerIdWhenPublicationIndexIsShared()
     {
         var graphProvider = new TestMetadataV2GraphBuilder()
             .AddResource("resource-cog", "cog-layer", MetadataV2ObjectType.RasterDataset)
@@ -426,7 +426,7 @@ public class ImageServerTileHandlerTests
             .BuildProvider();
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
-                7, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
+                42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns(new CogTileLookup(new RasterResult
             {
                 Data = [0x89, 0x50, 0x4E, 0x47],
@@ -456,9 +456,11 @@ public class ImageServerTileHandlerTests
             cacheLayerId: 7);
 
         await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
-        await AssertMissingTileAsync(context, result);
-        await cogResolver.DidNotReceiveWithAnyArgs().GetTileForLayerAsync(
-            default, default, default, default, default, default);
+        result.Should().BeOfType<FileContentHttpResult>();
+        await cogResolver.Received(1).GetTileForLayerAsync(
+            42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>());
+        await cogResolver.DidNotReceive().GetTileForLayerAsync(
+            7, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<RasterFormat>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
