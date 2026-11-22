@@ -55,7 +55,7 @@ internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid snap inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid snap inputs: {inputError}");
         }
 
         var reader = new WKBReader { HandleSRID = true };
@@ -68,12 +68,12 @@ internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, "wkb", ex.Message);
-            return JobExecutionResult.Failed("Invalid snap inputs: WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid snap inputs: WKB payload could not be decoded.");
         }
 
         if (input == null || input.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid snap inputs: input geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid snap inputs: input geometry is empty.");
         }
 
         Geometry reference;
@@ -84,24 +84,24 @@ internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, "referenceWkb", ex.Message);
-            return JobExecutionResult.Failed("Invalid snap inputs: reference WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid snap inputs: reference WKB payload could not be decoded.");
         }
 
         if (reference == null || reference.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid snap inputs: reference geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid snap inputs: reference geometry is empty.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(input, inputs.Srid, out var inputSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "wkb", inputSridError);
-            return JobExecutionResult.Failed($"Invalid snap inputs: {inputSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid snap inputs: {inputSridError}.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(reference, inputs.Srid, out var referenceSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "referenceWkb", referenceSridError);
-            return JobExecutionResult.Failed($"Invalid snap inputs: reference {referenceSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid snap inputs: reference {referenceSridError}.");
         }
 
         input.SRID = inputs.Srid;

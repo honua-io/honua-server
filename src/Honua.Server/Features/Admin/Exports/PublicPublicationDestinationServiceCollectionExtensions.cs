@@ -59,7 +59,9 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
             Configuration = configuration,
             Destination = provider.GetService<IPublicPublicationDestination>(),
             StatusReader = provider.GetService<ICdnInvalidationStatusReader>(),
-            HttpContextAccessor = provider.GetService<IHttpContextAccessor>()
+            HttpContextAccessor = provider.GetService<IHttpContextAccessor>(),
+            PrivateStorage = provider.GetService<ICloudFileStorage>(),
+            PrivateStorageOptions = provider.GetService<IOptions<CloudStorageOptions>>()
         });
         services.AddScoped<PublicExportRevocationService>();
     }

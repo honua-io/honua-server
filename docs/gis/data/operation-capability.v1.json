@@ -7,7 +7,7 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 539,
+    "operationCount": 542,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
@@ -18,10 +18,10 @@
       "ogc-api-processes": 10,
       "ogc-api-tiles": 13,
       "stac-api": 10,
-      "studio-api": 24
+      "studio-api": 27
     },
     "perCapability": {
-      "admin.control-plane": 322,
+      "admin.control-plane": 325,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -5306,6 +5306,36 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-studio-content-items-itemid-versions-versionid-reopen"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions",
+      "operationId": "listStudioDraftRevisions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}",
+      "operationId": "getStudioDraftRevision",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions-generation"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}/restore",
+      "operationId": "restoreStudioDraftRevision",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-drafts-draftid-revisions-generation-restore"
     },
     {
       "spec": "studio-api",

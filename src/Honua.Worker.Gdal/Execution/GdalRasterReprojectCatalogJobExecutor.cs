@@ -74,12 +74,12 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
 
         if (!GdalJobInputReader.TryGetInput(parameters, "targetSrid", out var targetSridRaw))
         {
-            return JobExecutionResult.Failed("Invalid reproject inputs: missing required input 'targetSrid'.");
+            return JobExecutionResult.InvalidInput("Invalid reproject inputs: missing required input 'targetSrid'.");
         }
 
         if (!int.TryParse(targetSridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetSrid) || targetSrid <= 0)
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid reproject inputs: 'targetSrid' value '{targetSridRaw}' is not a positive integer.");
         }
 
@@ -88,7 +88,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             && !string.IsNullOrWhiteSpace(resamplingRaw)
             && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid reproject inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
                 "(nearestneighbor, bilinear, cubic, lanczos).");
         }
@@ -96,7 +96,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid reproject inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -112,7 +112,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

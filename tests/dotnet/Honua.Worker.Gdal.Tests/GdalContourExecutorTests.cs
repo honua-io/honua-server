@@ -73,6 +73,7 @@ public sealed class GdalContourExecutorTests
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
             result.ErrorMessage.Should().Contain("interval");
+            result.IsRetryable.Should().BeFalse("a missing input fails the same way on every attempt");
             runner.Invocations.Should().BeEmpty();
         }
         finally

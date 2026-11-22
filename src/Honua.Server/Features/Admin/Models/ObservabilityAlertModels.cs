@@ -9,7 +9,7 @@ internal sealed class ObservabilityAlertEventResponse
 {
     public required long EventId { get; init; }
 
-    public required long? RuleId { get; init; }
+    public long? RuleId { get; init; }
 
     public string? RuleName { get; init; }
 

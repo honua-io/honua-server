@@ -57,4 +57,7 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9224, Level = LogLevel.Warning, Message = "Public promotion failed for export {ExportVersion}; the Export remains active on signed-in routes.")]
     public static partial void ExportPublicPromotionFailed(ILogger logger, string exportVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9225, Level = LogLevel.Error, Message = "Export {ExportVersion} was unpublished during public promotion, and immediate public revocation failed; the revocation sweep will retry.")]
+    public static partial void ExportPublicPromotionFenceRevokeFailed(ILogger logger, string exportVersion, Exception exception);
 }

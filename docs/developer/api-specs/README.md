@@ -171,7 +171,7 @@ Studio route without updating the document fails the OpenAPI drift gate.
 
 > **Note**: Vector tile endpoints provide TileJSON metadata for client configuration.
 >
-> For usage examples, see the [API Examples Guide](../../guides/query-analyze/query-features.md#vector-tiles-mvt).
+> For usage examples, see [Publish tiles](../../guides/publish/publish-tiles.md).
 
 ## FieldCollection Mobile Sync API
 
