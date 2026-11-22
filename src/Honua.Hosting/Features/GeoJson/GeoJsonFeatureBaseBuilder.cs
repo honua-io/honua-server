@@ -149,7 +149,8 @@ internal static partial class GeoJsonFeatureBaseBuilder
             }
         }
 
-        if (shouldIncludeObjectId && !properties.ContainsKey(objectIdFieldName))
+        if (shouldIncludeObjectId &&
+            (!properties.TryGetValue(objectIdFieldName, out var projectedObjectId) || NormalizeIdValue(projectedObjectId) is null))
         {
             properties[objectIdFieldName] = featureId;
         }

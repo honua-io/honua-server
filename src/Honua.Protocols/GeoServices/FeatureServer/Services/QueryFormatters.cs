@@ -359,7 +359,7 @@ internal sealed class QueryFormatter
             // returnDistinctValues has no stable OID; do not force-append it.
             if (!suppressObjectId)
             {
-                if (!all.ContainsKey(objectIdFieldName))
+                if (!all.TryGetValue(objectIdFieldName, out var projectedObjectId) || projectedObjectId is null)
                 {
                     all[objectIdFieldName] = objectIdValue;
                 }
@@ -403,6 +403,11 @@ internal sealed class QueryFormatter
                 filtered[name] = GeoServicesAttributeProjection.ToEsriValue(value);
                 break;
             }
+        }
+
+        if (!suppressObjectId && filtered[objectIdFieldName] is null)
+        {
+            filtered[objectIdFieldName] = objectIdValue;
         }
 
         return filtered;
@@ -1271,6 +1276,11 @@ internal sealed class StreamingQueryFormatter
                 if (string.Equals(fieldName, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 {
                     objectIdWritten = true;
+                    if (GeoServicesAttributeProjection.ToEsriValue(kvp.Value) is null)
+                    {
+                        writer.WriteNumber(fieldName, GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
+                        continue;
+                    }
                 }
 
                 WriteJsonValue(writer, fieldName, kvp.Value, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);

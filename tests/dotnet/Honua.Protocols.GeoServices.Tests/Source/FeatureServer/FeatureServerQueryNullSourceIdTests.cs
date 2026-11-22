@@ -54,16 +54,23 @@ public sealed class FeatureServerQueryNullSourceIdTests(FeatureServerNullSourceI
     public async Task Query_NullSourceId_EmitsNonNullDeclaredObjectId(string format, string outFields)
     {
         using var response = await fixture.App.Client.GetAsync(
-            $"/rest/services/test/FeatureServer/0/query?objectIds=900001,900002&outFields={outFields}&returnGeometry=false&f={format}");
+            $"/rest/services/test/FeatureServer/0/query?objectIds=900001,900002,900003,900004&outFields={outFields}&returnGeometry=false&f={format}");
         var body = await response.Content.ReadAsStringAsync();
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(body);
         var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().HaveCount(2, body);
+        features.Should().HaveCount(4, body);
         foreach (var feature in features)
         {
             var attributes = feature.GetProperty(format == "json" ? "attributes" : "properties");
-            var expectedId = attributes.GetProperty("name").GetString() == "null-source-id" ? 900001L : 900002L;
+            var expectedId = attributes.GetProperty("name").GetString() switch
+            {
+                "null-source-id" => 900001L,
+                "missing-source-id" => 900002L,
+                "present-source-id" => 123L,
+                "zero-source-id" => 0L,
+                var name => throw new InvalidOperationException($"Unexpected feature {name}.")
+            };
             attributes.GetProperty("id").GetInt64().Should().Be(expectedId, body);
             if (format == "geojson")
             {
