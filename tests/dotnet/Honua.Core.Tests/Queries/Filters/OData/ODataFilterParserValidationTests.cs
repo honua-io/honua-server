@@ -71,6 +71,50 @@ public sealed class ODataFilterParserValidationTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("status eq 'open' or null")]
+    [InlineData("status eq 'open' and null")]
+    [InlineData("not null")]
+    public void Parse_NullBooleanOperand_RemainsAllowed(string filter)
+    {
+        var expr = _parser.Parse(filter);
+
+        expr.Should().NotBeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_BareNullRoot_ThrowsParseException()
+    {
+        var act = () => _parser.Parse("null");
+
+        act.Should().Throw<ODataFilterParseException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1e-29")]
+    [InlineData("0.000000000000000000000000000001")]
+    public void IsZeroNumericLiteral_SmallNonZeroTextualLiteral_ReturnsFalse(string text)
+    {
+        var literal = new Literal(text, LiteralType.Number);
+
+        FilterPredicateValidation.IsZeroNumericLiteral(literal).Should().BeFalse();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("0e-29")]
+    [InlineData("-0.00e+10")]
+    [InlineData("0")]
+    public void IsZeroNumericLiteral_ZeroTextualLiteral_ReturnsTrue(string text)
+    {
+        var literal = new Literal(text, LiteralType.Number);
+
+        FilterPredicateValidation.IsZeroNumericLiteral(literal).Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseOrderExpression_ArithmeticExpression_RemainsAllowed()
     {

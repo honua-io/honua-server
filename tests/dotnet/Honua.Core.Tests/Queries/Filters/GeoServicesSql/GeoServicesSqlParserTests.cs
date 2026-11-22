@@ -678,6 +678,19 @@ public class GeoServicesSqlParserTests
 
     [Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("status = 'open' OR NULL")]
+    [InlineData("status = 'open' AND NULL")]
+    [InlineData("NOT NULL")]
+    [InlineData("amount / 1e-29 > 0")]
+    public void Parse_NullBooleanOperandAndSmallNonZeroDivisor_Succeeds(string where)
+    {
+        var expr = _parser.Parse(where);
+
+        expr.Should().NotBeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
     [InlineData("CURRENT_TIMESTAMP - INTERVAL '7' DAY < CURRENT_TIMESTAMP")]
     [InlineData("CURRENT_DATE + INTERVAL '1' DAY >= CURRENT_DATE")]
     public void Parse_TimestampIntervalArithmeticComparison_Succeeds(string whereClause)

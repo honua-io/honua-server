@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-
 namespace Honua.Core.Queries.Filters;
 
 public static class FilterPredicateValidation
@@ -43,16 +41,84 @@ public static class FilterPredicateValidation
             decimal m => m == 0m,
             double d => d == 0d,
             float f => f == 0f,
-            string s => decimal.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed == 0m,
+            string s => IsZeroNumericText(s),
             _ => false
         };
+    }
+
+    private static bool IsZeroNumericText(string text)
+    {
+        var span = StripSign(text.AsSpan().Trim());
+        if (span.IsEmpty)
+        {
+            return false;
+        }
+
+        var expIndex = span.IndexOfAny('e', 'E');
+        var significand = expIndex >= 0 ? span[..expIndex] : span;
+        if (!IsZeroSignificand(significand))
+        {
+            return false;
+        }
+
+        return expIndex < 0 || IsValidExponent(span[(expIndex + 1)..]);
+    }
+
+    private static ReadOnlySpan<char> StripSign(ReadOnlySpan<char> span) =>
+        span.Length > 0 && span[0] is '+' or '-' ? span[1..] : span;
+
+    private static bool IsZeroSignificand(ReadOnlySpan<char> span)
+    {
+        var hasDigit = false;
+        var seenDot = false;
+        foreach (var c in span)
+        {
+            if (c == '.')
+            {
+                if (seenDot)
+                {
+                    return false;
+                }
+
+                seenDot = true;
+                continue;
+            }
+
+            if (c != '0')
+            {
+                return false;
+            }
+
+            hasDigit = true;
+        }
+
+        return hasDigit;
+    }
+
+    private static bool IsValidExponent(ReadOnlySpan<char> span)
+    {
+        var digits = StripSign(span);
+        if (digits.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (var c in digits)
+        {
+            if (c is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsBooleanCore(FilterExpression expression, Func<FunctionCall, bool> isBooleanFunction) =>
         expression switch
         {
             PropertyReference => true,
-            Literal { Type: LiteralType.Boolean } => true,
+            Literal { Type: LiteralType.Boolean or LiteralType.Null } => true,
             SpatialPredicate => true,
             UnaryExpression { Operator: UnaryOperator.Not or UnaryOperator.IsNull or UnaryOperator.IsNotNull } => true,
             BinaryExpression { Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo } => false,
