@@ -532,16 +532,15 @@ internal static partial class FeatureServerEndpoints
         }
         else if (element.TryGetProperty("fixedBin", out var fixEl) && fixEl.ValueKind == JsonValueKind.Object)
         {
-            if (!fixEl.TryGetProperty("intervalCount", out var countEl) || !countEl.TryGetInt32(out var count))
+            // An omitted intervalUnit defaults to days; a present one must be valid.
+            var (interval, intervalError) = ParseFixedBinInterval(fixEl, "dateBin.fixedBin", defaultUnit: "days");
+            if (intervalError is not null)
             {
-                error = "dateBin.fixedBin.intervalCount is required.";
+                error = intervalError;
                 return false;
             }
 
-            var unit = fixEl.TryGetProperty("intervalUnit", out var unitEl)
-                ? unitEl.GetString()?.ToLowerInvariant() ?? "days"
-                : "days";
-            fixedInterval = ConvertToTimeSpan(count, unit);
+            fixedInterval = interval;
         }
         else
         {
