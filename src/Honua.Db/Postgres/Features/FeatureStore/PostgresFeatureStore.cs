@@ -677,7 +677,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
         {
             return await MvtTileBudgetFitter.ReadPooledAsync(
-                new MvtTileBudgetRead<CoreParameterizedQuery>(
+                new MvtTileBudgetRead<Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery>(
                     request.TileLimits.MaxTileSize,
                     step => postgresBuilder.BuildMvtTileQuery(
                         request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
