@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Microsoft.AspNetCore.Http;
+using WfsQueryException = Honua.Protocols.Ogc.Classic.Wfs20.Services.Wfs20Handler.WfsQueryException;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 

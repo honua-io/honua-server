@@ -2067,7 +2067,7 @@ internal sealed partial class Wfs20Handler
         int ReturnedCount,
         string NumberMatchedSummary);
 
-    private sealed class WfsQueryException(
+    internal sealed class WfsQueryException(
         string exceptionCode,
         string message,
         string? locator = null) : Exception(message)
