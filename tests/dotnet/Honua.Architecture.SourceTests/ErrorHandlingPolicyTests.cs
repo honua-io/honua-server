@@ -58,6 +58,10 @@ public sealed class ErrorHandlingPolicyTests
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
+        // Error shaping uses the admin ApiResponse failure envelope (TypedResults.Json
+        // with 400/404/409/422), which the marker scan does not recognize; unexpected
+        // failures are handled by the global exception middleware.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "Exports", "ExportAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),

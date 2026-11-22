@@ -6,9 +6,17 @@ vector-tile, style, and metadata pipelines — it parses Esri-shaped requests, r
 by **name** against the Metadata v2 graph, and formats Esri/Mapbox-compatible responses. It does
 not reimplement tile rendering, style storage, or catalog logic.
 
-The service is read-only and anonymous by design (it inherits the service access policy; the
-canonical seed service is open). Clients hydrate service metadata with `GET` or with a
-`POST {"f":"json"}` (Esri clients use the latter).
+The service is read-only and follows the service access policy. An anonymous caller can read a
+public service. For a private service, the descriptor, tile and style routes return the GeoServices
+error `499` (authentication required) to anonymous callers and `403` to signed-in callers without
+access. The sprite,
+glyph and tilemap resources hold no layer data (the tilemap is computed from the tile grid) and
+answer without credentials. Clients read service
+metadata with `GET` or with `POST {"f":"json"}` (Esri clients use the latter).
+
+Errors use the GeoServices error envelope: the HTTP status is 200 and the body is
+`{"error":{"code":<code>,"message":...,"details":[...]}}`. In the table below, "→ 400", "→ 404" and
+"→ 422" name that `error.code`.
 
 ## Per-operation route matrix
 
@@ -23,7 +31,7 @@ canonical seed service is open). Clients hydrate service metadata with `GET` or 
 | TileMap | GET | `/rest/services/{serviceId}/VectorTileServer/tilemap` | `application/json` | Top-of-pyramid availability descriptor (single `1`). |
 | TileMap (block) | GET | `/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{width}/{height}` | `application/json` | Row-major availability flags for the requested `width × height` block. Tiles overrunning the gridset edge are `0`. Levels outside the LOD scheme → 422; invalid dimensions → 400. |
 
-All routes resolve the service by name and return **404** for an unknown service.
+All routes resolve the service by name and return error code **404** for an unknown service.
 
 Error statuses in this table (400, 404, 422) are GeoServices error codes. The server sends them
 as HTTP 200 with a JSON `error` object whose `code` carries the status, as on the other

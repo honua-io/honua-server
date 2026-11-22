@@ -1,18 +1,20 @@
 ---
 type: guide
 title: "Studio MCP tools"
-description: "The server publishes 21 typed Studio tools through /mcp."
+description: "The server publishes 23 typed Studio tools through /mcp."
 resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools
 
-The server publishes 21 typed Studio tools through `/mcp`.
+The server publishes 23 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
-The `configure` and `setup` workflow views both include these tools, except
-`honua_studio_set_map_style`, which neither view carries. The
-`setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
-because that view also carries the closed admin roster. `setup` (`setup.v6`)
-is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
+The `setup` workflow view (`setup.v7`) includes 22 of these tools — every
+Studio tool except `honua_studio_set_map_style` — and stamps
+`_meta["honua.studio"].view` and `_meta["honua.studio"].revision`. The
+`configure` view (`configure.v4`) carries the admin connection, import, and
+publish roster and includes no Studio tools. The `dashboard_scaffolding` prompt
+selects `setup`, while `setup_and_publish` starts on `configure` for admin
+setup and switches to `setup` for Studio authoring.
 To list every tool, including `honua_studio_set_map_style`, send an
 authenticated `tools/list` request with `params.view` set to `"full"` and
 repeat it with `params.cursor` set to each `nextCursor` until none is returned.
@@ -36,6 +38,8 @@ repeat it with `params.cursor` set to each `nextCursor` until none is returned.
 | `honua_studio_remove_interaction` | Remove an interaction binding. |
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
+| `honua_studio_list_items` | List saved maps and other Studio items in the caller's authorized owner and tenant scope (`items[].itemId`, `currentVersionId`, `nextCursor`). |
+| `honua_studio_list_versions` | List authorized immutable versions of an item, newest first, including `versionId` and `contentHash`, with `beforeVersionNumber` / `nextBeforeVersionNumber` pagination. Does not advance the draft generation. |
 | `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
 | `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
 | `honua_studio_reopen_version` | Branch a new draft from a saved version. |

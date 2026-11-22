@@ -15,13 +15,11 @@ on:
       - '.github/actions/setup-dotnet-ci/**'
       - 'scripts/ci/check-export-portolan.py'
       - 'scripts/ci/portolan-pin.v1.json'
-      - 'src/**/PairedPublication*/**'
-      - 'src/**/*PairedPublish*'
       - 'src/**/Exports/**'
-      - 'src/Honua.Core/Core/Features/Publishing/Descriptors/**'
-      - 'tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublish*'
+      - 'src/Honua.Core/Core/Features/Exports/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Admin/Export*'
       - 'tests/dotnet/**/Exports/**'
-      - 'docs/gis/schemas/publication-descriptor*'
+      - 'docs/gis/schemas/stac-honua*'
   workflow_dispatch:
 
 permissions:
@@ -60,7 +58,7 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --configuration Release \
-            --filter 'FullyQualifiedName~PairedPublishEndpointTests.PairedPublish_Version_CopiesAsSelfContainedFileTree' \
+            --filter 'FullyQualifiedName~ExportEndpointTests.ExportVersion_CopiesAsSelfContainedFileTree' \
             --logger 'trx;LogFileName=export-snapshot.trx' --results-directory artifacts/test-results
 
       - name: Install the pinned validator
