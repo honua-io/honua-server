@@ -827,7 +827,8 @@ internal sealed class Cql2FilterProcessor(
         MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => RewrittenValueKind.Geometry,
         MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger or MetadataV2FieldType.Double or
             MetadataV2FieldType.Float => RewrittenValueKind.Numeric,
-        MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time =>
+        MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time or
+            MetadataV2FieldType.TimestampOffset =>
             RewrittenValueKind.Temporal,
         MetadataV2FieldType.Json => RewrittenValueKind.Array,
         MetadataV2FieldType.Boolean => RewrittenValueKind.Boolean,
@@ -943,7 +944,8 @@ internal sealed class Cql2FilterProcessor(
                 string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase) &&
                 field.Type is MetadataV2FieldType.Date
                     or MetadataV2FieldType.DateTime
-                    or MetadataV2FieldType.Time))
+                    or MetadataV2FieldType.Time
+                    or MetadataV2FieldType.TimestampOffset))
             {
                 return field.Name;
             }

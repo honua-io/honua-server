@@ -179,16 +179,20 @@ internal static class GrpcConversionHelpers
         return null;
     }
 
-    public static GeometryLimits CreateEffectiveGeometryLimits(GeometryLimits baseLimits, Proto.QueryFeaturesRequest request)
+    // geometrySrid is the SRID the response geometries are in (out_sr, else the layer's).
+    public static GeometryLimits CreateEffectiveGeometryLimits(
+        GeometryLimits baseLimits, Proto.QueryFeaturesRequest request, int? geometrySrid = null)
     {
         var precisionOverride = request.GeometryPrecision > 0 ? (int?)request.GeometryPrecision : null;
         var simplifyToleranceOverride = request.MaxAllowableOffset > 0 ? (double?)request.MaxAllowableOffset : null;
 
-        return GeometryOutputProcessor.CreateEffectiveLimits(
-            baseLimits,
-            precisionOverride,
-            simplifyToleranceOverride,
-            forceSimplify: simplifyToleranceOverride.HasValue);
+        return GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                baseLimits,
+                precisionOverride,
+                simplifyToleranceOverride,
+                forceSimplify: simplifyToleranceOverride.HasValue),
+            geometrySrid);
     }
 
     public static Proto.Feature ToProtoFeature(

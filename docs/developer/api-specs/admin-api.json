@@ -6891,7 +6891,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -7350,7 +7350,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7668,7 +7668,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -15253,7 +15253,7 @@
           "Services"
         ],
         "summary": "Export Layer Data",
-        "description": "Exports layer features as CSV, Shapefile (zipped), GeoPackage, or a licensed plugin-contributed output format. Small exports stream the file directly with a `Content-Disposition` attachment header. When more than 50,000 features match and a built-in format is requested, the export is queued as a background job and a 202 with a status URL is returned instead.",
+        "description": "Exports layer features as CSV, Shapefile (zipped), GeoPackage, GeoParquet, or a licensed plugin-contributed output format. Small exports stream the file directly with a `Content-Disposition` attachment header. When more than 50,000 features match and a built-in format is requested, the export is queued as a background job and a 202 with a status URL is returned instead.",
         "operationId": "exportServiceLayer",
         "parameters": [
           {
@@ -15279,7 +15279,7 @@
             "name": "format",
             "in": "query",
             "required": true,
-            "description": "Output format: `csv`, `shapefile`, `gpkg`, or the id of an active licensed plugin output format.",
+            "description": "Output format: `csv`, `shapefile`, `gpkg`, `geoparquet` (alias `parquet`), or the id of an active licensed plugin output format.",
             "schema": {
               "type": "string",
               "example": "gpkg"
@@ -15348,6 +15348,12 @@
                   "format": "binary"
                 }
               },
+              "application/vnd.apache.parquet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
               "application/geopackage+sqlite3": {
                 "schema": {
                   "type": "string",
@@ -15378,8 +15384,14 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "413": {
+            "description": "The GeoParquet export exceeds a configured encoding budget."
+          },
+          "501": {
+            "description": "GeoParquet encoding is unavailable on this host."
+          },
           "503": {
-            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running.",
+            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running, or temporary GeoParquet spool storage is full.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17533,8 +17545,25 @@
           "Scenes"
         ],
         "summary": "Generate Scene From Feature Layer",
-        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Generation runs synchronously inside the request; the response carries the routable tileset URL plus feature/tile counts. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable.",
+        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Runs synchronously by default; the response carries the routable tileset URL plus feature/tile counts. Request experimental async execution in the query or JSON body, or send Prefer: respond-async. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable or experimental async is disabled. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "generateScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17552,6 +17581,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenerateSceneResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -17580,14 +17627,216 @@
         }
       }
     },
-    "/scenes/ingest/citygml": {
+    "/scenes/jobs": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "List scene jobs",
+        "description": "Lists jobs admitted by this server instance. Job state is held in memory and is lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
+        "operationId": "listSceneJobs",
+        "parameters": [
+          {
+            "name": "sceneId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List scene jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SceneJobStatusResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Get a scene job",
+        "description": "Poll the same server instance that accepted the job. Completed job records are held in memory and lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
+        "operationId": "getSceneJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get a scene job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/assets": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "List scene assets",
+        "operationId": "listSceneAssets",
+        "parameters": [
+          {
+            "name": "includeInactive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List scene assets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SceneAssetLifecycleResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/scenes/assets/{sceneId}": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Get a scene asset",
+        "operationId": "getSceneAsset",
+        "parameters": [
+          {
+            "name": "sceneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get a scene asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneAssetLifecycleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/scenes/ingest/archive": {
       "post": {
         "tags": [
           "Scenes"
         ],
-        "summary": "Ingest CityGML Scene",
-        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402.",
-        "operationId": "ingestCityGmlScene",
+        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive",
+        "operationId": "ingestArchiveScene",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17598,6 +17847,289 @@
                   "file"
                 ],
                 "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "sceneId": {
+                    "type": "string",
+                    "description": "Explicit scene slug. The server derives one when omitted."
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "editionGate": {
+                    "type": "string"
+                  },
+                  "cacheMaxAgeSeconds": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "requiresAuth": {
+                    "type": "boolean"
+                  },
+                  "async": {
+                    "type": "boolean"
+                  },
+                  "tilesetFileName": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The imported scene.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneArchiveIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/ingest/model": {
+      "post": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model",
+        "operationId": "ingestModelScene",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "longitude",
+                  "latitude"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "sceneId": {
+                    "type": "string",
+                    "description": "Explicit scene slug. The server derives one when omitted."
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "editionGate": {
+                    "type": "string"
+                  },
+                  "cacheMaxAgeSeconds": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "requiresAuth": {
+                    "type": "boolean"
+                  },
+                  "async": {
+                    "type": "boolean"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "height": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "headingDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "pitchDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "rollDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scale": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleX": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleY": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleZ": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The imported scene.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneModelIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/ingest/citygml": {
+      "post": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Ingest CityGML Scene",
+        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "operationId": "ingestCityGmlScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -17644,6 +18176,24 @@
               }
             }
           },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -17661,6 +18211,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -17671,8 +18224,25 @@
           "Scenes"
         ],
         "summary": "Ingest Point Cloud Scene",
-        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402.",
+        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestPointCloudScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17683,6 +18253,10 @@
                   "file"
                 ],
                 "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -17747,6 +18321,24 @@
               }
             }
           },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -17764,6 +18356,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -22907,7 +23502,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -24932,6 +25527,322 @@
           }
         }
       }
+    },
+    "/metadata/history": {
+      "get": {
+        "operationId": "getAdminMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List metadata field edit history",
+        "description": "Returns field-level metadata edit history across items, optionally filtered by item kind, item id, and field path prefix.",
+        "parameters": [
+          {
+            "name": "itemKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional item kind filter (for example 'dataset', 'service', 'resources', or 'services')."
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional metadata entity identifier filter."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/metadata/layers/{storageLayerId}/history": {
+      "get": {
+        "operationId": "getAdminLayerMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List layer metadata field edit history",
+        "description": "Returns field-level metadata edit history for the storage layer's shared resource.",
+        "parameters": [
+          {
+            "name": "storageLayerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Internal storage layer identifier."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/history": {
+      "get": {
+        "operationId": "getAdminServiceMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List service metadata field edit history",
+        "description": "Returns field-level metadata edit history for the logical service.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Logical service name."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/metadata/schemas": {
+      "get": {
+        "operationId": "getAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read per-environment custom metadata field schemas",
+        "description": "Returns the active custom metadata field schema definitions and current ETag for the environment.",
+        "responses": {
+          "200": {
+            "description": "Per-environment custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace per-environment custom metadata field schemas",
+        "description": "Replaces the environment's custom metadata field schema definitions. Requires the ETag returned by GET and rejects stale revisions with 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataCustomFieldSchemasUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid schema definitions"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access or human approval required"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -25077,6 +25988,314 @@
       }
     },
     "schemas": {
+      "SceneArchiveIngestResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string"
+          },
+          "i3sUrl": {
+            "type": "string"
+          },
+          "tilesetFileName": {
+            "type": "string"
+          },
+          "tilesetVersion": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "xMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "xMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SceneModelIngestResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string"
+          },
+          "i3sUrl": {
+            "type": "string"
+          },
+          "sourceFormat": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "boundingRegionDegrees": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "minHeightMeters": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxHeightMeters": {
+            "type": "number",
+            "format": "double"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SceneJobAcceptedResponse": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "sceneId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SceneJobStatusResponse": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sceneId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "i3sUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "tileCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "SceneAssetLifecycleResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "datasetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "datasetType": {
+            "type": "string"
+          },
+          "lifecycleStatus": {
+            "type": "string"
+          },
+          "jobStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestJobId": {
+            "type": "string",
+            "nullable": true
+          },
+          "publishedRevision": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "tilesetUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "i3sUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "requiresAuth": {
+            "type": "boolean"
+          },
+          "crs": {
+            "type": "string",
+            "nullable": true
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "xMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "xMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
       "ToolboxTranslationManifest": {
         "type": "object",
         "description": "SDK-translated toolbox manifest submitted for validation against the canonical process catalog. Produced by the honua-migrate toolbox translation CLI; the server never parses a proprietary binary toolbox itself.",
@@ -47876,6 +49095,10 @@
           "layerId"
         ],
         "properties": {
+          "async": {
+            "type": "boolean",
+            "description": "Queue generation and return a job reference."
+          },
           "layerId": {
             "type": "integer",
             "format": "int32",
@@ -54117,7 +55340,8 @@
         "properties": {
           "etag": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Optimistic concurrency token supplied by the caller from the current layer discovery metadata."
           },
           "title": {
             "type": "string",
@@ -55376,6 +56600,176 @@
           },
           "pointerKey": {
             "type": "string"
+          }
+        }
+      },
+      "MetadataFieldHistoryEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "itemKind",
+          "itemId",
+          "fieldPath",
+          "actor",
+          "changedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "itemKind": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "fieldPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "oldValue": {
+            "nullable": true
+          },
+          "newValue": {
+            "nullable": true
+          },
+          "actor": {
+            "type": "string"
+          },
+          "changedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MetadataFieldHistoryResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataFieldHistoryEntry"
+            }
+          },
+          "nextBeforeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataFieldHistoryEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataFieldHistoryResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchema": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "allowedValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "appliesTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "facetable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasResponse": {
+        "type": "object",
+        "required": [
+          "etag",
+          "environment",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataCustomFieldSchemasResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasUpdateRequest": {
+        "type": "object",
+        "required": [
+          "etag",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
           }
         }
       }

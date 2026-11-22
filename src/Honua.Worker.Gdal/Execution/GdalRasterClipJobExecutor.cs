@@ -57,7 +57,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {sourceError}");
         }
 
         // Secondary base64 inputs share the same per-worker payload ceiling as
@@ -67,7 +67,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "boundary", opts.MaxArtifactBytes, out var boundaryWkb, out var boundaryError))
         {
             Log.InvalidInputs(logger, job.OperationId, boundaryError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: {boundaryError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {boundaryError}");
         }
 
         Geometry boundary;
@@ -78,17 +78,17 @@ internal sealed partial class GdalRasterClipJobExecutor(
         catch (ParseException ex)
         {
             Log.BoundaryParseFailed(logger, job.OperationId, ex);
-            return JobExecutionResult.Failed("Invalid clip inputs: boundary WKB could not be parsed.");
+            return JobExecutionResult.InvalidInput("Invalid clip inputs: boundary WKB could not be parsed.");
         }
 
         if (boundary == null || boundary.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid clip inputs: boundary geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid clip inputs: boundary geometry is empty.");
         }
 
         if (!IsAreaGeometry(boundary))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid clip inputs: boundary must be a Polygon or MultiPolygon; got '{boundary.GeometryType}'.");
         }
 
@@ -98,7 +98,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         {
             if (!int.TryParse(boundarySridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) || srid <= 0)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid clip inputs: 'boundarySrid' value '{boundarySridRaw}' is not a positive integer.");
             }
             boundary.SRID = srid;
@@ -120,7 +120,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

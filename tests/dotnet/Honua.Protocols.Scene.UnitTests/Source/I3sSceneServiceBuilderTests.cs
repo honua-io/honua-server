@@ -191,4 +191,23 @@ public sealed class I3sSceneServiceBuilderTests
         service.Layers.Should().ContainSingle();
         service.Layers[0].Id.Should().Be(0);
     }
+
+    [UnitTest]
+    public void BuildLayer_PopulatesLatestVcsWkidAndFallbackExtentOnPersistedLayer()
+    {
+        var layer = I3sSceneServiceBuilder.BuildPersistedLayer(
+            Scene,
+            resources: null,
+            datasetType: SceneDatasetType.Building,
+            fallbackExtent: ExtentWithZ);
+
+        layer.SpatialReference!.Wkid.Should().Be(4326);
+        layer.SpatialReference.LatestWkid.Should().Be(4326);
+        layer.SpatialReference.VcsWkid.Should().Be(115700);
+        layer.SpatialReference.LatestVcsWkid.Should().Be(115700);
+        layer.FullExtent.Should().NotBeNull();
+        layer.FullExtent!.Zmin.Should().Be(0.0);
+        layer.FullExtent.Zmax.Should().Be(100.0);
+        layer.FullExtent.SpatialReference!.LatestVcsWkid.Should().Be(115700);
+    }
 }

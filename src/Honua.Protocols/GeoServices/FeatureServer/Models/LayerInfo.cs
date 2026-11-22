@@ -24,5 +24,5 @@ public sealed class LayerInfo
     public string Type { get; init; } = "Feature Layer";
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public required string? GeometryType { get; init; }
+    public string? GeometryType { get; init; }
 }

@@ -11,7 +11,7 @@ using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
-public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleService
+public sealed partial class StudioPackageLifecycleService : IStudioPackageLifecycleService
 {
     public const string ActivitySourceName = "Honua.Studio.PackageLifecycle";
 
@@ -185,12 +185,14 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.preview-plan");
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
 
-        var validation = await ValidateDraftAsync(draftId, actorId, cancellationToken).ConfigureAwait(false);
         var draft = await _store.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
-        if (draft is null || validation is null)
+        if (draft is null)
         {
             return null;
         }
+
+        var validation = _validator.Validate(draft.Envelope);
+        activity?.SetTag("studio.validation.status", validation.Status.ToString());
 
         var requiresJob = RequiresBackgroundJob(draft.Family);
         var steps = requiresJob

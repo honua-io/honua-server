@@ -25,7 +25,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-internal static class StudioPackageEndpoints
+internal static partial class StudioPackageEndpoints
 {
     private const string ProblemType = "https://honua.io/problems/studio";
 
@@ -44,6 +44,7 @@ internal static class StudioPackageEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
+        endpoints.MapStudioDraftRevisionEndpoints();
 
         group.MapGet("/package-families", HandleGetPackageFamilies)
             .WithDisplayName("List Studio Package Families")
@@ -817,7 +818,11 @@ internal static class StudioPackageEndpoints
 
     private static StudioDraftMutationContext BuildMutationContext(HttpContext context, string? actorId) => new()
     {
-        PrincipalId = actorId,
+        // Owner IDs remain stable; the gateway needs the canonical credential identity
+        // to reject bootstrap proposals and revalidate persisted keys at approval.
+        PrincipalId = CanonicalSecurityActor.Resolve(context.User) is { ApiKeyId: not null } actor
+            ? actor.ActorId
+            : actorId,
         TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
         SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
         CorrelationId = context.TraceIdentifier,

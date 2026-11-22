@@ -59,9 +59,12 @@ public sealed class IdlePollPacer
 
     public Task WaitAfterWorkAsync(CancellationToken cancellationToken)
     {
-        _idleInterval = BusyInterval;
+        ResetIdleInterval();
         return Task.Delay(BusyInterval, cancellationToken);
     }
+
+    // For loops that drain immediately after a productive pass: the next idle wait starts again at BusyInterval.
+    public void ResetIdleInterval() => _idleInterval = BusyInterval;
 
     public async Task WaitIdleAsync(CancellationToken cancellationToken)
     {

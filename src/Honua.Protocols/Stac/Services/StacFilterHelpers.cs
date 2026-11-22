@@ -232,7 +232,8 @@ internal static class StacFilterHelpers
         {
             var temporalField = resource.SchemaFields.FirstOrDefault(field =>
                 string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)
-                && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
+                && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                    or MetadataV2FieldType.TimestampOffset);
 
             if (temporalField is not null)
             {
@@ -240,7 +241,8 @@ internal static class StacFilterHelpers
                 {
                     endTimeField = resource.SchemaFields.FirstOrDefault(field =>
                         string.Equals(field.Name, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
-                        field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time)?.Name;
+                        field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                            or MetadataV2FieldType.TimestampOffset)?.Name;
                 }
                 return temporalField.Name;
             }

@@ -67,11 +67,31 @@ public sealed class StagedImportMcpIntegrationTests
             var denied = await CallAsync(reader, "honua_op_dataset_stage_preview", Arguments(schema, artifact, "intent-denied"));
             denied.GetRawText().Should().Contain("permission_denied");
             denied.GetRawText().Should().NotContain("previewFingerprint");
+
+            await AssertApprovedDiscardAndIdempotentRepeatAsync(fixture, agent, (schema, physicalTable));
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task AssertApprovedDiscardAndIdempotentRepeatAsync(
+        WebAppFixture fixture, HttpClient agent, (string Schema, string PhysicalTable) target)
+    {
+        var discardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
+        (await RowCountAsync(fixture, target.Schema, target.PhysicalTable)).Should().Be(1, "discard proposal must not drop before approval");
+        var discardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, discardProposalId);
+        discardHandle.GetProperty("status").GetString().Should().Be("Completed", discardHandle.GetRawText());
+        discardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("false");
+        (await RowCountAsync(fixture, target.Schema, target.PhysicalTable)).Should().BeNull("approved discard must drop the staged table");
+
+        var repeatDiscardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
+        var repeatDiscardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, repeatDiscardProposalId);
+        repeatDiscardHandle.GetProperty("status").GetString().Should().Be("Completed", repeatDiscardHandle.GetRawText());
+        repeatDiscardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("true");
     }
 
     [IntegrationTest]
@@ -148,18 +168,21 @@ public sealed class StagedImportMcpIntegrationTests
         return (proposalId, stagingTable);
     }
 
-    // The shared test database skips migrations; apply the shipped receipt migration the
-    // durable import ledger needs (idempotent: CREATE ... IF NOT EXISTS).
+    // The shared test database skips migrations; apply the shipped receipt migrations the
+    // durable import ledger needs (idempotent).
     private static async Task EnsureImportReceiptTableAsync(WebAppFixture fixture)
     {
-        var script = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
-            "src", "Honua.Server", "Migrations", "138_CreateJobArtifactImportReceipt.sql"));
         await using var connection = new NpgsqlConnection(fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
         var metadataSchema = fixture.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Database:Schema"] ?? "honua";
-        await using var command = new NpgsqlCommand(
-            script.Replace("$HonuaSchema$", $"\"{metadataSchema}\"", StringComparison.Ordinal), connection);
-        await command.ExecuteNonQueryAsync();
+        foreach (var file in new[] { "138_CreateJobArtifactImportReceipt.sql", "225_AddDiscardedAtToJobArtifactImportReceipt.sql" })
+        {
+            var script = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
+                "src", "Honua.Server", "Migrations", file));
+            await using var command = new NpgsqlCommand(
+                script.Replace("$HonuaSchema$", $"\"{metadataSchema}\"", StringComparison.Ordinal), connection);
+            await command.ExecuteNonQueryAsync();
+        }
     }
 
     private static Dictionary<string, object?> Arguments(string schema, string artifact, string intentId = "intent-staged")

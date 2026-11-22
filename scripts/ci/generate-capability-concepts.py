@@ -101,6 +101,28 @@ UNPUBLISHED_STATUS = {"internal"}
 # Statuses that mean "real, but not promised". A capability in one of these
 # has no customer page on purpose.
 PREVIEW_STATUS = {"preview", "experimental"}
+# A capability with no explicit status whose routes are none of them `implemented`
+# is shown with its most restrictive surface maturity, so a registry entry that
+# never got a status cannot read as GA in the index or on its page.
+MATURITY_STATUS_ORDER = ("experimental", "deferred", "preview")
+# Statuses whose routes can be off on a default install.
+OPT_IN_STATUS = PREVIEW_STATUS | {"deferred"}
+
+
+def effective_status(entry: dict, facts: dict) -> str:
+    """Return the status a reader should see: explicit, else derived from maturity, else ga."""
+    explicit = (facts.get("status") or entry.get("status") or "").lower()
+    if explicit:
+        return explicit
+    maturity = facts.get("maturity") or {}
+    if any(maturity.values()) and not maturity.get("implemented"):
+        for state in MATURITY_STATUS_ORDER:
+            if maturity.get(state):
+                return state
+        # Routes exist but none is implemented, preview, deferred or experimental
+        # (for example all partial or planned): never present that as GA.
+        return "preview"
+    return "ga"
 
 
 RESOURCE_DECLARATION = re.compile(r'^resource:\s*"honua://capability/([^"]+)"\s*$', re.M)
@@ -207,9 +229,11 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         "| --- | --- |",
         f"| Capability key | `{key}` |",
     ]
+    status = effective_status(entry, facts)
     for label, value in (
         ("Category", facts.get("category") or entry.get("category")),
         ("Edition", facts.get("edition") or entry.get("edition")),
+        ("Status", status),
     ):
         if value:
             lines.append(f"| {label} | {value} |")
@@ -238,6 +262,10 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("")
         for label, rel in documented:
             lines.append(f"- [{label}](../../{rel})")
+        if status in OPT_IN_STATUS:
+            lines += ["", *availability_note(key, status)]
+    elif status == "live" and (no_surface := facts.get("noSurface") or {}).get("reasonCode") == "content-negotiation":
+        lines.extend(["## How to use it", "", no_surface["reason"], "", "- [All capabilities](README.md)"])
     elif not facts.get("entryCount") and not facts.get("provingTestCount"):
         # No route in the generated feature catalog and no proving test. This is
         # a registry entry for something that is not built, and saying "no page
@@ -255,8 +283,7 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("")
         lines.append("- [All capabilities](README.md) — the full index, with what each edition includes")
         lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md)")
-    elif ((facts.get("status") or entry.get("status") or "").lower() in PREVIEW_STATUS
-          or not (facts.get("maturity") or {}).get("implemented")):
+    elif status in PREVIEW_STATUS or not (facts.get("maturity") or {}).get("implemented"):
         # It has routes and tests, but none of those routes is `implemented`
         # maturity - they are all preview or experimental - or the capability
         # itself is marked so. "No page documents this" would read as an
@@ -265,13 +292,15 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("## Preview")
         lines.append("")
         lines.append(
-            "This capability is Preview. It is off by default, it needs an explicit opt-in to "
-            "enable, and it is not covered by the compatibility promise for the release - so it "
-            "has no customer-facing page in this bundle, and that is deliberate rather than an "
-            "omission. The counts above are real routes and real tests; what they are not is a "
-            "commitment."
+            f"This capability is **{status}**. It is not covered by the compatibility promise for "
+            "the release - so it has no customer-facing page in this bundle, and that is "
+            "deliberate rather than an omission. The counts above are real routes and real "
+            "tests; what they are not is a commitment."
         )
         lines.append("")
+        if status in OPT_IN_STATUS:
+            lines += availability_note(key, status)[2:]
+            lines.append("")
         lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here")
         lines.append("- [All capabilities](README.md)")
     else:
@@ -290,6 +319,23 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes")
         lines.append("- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def availability_note(key: str, status: str) -> list[str]:
+    """Tell a reader or agent how to find out whether a not-GA capability is on."""
+    return [
+        "## Availability",
+        "",
+        f"Status is **{status}**. Not every {status} capability is on by default, so read "
+        f"`{key}` in `GET /api/v1/capabilities/manifest` before calling its routes. "
+        "`available: true` means the routes are served. `available: false` with "
+        "`reasonCode: experimental-disabled` means they return 404 until "
+        f"`Capabilities:Experimental:{key}:Enabled` is `true` (or the global "
+        "`Capabilities:Experimental:Enabled`). Set it in configuration or as the container "
+        f"environment variable `Capabilities__Experimental__{key}__Enabled`; a POSIX shell "
+        "cannot `export` a name containing `.` or `-`. Edition licensing still applies once "
+        "it is enabled.",
+    ]
 
 
 def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:
@@ -354,7 +400,7 @@ def build() -> dict[str, str]:
             entry.get("displayName") or key,
             facts.get("category") or entry.get("category"),
             facts.get("edition") or entry.get("edition"),
-            facts.get("status") or entry.get("status") or "ga",
+            effective_status(entry, facts),
         ))
     written["README.md"] = render_index(index_rows)
     return written

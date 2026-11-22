@@ -17,6 +17,8 @@ using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
@@ -195,6 +197,7 @@ public sealed class OgcClassicConformance8725Tests
 
         // 1. XML POST GetCapabilities with child <ows:AcceptVersions><ows:Version>9.9.9</ows:Version></ows:AcceptVersions>
         var xmlCapsContext = new DefaultHttpContext { RequestServices = services };
+        xmlCapsContext.Request.Path = "/wfs";
         xmlCapsContext.Request.Method = HttpMethods.Post;
         xmlCapsContext.Request.ContentType = "application/xml";
         var xmlBody = """
@@ -218,6 +221,7 @@ public sealed class OgcClassicConformance8725Tests
 
         // 2. Form-urlencoded POST operational request with unsupported VERSION returns InvalidParameterValue (locator="version")
         var formContext = new DefaultHttpContext { RequestServices = services };
+        formContext.Request.Path = "/wfs";
         formContext.Request.Method = HttpMethods.Post;
         formContext.Request.ContentType = "application/x-www-form-urlencoded";
         var formBody = "SERVICE=WFS&REQUEST=GetFeature&VERSION=9.9.9&TYPENAMES=layer1";
@@ -354,6 +358,7 @@ public sealed class OgcClassicConformance8725Tests
             .AddSingleton<IMetadataV2GraphProvider>(graphProvider)
             .AddSingleton(validator)
             .AddSingleton(routes)
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
             .BuildServiceProvider();
 
         var context = new DefaultHttpContext { RequestServices = services };

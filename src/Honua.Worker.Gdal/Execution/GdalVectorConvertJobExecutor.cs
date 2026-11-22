@@ -65,7 +65,7 @@ internal sealed partial class GdalVectorConvertJobExecutor(
 
         if (!GdalJobInputReader.TryGetInput(parameters, "targetFormat", out var targetFormat))
         {
-            return JobExecutionResult.Failed("Invalid conversion inputs: missing required input 'targetFormat'.");
+            return JobExecutionResult.InvalidInput("Invalid conversion inputs: missing required input 'targetFormat'.");
         }
 
         if (!SupportedFormats.TryGetValue(targetFormat, out var targetMeta))
@@ -79,7 +79,7 @@ internal sealed partial class GdalVectorConvertJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid conversion inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid conversion inputs: {inputError}");
         }
 
         var sourceExtension = SupportedFormats.TryGetValue(sourceFormat, out var sourceMeta)

@@ -49,6 +49,45 @@ public sealed class AwsS3UploadCacheHeaderTests
         Assert.Equal("gzip", headers.ContentEncoding);
     }
 
+    [UnitTest]
+    public void ApplyContentLength_KnownLength_SetsContentLengthHeader()
+    {
+        var headers = new PutObjectRequest().Headers;
+
+        AwsS3FileStorage.ApplyContentLength(headers, 4096);
+
+        Assert.Equal(4096, headers.ContentLength);
+    }
+
+    [UnitTest]
+    public void ApplyContentLength_UnknownLength_LeavesContentLengthUnset()
+    {
+        var headers = new PutObjectRequest().Headers;
+
+        AwsS3FileStorage.ApplyContentLength(headers, null);
+
+        Assert.Equal(-1, headers.ContentLength);
+    }
+
+    [UnitTest]
+    public void KnownContentLength_NonSeekableStreamWithSizeBytes_ReturnsSizeBytes()
+    {
+        using var stream = new NonSeekableReadStream([1, 2, 3, 4]);
+        var request = Upload(StoredObjectCachePolicy.PublicImmutable) with { Content = stream, SizeBytes = 4 };
+
+        Assert.Equal(4, AwsS3FileStorage.KnownContentLength(request));
+    }
+
+    [UnitTest]
+    public void KnownContentLength_SeekableStreamWithOffset_ReturnsRemainingBytes()
+    {
+        using var stream = new MemoryStream([1, 2, 3, 4, 5], writable: false);
+        stream.Position = 2;
+        var request = Upload(StoredObjectCachePolicy.NotShared) with { Content = stream };
+
+        Assert.Equal(3, AwsS3FileStorage.KnownContentLength(request));
+    }
+
     private static FileUploadRequest Upload(StoredObjectCachePolicy policy) => new()
     {
         Content = Stream.Null,
@@ -56,4 +95,10 @@ public sealed class AwsS3UploadCacheHeaderTests
         ContentType = "application/vnd.pmtiles",
         CachePolicy = policy,
     };
+
+    private sealed class NonSeekableReadStream(byte[] data) : MemoryStream(data, writable: false)
+    {
+        public override bool CanSeek => false;
+        public override long Length => throw new NotSupportedException();
+    }
 }

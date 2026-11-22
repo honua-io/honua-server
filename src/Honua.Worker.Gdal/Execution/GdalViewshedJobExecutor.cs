@@ -52,22 +52,22 @@ internal sealed partial class GdalViewshedJobExecutor(
 
         if (!TryReadFinite(parameters, "observerX", out var observerX, out var oxError))
         {
-            return JobExecutionResult.Failed($"Invalid viewshed inputs: {oxError}");
+            return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {oxError}");
         }
 
         if (!TryReadFinite(parameters, "observerY", out var observerY, out var oyError))
         {
-            return JobExecutionResult.Failed($"Invalid viewshed inputs: {oyError}");
+            return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {oyError}");
         }
 
         if (!TryReadOptionalNonNegative(parameters, "observerHeight", 2.0, out var observerHeight, out var ohError))
         {
-            return JobExecutionResult.Failed($"Invalid viewshed inputs: {ohError}");
+            return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {ohError}");
         }
 
         if (!TryReadOptionalNonNegative(parameters, "targetHeight", 0.0, out var targetHeight, out var thError))
         {
-            return JobExecutionResult.Failed($"Invalid viewshed inputs: {thError}");
+            return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {thError}");
         }
 
         double? maxDistance = null;
@@ -76,7 +76,7 @@ internal sealed partial class GdalViewshedJobExecutor(
             if (!double.TryParse(maxRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
                 || double.IsNaN(parsed) || double.IsInfinity(parsed) || parsed <= 0d)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid viewshed inputs: 'maxDistance' must be a positive finite number; got '{maxRaw}'.");
             }
             maxDistance = parsed;
@@ -85,7 +85,7 @@ internal sealed partial class GdalViewshedJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid viewshed inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -101,7 +101,7 @@ internal sealed partial class GdalViewshedJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

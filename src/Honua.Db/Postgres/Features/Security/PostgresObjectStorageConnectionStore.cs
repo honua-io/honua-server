@@ -20,6 +20,7 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _connections;
     private readonly string _setups;
+    private readonly string _saveSetupSql;
 
     public PostgresObjectStorageConnectionStore(NpgsqlDataSource dataSource, string? schemaName = null)
     {
@@ -27,22 +28,33 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         _dataSource = dataSource;
         _connections = SchemaSearchPath.QualifyTable("object_storage_connections", schemaName);
         _setups = SchemaSearchPath.QualifyTable("object_storage_connection_setups", schemaName);
+        _saveSetupSql = SaveSetupSql(_setups);
     }
+
+    // Prunes expired setups and, when the minter is at its cap, supersedes its oldest open setups so retries and a
+    // second tab never lock it out. The counts exclude the deleted rows, which the statement's snapshot still sees,
+    // so the per-minter and installation totals stay bounded.
+    private static string SaveSetupSql(string setups) => $"""
+        WITH removed AS (
+            DELETE FROM {setups} WHERE consumed_at IS NULL AND (expires_at <= clock_timestamp() OR external_id IN (
+                SELECT external_id FROM {setups}
+                WHERE minted_by = @minted_by AND consumed_at IS NULL AND expires_at > clock_timestamp() AND @max_open_for_minter > 0
+                ORDER BY created_at DESC, external_id
+                OFFSET GREATEST(@max_open_for_minter - 1, 0)))
+            RETURNING external_id
+        ), open_setups AS (
+            SELECT minted_by FROM {setups}
+            WHERE consumed_at IS NULL AND expires_at > clock_timestamp() AND external_id NOT IN (SELECT external_id FROM removed)
+        )
+        INSERT INTO {setups} (external_id, minted_by, bucket, prefix, expires_at)
+        SELECT @external_id, @minted_by, @bucket, @prefix, @expires_at
+        WHERE (SELECT count(*) FROM open_setups) < @max_open
+          AND (SELECT count(*) FROM open_setups WHERE minted_by = @minted_by) < @max_open_for_minter;
+        """;
 
     public async Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(setup);
-        var sql = $"""
-            WITH pruned AS (
-                DELETE FROM {_setups} WHERE consumed_at IS NULL AND expires_at <= clock_timestamp()
-            ), open_setups AS (
-                SELECT minted_by FROM {_setups} WHERE consumed_at IS NULL AND expires_at > clock_timestamp()
-            )
-            INSERT INTO {_setups} (external_id, minted_by, bucket, prefix, expires_at)
-            SELECT @external_id, @minted_by, @bucket, @prefix, @expires_at
-            WHERE (SELECT count(*) FROM open_setups) < @max_open
-              AND (SELECT count(*) FROM open_setups WHERE minted_by = @minted_by) < @max_open_for_minter;
-            """;
         await using var db = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await db.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         // Taken in its own statement so the counts below see every mint that committed before it: two concurrent
@@ -54,7 +66,7 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         }
 
         int inserted;
-        await using (var command = new NpgsqlCommand(sql, db, transaction))
+        await using (var command = new NpgsqlCommand(_saveSetupSql, db, transaction))
         {
             command.Parameters.AddWithValue("external_id", NpgsqlDbType.Text, setup.ExternalId);
             command.Parameters.AddWithValue("minted_by", NpgsqlDbType.Text, setup.MintedBy);

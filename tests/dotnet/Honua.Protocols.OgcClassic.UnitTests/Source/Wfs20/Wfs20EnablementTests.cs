@@ -115,12 +115,13 @@ public sealed class Wfs20EnablementTests
         HttpContext context,
         bool enforceAccess = true)
     {
+        var methodName = enforceAccess ? "GetPublishedFeatureTypesAsync" : "GetAllPublishedFeatureTypesAsync";
         var method = typeof(Wfs20Handler).GetMethod(
-            "GetPublishedFeatureTypesAsync",
+            methodName,
             BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
 
-        var task = (Task)method!.Invoke(handler, [context, CancellationToken.None, enforceAccess])!;
+        var task = (Task)method!.Invoke(handler, [context, CancellationToken.None])!;
         await task.ConfigureAwait(false);
         var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
         return ((IEnumerable)result).Cast<object>().ToArray();

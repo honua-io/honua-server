@@ -95,7 +95,6 @@ using Microsoft.Extensions.Primitives;
 using Npgsql;
 using Scalar.AspNetCore;
 using Serilog;
-using Serilog.Enrichers.Span;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
@@ -113,6 +112,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.ConfigureStructuredLogging();
 
 // Owner decision 6 (2026-10-10): HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn> loads one
 // JSON settings document so a Lambda function can keep most settings out of its 4 KB environment.
@@ -347,52 +347,6 @@ if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DurableJobSubstrateStartup
 {
     return;
 }
-
-// Configure Serilog for structured logging with AOT compatibility
-builder.Host.UseSerilog((context, services, config) =>
-{
-    var isDevelopment = context.HostingEnvironment.IsDevelopment();
-    var benchmarkQuietLogs = context.Configuration.GetValue<bool>("HONUA_BENCHMARK_QUIET_LOGS");
-
-    config
-        .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-        .Enrich.FromLogContext()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithMachineName()
-        .Enrich.WithThreadId()
-        .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
-        .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
-        .ConfigureHonuaRequestDiagnostics();
-
-    if (benchmarkQuietLogs)
-    {
-        config
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Serilog.AspNetCore.RequestLoggingMiddleware", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Honua.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
-            .MinimumLevel.Override("Honua.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
-            .MinimumLevel.Override("Honua.Protocols.Ogc.Api.Features.OgcFeaturesQueryHandler", Serilog.Events.LogEventLevel.Warning);
-    }
-
-    if (isDevelopment)
-    {
-        // Development: Human-readable console output
-        config.WriteTo.Console(
-            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
-            formatProvider: System.Globalization.CultureInfo.InvariantCulture);
-    }
-    else
-    {
-        // Production: Compact JSON for log aggregation
-        config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
-    }
-}, preserveStaticLogger: false, writeToProviders: true);
 
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
@@ -819,6 +773,8 @@ builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermi
 builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRlsPolicyStore,
     Honua.Server.Features.Admin.Services.InMemoryRlsPolicyStore>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataActorProvider,
+    Honua.Server.Features.Admin.HttpContextMetadataActorProvider>();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
     Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
 // Field-level security (column masking), the field-level companion to RLS.
@@ -1231,11 +1187,11 @@ app.UseServerInstanceHeader();
 
 if (forwardedHeadersEnabled)
 {
-    app.Use(async (context, next) =>
+    app.Use((context, next) =>
     {
         context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] =
             context.Connection.RemoteIpAddress;
-        await next(context).ConfigureAwait(false);
+        return next(context);
     });
     app.UseForwardedHeaders();
 }
@@ -1251,37 +1207,33 @@ if (!disableHttpsRedirection)
     app.UseHttpsRedirection();
 }
 
-app.Use(async (context, next) =>
+app.Use((context, next) =>
 {
     var path = context.Request.Path.Value;
-    if (!string.IsNullOrEmpty(path))
+    if (string.IsNullOrEmpty(path) || !path.Contains("//", StringComparison.Ordinal))
     {
-        var trimmedPath = path.TrimEnd('/');
-        if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
-            trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
-        {
-            await Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    "Connection ID is required")
-                .ExecuteAsync(context)
-                .ConfigureAwait(false);
-            return;
-        }
+        return next();
     }
 
-    if (!string.IsNullOrEmpty(path) && path.Contains("//", StringComparison.Ordinal))
+    var trimmedPath = path.TrimEnd('/');
+    if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
+        trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
     {
-        var normalized = path;
-        while (normalized.Contains("//", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("//", "/");
-        }
-
-        context.Request.Path = new PathString(normalized);
+        return Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Connection ID is required")
+            .ExecuteAsync(context);
     }
 
-    await next().ConfigureAwait(false);
+    var normalized = path;
+    while (normalized.Contains("//", StringComparison.Ordinal))
+    {
+        normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
+    }
+
+    context.Request.Path = new PathString(normalized);
+    return next();
 });
 
 var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
@@ -1355,7 +1307,7 @@ app.UseSecurityHeaders();
 
 // Some standards validators and older HTTP clients send only `Accept-Encoding: *`.
 // Prefer gzip/deflate for that wildcard so the response remains broadly decodable.
-app.Use(async (context, next) =>
+app.Use((context, next) =>
 {
     if (context.Request.Headers.AcceptEncoding.Count == 1 &&
         string.Equals(context.Request.Headers.AcceptEncoding[0], "*", StringComparison.Ordinal))
@@ -1363,7 +1315,7 @@ app.Use(async (context, next) =>
         context.Request.Headers.AcceptEncoding = "gzip, deflate";
     }
 
-    await next(context);
+    return next(context);
 });
 
 // Add response compression middleware (early in pipeline)
@@ -1523,13 +1475,15 @@ app.UseSerilogRequestLogging(options =>
 // detection, and treating a client-supplied X-Grpc-Web header as sufficient
 // would let an unauthenticated caller bypass required native mTLS by setting a
 // single header alongside application/grpc.
-app.Use(async (context, next) =>
+var boxedTrue = (object)true;
+var boxedFalse = (object)false;
+app.Use((context, next) =>
 {
     var contentType = context.Request.ContentType;
     var isGrpcWeb = !string.IsNullOrWhiteSpace(contentType) &&
         contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
-    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
-    await next(context).ConfigureAwait(false);
+    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb ? boxedTrue : boxedFalse;
+    return next(context);
 });
 
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
@@ -2004,7 +1958,7 @@ if (app.Environment.IsDevelopment())
 #endif
 
 // Configure file import endpoints
-app.MapImportEndpoints();
+app.MapImportEndpoints(AdminConnectImportOperationCatalog.Definitions);
 app.MapMigrationScannerEndpoints();
 app.MapGeoServicesMigrationEvidenceEndpoints();
 app.MapToolboxTranslationEndpoints();

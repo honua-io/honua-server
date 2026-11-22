@@ -300,28 +300,10 @@ internal static partial class FeatureServerEndpoints
             if (root.TryGetProperty("fixedBin", out var fixedElement) &&
                 fixedElement.ValueKind == JsonValueKind.Object)
             {
-                if (!fixedElement.TryGetProperty("intervalCount", out var countElement) ||
-                    !countElement.TryGetInt32(out var intervalCount))
+                var (interval, intervalError) = ParseFixedBinInterval(fixedElement, "fixedBin", defaultUnit: null);
+                if (intervalError is not null)
                 {
-                    error = "fixedBin.intervalCount is required.";
-                    return false;
-                }
-
-                if (!fixedElement.TryGetProperty("intervalUnit", out var intervalUnitElement))
-                {
-                    error = "fixedBin.intervalUnit is required.";
-                    return false;
-                }
-
-                var intervalUnit = intervalUnitElement.GetString()?.ToLowerInvariant();
-                if (string.IsNullOrWhiteSpace(intervalUnit))
-                {
-                    error = "fixedBin.intervalUnit must not be empty.";
-                    return false;
-                }
-
-                if (!TryConvertToTimeSpan(intervalCount, intervalUnit, out var interval, out error))
-                {
+                    error = intervalError;
                     return false;
                 }
 
@@ -336,7 +318,7 @@ internal static partial class FeatureServerEndpoints
                 dateBin = new DateBinDefinition
                 {
                     BinField = binField,
-                    FixedInterval = interval,
+                    FixedInterval = interval!.Value,
                     FixedIntervalOrigin = origin
                 };
                 return true;
@@ -352,60 +334,64 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    internal static bool TryConvertToTimeSpan(int count, string unit, out TimeSpan interval, out string? error)
+    // A fixed bin has one length, so only fixed-length units are accepted; months and years
+    // vary in length and belong to calendarBin. Unknown units fail instead of binning by days.
+    // Sub-second units are refused because the DuckDB builder bins in whole seconds.
+    private static (TimeSpan? Interval, string? Error) ParseFixedBinInterval(
+        JsonElement fixedElement,
+        string paramName,
+        string? defaultUnit)
     {
-        interval = default;
-        error = null;
+        if (!fixedElement.TryGetProperty("intervalCount", out var countElement) ||
+            !countElement.TryGetInt32(out var count))
+        {
+            return (null, $"{paramName}.intervalCount is required.");
+        }
 
         if (count <= 0)
         {
-            error = "fixedBin.intervalCount must be greater than zero.";
-            return false;
+            return (null, $"{paramName}.intervalCount must be a positive integer.");
         }
 
-        try
+        if (!fixedElement.TryGetProperty("intervalUnit", out var unitElement))
         {
-            switch (unit)
-            {
-                case "milliseconds":
-                    interval = TimeSpan.FromMilliseconds(count);
-                    return true;
-                case "seconds":
-                    interval = TimeSpan.FromSeconds(count);
-                    return true;
-                case "minutes":
-                    interval = TimeSpan.FromMinutes(count);
-                    return true;
-                case "hours":
-                    interval = TimeSpan.FromHours(count);
-                    return true;
-                case "days":
-                    interval = TimeSpan.FromDays(count);
-                    return true;
-                case "weeks":
-                    interval = TimeSpan.FromDays(count * 7L);
-                    return true;
-                case "months":
-                    interval = TimeSpan.FromDays(count * 30L);
-                    return true;
-                case "years":
-                    interval = TimeSpan.FromDays(count * 365L);
-                    return true;
-                default:
-                    error = $"Unsupported fixedBin.intervalUnit '{unit}'. Must be one of: milliseconds, seconds, minutes, hours, days, weeks, months, years.";
-                    return false;
-            }
+            return defaultUnit is null
+                ? (null, $"{paramName}.intervalUnit is required.")
+                : ResolveFixedInterval(count, defaultUnit, paramName);
         }
-        catch (OverflowException)
+
+        var unit = unitElement.ValueKind == JsonValueKind.String
+            ? unitElement.GetString()!.ToLowerInvariant()
+            : string.Empty;
+        return ResolveFixedInterval(count, unit, paramName);
+    }
+
+    private static (TimeSpan? Interval, string? Error) ResolveFixedInterval(int count, string unit, string paramName)
+    {
+        long? secondsPerUnit = unit switch
         {
-            error = "fixedBin.intervalCount is too large for the specified intervalUnit.";
-            return false;
-        }
-        catch (ArgumentOutOfRangeException)
+            "seconds" => 1L,
+            "minutes" => 60L,
+            "hours" => 3600L,
+            "days" => 86400L,
+            "weeks" => 604800L,
+            _ => null
+        };
+        if (secondsPerUnit is null)
         {
-            error = "fixedBin.intervalCount is out of range for the specified intervalUnit.";
-            return false;
+            return (null, unit is "months" or "years"
+                ? $"{paramName}.intervalUnit '{unit}' has no fixed length; use calendarBin for months and years."
+                : $"{paramName}.intervalUnit must be one of seconds, minutes, hours, days or weeks.");
         }
+
+        var maxTimeSpanSeconds = TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerSecond;
+        var totalSeconds = count * secondsPerUnit.Value;
+        if (totalSeconds > maxTimeSpanSeconds)
+        {
+            return (null, $"{paramName}.intervalCount is too large.");
+        }
+
+        return (TimeSpan.FromSeconds(totalSeconds), null);
     }
 
     private static bool TryParseOutStatistics(string json, out ImmutableArray<StatisticDefinition> outStats, out string? error)

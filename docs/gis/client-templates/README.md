@@ -27,9 +27,9 @@ Use these variables across templates:
 - `HONUA_BASE_URL`
 - `HONUA_SERVICE_ID`
 - `HONUA_COLLECTION_ID`
-- `HONUA_ODATA_ENTITY_SET`
+- `HONUA_ODATA_LAYER_ID`
 - `HONUA_API_KEY`
 
-Current contract note: `HONUA_COLLECTION_ID` is the numeric OGC `collectionId`, which currently matches the layer id (`0` in the ticket `#320` certification seed).
+Current contract note: `HONUA_COLLECTION_ID` is the numeric OGC `collectionId`, which currently matches the layer id (`0` in the ticket `#320` certification seed). `HONUA_ODATA_LAYER_ID` is the same layer id; the BI templates read `/odata/Layers({layerId})/Features`.
 
 See [`../CLIENT_TEMPLATE_RUNBOOK.md`](../CLIENT_TEMPLATE_RUNBOOK.md) for full smoke execution steps and the workflow artifact contract.

@@ -63,8 +63,13 @@ public sealed class Cql2Parser
 
         while (Match(Cql2TokenType.Or))
         {
+            if (!Cql2BooleanExpression.IsPredicate(expr))
+            {
+                throw new ArgumentException("Operator 'OR' requires boolean or predicate operands.");
+            }
+
             FilterParserGuard.EnsureLogicalOperandCount(++operands);
-            var right = ParseBooleanTerm(allowBareScalar);
+            var right = ParseBooleanTerm(allowBareScalar: false);
             expr = new BinaryExpression(expr, BinaryOperator.Or, right);
         }
 
@@ -78,8 +83,13 @@ public sealed class Cql2Parser
 
         while (Match(Cql2TokenType.And))
         {
+            if (!Cql2BooleanExpression.IsPredicate(expr))
+            {
+                throw new ArgumentException("Operator 'AND' requires boolean or predicate operands.");
+            }
+
             FilterParserGuard.EnsureLogicalOperandCount(++operands);
-            var right = ParseBooleanFactor(allowBareScalar);
+            var right = ParseBooleanFactor(allowBareScalar: false);
             expr = new BinaryExpression(expr, BinaryOperator.And, right);
         }
 
@@ -91,7 +101,7 @@ public sealed class Cql2Parser
         {
             if (Match(Cql2TokenType.Not))
             {
-                var operand = ParseBooleanFactor(allowBareScalar);
+                var operand = ParseBooleanFactor(allowBareScalar: false);
                 return new UnaryExpression(UnaryOperator.Not, operand);
             }
 
@@ -100,8 +110,9 @@ public sealed class Cql2Parser
 
     private FilterExpression ParseBooleanPrimary(bool allowBareScalar)
     {
-        if (Match(Cql2TokenType.LeftParen))
+        if (Check(Cql2TokenType.LeftParen) && !Cql2ScalarLookahead.IsParenthesizedScalarAhead(_tokens, _position))
         {
+            Advance();
             var expr = ParseBooleanExpression(allowBareScalar);
             Consume(Cql2TokenType.RightParen, "Expected ')' after expression");
             return expr;
@@ -134,17 +145,7 @@ public sealed class Cql2Parser
             return exprResult;
         }
 
-        if (exprResult is BinaryExpression or UnaryExpression or SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate)
-        {
-            return exprResult;
-        }
-
-        if (exprResult is FunctionCall)
-        {
-            return exprResult;
-        }
-
-        if (exprResult is Literal literal && literal.Type == LiteralType.Boolean)
+        if (Cql2BooleanExpression.IsPredicate(exprResult))
         {
             return exprResult;
         }
@@ -175,6 +176,7 @@ public sealed class Cql2Parser
             Advance(); // NOT
             Advance(); // LIKE
             var pattern = ParsePatternExpression();
+            Cql2BooleanExpression.EnsureLikeOperands("NOT LIKE", left, pattern);
             return new BinaryExpression(left, BinaryOperator.NotLike, pattern);
         }
 
@@ -182,6 +184,7 @@ public sealed class Cql2Parser
         if (Match(Cql2TokenType.Like))
         {
             var pattern = ParsePatternExpression();
+            Cql2BooleanExpression.EnsureLikeOperands("LIKE", left, pattern);
             return new BinaryExpression(left, BinaryOperator.Like, pattern);
         }
 
@@ -1035,7 +1038,7 @@ public sealed class Cql2Parser
         return false;
     }
 
-    private static bool IsComparisonOperator(Cql2TokenType type)
+    internal static bool IsComparisonOperator(Cql2TokenType type)
     {
         return type is Cql2TokenType.Equal or Cql2TokenType.NotEqual or
                Cql2TokenType.LessThan or Cql2TokenType.LessThanOrEqual or

@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public class ApiKeyAuthenticationTests : IAsyncLifetime
+public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests.SharedHosts>
 {
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
@@ -42,66 +42,156 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     private static readonly string[] FeatureServerSupportedFormats = ["JSON", "GeoJSON"];
     private readonly ITestOutputHelper _output;
     private readonly DatabaseFixtureAdapter _database;
-    private readonly WebAppFixture _fixture = new();
+    private readonly SharedHosts _sharedHosts;
 
-    public ApiKeyAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
+    public ApiKeyAuthenticationTests(
+        DatabaseFixtureAdapter database,
+        SharedHosts sharedHosts,
+        ITestOutputHelper output)
     {
         _database = database;
+        _sharedHosts = sharedHosts;
         _output = output;
     }
 
-    public async Task InitializeAsync()
+    public sealed class SharedHosts : IDisposable
     {
-        await _fixture.InitializeAsync();
-    }
+        private readonly Lock _lock = new();
+        private readonly Dictionary<string, OwnedFactory> _factories = new(StringComparer.Ordinal);
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+        internal OwnedFactory GetProductionAdminFactory(string connectionString)
+            => GetOrCreate(
+                "production-admin",
+                () => CreateFactory(
+                    connectionString,
+                    "Production",
+                    builder =>
+                    {
+                        builder.UseEnvironment("Production");
+                        builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+                    }));
 
-    private WebApplicationFactory<Program> CreateTestFactory(
-        string environmentName,
-        Action<IWebHostBuilder> configure)
-    {
-        return TestWebApplicationFactory.CreateForEnvironment(environmentName)
-            .WithWebHostBuilder(builder =>
+        internal OwnedFactory GetProductionBasicHttpsFactory(string connectionString)
+            => GetOrCreate(
+                "production-basic-https",
+                () => CreateFactory(
+                    connectionString,
+                    "Production",
+                    builder =>
+                    {
+                        builder.UseEnvironment("Production");
+                        builder.UseSetting("HONUA_ADMIN_PASSWORD", TestBasicPassword);
+                        builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+                        builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
+                    }));
+
+        public void Dispose()
+        {
+            foreach (var factory in _factories.Values)
             {
-                // Apply additional test-specific configuration first
-                configure?.Invoke(builder);
+                factory.Dispose();
+            }
 
-                // Default to the test environment unless the caller explicitly requested one.
-                if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
+            _factories.Clear();
+        }
+
+        private OwnedFactory GetOrCreate(string key, Func<OwnedFactory> create)
+        {
+            lock (_lock)
+            {
+                if (!_factories.TryGetValue(key, out var factory))
                 {
-                    builder.UseEnvironment("Test");
+                    factory = create();
+                    _factories[key] = factory;
                 }
 
-                // Configure test connection string to avoid connection string errors (must be last)
-                builder.ConfigureAppConfiguration((context, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:DefaultConnection"] = TestPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestPostgresConnectionString,
-                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
-                        ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
-                        ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
-                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
-                        ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
-                        ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
-                        ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
-                    });
-                });
+                return factory;
+            }
+        }
+    }
 
-                builder.ConfigureTestServices(services =>
+    internal sealed class OwnedFactory : IDisposable
+    {
+        private readonly TestWebApplicationFactory _baseFactory;
+        private readonly WebApplicationFactory<Program> _configuredFactory;
+
+        public OwnedFactory(
+            string connectionString,
+            string environmentName,
+            Action<IWebHostBuilder> configure)
+        {
+            _baseFactory = TestWebApplicationFactory.CreateForEnvironment(environmentName);
+            try
+            {
+                _configuredFactory = _baseFactory.WithWebHostBuilder(
+                    builder => ConfigureBuilder(builder, connectionString, configure));
+            }
+            catch
+            {
+                _baseFactory.Dispose();
+                throw;
+            }
+        }
+
+        private static void ConfigureBuilder(
+            IWebHostBuilder builder,
+            string connectionString,
+            Action<IWebHostBuilder> configure)
+        {
+            // Apply additional test-specific configuration first
+            configure?.Invoke(builder);
+
+            // Default to the test environment unless the caller explicitly requested one.
+            if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
+            {
+                builder.UseEnvironment("Test");
+            }
+
+            // Configure test connection string to avoid connection string errors (must be last)
+            builder.ConfigureAppConfiguration((context, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    services.RemoveAll<IDatabaseCompatibilityChecker>();
-                    services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
-                    services.RemoveAll<NpgsqlDataSource>();
-                    services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
+                    ["ConnectionStrings:DefaultConnection"] = connectionString,
+                    ["ConnectionStrings:honua"] = connectionString,
+                    ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
+                    ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
+                    ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                    ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
+                    ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
+                    ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
+                    ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
                 });
             });
+
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IDatabaseCompatibilityChecker>();
+                services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
+                services.RemoveAll<NpgsqlDataSource>();
+                services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+            });
+        }
+
+        public HttpClient CreateClient() => _configuredFactory.CreateClient();
+
+        public void Dispose()
+        {
+            // Disposing the base factory disposes its derived configured factory once.
+            _baseFactory.Dispose();
+        }
     }
+
+    private OwnedFactory CreateTestFactory(
+        string environmentName,
+        Action<IWebHostBuilder> configure)
+        => CreateFactory(TestPostgresConnectionString, environmentName, configure);
+
+    private static OwnedFactory CreateFactory(
+        string connectionString,
+        string environmentName,
+        Action<IWebHostBuilder> configure)
+        => new(connectionString, environmentName, configure);
 
     private static void AddFeatureServerTestServices(
         IServiceCollection services,
@@ -248,11 +338,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_ProductionEnvironment_NoBypass_RequiresAuth()
     {
         // Arrange - Production environment without bypass
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-        });
+        var factory = _sharedHosts.GetProductionAdminFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint without API key
@@ -338,17 +424,12 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_ValidApiKey_AllowsAccess()
     {
         // Arrange
-        const string adminPassword = TestAdminPassword;
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
-        });
+        var factory = _sharedHosts.GetProductionAdminFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with valid API key
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
-        request.Headers.Add("X-API-Key", adminPassword);
+        request.Headers.Add("X-API-Key", TestAdminPassword);
         var response = await client.SendAsync(request);
 
         // Assert - Should allow access (will get 500 due to missing DB, but not 401)
@@ -386,11 +467,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_EmptyApiKey_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-        });
+        var factory = _sharedHosts.GetProductionAdminFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with empty API key
@@ -407,11 +484,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_NoApiKeyHeader_DeniesAccess()
     {
         // Arrange
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-        });
+        var factory = _sharedHosts.GetProductionAdminFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint without API key header
@@ -481,19 +554,12 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_InsecureTransport_DeniesAccess()
     {
         // Arrange
-        const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
-            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
-            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
-        });
+        var factory = _sharedHosts.GetProductionBasicHttpsFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{TestBasicPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         var response = await client.SendAsync(request);
 
@@ -512,19 +578,12 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_ForwardedProtoSpoof_DeniesAccess()
     {
         // Arrange
-        const string adminPassword = TestBasicPassword;
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
-            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
-            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
-        });
+        var factory = _sharedHosts.GetProductionBasicHttpsFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{TestBasicPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
         var response = await client.SendAsync(request);
@@ -619,11 +678,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task HealthEndpoint_NoAuth_AlwaysAccessible()
     {
         // Arrange - Production environment with auth required
-        using var factory = CreateTestFactory("Production", builder =>
-        {
-            builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-        });
+        var factory = _sharedHosts.GetProductionAdminFactory(TestPostgresConnectionString);
         using var client = factory.CreateClient();
 
         // Act - Access public health endpoint without API key

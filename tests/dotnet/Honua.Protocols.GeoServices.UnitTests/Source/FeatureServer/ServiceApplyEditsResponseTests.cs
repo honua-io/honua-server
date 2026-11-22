@@ -127,7 +127,7 @@ public sealed class ServiceApplyEditsResponseTests
     }
 
     [UnitTest]
-    public void BuildBinFieldsAndTryConvertToTimeSpan_WithIntervalUnits_PopulatesFieldsAndValidatesUnits()
+    public void BuildBinFieldsAndDateBinFields_PopulatesFields()
     {
         var resource = new MetadataV2Object
         {
@@ -159,18 +159,29 @@ public sealed class ServiceApplyEditsResponseTests
         dateBinFields[0].Type.Should().Be("esriFieldTypeDate");
         dateBinFields[1].Type.Should().Be("esriFieldTypeDouble");
 
-        FeatureServerEndpoints.TryConvertToTimeSpan(250, "milliseconds", out var msInterval, out var msError).Should().BeTrue();
-        msError.Should().BeNull();
-        msInterval.Should().Be(TimeSpan.FromMilliseconds(250));
+    }
 
-        FeatureServerEndpoints.TryConvertToTimeSpan(2, "months", out var monthInterval, out _).Should().BeTrue();
-        monthInterval.Should().Be(TimeSpan.FromDays(60));
+    [UnitTest]
+    public void TryParseDateBin_WithFixedSeconds_PreservesInterval()
+    {
+        FeatureServerEndpoints.TryParseDateBin(
+            """{"fixedBin":{"intervalCount":250,"intervalUnit":"seconds"}}""",
+            "observed_at", out var dateBin, out var error).Should().BeTrue();
+        error.Should().BeNull();
+        dateBin.FixedInterval.Should().Be(TimeSpan.FromSeconds(250));
+    }
 
-        FeatureServerEndpoints.TryConvertToTimeSpan(1, "years", out var yearInterval, out _).Should().BeTrue();
-        yearInterval.Should().Be(TimeSpan.FromDays(365));
-
-        FeatureServerEndpoints.TryConvertToTimeSpan(1, "fortnights", out _, out var unknownError).Should().BeFalse();
-        unknownError.Should().Contain("fortnights");
+    [UnitTheory]
+    [InlineData("milliseconds")]
+    [InlineData("months")]
+    [InlineData("years")]
+    [InlineData("fortnights")]
+    public void TryParseDateBin_WithUnsupportedFixedUnit_RejectsInterval(string unit)
+    {
+        var json = $$"""{"fixedBin":{"intervalCount":1,"intervalUnit":"{{unit}}"}}""";
+        FeatureServerEndpoints.TryParseDateBin(json, "observed_at", out _, out var error)
+            .Should().BeFalse();
+        error.Should().Contain("fixedBin.intervalUnit");
     }
 
     [UnitTest]

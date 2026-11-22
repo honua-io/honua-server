@@ -130,6 +130,12 @@ public interface IStudioPackageLifecycleService
 
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default);
+
+    Task<StudioPackageDraft?> RestoreDraftRevisionAsync(Guid draftId, RestoreStudioDraftRevisionCommand command, CancellationToken cancellationToken = default);
+
     Task<StudioPackageDraft?> UpdateDraftAsync(Guid draftId, UpdateStudioPackageDraftCommand command, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
@@ -251,6 +257,15 @@ public sealed record UpdateStudioPackageDraftCommand
     public required StudioPackageEnvelope Envelope { get; init; }
 
     public long? Generation { get; init; }
+
+    public string? ActorId { get; init; }
+}
+
+public sealed record RestoreStudioDraftRevisionCommand
+{
+    public required long TargetGeneration { get; init; }
+
+    public required long ExpectedGeneration { get; init; }
 
     public string? ActorId { get; init; }
 }

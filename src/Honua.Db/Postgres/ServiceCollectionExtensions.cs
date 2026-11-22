@@ -357,6 +357,11 @@ internal static partial class ServiceCollectionExtensions
         // Register Forms package store
         services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
+        // Task-first asset management: profiles, tasks and completion (ADR-0084)
+        services.AddScoped<Honua.Core.Features.Assets.IAssetProfileStore, Features.Assets.PostgresAssetProfileStore>();
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskStore, Features.Assets.PostgresWorkTaskStore>();
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskCompletionStore, Features.Assets.PostgresWorkTaskCompletionStore>();
+
         // Register back-office field review store
         services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
             Features.FieldWorkflows.PostgresFieldReviewStore>();
@@ -379,12 +384,17 @@ internal static partial class ServiceCollectionExtensions
                 metadataEnvironment,
                 serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"],
-                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
+                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>())
+            {
+                ActorProvider = serviceProvider.GetService<IMetadataActorProvider>(),
+            });
 
         // A host that replaces or decorates IMetadataV2GraphStore has no activation journal: the watch
         // store resolves to null there, so the watcher idles and its findings source reports notConfigured.
         services.AddScoped<ICatalogActivationWatchStore>(serviceProvider =>
             (serviceProvider.GetRequiredService<IMetadataV2GraphStore>() as ICatalogActivationWatchStore)!);
+        services.AddScoped<IMetadataFieldHistoryStore>(serviceProvider =>
+            (serviceProvider.GetRequiredService<IMetadataV2GraphStore>() as IMetadataFieldHistoryStore)!);
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.

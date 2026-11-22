@@ -52,13 +52,13 @@ internal sealed partial class GdalContourJobExecutor(
 
         if (!GdalJobInputReader.TryGetInput(parameters, "interval", out var intervalRaw) || string.IsNullOrWhiteSpace(intervalRaw))
         {
-            return JobExecutionResult.Failed("Invalid contour inputs: missing required input 'interval'.");
+            return JobExecutionResult.InvalidInput("Invalid contour inputs: missing required input 'interval'.");
         }
 
         if (!double.TryParse(intervalRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var interval)
             || double.IsNaN(interval) || double.IsInfinity(interval) || interval <= 0d)
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid contour inputs: 'interval' must be a positive finite number; got '{intervalRaw}'.");
         }
 
@@ -68,7 +68,7 @@ internal sealed partial class GdalContourJobExecutor(
             if (!double.TryParse(baseRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
                 || double.IsNaN(parsed) || double.IsInfinity(parsed))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid contour inputs: 'base' must be a finite number; got '{baseRaw}'.");
             }
             offset = parsed;
@@ -77,7 +77,7 @@ internal sealed partial class GdalContourJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid contour inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid contour inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -93,7 +93,7 @@ internal sealed partial class GdalContourJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

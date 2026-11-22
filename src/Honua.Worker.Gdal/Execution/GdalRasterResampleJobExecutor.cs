@@ -69,7 +69,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
 
         if (!TryReadPositiveDouble(parameters, "cellSize", out var cellSizeX, out var cellError))
         {
-            return JobExecutionResult.Failed($"Invalid resample inputs: {cellError}");
+            return JobExecutionResult.InvalidInput($"Invalid resample inputs: {cellError}");
         }
 
         var cellSizeY = cellSizeX;
@@ -77,7 +77,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             && !string.IsNullOrWhiteSpace(cellSizeYRaw)
             && !TryReadPositiveDouble(parameters, "cellSizeY", out cellSizeY, out var cellYError))
         {
-            return JobExecutionResult.Failed($"Invalid resample inputs: {cellYError}");
+            return JobExecutionResult.InvalidInput($"Invalid resample inputs: {cellYError}");
         }
 
         var resamplingFlag = "bilinear";
@@ -85,7 +85,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             && !string.IsNullOrWhiteSpace(resamplingRaw)
             && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid resample inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
                 "(nearestneighbor, bilinear, cubic, lanczos).");
         }
@@ -93,7 +93,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid resample inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid resample inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -109,7 +109,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             // Bound the caller-controlled OUTPUT resolution (-tr) before gdalwarp derives
@@ -120,7 +120,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             // input dimension caps plus the timeout/artifact ceilings remain the backstop.
             if (!TryGetInputGrid(sourceInput, out var inputDims, out var scaleX, out var scaleY, out var gridError))
             {
-                return JobExecutionResult.Failed($"Invalid resample inputs: {gridError}");
+                return JobExecutionResult.InvalidInput($"Invalid resample inputs: {gridError}");
             }
 
             if (!GdalOutputGridGuard.TryAdmitResolutionWithFootprint(
@@ -134,7 +134,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                     opts,
                     out var resolutionError))
             {
-                return JobExecutionResult.Failed($"Invalid resample inputs: {resolutionError}");
+                return JobExecutionResult.InvalidInput($"Invalid resample inputs: {resolutionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

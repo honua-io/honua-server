@@ -56,31 +56,31 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {inputError}");
         }
 
         if (!TryDecodeGeometry(inputs.TargetWkb, out var target, out var decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: targetWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {decodeError}");
         }
 
         if (!TryDecodeGeometry(inputs.ClipEnvelopeWkb, out var clip, out decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: clipEnvelopeWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {decodeError}");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: targetWkb {targetSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {targetSridError}.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(clip, inputs.Srid, out var clipSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", clipSridError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: clipEnvelopeWkb {clipSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {clipSridError}.");
         }
 
         target.SRID = inputs.Srid;
@@ -99,7 +99,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             var envelope = clip.EnvelopeInternal;
             if (envelope == null || envelope.IsNull)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     "Invalid clip inputs: clipEnvelopeWkb has no envelope.");
             }
 

@@ -738,6 +738,7 @@ public sealed class I3sProductionRouteRegistrationTests
     public void ScopedProvider_WithScopeValidation_MapsGeometryRoutesWithoutResolvingProvider()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddRouting();
         services.AddScoped<ISceneNodeGeometryProvider>(_ =>
             throw new InvalidOperationException("Endpoint mapping must not instantiate the provider."));
@@ -760,6 +761,7 @@ public sealed class I3sProductionRouteRegistrationTests
     public void ProviderFreeContainer_AdvertisesMetadataPreviewOnly()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddRouting();
         using var serviceProvider = services.BuildServiceProvider();
         serviceProvider.GetService<ISceneNodeGeometryProvider>().Should().BeNull();

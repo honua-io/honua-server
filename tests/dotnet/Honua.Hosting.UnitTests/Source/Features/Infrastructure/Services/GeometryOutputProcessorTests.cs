@@ -107,6 +107,43 @@ public sealed class GeometryOutputProcessorTests
     }
 
     [UnitTest]
+    public void ApplyLimits_WithSridlessGeometryAndRequestSrid_SimplifiesInThatSrid()
+    {
+        var limits = GeometryOutputProcessor.ForGeometrySrid(GeometryOutputProcessor.CreateEffectiveLimits(
+            _simplifyLimits, precisionOverride: null, simplifyToleranceOverride: 100d, forceSimplify: true), 4326);
+
+        var result = GeometryOutputProcessor.ApplyLimits(WiggleWithoutSrid(), limits);
+
+        result!.NumPoints.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void ApplyLimits_WithSridlessGeometryAndNoRequestSrid_SkipsSimplification()
+    {
+        var limits = GeometryOutputProcessor.CreateEffectiveLimits(
+            _simplifyLimits, precisionOverride: null, simplifyToleranceOverride: 100d, forceSimplify: true);
+
+        var result = GeometryOutputProcessor.ApplyLimits(WiggleWithoutSrid(), limits);
+
+        result!.NumPoints.Should().Be(20);
+    }
+
+    [UnitTest]
+    public void ApplyLimits_WithExplicitGeometrySrid_UsesGeometrySridOverRequestSrid()
+    {
+        // A 20-vertex line in EPSG:3857 (metres) whose 10 m wiggle simplifies under 100 m in 3857,
+        // whereas interpreting those metre coordinates as 4326 degrees would not simplify at 100 m.
+        var line = new GeometryFactory(new PrecisionModel(), 3857).CreateLineString(
+            Enumerable.Range(0, 20).Select(static i => new Coordinate(i * 100d, (i % 2) * 10d)).ToArray());
+        var limits = GeometryOutputProcessor.ForGeometrySrid(GeometryOutputProcessor.CreateEffectiveLimits(
+            _simplifyLimits, precisionOverride: null, simplifyToleranceOverride: 100d, forceSimplify: true), 4326);
+
+        var result = GeometryOutputProcessor.ApplyLimits(line, limits);
+
+        result!.NumPoints.Should().Be(2);
+    }
+
+    [UnitTest]
     public void ApplyLimits_WithSharedGeometry_RoundsACopy()
     {
         var shared = CreatePrecisePointZ();
@@ -180,4 +217,8 @@ public sealed class GeometryOutputProcessorTests
 
     private static Point CreatePrecisePointZ()
         => new GeometryFactory().CreatePoint(new CoordinateZ(1.123456, 2.987654, 7.5));
+
+    // Decoded OGC WKB carries no SRID; a 20-vertex line that wiggles by about 10 m.
+    private static LineString WiggleWithoutSrid() => new GeometryFactory().CreateLineString(
+        Enumerable.Range(0, 20).Select(static i => new Coordinate(i * 0.001d, (i % 2) * 0.0001d)).ToArray());
 }

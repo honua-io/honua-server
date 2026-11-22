@@ -579,7 +579,106 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         H3AggregationQuery h3Query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
     {
-        throw new NotSupportedException("DuckDB provider does not support H3 hexagonal aggregation.");
+        h3Query.RejectSummaryDefinitions();
+
+        if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 resolution must be between {H3AggregationQuery.MinResolution} and {H3AggregationQuery.MaxResolution}.");
+        }
+
+        if (h3Query.KRingDistance is < 0 or > H3AggregationQuery.MaxKRingDistance)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 k-ring distance must be between 0 and {H3AggregationQuery.MaxKRingDistance}.");
+        }
+
+        var mapping = _layerRegistry.GetRequiredMapping(layerId);
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var paramIndex = 1;
+
+        var resParam = $"${paramIndex++}";
+        parameters.Add(h3Query.Resolution);
+
+        var geoExpr = mapping.Srid != SpatialConstants.DefaultSrid
+            ? $"ST_Transform({mapping.QuotedGeometryColumn}, 'EPSG:{mapping.Srid}', 'EPSG:{SpatialConstants.DefaultSrid}', always_xy := true)"
+            : mapping.QuotedGeometryColumn;
+        var centroidExpr = $"ST_Centroid({geoExpr})";
+        var h3CellExpr = $"h3_latlng_to_cell(ST_Y({centroidExpr}), ST_X({centroidExpr}), {resParam})";
+
+        var polyfillCteLength = 0;
+        if (h3Query.PolyfillGeometry is { Length: > 0 })
+        {
+            var polyfillSrid = h3Query.PolyfillSrid ?? query.SpatialReferenceSrid ?? SpatialConstants.DefaultSrid;
+            var polyParam = $"${paramIndex++}";
+            parameters.Add(h3Query.PolyfillGeometry);
+            var polyGeom = polyfillSrid != SpatialConstants.DefaultSrid
+                ? $"ST_Transform(ST_GeomFromWKB({polyParam}), 'EPSG:{polyfillSrid}', 'EPSG:{SpatialConstants.DefaultSrid}', always_xy := true)"
+                : $"ST_GeomFromWKB({polyParam})";
+            sb.Append(CultureInfo.InvariantCulture,
+                $"WITH polyfill_cells AS (SELECT UNNEST(h3_polygon_wkt_to_cells(ST_AsText({polyGeom}), {resParam})) AS cell)");
+            polyfillCteLength = sb.Length;
+            sb.Append(' ');
+        }
+
+        var hasKRing = h3Query.KRingDistance is > 0;
+        sb.Append(hasKRing
+            ? "SELECT _h3cell, h3_h3_to_string(_h3cell) AS \"cellIndex\", ST_AsGeoJSON(ST_GeomFromText(h3_cell_to_boundary_wkt(_h3cell))) AS \"cellGeometry\""
+            : "SELECT h3_h3_to_string(_h3cell) AS \"cellIndex\", ST_AsGeoJSON(ST_GeomFromText(h3_cell_to_boundary_wkt(_h3cell))) AS \"cellGeometry\"");
+        AppendH3StatisticsColumns(sb, mapping, h3Query);
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $" FROM (SELECT *, {h3CellExpr} AS _h3cell FROM {mapping.QuotedTableName} WHERE {mapping.QuotedGeometryColumn} IS NOT NULL");
+        AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+        AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
+        sb.Append(") _src");
+
+        if (polyfillCteLength > 0)
+        {
+            sb.Append(" WHERE _h3cell IN (SELECT cell FROM polyfill_cells)");
+        }
+
+        sb.Append(" GROUP BY _h3cell");
+
+        if (hasKRing)
+        {
+            var innerSql = sb.ToString();
+            sb.Clear();
+            if (polyfillCteLength > 0)
+            {
+                sb.Append(innerSql[..polyfillCteLength]);
+                sb.Append(", aggregated AS (");
+                sb.Append(innerSql[(polyfillCteLength + 1)..]);
+            }
+            else
+            {
+                sb.Append("WITH aggregated AS (");
+                sb.Append(innerSql);
+            }
+
+            var kRingParam = $"${paramIndex++}";
+            parameters.Add(h3Query.KRingDistance!.Value);
+            sb.Append(") SELECT h3_h3_to_string(neighbor) AS \"cellIndex\", ST_AsGeoJSON(ST_GeomFromText(h3_cell_to_boundary_wkt(neighbor))) AS \"cellGeometry\"");
+            AppendH3KRingReaggregateColumns(sb, h3Query);
+            sb.Append(CultureInfo.InvariantCulture,
+                $" FROM aggregated a, UNNEST(h3_grid_disk(a._h3cell, {kRingParam})) AS _k(neighbor) GROUP BY neighbor");
+        }
+        else
+        {
+            sb.Append(" ORDER BY COUNT(*) DESC");
+        }
+
+        if (h3Query.MaxCells is > 0)
+        {
+            var maxCellsParam = $"${paramIndex++}";
+            parameters.Add(h3Query.MaxCells.Value);
+            sb.Append(CultureInfo.InvariantCulture, $" LIMIT {maxCellsParam}");
+        }
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
     public ParameterizedQuery BuildH3TileQuery(
@@ -913,6 +1012,12 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
         var geomCol = mapping.QuotedGeometryColumn;
+        var pushedBbox = TryAppendBboxCoveringFilter(sb, mapping, filter, ref paramIndex, parameters);
+        if (pushedBbox && filter.SpatialRelationship == SpatialRelationship.EnvelopeIntersects && filter.AllowEnvelopeOnly)
+        {
+            return;
+        }
+
         var filterGeomParam = BuildFilterGeometryExpression(filter, mapping, ref paramIndex, parameters);
 
         var clause = filter.SpatialRelationship switch
@@ -1258,6 +1363,72 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var distanceInCrsUnits = distanceInMeters / Honua.Core.Features.Infrastructure.Crs.CrsLinearUnitFactor.LinearUnitToMeters(mapping.Srid);
         parameters.Add(distanceInCrsUnits);
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
+    }
+
+    private static bool TryAppendBboxCoveringFilter(
+        StringBuilder sb,
+        DuckDBLayerMapping mapping,
+        SpatialFilter filter,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (mapping.QuotedBboxColumn is null
+            || filter.GetBboxCoveringBounds(mapping.Srid) is not { } bounds)
+        {
+            return false;
+        }
+
+        var bboxCol = mapping.QuotedBboxColumn;
+        var minXParam = $"${paramIndex++}";
+        var maxXParam = $"${paramIndex++}";
+        var minYParam = $"${paramIndex++}";
+        var maxYParam = $"${paramIndex++}";
+        parameters.Add(bounds.MinX);
+        parameters.Add(bounds.MaxX);
+        parameters.Add(bounds.MinY);
+        parameters.Add(bounds.MaxY);
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $" AND {bboxCol}.xmax >= {minXParam} AND {bboxCol}.xmin <= {maxXParam} AND {bboxCol}.ymax >= {minYParam} AND {bboxCol}.ymin <= {maxYParam}");
+        return true;
+    }
+
+    private static void AppendH3StatisticsColumns(
+        StringBuilder sb,
+        DuckDBLayerMapping mapping,
+        H3AggregationQuery h3Query)
+    {
+        if (h3Query.OutStatistics is { IsDefaultOrEmpty: false } stats)
+        {
+            var statsSql = BuildStatisticColumns(stats);
+            sb.Append(CultureInfo.InvariantCulture, $", {statsSql}");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $", COUNT({mapping.QuotedObjectIdColumn}) AS \"count\"");
+    }
+
+    private static void AppendH3KRingReaggregateColumns(StringBuilder sb, H3AggregationQuery h3Query)
+    {
+        if (h3Query.OutStatistics is not { IsDefaultOrEmpty: false } stats)
+        {
+            sb.Append(", SUM(a.\"count\") AS \"count\"");
+            return;
+        }
+
+        foreach (var stat in stats)
+        {
+            ValidateFieldName(stat.OutStatisticFieldName);
+            var alias = DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
+            var agg = stat.StatisticType switch
+            {
+                StatisticType.Count or StatisticType.Sum => $"SUM(a.{alias})",
+                StatisticType.Min => $"MIN(a.{alias})",
+                StatisticType.Max => $"MAX(a.{alias})",
+                _ => $"AVG(a.{alias})",
+            };
+            sb.Append(CultureInfo.InvariantCulture, $", {agg} AS {alias}");
+        }
     }
 
     private static bool IsUnlistedGeographicSridRange(int srid)

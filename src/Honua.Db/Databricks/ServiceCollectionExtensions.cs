@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Warehouse.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
@@ -68,6 +69,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IDatabricksFeatureDataAccess>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DatabricksFeatureStore>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, DatabricksWarehouseCapabilityDescriptor>());
 
         // Export the single dialect for this provider (architecture guardrail asserts one
         // dialect per provider). TryAdd so a primary RDBMS provider's dialect wins when

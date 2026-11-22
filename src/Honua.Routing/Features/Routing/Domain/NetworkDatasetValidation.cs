@@ -68,6 +68,12 @@ public static partial class NetworkDatasetValidation
             return false;
         }
 
+        if (ContainsDisallowedControlCharacter(name))
+        {
+            error = "Network dataset name must not contain control characters.";
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }
@@ -139,13 +145,35 @@ public static partial class NetworkDatasetValidation
 
     public static bool TryValidateDescription(string? description, out string error)
     {
-        if (description is not null && description.Length > MaxDescriptionLength)
+        if (description is not null)
         {
-            error = $"Network dataset description must be {MaxDescriptionLength} characters or fewer.";
-            return false;
+            if (description.Length > MaxDescriptionLength)
+            {
+                error = $"Network dataset description must be {MaxDescriptionLength} characters or fewer.";
+                return false;
+            }
+
+            if (ContainsDisallowedControlCharacter(description))
+            {
+                error = "Network dataset description must not contain control characters.";
+                return false;
+            }
         }
 
         error = string.Empty;
         return true;
+    }
+
+    internal static bool ContainsDisallowedControlCharacter(string value)
+    {
+        foreach (var ch in value)
+        {
+            if (char.IsControl(ch) || ch is '\u0085' or '\u2028' or '\u2029')
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

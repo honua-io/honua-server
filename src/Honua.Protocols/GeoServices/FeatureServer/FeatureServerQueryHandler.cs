@@ -974,7 +974,8 @@ internal sealed partial class FeatureServerQueryHandler(
             // quantization per feature inside PbfQueryFormatter and streams into a bounded spool
             // whenever Z/M detection and runtime-field discovery are not needed.
             var usePbfStreaming = isPbf && CanStreamPbf(queryLayer.Resource, validatedParams, effectiveLimit);
-            var useStreaming = usePbfStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+            var useParquetStreaming = isParquet && CanStreamParquet(queryLayer.Resource, validatedParams, effectiveLimit);
+            var useStreaming = usePbfStreaming || useParquetStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
                 && quantizationTransform is null
                 // The materialized formatter discovers runtime fields (notably the
                 // returnDistance column) and emits pjson/102100 aliases consistently.
@@ -1240,9 +1241,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 new StreamingQueryDispatch
                 {
                     UsePbfStreaming = usePbfStreaming,
+                    UseParquetStreaming = useParquetStreaming,
                     Query = query,
                     ValidatedParams = validatedParams,
                     OutputSrid = outputSrid,
+                    RequestedOutputSrid = requestedOutSrAlias,
                     QuantizationTransform = quantizationTransform,
                     Context = context,
                     Format = format
@@ -3025,6 +3028,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
+                if (!StatisticAliasRegex().IsMatch(outAlias))
+                {
+                    error = $"outStatisticFieldName '{outAlias}' must start with a letter or underscore and contain only letters, digits and underscores, at most 63 characters.";
+                    return false;
+                }
+
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
@@ -3770,4 +3779,8 @@ internal sealed partial class FeatureServerQueryHandler(
         @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingTermRegex();
+
+    // The alias becomes a SQL column alias; PostgreSQL identifiers stop at 63 bytes.
+    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_]{0,62}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex StatisticAliasRegex();
 }

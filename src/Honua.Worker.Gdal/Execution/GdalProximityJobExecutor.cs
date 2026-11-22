@@ -76,7 +76,7 @@ internal sealed partial class GdalProximityJobExecutor(
         {
             if (!DistanceUnits.Contains(distUnitsRaw.Trim()))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid proximity inputs: 'distUnits' value '{distUnitsRaw}' is not in the allowed set (GEO, PIXEL).");
             }
             distUnits = distUnitsRaw.Trim().ToUpperInvariant();
@@ -87,7 +87,7 @@ internal sealed partial class GdalProximityJobExecutor(
         {
             if (!TryParsePositive(maxRaw, out var parsed))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid proximity inputs: 'maxDistance' must be a positive finite number; got '{maxRaw}'.");
             }
             maxDistance = parsed;
@@ -97,13 +97,13 @@ internal sealed partial class GdalProximityJobExecutor(
         if (GdalJobInputReader.TryGetInput(parameters, "values", out var valuesRaw) && !string.IsNullOrWhiteSpace(valuesRaw)
             && !TryNormalizeValues(valuesRaw, out values, out var valuesError))
         {
-            return JobExecutionResult.Failed($"Invalid proximity inputs: {valuesError}");
+            return JobExecutionResult.InvalidInput($"Invalid proximity inputs: {valuesError}");
         }
 
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid proximity inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid proximity inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -119,7 +119,7 @@ internal sealed partial class GdalProximityJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

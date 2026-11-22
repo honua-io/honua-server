@@ -9,7 +9,8 @@ internal enum BuiltInExportFormat
 {
     Csv,
     Shapefile,
-    GeoPackage
+    GeoPackage,
+    GeoParquet
 }
 
 internal static class BuiltInExportFormats
@@ -19,7 +20,9 @@ internal static class BuiltInExportFormats
         {
             ["csv"] = BuiltInExportFormat.Csv,
             ["shapefile"] = BuiltInExportFormat.Shapefile,
-            ["gpkg"] = BuiltInExportFormat.GeoPackage
+            ["gpkg"] = BuiltInExportFormat.GeoPackage,
+            ["geoparquet"] = BuiltInExportFormat.GeoParquet,
+            ["parquet"] = BuiltInExportFormat.GeoParquet
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     internal static BuiltInExportFormat? Resolve(string? token) =>

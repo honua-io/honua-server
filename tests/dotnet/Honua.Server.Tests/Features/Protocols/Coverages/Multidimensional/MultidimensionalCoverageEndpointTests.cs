@@ -119,6 +119,33 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTheory]
+    [InlineData("name", "bad\r\n[ERR] forged")]
+    [InlineData("description", "desc\r\nforged")]
+    [InlineData("bucket", "bad..bucket")]
+    [InlineData("bucket", ".")]
+    [InlineData("objectKey", "file:///etc/passwd.nc4")]
+    [InlineData("objectKey", "bad\\path.nc4")]
+    [Endpoint("POST /api/v1/admin/multidim-coverages")]
+    public async Task Register_WithUnsafeInputFields_Returns400BeforeLayerLookup(string field, string value)
+    {
+        var request = new
+        {
+            layerId = 99999,
+            name = field == "name" ? value : "valid-name",
+            description = field == "description" ? value : null,
+            format = "NetCdf4",
+            provider = "AwsS3",
+            bucket = field == "bucket" ? value : "bucket",
+            objectKey = field == "objectKey" ? value : "granule.nc4",
+            variables = Array.Empty<string>()
+        };
+
+        var response = await _client.PostAsJsonAsync(Route, request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/multidim-coverages")]
     public async Task Register_WithLocalProvider_Returns400()
