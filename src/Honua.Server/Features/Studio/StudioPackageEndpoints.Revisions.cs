@@ -20,25 +20,28 @@ internal static partial class StudioPackageEndpoints
 {
     private const string DraftResourceType = "studio-package-draft";
 
+    // Route parameters bound by StudioDraftRevisionScope ([FromRoute(Name = "draftId")]) must sit in each endpoint's
+    // own template. The API-versioning group decorator also enumerates these endpoints without the group prefix, and
+    // an explicit route binding whose name is only in the prefix then fails host startup.
     private static void MapStudioDraftRevisionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/studio/drafts/{draftId:guid}/revisions")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/studio/drafts")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
 
-        group.MapGet(string.Empty, HandleListDraftRevisions)
+        group.MapGet("/{draftId:guid}/revisions", HandleListDraftRevisions)
             .WithDisplayName("List Studio Draft Revisions")
             .WithSummary("Lists retained Studio draft revision summaries in descending generation order.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        group.MapGet("/{generation:long}", HandleGetDraftRevision)
+        group.MapGet("/{draftId:guid}/revisions/{generation:long}", HandleGetDraftRevision)
             .WithDisplayName("Get Studio Draft Revision")
             .WithSummary("Returns one retained Studio draft revision envelope.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        group.MapPost("/{generation:long}/restore", HandleRestoreDraftRevision)
+        group.MapPost("/{draftId:guid}/revisions/{generation:long}/restore", HandleRestoreDraftRevision)
             .WithDisplayName("Restore Studio Draft Revision")
             .WithSummary("Restores a retained Studio draft revision through the canonical mutation runtime.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
