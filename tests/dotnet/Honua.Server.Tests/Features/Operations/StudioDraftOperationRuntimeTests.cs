@@ -566,11 +566,13 @@ public sealed partial class StudioDraftOperationRuntimeTests
         var descriptor = StudioDraftOperations.BuildDescriptors()
             .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
         var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.CreatePublicationRequest);
-        var sealedRequest = mapper.Map(
-            descriptor,
-            bridge.Request!,
-            bridge.Context!,
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var sealedRequest = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = bridge.Request!,
+            Context = bridge.Context!,
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
         var replay = mapper.MapReplay(sealedRequest);
         var sealedPayload = JsonSerializer.Deserialize(
             replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,
@@ -1003,17 +1005,19 @@ public sealed partial class StudioDraftOperationRuntimeTests
             },
         };
 
-        var mapped = mapper.Map(
-            descriptor,
-            request,
-            new OperationPolicyContext
+        var mapped = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext
             {
                 OperationInstanceId = "opinst-delete",
                 CorrelationId = "corr-delete",
                 TenantId = "tenant-a",
                 SchemaName = "tenant_schema",
             },
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
 
         mapped.OperationId.Should().Be(StudioDraftOperations.Delete);
         mapped.Kind.Should().Be(OperationClass.StudioDraftMutation);
@@ -1040,10 +1044,13 @@ public sealed partial class StudioDraftOperationRuntimeTests
 
         var validation = await executor.ValidateAsync(request);
         var mapped = new StudioDraftApprovalRequestMapper(StudioDraftOperations.Rollback).Map(
-            descriptor,
-            request,
-            new OperationPolicyContext(),
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            new OperationApprovalRequestContext
+            {
+                Descriptor = descriptor,
+                Request = request,
+                Context = new OperationPolicyContext(),
+                Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+            });
 
         validation.ApprovalPlan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
         mapped.Plan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
@@ -1060,11 +1067,13 @@ public sealed partial class StudioDraftOperationRuntimeTests
             StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
         var request = Request(StudioDraftOperations.SaveVersion, payload);
 
-        var mapped = mapper.Map(
-            descriptor,
-            request,
-            new OperationPolicyContext { TenantId = "tenant-a", SchemaName = "tenant_schema" },
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var mapped = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext { TenantId = "tenant-a", SchemaName = "tenant_schema" },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
         var replay = mapper.MapReplay(mapped);
         var replayPayload = JsonSerializer.Deserialize(
             replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,

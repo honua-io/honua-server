@@ -39,6 +39,7 @@ public static class AgentApprovalRule
         "admin.import.upload-object",
         "service.publish",
         "dataset.stage.import",
+        "dataset.stage.discard",
         StudioDraftMutationContext.PublicationOperationId,
         "studio.content.rollback",
     };

@@ -150,6 +150,11 @@ internal static class CacheOperationsEndpoints
         HttpContext context,
         ILogger<CacheOperationsEndpointsLog> logger)
     {
+        if (ValidateOperationsRequest(request) is { } validationError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
+        }
+
         var hasKeyPattern = !string.IsNullOrWhiteSpace(request.KeyPattern);
         var hasServiceId = !string.IsNullOrWhiteSpace(request.ServiceId);
         var hasScope = !string.IsNullOrWhiteSpace(request.Scope);
@@ -261,6 +266,11 @@ internal static class CacheOperationsEndpoints
             .Select(p => p.LayerIndex!.Value)
             .ToArray();
     }
+
+    private static string? ValidateOperationsRequest(CacheOperationsInvalidationRequest request)
+        => CacheInvalidationValidation.ValidateOptionalField(request.KeyPattern, "KeyPattern")
+            ?? CacheInvalidationValidation.ValidateOptionalField(request.ServiceId, "ServiceId")
+            ?? CacheInvalidationValidation.ValidateOptionalField(request.Scope, "Scope");
 
     private static double Ratio(long numerator, long denominator)
         => denominator > 0 ? (double)numerator / denominator : 0.0;
