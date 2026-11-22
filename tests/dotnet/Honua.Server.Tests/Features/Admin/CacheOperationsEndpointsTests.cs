@@ -152,16 +152,20 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
         object[] payloads =
         [
             new { keyPattern = "test\r\n[ERR] FORGED" },
+            new { keyPattern = "test\u2028FORGED" },
             new { serviceId = "svc\nFORGED" },
             new { scope = "all\r\nFORGED" },
             new { keyPattern = oversized },
             new { serviceId = oversized },
+            new { scope = oversized },
         ];
 
         foreach (var payload in payloads)
         {
             var response = await _client.PostAsJsonAsync("/api/v1/admin/operations/cache/invalidate", payload);
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("FORGED");
         }
     }
 
@@ -173,10 +177,13 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
         object[] payloads =
         [
             new { scope = "bad\r\n[ERR] FORGED_CACHE_SCOPE" },
+            new { scope = "bad\u2029FORGED_CACHE_SCOPE" },
+            new { scope = new string(' ', 256) + "all" },
             new { scope = "<script>alert(1)</script>" },
             new { scope = "service", serviceId = "svc\r\nFORGED" },
             new { scope = "layer", serviceId = oversized, layerId = 0 },
             new { scope = "collection", collectionId = "col\nFORGED" },
+            new { scope = "collection", collectionId = oversized },
         ];
 
         foreach (var payload in payloads)

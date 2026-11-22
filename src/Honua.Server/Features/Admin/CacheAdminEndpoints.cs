@@ -132,9 +132,8 @@ internal static class CacheAdminEndpoints
             return false;
         }
 
-        if (CacheInvalidationValidation.ContainsControlOrLineBreak(request.Scope))
+        if (!CacheInvalidationValidation.TryValidateOptionalField(request.Scope, "Scope", out error))
         {
-            error = "Scope must not contain control characters.";
             return false;
         }
 

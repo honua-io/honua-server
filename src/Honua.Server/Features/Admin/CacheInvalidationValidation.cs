@@ -15,15 +15,15 @@ internal static class CacheInvalidationValidation
             return true;
         }
 
-        if (ContainsControlOrLineBreak(value))
-        {
-            error = $"{fieldName} must not contain control characters.";
-            return false;
-        }
-
         if (value.Length > MaxFieldLength)
         {
             error = $"{fieldName} must be {MaxFieldLength} characters or fewer.";
+            return false;
+        }
+
+        if (ContainsControlOrLineBreak(value))
+        {
+            error = $"{fieldName} must not contain control characters.";
             return false;
         }
 
