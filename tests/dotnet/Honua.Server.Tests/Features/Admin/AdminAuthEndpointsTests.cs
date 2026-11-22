@@ -1002,7 +1002,7 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
 
     internal sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
     {
-        private readonly HttpClient _client;
+        private readonly StubHttpMessageHandler _handler;
         private readonly string _expectedDiscoveryUrl;
         private readonly StubOidcEndpoints _endpoints;
         private readonly string _accessToken;
@@ -1021,10 +1021,7 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
                 ?? new Uri(new Uri(expectedDiscoveryUrl), "/keys").ToString();
             _accessToken = accessToken ?? CreateAccessToken();
             _idToken = idToken ?? CreateIdToken("Test Admin", "admin");
-            _client = new HttpClient(CreateMessageHandler())
-            {
-                BaseAddress = new Uri("https://stub.local")
-            };
+            _handler = new StubHttpMessageHandler(this);
         }
 
         public Dictionary<string, string> LastTokenFormValues { get; } = new(StringComparer.Ordinal);
@@ -1038,12 +1035,16 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
             IdTokenOverride = null;
         }
 
-        public HttpClient CreateClient(string name) => _client;
+        public HttpClient CreateClient(string name) => new(_handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://stub.local")
+        };
+
         public HttpMessageHandler CreateMessageHandler() => new StubHttpMessageHandler(this);
 
         public void Dispose()
         {
-            _client.Dispose();
+            _handler.Dispose();
         }
 
         private sealed class StubHttpMessageHandler(StubHttpClientFactory owner) : HttpMessageHandler
