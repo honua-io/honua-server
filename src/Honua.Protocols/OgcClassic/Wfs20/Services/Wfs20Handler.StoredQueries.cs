@@ -424,19 +424,7 @@ internal sealed partial class Wfs20Handler
         FeatureQuery query;
         try
         {
-            using var cqlScope = WfsCqlFilterHelper.BeginScope(
-                WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
-            query = await BuildFeatureQueryAsync(
-                descriptor,
-                propertyName: null,
-                sortBy: null,
-                bbox: null,
-                filter: null,
-                resourceId: featureId,
-                srsName: null,
-                enforceResourceIdTypeMatch: true,
-                requireResourceIdQualifier: false,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            query = await BuildStoredFeatureQueryAsync(context, descriptor, featureId, cancellationToken).ConfigureAwait(false);
         }
         catch (WfsQueryException ex)
         {
@@ -461,6 +449,27 @@ internal sealed partial class Wfs20Handler
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
     }
 
+
+    private async ValueTask<FeatureQuery> BuildStoredFeatureQueryAsync(
+        HttpContext context,
+        WfsFeatureTypeDescriptor descriptor,
+        string featureId,
+        CancellationToken cancellationToken)
+    {
+        using var cqlScope = WfsCqlFilterHelper.BeginScope(
+            WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
+        return await BuildFeatureQueryAsync(
+            descriptor,
+            propertyName: null,
+            sortBy: null,
+            bbox: null,
+            filter: null,
+            resourceId: featureId,
+            srsName: null,
+            enforceResourceIdTypeMatch: true,
+            requireResourceIdQualifier: false,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<IResult> HandleManagedStoredQueryGetFeatureAsync(
         HttpContext context,
