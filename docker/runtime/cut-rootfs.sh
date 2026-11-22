@@ -31,3 +31,6 @@ chisel-wrapper --generate-dpkg-status "$root/var/lib/dpkg/status" -- \
     libc6_libs libgcc-s1_libs libicu78_libs libssl3t64_libs libstdc++6_libs \
     tzdata-legacy_zoneinfo tzdata_zoneinfo
 test -s "$root/var/lib/dpkg/status"
+# Preserve the publisher's launcher layout; Docker COPY dereferences symlinks.
+mkdir -p "$root/usr/bin"
+ln -s ../share/dotnet/dotnet "$root/usr/bin/dotnet"

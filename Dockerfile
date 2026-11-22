@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 FROM scratch AS chiseled-base
 COPY --from=chiseled-rootfs /rootfs/ /
 COPY --from=chiseled-publisher /usr/share/dotnet/ /usr/share/dotnet/
-COPY --from=chiseled-publisher /usr/bin/dotnet /usr/bin/dotnet
 COPY --from=chiseled-publisher /etc/passwd /etc/passwd
 COPY --from=chiseled-publisher /etc/group /etc/group
 COPY --from=chiseled-publisher --chown=1654:1654 /home/app/ /home/app/
