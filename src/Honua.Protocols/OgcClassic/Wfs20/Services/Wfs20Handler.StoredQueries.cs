@@ -424,7 +424,9 @@ internal sealed partial class Wfs20Handler
         FeatureQuery query;
         try
         {
-            query = await BuildStoredFeatureQueryAsync(context, descriptor, featureId, cancellationToken).ConfigureAwait(false);
+            using var cqlScope = WfsCqlFilterHelper.BeginScope(
+                WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
+            query = await BuildStoredFeatureQueryAsync(descriptor, featureId, cancellationToken).ConfigureAwait(false);
         }
         catch (WfsQueryException ex)
         {
@@ -451,13 +453,10 @@ internal sealed partial class Wfs20Handler
 
 
     private async ValueTask<FeatureQuery> BuildStoredFeatureQueryAsync(
-        HttpContext context,
         WfsFeatureTypeDescriptor descriptor,
         string featureId,
         CancellationToken cancellationToken)
     {
-        using var cqlScope = WfsCqlFilterHelper.BeginScope(
-            WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
         return await BuildFeatureQueryAsync(
             descriptor,
             propertyName: null,
