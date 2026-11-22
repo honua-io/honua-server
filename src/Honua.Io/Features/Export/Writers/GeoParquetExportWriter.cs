@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -54,11 +54,9 @@ internal static class GeoParquetExportWriter
         var encodingLimits = GeoParquetLimits.ForArtifact(request.Limits.GeoParquet);
         var resource = BuildResource(request);
         var objectIdFieldName = ResolveObjectIdFieldName(request.Fields);
-        var collected = await CollectFeaturesWithinBudgetAsync(
-            features, request.Fields.Length + 6, encodingLimits, cancellationToken).ConfigureAwait(false);
-
-        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(
-            QueryResult<Feature>.Create(collected.Length, collected),
+        var writtenCount = 0;
+        var (payload, _) = await GeoParquetFeatureWriter.FormatAsGeoParquetStreamAsync(
+            CountFeaturesAsync(cancellationToken),
             resource,
             new GeoParquetStreamEncodingOptions
             {
@@ -70,32 +68,19 @@ internal static class GeoParquetExportWriter
                 GeometryLimits = request.Limits.Geometry,
                 Logger = request.Logger,
                 EncodingLimits = encodingLimits
-            });
+            },
+            cancellationToken).ConfigureAwait(false);
 
-        return (payload, collected.Length);
-    }
+        return (payload, writtenCount);
 
-    private static async Task<ImmutableArray<Feature>> CollectFeaturesWithinBudgetAsync(
-        IAsyncEnumerable<Feature> features,
-        int columnCount,
-        GeoParquetLimits limits,
-        CancellationToken cancellationToken)
-    {
-        var collected = ImmutableArray.CreateBuilder<Feature>();
-        long totalBytes = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
+        async IAsyncEnumerable<Feature> CountFeaturesAsync([EnumeratorCancellation] CancellationToken token)
         {
-            var bytes = GeoParquetFeatureWriter.EstimateFeatureBytes(feature, columnCount);
-            totalBytes += bytes;
-            if (bytes > limits.MaxEstimatedBatchBytes || totalBytes > limits.MaxEstimatedInputBytes)
+            await foreach (var feature in features.WithCancellation(token).ConfigureAwait(false))
             {
-                throw new GeoParquetLimitExceededException();
+                writtenCount++;
+                yield return feature;
             }
-
-            collected.Add(feature);
         }
-
-        return collected.ToImmutable();
     }
 
     private static MetadataV2Object BuildResource(GeoParquetExportRequest request)
