@@ -20,6 +20,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
@@ -168,18 +169,24 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var capabilities = PooledTextBuilder.Rent();
-                try
+                var cacheKey = CapabilitiesDocumentCacheHelper.BuildWmsKey(
+                    new WmsCapabilitiesCacheRequest { Context = context, SnapshotEtag = snapshot.Etag, ServiceId = svcDef.Metadata.Id, Version = capabilitiesVersion },
+                    Array.ConvertAll(accessibleLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)),
+                    Array.ConvertAll(challengeLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)));
+                return await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>
                 {
-                    await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
-                    return PooledTextBuilder.ToUtf8Result(
-                        capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
-                }
-                finally
-                {
-                    PooledTextBuilder.Return(capabilities);
-                }
+                    var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
+                    var capabilities = PooledTextBuilder.Rent();
+                    try
+                    {
+                        await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
+                        return PooledTextBuilder.ToUtf8Result(capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
+                    }
+                    finally
+                    {
+                        PooledTextBuilder.Return(capabilities);
+                    }
+                }).ConfigureAwait(false);
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))

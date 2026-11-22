@@ -22,6 +22,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -59,36 +60,16 @@ internal sealed partial class Wfs20Handler
             var featureTypes = SelectAdvertisedFeatureTypes(
                 await GetPublishedFeatureTypesAsync(context, cancellationToken));
             var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service: null);
-            var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
-            var builtTypes = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
-                ? await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
-                : [];
-
-            var capabilities = new WfsCapabilities
-            {
-                UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
-                ServiceIdentification = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")
-                    ? CreateCatalogIdentification(metadata)
-                    : null,
-                ServiceProvider = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")
-                    ? CreateCatalogServiceProvider(metadata)
-                    : null,
-                OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
-                    ? BuildOperationsMetadata(wfsUrl)
-                    : null,
-                FeatureTypeList = builtTypes.Length > 0
-                    ? new FeatureTypeList { FeatureTypes = builtTypes }
-                    : null,
-                FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
-                    ? BuildFilterCapabilities()
-                    : null
-            };
-
-            foreach (var featureType in featureTypes.DistinctBy(featureType => featureType.NamespacePrefix))
-            {
-                capabilities.Namespaces.Add(featureType.NamespacePrefix, featureType.NamespaceUri);
-            }
+            var capabilities = await BuildCapabilitiesModelAsync(
+                context,
+                new WfsCapabilitiesBuildInput
+                {
+                    Snapshot = snapshot,
+                    RequestedSections = requestedSections,
+                    BaseUrl = baseUrl,
+                    FeatureTypes = featureTypes
+                },
+                cancellationToken).ConfigureAwait(false);
             Wfs20Log.GetCapabilitiesReturned(_logger);
             return capabilities;
         }
@@ -98,6 +79,53 @@ internal sealed partial class Wfs20Handler
             activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
             throw;
         }
+    }
+
+    private sealed class WfsCapabilitiesBuildInput
+    {
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+        internal required IReadOnlySet<string>? RequestedSections { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required ImmutableArray<WfsFeatureTypeDescriptor> FeatureTypes { get; init; }
+    }
+
+    private async Task<WfsCapabilities> BuildCapabilitiesModelAsync(
+        HttpContext context,
+        WfsCapabilitiesBuildInput input,
+        CancellationToken cancellationToken)
+    {
+        var metadata = PublishedMetadataProjection.ForCapabilities(input.Snapshot.Graph, service: null);
+        var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{input.BaseUrl}/wfs");
+        var builtTypes = ShouldIncludeCapabilitiesSection(input.RequestedSections, "FeatureTypeList")
+            ? await BuildFeatureTypesAsync(input.FeatureTypes, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        var capabilities = new WfsCapabilities
+        {
+            UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
+            ServiceIdentification = ShouldIncludeCapabilitiesSection(input.RequestedSections, "ServiceIdentification")
+                ? CreateCatalogIdentification(metadata)
+                : null,
+            ServiceProvider = ShouldIncludeCapabilitiesSection(input.RequestedSections, "ServiceProvider")
+                ? CreateCatalogServiceProvider(metadata)
+                : null,
+            OperationsMetadata = ShouldIncludeCapabilitiesSection(input.RequestedSections, "OperationsMetadata")
+                ? BuildOperationsMetadata(wfsUrl)
+                : null,
+            FeatureTypeList = builtTypes.Length > 0
+                ? new FeatureTypeList { FeatureTypes = builtTypes }
+                : null,
+            FilterCapabilities = ShouldIncludeCapabilitiesSection(input.RequestedSections, "Filter_Capabilities")
+                ? BuildFilterCapabilities()
+                : null
+        };
+
+        foreach (var featureType in input.FeatureTypes.DistinctBy(featureType => featureType.NamespacePrefix))
+        {
+            capabilities.Namespaces.Add(featureType.NamespacePrefix, featureType.NamespaceUri);
+        }
+
+        return capabilities;
     }
 
 
@@ -166,12 +194,13 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
+    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesFromSnapshotAsync(
         HttpContext context,
-        CancellationToken cancellationToken,
-        bool enforceAccess = true)
+        PublishedFeatureTypeQuery query,
+        CancellationToken cancellationToken)
     {
-        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = query.Snapshot;
+        var enforceAccess = query.AccessMode == FeatureTypeAccessMode.Enforce;
         var candidates = new List<(int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
@@ -372,10 +401,9 @@ internal sealed partial class Wfs20Handler
         string[] unknownTypes,
         CancellationToken cancellationToken)
     {
-        var allPublishedTypes = await GetPublishedFeatureTypesAsync(
+        var allPublishedTypes = await GetAllPublishedFeatureTypesAsync(
             context,
-            cancellationToken,
-            enforceAccess: false).ConfigureAwait(false);
+            cancellationToken).ConfigureAwait(false);
         return unknownTypes.Any(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
             && context.User.Identity?.IsAuthenticated != true;
     }

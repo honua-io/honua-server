@@ -15,6 +15,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Monitoring;
@@ -340,27 +341,35 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => OgcClassicRasterSupport.IsRenderableResource(l.Resource))
                 .ToArray();
-            var capabilities = PooledTextBuilder.Rent();
-            try
+            var cacheKey = ShouldDisableWmtsCaching(context)
+                ? null
+                : CapabilitiesDocumentCacheHelper.BuildWmtsKey(
+                    new WmtsCapabilitiesCacheRequest
+                    {
+                        Context = context,
+                        SnapshotEtag = snapshot.Etag,
+                        ServiceId = svcDef.Metadata.Id,
+                        ResponseMimeType = responseMimeType,
+                        SectionsMask = (int)sections,
+                        MaxZoom = wmtsMaxZoom
+                    },
+                    Array.ConvertAll(visibleLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)));
+            return await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>
             {
-                await BuildWmtsCapabilitiesAsync(
-                    capabilities,
-                    context.Request,
-                    svcDef,
-                    visibleLayers,
-                    snapshot.Graph,
-                    sections,
-                    wmtsMaxZoom,
-                    capabilitiesFeatureReader,
-                    tileMatrixSetRegistry,
-                    logger,
-                    cancellationToken).ConfigureAwait(false);
-                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
-            }
-            finally
-            {
-                PooledTextBuilder.Return(capabilities);
-            }
+                var capabilities = PooledTextBuilder.Rent();
+                try
+                {
+                    await BuildWmtsCapabilitiesAsync(
+                        capabilities, context.Request, svcDef, visibleLayers, snapshot.Graph,
+                        sections, wmtsMaxZoom, capabilitiesFeatureReader, tileMatrixSetRegistry, logger, cancellationToken)
+                        .ConfigureAwait(false);
+                    return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+                }
+                finally
+                {
+                    PooledTextBuilder.Return(capabilities);
+                }
+            }).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1663,6 +1672,7 @@ internal static class WmtsRequestHandlers
             // Legend metadata is optional; an unavailable style must not remove the
             // layer or prevent clients from discovering otherwise usable map tiles.
             OgcClassicLog.LegendSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return false;
         }
     }
@@ -1731,6 +1741,7 @@ internal static class WmtsRequestHandlers
             // Intentionally generic: a per-layer temporal resolution failure must degrade to no
             // TIME dimension rather than fail the whole capabilities document (see doc comment above).
             OgcClassicLog.TemporalExtentSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return null;
         }
     }
