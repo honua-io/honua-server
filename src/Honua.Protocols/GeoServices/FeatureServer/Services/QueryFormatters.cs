@@ -1416,7 +1416,8 @@ internal sealed class StreamingQueryFormatter
 
     private static HashSet<string>? CreateFieldLookup(string[]? outFields)
     {
-        if (outFields == null || outFields.Length == 0)
+        if (outFields == null || outFields.Length == 0 ||
+            (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)))
         {
             return null;
         }
