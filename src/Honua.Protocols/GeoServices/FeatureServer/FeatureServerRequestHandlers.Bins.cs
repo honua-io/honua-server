@@ -532,8 +532,8 @@ internal static partial class FeatureServerEndpoints
         }
         else if (element.TryGetProperty("fixedBin", out var fixEl) && fixEl.ValueKind == JsonValueKind.Object)
         {
-            // An omitted intervalUnit keeps its historical days default; a present one must be valid.
-            var (interval, intervalError) = ParseFixedBinInterval(fixEl, "dateBin.fixedBin", defaultUnitToDays: true);
+            // An omitted intervalUnit defaults to days; a present one must be valid.
+            var (interval, intervalError) = ParseFixedBinInterval(fixEl, "dateBin.fixedBin", defaultUnit: "days");
             if (intervalError is not null)
             {
                 error = intervalError;

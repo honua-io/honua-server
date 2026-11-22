@@ -1698,17 +1698,13 @@ internal static partial class FeatureServerEndpoints
         }
 
         // sqlType is optional and overloaded across two distinct Esri concepts:
-        //   * a SQL-dialect selector (standard|native): standardized SQL vs native DBMS SQL;
+        //   * a SQL-dialect selector (standard|native) or omitted, validated as a where clause;
         //   * the canonical validateSQL clause-type enum the real ArcGIS clients send
         //     (esriSQLTypeWhere/OrderBy/Expression) plus its short forms (where/orderBy/
         //     expression) and the ArcGIS API for Python's `statement` alias.
-        // Accept both dialect values (standard|native) and the service-level clause-type vocabulary.
-        // Dialect values (and an omitted sqlType) validate as a where-style ArcGIS SQL expression;
-        // clause-type values route through the shared service validator so orderBy is validated correctly.
         var sqlType = GetValueString(values, "sqlType");
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
-        // A dialect selector (standard|native) or an omitted sqlType validates as a where clause.
         var clauseType = "where";
         if (!string.IsNullOrWhiteSpace(sqlType) && !IsSqlDialectType(sqlType))
         {

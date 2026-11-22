@@ -279,7 +279,7 @@ internal static partial class FeatureServerEndpoints
             if (root.TryGetProperty("fixedBin", out var fixedElement) &&
                 fixedElement.ValueKind == JsonValueKind.Object)
             {
-                var (interval, intervalError) = ParseFixedBinInterval(fixedElement, "fixedBin", defaultUnitToDays: false);
+                var (interval, intervalError) = ParseFixedBinInterval(fixedElement, "fixedBin", defaultUnit: null);
                 if (intervalError is not null)
                 {
                     error = intervalError;
@@ -316,10 +316,10 @@ internal static partial class FeatureServerEndpoints
     // A fixed bin has one length, so only fixed-length units are accepted; months and years
     // vary in length and belong to calendarBin. Unknown units fail instead of binning by days.
     // Sub-second units are refused because the DuckDB builder bins in whole seconds.
-    internal static (TimeSpan? Interval, string? Error) ParseFixedBinInterval(
+    private static (TimeSpan? Interval, string? Error) ParseFixedBinInterval(
         JsonElement fixedElement,
         string paramName,
-        bool defaultUnitToDays)
+        string? defaultUnit)
     {
         if (!fixedElement.TryGetProperty("intervalCount", out var countElement) ||
             !countElement.TryGetInt32(out var count))
@@ -334,9 +334,9 @@ internal static partial class FeatureServerEndpoints
 
         if (!fixedElement.TryGetProperty("intervalUnit", out var unitElement))
         {
-            return defaultUnitToDays
-                ? ResolveFixedInterval(count, "days", paramName)
-                : (null, $"{paramName}.intervalUnit is required.");
+            return defaultUnit is null
+                ? (null, $"{paramName}.intervalUnit is required.")
+                : ResolveFixedInterval(count, defaultUnit, paramName);
         }
 
         var unit = unitElement.ValueKind == JsonValueKind.String
