@@ -2263,6 +2263,32 @@ baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the sec
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
 
+### WPS canonical rejection host lifetime
+
+The four `Wps20EndpointsTests.CanonicalExecute_UnsupportedContract_IsRejectedBeforeSubmission`
+theory cases share a lazy class-owned application with the same canonical process
+catalog and job-service substitute. Every case creates a fresh client and clears
+received job-service calls before sending its request. Other configured hosts
+retain their isolation. All 125 assertion lines and 154 selection/endpoint
+metadata lines are unchanged, including the bad-request response and assertion
+that rejected contracts never submit a job.
+
+Four interleaved baseline/candidate runs of the complete unchanged WFS 6 owning
+shard passed the same 12 cases, with zero skips; 11 belong to the WPS class.
+Summed class seconds were 8.783987 / 4.083868 and 7.195504 / 3.723192
+(baseline / candidate); the median was 7.989745 -> 3.903530 seconds.
+Fixture-inclusive TRX shard intervals were 27.592498 / 22.787546 and
+25.240013 / 27.248837 seconds. Their median was 26.416256 -> 25.018192 seconds,
+a measured saving of 1.398064 seconds (0.023301 runner-minutes), with one runner
+before and after. Both class pairs improved, but the second full-shard pair was
+slower; this variable small sample does not establish PR critical-path savings.
+Compilation/process time is excluded. This removes three redundant configured
+application boots without splitting cases or reducing assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
