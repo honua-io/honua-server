@@ -97,6 +97,14 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             self.assertIn('8444 http://compose-manager:8080;', edge_config)
             self.assertIn('default http://honua:8080;', edge_config)
 
+    def test_proxied_responses_hide_duplicate_upstream_security_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            edge_config = (path / 'console.nginx.conf').read_text()
+            proxy_block = edge_config.split('location / {', 1)[1].split('}', 1)[0]
+            self.assertIn('proxy_hide_header X-Content-Type-Options;', proxy_block)
+            self.assertIn('proxy_hide_header Referrer-Policy;', proxy_block)
+
     def test_console_advertises_the_https_edge_for_generated_map_urls(self):
         with tempfile.TemporaryDirectory() as directory:
             path, rendered, _ = self.packaged_console_install(Path(directory))
