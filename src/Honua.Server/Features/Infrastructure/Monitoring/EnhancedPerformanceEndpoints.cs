@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Authentication;
@@ -374,13 +375,49 @@ internal static partial class EnhancedPerformanceEndpoints
         }
     }
 
+    internal const int MaxCacheInvalidationPatternLength = 256;
+
+    internal static string? ValidateInvalidationPattern(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return "Pattern parameter is required for cache invalidation";
+        }
+
+        if (pattern.Length > MaxCacheInvalidationPatternLength)
+        {
+            return $"Pattern parameter must not exceed {MaxCacheInvalidationPatternLength} characters";
+        }
+
+        foreach (var ch in pattern)
+        {
+            if (char.IsControl(ch))
+            {
+                return "Pattern parameter must not contain control characters";
+            }
+        }
+
+        return null;
+    }
+
+    private static void LogCacheInvalidationError(HttpContext httpContext, string? pattern, Exception ex)
+    {
+        var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Honua.Monitoring");
+        if (logger.IsEnabled(LogLevel.Error))
+        {
+            var sanitizedPattern = LogValueRedactor.SanitizeForLog(pattern ?? "Unknown");
+            MonitoringLog.CacheInvalidationFailed(logger, sanitizedPattern, ex);
+        }
+    }
+
     private static async Task<IResult> InvalidateCache(HttpContext httpContext, [FromQuery] string? pattern = null)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(pattern))
+            if (ValidateInvalidationPattern(pattern) is { } validationError)
             {
-                return Results.BadRequest("Pattern parameter is required for cache invalidation");
+                return Results.BadRequest(validationError);
             }
 
             var cacheManager = httpContext.RequestServices.GetService<QueryResultCacheManager>();
@@ -394,7 +431,7 @@ internal static partial class EnhancedPerformanceEndpoints
             var invalidatedCount = await cacheManager.InvalidateAsync(pattern);
             var response = new CacheInvalidationResponse
             {
-                Pattern = pattern,
+                Pattern = pattern!,
                 EntriesInvalidated = invalidatedCount,
                 InvalidatedAt = DateTime.UtcNow
             };
@@ -405,9 +442,7 @@ internal static partial class EnhancedPerformanceEndpoints
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
-                .CreateLogger("Honua.Monitoring");
-            MonitoringLog.CacheInvalidationFailed(logger, pattern ?? "Unknown", ex);
+            LogCacheInvalidationError(httpContext, pattern, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 httpContext,
                 "Cache invalidation error. See server logs for details.");
