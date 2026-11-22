@@ -853,7 +853,7 @@ internal sealed partial class ODataSearchService
             return optionsByName;
         }
 
-        var segments = SplitTopLevel(expand);
+        var segments = ODataUtilityService.SplitTopLevel(expand);
         for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
         {
             var trimmed = segments[segmentIndex].Trim();
@@ -947,38 +947,6 @@ internal sealed partial class ODataSearchService
 
         options = null!;
         return false;
-    }
-
-    private static List<string> SplitTopLevel(string expression)
-    {
-        var result = new List<string>();
-        var depth = 0;
-        var start = 0;
-
-        for (var i = 0; i < expression.Length; i++)
-        {
-            var c = expression[i];
-            if (c == '(')
-            {
-                depth++;
-            }
-            else if (c == ')')
-            {
-                depth = Math.Max(0, depth - 1);
-            }
-            else if (c == ',' && depth == 0)
-            {
-                result.Add(expression[start..i]);
-                start = i + 1;
-            }
-        }
-
-        if (start < expression.Length)
-        {
-            result.Add(expression[start..]);
-        }
-
-        return result;
     }
 
     [GeneratedRegex(@"""[^""]+""|\S+", RegexOptions.CultureInvariant)]

@@ -566,10 +566,69 @@ internal static class ODataUtilityService
 
         if (!string.IsNullOrWhiteSpace(expand))
         {
-            selections.AddRange(expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            foreach (var segment in SplitTopLevel(expand))
+            {
+                var expansion = segment.Trim();
+                var optionIndex = expansion.IndexOf('(');
+                var name = optionIndex < 0 ? expansion : expansion[..optionIndex].Trim();
+                if (name.Length == 0)
+                {
+                    continue;
+                }
+
+                string? expandedSelect = null;
+                if (optionIndex >= 0 && expansion.EndsWith(')'))
+                {
+                    foreach (var option in expansion[(optionIndex + 1)..^1]
+                                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        if (option.StartsWith("$select=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            expandedSelect = option[8..];
+                        }
+                    }
+                }
+
+                // Parentheses distinguish expanded navigation properties from selected
+                // structural properties in an OData context URL.
+                selections.RemoveAll(item => item.Equals(name, StringComparison.OrdinalIgnoreCase));
+                selections.Add($"{name}({BuildContextSelection(expandedSelect, null)})");
+            }
         }
 
         return selections.Count == 0 ? null : string.Join(",", selections.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    internal static List<string> SplitTopLevel(string expression)
+    {
+        var result = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i < expression.Length; i++)
+        {
+            var c = expression[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+            }
+            else if (c == ',' && depth == 0)
+            {
+                result.Add(expression[start..i]);
+                start = i + 1;
+            }
+        }
+
+        if (start < expression.Length)
+        {
+            result.Add(expression[start..]);
+        }
+
+        return result;
     }
 
     public static Dictionary<string, object?> ApplySelect(Dictionary<string, object?> payload, string select)

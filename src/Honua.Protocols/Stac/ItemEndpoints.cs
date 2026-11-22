@@ -269,6 +269,13 @@ internal static class ItemEndpoints
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
 
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Catalog);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
