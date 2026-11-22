@@ -52,6 +52,9 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         {
             services.RemoveAll<IFeatureDataProvider>();
             services.AddSingleton(provider);
+            // Collection metadata reads extents through the directly injected reader.
+            services.RemoveAll<IFeatureReader>();
+            services.AddSingleton(_reader);
             services.PostConfigure<StacOptions>(options => options.NumberMatchedPolicy = StacNumberMatchedPolicy.OmitWhenExpensive);
         });
     }
