@@ -129,7 +129,8 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
             var completed = await Task.WhenAny(tick, available, draining).ConfigureAwait(false);
             if (completed == draining)
             {
-                await WriteAsync(context, RealtimeStreamAdmission.FormatSseRetry(session)).ConfigureAwait(false);
+                await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, session, context.RequestAborted)
+                    .ConfigureAwait(false);
                 return;
             }
             if (completed == tick)
@@ -146,6 +147,10 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
                 if (delivery is RealtimeDelivery.Event item)
                 {
                     session.RecordDelivery(item.Value.CreatedAt);
+                }
+                else if (delivery is RealtimeDelivery.Reset reset)
+                {
+                    session.RecordReset(reset.Reason);
                 }
             }
             available = reader.WaitToReadAsync(context.RequestAborted).AsTask();

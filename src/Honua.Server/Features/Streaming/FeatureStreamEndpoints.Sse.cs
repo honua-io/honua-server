@@ -210,6 +210,7 @@ internal static partial class FeatureStreamEndpoints
                     var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
                     await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, linkedCts.Token)
                         .ConfigureAwait(false);
+                    session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
                     var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
                     if (snapshotScopeError is not null)
                     {
@@ -553,6 +554,7 @@ internal static partial class FeatureStreamEndpoints
                             linkedCts.Token).ConfigureAwait(false);
 
                         liveDelivered.MarkDelivered(liveEnvelope.Cursor);
+                        session.Lifecycle?.RecordDelivery(liveEnvelope.Timestamp);
                     }
 
                     await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
@@ -651,6 +653,7 @@ internal static partial class FeatureStreamEndpoints
         {
             var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
             await WriteSseResetAsync(response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, cancellationToken).ConfigureAwait(false);
+            recovery.Session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
             var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, recovery.Filter);
             if (snapshotScopeError is not null)
             {

@@ -13,6 +13,7 @@ internal static class RealtimeStreamAdmission
     internal const string SseTransport = "sse";
     internal const string WebSocketTransport = "websocket";
     internal const int RetryAfterSeconds = 2;
+    internal static readonly TimeSpan TerminalWriteBudget = TimeSpan.FromSeconds(2);
 
     // RFC 6455 section 7.4.1 reserves 1012 for "service restart"; WebSocketCloseStatus has no member for it.
     internal const WebSocketCloseStatus ServiceRestart = (WebSocketCloseStatus)1012;
@@ -42,11 +43,14 @@ internal static class RealtimeStreamAdmission
     }
 
     // The terminal SSE frame: clients reconnect after the jittered delay, normally to another task.
+    // Bounded so a stalled client cannot hold the drain open until the lifecycle abort deadline.
     internal static async Task WriteSseRetryAsync(HttpResponse response, IRealtimeStreamSession session,
         CancellationToken cancellationToken)
     {
-        await response.WriteAsync(FormatSseRetry(session), cancellationToken).ConfigureAwait(false);
-        await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TerminalWriteBudget);
+        await response.WriteAsync(FormatSseRetry(session), budget.Token).ConfigureAwait(false);
+        await response.Body.FlushAsync(budget.Token).ConfigureAwait(false);
     }
 
     internal static string FormatSseRetry(IRealtimeStreamSession session)

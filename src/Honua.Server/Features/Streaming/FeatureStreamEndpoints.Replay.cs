@@ -28,13 +28,13 @@ internal static partial class FeatureStreamEndpoints
         var cursor = fromCursor;
         var delivered = 0L;
         await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), fromCursor, cancellationToken)
+            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock, sessionManager), fromCursor, cancellationToken)
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
             await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
+                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock, sessionManager), cursor, cancellationToken)
                 .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
@@ -109,7 +109,7 @@ internal static partial class FeatureStreamEndpoints
             if (events.Count < batchSize)
             {
                 await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
-                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
+                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock, sessionManager), cursor, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             }
@@ -122,7 +122,8 @@ internal static partial class FeatureStreamEndpoints
     private sealed record WebSocketReplayContext(
         FeatureStreamReplayContext Replay,
         WebSocket Socket,
-        SemaphoreSlim WriteLock);
+        SemaphoreSlim WriteLock,
+        FeatureStreamSessionManager? SessionManager);
 
     private static async Task EnsureWebSocketReplayableAfterAsync(
         WebSocketReplayContext context,
@@ -143,6 +144,7 @@ internal static partial class FeatureStreamEndpoints
                     Reason = RealtimeResetReasons.Retention,
                     Head = FeatureStreamCursor.Format(head)
                 }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+            context.SessionManager?.RecordReset(context.Replay.SessionId, RealtimeResetReasons.Retention);
             throw;
         }
     }
@@ -219,6 +221,7 @@ internal static partial class FeatureStreamEndpoints
                     envelope.Cursor,
                     cancellationToken).ConfigureAwait(false);
                 await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+                sessionManager.RecordDelivery(sessionId, envelope.Timestamp);
                 delivered++;
             }
 

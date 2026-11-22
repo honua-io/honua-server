@@ -152,6 +152,7 @@ internal static partial class RealtimeNotificationEndpoints
                         {
                             return;
                         }
+                        realtime.RecordDelivery(item.Value.CreatedAt);
                         break;
                     case RealtimeDelivery.Reset reset:
                         await WriteFrameAsync(context.Response, new StreamFrame(new RealtimePosition(request.Family, reset.Head), "reset", writer =>
@@ -161,6 +162,7 @@ internal static partial class RealtimeNotificationEndpoints
                             writer.WriteNumber("head", reset.Head);
                             writer.WriteEndObject();
                         }), lifetime.Token).ConfigureAwait(false);
+                        realtime.RecordReset(reset.Reason);
                         return;
                     case RealtimeDelivery.Heartbeat:
                         await context.Response.WriteAsync(": hb\n\n", lifetime.Token).ConfigureAwait(false);
@@ -176,6 +178,7 @@ internal static partial class RealtimeNotificationEndpoints
         catch (GeoprocessingAuthorizationException)
         {
             // Authorization changed after admission: close without sending another job frame.
+            realtime.RecordRevocation();
         }
         catch (GeoprocessingNotFoundException)
         {

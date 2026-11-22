@@ -333,6 +333,30 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
+    internal void AttachLifecycle(Guid sessionId, IRealtimeStreamSession lifecycle)
+    {
+        if (_sessions.TryGetValue(sessionId, out var entry))
+        {
+            entry.Lifecycle = lifecycle;
+        }
+    }
+
+    internal void RecordDelivery(Guid sessionId, DateTimeOffset committedAt)
+    {
+        if (_sessions.TryGetValue(sessionId, out var entry))
+        {
+            entry.Lifecycle?.RecordDelivery(committedAt);
+        }
+    }
+
+    internal void RecordReset(Guid sessionId, string reason)
+    {
+        if (_sessions.TryGetValue(sessionId, out var entry))
+        {
+            entry.Lifecycle?.RecordReset(reason);
+        }
+    }
+
     public void RemoveSession(Guid sessionId, FeatureStreamDisconnectReason reason)
         => TryRemoveSession(sessionId, reason);
 
@@ -349,6 +373,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         if (reason == FeatureStreamDisconnectReason.SlowConsumer)
         {
             _metrics.RecordSlowConsumerDrop(entry.Transport);
+            entry.Lifecycle?.RecordReset(RealtimeResetReasons.SlowConsumer);
+        }
+        else if (reason == FeatureStreamDisconnectReason.PolicyRevoked)
+        {
+            entry.Lifecycle?.RecordRevocation();
         }
 
         UpdateGaugeSnapshot();
@@ -815,6 +844,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public string? ClientLabel { get; }
         public string Transport { get; }
         public string AdmissionPartition { get; }
+        public IRealtimeStreamSession? Lifecycle { get; set; }
         public bool HasSubscriptions
         {
             get
@@ -1070,6 +1100,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 var authorized = current.Filter is null ? envelope : current.Filter.PrepareDelivery(envelope);
                 if (authorized is null)
                 {
+                    if (current.Filter is not null)
+                    {
+                        Lifecycle?.RecordAuthorizationFilter();
+                    }
                     return null;
                 }
 
@@ -1241,6 +1275,7 @@ internal sealed class FeatureStreamSession : IDisposable
     public void AttachLifecycle(IRealtimeStreamSession lifecycle)
     {
         Lifecycle = lifecycle;
+        _manager.AttachLifecycle(SessionId, lifecycle);
         _drainSignal = lifecycle.DrainingToken.Register(RequestServiceRestart);
     }
 

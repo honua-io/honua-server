@@ -228,7 +228,15 @@ internal static partial class ObservationStreamEndpoints
                         string.Concat(message.Cursor is null ? "" : "id: " + message.Cursor + "\n",
                             "event: ", message.Event, "\ndata: ", message.Json, "\n\n"), ct).ConfigureAwait(false);
                     await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
-                    if (frame is RealtimeDelivery.Reset) return;
+                    if (frame is RealtimeDelivery.Event item)
+                    {
+                        session.Lifecycle?.RecordDelivery(item.Value.CreatedAt);
+                    }
+                    else if (frame is RealtimeDelivery.Reset reset)
+                    {
+                        session.Lifecycle?.RecordReset(reset.Reason);
+                        return;
+                    }
                 }
 
                 await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
@@ -287,8 +295,13 @@ internal static partial class ObservationStreamEndpoints
         long? datastreamId,
         WebSocket? socket)
     {
-        if (session.DisconnectReason != ObservationStreamDisconnectReason.SlowConsumer
-            || context.RequestAborted.IsCancellationRequested)
+        if (session.DisconnectReason != ObservationStreamDisconnectReason.SlowConsumer)
+        {
+            return;
+        }
+
+        session.Lifecycle?.RecordReset(RealtimeResetReasons.SlowConsumer);
+        if (context.RequestAborted.IsCancellationRequested)
         {
             return;
         }

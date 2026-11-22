@@ -356,7 +356,6 @@ internal static partial class FeatureStreamEndpoints
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    // Several limits can refuse a session (per client, per tenant or principal, per node), so the answer names none.
     private static async Task WriteSseServiceRestartAsync(HttpContext context, FeatureStreamSession session)
     {
         if (!session.ServiceRestart || session.Lifecycle is not { } realtime || context.RequestAborted.IsCancellationRequested
@@ -376,6 +375,7 @@ internal static partial class FeatureStreamEndpoints
         }
     }
 
+    // Several limits can refuse a session (per client, per tenant or principal, per node), so the answer names none.
     private static IResult CreateSessionLimitExceeded(HttpContext context)
         => ProblemDetailsHelpers.CreateAdminProblem(
                 context,

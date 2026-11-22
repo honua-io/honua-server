@@ -1554,6 +1554,7 @@ internal static partial class FeatureStreamEndpoints
                 WebSocketMessageType.Text,
                 endOfMessage: true,
                 cancellationToken).ConfigureAwait(false);
+            sessionManager?.RecordDelivery(sessionId, stamped.Timestamp);
             return true;
         }
         finally
