@@ -122,7 +122,7 @@ public sealed class QuantizedMeshTileWriterTests
 
         var bytes = QuantizedMeshTileWriter.Write(new QuantizedMeshTileInput
         {
-            Bounds = new TerrainGeographicBounds(-180.0, -90.0, 0.0, 90.0),
+            Bounds = new TerrainGeographicBounds { West = -180.0, South = -90.0, East = 0.0, North = 90.0 },
             GridSize = gridSize,
             Elevations = elevations,
             IncludeVertexNormals = true
@@ -144,7 +144,7 @@ public sealed class QuantizedMeshTileWriterTests
         {
             var bytes = QuantizedMeshTileWriter.Write(new QuantizedMeshTileInput
             {
-                Bounds = new TerrainGeographicBounds(west, -90.0, west + 180.0, 90.0),
+                Bounds = new TerrainGeographicBounds { West = west, South = -90.0, East = west + 180.0, North = 90.0 },
                 GridSize = gridSize,
                 Elevations = BuildSlopedElevations(gridSize, baseHeight: 100.0, eastSlope: 0.0, northSlope: 0.0)
             });

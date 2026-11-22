@@ -101,19 +101,17 @@ public static class QuantizedMeshEllipsoid
 
     internal static byte[] ComputeOctEncodedVertexNormals(ReadOnlySpan<EcefPoint> positions, ReadOnlySpan<uint> indices)
     {
-        var accumX = new double[positions.Length];
-        var accumY = new double[positions.Length];
-        var accumZ = new double[positions.Length];
+        var sums = new EcefPoint[positions.Length];
 
         for (var i = 0; i + 2 < indices.Length; i += 3)
         {
-            AccumulateTriangleNormal(positions, indices[i], indices[i + 1], indices[i + 2], accumX, accumY, accumZ);
+            AccumulateTriangleNormal(positions, indices.Slice(i, 3), sums);
         }
 
         var encoded = new byte[positions.Length * 2];
         for (var i = 0; i < positions.Length; i++)
         {
-            var normal = NormalizeOrRadial(accumX[i], accumY[i], accumZ[i], positions[i]);
+            var normal = NormalizeOrRadial(sums[i], positions[i]);
             var (octX, octY) = OctEncode(normal.X, normal.Y, normal.Z);
             encoded[i * 2] = octX;
             encoded[(i * 2) + 1] = octY;
@@ -169,16 +167,12 @@ public static class QuantizedMeshEllipsoid
 
     private static void AccumulateTriangleNormal(
         ReadOnlySpan<EcefPoint> positions,
-        uint i0,
-        uint i1,
-        uint i2,
-        double[] accumX,
-        double[] accumY,
-        double[] accumZ)
+        ReadOnlySpan<uint> face,
+        EcefPoint[] sums)
     {
-        var p0 = positions[(int)i0];
-        var p1 = positions[(int)i1];
-        var p2 = positions[(int)i2];
+        var p0 = positions[(int)face[0]];
+        var p1 = positions[(int)face[1]];
+        var p2 = positions[(int)face[2]];
 
         var e1x = p1.X - p0.X;
         var e1y = p1.Y - p0.Y;
@@ -191,23 +185,20 @@ public static class QuantizedMeshEllipsoid
         var ny = (e1z * e2x) - (e1x * e2z);
         var nz = (e1x * e2y) - (e1y * e2x);
 
-        accumX[i0] += nx;
-        accumY[i0] += ny;
-        accumZ[i0] += nz;
-        accumX[i1] += nx;
-        accumY[i1] += ny;
-        accumZ[i1] += nz;
-        accumX[i2] += nx;
-        accumY[i2] += ny;
-        accumZ[i2] += nz;
+        foreach (var vertex in face)
+        {
+            var index = (int)vertex;
+            var sum = sums[index];
+            sums[index] = new EcefPoint(sum.X + nx, sum.Y + ny, sum.Z + nz);
+        }
     }
 
-    private static EcefPoint NormalizeOrRadial(double nx, double ny, double nz, EcefPoint fallbackPosition)
+    private static EcefPoint NormalizeOrRadial(EcefPoint normal, EcefPoint fallbackPosition)
     {
-        var len = Math.Sqrt((nx * nx) + (ny * ny) + (nz * nz));
+        var len = Length(normal);
         if (len > 1e-12)
         {
-            return new EcefPoint(nx / len, ny / len, nz / len);
+            return new EcefPoint(normal.X / len, normal.Y / len, normal.Z / len);
         }
 
         var radialLen = Length(fallbackPosition);

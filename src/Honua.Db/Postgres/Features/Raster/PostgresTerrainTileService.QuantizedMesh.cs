@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
@@ -12,6 +13,41 @@ internal sealed partial class PostgresTerrainTileService
     public async Task<TerrainElevationGrid> GetGeographicElevationGridAsync(
         TerrainGeographicGridRequest request,
         CancellationToken cancellationToken = default)
+    {
+        ValidateGeographicRequest(request);
+
+        _ = await ValidateSupportedMetadataAsync(
+            request.LayerId,
+            request.MergeStrategy,
+            cancellationToken).ConfigureAwait(false);
+
+        var bounds = TerrainTmsGrid.GetTileBounds(request.Z, request.X, request.Y);
+        var rasterIds = await GetIntersectingRasterIdsGeographicAsync(
+            request.LayerId,
+            bounds,
+            cancellationToken).ConfigureAwait(false);
+
+        var elevations = new double?[request.GridSize * request.GridSize];
+        var sample = new GeographicGridSample(request, bounds, rasterIds)
+        {
+            Elevations = elevations
+        };
+        var hasData = rasterIds.Length != 0
+            && await PopulateGeographicElevationGridAsync(sample, cancellationToken).ConfigureAwait(false);
+
+        LogGridSample(request, rasterIds.Length, hasData);
+
+        return new TerrainElevationGrid
+        {
+            GridSize = request.GridSize,
+            Bounds = bounds,
+            Elevations = elevations,
+            SelectedRasterCount = rasterIds.Length,
+            IsAllNoData = !hasData
+        };
+    }
+
+    private static void ValidateGeographicRequest(TerrainGeographicGridRequest request)
     {
         if (request.GridSize is < TerrainTmsGrid.MinGridSize or > TerrainTmsGrid.MaxGridSize)
         {
@@ -26,47 +62,10 @@ internal sealed partial class PostgresTerrainTileService
                 TerrainTileFailureKind.UnsupportedSource,
                 $"Tile coordinates z={request.Z}, x={request.X}, y={request.Y} are outside TMS geographic bounds.");
         }
+    }
 
-        _ = await ValidateSupportedMetadataAsync(
-            request.LayerId,
-            request.MergeStrategy,
-            cancellationToken).ConfigureAwait(false);
-
-        var bounds = TerrainTmsGrid.GetTileBounds(request.Z, request.X, request.Y);
-        var rasterIds = await GetIntersectingRasterIdsGeographicAsync(
-            request.LayerId,
-            bounds,
-            cancellationToken).ConfigureAwait(false);
-
-        var elevations = new double?[request.GridSize * request.GridSize];
-        if (rasterIds.Length == 0)
-        {
-            PostgresTerrainLog.QuantizedMeshGridSampled(
-                _logger,
-                request.LayerId,
-                request.Z,
-                request.X,
-                request.Y,
-                request.GridSize,
-                rasterCount: 0,
-                allNoData: true);
-            return new TerrainElevationGrid
-            {
-                GridSize = request.GridSize,
-                Bounds = bounds,
-                Elevations = elevations,
-                SelectedRasterCount = 0,
-                IsAllNoData = true
-            };
-        }
-
-        var hasData = await PopulateGeographicElevationGridAsync(
-            request,
-            bounds,
-            rasterIds,
-            elevations,
-            cancellationToken).ConfigureAwait(false);
-
+    private void LogGridSample(TerrainGeographicGridRequest request, int rasterCount, bool hasData)
+    {
         PostgresTerrainLog.QuantizedMeshGridSampled(
             _logger,
             request.LayerId,
@@ -74,17 +73,8 @@ internal sealed partial class PostgresTerrainTileService
             request.X,
             request.Y,
             request.GridSize,
-            rasterIds.Length,
+            rasterCount,
             allNoData: !hasData);
-
-        return new TerrainElevationGrid
-        {
-            GridSize = request.GridSize,
-            Bounds = bounds,
-            Elevations = elevations,
-            SelectedRasterCount = rasterIds.Length,
-            IsAllNoData = !hasData
-        };
     }
 
     private async Task<TerrainDatasetMetadata> ValidateSupportedMetadataAsync(
@@ -118,7 +108,64 @@ internal sealed partial class PostgresTerrainTileService
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
+        command.CommandText = GeographicRasterIntersectionSql;
+        AddParameter(command, "@layerId", layerId);
+        BindGeographicBounds(command, bounds);
+        AddParameter(command, "@mercatorMaxLat", WebMercatorSafeLatitude);
+
+        var rasterIds = new List<long>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rasterIds.Add(reader.GetInt64(0));
+        }
+
+        return [.. rasterIds];
+    }
+
+    private async Task<bool> PopulateGeographicElevationGridAsync(
+        GeographicGridSample sample,
+        CancellationToken cancellationToken)
+    {
+        var request = sample.Request;
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = GeographicElevationGridSql;
+        AddParameter(command, "@layerId", request.LayerId);
+        BindGeographicBounds(command, sample.Bounds);
+        AddParameter(command, "@gridSize", request.GridSize);
+        AddParameter(command, "@rasterIds", sample.RasterIds);
+        AddParameter(command, "@mergeStrategy", request.MergeStrategy.ToString());
+        AddParameter(command, "@mercatorMaxLat", WebMercatorSafeLatitude);
+
+        var hasData = false;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var gx = reader.GetInt32(0);
+            var gy = reader.GetInt32(1);
+            var elevation = reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2);
+            sample.Elevations[(gy * request.GridSize) + gx] = elevation;
+            hasData |= elevation.HasValue && double.IsFinite(elevation.Value);
+        }
+
+        return hasData;
+    }
+
+    private static void BindGeographicBounds(DbCommand command, TerrainGeographicBounds bounds)
+    {
+        AddParameter(command, "@west", bounds.West);
+        AddParameter(command, "@south", bounds.South);
+        AddParameter(command, "@east", bounds.East);
+        AddParameter(command, "@north", bounds.North);
+    }
+
+    private sealed record GeographicGridSample(TerrainGeographicGridRequest Request, TerrainGeographicBounds Bounds, long[] RasterIds)
+    {
+        public required double?[] Elevations { get; init; }
+    }
+
+    private string GeographicRasterIntersectionSql => $"""
             WITH tile_bounds AS (
                 SELECT ST_MakeEnvelope(@west, @south, @east, @north, 4326) AS geom_4326,
                        CASE
@@ -140,33 +187,8 @@ internal sealed partial class PostgresTerrainTileService
               )
             ORDER BY COALESCE(acquisition_date, created_at) DESC, created_at DESC, id DESC
             """;
-        AddParameter(command, "@layerId", layerId);
-        AddParameter(command, "@west", bounds.West);
-        AddParameter(command, "@south", bounds.South);
-        AddParameter(command, "@east", bounds.East);
-        AddParameter(command, "@north", bounds.North);
-        AddParameter(command, "@mercatorMaxLat", WebMercatorSafeLatitude);
 
-        var rasterIds = new List<long>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rasterIds.Add(reader.GetInt64(0));
-        }
-
-        return [.. rasterIds];
-    }
-
-    private async Task<bool> PopulateGeographicElevationGridAsync(
-        TerrainGeographicGridRequest request,
-        TerrainGeographicBounds bounds,
-        long[] rasterIds,
-        double?[] elevations,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
+    private string GeographicElevationGridSql => $"""
             WITH points AS (
                 SELECT gx,
                        gy,
@@ -225,27 +247,4 @@ internal sealed partial class PostgresTerrainTileService
             GROUP BY p.gx, p.gy
             ORDER BY p.gy, p.gx
             """;
-        AddParameter(command, "@layerId", request.LayerId);
-        AddParameter(command, "@west", bounds.West);
-        AddParameter(command, "@south", bounds.South);
-        AddParameter(command, "@east", bounds.East);
-        AddParameter(command, "@north", bounds.North);
-        AddParameter(command, "@gridSize", request.GridSize);
-        AddParameter(command, "@rasterIds", rasterIds);
-        AddParameter(command, "@mergeStrategy", request.MergeStrategy.ToString());
-        AddParameter(command, "@mercatorMaxLat", WebMercatorSafeLatitude);
-
-        var hasData = false;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var gx = reader.GetInt32(0);
-            var gy = reader.GetInt32(1);
-            var elevation = reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2);
-            elevations[(gy * request.GridSize) + gx] = elevation;
-            hasData |= elevation.HasValue && double.IsFinite(elevation.Value);
-        }
-
-        return hasData;
-    }
 }

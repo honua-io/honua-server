@@ -130,9 +130,27 @@ public sealed class TerrainTileException : InvalidOperationException
     public TerrainTileFailureKind FailureKind { get; }
 }
 
-public readonly record struct TerrainGeographicBounds(double West, double South, double East, double North);
+public readonly record struct TerrainGeographicBounds
+{
+    public required double West { get; init; }
 
-public readonly record struct TerrainTileRange(int StartX, int StartY, int EndX, int EndY);
+    public required double South { get; init; }
+
+    public required double East { get; init; }
+
+    public required double North { get; init; }
+}
+
+public readonly record struct TerrainTileRange
+{
+    public required int StartX { get; init; }
+
+    public required int StartY { get; init; }
+
+    public required int EndX { get; init; }
+
+    public required int EndY { get; init; }
+}
 
 public readonly record struct TerrainGeographicGridRequest
 {
@@ -200,7 +218,7 @@ public static class TerrainTmsGrid
 
         var west = -180.0 + x * tileWidth;
         var south = -90.0 + y * tileHeight;
-        return new TerrainGeographicBounds(west, south, west + tileWidth, south + tileHeight);
+        return new TerrainGeographicBounds { West = west, South = south, East = west + tileWidth, North = south + tileHeight };
     }
 
     public static TerrainTileRange[][] ComputeAvailableRanges(double[]? wgs84Bounds, int minZoom, int maxZoom)
@@ -227,24 +245,24 @@ public static class TerrainTmsGrid
         {
             levels[z] = z < clampedMinZoom
                 ? []
-                : [ComputeLevelRange(z, west, south, east, north)];
+                : [ComputeLevelRange(z, new TerrainGeographicBounds { West = west, South = south, East = east, North = north })];
         }
 
         return levels;
     }
 
-    private static TerrainTileRange ComputeLevelRange(int z, double west, double south, double east, double north)
+    private static TerrainTileRange ComputeLevelRange(int z, TerrainGeographicBounds bounds)
     {
         var numX = 2 << z;
         var numY = 1 << z;
-        var startX = Math.Clamp((int)Math.Floor((west + 180.0) / 360.0 * numX), 0, numX - 1);
-        var eastSample = east > west ? Math.BitDecrement(east) : east;
+        var startX = Math.Clamp((int)Math.Floor((bounds.West + 180.0) / 360.0 * numX), 0, numX - 1);
+        var eastSample = bounds.East > bounds.West ? Math.BitDecrement(bounds.East) : bounds.East;
         var endX = Math.Clamp((int)Math.Floor((eastSample + 180.0) / 360.0 * numX), startX, numX - 1);
 
-        var startY = Math.Clamp((int)Math.Floor((south + 90.0) / 180.0 * numY), 0, numY - 1);
-        var northSample = north > south ? Math.BitDecrement(north) : north;
+        var startY = Math.Clamp((int)Math.Floor((bounds.South + 90.0) / 180.0 * numY), 0, numY - 1);
+        var northSample = bounds.North > bounds.South ? Math.BitDecrement(bounds.North) : bounds.North;
         var endY = Math.Clamp((int)Math.Floor((northSample + 90.0) / 180.0 * numY), startY, numY - 1);
 
-        return new TerrainTileRange(startX, startY, endX, endY);
+        return new TerrainTileRange { StartX = startX, StartY = startY, EndX = endX, EndY = endY };
     }
 }

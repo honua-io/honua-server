@@ -9,6 +9,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 
@@ -455,34 +456,7 @@ internal static class OutputCachingRegistration
                 policy.Tag("mvt-tiles", "metadata");
             });
 
-            // Terrain TileJSON-compatible metadata caching policy
-            options.AddPolicy("TerrainMetadata", policy =>
-            {
-                policy.Expire(ttl.TerrainMetadata);
-                policy.SetVaryByRouteValue("datasetId");
-                policy.SetVaryByHeader("Accept");
-                policy.Tag("terrain", "metadata");
-            });
-
-            // Terrain-RGB finite grid tile caching policy
-            options.AddPolicy("TerrainTile", policy =>
-            {
-                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
-                policy.Expire(ttl.TerrainTile);
-                policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
-                policy.Tag("terrain", "tiles");
-            });
-
-            // Quantized-mesh terrain tile caching policy (varies by Accept / extensions for octvertexnormals)
-            options.AddPolicy("TerrainQuantizedMeshTile", policy =>
-            {
-                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
-                policy.Expire(ttl.TerrainTile);
-                policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
-                policy.SetVaryByHeader("Accept");
-                policy.SetVaryByQuery("extensions");
-                policy.Tag("terrain", "tiles");
-            });
+            ConfigureTerrainCaching(options, ttl);
 
             // Hosted 3D Tiles tileset.json metadata caching policy.
             // Range requests bypass output cache so the static-file pipeline
@@ -585,6 +559,38 @@ internal static class OutputCachingRegistration
 
             // Note: No default base policy - endpoints must explicitly opt into caching for
             // security. Enforced by excludeDefaultPolicy on AddBasePolicy above.
+        });
+    }
+
+    private static void ConfigureTerrainCaching(OutputCacheOptions options, OutputCacheTtlOptions ttl)
+    {
+        // Terrain TileJSON-compatible metadata caching policy
+        options.AddPolicy("TerrainMetadata", policy =>
+        {
+            policy.Expire(ttl.TerrainMetadata);
+            policy.SetVaryByRouteValue("datasetId");
+            policy.SetVaryByHeader("Accept");
+            policy.Tag("terrain", "metadata");
+        });
+
+        // Terrain-RGB finite grid tile caching policy
+        options.AddPolicy("TerrainTile", policy =>
+        {
+            policy.AddPolicy<IdentityCodingOutputCachePolicy>();
+            policy.Expire(ttl.TerrainTile);
+            policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
+            policy.Tag("terrain", "tiles");
+        });
+
+        // Quantized-mesh terrain tile caching policy (varies by Accept / extensions for octvertexnormals)
+        options.AddPolicy("TerrainQuantizedMeshTile", policy =>
+        {
+            policy.AddPolicy<IdentityCodingOutputCachePolicy>();
+            policy.Expire(ttl.TerrainTile);
+            policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
+            policy.SetVaryByHeader("Accept");
+            policy.SetVaryByQuery("extensions");
+            policy.Tag("terrain", "tiles");
         });
     }
 

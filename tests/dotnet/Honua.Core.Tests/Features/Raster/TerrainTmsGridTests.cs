@@ -25,16 +25,16 @@ public sealed class TerrainTmsGridTests
     public void GetTileBounds_UsesSouthToNorthTmsRowOrder()
     {
         var westRoot = TerrainTmsGrid.GetTileBounds(0, 0, 0);
-        westRoot.Should().Be(new TerrainGeographicBounds(-180.0, -90.0, 0.0, 90.0));
+        westRoot.Should().Be(new TerrainGeographicBounds { West = -180.0, South = -90.0, East = 0.0, North = 90.0 });
 
         var eastRoot = TerrainTmsGrid.GetTileBounds(0, 1, 0);
-        eastRoot.Should().Be(new TerrainGeographicBounds(0.0, -90.0, 180.0, 90.0));
+        eastRoot.Should().Be(new TerrainGeographicBounds { West = 0.0, South = -90.0, East = 180.0, North = 90.0 });
 
         var southRow = TerrainTmsGrid.GetTileBounds(1, 0, 0);
-        southRow.Should().Be(new TerrainGeographicBounds(-180.0, -90.0, -90.0, 0.0));
+        southRow.Should().Be(new TerrainGeographicBounds { West = -180.0, South = -90.0, East = -90.0, North = 0.0 });
 
         var northRow = TerrainTmsGrid.GetTileBounds(1, 0, 1);
-        northRow.Should().Be(new TerrainGeographicBounds(-180.0, 0.0, -90.0, 90.0));
+        northRow.Should().Be(new TerrainGeographicBounds { West = -180.0, South = 0.0, East = -90.0, North = 90.0 });
     }
 
     [UnitTest]
@@ -44,10 +44,10 @@ public sealed class TerrainTmsGridTests
         var ranges = TerrainTmsGrid.ComputeAvailableRanges(mauiBounds, minZoom: 0, maxZoom: 3);
 
         ranges.Should().HaveCount(4);
-        ranges[0].Should().ContainSingle().Which.Should().Be(new TerrainTileRange(0, 0, 0, 0));
-        ranges[1].Should().ContainSingle().Which.Should().Be(new TerrainTileRange(0, 1, 0, 1));
-        ranges[2].Should().ContainSingle().Which.Should().Be(new TerrainTileRange(0, 2, 0, 2));
-        ranges[3].Should().ContainSingle().Which.Should().Be(new TerrainTileRange(1, 4, 1, 4));
+        ranges[0].Should().ContainSingle().Which.Should().Be(new TerrainTileRange { StartX = 0, StartY = 0, EndX = 0, EndY = 0 });
+        ranges[1].Should().ContainSingle().Which.Should().Be(new TerrainTileRange { StartX = 0, StartY = 1, EndX = 0, EndY = 1 });
+        ranges[2].Should().ContainSingle().Which.Should().Be(new TerrainTileRange { StartX = 0, StartY = 2, EndX = 0, EndY = 2 });
+        ranges[3].Should().ContainSingle().Which.Should().Be(new TerrainTileRange { StartX = 1, StartY = 4, EndX = 1, EndY = 4 });
     }
 
     [UnitTest]
