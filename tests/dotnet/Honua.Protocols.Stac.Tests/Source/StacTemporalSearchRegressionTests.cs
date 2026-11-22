@@ -34,6 +34,31 @@ public sealed class StacTemporalSearchRegressionTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
+    [InlineData("items", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
+    [InlineData("get", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
+    [InlineData("post", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
+    [InlineData("items", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
+    [InlineData("get", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
+    [InlineData("post", "2023-01-02T00:00:00Z/", HttpStatusCode.BadRequest)]
+    [InlineData("items", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
+    [InlineData("get", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
+    [InlineData("post", "../2023-01-02T00:00:00Z", HttpStatusCode.OK)]
+    [InlineData("items", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
+    [InlineData("get", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
+    [InlineData("post", "2023-01-02T00:00:00Z/..", HttpStatusCode.OK)]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    [Endpoint("GET /stac/search")]
+    [Endpoint("POST /stac/search")]
+    public async Task Datetime_OpenInterval_RequiresExplicitBoundMarker(
+        string route, string datetime, HttpStatusCode expectedStatus)
+    {
+        using var response = await SearchAsync(route, datetime);
+
+        response.StatusCode.Should().Be(expectedStatus);
+    }
+
+    [IntegrationTheory]
     [InlineData("items")]
     [InlineData("get")]
     [InlineData("post")]
@@ -44,13 +69,7 @@ public sealed class StacTemporalSearchRegressionTests : IAsyncLifetime
     public async Task Datetime_WithoutTemporalField_DoesNotReturnUndatedRows(string route)
     {
         const string datetime = "1999-01-01T00:00:00Z/1999-12-31T23:59:59Z";
-        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var response = route switch
-        {
-            "items" => await _fixture.Client.GetAsync($"/stac/collections/{collectionId}/items?datetime={datetime}"),
-            "get" => await _fixture.Client.GetAsync($"/stac/search?collections={collectionId}&datetime={datetime}"),
-            _ => await _fixture.Client.PostAsJsonAsync("/stac/search", new { collections = new[] { collectionId }, datetime })
-        };
+        using var response = await SearchAsync(route, datetime);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -58,5 +77,16 @@ public sealed class StacTemporalSearchRegressionTests : IAsyncLifetime
         json.RootElement.GetProperty("numberMatched").GetInt64().Should().Be(0);
         json.RootElement.GetProperty("links").EnumerateArray()
             .Should().NotContain(link => link.GetProperty("rel").GetString() == "next");
+    }
+
+    private Task<HttpResponseMessage> SearchAsync(string route, string datetime)
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return route switch
+        {
+            "items" => _fixture.Client.GetAsync($"/stac/collections/{collectionId}/items?datetime={Uri.EscapeDataString(datetime)}"),
+            "get" => _fixture.Client.GetAsync($"/stac/search?collections={collectionId}&datetime={Uri.EscapeDataString(datetime)}"),
+            _ => _fixture.Client.PostAsJsonAsync("/stac/search", new { collections = new[] { collectionId }, datetime })
+        };
     }
 }

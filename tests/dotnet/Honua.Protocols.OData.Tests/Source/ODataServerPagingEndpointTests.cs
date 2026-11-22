@@ -38,6 +38,24 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers")]
+    public async Task Layers_WithZeroTop_ReturnsEmptyPageAndUnpagedCount()
+    {
+        using var response = await _fixture.Client.GetAsync("/odata/Layers?$top=0&$count=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+
+        root.GetProperty("@odata.count").GetInt64().Should().BeGreaterThan(0,
+            "the seed contains visible layers and $top does not change their total count");
+        root.GetProperty("value").EnumerateArray().Should().BeEmpty();
+        root.TryGetProperty("@odata.nextLink", out _).Should().BeFalse(
+            "a zero $top budget has no remaining page");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=5000")]
     public async Task Features_WithLargeTop_ReturnsBoundedPageWithNextLink()
     {
