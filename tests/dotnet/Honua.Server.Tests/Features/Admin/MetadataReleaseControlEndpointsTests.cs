@@ -188,29 +188,7 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
             TargetId = "svc-1",
             DesiredImage = "honua/server:rev-2",
         };
-        var invalidPlan = new MetadataReleaseExecutionPlan
-        {
-            PackageId = "pkg-coord-invalid",
-            TargetEnvironment = "dev",
-            ResourceSemanticId = "res-1",
-            NewFieldName = "owner-email",
-            Script = new MetadataReleaseScript
-            {
-                ScriptId = "script-1",
-                Reversible = true,
-                ForwardOperations =
-                [
-                    new MetadataReleaseScriptOperation
-                    {
-                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
-                        ResourceSemanticId = "res-1",
-                        FieldName = "owner-email",
-                        FieldType = "String",
-                        Nullable = true,
-                    },
-                ],
-            },
-        };
+        var invalidPlan = CreateInvalidFieldPlan("pkg-coord-invalid", "script-1");
 
         var act = () => coordinatedService.CreateAsync(
             container, invalidPlan, "dev", "admin", "test", "idem-1", "corr-1");
@@ -230,30 +208,7 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
             NSubstitute.Substitute.For<IMetadataReleaseOperationReconciler>(),
             [store]);
 
-        var invalidPlan = new MetadataReleaseExecutionPlan
-        {
-            PackageId = "pkg-coord-legacy",
-            TargetEnvironment = "dev",
-            ResourceSemanticId = "res-1",
-            NewFieldName = "owner-email",
-            Script = new MetadataReleaseScript
-            {
-                ScriptId = "script-legacy",
-                Reversible = true,
-                ForwardOperations =
-                [
-                    new MetadataReleaseScriptOperation
-                    {
-                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
-                        ResourceSemanticId = "res-1",
-                        FieldName = "owner-email",
-                        FieldType = "String",
-                        Nullable = true,
-                    },
-                ],
-            },
-        };
-
+        var invalidPlan = CreateInvalidFieldPlan("pkg-coord-legacy", "script-legacy");
         var context = new CoordinatedReleaseContext
         {
             PackageId = invalidPlan.PackageId,
@@ -278,6 +233,31 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
         result.Outcome.Should().Be(CoordinatedStepOutcome.Failed);
         result.Detail.Should().Contain("newFieldName");
     }
+
+    private static MetadataReleaseExecutionPlan CreateInvalidFieldPlan(string packageId, string scriptId) =>
+        new()
+        {
+            PackageId = packageId,
+            TargetEnvironment = "dev",
+            ResourceSemanticId = "res-1",
+            NewFieldName = "owner-email",
+            Script = new MetadataReleaseScript
+            {
+                ScriptId = scriptId,
+                Reversible = true,
+                ForwardOperations =
+                [
+                    new MetadataReleaseScriptOperation
+                    {
+                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
+                        ResourceSemanticId = "res-1",
+                        FieldName = "owner-email",
+                        FieldType = "String",
+                        Nullable = true,
+                    },
+                ],
+            },
+        };
 
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
