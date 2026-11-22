@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Forms.Packages;
 
-public sealed class FormPackageValidator
+public sealed partial class FormPackageValidator
 {
     private static readonly HashSet<string> _supportedVisibilityOperators = new(StringComparer.OrdinalIgnoreCase)
     {

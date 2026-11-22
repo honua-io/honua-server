@@ -143,6 +143,12 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         var outOfRange = await CompleteAsync(started, Completion(3, Later, condition: 6));
         var noCondition = await CompleteAsync(started, Completion(3, Later, condition: null));
         var nulNotes = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Notes = "bad\0note" });
+        var missingAnswers = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = null });
+        var emptyAnswers = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = JsonElement.Parse("{}") });
+        var wrongAnswerType = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = JsonElement.Parse("""{"name":123}""") });
+        var unknownField = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = JsonElement.Parse("""{"name":"Sign","extra":true}""") });
+        var duplicateField = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = JsonElement.Parse("""{"name":"Sign","NAME":"Other"}""") });
+        var nulAnswer = await CompleteAsync(started, Completion(3, Later, condition: 3) with { Answers = JsonElement.Parse("""{"name":"bad\u0000value"}""") });
 
         fromAssigned.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         wrongForm.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -150,8 +156,30 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         outOfRange.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         noCondition.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         nulNotes.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        missingAnswers.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        emptyAnswers.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        wrongAnswerType.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        unknownField.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        duplicateField.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        nulAnswer.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(0);
         (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_LiteralEscapedBackslashZeroSequenceInAnswer_IsAccepted()
+    {
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        var request = Completion(3, Later, condition: 4) with
+        {
+            Answers = JsonElement.Parse("""{"name":"literal \\u0000 text"}"""),
+        };
+
+        var completed = await CompleteAsync(taskId, request);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK, await completed.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -240,7 +268,7 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         ObservedAt = observedAt,
         Form = _form,
         Condition = condition,
-        Answers = JsonElement.Parse("""{"faceLegible":true}"""),
+        Answers = JsonElement.Parse("""{"name":"Sign inspection"}"""),
         Notes = "Post leaning slightly.",
     };
 

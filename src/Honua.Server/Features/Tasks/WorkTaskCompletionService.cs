@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Assets;
 
@@ -11,6 +12,8 @@ namespace Honua.Server.Features.Tasks;
 internal sealed class WorkTaskCompletionService(
     IWorkTaskStore tasks,
     IWorkTaskCompletionStore completions,
+    AssetFormLookup forms,
+    FormPackageValidator formValidator,
     TimeProvider clock)
 {
     private const int MaxNotesLength = 4000;
@@ -44,15 +47,38 @@ internal sealed class WorkTaskCompletionService(
             return AssetCommandHttp.ToResult(context, replay, StatusCodes.Status200OK);
         }
 
-        if (Validate(request, task) is { } invalid)
+        var actor = AssetCommandHttp.ResolveTaskActor(context);
+        if (!actor.IsPlanner && !actor.IsAssignee(task.Assignee))
         {
-            return AssetCommandHttp.Rejected(context, [invalid]);
+            return Forbidden(context);
         }
 
-        var actor = AssetCommandHttp.ResolveTaskActor(context);
+        if (await ValidateAllAsync(request, task, context.RequestAborted).ConfigureAwait(false) is { Length: > 0 } errors)
+        {
+            return AssetCommandHttp.Rejected(context, errors);
+        }
+
         var completion = new WorkTaskCompletionCommand { TaskId = taskId, Request = request, Actor = actor, Command = command, AuthorizedProfileId = task.ProfileId };
         return AssetCommandHttp.ToResult(
             context, await completions.CompleteAsync(completion, context.RequestAborted).ConfigureAwait(false), StatusCodes.Status200OK);
+    }
+
+    private static IResult Forbidden(HttpContext context) => AssetCommandHttp.ToResult(
+        context,
+        new AssetCommandResult(AssetCommandStatus.Forbidden, null, "Only the assignee or a planner can complete this task."),
+        StatusCodes.Status200OK);
+
+    private async Task<AssetFieldError[]> ValidateAllAsync(
+        WorkTaskCompletionRequest request,
+        WorkTask task,
+        CancellationToken cancellationToken)
+    {
+        if (Validate(request, task) is { } invalid)
+        {
+            return [invalid];
+        }
+
+        return await ValidateAnswersAsync(request, task, cancellationToken).ConfigureAwait(false);
     }
 
     private AssetFieldError? Validate(WorkTaskCompletionRequest request, WorkTask task)
@@ -79,7 +105,7 @@ internal sealed class WorkTaskCompletionService(
             return new AssetFieldError("answers", "answers must be a JSON object.");
         }
 
-        if (request.Answers is { } answers && answers.GetRawText().Contains("\\u0000", StringComparison.OrdinalIgnoreCase))
+        if (request.Answers is { } answers && ContainsNul(answers))
         {
             return new AssetFieldError("answers", "answers cannot contain NUL characters.");
         }
@@ -88,4 +114,61 @@ internal sealed class WorkTaskCompletionService(
             ? new AssetFieldError("notes", $"notes are at most {MaxNotesLength} characters and cannot contain NUL characters.")
             : null;
     }
+
+    private async Task<AssetFieldError[]> ValidateAnswersAsync(
+        WorkTaskCompletionRequest request,
+        WorkTask task,
+        CancellationToken cancellationToken)
+    {
+        if (request.Form != task.Form)
+        {
+            return [new("form", $"The task is pinned to form {task.Form.FormId} version {task.Form.Version}.")];
+        }
+
+        var published = await forms.FindPinnedAsync(task, cancellationToken).ConfigureAwait(false);
+        if (published is null)
+        {
+            return [new("form", "The pinned form version is unavailable.")];
+        }
+
+        var values = ReadAnswers(request.Answers);
+        if (values is null)
+        {
+            return [new("answers", "Answer field names must be unique.")];
+        }
+
+        var validation = await formValidator.ValidateRecordAsync(published, (values, []), cancellationToken).ConfigureAwait(false);
+        return validation.Issues
+            .Where(static issue => issue.Severity == "error")
+            .Select(static issue => new AssetFieldError(issue.FieldId is { } field ? $"answers.{field}" : issue.Path ?? "form", issue.Message))
+            .ToArray();
+    }
+
+    private static Dictionary<string, JsonElement>? ReadAnswers(JsonElement? answers)
+    {
+        var values = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        if (answers is not { } supplied)
+        {
+            return values;
+        }
+
+        foreach (var answer in supplied.EnumerateObject())
+        {
+            if (!values.TryAdd(answer.Name, answer.Value))
+            {
+                return null;
+            }
+        }
+
+        return values;
+    }
+
+    private static bool ContainsNul(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString()?.Contains('\0', StringComparison.Ordinal) == true,
+        JsonValueKind.Array => element.EnumerateArray().Any(ContainsNul),
+        JsonValueKind.Object => element.EnumerateObject().Any(static property =>
+            property.Name.Contains('\0', StringComparison.Ordinal) || ContainsNul(property.Value)),
+        _ => false,
+    };
 }

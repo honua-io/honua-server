@@ -97,6 +97,7 @@ internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
             : new AssetCommandResult(
                 AssetCommandStatus.Rejected,
                 null,
-                $"The task is pinned to form {current.Form.FormId} version {current.Form.Version}.") { Field = "form" };
+                $"The task is pinned to form {current.Form.FormId} version {current.Form.Version}.")
+            { Field = "form" };
     }
 }
