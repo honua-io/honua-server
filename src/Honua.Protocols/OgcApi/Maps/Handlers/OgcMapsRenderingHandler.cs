@@ -797,17 +797,9 @@ internal sealed class OgcMapsRenderingHandler
                 bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
             }
 
-            var contentCrsHeader = FormatContentCrsHeader(bboxSrid);
-            if (SpatialReferenceHelpers.TryParseCrsDefinition(context.Request.Query["crs"].ToString(), out var outputCrs) &&
-                outputCrs.Srid == bboxSrid)
-            {
-                contentCrsHeader = $"<{outputCrs.Uri}>";
-                if (contentBboxHeader is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)
-                {
-                    var coordinates = contentBboxHeader.Split(',');
-                    contentBboxHeader = $"{coordinates[1]},{coordinates[0]},{coordinates[3]},{coordinates[2]}";
-                }
-            }
+            var spatialHeaders = ResolveSpatialHeaders(context, bboxSrid, contentBboxHeader);
+            contentBboxHeader = spatialHeaders.Bbox;
+            var contentCrsHeader = spatialHeaders.Crs;
             if (contentBboxHeader is not null)
             {
                 context.Response.Headers["Content-Bbox"] = contentBboxHeader;
@@ -822,6 +814,22 @@ internal sealed class OgcMapsRenderingHandler
         }
 
         return EncodedRasterResults.File(result.Data, result.ContentType);
+    }
+
+    private static (string? Crs, string? Bbox) ResolveSpatialHeaders(HttpContext context, int? bboxSrid, string? bbox)
+    {
+        var crs = FormatContentCrsHeader(bboxSrid);
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(context.Request.Query["crs"].ToString(), out var outputCrs) &&
+            outputCrs.Srid == bboxSrid)
+        {
+            crs = $"<{outputCrs.Uri}>";
+            if (bbox is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)
+            {
+                var coordinates = bbox.Split(',');
+                bbox = $"{coordinates[1]},{coordinates[0]},{coordinates[3]},{coordinates[2]}";
+            }
+        }
+        return (crs, bbox);
     }
 
     private static void AppendLinkHeaders(HttpContext context, string currentContentType)

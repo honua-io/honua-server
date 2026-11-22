@@ -259,7 +259,8 @@ internal static partial class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (PrepareItemsFormat(context, f, out var contentType) is { } formatError)
+        var (formatError, contentType) = PrepareItemsFormat(context, f);
+        if (formatError is not null)
         {
             return formatError;
         }
@@ -299,7 +300,7 @@ internal static partial class OgcRecordsEndpoints
         return Results.Json(response, OgcRecordsJsonContext.Default.OgcRecordFeatureCollection, contentType);
     }
 
-    private static IResult? PrepareItemsFormat(HttpContext context, string? f, out string contentType)
+    private static (IResult? Error, string ContentType) PrepareItemsFormat(HttpContext context, string? f)
     {
         if (!OgcCommonUtilities.TryGetOutputFormat(
                 f, context,
@@ -309,14 +310,14 @@ internal static partial class OgcRecordsEndpoints
                     ["geojson"] = MediaTypes.GeoJson,
                 },
                 [MediaTypes.GeoJson, MediaTypes.Json], MediaTypes.GeoJson,
-                out contentType, out var formatError))
+                out var contentType, out var formatError))
         {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
+            return (OgcCommonUtilities.CreateFormatError(context, formatError), contentType);
         }
 
         context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Accept);
 
-        return null;
+        return (null, contentType);
     }
 
     private static async Task<IResult> HandleGetItem(

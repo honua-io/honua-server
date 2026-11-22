@@ -101,21 +101,25 @@ internal static class OgcCoverageSpatialSubset
             return false;
         }
 
-        bounds = new Bounds(x.Value.Low, y.Value.Low, x.Value.High, y.Value.High, geographicNames.Value ? 4326 : storageSrid);
-        if (x.Value.Low.CompareTo(x.Value.High) == 0 || y.Value.Low.CompareTo(y.Value.High) == 0)
+        var completed = CompleteBounds(new Bounds(x.Value.Low, y.Value.Low, x.Value.High, y.Value.High,
+            geographicNames.Value ? 4326 : storageSrid), raster, storageSrid);
+        bounds = completed.Bounds;
+        error = completed.Error;
+        return error.Length == 0;
+    }
+
+    private static (Bounds Bounds, string Error) CompleteBounds(Bounds bounds, RasterInfo raster, int storageSrid)
+    {
+        if (bounds.MinX.CompareTo(bounds.MaxX) != 0 && bounds.MinY.CompareTo(bounds.MaxY) != 0)
         {
-            // ST_Clip selects pixel centers. A zero-area clip is not a raster slice:
-            // select the native grid cell containing the ordinate before exporting.
-            var expanded = ExpandSlices(bounds, raster, storageSrid);
-            if (!expanded.HasValue)
-            {
-                error = "Spatial slices require an axis-aligned native grid and an ordinate within its extent. Use native x/y axes when the storage CRS is projected.";
-                return false;
-            }
-            bounds = expanded.Value;
+            return (bounds, string.Empty);
         }
-        error = string.Empty;
-        return true;
+        // ST_Clip selects pixel centers. Select the native grid cell containing
+        // the slice ordinate instead of passing a zero-area geometry to export.
+        var expanded = ExpandSlices(bounds, raster, storageSrid);
+        return expanded.HasValue
+            ? (expanded.Value, string.Empty)
+            : (default, "Spatial slices require an axis-aligned native grid and an ordinate within its extent. Use native x/y axes when the storage CRS is projected.");
     }
 
     private static Bounds? ExpandSlices(Bounds bounds, RasterInfo raster, int storageSrid)
