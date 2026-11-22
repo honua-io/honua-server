@@ -11,8 +11,10 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -197,6 +199,8 @@ public sealed class McpSceneToolTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(reader);
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddValidationServices();
         var claims = new List<Claim> { new(ClaimTypes.Name, "mcp-tester") };
         foreach (var role in roles)
         {
