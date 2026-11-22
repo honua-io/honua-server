@@ -17805,9 +17805,9 @@
         "tags": [
           "Scenes"
         ],
-        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive",
         "operationId": "ingestArchiveScene",
-        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async.",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "parameters": [
           {
             "name": "async",
@@ -17925,9 +17925,9 @@
         "tags": [
           "Scenes"
         ],
-        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model",
         "operationId": "ingestModelScene",
-        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async.",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "parameters": [
           {
             "name": "async",
