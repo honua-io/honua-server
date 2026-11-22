@@ -2291,6 +2291,21 @@ Every case remains in the same selected PR shard and twice-daily full trunk runs
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
 
+### Streaming baseline-capability seed lifetime
+
+The eight baseline-capability cases in `FeatureStreamEndpointsTests` borrow the
+feature schema of the already initialized class fixture. Each case retains its
+private application, mock feature reader, metadata provider, license configuration
+and disposal. These GET requests read capabilities through the case-local mock
+reader; they do not mutate the shared feature data. The Database collection still
+serializes the cases, and the class fixture owns schema cleanup after every
+borrower is disposed. The one-second lookup budget, cancellation behavior, all
+assertions and endpoint metadata remain unchanged.
+
+Every case remains in its existing selected PR shard and full trunk runs. No
+workflow, shard filter, required check name, runner count or required aggregate
+`needs` contract changes.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
