@@ -32,6 +32,25 @@ Routine Studio design is the direct prompt/edit/preview/refine/undo loop. Data p
 - [Clean up owned outputs and configuration](cleanup-resources.md)
 - [Design an App through prompt and preview](design-studio.md)
 
+## Which MCP view to select
+
+Each guide names MCP tools by their exact names. The [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery) below carry every MCP tool that guide names; where no single view does, the row names the views to combine. View membership is server-owned and can change: confirm it with `tools/list` for the view rather than keeping this table in a client.
+
+| Guide | View |
+|---|---|
+| [Install and configure](install-configure.md) | `default` or `setup` for `honua_list_capabilities`, plus `operate` for `honua_ops_health` |
+| [Connect and publish existing data](connect-publish-data.md) | `configure` |
+| [Import data](import-data.md) | `configure` |
+| [Discover data](discover-data.md) | `analyze` for `honua_ground_candidates`, plus `default`, `setup` or `configure` for `honua_describe_layer` |
+| [Compose a map](compose-map.md) | `setup` |
+| [Analyze features](analyze-features.md) | `default`, `setup` or `analyze` |
+| [Save, reopen, and resume a map](save-resume-map.md) | `setup` |
+| [Publish and share a saved map](publish-share-map.md) | `setup`, plus `review` for `honua_validate_package` |
+| [Configure and verify resource access](govern-access.md) | `configure` |
+| [Recover or cancel a job](recover-job.md) | `analyze` |
+| [Run a native conversion](run-native-job.md) | `default` or `setup` |
+| [Clean up owned outputs](cleanup-resources.md) | `default`, `setup`, `configure` or `analyze` |
+
 A workflow page is not a release qualification receipt. Follow the source-linked implementation limits, including preview status and the distinction between the current Studio draft adapter and its Git worktree design contract.
 
 ## Vocabulary review rule

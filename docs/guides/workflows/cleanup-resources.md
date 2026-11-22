@@ -123,7 +123,7 @@ Authoritative source data stays unchanged, even when it is associated with the t
 
 Verify absence of removed objects and continued access to retained dependencies. Report residual resources and irreversible deletions honestly. Use existing revision history where available; do not promise a universal undo.
 
-Over MCP, `honua_list_layers` is in the `default`, `setup`, `configure` and `analyze` [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery). It returns one page of layers with their service identity; while `hasMore` is true, read the next page from `nextOffset` before deciding what is in scope.
+Over MCP, `honua_list_layers` is in the `default`, `setup`, `configure` and `analyze` [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery). It returns one page of layers with their service identity; while `hasMore` is true, pass `nextOffset` as `offset` to read the next page before deciding what is in scope.
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 
