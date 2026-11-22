@@ -160,17 +160,42 @@ public sealed class SceneCopcEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentRange?.Length.Should().Be(_copcBytes.Length);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("bytes=0-600")]
+    [InlineData("bytes=0-")]
+    [InlineData("bytes=-600")]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/copc")]
-    public async Task GetCopc_RangeExceedingByteCeiling_Returns413PayloadTooLarge()
+    public async Task GetCopc_RangeExceedingByteCeiling_Returns416RangeNotSatisfiable(string range)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/scenes/{PublicCopcSceneId}/copc");
-        request.Headers.Range = new RangeHeaderValue(0, 600);
+        request.Headers.Range = RangeHeaderValue.Parse(range);
 
-        var response = await _fixture.Client.SendAsync(request);
+        using var response = await _fixture.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        response.StatusCode.Should().Be(HttpStatusCode.RequestedRangeNotSatisfiable);
+        response.Content.Headers.ContentRange?.ToString().Should().Be($"bytes */{_copcBytes.Length}");
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/copc")]
+    public async Task GetCopc_BoundedOpenEndedOrSuffixRange_Returns206WithExactBytes(bool suffix)
+    {
+        var start = _copcBytes.Length - 64;
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/scenes/{PublicCopcSceneId}/copc");
+        request.Headers.Range = suffix ? new RangeHeaderValue(null, 64) : new RangeHeaderValue(start, null);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+        response.Content.Headers.ContentRange?.From.Should().Be(start);
+        response.Content.Headers.ContentRange?.To.Should().Be(_copcBytes.Length - 1);
+        response.Content.Headers.ContentRange?.Length.Should().Be(_copcBytes.Length);
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(_copcBytes.AsSpan(start).ToArray());
     }
 
     [IntegrationTest]
