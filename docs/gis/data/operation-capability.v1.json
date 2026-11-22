@@ -5309,6 +5309,36 @@
     },
     {
       "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions",
+      "operationId": "listStudioDraftRevisions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}",
+      "operationId": "getStudioDraftRevision",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions-generation"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}/restore",
+      "operationId": "restoreStudioDraftRevision",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-drafts-draftid-revisions-generation-restore"
+    },
+    {
+      "spec": "studio-api",
       "method": "POST",
       "path": "/api/v1/studio/map-packages/generate",
       "operationId": "generateStudioMapPackage",
@@ -5386,36 +5416,6 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-studio-package-drafts-draftid-preview-plan"
-    },
-    {
-      "spec": "studio-api",
-      "method": "GET",
-      "path": "/api/v1/studio/drafts/{draftId}/revisions",
-      "operationId": "listStudioDraftRevisions",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions"
-    },
-    {
-      "spec": "studio-api",
-      "method": "GET",
-      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}",
-      "operationId": "getStudioDraftRevision",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-studio-drafts-draftid-revisions-generation"
-    },
-    {
-      "spec": "studio-api",
-      "method": "POST",
-      "path": "/api/v1/studio/drafts/{draftId}/revisions/{generation}/restore",
-      "operationId": "restoreStudioDraftRevision",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-studio-drafts-draftid-revisions-generation-restore"
     },
     {
       "spec": "studio-api",
