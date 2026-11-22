@@ -6,7 +6,6 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Infrastructure.Services;
 using Honua.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
