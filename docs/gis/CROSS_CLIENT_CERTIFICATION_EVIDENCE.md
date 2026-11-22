@@ -168,7 +168,7 @@ Since ticket `#415`, that artifact includes automated `.cert.json` envelopes for
 | `lanes/<lane>/checks.tsv` | TSV | Raw smoke-check rows with `check_id`, `status`, `http_status`, transcript path, and optional note |
 | `lanes/<lane>/lane-summary.json` / `lane-summary.md` | JSON / Markdown | Lane summary with `lane`, `title`, lane `status`, `summary { total, passed, failed, skipped, not_applicable }`, and `checks[] { id, status, http_status, transcript, note }`, plus a human-readable check table |
 | `lanes/<lane>/transcripts/<check-id>.txt` | Text | Exact request/response transcript for a single smoke check |
-| `certification/<timestamp>-<client_lane>-<protocol>.cert.json` | JSON | Per-protocol `.cert.json` envelope (full profile only); see [envelope schema](#evidence-envelope-schema) above |
+| `certification/<timestamp>-<client_lane>-<protocol>.cert.json` | JSON | Per-protocol `.cert.json` envelope (full profile only); see [envelope schema](#evidence-envelope-json) above |
 | `metadata/workflow-context.json` | JSON | Workflow provenance including timestamp, base URL, service id, layer id, seed source, server version, and GitHub run metadata when available |
 | `metadata/<seed-file>.sql` | SQL | Exact versioned seed snapshot used by the run |
 | `server/server.log` | Text | Honua server stdout/stderr captured during the workflow run |
