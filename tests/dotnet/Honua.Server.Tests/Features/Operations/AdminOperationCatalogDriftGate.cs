@@ -17,11 +17,19 @@ internal static class AdminOperationCatalogDriftGate
         IReadOnlyList<IAdminHttpOperationDefinition> Definitions,
         IReadOnlyList<OperationDescriptor> Descriptors);
 
+    public sealed record RuntimeRegistrations(
+        IReadOnlyDictionary<string, int>? ExecutorCounts = null,
+        IReadOnlyDictionary<string, int>? MapperCounts = null);
+
     public sealed record EvaluationContext(
         JsonElement Contract,
         IReadOnlyList<CatalogSlice> Slices,
-        IReadOnlyDictionary<string, int>? ExecutorCounts = null,
-        IReadOnlyDictionary<string, int>? MapperCounts = null);
+        RuntimeRegistrations? Runtime = null);
+
+    private sealed record EvaluationState(
+        EvaluationContext Context,
+        Dictionary<string, AdminAccessOperationDriftGate.OpenApiOperation> Operations,
+        List<string> Findings);
 
     public static IReadOnlySet<string> DirectApprovalExceptions { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -46,12 +54,13 @@ internal static class AdminOperationCatalogDriftGate
 
         CheckGlobalUniqueness(allDefinitions, findings);
 
+        var state = new EvaluationState(context, operations, findings);
         foreach (var slice in context.Slices)
         {
             var descriptorMap = IndexDescriptors(slice, findings);
             foreach (var definition in slice.Definitions)
             {
-                EvaluateDefinition(definition, descriptorMap, operations, context, findings);
+                EvaluateDefinition(definition, descriptorMap, state);
             }
         }
 
@@ -72,7 +81,7 @@ internal static class AdminOperationCatalogDriftGate
             findings.Add($"duplicate: openApiOperationId '{group.Key}' is registered {group.Count()} times across admin catalogs.");
         }
 
-        foreach (var group in definitions.GroupBy(static d => $"{d.Method.Method.ToUpperInvariant()} {d.Path}", StringComparer.Ordinal).Where(static g => g.Count() > 1))
+        foreach (var group in definitions.GroupBy(static d => $"{d.Method.Method.ToUpperInvariant()} {NormalizePath(d.Path)}", StringComparer.Ordinal).Where(static g => g.Count() > 1))
         {
             findings.Add($"duplicate: route '{group.Key}' is registered {group.Count()} times across admin catalogs.");
         }
@@ -97,63 +106,61 @@ internal static class AdminOperationCatalogDriftGate
     private static void EvaluateDefinition(
         IAdminHttpOperationDefinition definition,
         Dictionary<string, OperationDescriptor> descriptors,
-        Dictionary<string, AdminAccessOperationDriftGate.OpenApiOperation> operations,
-        EvaluationContext context,
-        List<string> findings)
+        EvaluationState state)
     {
-        if (!operations.TryGetValue(definition.OpenApiOperationId, out var contractOp))
+        if (!state.Operations.TryGetValue(definition.OpenApiOperationId, out var contractOp))
         {
-            findings.Add($"unknown: '{definition.OperationId}' references missing OpenAPI operation '{definition.OpenApiOperationId}'.");
+            state.Findings.Add($"unknown: '{definition.OperationId}' references missing OpenAPI operation '{definition.OpenApiOperationId}'.");
             return;
         }
 
         if (!string.Equals(definition.Method.Method, contractOp.Method, StringComparison.OrdinalIgnoreCase))
         {
-            findings.Add($"method-drift: '{definition.OperationId}' declares {definition.Method.Method}, contract declares {contractOp.Method}.");
+            state.Findings.Add($"method-drift: '{definition.OperationId}' declares {definition.Method.Method}, contract declares {contractOp.Method}.");
         }
 
         if (!string.Equals(NormalizePath(definition.Path), NormalizePath(contractOp.Path), StringComparison.Ordinal))
         {
-            findings.Add($"path-drift: '{definition.OperationId}' declares '{definition.Path}', contract declares '{contractOp.Path}'.");
+            state.Findings.Add($"path-drift: '{definition.OperationId}' declares '{definition.Path}', contract declares '{contractOp.Path}'.");
         }
 
         if (!descriptors.TryGetValue(definition.OperationId, out var descriptor))
         {
-            findings.Add($"missing-descriptor: '{definition.OperationId}' has no published descriptor.");
+            state.Findings.Add($"missing-descriptor: '{definition.OperationId}' has no published descriptor.");
             return;
         }
 
-        EvaluatePolicyAndScope(definition, descriptor, contractOp, findings);
-        EvaluateCompensation(descriptor, findings);
-        EvaluateRuntimeRegistrations(descriptor, context, findings);
+        EvaluatePolicyAndScope(descriptor, contractOp, state.Findings);
+        EvaluateCompensation(descriptor, state.Findings);
+        EvaluateRuntimeRegistrations(descriptor, state.Context.Runtime, state.Findings);
     }
 
     private static void EvaluatePolicyAndScope(
-        IAdminHttpOperationDefinition definition,
         OperationDescriptor descriptor,
         AdminAccessOperationDriftGate.OpenApiOperation contractOp,
         List<string> findings)
     {
+        var operationId = descriptor.OperationId;
         var sideEffect = descriptor.Policy.SideEffectClass;
         if (contractOp.Method == "GET" && sideEffect != OperationSideEffectClass.ReadOnly)
         {
-            findings.Add($"policy-drift: GET operation '{definition.OperationId}' is classified as {sideEffect}.");
+            findings.Add($"policy-drift: GET operation '{operationId}' is classified as {sideEffect}.");
         }
 
         if (sideEffect != OperationSideEffectClass.ReadOnly &&
             descriptor.ApprovalModel != OperationApprovalModel.OperatorGate &&
-            !DirectApprovalExceptions.Contains(definition.OperationId))
+            !DirectApprovalExceptions.Contains(operationId))
         {
-            findings.Add($"ungated: mutation '{definition.OperationId}' bypasses OperatorGate.");
+            findings.Add($"ungated: mutation '{operationId}' bypasses OperatorGate.");
         }
 
-        if (!OperationScopeMapping.TryResolve(new OperationRequest { OperationId = definition.OperationId }, out var scope))
+        if (!OperationScopeMapping.TryResolve(new OperationRequest { OperationId = operationId }, out var scope))
         {
-            findings.Add($"scope-drift: '{definition.OperationId}' has no canonical OAuth scope mapping.");
+            findings.Add($"scope-drift: '{operationId}' has no canonical OAuth scope mapping.");
         }
         else if ((sideEffect == OperationSideEffectClass.ReadOnly) != (scope == OperatorOperation.Read))
         {
-            findings.Add($"scope-drift: '{definition.OperationId}' ({sideEffect}) maps to OAuth operation {scope}.");
+            findings.Add($"scope-drift: '{operationId}' ({sideEffect}) maps to OAuth operation {scope}.");
         }
     }
 
@@ -186,18 +193,18 @@ internal static class AdminOperationCatalogDriftGate
 
     private static void EvaluateRuntimeRegistrations(
         OperationDescriptor descriptor,
-        EvaluationContext context,
+        RuntimeRegistrations? runtime,
         List<string> findings)
     {
-        if (context.ExecutorCounts is not null &&
-            (!context.ExecutorCounts.TryGetValue(descriptor.OperationId, out var executorCount) || executorCount != 1))
+        if (runtime?.ExecutorCounts is not null &&
+            (!runtime.ExecutorCounts.TryGetValue(descriptor.OperationId, out var executorCount) || executorCount != 1))
         {
             findings.Add($"executor-drift: '{descriptor.OperationId}' has {executorCount} registered executor(s); expected 1.");
         }
 
-        if (context.MapperCounts is not null &&
+        if (runtime?.MapperCounts is not null &&
             descriptor.ApprovalModel == OperationApprovalModel.OperatorGate &&
-            (!context.MapperCounts.TryGetValue(descriptor.OperationId, out var mapperCount) || mapperCount != 1))
+            (!runtime.MapperCounts.TryGetValue(descriptor.OperationId, out var mapperCount) || mapperCount != 1))
         {
             findings.Add($"mapper-drift: gated '{descriptor.OperationId}' has {mapperCount} approval mapper(s); expected 1.");
         }

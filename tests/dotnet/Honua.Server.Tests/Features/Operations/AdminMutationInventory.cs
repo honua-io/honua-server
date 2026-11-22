@@ -200,6 +200,16 @@ internal static class AdminMutationInventory
             }
         }
 
+        ValidateEntries(entries, operations, findings);
+
+        return findings;
+    }
+
+    private static void ValidateEntries(
+        IReadOnlyList<Entry> entries,
+        Dictionary<string, AdminAccessOperationDriftGate.OpenApiOperation> operations,
+        List<string> findings)
+    {
         foreach (var entry in entries)
         {
             if (string.IsNullOrWhiteSpace(entry.Reason))
@@ -216,8 +226,6 @@ internal static class AdminMutationInventory
                 findings.Add($"read-only-method: '{entry.OpenApiOperationId}' uses {op.Method} and does not belong in the non-GET inventory.");
             }
         }
-
-        return findings;
     }
 
     private static Dictionary<string, Entry> IndexEntries(IReadOnlyList<Entry> entries, List<string> findings)

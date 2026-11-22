@@ -233,8 +233,10 @@ internal static partial class EmbedGovernanceEndpoints
             return false;
         }
 
-        if (!TryValidateAllowedEmbedOrigins(request.Scope.AllowedEmbedOrigins, out var origins, out validationMessage))
+        var (origins, originsError) = ValidateAllowedEmbedOrigins(request.Scope.AllowedEmbedOrigins);
+        if (origins is null)
         {
+            validationMessage = originsError;
             return false;
         }
 
@@ -288,26 +290,24 @@ internal static partial class EmbedGovernanceEndpoints
         CreatedBy = record.CreatedBy,
     };
 
-    private static bool TryValidateAllowedEmbedOrigins(
-        IReadOnlyList<string>? values,
-        out List<string> origins,
-        out string validationMessage)
+    private static (List<string>? Origins, string ValidationMessage) ValidateAllowedEmbedOrigins(
+        IReadOnlyList<string>? values)
     {
-        origins = [];
         if (values is null || values.Count == 0)
         {
-            validationMessage = "Validation failed: at least one allowed embed origin is required";
-            return false;
+            return (null, "Validation failed: at least one allowed embed origin is required");
         }
 
+        var origins = new List<string>(values.Count);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in values)
         {
-            if (!TryValidateEmbedOrigin(raw, out var origin))
+            var origin = NormalizeValidEmbedOrigin(raw);
+            if (origin is null)
             {
-                validationMessage =
-                    "Validation failed: allowedEmbedOrigins entries must be valid http or https origins (scheme, host, and optional port only, with no path, query, fragment, wildcards, or control characters)";
-                return false;
+                return (
+                    null,
+                    "Validation failed: allowedEmbedOrigins entries must be valid http or https origins (scheme, host, and optional port only, with no path, query, fragment, wildcards, or control characters)");
             }
 
             if (seen.Add(origin))
@@ -316,16 +316,14 @@ internal static partial class EmbedGovernanceEndpoints
             }
         }
 
-        validationMessage = string.Empty;
-        return true;
+        return (origins, string.Empty);
     }
 
-    internal static bool TryValidateEmbedOrigin(string? value, out string origin)
+    internal static string? NormalizeValidEmbedOrigin(string? value)
     {
-        origin = string.Empty;
         if (string.IsNullOrEmpty(value) || value.Any(char.IsControl))
         {
-            return false;
+            return null;
         }
 
         var candidate = value.Trim();
@@ -333,9 +331,14 @@ internal static partial class EmbedGovernanceEndpoints
             || candidate.Any(char.IsWhiteSpace)
             || candidate.AsSpan().IndexOfAny(DisallowedOriginChars) >= 0)
         {
-            return false;
+            return null;
         }
 
+        return IsValidHttpOriginUri(candidate) ? candidate : null;
+    }
+
+    private static bool IsValidHttpOriginUri(string candidate)
+    {
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
             || (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
@@ -350,17 +353,12 @@ internal static partial class EmbedGovernanceEndpoints
         }
 
         var authority = candidate[schemePrefix.Length..];
-        if (authority.Length == 0
-            || authority.Contains('/', StringComparison.Ordinal)
-            || authority.EndsWith(':')
-            || string.IsNullOrEmpty(uri.Host)
-            || uri.HostNameType is not (UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6))
-        {
-            return false;
-        }
-
-        origin = candidate;
-        return true;
+        return authority.Length > 0
+            && !authority.Contains('/', StringComparison.Ordinal)
+            && !authority.EndsWith(':')
+            && !string.IsNullOrEmpty(uri.Host)
+            && uri.Port > 0
+            && uri.HostNameType is UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6;
     }
 
     private static List<string> Sanitize(IReadOnlyList<string>? values)

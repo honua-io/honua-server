@@ -110,6 +110,7 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
     [InlineData("https://app.example.com\r\nX-Injected: 1")]
     [InlineData("https://app.example.com\n")]
     [InlineData("https://app.example.com:")]
+    [InlineData("https://app.example.com:0")]
     [InlineData("app.example.com")]
     [InlineData("")]
     [Endpoint("POST /api/v1/admin/embed/keys")]

@@ -34,8 +34,7 @@ public sealed class AdminOperationCatalogDriftGateTests : IDisposable
         var findings = AdminOperationCatalogDriftGate.Evaluate(new(
             Contract,
             AdminOperationCatalogDriftGate.ShippedSlices(),
-            executorCounts,
-            mapperCounts));
+            new(executorCounts, mapperCounts)));
 
         findings.Should().BeEmpty();
     }
@@ -108,7 +107,7 @@ public sealed class AdminOperationCatalogDriftGateTests : IDisposable
         var mapperCounts = allIds.ToDictionary(static id => id, static _ => 1, StringComparer.Ordinal);
         mapperCounts["admin.exports.delete"] = 0;
 
-        var findings = AdminOperationCatalogDriftGate.Evaluate(new(Contract, slices, executorCounts, mapperCounts));
+        var findings = AdminOperationCatalogDriftGate.Evaluate(new(Contract, slices, new(executorCounts, mapperCounts)));
 
         findings.Should().Contain(f => f.StartsWith("executor-drift:", StringComparison.Ordinal) && f.Contains("admin.services.list", StringComparison.Ordinal));
         findings.Should().Contain(f => f.StartsWith("executor-drift:", StringComparison.Ordinal) && f.Contains("admin.cache.invalidate", StringComparison.Ordinal));
