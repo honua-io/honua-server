@@ -10,12 +10,15 @@ using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using System.Buffers;
 using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Server.Features.Admin.EmbedGovernance;
 
 internal static partial class EmbedGovernanceEndpoints
 {
+    private static readonly SearchValues<char> DisallowedOriginChars = SearchValues.Create("*?#@\\");
+
     internal sealed class EmbedGovernanceEndpointsLog;
 
     public static void MapEmbedGovernanceEndpoints(this IEndpointRouteBuilder endpoints)
@@ -230,10 +233,8 @@ internal static partial class EmbedGovernanceEndpoints
             return false;
         }
 
-        var origins = Sanitize(request.Scope.AllowedEmbedOrigins);
-        if (origins.Count == 0)
+        if (!TryValidateAllowedEmbedOrigins(request.Scope.AllowedEmbedOrigins, out var origins, out validationMessage))
         {
-            validationMessage = "Validation failed: at least one allowed embed origin is required";
             return false;
         }
 
@@ -286,6 +287,81 @@ internal static partial class EmbedGovernanceEndpoints
         RevokedAt = record.RevokedAt,
         CreatedBy = record.CreatedBy,
     };
+
+    private static bool TryValidateAllowedEmbedOrigins(
+        IReadOnlyList<string>? values,
+        out List<string> origins,
+        out string validationMessage)
+    {
+        origins = [];
+        if (values is null || values.Count == 0)
+        {
+            validationMessage = "Validation failed: at least one allowed embed origin is required";
+            return false;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in values)
+        {
+            if (!TryValidateEmbedOrigin(raw, out var origin))
+            {
+                validationMessage =
+                    "Validation failed: allowedEmbedOrigins entries must be valid http or https origins (scheme, host, and optional port only, with no path, query, fragment, wildcards, or control characters)";
+                return false;
+            }
+
+            if (seen.Add(origin))
+            {
+                origins.Add(origin);
+            }
+        }
+
+        validationMessage = string.Empty;
+        return true;
+    }
+
+    internal static bool TryValidateEmbedOrigin(string? value, out string origin)
+    {
+        origin = string.Empty;
+        if (string.IsNullOrEmpty(value) || value.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        var candidate = value.Trim();
+        if (candidate.Length == 0
+            || candidate.Any(char.IsWhiteSpace)
+            || candidate.AsSpan().IndexOfAny(DisallowedOriginChars) >= 0)
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+            || (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var schemePrefix = $"{uri.Scheme}://";
+        if (!candidate.StartsWith(schemePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var authority = candidate[schemePrefix.Length..];
+        if (authority.Length == 0
+            || authority.Contains('/', StringComparison.Ordinal)
+            || authority.EndsWith(':')
+            || string.IsNullOrEmpty(uri.Host)
+            || uri.HostNameType is not (UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6))
+        {
+            return false;
+        }
+
+        origin = candidate;
+        return true;
+    }
 
     private static List<string> Sanitize(IReadOnlyList<string>? values)
     {
