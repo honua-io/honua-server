@@ -29,7 +29,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var response = await PublishWithTemporalColumnAsync("VALID_FROM");
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.StorageLayerId;
+        TrackPublishedLayer(JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!);
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var binding = snapshot.Graph.StorageBindings.Single(candidate =>
@@ -37,7 +37,7 @@ public sealed partial class LayerPublishingIntegrationTests
         binding.Options!["temporalColumn"].GetString().Should().Be("valid_from");
 
         var capability = await _client.GetAsync(
-            $"/api/v1/temporal/services/{_serviceName}/layers/{_layerId}/capabilities");
+            $"/api/v1/temporal/services/{_serviceName}/layers/{_layerIndex}/capabilities");
         var capabilityPayload = await capability.Content.ReadAsStringAsync();
         capability.StatusCode.Should().Be(HttpStatusCode.OK, capabilityPayload);
         using (var document = JsonDocument.Parse(capabilityPayload))
@@ -48,7 +48,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }
 
         var asOf = await _client.GetAsync(
-            $"/api/v1/temporal/services/{_serviceName}/layers/{_layerId}/as-of?generation=0");
+            $"/api/v1/temporal/services/{_serviceName}/layers/{_layerIndex}/as-of?generation=0");
         var asOfPayload = await asOf.Content.ReadAsStringAsync();
         asOf.StatusCode.Should().Be(HttpStatusCode.OK, asOfPayload);
     }
@@ -74,7 +74,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var retry = await PublishWithTemporalColumnAsync("valid_from", fields: null);
         var retryPayload = await retry.Content.ReadAsStringAsync();
         retry.StatusCode.Should().Be(HttpStatusCode.Created, retryPayload);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(retryPayload, _jsonOptions)!.Data!.StorageLayerId;
+        TrackPublishedLayer(JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(retryPayload, _jsonOptions)!.Data!);
     }
 
     private Task AddTemporalSourceColumnsAsync()

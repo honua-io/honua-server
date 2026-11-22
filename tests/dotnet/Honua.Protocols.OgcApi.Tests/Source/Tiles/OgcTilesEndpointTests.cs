@@ -38,6 +38,24 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
+    [InlineData("7777", HttpStatusCode.Conflict)]
+    [InlineData("0", HttpStatusCode.OK)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles")]
+    public async Task GetCollectionTilesets_WithSharedServiceIndex_UsesStorageIdOrReportsAmbiguity(
+        string collectionId, HttpStatusCode expectedStatus)
+    {
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Publications = graph.Publications.Select(publication => publication with { LayerIndex = 7777 }).ToArray()
+        });
+
+        var response = await _fixture.Client.GetAsync($"/ogc/tiles/collections/{collectionId}/tiles");
+
+        response.StatusCode.Should().Be(expectedStatus, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.GetMetadata)]

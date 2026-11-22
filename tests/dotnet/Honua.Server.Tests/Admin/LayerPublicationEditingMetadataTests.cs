@@ -51,8 +51,10 @@ public sealed partial class LayerPublishingIntegrationTests
         TrackPublishedLayer(JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!);
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Graph.StorageBindings.Single(binding => binding.StorageLayerId == _layerId).ResourceId;
         var publication = snapshot.Graph.Publications.Single(candidate =>
-            candidate.LayerIndex == _layerIndex && candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
+            candidate.ResourceId == resourceId && candidate.LayerIndex == _layerIndex &&
+            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
         var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
         resource.Editing!.GlobalIdField.Should().Be("stable_id");
         resource.Editing.SupportsAttachments.Should().Be(supportsAttachments);

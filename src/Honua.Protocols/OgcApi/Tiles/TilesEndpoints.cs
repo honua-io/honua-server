@@ -1544,6 +1544,11 @@ internal static partial class TilesEndpoints
         bool missingCollectionIsBadRequest,
         CancellationToken cancellationToken)
     {
+        if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            return await ResolveNumericCollectionLayer(context, snapshot, (collectionId, missingCollectionIsBadRequest), cancellationToken).ConfigureAwait(false);
+        }
+
         var publication = FindCollectionPublication(context, snapshot, collectionId, requireProtocol: true, out var service);
         if (publication is null || service is null)
         {
@@ -1584,6 +1589,31 @@ internal static partial class TilesEndpoints
         }
 
         return new TileRequestLayerResolution(layer, null);
+    }
+
+    private static async Task<TileRequestLayerResolution> ResolveNumericCollectionLayer(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        (string CollectionId, bool MissingIsBadRequest) lookup,
+        CancellationToken cancellationToken)
+    {
+        var collectionId = lookup.CollectionId;
+        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+            context, collectionId, snapshot, requiredProtocol: OgcApiTilesProtocol,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            var error = lookup.MissingIsBadRequest && validation.Publication is null &&
+                validation.ErrorResult is IStatusCodeHttpResult { StatusCode: StatusCodes.Status404NotFound }
+                ? StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found.")
+                : validation.ErrorResult;
+            return new TileRequestLayerResolution(null, error);
+        }
+
+        var layer = CreateTileRequestLayer(snapshot, validation.Publication!, validation.Service!, validation.Resource!);
+        return new TileRequestLayerResolution(layer, layer is null
+            ? StandardErrorHelpers.CreateInternalServerError(context, $"Collection '{collectionId}' is not bound to a storage layer.")
+            : null);
     }
 
     private static MetadataV2Layer? FindCollectionPublication(
