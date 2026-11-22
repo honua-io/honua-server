@@ -15,9 +15,12 @@ merged Server commit.
 ## Provenance
 
 The base schema tree and upstream JSON fixtures are refreshed from geospatial-mcp
-commit **`f494393a119fcff4f53ca6998a8df5160ff1203e`** on `fix/s-vocab-map-app-wire-contract`. This is a pre-merge
-pin for the coordinated Map/App contract migration; its reference manifest is
-still awaiting regeneration from the matching server producer. The pinned changes rename identifiers and resource references without compatibility
+commit **`417d6a111f7a28b7f5405170b4b2923f0572e111`** on `fix/s-vocab-map-app-wire-contract`. This is a pre-merge
+pin for the coordinated Map/App contract migration. Its standard reference
+manifest was regenerated from server producer commit
+`23a0a9c243bdcdc261ee0e8db7cf9c10a7f3f130`, with implementation extensions
+reported separately; strict conformance and all 71 upstream fixtures pass. The
+pinned changes rename identifiers and resource references without compatibility
 aliases and align control identifiers with runtime validation.
 
 The base schema files come from `spec/schemas/`, fixtures from
