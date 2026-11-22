@@ -21,8 +21,8 @@ public sealed class ConsoleLoggingCollection
 public sealed partial class StructuredLoggingConfigurationTests
 {
     [UnitTheory]
-    [InlineData(Environments.Production)]
-    [InlineData(Environments.Staging)]
+    [InlineData("Production")]
+    [InlineData("Staging")]
     public async Task StructuredConsole_PreservesMultilineValuesInOneJsonEvent(string environment)
     {
         using var output = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
