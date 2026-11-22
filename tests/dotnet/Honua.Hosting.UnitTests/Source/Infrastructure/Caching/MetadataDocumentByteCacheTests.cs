@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Caching;
@@ -295,8 +294,8 @@ public sealed class MetadataDocumentByteCacheTests
     {
         internal long Generation { get; set; } = generation;
 
-        public ValueTask<long> GetGenerationAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(Generation);
+        public Task<long> GetGenerationAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Generation);
     }
 
     private sealed class SteppingTimeProvider : TimeProvider
