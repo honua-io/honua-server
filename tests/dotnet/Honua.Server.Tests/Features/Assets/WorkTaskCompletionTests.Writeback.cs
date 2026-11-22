@@ -250,12 +250,16 @@ public sealed partial class WorkTaskCompletionTests
             $"/api/v1/assets/profiles/{_profileId}",
             new AssetProfileWriteRequest
             {
-                CommandId = Guid.NewGuid(), ExpectedVersion = 1,
-                ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-                Name = "Signs", State = AssetProfileState.Active,
+                CommandId = Guid.NewGuid(),
+                ExpectedVersion = 1,
+                ServiceId = WebAppFixture.TestServiceId,
+                LayerId = WebAppFixture.TestLayerId,
+                Name = "Signs",
+                State = AssetProfileState.Active,
                 Fields = new AssetProfileFieldMap { AssetId = "objectid", Condition = "population", LastInspected = "timestamp" },
                 ConditionLabels = ["Very poor", "Poor", "Fair", "Good", "Very good"],
-                InspectionFormId = _form.FormId, ServiceFormId = _form.FormId,
+                InspectionFormId = _form.FormId,
+                ServiceFormId = _form.FormId,
             }, AssetsJsonContext.Default.AssetProfileWriteRequest);
         mapped.StatusCode.Should().Be(HttpStatusCode.OK, await mapped.Content.ReadAsStringAsync());
     }

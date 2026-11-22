@@ -41,7 +41,8 @@ internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
         if (!await LockGenerationAsync(transaction, completion.ConfigurationGeneration, cancellationToken).ConfigureAwait(false))
         {
             return new AssetCommandResult(AssetCommandStatus.Rejected, null,
-                "Configuration changed or is unavailable; reload and retry.") { Field = "configurationGeneration" };
+                "Configuration changed or is unavailable; reload and retry.")
+            { Field = "configurationGeneration" };
         }
 
         return await CompleteLockedAsync(transaction, completion, cancellationToken).ConfigureAwait(false);

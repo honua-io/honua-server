@@ -31,8 +31,11 @@ internal sealed class AssetCompletionCapabilities(IFormTargetMetadataResolver ta
 
     public async Task<bool> SupportsWritebackAsync(FormTargetMetadataResolution target, CancellationToken cancellationToken)
     {
-        if (target is not { Snapshot: { } snapshot, Service: { } service, Publication: { } publication,
-            Resource: { } resource, StorageLayerId: int layerId })
+        if (target is not
+            {
+                Snapshot: { } snapshot, Service: { } service, Publication: { } publication,
+                Resource: { } resource, StorageLayerId: int layerId
+            })
         {
             return false;
         }

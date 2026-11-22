@@ -75,13 +75,22 @@ public sealed partial class WorkTaskCompletionTests
         var id = Guid.NewGuid();
         return store.ReserveAsync(new WorkTaskAttachment
         {
-            AttachmentId = id, TaskId = authorization.TaskId, OwnerSubject = "crew-b", FieldId = "photo",
-            Filename = "inspection.txt", ContentType = "text/plain", SizeBytes = 16,
-            BlobKey = $"task-evidence/{authorization.TaskId}/{id}", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            AttachmentId = id,
+            TaskId = authorization.TaskId,
+            OwnerSubject = "crew-b",
+            FieldId = "photo",
+            Filename = "inspection.txt",
+            ContentType = "text/plain",
+            SizeBytes = 16,
+            BlobKey = $"task-evidence/{authorization.TaskId}/{id}",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
         }, new WorkTaskAttachmentLimits
         {
-            ConfigurationGeneration = authorization.Generation, IsPlanner = false,
-            MaxCount = 5, MaxFieldCount = 5, MaxTotalBytes = 1024,
+            ConfigurationGeneration = authorization.Generation,
+            IsPlanner = false,
+            MaxCount = 5,
+            MaxFieldCount = 5,
+            MaxTotalBytes = 1024,
         }, cancellationToken);
     }
 

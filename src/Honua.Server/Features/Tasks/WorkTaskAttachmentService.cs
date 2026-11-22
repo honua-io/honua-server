@@ -54,8 +54,11 @@ internal sealed class WorkTaskAttachmentService(WorkTaskAttachmentAccess access,
         var attachment = CreateAttachment(context, (task, file, field));
         var descriptor = new FormSubmissionAttachmentDescriptor
         {
-            FieldId = field, PartName = "file", Filename = attachment.Filename,
-            ContentType = attachment.ContentType, SizeBytes = attachment.SizeBytes,
+            FieldId = field,
+            PartName = "file",
+            Filename = attachment.Filename,
+            ContentType = attachment.ContentType,
+            SizeBytes = attachment.SizeBytes,
         };
         var validation = await validator.ValidateAttachmentUploadAsync(form, descriptor, context.RequestAborted).ConfigureAwait(false);
         if (!validation.IsValid)
@@ -88,10 +91,15 @@ internal sealed class WorkTaskAttachmentService(WorkTaskAttachmentAccess access,
         var id = Guid.NewGuid();
         return new WorkTaskAttachment
         {
-            AttachmentId = id, TaskId = upload.Task.TaskId, OwnerSubject = AssetCommandHttp.ResolveActor(context),
-            FieldId = upload.Field, Filename = FileUploadSecurity.SanitizeFileName(upload.File.FileName),
-            ContentType = upload.File.ContentType.Split(';', 2)[0].Trim(), SizeBytes = upload.File.Length,
-            BlobKey = $"task-evidence/{upload.Task.TaskId:D}/{id:D}", ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
+            AttachmentId = id,
+            TaskId = upload.Task.TaskId,
+            OwnerSubject = AssetCommandHttp.ResolveActor(context),
+            FieldId = upload.Field,
+            Filename = FileUploadSecurity.SanitizeFileName(upload.File.FileName),
+            ContentType = upload.File.ContentType.Split(';', 2)[0].Trim(),
+            SizeBytes = upload.File.Length,
+            BlobKey = $"task-evidence/{upload.Task.TaskId:D}/{id:D}",
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
         };
     }
 

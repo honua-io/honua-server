@@ -29,8 +29,11 @@ internal sealed class WorkTaskAttachmentPolicy(IOptions<LimitsOptions> limits)
         context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions
         {
             // Multipart limits count the file section as well as the fieldId section.
-            MultipartBodyLengthLimit = MaxBytes, ValueLengthLimit = 256, ValueCountLimit = 2,
-            MultipartHeadersCountLimit = 16, MultipartHeadersLengthLimit = 4096,
+            MultipartBodyLengthLimit = MaxBytes,
+            ValueLengthLimit = 256,
+            ValueCountLimit = 2,
+            MultipartHeadersCountLimit = 16,
+            MultipartHeadersLengthLimit = 4096,
         }));
         try
         {
@@ -51,7 +54,9 @@ internal sealed class WorkTaskAttachmentPolicy(IOptions<LimitsOptions> limits)
             limits.Value.Attachments.MaxAttachmentsPerFeature);
         return new WorkTaskAttachmentLimits
         {
-            ConfigurationGeneration = authorization.Generation, IsPlanner = authorization.Actor.IsPlanner, MaxCount = maximum,
+            ConfigurationGeneration = authorization.Generation,
+            IsPlanner = authorization.Actor.IsPlanner,
+            MaxCount = maximum,
             MaxFieldCount = Math.Min(policy.Fields.FirstOrDefault(field =>
                 string.Equals(field.FieldId, fieldId, StringComparison.OrdinalIgnoreCase))?.MaxCount ?? maximum, maximum),
             MaxTotalBytes = Math.Min(policy.MaxTotalBytes ?? limits.Value.Attachments.MaxTotalAttachmentSize,

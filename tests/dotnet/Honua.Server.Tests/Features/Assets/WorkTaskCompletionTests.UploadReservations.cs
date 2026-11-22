@@ -26,12 +26,22 @@ public sealed partial class WorkTaskCompletionTests
 
         var reserved = await store.ReserveAsync(new WorkTaskAttachment
         {
-            AttachmentId = id, TaskId = taskId, OwnerSubject = "crew-b", FieldId = field,
-            Filename = "inspection.txt", ContentType = "text/plain", SizeBytes = 16,
-            BlobKey = $"task-evidence/{taskId}/{id}", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            AttachmentId = id,
+            TaskId = taskId,
+            OwnerSubject = "crew-b",
+            FieldId = field,
+            Filename = "inspection.txt",
+            ContentType = "text/plain",
+            SizeBytes = 16,
+            BlobKey = $"task-evidence/{taskId}/{id}",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
         }, new WorkTaskAttachmentLimits
         {
-            ConfigurationGeneration = generation, IsPlanner = false, MaxCount = 5, MaxFieldCount = 1, MaxTotalBytes = totalLimit,
+            ConfigurationGeneration = generation,
+            IsPlanner = false,
+            MaxCount = 5,
+            MaxFieldCount = 1,
+            MaxTotalBytes = totalLimit,
         });
 
         reserved.Should().Be(outcome == ReservationOutcome.Accepted);
@@ -60,12 +70,22 @@ public sealed partial class WorkTaskCompletionTests
 
         var reservation = store.ReserveAsync(new WorkTaskAttachment
         {
-            AttachmentId = id, TaskId = taskId, OwnerSubject = "crew-b", FieldId = "photo",
-            Filename = "inspection.txt", ContentType = "text/plain", SizeBytes = 16,
-            BlobKey = $"task-evidence/{taskId}/{id}", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            AttachmentId = id,
+            TaskId = taskId,
+            OwnerSubject = "crew-b",
+            FieldId = "photo",
+            Filename = "inspection.txt",
+            ContentType = "text/plain",
+            SizeBytes = 16,
+            BlobKey = $"task-evidence/{taskId}/{id}",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
         }, new WorkTaskAttachmentLimits
         {
-            ConfigurationGeneration = generation, IsPlanner = false, MaxCount = 5, MaxFieldCount = 5, MaxTotalBytes = 1024,
+            ConfigurationGeneration = generation,
+            IsPlanner = false,
+            MaxCount = 5,
+            MaxFieldCount = 5,
+            MaxTotalBytes = 1024,
         }, timeout.Token);
         await WaitForDatabaseBlockAsync(writer.ProcessID, timeout.Token);
         await transaction.CommitAsync();

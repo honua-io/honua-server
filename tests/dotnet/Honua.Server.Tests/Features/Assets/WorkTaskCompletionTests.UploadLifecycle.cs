@@ -63,8 +63,12 @@ public sealed partial class WorkTaskCompletionTests
         await using var bytes = new MemoryStream("expired evidence"u8.ToArray());
         var uploaded = await storage.UploadIfMatchAsync(new FileUploadRequest
         {
-            Content = bytes, FileName = "inspection.jpg", ContentType = "image/jpeg",
-            SizeBytes = bytes.Length, ObjectKeyOverride = $"task-evidence/{id}", EnableChunkedUpload = false,
+            Content = bytes,
+            FileName = "inspection.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = bytes.Length,
+            ObjectKeyOverride = $"task-evidence/{id}",
+            EnableChunkedUpload = false,
         }, null);
         uploaded.Success.Should().BeTrue();
 

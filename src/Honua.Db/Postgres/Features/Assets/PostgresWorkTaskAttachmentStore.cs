@@ -130,9 +130,15 @@ internal sealed class PostgresWorkTaskAttachmentStore(IAdoNetDatabaseConnectionP
         {
             results.Add(new WorkTaskAttachment
             {
-                AttachmentId = reader.GetGuid(0), TaskId = reader.GetGuid(1), OwnerSubject = reader.GetString(2),
-                FieldId = reader.GetString(3), Filename = reader.GetString(4), ContentType = reader.GetString(5),
-                SizeBytes = reader.GetInt64(6), BlobKey = reader.GetString(7), ExpiresAt = reader.GetDateTime(8),
+                AttachmentId = reader.GetGuid(0),
+                TaskId = reader.GetGuid(1),
+                OwnerSubject = reader.GetString(2),
+                FieldId = reader.GetString(3),
+                Filename = reader.GetString(4),
+                ContentType = reader.GetString(5),
+                SizeBytes = reader.GetInt64(6),
+                BlobKey = reader.GetString(7),
+                ExpiresAt = reader.GetDateTime(8),
                 Status = reader.GetString(9),
             });
         }

@@ -22,8 +22,11 @@ internal sealed class WorkTaskAttachmentContent(IWorkTaskAttachmentStore attachm
         await using var stream = file.OpenReadStream();
         var result = await storage.UploadIfMatchAsync(new FileUploadRequest
         {
-            Content = stream, FileName = attachment.Filename, ContentType = attachment.ContentType,
-            SizeBytes = attachment.SizeBytes, ObjectKeyOverride = attachment.BlobKey,
+            Content = stream,
+            FileName = attachment.Filename,
+            ContentType = attachment.ContentType,
+            SizeBytes = attachment.SizeBytes,
+            ObjectKeyOverride = attachment.BlobKey,
             EnableChunkedUpload = false,
         }, null, cancellationToken).ConfigureAwait(false);
         return result.Success && await attachments.MarkReadyAsync(attachment.AttachmentId, cancellationToken).ConfigureAwait(false);

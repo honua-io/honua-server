@@ -78,8 +78,12 @@ internal sealed class WorkTaskCompletionForm(AssetFormLookup forms, FormPackageV
 
         return uploads.Select(static upload => new FormSubmissionAttachmentDescriptor
         {
-            ClientAttachmentId = upload.AttachmentId.ToString("D"), PartName = upload.AttachmentId.ToString("D"),
-            FieldId = upload.FieldId, Filename = upload.Filename, ContentType = upload.ContentType, SizeBytes = upload.SizeBytes,
+            ClientAttachmentId = upload.AttachmentId.ToString("D"),
+            PartName = upload.AttachmentId.ToString("D"),
+            FieldId = upload.FieldId,
+            Filename = upload.Filename,
+            ContentType = upload.ContentType,
+            SizeBytes = upload.SizeBytes,
         }).ToArray();
     }
 

@@ -94,7 +94,9 @@ public sealed partial class FormPackageValidatorTests
         var package = CreatePackage(includeAttachment: true);
         package = new FormPackageDocument
         {
-            Target = package.Target, AttachmentPolicy = package.AttachmentPolicy, SubmitPolicy = package.SubmitPolicy,
+            Target = package.Target,
+            AttachmentPolicy = package.AttachmentPolicy,
+            SubmitPolicy = package.SubmitPolicy,
             Fields = [.. package.Fields, new FormFieldDefinition
             {
                 FieldId = "receipt", Type = "attachment", Required = true, SectionId = "main"
@@ -114,7 +116,9 @@ public sealed partial class FormPackageValidatorTests
         var package = CreatePackage(includeAttachment: true);
         package = new FormPackageDocument
         {
-            Target = package.Target, Fields = package.Fields, SubmitPolicy = package.SubmitPolicy,
+            Target = package.Target,
+            Fields = package.Fields,
+            SubmitPolicy = package.SubmitPolicy,
             AttachmentPolicy = new FormAttachmentPolicy { Enabled = true, RequireExifStripping = true }
         };
 
@@ -125,8 +129,12 @@ public sealed partial class FormPackageValidatorTests
 
     private static FormSubmissionAttachmentDescriptor UploadDescriptor() => new()
     {
-        FieldId = "photo", ClientAttachmentId = "photo-1", PartName = "photo-1",
-        Filename = "inspection.png", ContentType = "image/png", SizeBytes = 32
+        FieldId = "photo",
+        ClientAttachmentId = "photo-1",
+        PartName = "photo-1",
+        Filename = "inspection.png",
+        ContentType = "image/png",
+        SizeBytes = 32
     };
 
     private static FormPackageVersion RecordVersion(FormPackageDocument package)
