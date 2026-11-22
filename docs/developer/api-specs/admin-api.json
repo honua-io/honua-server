@@ -17533,8 +17533,25 @@
           "Scenes"
         ],
         "summary": "Generate Scene From Feature Layer",
-        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Generation runs synchronously inside the request; the response carries the routable tileset URL plus feature/tile counts. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable.",
+        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Runs synchronously by default; the response carries the routable tileset URL plus feature/tile counts. Request async execution in the query or JSON body, or send Prefer: respond-async. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable.",
         "operationId": "generateScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17552,6 +17569,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenerateSceneResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -18038,6 +18073,23 @@
         "summary": "Ingest CityGML Scene",
         "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402.",
         "operationId": "ingestCityGmlScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -18048,6 +18100,10 @@
                   "file"
                 ],
                 "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -18094,6 +18150,24 @@
               }
             }
           },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -18123,6 +18197,23 @@
         "summary": "Ingest Point Cloud Scene",
         "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402.",
         "operationId": "ingestPointCloudScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -18133,6 +18224,10 @@
                   "file"
                 ],
                 "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -18193,6 +18288,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScenePointCloudIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -48950,6 +49063,10 @@
           "layerId"
         ],
         "properties": {
+          "async": {
+            "type": "boolean",
+            "description": "Queue generation and return a job reference."
+          },
           "layerId": {
             "type": "integer",
             "format": "int32",
