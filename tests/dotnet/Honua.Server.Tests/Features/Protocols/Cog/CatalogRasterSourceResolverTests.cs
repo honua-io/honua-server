@@ -255,9 +255,10 @@ public sealed class CatalogRasterSourceResolverTests
     }
 
     [UnitTest]
-    public async Task ResolveLayerIdAsync_StorageLayerSelector_QueriesItsPublicationIndex()
+    public async Task ResolveLayerIdAsync_StorageLayerSelector_QueriesStorageAndPublicationIndex()
     {
         var store = Substitute.For<ICogStore>();
+        store.ListByLayerAsync(900, Arg.Any<CancellationToken>()).Returns([]);
         store.ListByLayerAsync(42, Arg.Any<CancellationToken>())
             .Returns([CreateRegistration(91, layerId: 42)]);
         await using var services = BuildServices(store, BuildSnapshot((42, 900)));
@@ -266,8 +267,24 @@ public sealed class CatalogRasterSourceResolverTests
         var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(900, null));
 
         result.Should().Be(RasterSourceLayerResolution.Success(900));
+        await store.Received(1).ListByLayerAsync(900, Arg.Any<CancellationToken>());
         await store.Received(1).ListByLayerAsync(42, Arg.Any<CancellationToken>());
-        await store.DidNotReceive().ListByLayerAsync(900, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ResolveLayerIdAsync_TwoServicesWithLayerZero_ResolvesByStorageLayerId()
+    {
+        var store = Substitute.For<ICogStore>();
+        store.ListByLayerAsync(900, Arg.Any<CancellationToken>())
+            .Returns([CreateRegistration(91, layerId: 900)]);
+        await using var services = BuildServices(store, BuildSnapshot((0, 900), (0, 901)));
+        var resolver = CreateResolver(services);
+
+        var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(900, null));
+
+        result.Should().Be(RasterSourceLayerResolution.Success(900));
+        await store.Received(1).ListByLayerAsync(900, Arg.Any<CancellationToken>());
+        await store.DidNotReceive().ListByLayerAsync(0, Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
