@@ -249,7 +249,9 @@ POST /api/v{version:apiVersion}/admin/rls-policies/
 POST /api/v{version:apiVersion}/admin/roles/
 POST /api/v{version:apiVersion}/admin/scenes/
 POST /api/v{version:apiVersion}/admin/scenes/generate/
+POST /api/v{version:apiVersion}/admin/scenes/ingest/archive
 POST /api/v{version:apiVersion}/admin/scenes/ingest/citygml
+POST /api/v{version:apiVersion}/admin/scenes/ingest/model
 POST /api/v{version:apiVersion}/admin/scenes/ingest/pointcloud
 POST /api/v{version:apiVersion}/admin/security/client-certificates/profiles
 POST /api/v{version:apiVersion}/admin/security/client-certificates/profiles/{profileId}/mappings

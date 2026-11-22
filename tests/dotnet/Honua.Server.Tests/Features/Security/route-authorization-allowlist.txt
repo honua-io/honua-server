@@ -98,6 +98,7 @@ anonymous GET /rest/services/{id:int}/ImageServer/{rasterId:long}/info/histogram
 anonymous GET /rest/services/{id:int}/ImageServer/{rasterId:long}/info/keyProperties
 anonymous GET /rest/services/{id:int}/ImageServer/{rasterId:long}/rasterFile
 anonymous GET /rest/services/{id:int}/ImageServer/{rasterId:long}/thumbnail
+anonymous GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}
 anonymous GET /rest/services/{serviceId:regex(^(?!\d+$).+$)}/ImageServer/
 anonymous GET /rest/services/{serviceId:regex(^(?!\d+$).+$)}/ImageServer/WMTS
 anonymous GET /rest/services/{serviceId:regex(^(?!\d+$).+$)}/ImageServer/WMTS/{**restPath}
@@ -165,6 +166,7 @@ anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versi
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}
 anonymous GET /saml/login
 anonymous GET /saml/metadata
+anonymous GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}
 anonymous GET /scim/v2/Groups/
 anonymous GET /scim/v2/Groups/{id}
 anonymous GET /scim/v2/ResourceTypes
