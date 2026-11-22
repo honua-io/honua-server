@@ -13,23 +13,18 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 7,
+    "entries": 6,
     "datedNames": 6,
     "missingFiles": 0,
-    "brokenAnchors": 7,
+    "brokenAnchors": 6,
     "byArea": {
       "docs/internal": 6,
-      "docs/developer": 1,
+      "docs/developer": 0,
       "docs/gis": 0,
       "docs/guides": 0
     }
   },
   "entries": [
-    {
-      "source": "docs/developer/api-specs/README.md",
-      "target": "../../guides/query-analyze/query-features.md#vector-tiles-mvt",
-      "reason": "Heading renamed during the workflow-first restructure."
-    },
     {
       "source": "docs/internal/admin-api/analysis-content.md",
       "target": "../../reference/admin-api/overview.md#analysis-report-endpoints",

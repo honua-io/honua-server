@@ -82,7 +82,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             if (!inputs.TryGet("serviceUrl", out var rawServiceUrl) || string.IsNullOrWhiteSpace(rawServiceUrl))
             {
-                return JobExecutionResult.Failed($"Invalid {_processId} inputs: serviceUrl is required.");
+                return JobExecutionResult.InvalidInput($"Invalid {_processId} inputs: serviceUrl is required.");
             }
 
             var ssrfResult = await OutboundHttpUrlValidator.ValidateAsync(rawServiceUrl, cancellationToken)
@@ -90,8 +90,11 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
             if (!ssrfResult.IsValid)
             {
                 Log.SsrfRejected(_logger, job.OperationId, _processId, ssrfResult.ErrorMessage ?? "blocked URL");
-                return JobExecutionResult.Failed(
-                    $"Invalid {_processId} inputs: serviceUrl {ssrfResult.ErrorMessage}");
+                var message = $"Invalid {_processId} inputs: serviceUrl {ssrfResult.ErrorMessage}";
+                // A DNS outage may clear on the next attempt; every other rejection is the caller's URL.
+                return ssrfResult.IsHostResolutionUnavailable
+                    ? JobExecutionResult.Failed(message)
+                    : JobExecutionResult.InvalidInput(message);
             }
         }
 
@@ -115,6 +118,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
+            // Connection and secret resolution failures surface here too, so keep the retry budget.
             Log.InvalidInputs(_logger, job.OperationId, _processId, ex.PublicMessage, ex.InnerException);
             return JobExecutionResult.Failed($"Invalid {_processId} inputs: {ex.PublicMessage}");
         }
@@ -154,6 +158,11 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
 
                 features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
             }
+        }
+        catch (DagSourceSelectionException ex)
+        {
+            // Caller-facing selector rejection (e.g. an unsupported where): fails the same way every attempt.
+            return LayerComputationBudget.Refusal($"Invalid {_processId} inputs: {ex.Message}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

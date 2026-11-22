@@ -92,6 +92,20 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ServicesByName.TryGetValue(serviceName, out var service) ? service : null;
     }
 
+    // Callers may address a service by its ID or by its (case-insensitive) name; an exact ID wins.
+    public static MetadataV2Service? FindServiceByNameOrId(this MetadataV2GraphSnapshot snapshot, string serviceNameOrId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (string.IsNullOrEmpty(serviceNameOrId))
+        {
+            return null;
+        }
+
+        return snapshot.Index.ServicesById.TryGetValue(serviceNameOrId, out var byId) ? byId
+            : snapshot.Index.ServicesByName.TryGetValue(serviceNameOrId, out var byName) ? byName
+            : null;
+    }
+
     public static IReadOnlyList<MetadataV2Layer> PublicationsForService(
         this MetadataV2GraphSnapshot snapshot, string serviceId)
     {

@@ -161,7 +161,7 @@ public sealed class DomainCodedValueInfo
     public required string Name { get; set; }
 
     [JsonPropertyName("code")]
-    public required object? Code { get; set; }
+    public object? Code { get; set; }
 }
 
 public sealed class ValidateSqlRequest

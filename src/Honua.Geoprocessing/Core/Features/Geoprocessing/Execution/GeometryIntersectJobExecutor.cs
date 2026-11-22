@@ -54,31 +54,31 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid intersect inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: {inputError}");
         }
 
         if (!TryDecodeGeometry(inputs.TargetWkb, out var target, out var decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid intersect inputs: targetWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: targetWkb {decodeError}");
         }
 
         if (!TryDecodeGeometry(inputs.IntersectorWkb, out var intersector, out decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid intersect inputs: intersectorWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: intersectorWkb {decodeError}");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.Failed($"Invalid intersect inputs: targetWkb {targetSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: targetWkb {targetSridError}.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(intersector, inputs.Srid, out var intersectorSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", intersectorSridError);
-            return JobExecutionResult.Failed($"Invalid intersect inputs: intersectorWkb {intersectorSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: intersectorWkb {intersectorSridError}.");
         }
 
         target.SRID = inputs.Srid;
