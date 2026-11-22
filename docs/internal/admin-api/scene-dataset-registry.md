@@ -165,7 +165,7 @@ lean `SceneDataset` it serves:
   presenting the token via `?token=` or `X-Honua-Token`. The envelope reuses
   the same access policy this registry projects onto `SceneDataset`, so role
   changes here continue to gate envelope issuance. See
-  [Hosted 3D Tiles Scenes — Browser-safe access via signed envelope](../../guides/publish/publish-3d-scenes.md#browser-safe-access-via-signed-envelope).
+  [Publish 3D scenes — Render in CesiumJS](../../guides/publish/publish-3d-scenes.md#4-render-in-cesiumjs).
 
 Inactive records are filtered out of `FindAsync` so deactivation immediately
 hides a dataset from the public surface. Successful register / update /
