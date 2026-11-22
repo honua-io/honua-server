@@ -349,7 +349,7 @@ driving-distance query). The caps are configurable via the `Routing` section
   source-offer obligation).
 - [Esri routing service overview (NAServer)](https://developers.arcgis.com/rest/services-reference/enterprise/routing/routing-services/) —
   route sync service and ServiceArea solve response shapes (`saPolygons`).
-- [Esri Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-synchronous-service/).
+- [Esri Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-sync-services/).
 - [pgRouting `pgr_dijkstra`](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) —
   route solves.
 - [pgRouting `pgr_drivingDistance`](https://docs.pgrouting.org/latest/en/pgr_drivingDistance.html) —
