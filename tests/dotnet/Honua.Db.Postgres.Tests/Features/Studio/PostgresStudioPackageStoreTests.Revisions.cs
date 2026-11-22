@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit.Attributes;
 
@@ -113,5 +115,115 @@ public sealed partial class PostgresStudioPackageStoreTests
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    [IntegrationTest]
+    public async Task RestoreDraftRevisionAsync_RestoresStyledRemovedLayerAndRejectsConcurrentStaleWrite()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioRevisionRestore");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var registry = new StudioPackageFamilyRegistry(store);
+            var lifecycle = new StudioPackageLifecycleService(
+                store, registry, new StudioPackageValidator(registry, TimeProvider.System), TimeProvider.System);
+            var styledEnvelope = BuildCompositionRevisionEnvelope() with
+            {
+                Bindings = [new StudioPackageBinding { Key = "roads", Kind = "layer", Ref = "services/city/layers/roads" }],
+                Dependencies = [new StudioPackageDependency { Kind = "style", Ref = "styles/roads-styled" }],
+            };
+            var (created, removed) = await CreateStyledThenRemovedDraftAsync(lifecycle, styledEnvelope);
+            var restoreCommand = new RestoreStudioDraftRevisionCommand
+            {
+                TargetGeneration = created.Generation,
+                ExpectedGeneration = removed.Generation,
+                ActorId = "owner-a",
+            };
+
+            var restored = (await lifecycle.RestoreDraftRevisionAsync(created.DraftId, restoreCommand))!;
+
+            restored.Should().BeEquivalentTo(new { Generation = 3L, created.ItemId, created.OwnerId, created.WorkspaceId });
+            var freshStore = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            AssertStyledLayerRestored((await freshStore.GetDraftAsync(created.DraftId))!, styledEnvelope);
+            await lifecycle.Invoking(s => s.RestoreDraftRevisionAsync(created.DraftId, restoreCommand))
+                .Should().ThrowAsync<InvalidOperationException>();
+            await store.Invoking(s => s.UpdateDraftAsync(restored with { Generation = removed.Generation }))
+                .Should().ThrowAsync<InvalidOperationException>();
+            (await freshStore.GetDraftAsync(created.DraftId))!.Generation.Should().Be(3);
+            (await store.ListDraftRevisionsAsync(new(created.DraftId))).Should().HaveCount(2);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PreviewPlanAsync_LeavesStoredDraftGenerationAuditAndRevisionsUnchanged()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioPreviewReadOnly");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var registry = new StudioPackageFamilyRegistry(store);
+            var lifecycle = new StudioPackageLifecycleService(
+                store, registry, new StudioPackageValidator(registry, TimeProvider.System), TimeProvider.System);
+            var created = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "readonly-preview",
+                Envelope = BuildEnvelope("1=1"),
+                ActorId = "author-a",
+            });
+            var before = (await store.GetDraftAsync(created.DraftId))!;
+
+            var plan = await lifecycle.PreviewPlanAsync(created.DraftId, "reviewer-b");
+
+            plan.Should().NotBeNull();
+            var reloaded = (await store.GetDraftAsync(created.DraftId))!;
+            reloaded.Generation.Should().Be(before.Generation);
+            reloaded.UpdatedBy.Should().Be(before.UpdatedBy);
+            reloaded.UpdatedAt.Should().Be(before.UpdatedAt);
+            reloaded.Validation.GeneratedAt.Should().Be(before.Validation.GeneratedAt);
+            (await store.ListDraftRevisionsAsync(new(created.DraftId))).Should().BeEmpty();
+            (await lifecycle.PreviewPlanAsync(Guid.NewGuid(), "reviewer-b")).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static async Task<(StudioPackageDraft Created, StudioPackageDraft Removed)> CreateStyledThenRemovedDraftAsync(
+        StudioPackageLifecycleService lifecycle,
+        StudioPackageEnvelope styledEnvelope)
+    {
+        var created = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "styled-restore",
+            WorkspaceId = "ws-city",
+            OwnerId = "owner-a",
+            Envelope = styledEnvelope,
+            ActorId = "owner-a",
+        });
+        var removed = (await lifecycle.UpdateDraftAsync(created.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = created.PackageKey,
+            WorkspaceId = created.WorkspaceId,
+            OwnerId = created.OwnerId,
+            Envelope = BuildEnvelope("removed") with { Bindings = [], Dependencies = [] },
+            Generation = created.Generation,
+            ActorId = "owner-a",
+        }))!;
+        return (created, removed);
+    }
+
+    private static void AssertStyledLayerRestored(StudioPackageDraft reloaded, StudioPackageEnvelope styledEnvelope)
+    {
+        reloaded.Generation.Should().Be(3);
+        JsonElement.DeepEquals(reloaded.Envelope.Body!.Value, styledEnvelope.Body!.Value).Should().BeTrue();
+        reloaded.Envelope.Bindings.Should().ContainSingle(b => b.Key == "roads" && b.Ref == "services/city/layers/roads");
+        reloaded.Envelope.Dependencies.Should().ContainSingle(d => d.Kind == "style" && d.Ref == "styles/roads-styled");
     }
 }
