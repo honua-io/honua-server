@@ -38,7 +38,7 @@ internal static partial class SceneDatasetEndpoints
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var fileLength = stream.Length;
         var header = new byte[(int)Math.Min(fileLength, 65_536)];
-        var bytesRead = stream.ReadAtLeast(header, header.Length, throwIfEndOfStream: false);
+        var bytesRead = stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
         var prefix = header.AsSpan(0, bytesRead);
 
         if (LasPointCloudReader.TryReadCopcInfo(prefix, out var info, out var copcError))
