@@ -107,7 +107,9 @@ internal static partial class GeoJsonFeatureBaseBuilder
 
             if (attributes.TryGetValue(fieldName, out var value))
             {
-                properties[fieldName] = CoerceProperty(fieldName, value, schema);
+                properties[fieldName] = isObjectIdField && shouldIncludeObjectId
+                    ? NormalizeIdValue(value) ?? featureId
+                    : CoerceProperty(fieldName, value, schema);
             }
             else if (isObjectIdField && shouldIncludeObjectId)
             {
@@ -123,7 +125,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
                 {
                     if (shouldIncludeObjectId && !properties.ContainsKey(fieldName))
                     {
-                        properties[fieldName] = value ?? featureId;
+                        properties[fieldName] = NormalizeIdValue(value) ?? featureId;
                     }
 
                     continue;
