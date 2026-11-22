@@ -68,7 +68,8 @@ internal static class TemporalExtentHelpers
     {
         foreach (var field in resource.SchemaFields.Where(field =>
             string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time))
+            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset))
         {
             resolvedName = field.Name;
             return true;

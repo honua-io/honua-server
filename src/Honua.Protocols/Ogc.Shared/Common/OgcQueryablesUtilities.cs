@@ -147,6 +147,7 @@ internal static class OgcQueryablesUtilities
             switch (field.Type)
             {
                 case MetadataV2FieldType.DateTime:
+                case MetadataV2FieldType.TimestampOffset:
                     type = TemporalPropertyType.DateTime;
                     return true;
                 case MetadataV2FieldType.Date:
