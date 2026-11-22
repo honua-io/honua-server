@@ -206,7 +206,7 @@ public sealed class SceneDiscoveryContractDriftTests
 
     private static void AssertJsonMatchesFixture(string actualJson, string fixtureFileName)
     {
-        var path = RepositoryPaths.Resolve("tests", "fixtures", "scenes", "contracts", fixtureFileName);
+        var path = Path.Join(AppContext.BaseDirectory, "Fixtures", fixtureFileName);
         var expectedNode = JsonNode.Parse(File.ReadAllText(path));
         var actualNode = JsonNode.Parse(actualJson);
 
