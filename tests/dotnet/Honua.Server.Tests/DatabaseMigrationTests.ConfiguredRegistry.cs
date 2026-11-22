@@ -141,7 +141,7 @@ public sealed partial class DatabaseMigrationTests
             configuration: configuration);
         var installed = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
         installed.Successful.Should().BeTrue(installed.ErrorMessage);
-        command.CommandText = "CREATE EXTENSION postgis_raster;";
+        command.CommandText = "CREATE EXTENSION postgis_raster WITH SCHEMA public;";
         await command.ExecuteNonQueryAsync();
         var plan = await runner.PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
         plan.Successful.Should().BeTrue(plan.ErrorMessage);
