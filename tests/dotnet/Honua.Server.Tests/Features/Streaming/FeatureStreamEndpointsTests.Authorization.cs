@@ -336,7 +336,8 @@ public sealed partial class FeatureStreamEndpointsTests
 
         using var rejected = CredentialStreamProof.SseRequest(credential.Token, proof.LastCursor);
         using var denied = await fixture.Client.SendAsync(rejected, HttpCompletionOption.ResponseHeadersRead, ct);
-        denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an expired or revoked credential has no tenant binding and cannot see the tenant-owned layer");
 
         foreach (var tenant in new string?[] { "tenant-b", null })
         {
