@@ -3418,3 +3418,12 @@ collection remains serial and all assertions and test attributes are preserved.
 Shard filters, selected cases, workflows, required check names and the aggregate
 `needs` contract are unchanged. Every case continues in its selected PR shard and
 full trunk runs; no coverage moves to another schedule.
+
+Four interleaved baseline/candidate runs of the complete unchanged Core Endpoint
+Mutations shard passed the same 61 cases, with zero failures or skips. Median
+class-body time fell from 51.067914s to 45.244433s. Median fixture-inclusive TRX
+`Times` interval fell from 68.107526s to 62.059710s, saving 6.047816s
+(0.100797 runner-minutes). Both pairs improved: 66.604309s to 62.258366s and
+69.610743s to 61.861054s. Runner count remains one; compilation and process startup
+are excluded. These are paired shard measurements, not an aggregate critical-path
+claim or a sum with other independently measured candidates.
