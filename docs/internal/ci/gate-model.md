@@ -3405,3 +3405,16 @@ seconds, saving 1.513 seconds (0.025 runner-minutes). Both pairs improved, by
 0.435 and 2.591 seconds. Runner count stays one. These are small shared-host
 measurements; compilation is excluded, and no parallel PR Gate critical-path
 improvement is claimed.
+
+### FeatureServer unsupported-control host lifetime
+
+The nine `ApplyEdits_UnsupportedEsriControl_IsRejectedInsteadOfDropped` rows use
+the existing class application. Validation rejects these controls before invoking
+the edit handler. Each row retains its unique feature name, HTTP error and message
+assertions, and a separate query proving that the rejected edit created no feature.
+Successful mutation cases retain their private applications and schemas. The class
+collection remains serial and all assertions and test attributes are preserved.
+
+Shard filters, selected cases, workflows, required check names and the aggregate
+`needs` contract are unchanged. Every case continues in its selected PR shard and
+full trunk runs; no coverage moves to another schedule.
