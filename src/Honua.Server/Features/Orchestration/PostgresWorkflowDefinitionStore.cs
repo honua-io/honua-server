@@ -25,8 +25,7 @@ internal sealed partial class PostgresWorkflowDefinitionStore(ControlPlaneStorag
             await using var command = new NpgsqlCommand(
                 $"SELECT record::text FROM {_definitions} WHERE workflow_id = @id", connection);
             command.Parameters.AddWithValue("id", workflowId);
-            var payload = await command.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
-            return payload is null ? null : Decode(payload);
+            return await command.ExecuteScalarAsync(token).ConfigureAwait(false) is string payload ? Decode(payload) : null;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
     }
 

@@ -43,11 +43,11 @@ internal static partial class GPServerEndpoints
                 response = name == "SubmitJob"
                     ? await HandleSubmitJob(context, ct, ReadParameters).ConfigureAwait(false)
                     : await HandleExecute(context, ct, ReadParameters).ConfigureAwait(false);
-                if ((response as IValueHttpResult)?.Value is GPSubmitJobResponse submitted)
+                if (response is IValueHttpResult { Value: GPSubmitJobResponse submitted })
                 {
                     result = new XElement("Result", submitted.JobId);
                 }
-                else if ((response as IValueHttpResult)?.Value is GPExecuteResponse executed)
+                else if (response is IValueHttpResult { Value: GPExecuteResponse executed })
                 {
                     result = GPServerSoapExecution.BuildResult(executed.Results ?? [], executed.Messages ?? []);
                 }

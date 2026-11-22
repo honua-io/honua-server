@@ -96,10 +96,19 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
 
 Run `GET /api/v1/admin/operations/{runId}` again in the explorer.
 
-Expected (trimmed): run progress that ends in a succeeded state with both steps terminal.
+Expected (trimmed): a bare PascalCase `WorkflowProgress` object whose run ends in `RunStatus: 2` (`Succeeded`), `Status: 2` (`Completed`), and `StepsCompleted` equal to `TotalSteps`.
 
 ```json
-{ "data": { "operationId": "…", "operationType": "Orchestration", "status": "Succeeded" } }
+{
+  "OperationId": "wf-…",
+  "WorkflowId": "…",
+  "RunStatus": 2,
+  "StepsCompleted": 2,
+  "TotalSteps": 2,
+  "PercentComplete": 100,
+  "CurrentPhase": "Succeeded",
+  "Status": 2
+}
 ```
 
 ## Troubleshoot

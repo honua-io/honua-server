@@ -762,7 +762,9 @@ internal sealed class FormSubmissionService
         return builder.ToImmutable();
     }
 
-    private static object? ConvertJsonValue(JsonElement value, MetadataV2FieldType fieldType)
+    // Exact types (TimestampOffset, Decimal) are stored as canonical text, which the package validator
+    // has already parsed; a JSON number keeps its own digits.
+    internal static object? ConvertJsonValue(JsonElement value, MetadataV2FieldType fieldType)
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
@@ -771,7 +773,10 @@ internal sealed class FormSubmissionService
 
         return fieldType switch
         {
-            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Time => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
+            MetadataV2FieldType.Decimal when value.ValueKind == JsonValueKind.Number
+                => ExactAttributeValues.FormatDecimalNumber(value) ?? value.GetRawText(),
+            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Decimal => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
             MetadataV2FieldType.Integer => value.GetInt32(),
             MetadataV2FieldType.BigInteger => value.GetInt64(),
             MetadataV2FieldType.Double => value.GetDouble(),

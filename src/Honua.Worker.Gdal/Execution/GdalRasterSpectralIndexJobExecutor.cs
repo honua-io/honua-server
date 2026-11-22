@@ -59,13 +59,13 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
         if (!GdalJobInputReader.TryGetInput(parameters, "index", out var indexRaw)
             || string.IsNullOrWhiteSpace(indexRaw))
         {
-            return JobExecutionResult.Failed("Invalid spectral-index inputs: missing required input 'index'.");
+            return JobExecutionResult.InvalidInput("Invalid spectral-index inputs: missing required input 'index'.");
         }
 
         var index = indexRaw.Trim().ToLowerInvariant();
         if (!SupportedIndices.Contains(index))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid spectral-index inputs: 'index' value '{indexRaw}' is not supported (NDVI, NDWI, NDBI, SAVI, EVI).");
         }
 
@@ -73,12 +73,12 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
         // and a builder for the trusted calc expression.
         if (!TryBuildIndex(index, parameters, out var roles, out var calc, out var buildError))
         {
-            return JobExecutionResult.Failed($"Invalid spectral-index inputs: {buildError}");
+            return JobExecutionResult.InvalidInput($"Invalid spectral-index inputs: {buildError}");
         }
 
         if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
         {
-            return JobExecutionResult.Failed($"Invalid spectral-index inputs: {noDataError}");
+            return JobExecutionResult.InvalidInput($"Invalid spectral-index inputs: {noDataError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -95,7 +95,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 if (!GdalJobInputReader.TryGetRasterInput(parameters, roles[i], opts.MaxArtifactBytes, out var rasterInput, out var roleError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, roleError);
-                    return JobExecutionResult.Failed($"Invalid spectral-index inputs: {roleError}");
+                    return JobExecutionResult.InvalidInput($"Invalid spectral-index inputs: {roleError}");
                 }
 
                 // Bound the DECLARED pixel footprint before writing the file or
@@ -104,7 +104,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 if (!rasterInput.TryAdmit(opts, out var dimensionError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, dimensionError);
-                    return JobExecutionResult.Failed($"Invalid spectral-index inputs: {dimensionError}");
+                    return JobExecutionResult.InvalidInput($"Invalid spectral-index inputs: {dimensionError}");
                 }
 
                 // Second segment is built from roles[i], which is always one of the

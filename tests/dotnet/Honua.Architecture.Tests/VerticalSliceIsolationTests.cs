@@ -60,7 +60,8 @@ public sealed class VerticalSliceIsolationTests
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
         "Temporal", // Temporal data history slice: capability discovery + as-of read.
         "FieldWorkflows", // Back-office field workflow slice: review/QA + exports over form submissions.
-        "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "AgentWorkspace", // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "Assets" // Task-first asset management: asset profiles over published layers, command receipts.
     };
 
     private static readonly HashSet<string> _infrastructureAllowedSubAreas =
@@ -177,6 +178,8 @@ public sealed class VerticalSliceIsolationTests
             ["Operations"] = new[] { "Admin" },
             // Studio composes the Console authoring surface.
             ["Studio"] = new[] { "Console" },
+            // Asset profiles validate their linked inspection and service forms against the published layer.
+            ["Assets"] = new[] { "Forms" },
             // The ingest cluster (Import + Migration + FileImport + RasterImport)
             // is one cohesive unit destined for the Honua.Import module; intra-
             // cluster references are expected and move out of Server together.

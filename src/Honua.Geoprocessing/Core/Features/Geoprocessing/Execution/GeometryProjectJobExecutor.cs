@@ -57,7 +57,7 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid project inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid project inputs: {inputError}");
         }
 
         if (!IsTransformSupported(inputs.FromSrid, inputs.ToSrid))
@@ -78,18 +78,18 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.Failed("Invalid project inputs: WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid project inputs: WKB payload could not be decoded.");
         }
 
         if (source == null || source.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid project inputs: geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid project inputs: geometry is empty.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(source, inputs.FromSrid, out var sridError))
         {
             Log.InvalidInputs(_logger, job.OperationId, sridError);
-            return JobExecutionResult.Failed($"Invalid project inputs: {sridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid project inputs: {sridError}.");
         }
 
         source.SRID = inputs.FromSrid;

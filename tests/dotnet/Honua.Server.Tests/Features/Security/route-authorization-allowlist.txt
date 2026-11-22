@@ -456,8 +456,8 @@ none GET /api/scenes
 none GET /api/scenes/{sceneId}
 none GET /api/scenes/{sceneId}/resolve
 none GET /api/styles/{publicationId}.json
-none GET /api/v1/publications/{publicationId}/current.json
-none GET /api/v1/publications/{publicationId}/{version}/{fileName}
+none GET /api/v1/exports/{exportId}/current.json
+none GET /api/v1/exports/{exportId}/{version}/{fileName}
 none GET /api/v1/rasters/cog/{*artifactId}
 none GET /api/v1/tiles/pmtiles/{*artifactId}
 none GET /api/v{version:apiVersion}/datacubes/{layerId:int}/tiles/{tileMatrixSetId}/{z:int}/{x:int}/{y:int}
@@ -747,8 +747,8 @@ none GET /tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt
 none GET /tiles/{layerId:int}/tile.json
 none GET /tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt
 none GET /wfs
-none HEAD /api/v1/publications/{publicationId}/current.json
-none HEAD /api/v1/publications/{publicationId}/{version}/{fileName}
+none HEAD /api/v1/exports/{exportId}/current.json
+none HEAD /api/v1/exports/{exportId}/{version}/{fileName}
 none HEAD /api/v1/rasters/cog/{*artifactId}
 none HEAD /api/v1/tiles/pmtiles/{*artifactId}
 none HEAD /scenes/{sceneId}/tileset.json
@@ -761,6 +761,7 @@ none POST /geospatial.v1.ElevationService/GetElevationProfile
 # Generated base handlers for unimplemented FeatureService RPCs return status Unimplemented.
 none POST /geospatial.v1.FeatureService/AbortAttachmentUpload
 none POST /geospatial.v1.FeatureService/ApplyEdits
+none POST /geospatial.v1.FeatureService/ApplyServiceEdits
 none POST /geospatial.v1.FeatureService/BeginAttachmentUpload
 none POST /geospatial.v1.FeatureService/CommitAttachmentUpload
 none POST /geospatial.v1.FeatureService/DeleteAttachment
@@ -770,6 +771,7 @@ none POST /geospatial.v1.FeatureService/GetAttachmentUrl
 none POST /geospatial.v1.FeatureService/ListAttachments
 none POST /geospatial.v1.FeatureService/QueryFeatures
 none POST /geospatial.v1.FeatureService/QueryFeaturesStream
+none POST /geospatial.v1.FeatureService/QueryRelatedRecords
 none POST /geospatial.v1.FeatureService/UploadAttachment
 none POST /geospatial.v1.FeatureService/UploadAttachmentChunk
 none POST /geospatial.v1.ProcessService/CancelJob

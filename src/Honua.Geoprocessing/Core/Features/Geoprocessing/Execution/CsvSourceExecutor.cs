@@ -55,7 +55,7 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         var inputs = new StepInputReader(job.Spec.Parameters);
         if (!inputs.TryGet("inline", out var inline) || string.IsNullOrWhiteSpace(inline))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid {HandledProcessId} inputs: requires an 'inline' CSV document.");
         }
 

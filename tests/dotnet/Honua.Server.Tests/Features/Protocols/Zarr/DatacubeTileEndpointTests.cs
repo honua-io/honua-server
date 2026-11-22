@@ -217,13 +217,13 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         var client = await StartCubeAsync(fixture);
         var image = MiniPngDecoder.Decode(await ReadTilePngAsync(await client.GetAsync(
             $"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/0/0/0")));
-        image.Pixel(0, 0).Item4.Should().Be(0, "an absent chunk must be transparent after service conversion");
-        image.Pixel(TileSize - 1, 0).Item4.Should().Be(0, "a stored sentinel must be transparent too");
+        image.Pixel(0, 0).A.Should().Be(0, "an absent chunk must be transparent after service conversion");
+        image.Pixel(TileSize - 1, 0).A.Should().Be(0, "a stored sentinel must be transparent too");
         var neighborGray = wide ? (byte)255 : (byte)0;
         image.Pixel(0, TileSize - 1).Should().Be((neighborGray, neighborGray, neighborGray, (byte)255));
-        image.Pixel(TileSize - 1, TileSize - 1).Item4.Should().Be(255);
+        image.Pixel(TileSize - 1, TileSize - 1).A.Should().Be(255);
         if (dtype != "|b1")
-            image.Pixel(TileSize - 1, TileSize - 1).Item1.Should().Be(wide ? (byte)0 : (byte)255,
+            image.Pixel(TileSize - 1, TileSize - 1).R.Should().Be(wide ? (byte)0 : (byte)255,
                 "stored/missing fill values must not enter the stretch range");
 
         byte[] Cell(object value)

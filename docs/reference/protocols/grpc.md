@@ -63,7 +63,7 @@ for session lifecycle and CSRF requirements.
 
 | Service | RPCs | Purpose |
 | --- | --- | --- |
-| `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query and edits; respects per-service protocol enablement and access policy. |
+| `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `QueryRelatedRecords`, `ApplyEdits`, `ApplyServiceEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query, related records, and single- or multi-layer edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
 | `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. Experimental: registered only when `Capabilities__Experimental__scene.catalog__Enabled=true`; otherwise `UNIMPLEMENTED`. |
@@ -111,12 +111,37 @@ attachment editing additionally requires explicit attachment enablement. Clients
 respect these flags and surface unsupported operations explicitly.
 
 The server maintains the editing tracking fields, as GeoServices `applyEdits`
-does. `ApplyEdits` ignores client values for the creator, created-at, editor and
-updated-at fields. An insert stamps all four from the authenticated caller and
-the server clock. An update stamps the editor and updated-at fields and keeps
-the stored creator values. Timestamps are stamped into DateTime, Date,
-TimestampOffset, String, BigInteger and Double fields; a tracking field of any
-other type, such as a 32-bit Integer, is left empty.
+does. `ApplyEdits` and `ApplyServiceEdits` ignore client values for the creator,
+created-at, editor and updated-at fields. An insert stamps all four from the
+authenticated caller and the server clock (one shared timestamp across all
+layers of a multi-layer `ApplyServiceEdits` call). An update stamps the editor
+and updated-at fields and keeps the stored creator values. Timestamps are
+stamped into DateTime, Date, TimestampOffset, String, BigInteger and Double
+fields; a tracking field of any other type, such as a 32-bit Integer, is left
+empty.
+
+## Related records and multi-layer service edits
+
+`QueryRelatedRecords` queries a declared relationship from a bounded set of
+distinct `object_ids` and returns grouped related features with bounded
+continuation paging (`page_size`, `page_token`, `next_page_token`). Row
+security and field masks apply to both the origin and related layers. Page
+tokens are authenticated and encrypted via ASP.NET Data Protection, expire
+after 15 minutes (with a 60-second clock-skew allowance), and are bound to the
+request parameters, metadata snapshot revision, tenant, and stable caller
+identity claims (excluding ephemeral JWT lifetime claims such as `exp`/`iat`).
+Invalid, expired, or foreign tokens return `INVALID_ARGUMENT`.
+
+`ApplyServiceEdits` applies edits across distinct managed layers of a service
+within a single `RepeatableRead` transaction. Every layer is authorized,
+validated, and checked for edit limits before the transaction opens. With
+`rollback_on_failure: false`, each row runs inside a savepoint so individual
+row failures do not abort other rows or layers. With `rollback_on_failure: true`,
+any row or edit-hook rejection rolls back all layers and returns per-layer
+results with error code `1000`. When `idempotency_key` is supplied, the server
+commits a durable 24-hour receipt bound to the caller, service, and SHA-256
+request fingerprint; retrying the same key with a different request returns
+`INVALID_ARGUMENT`, and replayed responses re-apply current field visibility.
 
 ## Attachments over gRPC-Web
 
@@ -226,7 +251,7 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
-The server pins `Geospatial.Grpc` **1.3.0**, which is on
+The server pins `Geospatial.Grpc` **1.5.0**, which is on
 [nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and restores
 anonymously.
 

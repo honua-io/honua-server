@@ -99,7 +99,7 @@ public sealed record StacItem
     public string? Type { get; init; } = "Feature";
 
     [JsonPropertyName("id")]
-    public required string? Id { get; init; }
+    public string? Id { get; init; }
 
     [JsonPropertyName("geometry")]
     public JsonElement? Geometry { get; init; }
@@ -109,14 +109,14 @@ public sealed record StacItem
     public ImmutableArray<double>? Bbox { get; init; }
 
     [JsonPropertyName("properties")]
-    public required Dictionary<string, object?>? Properties { get; init; }
+    public Dictionary<string, object?>? Properties { get; init; }
 
     [JsonPropertyName("links")]
-    public required ImmutableArray<Link>? Links { get; init; }
+    public ImmutableArray<Link>? Links { get; init; }
 
     // STAC 1.0.0 requires an assets object on every item, so an item with no known assets still emits an empty dictionary.
     [JsonPropertyName("assets")]
-    public required Dictionary<string, StacAsset>? Assets { get; init; }
+    public Dictionary<string, StacAsset>? Assets { get; init; }
 
     [JsonPropertyName("collection")]
     public string? Collection { get; init; }
