@@ -165,7 +165,7 @@ public class OgcMapsConformanceHandlerTests
             out var pointBounds,
             out var pointError).Should().BeTrue(pointError);
         pointBounds.MinY.Should().Be(45);
-        pointBounds.MaxY.Should().Be(45);
+        pointBounds.MaxY.Should().Be(47.8125, "a point slice must cover one native grid cell");
         pointBounds.MinX.Should().Be(-180);
         pointBounds.MaxX.Should().Be(180);
 
