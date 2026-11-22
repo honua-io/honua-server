@@ -191,6 +191,9 @@ public sealed class DuckDBExternalSourceSqlTests
             await using var query = db.CreateCommand();
             query.CommandText = "SELECT count(*) FROM parcels";
             Assert.Equal(3L, await query.ExecuteScalarAsync());
+
+            query.CommandText = "SELECT ST_AsText(geom) FROM parcels WHERE id = 1";
+            Assert.Equal("POINT (1 0)", await query.ExecuteScalarAsync());
         }
 
         Assert.Equal(connection, reader.Location?.Connection);
@@ -244,7 +247,11 @@ public sealed class DuckDBExternalSourceSqlTests
             await using var db = new DuckDBConnection("Data Source=:memory:");
             await db.OpenAsync();
             await using var query = db.CreateCommand();
-            query.CommandText = $"COPY (SELECT range AS id FROM range(3)) TO {DuckDBExternalSourceSql.QuoteLiteral(path)} (FORMAT parquet)";
+            query.CommandText = "INSTALL spatial";
+            await query.ExecuteNonQueryAsync();
+            query.CommandText = "LOAD spatial";
+            await query.ExecuteNonQueryAsync();
+            query.CommandText = $"COPY (SELECT range AS id, ST_Point(range, 0) AS geom FROM range(3)) TO {DuckDBExternalSourceSql.QuoteLiteral(path)} (FORMAT parquet)";
             await query.ExecuteNonQueryAsync();
             return await File.ReadAllBytesAsync(path);
         }
