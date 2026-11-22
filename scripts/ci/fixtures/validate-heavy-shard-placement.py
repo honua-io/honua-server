@@ -43,7 +43,7 @@ class HeavyPlacementTests(unittest.TestCase):
 
     def test_the_longest_shard_and_a_lone_shard_stay_hosted(self):
         self.assertEqual(heavy_names(budget_module.place_heavy(lane([5.0]), 1.83)), [])
-        self.assertEqual(len(heavy_names(budget_module.place_heavy(lane([6.0, 6.0]), 1.0))), 1)
+        self.assertEqual(heavy_names(budget_module.place_heavy(lane([6.0, 6.0]), 1.01)), [])
         self.assertEqual(heavy_names(budget_module.place_heavy(lane([8.0, 6.0, 5.0]), 1.83)), [])
 
     def test_at_most_half_the_lane_goes_heavy_shortest_first(self):
@@ -53,6 +53,11 @@ class HeavyPlacementTests(unittest.TestCase):
     def test_unmeasured_shards_stay_hosted(self):
         placed = budget_module.place_heavy(lane([8.0, None, 0.0, 2.0]), 1.83)
         self.assertEqual(heavy_names(placed), ["s3"])
+
+    def test_duplicate_names_keep_their_own_marks(self):
+        include = lane([9.0, 2.0]) + lane([2.0], OTHER, "o")
+        include[1]["shard_name"] = include[2]["shard_name"] = "same"
+        self.assertEqual([entry["heavy"] for entry in selector.place_heavy_shards(include, 1.83)], [False, True, False])
 
     def test_each_producer_lane_is_placed_on_its_own(self):
         include = lane([9.0, 2.0]) + lane([4.0, 2.0], OTHER, "o")
@@ -78,8 +83,8 @@ class HeavyPlacementTests(unittest.TestCase):
 
     def test_slowdown_loader_rejects_a_missing_or_invalid_policy(self):
         config = selector.load_config(shard_fixtures.CONFIG_PATH)
-        self.assertGreaterEqual(budget_module.load_heavy_slowdown(config), 1.0)
-        for broken in (None, {}, {"heavy_slowdown": 0.5}, {"heavy_slowdown": True}, {"heavy_slowdown": "1.8"}):
+        self.assertGreater(budget_module.load_heavy_slowdown(config), 1.0)
+        for broken in (None, {}, {"heavy_slowdown": 0.5}, {"heavy_slowdown": 1}, {"heavy_slowdown": True}, {"heavy_slowdown": "1.8"}):
             mutated = copy.deepcopy(config)
             mutated.pop(budget_module.HEAVY_PLACEMENT_KEY)
             if broken is not None:

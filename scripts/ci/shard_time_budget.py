@@ -101,8 +101,8 @@ def deferred_summary(result: dict[str, Any]) -> list[str]:
 def load_heavy_slowdown(config: dict[str, Any]) -> float:
     policy = config.get(HEAVY_PLACEMENT_KEY)
     value = policy.get("heavy_slowdown") if isinstance(policy, dict) else None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 1:
-        raise TimeBudgetError(f"{HEAVY_PLACEMENT_KEY}.heavy_slowdown must be a number of at least 1")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 1:
+        raise TimeBudgetError(f"{HEAVY_PLACEMENT_KEY}.heavy_slowdown must be a number greater than 1")
     return float(value)
 
 
