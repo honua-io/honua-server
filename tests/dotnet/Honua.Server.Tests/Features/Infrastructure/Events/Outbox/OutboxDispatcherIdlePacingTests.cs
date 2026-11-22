@@ -77,6 +77,24 @@ public sealed class OutboxDispatcherIdlePacingTests
         }
     }
 
+    [UnitTest]
+    public async Task EqualIdleAndMaxIntervals_KeepsFixedPollingInterval()
+    {
+        var claims = new ClaimCounter();
+        using var dispatcher = NewDispatcher(claims, new Pacing(100, 100, new PollWakeSignal<IFeatureChangeOutboxRepository>()));
+
+        await dispatcher.StartAsync(CancellationToken.None);
+        try
+        {
+            // Setting MaxIdlePollIntervalMs == IdlePollIntervalMs disables backoff; nine passes take about 1 s.
+            await claims.WaitForAsync(9).WaitAsync(TimeSpan.FromSeconds(8));
+        }
+        finally
+        {
+            await dispatcher.StopAsync(CancellationToken.None);
+        }
+    }
+
     private sealed record Pacing(int IdleMs, int MaxIdleMs, PollWakeSignal<IFeatureChangeOutboxRepository> Wake);
 
     private static OutboxDispatcherBackgroundService NewDispatcher(ClaimCounter claims, Pacing pacing)
