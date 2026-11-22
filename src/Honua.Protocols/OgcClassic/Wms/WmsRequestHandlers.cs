@@ -20,10 +20,12 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
@@ -167,18 +169,24 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var capabilities = PooledTextBuilder.Rent();
-                try
+                var cacheKey = CapabilitiesDocumentCacheHelper.BuildWmsKey(
+                    new WmsCapabilitiesCacheRequest { Context = context, SnapshotEtag = snapshot.Etag, ServiceId = svcDef.Metadata.Id, Version = capabilitiesVersion },
+                    Array.ConvertAll(accessibleLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)),
+                    Array.ConvertAll(challengeLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)));
+                return await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>
                 {
-                    await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
-                    return PooledTextBuilder.ToUtf8Result(
-                        capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
-                }
-                finally
-                {
-                    PooledTextBuilder.Return(capabilities);
-                }
+                    var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
+                    var capabilities = PooledTextBuilder.Rent();
+                    try
+                    {
+                        await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
+                        return PooledTextBuilder.ToUtf8Result(capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
+                    }
+                    finally
+                    {
+                        PooledTextBuilder.Return(capabilities);
+                    }
+                }).ConfigureAwait(false);
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
@@ -248,7 +256,7 @@ internal static partial class WmsRequestHandlers
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) || !ResourceHasGeometry(resource!)
+            if (!snapshot.IsRoutable(publication) || !OgcClassicRasterSupport.IsRenderableResource(resource!)
                 || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
             {
                 continue;
@@ -314,19 +322,6 @@ internal static partial class WmsRequestHandlers
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
-
-    private static bool ResourceHasGeometry(MetadataV2Object resource)
-    {
-        if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
-        {
-            return true;
-        }
-
-        // V2 graphs that don't fill in the typed Spatial slot still surface geometry through
-        // the schema (Geometry/Geography field). Match the WCS/WMTS V2 ports — both are
-        // treated as "this layer is renderable".
-        return resource.FindPrimaryGeometryField() is not null;
-    }
 
     private static string GetWmsLayerDisplayName(WmsLayer layer)
         => layer.Identifier;
@@ -444,7 +439,8 @@ internal static partial class WmsRequestHandlers
         var hasTemporalLayer = false;
         for (var i = 0; i < layers.Length; i++)
         {
-            if (!HasDeclaredTimeDimension(layers[i]) &&
+            if (!OgcClassicRasterSupport.IsRasterResource(layers[i].Resource) &&
+                !HasDeclaredTimeDimension(layers[i]) &&
                 TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layers[i].Resource, out var selection))
             {
                 // Match GetCapabilities' effective gate, not just the presence of
@@ -743,6 +739,12 @@ internal static partial class WmsRequestHandlers
             if (string.IsNullOrWhiteSpace(token))
             {
                 continue;
+            }
+
+            if (OgcClassicRasterSupport.IsRasterResource(layers[i].Resource))
+            {
+                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                    "FILTER is not supported for raster layers."));
             }
 
             var (filter, error) = TranslateWmsLayerFilter(
@@ -1287,6 +1289,11 @@ internal static partial class WmsRequestHandlers
         var exceptionsValue = context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS");
         if (IsWmsImageExceptionFormat(exceptionsValue))
         {
+            if (context is not null)
+            {
+                SharedCacheResponse.DoNotShare(context);
+            }
+
             return CreateWmsImageException(context, code, message, exceptionsValue);
         }
 

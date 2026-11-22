@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Db.Postgres.Tests.Shared;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -226,7 +227,7 @@ public sealed partial class PostgresOpsIncidentObservationStoreTests(PostgresFix
             await ApplyMigrationAsync(schema, "172_CreateOpsIncidentEpisodes.sql");
             await using var restartedProvider = services.BuildServiceProvider();
             await using var restartedScope = restartedProvider.CreateAsyncScope();
-            await action(scope.ServiceProvider, restartedScope.ServiceProvider);
+            await FirstChanceNullReferenceTrace.RunAsync(() => action(scope.ServiceProvider, restartedScope.ServiceProvider));
         }
         finally
         {

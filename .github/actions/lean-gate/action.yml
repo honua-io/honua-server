@@ -240,7 +240,12 @@ runs:
           [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing selected build filter"; exit 1; }
           target="${GATE_BUILD_FILTER}"
         fi
-        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release -maxcpucount:4
+        # Match Dockerfile's default JIT serving image (-p:PublishAot=false), which
+        # disables EnableRequestDelegateGenerator and exercises runtime reflection
+        # RequestDelegateFactory so server-boot-smoke.sh and Server.Tests catch JIT
+        # endpoint-binding startup crashes (#7919, #9136) on every PR Gate. AOT
+        # analyzers remain enabled in format-check and ci.yml AOT Build Verification.
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release /p:PublishAot=false -maxcpucount:4
 
     # Composite-action steps do not support `timeout-minutes`, so each bounded
     # step wraps its command in coreutils `timeout` (exit 124 => step fails).
@@ -263,6 +268,7 @@ runs:
               -graphBuild -maxcpucount:4 \
               /p:TreatWarningsAsErrors=true \
               /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
+              /p:PublishAot=false \
               /p:UseSharedCompilation=false
         else
           timeout "${{ inputs.build-timeout-minutes }}m" \
@@ -272,6 +278,7 @@ runs:
               -graphBuild -maxcpucount:4 \
               /p:TreatWarningsAsErrors=true \
               /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
+              /p:PublishAot=false \
               /p:UseSharedCompilation=false
         fi
 

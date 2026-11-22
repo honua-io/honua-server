@@ -77,7 +77,7 @@ before those events are stored. The same correlation and traceparent are injecte
 `HONUA_CORRELATION_ID` and `HONUA_TRACEPARENT` when the attempt is prepared, and the
 trace id is recorded on the job as `honua.trace_id` when that parameter is not already set.
 
-The console job step view (`GET /admin/jobs/{id}/steps`) reports `timingSource` per step:
+The console job step view (`GET /api/v1/admin/jobs/{jobId}/steps`) reports `timingSource` per step:
 `measured` when both the step and the next one carry `honua.event.elapsedMs`, otherwise
 `inferred` from log timestamps. Treat inferred durations as approximate.
 

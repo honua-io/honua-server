@@ -46,6 +46,11 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route wiring. Request validation and stream failure handling live in
         // AdminLiveStream (400 for an unknown topic, catch of cancellation and IO).
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminLiveEndpoints.cs"),
+        // Pure route wiring. AssetProfileService shapes every error through AssetCommandHttp
+        // (field-level validation problems, 403/404/409 admin problem details).
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Assets", "AssetProfileEndpoints.cs"),
+        // Pure route wiring. WorkTaskService shapes every error through AssetCommandHttp.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Tasks", "WorkTaskEndpoints.cs"),
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
@@ -60,6 +65,10 @@ public sealed class ErrorHandlingPolicyTests
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
+        // Error shaping uses the admin ApiResponse failure envelope (TypedResults.Json
+        // with 400/404/409/422), which the marker scan does not recognize; unexpected
+        // failures are handled by the global exception middleware.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "Exports", "ExportAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),

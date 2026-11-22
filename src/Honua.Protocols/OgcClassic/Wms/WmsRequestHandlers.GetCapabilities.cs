@@ -148,6 +148,7 @@ internal static partial class WmsRequestHandlers
         // Identify time-aware layers (gate matches the GetMap/capabilities emission path).
         var temporalLayers = layers
             .Where(layer =>
+                !OgcClassicRasterSupport.IsRasterResource(layer.Resource) &&
                 !HasDeclaredTimeDimension(layer) &&
                 TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
             .ToArray();
@@ -196,7 +197,9 @@ internal static partial class WmsRequestHandlers
         // Fan out like the temporal prefetch above: each style lookup opens its own
         // connection, so the per-layer capabilities loop does not pay a sequential
         // round-trip per layer.
-        var candidates = layers.Where(static layer => ResourceHasGeometry(layer.Resource)).ToArray();
+        var candidates = layers
+            .Where(static layer => !OgcClassicRasterSupport.IsRasterResource(layer.Resource) && OgcClassicRasterSupport.ResourceHasGeometry(layer.Resource))
+            .ToArray();
         if (candidates.Length == 0)
         {
             return [];
@@ -260,6 +263,7 @@ internal static partial class WmsRequestHandlers
                 layer.StorageLayerId,
                 GetWmsLayerDisplayName(layer),
                 ex);
+            CapabilitiesBuildDegradation.Mark();
             return null;
         }
     }
@@ -479,7 +483,8 @@ internal static partial class WmsRequestHandlers
             var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
             var layerAbstract = string.IsNullOrWhiteSpace(layerMetadata.Description) ? null : layerMetadata.Description;
 
-            sb.AppendLine("      <Layer queryable=\"1\">");
+            var queryable = OgcClassicRasterSupport.IsRasterResource(layer.Resource) ? "0" : "1";
+            sb.Append("      <Layer queryable=\"").Append(queryable).AppendLine("\">");
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             if (layerAbstract is not null)
@@ -575,24 +580,25 @@ internal static partial class WmsRequestHandlers
     }
 
     private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(
-        MetadataV2Object resource,
-        ICoordinateTransformService? coordinateTransformService,
+        HttpContext context,
+        WmsLayer layer,
         CancellationToken cancellationToken)
     {
-        var bbox = resource.ReadBbox();
-        if (bbox is null)
+        var resolved = await OgcClassicRasterSupport.TryResolveResourceExtentAsync(
+            context, new(layer.Resource, layer.StorageLayerId), cancellationToken).ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var srid = resource.ReadSrid() ?? 4326;
+        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var transformed = await OgcExtentTransformer
             .TryTransformExtentToCrs84Async(
-                bbox.West,
-                bbox.South,
-                bbox.East,
-                bbox.North,
-                srid,
+                resolved.Value.West,
+                resolved.Value.South,
+                resolved.Value.East,
+                resolved.Value.North,
+                resolved.Value.Srid,
                 coordinateTransformService,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -618,8 +624,7 @@ internal static partial class WmsRequestHandlers
         HttpContext context, WmsLayer layer)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var extent = await TryGetLayerWgs84ExtentAsync(layer.Resource,
-            context.RequestServices.GetService<ICoordinateTransformService>(), cancellationToken).ConfigureAwait(false);
+        var extent = await TryGetLayerWgs84ExtentAsync(context, layer, cancellationToken).ConfigureAwait(false);
         var temporalRanges = await PrefetchTemporalRangesAsync(context, [layer], cancellationToken).ConfigureAwait(false);
         var legendDimensions = await PrefetchLegendDimensionsAsync(context, [layer], cancellationToken).ConfigureAwait(false);
         return new(layer, extent, temporalRanges, legendDimensions);

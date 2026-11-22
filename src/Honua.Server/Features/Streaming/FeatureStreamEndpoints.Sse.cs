@@ -210,6 +210,7 @@ internal static partial class FeatureStreamEndpoints
                     var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
                     await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, linkedCts.Token)
                         .ConfigureAwait(false);
+                    session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
                     var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
                     if (snapshotScopeError is not null)
                     {
@@ -412,13 +413,17 @@ internal static partial class FeatureStreamEndpoints
             while (!linkedCts.Token.IsCancellationRequested)
             {
 #pragma warning disable CA2000 // The using declaration disposes it on every path; replay revalidation confuses the interprocedural analysis.
-                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token, session.ServiceRestartToken);
 #pragma warning restore CA2000
                 var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
                 var diff = nextPollAt - DateTimeOffset.UtcNow;
                 var remainingDelay = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
                 var waitForPollTask = Task.Delay(remainingDelay, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
+                if (session.ServiceRestart)
+                {
+                    break; // Between frames: the endpoint writes the retry frame.
+                }
 
                 if (completed == waitForPollTask)
                 {
@@ -551,6 +556,7 @@ internal static partial class FeatureStreamEndpoints
                             linkedCts.Token).ConfigureAwait(false);
 
                         liveDelivered.MarkDelivered(liveEnvelope.Cursor);
+                        session.Lifecycle?.RecordDelivery(liveEnvelope.Timestamp);
                     }
 
                     await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
@@ -649,6 +655,7 @@ internal static partial class FeatureStreamEndpoints
         {
             var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
             await WriteSseResetAsync(response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, cancellationToken).ConfigureAwait(false);
+            recovery.Session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
             var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, recovery.Filter);
             if (snapshotScopeError is not null)
             {

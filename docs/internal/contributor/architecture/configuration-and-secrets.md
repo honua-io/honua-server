@@ -101,7 +101,7 @@ consistent. Bind from `StandardTtl` in configuration:
     "Short":     "00:05:00",
     "Medium":    "00:30:00",
     "Long":      "04:00:00",
-    "VeryLong":  "24:00:00",
+    "VeryLong":  "1.00:00:00",
     "Negative":  "00:01:00"
   }
 }

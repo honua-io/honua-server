@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -705,7 +705,7 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
     builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
 }
 #endif
-Honua.Server.Features.Admin.PairedPublications.PublicPublicationDestinationServiceCollectionExtensions
+Honua.Server.Features.Admin.Exports.PublicPublicationDestinationServiceCollectionExtensions
     .AddPublicPublicationDestination(builder.Services, builder.Configuration);
 
 // Configure file upload security limits
@@ -819,6 +819,8 @@ builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermi
 builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRlsPolicyStore,
     Honua.Server.Features.Admin.Services.InMemoryRlsPolicyStore>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataActorProvider,
+    Honua.Server.Features.Admin.HttpContextMetadataActorProvider>();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
     Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
 // Field-level security (column masking), the field-level companion to RLS.
@@ -1231,11 +1233,11 @@ app.UseServerInstanceHeader();
 
 if (forwardedHeadersEnabled)
 {
-    app.Use(async (context, next) =>
+    app.Use((context, next) =>
     {
         context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] =
             context.Connection.RemoteIpAddress;
-        await next(context).ConfigureAwait(false);
+        return next(context);
     });
     app.UseForwardedHeaders();
 }
@@ -1251,37 +1253,33 @@ if (!disableHttpsRedirection)
     app.UseHttpsRedirection();
 }
 
-app.Use(async (context, next) =>
+app.Use((context, next) =>
 {
     var path = context.Request.Path.Value;
-    if (!string.IsNullOrEmpty(path))
+    if (string.IsNullOrEmpty(path) || !path.Contains("//", StringComparison.Ordinal))
     {
-        var trimmedPath = path.TrimEnd('/');
-        if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
-            trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
-        {
-            await Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    "Connection ID is required")
-                .ExecuteAsync(context)
-                .ConfigureAwait(false);
-            return;
-        }
+        return next();
     }
 
-    if (!string.IsNullOrEmpty(path) && path.Contains("//", StringComparison.Ordinal))
+    var trimmedPath = path.TrimEnd('/');
+    if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
+        trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
     {
-        var normalized = path;
-        while (normalized.Contains("//", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("//", "/");
-        }
-
-        context.Request.Path = new PathString(normalized);
+        return Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Connection ID is required")
+            .ExecuteAsync(context);
     }
 
-    await next().ConfigureAwait(false);
+    var normalized = path;
+    while (normalized.Contains("//", StringComparison.Ordinal))
+    {
+        normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
+    }
+
+    context.Request.Path = new PathString(normalized);
+    return next();
 });
 
 var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
@@ -1355,7 +1353,7 @@ app.UseSecurityHeaders();
 
 // Some standards validators and older HTTP clients send only `Accept-Encoding: *`.
 // Prefer gzip/deflate for that wildcard so the response remains broadly decodable.
-app.Use(async (context, next) =>
+app.Use((context, next) =>
 {
     if (context.Request.Headers.AcceptEncoding.Count == 1 &&
         string.Equals(context.Request.Headers.AcceptEncoding[0], "*", StringComparison.Ordinal))
@@ -1363,7 +1361,7 @@ app.Use(async (context, next) =>
         context.Request.Headers.AcceptEncoding = "gzip, deflate";
     }
 
-    await next(context);
+    return next(context);
 });
 
 // Add response compression middleware (early in pipeline)
@@ -1523,13 +1521,15 @@ app.UseSerilogRequestLogging(options =>
 // detection, and treating a client-supplied X-Grpc-Web header as sufficient
 // would let an unauthenticated caller bypass required native mTLS by setting a
 // single header alongside application/grpc.
-app.Use(async (context, next) =>
+var boxedTrue = (object)true;
+var boxedFalse = (object)false;
+app.Use((context, next) =>
 {
     var contentType = context.Request.ContentType;
     var isGrpcWeb = !string.IsNullOrWhiteSpace(contentType) &&
         contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
-    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
-    await next(context).ConfigureAwait(false);
+    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb ? boxedTrue : boxedFalse;
+    return next(context);
 });
 
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
@@ -2004,7 +2004,7 @@ if (app.Environment.IsDevelopment())
 #endif
 
 // Configure file import endpoints
-app.MapImportEndpoints();
+app.MapImportEndpoints(AdminConnectImportOperationCatalog.Definitions);
 app.MapMigrationScannerEndpoints();
 app.MapGeoServicesMigrationEvidenceEndpoints();
 app.MapToolboxTranslationEndpoints();
@@ -2055,7 +2055,8 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
-app.MapPairedPublicationReadEndpoints();
+app.MapExportReadEndpoints();
+app.MapExportAdminEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();

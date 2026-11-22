@@ -101,7 +101,9 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         };
 
     private static bool IsOwnedDraftMutation(OperationRequest request, OperationPolicyContext context) =>
-        request.OperationId is not (StudioDraftMutationContext.UpdateOperationId or StudioDraftMutationContext.DeleteOperationId)
+        request.OperationId is not (StudioDraftMutationContext.UpdateOperationId
+            or StudioDraftMutationContext.RestoreRevisionOperationId
+            or StudioDraftMutationContext.DeleteOperationId)
         || (!string.IsNullOrWhiteSpace(context.PrincipalId)
             && string.Equals(request.VerifiedStudioDraftOwnerId, context.PrincipalId, StringComparison.Ordinal));
 

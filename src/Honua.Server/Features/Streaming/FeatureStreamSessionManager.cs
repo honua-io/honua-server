@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
@@ -350,6 +351,11 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
         if (reason == FeatureStreamDisconnectReason.SlowConsumer)
         {
             _metrics.RecordSlowConsumerDrop(entry.Transport);
+            entry.Lifecycle?.RecordReset(RealtimeResetReasons.SlowConsumer);
+        }
+        else if (reason == FeatureStreamDisconnectReason.PolicyRevoked)
+        {
+            entry.Lifecycle?.RecordRevocation();
         }
 
         UpdateGaugeSnapshot();
@@ -829,6 +835,7 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
         public string? ClientLabel { get; }
         public string Transport { get; }
         public string AdmissionPartition { get; }
+        public IRealtimeStreamSession? Lifecycle { get; set; }
         public bool HasSubscriptions
         {
             get
@@ -1114,6 +1121,10 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
                 var authorized = current.Filter is null ? envelope : current.Filter.PrepareDelivery(envelope);
                 if (authorized is null)
                 {
+                    if (current.Filter is not null)
+                    {
+                        Lifecycle?.RecordAuthorizationFilter();
+                    }
                     return null;
                 }
 
@@ -1265,8 +1276,40 @@ internal sealed class FeatureStreamSession : IDisposable
     // Only one socket send is in flight, and replay and the live drain share that lock.
     public SemaphoreSlim WriteLock => _writeLock;
 
+    // Set when the shared realtime lifecycle closes this session for a task shutdown, so the
+    // transport ends with a reconnect hint (SSE retry, WebSocket 1012) instead of a plain close.
+    public bool ServiceRestart => Volatile.Read(ref _serviceRestart);
+
+    // Transports check this between frames: SSE then ends with a retry frame, and WebSocket sends 1012
+    // while still receiving (cancelling a pending receive or an in-flight write would abort the connection).
+    public CancellationToken ServiceRestartToken => _serviceRestartSignal.Token;
+
+    private readonly CancellationTokenSource _serviceRestartSignal = new();
+
+    private bool _serviceRestart;
+
+    private CancellationTokenRegistration _drainSignal;
+
+    // The shared realtime lifecycle registration; null until attached.
+    public IRealtimeStreamSession? Lifecycle { get; private set; }
+
+    public void AttachLifecycle(IRealtimeStreamSession lifecycle)
+    {
+        Lifecycle = lifecycle;
+        _manager.AttachLifecycle(SessionId, lifecycle);
+        _drainSignal = lifecycle.DrainingToken.Register(RequestServiceRestart);
+    }
+
+    public void RequestServiceRestart()
+    {
+        Volatile.Write(ref _serviceRestart, true);
+        _serviceRestartSignal.Cancel();
+    }
+
     public void Dispose()
     {
+        _drainSignal.Dispose();
+        _serviceRestartSignal.Dispose();
         _manager.RemoveSession(SessionId, FeatureStreamDisconnectReason.ClientClosed);
         _writeLock.Dispose();
     }

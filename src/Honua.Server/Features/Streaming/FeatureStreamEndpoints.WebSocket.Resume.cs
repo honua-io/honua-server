@@ -90,6 +90,7 @@ internal static partial class FeatureStreamEndpoints
         await SendWebSocketResetAsync(
             new(gate.Socket, gate.Session.WriteLock, RealtimeResetReasons.Retention, head),
             cancellationToken).ConfigureAwait(false);
+        gate.Session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
         var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, gate.Filter);
         if (snapshotScopeError is null)
         {

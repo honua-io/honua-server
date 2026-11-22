@@ -10,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
@@ -30,6 +31,7 @@ internal static partial class WmsRequestHandlers
         string serviceId,
         ILogger logger)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.Tile);
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         OgcClassicLog.WmsRequested(logger, serviceId, "GetMap");
         var stopwatch = Stopwatch.StartNew();
@@ -162,6 +164,10 @@ internal static partial class WmsRequestHandlers
         // validated above before repeated storage layers collapse to their first occurrence.
         // Each surviving layer is queried and drawn once.
         (renderLayers, var layerFilters) = DeduplicateWmsLayers(renderLayers, filterResult.Filters);
+        if (renderLayers.Length == 1)
+        {
+            SharedCacheResponse.UsePublication(context, service, renderLayers[0].Publication);
+        }
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -244,7 +250,16 @@ internal static partial class WmsRequestHandlers
             var layer = renderLayers[i];
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!ResourceHasGeometry(layer.Resource))
+            if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+            {
+                totalFeatureCount += await TryDrawWmsRasterLayerAsync(
+                    context,
+                    (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (!OgcClassicRasterSupport.ResourceHasGeometry(layer.Resource))
             {
                 continue;
             }
@@ -332,5 +347,30 @@ internal static partial class WmsRequestHandlers
         HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
 
         return Results.Bytes(imageBytes, contentType);
+    }
+
+    private static async Task<int> TryDrawWmsRasterLayerAsync(
+        HttpContext context,
+        (SKCanvas Canvas, (int StorageLayerId, SkiaMapRenderer.RenderExtent Extent, int RequestSrid, int Width, int Height) Input) target,
+        CancellationToken cancellationToken)
+    {
+        var input = new OgcClassicRasterSupport.RasterMapRenderInput
+        {
+            StorageLayerId = target.Input.StorageLayerId,
+            Extent = target.Input.Extent,
+            RequestSrid = target.Input.RequestSrid,
+            Width = target.Input.Width,
+            Height = target.Input.Height
+        };
+        var rasterBytes = await OgcClassicRasterSupport.TryRenderRasterMapLayerAsync(
+            context, input, cancellationToken).ConfigureAwait(false);
+        if (rasterBytes is not { Length: > 0 })
+        {
+            return 0;
+        }
+
+        OgcClassicRasterSupport.DrawEncodedRaster(
+            target.Canvas, rasterBytes, new SKRect(0, 0, input.Width, input.Height));
+        return 1;
     }
 }

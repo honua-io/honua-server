@@ -12,19 +12,43 @@ public static class EmbedPolicyEvaluator
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(request);
 
-        if (key.GetStatus(now) != EmbedKeyStatus.Active)
+        var accessDecision = EvaluateKeyAndOrigin(key, request, now);
+        if (!accessDecision.Allowed)
         {
-            return EmbedPolicyDecision.Deny(EmbedPolicyDenyReason.KeyInactive, "embed key is not active");
+            return accessDecision;
         }
 
+        var scopeDecision = EvaluateEventScope(key, request);
+        if (!scopeDecision.Allowed)
+        {
+            return scopeDecision;
+        }
+
+        return EvaluateRateLimit(key, request);
+    }
+
+    public static EmbedPolicyDecision EvaluateRequestAccess(
+        EmbedKeyRecord key,
+        EmbedPolicyRequest request,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var accessDecision = EvaluateKeyAndOrigin(key, request, now);
+        if (!accessDecision.Allowed)
+        {
+            return accessDecision;
+        }
+
+        return EvaluateRateLimit(key, request);
+    }
+
+    public static EmbedPolicyDecision EvaluateEventScope(EmbedKeyRecord key, EmbedPolicyRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(request);
         var scope = key.Scope;
-
-        if (!IsOriginAllowed(request.Origin, scope.AllowedEmbedOrigins))
-        {
-            return EmbedPolicyDecision.Deny(
-                EmbedPolicyDenyReason.OriginNotAllowed,
-                $"origin '{request.Origin ?? "(none)"}' is not allowed for this key");
-        }
 
         if (!IsMemberAllowed(request.ServiceId, scope.AllowedServiceOrigins))
         {
@@ -49,6 +73,32 @@ public static class EmbedPolicyEvaluator
                 "request tenant does not match the key's bound tenant");
         }
 
+        return EmbedPolicyDecision.Allow;
+    }
+
+    private static EmbedPolicyDecision EvaluateKeyAndOrigin(
+        EmbedKeyRecord key,
+        EmbedPolicyRequest request,
+        DateTimeOffset now)
+    {
+        if (key.GetStatus(now) != EmbedKeyStatus.Active)
+        {
+            return EmbedPolicyDecision.Deny(EmbedPolicyDenyReason.KeyInactive, "embed key is not active");
+        }
+
+        if (!IsOriginAllowed(request.Origin, key.Scope.AllowedEmbedOrigins))
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.OriginNotAllowed,
+                $"origin '{request.Origin ?? "(none)"}' is not allowed for this key");
+        }
+
+        return EmbedPolicyDecision.Allow;
+    }
+
+    private static EmbedPolicyDecision EvaluateRateLimit(EmbedKeyRecord key, EmbedPolicyRequest request)
+    {
+        var scope = key.Scope;
         if (scope.RateLimitRequestsPerWindow > 0
             && request.RequestsConsumedInWindow > scope.RateLimitRequestsPerWindow)
         {

@@ -106,6 +106,44 @@ public sealed class RateLimitEndpointsTests : IAsyncLifetime
         getAfterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTheory]
+    [InlineData("policy\r\ninjected")]
+    [InlineData("policy\nline")]
+    [InlineData("policy\tcontrol")]
+    [Endpoint("POST /api/v1/admin/rate-limits")]
+    [Endpoint("PUT /api/v1/admin/rate-limits/{id}")]
+    public async Task CreateAndUpdatePolicy_WithControlCharactersInName_ReturnsBadRequest(string badName)
+    {
+        var createBad = await _client.PostAsJsonAsync("/api/v1/admin/rate-limits", new
+        {
+            name = badName,
+            scope = "tenant",
+            key = $"tenant-{Guid.NewGuid():N}",
+            requestsPerWindow = 100,
+            windowDurationSeconds = 60d,
+            enabled = true,
+        });
+        createBad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var createValid = await _client.PostAsJsonAsync("/api/v1/admin/rate-limits", new
+        {
+            name = $"valid-policy-{Guid.NewGuid():N}",
+            scope = "tenant",
+            key = $"tenant-{Guid.NewGuid():N}",
+            requestsPerWindow = 100,
+            windowDurationSeconds = 60d,
+            enabled = true,
+        });
+        createValid.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var doc = JsonDocument.Parse(await createValid.Content.ReadAsStringAsync());
+        var policyId = doc.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
+
+        var updateBad = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/rate-limits/{policyId}",
+            new { name = badName });
+        updateBad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/rate-limits/status")]
     public async Task GetStatus_MissingKey_ReturnsBadRequest()

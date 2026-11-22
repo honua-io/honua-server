@@ -3,7 +3,7 @@
 
 using System.IO;
 using System.Text.Json.Nodes;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Newtonsoft.Json.Linq;
@@ -40,7 +40,7 @@ public sealed class ExportCollectionSchemaTests
         var collection = Load(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
 
         collection.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
-        PublicationDescriptorRules.Violations(Read(collection)).Should().BeEmpty();
+        ExportVersionRules.Violations(Read(collection)).Should().BeEmpty();
     }
 
     [UnitTheory]
@@ -57,7 +57,7 @@ public sealed class ExportCollectionSchemaTests
         }
 
         schemaValid.Should().BeTrue($"{file} must pass the schema so only rule {expectedFailure} rejects it: {Describe(errors)}");
-        PublicationDescriptorRules.Violations(Read(collection)).Should().Equal(expectedFailure);
+        ExportVersionRules.Violations(Read(collection)).Should().Equal(expectedFailure);
     }
 
     [UnitTest]
@@ -79,7 +79,7 @@ public sealed class ExportCollectionSchemaTests
     {
         var export = ExportCollectionDocument.Read(JsonNode.Parse(
             File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json")))!.AsObject())!;
-        var withHidden = export with { Fields = [.. export.Fields, new PublicationField("landvalue", "integer", Public: false)] };
+        var withHidden = export with { Fields = [.. export.Fields, new ExportVersionField("landvalue", "integer", Public: false)] };
 
         var written = ExportCollectionDocument.Write(withHidden, ExportCollectionMetadata.None);
 
@@ -99,7 +99,7 @@ public sealed class ExportCollectionSchemaTests
         written["license"]!.GetValue<string>().Should().Be(expected);
     }
 
-    // The server adds the README.md and AGENTS.md links and the providers (PairedPublicationDescriptorFactory.Collection);
+    // The server adds the README.md and AGENTS.md links and the providers (ExportVersionFactory.Collection);
     // it does not write a host contact yet, so the example supplies one. With them the document is Portolan-valid.
     [UnitTest]
     public void MauiCountyParcelsExample_PassesThePinnedPortolanProfileOnceCompanionsAreAdded()
@@ -138,7 +138,7 @@ public sealed class ExportCollectionSchemaTests
 
         files.Should().BeEquivalentTo(ExpectedFailures().Keys);
         ExpectedFailures().Values.Should().OnlyContain(failure =>
-            failure == SchemaFailure || PublicationDescriptorRules.All.Contains(failure));
+            failure == SchemaFailure || ExportVersionRules.All.Contains(failure));
     }
 
     [UnitTest]
@@ -146,7 +146,7 @@ public sealed class ExportCollectionSchemaTests
     {
         var description = JObject.Parse(File.ReadAllText(SchemaPath)).Value<string>("description")!;
 
-        PublicationDescriptorRules.All.Should().OnlyContain(rule => description.Contains($") {rule}:", StringComparison.Ordinal));
+        ExportVersionRules.All.Should().OnlyContain(rule => description.Contains($") {rule}:", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -160,12 +160,12 @@ public sealed class ExportCollectionSchemaTests
             .Properties()
             .ToDictionary(property => property.Name, property => property.Value.Value<string>()!, StringComparer.Ordinal);
 
-    private static PublicationDescriptor Example()
+    private static ExportVersion Example()
         => ExportCollectionDocument.Read(JsonNode.Parse(File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json")))!.AsObject())!;
 
     private static JObject Load(string path) => JObject.Parse(File.ReadAllText(path));
 
-    private static PublicationDescriptor Read(JObject collection)
+    private static ExportVersion Read(JObject collection)
         => ExportCollectionDocument.Read(JsonNode.Parse(collection.ToString())!.AsObject())
            ?? throw new InvalidOperationException("The example is not a readable Export version.");
 

@@ -6891,7 +6891,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -7350,7 +7350,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7668,7 +7668,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -22907,7 +22907,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -24677,6 +24677,571 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/exports": {
+      "get": {
+        "tags": [
+          "Exports"
+        ],
+        "summary": "List Exports",
+        "description": "Lists every Export with its status and current Version. An Export is a Layer published as cloud-native files: immutable Versions, each a PMTiles and a GeoParquet file described by one STAC collection document. Responses use the admin envelope `{success, data, message}`.",
+        "operationId": "listExports",
+        "responses": {
+          "200": {
+            "description": "Exports.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportListEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum Exports to return (1-200, default 50).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based offset into the sorted Export list.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Exports"
+        ],
+        "summary": "Export a Layer as files",
+        "description": "Starts an export job for a Layer and returns 202 with the Export in status `running` and the job id. The Export id defaults to the Layer's name as a slug and the identity field to the Layer's object id. A new immutable Version becomes current when the job completes; earlier Versions are kept. An agent's call files a proposal that a person approves.",
+        "operationId": "createExport",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Export job started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The source is not a routable Layer of that Service.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The source kind cannot be exported yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "An export job is already running for this Export.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exports/{exportId}": {
+      "get": {
+        "tags": [
+          "Exports"
+        ],
+        "summary": "Get Export",
+        "description": "Returns one Export with its Versions, the signed-in URLs of each Version's collection document and files, and why it is not public.",
+        "operationId": "getExport",
+        "parameters": [
+          {
+            "name": "exportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Export.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Export with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Exports"
+        ],
+        "summary": "Unpublish Export",
+        "description": "Stops serving the Export by removing its current-Version pointer and returns it in status `unpublished`. Version files are kept. An agent's call files a proposal that a person approves.",
+        "operationId": "deleteExport",
+        "parameters": [
+          {
+            "name": "exportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Export unpublished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Export with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "An export job is already running for this Export.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metadata/history": {
+      "get": {
+        "operationId": "getAdminMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List metadata field edit history",
+        "description": "Returns field-level metadata edit history across items, optionally filtered by item kind, item id, and field path prefix.",
+        "parameters": [
+          {
+            "name": "itemKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional item kind filter (for example 'dataset', 'service', 'resources', or 'services')."
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional metadata entity identifier filter."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/metadata/layers/{storageLayerId}/history": {
+      "get": {
+        "operationId": "getAdminLayerMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List layer metadata field edit history",
+        "description": "Returns field-level metadata edit history for the storage layer's shared resource.",
+        "parameters": [
+          {
+            "name": "storageLayerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Internal storage layer identifier."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/history": {
+      "get": {
+        "operationId": "getAdminServiceMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List service metadata field edit history",
+        "description": "Returns field-level metadata edit history for the logical service.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Logical service name."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/metadata/schemas": {
+      "get": {
+        "operationId": "getAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read per-environment custom metadata field schemas",
+        "description": "Returns the active custom metadata field schema definitions and current ETag for the environment.",
+        "responses": {
+          "200": {
+            "description": "Per-environment custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace per-environment custom metadata field schemas",
+        "description": "Replaces the environment's custom metadata field schema definitions. Requires the ETag returned by GET and rejects stale revisions with 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataCustomFieldSchemasUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid schema definitions"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access or human approval required"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -50720,17 +51285,6 @@
             "nullable": true,
             "description": "`none` or `gzip`: tile payload compression for `archive`, `publish` and `paired-publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
           },
-          "publicationId": {
-            "type": "string",
-            "nullable": true,
-            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
-            "description": "Required for `paired-publish`: the publication whose versions and current pointer the run writes."
-          },
-          "identityField": {
-            "type": "string",
-            "nullable": true,
-            "description": "Required for `paired-publish`: a visible text field that identifies each feature in both the PMTiles and the GeoParquet artifact."
-          },
           "generationId": {
             "type": "string",
             "nullable": true,
@@ -50870,9 +51424,6 @@
           "publishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
-          "publishedPublication": {
-            "$ref": "#/components/schemas/TileOpsPublishedPublication"
-          },
           "startedAt": {
             "type": "string",
             "format": "date-time"
@@ -50905,31 +51456,14 @@
           "duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
-          }
-        }
-      },
-      "TileOpsPublishedPublication": {
-        "type": "object",
-        "nullable": true,
-        "description": "The version a completed `paired-publish` activated. Property names are camelCase.",
-        "properties": {
-          "publicationId": {
-            "type": "string"
           },
-          "version": {
-            "type": "string"
+          "publishedExportVersion": {
+            "$ref": "#/components/schemas/TileOpsPublishedExportVersion"
           },
-          "captureId": {
+          "exportId": {
             "type": "string",
-            "description": "Embedded in both artifacts' metadata as `honua:captureId`."
-          },
-          "descriptorKey": {
-            "type": "string",
-            "description": "Storage key of the version's STAC collection document (collection.json)."
-          },
-          "pointerKey": {
-            "type": "string",
-            "description": "Storage key of the publication's current-version pointer."
+            "nullable": true,
+            "description": "The Export this job writes a Version of; null for tile operations."
           }
         }
       },
@@ -52416,7 +52950,7 @@
           "createdAtField": {
             "type": "string",
             "nullable": true,
-            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+            "description": "Date, DateTime, TimestampOffset, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
           },
           "editorField": {
             "type": "string",
@@ -52426,7 +52960,7 @@
           "updatedAtField": {
             "type": "string",
             "nullable": true,
-            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
+            "description": "Date, DateTime, TimestampOffset, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },
@@ -53899,7 +54433,8 @@
         "properties": {
           "etag": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Optimistic concurrency token supplied by the caller from the current layer discovery metadata."
           },
           "title": {
             "type": "string",
@@ -54879,6 +55414,455 @@
           "materialHint": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "ExportSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "layer"
+            ],
+            "description": "Source kind; only `layer` today."
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "layerId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportCreateRequest": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ExportSource"
+          },
+          "exportId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "description": "Defaults to the Layer's name as a slug."
+          },
+          "identityField": {
+            "type": "string",
+            "description": "Feature identity field shared by both artifacts; defaults to the Layer's declared text key, or its object id."
+          },
+          "minZoom": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxZoom": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTiles": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true,
+            "description": "Maximum tiles to render for the PMTiles archive; defaults to the server's local tile ceiling."
+          }
+        }
+      },
+      "ExportArtifact": {
+        "type": "object",
+        "required": [
+          "kind",
+          "href"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "collection",
+              "geoparquet",
+              "pmtiles"
+            ]
+          },
+          "href": {
+            "type": "string",
+            "format": "uri"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "ExportVersion": {
+        "type": "object",
+        "required": [
+          "version",
+          "artifacts"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "featureCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportArtifact"
+            }
+          }
+        }
+      },
+      "Export": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "source",
+          "versions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "ready",
+              "failed",
+              "unpublished"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ExportSource"
+          },
+          "currentVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "collectionUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute signed-in URL of the current Version's collection document."
+          },
+          "publicUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute public URL of the collection document; null while the Export is signed-in only."
+          },
+          "notPublicReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobId": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "The newest export job's error when it failed."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExportVersion"
+            }
+          }
+        }
+      },
+      "ExportEnvelope": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Export"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ExportListEnvelope": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Export"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ExportFailureEnvelope": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TileOpsPublishedExportVersion": {
+        "type": "object",
+        "nullable": true,
+        "description": "The Export Version a completed export job made current. Property names are PascalCase.",
+        "properties": {
+          "exportId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "captureId": {
+            "type": "string"
+          },
+          "collectionKey": {
+            "type": "string",
+            "description": "Storage key of the Version's STAC collection document (collection.json)."
+          },
+          "pointerKey": {
+            "type": "string"
+          }
+        }
+      },
+      "MetadataFieldHistoryEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "itemKind",
+          "itemId",
+          "fieldPath",
+          "actor",
+          "changedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "itemKind": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "fieldPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "oldValue": {
+            "nullable": true
+          },
+          "newValue": {
+            "nullable": true
+          },
+          "actor": {
+            "type": "string"
+          },
+          "changedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MetadataFieldHistoryResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataFieldHistoryEntry"
+            }
+          },
+          "nextBeforeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataFieldHistoryEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataFieldHistoryResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchema": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "allowedValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "appliesTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "facetable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasResponse": {
+        "type": "object",
+        "required": [
+          "etag",
+          "environment",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataCustomFieldSchemasResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasUpdateRequest": {
+        "type": "object",
+        "required": [
+          "etag",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
           }
         }
       }

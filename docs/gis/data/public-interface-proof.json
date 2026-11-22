@@ -855,6 +855,50 @@
       ]
     },
     {
+      "surfaceId": "asset-tasks",
+      "displayName": "Task-first asset management (asset profiles, tasks)",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/{assets,tasks}/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/assets/",
+        "/api/v1/tasks"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests and WorkTaskEndpointsTests integration tests (CAS, receipts, history).",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Assets.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7301"
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated AssetsJsonContext keeps the profile, task, history and completion wire shapes AOT-safe; ADR-0084 and the rc.3 asset-management specification define the contract and its open decisions.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Core/Features/Assets/AssetsJsonContext.cs",
+            "docs/internal/contributor/adr/0084-task-first-asset-management.md",
+            "docs/internal/contributor/specs/asset-management-rc3.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7301"
+        }
+      ]
+    },
+    {
       "surfaceId": "content-publication-registry",
       "displayName": "Content publication registry and published artifact routes",
       "surfaceKind": "http-route-family",
@@ -3779,14 +3823,14 @@
       ]
     },
     {
-      "surfaceId": "paired-publication-read",
-      "displayName": "Paired publication read (PMTiles + GeoParquet)",
+      "surfaceId": "export-read",
+      "displayName": "Export read (PMTiles + GeoParquet)",
       "surfaceKind": "http-route",
-      "protocol": "Paired Publication HTTP",
-      "canonicalIdentifier": "/api/v1/publications/{publicationId}/**",
+      "protocol": "Export HTTP",
+      "canonicalIdentifier": "/api/v1/exports/{exportId}/**",
       "parentSurfaceId": null,
       "endpointPrefixes": [
-        "/api/v1/publications/"
+        "/api/v1/exports/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
@@ -3794,11 +3838,11 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage and PairedPublishReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
+          "proofMechanism": "EndpointRegistry coverage and ExportReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublishReadEndpointTests.cs"
+            "src/Honua.Server/Features/Admin/Exports/ExportReadEndpoints.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/ExportReadEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -4240,6 +4284,8 @@
         "Grpc::geospatial.v1.FeatureService/QueryFeatures",
         "Grpc::geospatial.v1.FeatureService/QueryFeaturesStream",
         "Grpc::geospatial.v1.FeatureService/ApplyEdits",
+        "Grpc::geospatial.v1.FeatureService/ApplyServiceEdits",
+        "Grpc::geospatial.v1.FeatureService/QueryRelatedRecords",
         "Grpc::geospatial.v1.FeatureService/AbortAttachmentUpload",
         "Grpc::geospatial.v1.FeatureService/BeginAttachmentUpload",
         "Grpc::geospatial.v1.FeatureService/CommitAttachmentUpload",

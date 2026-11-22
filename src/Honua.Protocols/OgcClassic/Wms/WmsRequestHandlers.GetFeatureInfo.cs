@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
@@ -34,6 +35,22 @@ internal static partial class WmsRequestHandlers
         </xs:schema>
         """;
 
+    private static IResult? FindNonQueryableWmsLayerError(HttpContext context, WmsLayer[] queryLayers)
+    {
+        foreach (var queryLayer in queryLayers)
+        {
+            if (OgcClassicRasterSupport.IsRasterResource(queryLayer.Resource))
+            {
+                return CreateWmsServiceException(
+                    context,
+                    "LayerNotQueryable",
+                    $"Layer '{GetWmsLayerDisplayName(queryLayer)}' is not queryable.");
+            }
+        }
+
+        return null;
+    }
+
     private static async Task<IResult> HandleWmsGetFeatureInfo(
         HttpContext context,
         MetadataV2Service service,
@@ -41,6 +58,7 @@ internal static partial class WmsRequestHandlers
         string serviceId,
         ILogger logger)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.FeatureQuery);
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         OgcClassicLog.WmsRequested(logger, serviceId, "GetFeatureInfo");
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -147,11 +165,20 @@ internal static partial class WmsRequestHandlers
         // Query each storage layer once: repeated QUERY_LAYERS tokens would otherwise repeat
         // the temporal resolution and the identify scan per token.
         queryLayers = [.. queryLayers.DistinctBy(layer => layer.StorageLayerId)];
+        if (queryLayers.Length == 1)
+        {
+            SharedCacheResponse.UsePublication(context, service, queryLayers[0].Publication);
+        }
 
         var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
         if (queryLayers.Any(layer => !mapLayerStorageIds.Contains(layer.StorageLayerId)))
         {
             return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
+        }
+
+        if (FindNonQueryableWmsLayerError(context, queryLayers) is { } nonQueryableError)
+        {
+            return nonQueryableError;
         }
 
         if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))

@@ -91,7 +91,7 @@ Read-only providers support query, count, extent, and pagination; they report un
 
 The serving image is deliberately lean: the native-AOT web images contain no GDAL/OGR CLI, no
 native GDAL/PROJ/GEOS libraries, and no .NET GDAL bindings. Query, edit, render, and the managed
-geoprocessing processes all run in-process. Thirty of the 98 geoprocessing processes declare
+geoprocessing processes all run in-process. Thirty of the 101 geoprocessing processes declare
 `RuntimeProfile = native` and cannot: they execute out-of-process in the heavyweight GDAL/PDAL
 worker image (`docker/worker-gdal/Dockerfile`, ADR-0038).
 
@@ -128,7 +128,7 @@ and the [ops control plane section](../guides/deploy/cloud-deployments.md#ops-co
 
 ## Deployment topology
 
-The same image runs in three shapes.
+The same image runs in two shapes.
 
 **Single container.** One process, one host, local file storage.
 Docker Compose evaluation stacks and air-gapped single-host installs. Not zero-downtime.
@@ -174,6 +174,6 @@ See [Authentication](../guides/secure/authentication.md) and [TLS and mTLS](../g
 - [Protocols](protocols.md) — the full protocol-to-endpoint matrix
 - [Data model](data-model.md) — connections, layers, services, and styles
 - [Docker Compose deployment](../guides/deploy/docker-compose.md) and [Kubernetes](../guides/deploy/kubernetes.md)
-- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS/AKS
+- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS
 - [Upgrade and roll back](../guides/deploy/upgrade-and-rollback.md) — canary gates, rollback taxonomy
 - [Operations](../guides/deploy/backup-and-restore.md) — jobs, workflows, monitoring

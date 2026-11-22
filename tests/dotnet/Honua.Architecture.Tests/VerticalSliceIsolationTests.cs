@@ -60,7 +60,9 @@ public sealed class VerticalSliceIsolationTests
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
         "Temporal", // Temporal data history slice: capability discovery + as-of read.
         "FieldWorkflows", // Back-office field workflow slice: review/QA + exports over form submissions.
-        "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "AgentWorkspace", // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "Assets", // Task-first asset management: asset profiles over published layers, command receipts.
+        "Tasks" // Work tasks on assets: commands, state machine, immutable history.
     };
 
     private static readonly HashSet<string> _infrastructureAllowedSubAreas =
@@ -131,6 +133,10 @@ public sealed class VerticalSliceIsolationTests
             "Progress",
             "Raster",
             "RateLimiting",
+            "Realtime",         // Hosting-resident RealtimeStreamAdmission: shared stream
+                                // shutdown-drain admission, 503 Retry-After, and SSE/WebSocket
+                                // reconnect hints used by both Honua.Protocols.SensorThings and
+                                // Honua.Server transports so neither owns the drain seam.
             "Rendering",
             "Resilience",
             "Scene",
@@ -177,6 +183,10 @@ public sealed class VerticalSliceIsolationTests
             ["Operations"] = new[] { "Admin" },
             // Studio composes the Console authoring surface.
             ["Studio"] = new[] { "Console" },
+            // Asset profiles validate their linked inspection and service forms against the published layer.
+            ["Assets"] = new[] { "Forms" },
+            // Tasks share the asset command envelope (receipts, actor, access) and pin published forms.
+            ["Tasks"] = new[] { "Assets", "Forms" },
             // The ingest cluster (Import + Migration + FileImport + RasterImport)
             // is one cohesive unit destined for the Honua.Import module; intra-
             // cluster references are expected and move out of Server together.

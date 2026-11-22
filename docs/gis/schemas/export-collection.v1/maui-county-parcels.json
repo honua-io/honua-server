@@ -98,7 +98,8 @@
   "honua:identity": {
     "field": "tmk_txt",
     "pmtiles_property": "tmk_txt",
-    "geoparquet_column": "tmk_txt"
+    "geoparquet_column": "tmk_txt",
+    "stable": true
   },
   "honua:geometry": {
     "column": "geometry",

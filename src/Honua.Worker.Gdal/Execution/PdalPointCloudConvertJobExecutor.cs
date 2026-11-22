@@ -62,7 +62,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         var hasSourceSrs = !string.IsNullOrWhiteSpace(sourceSrs);
         if (hasSourceSrs && !IsValidSrsToken(sourceSrs))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid point-cloud conversion inputs: 'sourceSrs' value '{sourceSrs}' is not an accepted CRS token " +
                 "(expected an EPSG code like 'EPSG:32610' or a positive integer).");
         }
@@ -72,7 +72,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid point-cloud conversion inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid point-cloud conversion inputs: {inputError}");
         }
 
         if (LasPublicHeader.TryReadPointCount(sourceBytes, out var declaredPoints, out var recordLength))
@@ -81,7 +81,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             {
                 Log.InvalidInputs(logger, job.OperationId,
                     $"declared point count {declaredPoints} exceeds MaxPointCloudPoints={opts.MaxPointCloudPoints}");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
                     $"exceeds configured MaxPointCloudPoints={opts.MaxPointCloudPoints.ToString(CultureInfo.InvariantCulture)}.");
             }
@@ -90,7 +90,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             {
                 Log.InvalidInputs(logger, job.OperationId,
                     $"estimated uncompressed LAS payload exceeds MaxArtifactBytes={opts.MaxArtifactBytes}");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
                     $"exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}.");
             }

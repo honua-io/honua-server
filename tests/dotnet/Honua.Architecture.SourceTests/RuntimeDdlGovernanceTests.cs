@@ -27,6 +27,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.SessionTemporaryFunction, 3, "PostgresGeometryOperationService owns three fixed-name pg_temp geodesic helpers on its leased connection; pool reset or session termination discards them. No persistent schema is modified."),
             ["src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.FreshStaging.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 10, "Create-only import creates and drops only its uniquely named, verified-owned staging table. Promotion renames that staging table, key, indexes and sequence to a fresh target inside the transaction; it never changes core schema or customer tables (#7607)."),
+            ["src/Honua.Db/Postgres/Features/FileImport/PostgresServerJobArtifactImportLedger.cs"] =
+                new(RuntimeDdlCategory.GeneratedImportTarget, 1, "PostgresServerJobArtifactImportLedger drops only a server-owned, unreferenced staged import table inside the discard transaction after checking layers, storage bindings, and the import-owned table comment (#7632)."),
             ["src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.GeometryMetadata.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "StreamingFileImportService changes only its fixed-name inferred geometry-type constraint on import-owned tables. Replace and staged append finalize it in their commit transaction; direct upsert reconciles it on completion or interruption. It never changes core schema or customer constraints (#6847)."),
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =

@@ -52,6 +52,12 @@ internal sealed class FormPackageLifecycleService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid form package document.");
         }
 
+        if (!FormPackageIdentifier.IsAcceptable(package.FormId))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
+                "formId must be 1-128 ASCII letters, digits, hyphens or underscores, and must not be a reserved route segment.");
+        }
+
         var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var version = await _store.SaveDraftAsync(package, actor, context.RequestAborted).ConfigureAwait(false);
         ApplyVersionHeaders(context.Response, version, noStore: true);

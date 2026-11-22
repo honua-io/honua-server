@@ -8,6 +8,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Infrastructure.Caching;
@@ -207,7 +208,11 @@ internal sealed partial class QueryResultCacheManager : IDisposable
                 invalidatedCount++;
             }
 
-            CacheLog.CacheInvalidated(_logger, pattern, invalidatedCount);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var sanitizedPattern = LogValueRedactor.SanitizeForLog(pattern);
+                CacheLog.CacheInvalidated(_logger, sanitizedPattern, invalidatedCount);
+            }
         }
 
         await Task.CompletedTask;
