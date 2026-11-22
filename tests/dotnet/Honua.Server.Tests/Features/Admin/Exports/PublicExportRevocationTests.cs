@@ -380,6 +380,28 @@ public sealed class PublicExportRevocationTests
         harness.StateStore.Promoted.Keys.Should().BeEquivalentTo(["parcels", "roads"]);
     }
 
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenPrivateStorageThrowsForOneExport_StillRevokesIneligibleSiblingAndRethrows()
+    {
+        var storage = new Mock<ICloudFileStorage>();
+        storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("transient storage timeout"));
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = false,
+            PrivateStorage = storage.Object
+        });
+
+        var act = () => harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        await act.Should().ThrowAsync<IOException>().WithMessage("*transient storage timeout*");
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" &&
+            r.Reason == PublicExportRevocationService.ReasonAccessRestricted &&
+            r.State == PublicExportRevocationState.Completed);
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
+    }
+
     private static ICloudFileStorage CreatePrivateExportStorage(IReadOnlyDictionary<string, byte[]> objects)
     {
         var storage = new Mock<ICloudFileStorage>();

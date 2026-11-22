@@ -481,7 +481,17 @@ internal sealed partial class TileOperationExecutionCore
             return result;
         }
 
-        var currentETag = await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
+        string? currentETag;
+        try
+        {
+            currentETag = await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            TileOperationLog.ExportPublicPromotionFenceRevokeFailed(_logger, VersionLabel(context.Run), ex);
+            return result;
+        }
+
         if (currentETag is null || string.Equals(currentETag, context.UnpublishedETag, StringComparison.Ordinal))
         {
             return result;

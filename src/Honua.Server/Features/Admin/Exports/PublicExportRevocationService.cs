@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.ExceptionServices;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -53,24 +54,33 @@ internal sealed partial class PublicExportRevocationService(
         var snapshot = await deps.GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var changeId = ResolveCurrentChangeId();
 
+        Exception? firstUnpublishCheckFailure = null;
         foreach (var export in promoted)
         {
-            if (await IsUnpublishedAsync(export, cancellationToken).ConfigureAwait(false))
+            if (!await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
             {
                 await RequestRevocationAsync(
-                    new PublicExportRevocationRequest(export.PublicationId, ReasonUnpublished, changeId),
+                    new PublicExportRevocationRequest(export.PublicationId, ReasonAccessRestricted, changeId),
                     cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            if (await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
+            var unpublishCheck = await TryCheckUnpublishedAsync(export, cancellationToken).ConfigureAwait(false);
+            if (unpublishCheck.IsUnpublished)
             {
-                continue;
+                await RequestRevocationAsync(
+                    new PublicExportRevocationRequest(export.PublicationId, ReasonUnpublished, changeId),
+                    cancellationToken).ConfigureAwait(false);
             }
+            else if (unpublishCheck.Failure is { } failure)
+            {
+                firstUnpublishCheckFailure ??= failure;
+            }
+        }
 
-            await RequestRevocationAsync(
-                new PublicExportRevocationRequest(export.PublicationId, ReasonAccessRestricted, changeId),
-                cancellationToken).ConfigureAwait(false);
+        if (firstUnpublishCheckFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(firstUnpublishCheckFailure).Throw();
         }
     }
 
@@ -356,6 +366,24 @@ internal sealed partial class PublicExportRevocationService(
         return failed;
     }
 
+    private readonly record struct UnpublishCheckResult(bool IsUnpublished, Exception? Failure);
+
+    private async Task<UnpublishCheckResult> TryCheckUnpublishedAsync(
+        PromotedExportRecord export,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var unpublished = await IsUnpublishedAsync(export, cancellationToken).ConfigureAwait(false);
+            return new UnpublishCheckResult(unpublished, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            LogUnpublishCheckFailed(logger, export.PublicationId, ex);
+            return new UnpublishCheckResult(false, ex);
+        }
+    }
+
     private async Task<bool> IsUnpublishedAsync(
         PromotedExportRecord export,
         CancellationToken cancellationToken)
@@ -399,4 +427,9 @@ internal sealed partial class PublicExportRevocationService(
         Message = "Public export revocation {RevocationId} for {PublicationId} failed at step {State}; retrying.")]
     private static partial void LogRevocationStepFailed(
         ILogger logger, string revocationId, string publicationId, PublicExportRevocationState state, Exception exception);
+
+    [LoggerMessage(EventId = 10341, Level = LogLevel.Warning,
+        Message = "Failed to check unpublish state for promoted export {PublicationId}; deferring to next sweep.")]
+    private static partial void LogUnpublishCheckFailed(
+        ILogger logger, string publicationId, Exception exception);
 }

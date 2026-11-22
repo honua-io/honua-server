@@ -49,11 +49,6 @@ internal sealed class RevocationHarness
         var invalidationRequests = new List<string[]>();
         var pollReceipts = new List<CdnInvalidationReceipt>();
         var failureNotices = new List<(PublicExportRevocationRecord, string)>();
-
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { [PublicExportRevocationService.DistributionIdSetting] = "E123DIST" })
-            .Build();
-
         var destination = new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/"));
         var service = new PublicExportRevocationService(
             new PublicExportRevocationDependencies
@@ -63,7 +58,7 @@ internal sealed class RevocationHarness
                 GraphProvider = CreateGraphProvider(opts).Object,
                 CdnInvalidation = CreateCdnService(opts.InvalidationOutcomes, invalidationRequests),
                 OpsNotifier = CreateNotifier(failureNotices).Object,
-                Configuration = config,
+                Configuration = CreateConfiguration(),
                 Destination = destination,
                 StatusReader = CreateStatusReader(pollReceipts).Object,
                 PrivateStorage = opts.PrivateStorage,
@@ -82,6 +77,11 @@ internal sealed class RevocationHarness
             FailureNotices = failureNotices
         };
     }
+
+    private static IConfiguration CreateConfiguration()
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [PublicExportRevocationService.DistributionIdSetting] = "E123DIST" })
+            .Build();
 
     public PublicExportRevocationHostedService CreateHostedService(TimeProvider? timeProvider = null)
     {
