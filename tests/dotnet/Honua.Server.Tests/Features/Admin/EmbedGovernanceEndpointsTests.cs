@@ -95,6 +95,54 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Contains("origin", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [IntegrationTheory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("file://localhost")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("*")]
+    [InlineData("*.example.com")]
+    [InlineData("https://*.example.com")]
+    [InlineData("https://app.example.com/path")]
+    [InlineData("https://app.example.com/")]
+    [InlineData("https://app.example.com?foo=bar")]
+    [InlineData("https://app.example.com#frag")]
+    [InlineData("https://user@app.example.com")]
+    [InlineData("https://app.example.com\r\nX-Injected: 1")]
+    [InlineData("https://app.example.com\n")]
+    [InlineData("https://app.example.com:")]
+    [InlineData("https://app.example.com:0")]
+    [InlineData("app.example.com")]
+    [InlineData("")]
+    [Endpoint("POST /api/v1/admin/embed/keys")]
+    public async Task CreateEmbedKey_WithInvalidAllowedOrigin_ReturnsBadRequest(string invalidOrigin)
+    {
+        var request = new CreateEmbedKeyRequest
+        {
+            Name = "invalid-origin-key",
+            Scope = new EmbedKeyScopeDto { AllowedEmbedOrigins = ["https://valid.example.com", invalidOrigin] },
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/embed/keys", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("origin", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://app.example.com")]
+    [InlineData("https://app.example.com:8443")]
+    [InlineData("http://localhost:3000")]
+    [InlineData("http://127.0.0.1:8080")]
+    [InlineData("http://[::1]:8080")]
+    [Endpoint("POST /api/v1/admin/embed/keys")]
+    public async Task CreateEmbedKey_WithValidAllowedOrigin_ReturnsCreated(string validOrigin)
+    {
+        var created = await CreateKeyAsync("valid-origin-key", [validOrigin]);
+
+        Assert.Contains(validOrigin, created.EmbedKey.Scope.AllowedEmbedOrigins);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/embed/keys/{id}/rotate")]
     public async Task RotateEmbedKey_InvalidatesOldSecret()
