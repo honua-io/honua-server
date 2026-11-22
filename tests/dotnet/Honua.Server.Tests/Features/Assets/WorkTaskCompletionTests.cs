@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Assets;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class WorkTaskCompletionTests : IAsyncLifetime
+public sealed partial class WorkTaskCompletionTests : IAsyncLifetime
 {
     private const string TasksPath = "/api/v1/tasks";
 
@@ -37,9 +37,9 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        foreach (var table in new[] { "asset_summaries", "work_task_history", "asset_command_receipts" })
+        foreach (var table in new[] { "asset_inspections", "asset_summaries", "features", "work_tasks", "work_task_history", "asset_command_receipts", "feature_change_outbox" })
         {
-            await AssetTestData.ExecuteAsync(_fixture, $"DROP TRIGGER IF EXISTS fail_completion_write ON honua.{table}");
+            await AssetTestData.ExecuteAsync(_fixture, $"DROP TRIGGER IF EXISTS fail_completion_write ON {CompletionFaultTable(table)}");
         }
 
         await AssetTestData.ResetAsync(_fixture);
@@ -95,7 +95,7 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         await AssetTestData.ExecuteAsync(_fixture, $"""
             CREATE OR REPLACE FUNCTION honua.fail_completion_write() RETURNS trigger AS $$
             BEGIN RAISE EXCEPTION 'injected completion failure'; END; $$ LANGUAGE plpgsql;
-            CREATE TRIGGER fail_completion_write BEFORE INSERT OR UPDATE ON honua.{table}
+            CREATE TRIGGER fail_completion_write BEFORE INSERT OR UPDATE ON {CompletionFaultTable(table)}
                 FOR EACH ROW {when} EXECUTE FUNCTION honua.fail_completion_write();
             """);
 
@@ -258,66 +258,58 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
             .Should().Be(valid ? WorkTaskStatus.Completed : WorkTaskStatus.InProgress);
     }
 
-    private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);
-
-    private async Task<Guid> StartedTaskAsync(string assetId, string type)
+    [IntegrationTheory]
+    [InlineData(3)]
+    [InlineData(4)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_SecondPayload_RetainsCandidateAndReplaysConflict(long expectedVersion)
     {
-        var taskId = await CreateTaskAsync(assetId, type);
-        var started = await _fixture.Client.PostAsJsonAsync(
-            $"{TasksPath}/{taskId}/transitions",
-            new WorkTaskTransitionRequest { CommandId = Guid.NewGuid(), ExpectedVersion = 1, Action = WorkTaskAction.Start },
-            AssetsJsonContext.Default.WorkTaskTransitionRequest);
-        started.StatusCode.Should().Be(HttpStatusCode.OK, await started.Content.ReadAsStringAsync());
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        (await CompleteAsync(taskId, Completion(3, Later, condition: 4))).StatusCode.Should().Be(HttpStatusCode.OK);
+        var candidate = Completion(expectedVersion, Earlier, condition: 2) with { Notes = "Second crew observation" };
 
-        // A reassignment gives every started task the same version arithmetic: create 1, start 2, reassign 3.
-        var reassigned = await _fixture.Client.PostAsJsonAsync(
-            $"{TasksPath}/{taskId}/transitions",
-            new WorkTaskTransitionRequest { CommandId = Guid.NewGuid(), ExpectedVersion = 2, Action = WorkTaskAction.Reassign, Assignee = "crew-b" },
-            AssetsJsonContext.Default.WorkTaskTransitionRequest);
-        reassigned.StatusCode.Should().Be(HttpStatusCode.OK, await reassigned.Content.ReadAsStringAsync());
-        return taskId;
+        var conflict = await CompleteAsync(taskId, candidate);
+        var replay = await CompleteAsync(taskId, candidate);
+
+        conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await AssetTestData.ReadJsonAsync(conflict);
+        body["candidateId"]!.GetValue<Guid>().Should().Be(candidate.CommandId!.Value);
+        body["candidate"]!["notes"]!.GetValue<string>().Should().Be(candidate.Notes);
+        (await replay.Content.ReadAsStringAsync()).Should().Be(await conflict.Content.ReadAsStringAsync());
+        var stored = (string)(await AssetTestData.ScalarAsync(_fixture,
+            $"SELECT response::text FROM honua.asset_command_receipts WHERE command_id = '{candidate.CommandId}'"))!;
+        JsonElement.Parse(stored).GetProperty("candidate").GetProperty("condition").GetInt32().Should().Be(2);
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
+        (await AssetTestData.CountAsync(_fixture, "work_task_history")).Should().Be(4);
+        (await SummaryAsync(_assets[0].AssetId)).Should().Be((4, 1L));
+        (await CompleteAsync(taskId, candidate with { Notes = "Changed payload" })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(6);
     }
 
-    private Task<Guid> CreateInspectionAsync(string assetId) => CreateTaskAsync(assetId, WorkTaskType.Inspection);
-
-    private async Task<Guid> CreateTaskAsync(string assetId, string type)
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_CandidateReceiptFails_RetriesWithoutChangingCanonicalCompletion()
     {
-        var response = await _fixture.Client.PostAsJsonAsync(
-            TasksPath,
-            new WorkTaskCreateRequest
-            {
-                CommandId = Guid.NewGuid(),
-                TaskId = Guid.NewGuid(),
-                ServiceId = WebAppFixture.TestServiceId,
-                Type = type,
-                Title = type + " " + assetId,
-                ProfileId = _profileId,
-                AssetId = assetId,
-                Assignee = "crew-a",
-            },
-            AssetsJsonContext.Default.WorkTaskCreateRequest);
-        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
-        return Guid.Parse((await AssetTestData.ReadJsonAsync(response))["task"]!["taskId"]!.GetValue<string>());
-    }
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        (await CompleteAsync(taskId, Completion(3, Later, condition: 4))).StatusCode.Should().Be(HttpStatusCode.OK);
+        var candidate = Completion(3, Earlier, condition: 2);
+        await AssetTestData.ExecuteAsync(_fixture, """
+            CREATE OR REPLACE FUNCTION honua.fail_completion_write() RETURNS trigger AS $$
+            BEGIN RAISE EXCEPTION 'injected candidate failure'; END; $$ LANGUAGE plpgsql;
+            CREATE TRIGGER fail_completion_write BEFORE INSERT ON honua.asset_command_receipts
+                FOR EACH ROW WHEN (NEW.status_code = 409) EXECUTE FUNCTION honua.fail_completion_write();
+            """);
 
-    private WorkTaskCompletionRequest Completion(long expectedVersion, DateTimeOffset observedAt, int? condition) => new()
-    {
-        CommandId = Guid.NewGuid(),
-        ExpectedVersion = expectedVersion,
-        ObservedAt = observedAt,
-        Form = _form,
-        Condition = condition,
-        Answers = JsonElement.Parse("""{"name":"Sign inspection"}"""),
-        Notes = "Post leaning slightly.",
-    };
+        var failed = await CompleteAsync(taskId, candidate);
 
-    private Task<HttpResponseMessage> CompleteAsync(Guid taskId, WorkTaskCompletionRequest request)
-        => _fixture.Client.PostAsJsonAsync($"{TasksPath}/{taskId}/completion", request, AssetsJsonContext.Default.WorkTaskCompletionRequest);
-
-    private async Task<(int Condition, long Revision)> SummaryAsync(string assetId)
-    {
-        var condition = await AssetTestData.ScalarAsync(_fixture, $"SELECT condition FROM honua.asset_summaries WHERE asset_id = '{assetId}'");
-        var revision = await AssetTestData.ScalarAsync(_fixture, $"SELECT revision FROM honua.asset_summaries WHERE asset_id = '{assetId}'");
-        return (Convert.ToInt32(condition, System.Globalization.CultureInfo.InvariantCulture), (long)revision!);
-    }
-}
+        failed.IsSuccessStatusCode.Should().BeFalse();
+        (await failed.Content.ReadAsStringAsync()).Should().NotContain("injected");
+        (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(5);
+        await AssetTestData.ExecuteAsync(_fixture, "DROP TRIGGER fail_completion_write ON honua.asset_command_receipts");
+        (await CompleteAsync(taskId, candidate)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(6);
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
+        (await SummaryAsync(_assets[0].AssetId)).Should().Be((4, 1L));
