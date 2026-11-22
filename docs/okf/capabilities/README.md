@@ -124,7 +124,6 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [OGC API Tiles](serve.ogc-api-tiles.md) | Serve | Community | ga |
 | [OGC SensorThings API](serve.sensorthings.md) | Serve | Community | ga |
 | [STAC API](serve.stac.md) | Serve | Community | ga |
-| [Quantized-Mesh Terrain](serve.terrain-quantized-mesh.md) | Serve | Community | ga |
 | [Vector Tiles (MVT/TileJSON/PMTiles)](serve.vector-tiles.md) | Serve | Community | ga |
 | [WCS 2.0.1](serve.wcs.md) | Serve | Community | ga |
 | [WFS 2.0](serve.wfs.md) | Serve | Community | ga |

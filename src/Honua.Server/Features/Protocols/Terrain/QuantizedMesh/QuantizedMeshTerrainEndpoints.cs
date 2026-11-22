@@ -171,30 +171,27 @@ internal static class QuantizedMeshTerrainEndpoints
             return true;
         }
 
-        foreach (var acceptHeader in request.Headers.Accept)
+        if (!MediaTypeHeaderValue.TryParseList(request.Headers.Accept, out var acceptedMediaTypes))
         {
-            if (acceptHeader is not null && AcceptHeaderRequestsNormals(acceptHeader))
+            return false;
+        }
+
+        foreach (var mediaType in acceptedMediaTypes)
+        {
+            if (mediaType.Quality is 0 ||
+                !string.Equals(mediaType.MediaType.Value, QuantizedMeshTileWriter.MediaType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var extensions = NameValueHeaderValue.Find(mediaType.Parameters, "extensions");
+            if (extensions?.Value.Value is { } extensionValue && ContainsExtensionToken(extensionValue))
             {
                 return true;
             }
         }
 
         return false;
-    }
-
-    private static bool AcceptHeaderRequestsNormals(string headerValue)
-    {
-        var extIndex = headerValue.IndexOf("extensions=", StringComparison.OrdinalIgnoreCase);
-        if (extIndex < 0)
-        {
-            return false;
-        }
-
-        var valueStart = extIndex + "extensions=".Length;
-        var rest = headerValue[valueStart..];
-        var terminator = rest.IndexOfAny([';', ',']);
-        var rawValue = terminator >= 0 ? rest[..terminator] : rest;
-        return ContainsExtensionToken(rawValue);
     }
 
     private static bool ContainsExtensionToken(string rawValue)

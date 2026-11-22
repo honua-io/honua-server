@@ -25,4 +25,3 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Publish terrain and elevation](../../guides/publish/publish-terrain-and-elevation.md)
-- [Terrain and elevation](../../reference/protocols/terrain-and-elevation.md)

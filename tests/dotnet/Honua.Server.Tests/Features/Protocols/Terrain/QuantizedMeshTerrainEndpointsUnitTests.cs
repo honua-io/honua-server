@@ -18,6 +18,10 @@ public sealed class QuantizedMeshTerrainEndpointsUnitTests
     [InlineData("application/vnd.quantized-mesh; extensions=\"octvertexnormals\"", true)]
     [InlineData("application/vnd.quantized-mesh", false)]
     [InlineData("application/octet-stream", false)]
+    [InlineData("application/octet-stream;q=0.9, application/vnd.quantized-mesh; extensions = octvertexnormals", true)]
+    [InlineData("application/vnd.quantized-mesh;extensions=octvertexnormals;q=0, application/octet-stream", false)]
+    [InlineData("application/json;extensions=octvertexnormals, application/vnd.quantized-mesh", false)]
+    [InlineData("application/vnd.quantized-mesh;x-extensions=octvertexnormals", false)]
     public void RequestsOctVertexNormals_AcceptHeader_ParsesExtensionParameter(string acceptHeader, bool expected)
     {
         var context = new DefaultHttpContext();
