@@ -12,6 +12,7 @@ internal static class TiffHeaderBuilder
     private const int TagBitsPerSample = 258;
     private const int TagSamplesPerPixel = 277;
     private const int TagModelPixelScale = 33550;
+    private const int TagModelTransformation = 34264;
 
     private const int TypeShort = 3;
     private const int TypeLong = 4;
@@ -63,6 +64,42 @@ internal static class TiffHeaderBuilder
         WriteDouble(bytes, scaleX, littleEndian);
         WriteDouble(bytes, scaleY, littleEndian);
         WriteDouble(bytes, 0d, littleEndian); // scaleZ
+
+        return bytes.ToArray();
+    }
+
+    public static byte[] ClassicWithModelTransformation(
+        long width, long height, double[] matrix16, int bands = 1, int bits = 8, bool littleEndian = true)
+    {
+        if (matrix16.Length != 16)
+        {
+            throw new ArgumentException("ModelTransformation requires 16 doubles.", nameof(matrix16));
+        }
+
+        var bytes = new List<byte>();
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        WriteU16(bytes, 42, littleEndian);
+        WriteU32(bytes, 8, littleEndian);
+
+        const int entryCount = 5;
+        long matrixOffset = 8 + 2 + (entryCount * 12) + 4;
+
+        WriteU16(bytes, entryCount, littleEndian);
+        WriteClassicEntry(bytes, TagImageWidth, TypeLong, width, littleEndian);
+        WriteClassicEntry(bytes, TagImageLength, TypeLong, height, littleEndian);
+        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
+        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
+        WriteU16(bytes, TagModelTransformation, littleEndian);
+        WriteU16(bytes, TypeDouble, littleEndian);
+        WriteU32(bytes, 16, littleEndian);
+        WriteU32(bytes, matrixOffset, littleEndian);
+        WriteU32(bytes, 0, littleEndian);
+
+        foreach (var d in matrix16)
+        {
+            WriteDouble(bytes, d, littleEndian);
+        }
 
         return bytes.ToArray();
     }

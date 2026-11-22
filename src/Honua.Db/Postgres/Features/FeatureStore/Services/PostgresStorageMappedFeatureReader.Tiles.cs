@@ -133,11 +133,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         var req = spec.Request;
         var tileEnvelope = BuildTileEnvelope(sql, spec.Bounds, spec.TargetSrid, req.X, req.Y, req.Z, req.GridGeometry is not null);
         var bufferedEnvelope = $"ST_Expand({tileEnvelope}, {sql.AddParameter(spec.BufferMapUnits)})";
-        if (req.GridGeometry is null)
+        if (spec.Geographic)
         {
-            bufferedEnvelope = spec.TargetSrid == 4326
-                ? $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, 4326))"
-                : $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))";
+            bufferedEnvelope = $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, {spec.TargetSrid}))";
+        }
+        else if (req.GridGeometry is null)
+        {
+            bufferedEnvelope = $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))";
         }
 
         var geometry = $"{_geometryColumn}::geometry";

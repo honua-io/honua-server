@@ -809,6 +809,8 @@ sql:
           asset_storage_prefix  TEXT,
           tileset_file_name     VARCHAR(64) NOT NULL DEFAULT 'tileset.json',
           dataset_type          VARCHAR(32) NOT NULL DEFAULT 'hosted_tiles',
+          serving_format        VARCHAR(32),
+          content_kind          VARCHAR(32),
           extent_xmin           DOUBLE PRECISION,
           extent_ymin           DOUBLE PRECISION,
           extent_xmax           DOUBLE PRECISION,

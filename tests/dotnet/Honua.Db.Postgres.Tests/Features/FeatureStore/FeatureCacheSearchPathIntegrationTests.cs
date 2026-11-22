@@ -22,6 +22,46 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed class FeatureCacheSearchPathIntegrationTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task CreateFeature_ConfiguredRegistry_UsesLayerSridForOrdinaryWkb()
+    {
+        var schema = await fixture.CreateIsolatedSchemaInternalAsync("configured_srid", applySeed: false);
+        try
+        {
+            await fixture.ExecuteAsync($$"""
+                CREATE TABLE "{{schema}}".layers (layer_id integer PRIMARY KEY, srid integer NOT NULL);
+                INSERT INTO "{{schema}}".layers VALUES (2147483645, 4326);
+                CREATE TABLE "{{schema}}".features (
+                    objectid bigserial PRIMARY KEY, layer_id integer NOT NULL,
+                    geometry geometry, attributes jsonb);
+                CREATE INDEX features_transform_probe ON "{{schema}}".features
+                    USING gist ((ST_Transform(geometry, 4326)::geography));
+                """);
+            await using var dataSource = NpgsqlDataSource.Create(fixture.ConnectionString);
+            var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
+            provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
+                (DbConnection)await dataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
+            var manager = new FeatureCacheManager(provider, NullLogger<FeatureCacheManager>.Instance, schema);
+            (await manager.GetLayerSridAsync(2147483645, CancellationToken.None)).Should().Be(4326);
+            var writer = new FeatureDataAccess(new FeatureDataAccessDependencies(
+                provider, new GeometryProcessor(), manager,
+                new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
+                null, NullLogger<FeatureDataAccess>.Instance, null, null, null, schema));
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("SELECT ST_AsBinary(ST_MakePoint(-156.4, 20.8))", connection);
+            var wkb = (byte[])(await command.ExecuteScalarAsync())!;
+            await writer.CreateFeatureAsync(2147483645,
+                Feature.Create(0, wkb, ImmutableDictionary<string, object?>.Empty.Add("note", "created")),
+                CancellationToken.None);
+            command.CommandText = $"SELECT ST_SRID(geometry) FROM \"{schema}\".features";
+            (await command.ExecuteScalarAsync()).Should().Be(4326);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task AttributeOnlyUpdate_FeaturesInLaterSearchSchema_PreservesGeometryAndSrid()
     {
         var firstSchema = await fixture.CreateIsolatedSchemaInternalAsync("empty_search_path", applySeed: false);

@@ -11,12 +11,29 @@ internal static class GeodesicGeometryOperations
     private const double Wgs84SemiMajorMeters = 6_378_137.0;
     private const double Wgs84Flattening = 1.0 / 298.257223563;
     private const double Wgs84SemiMinorMeters = Wgs84SemiMajorMeters * (1.0 - Wgs84Flattening);
+    private const double Wgs84EccentricitySquared = (2.0 * Wgs84Flattening) - (Wgs84Flattening * Wgs84Flattening);
+    private static readonly double Wgs84Eccentricity = Math.Sqrt(Wgs84EccentricitySquared);
     private const double Wgs84MeanRadiusMeters = 6_371_008.7714;
-    private const double Wgs84AuthalicRadiusMeters = 6_371_007.1809;
     private const double DegreesToRadians = Math.PI / 180.0;
     private const double RadiansToDegrees = 180.0 / Math.PI;
     private const int MaxVincentyIterations = 200;
     private const double VincentyTolerance = 1e-12;
+
+    private static readonly double[] GaussNodes =
+    [
+        -0.8611363115940526,
+        -0.3399810435848563,
+        0.3399810435848563,
+        0.8611363115940526
+    ];
+
+    private static readonly double[] GaussWeights =
+    [
+        0.3478548451374538,
+        0.6521451548625461,
+        0.6521451548625461,
+        0.3478548451374538
+    ];
 
     internal static bool IsGeographicSrid(int srid) => GeographicSridClassifier.IsGeographicSrid(srid);
 
@@ -325,18 +342,43 @@ internal static class GeodesicGeometryOperations
             return 0.0;
         }
 
-        var total = 0.0;
+        var signedArea = 0.0;
         for (var i = 0; i < count - 1; i++)
         {
             var lon1 = ring.GetX(i) * DegreesToRadians;
-            var lat1 = ring.GetY(i) * DegreesToRadians;
+            var lat1 = Math.Clamp(ring.GetY(i), -90.0, 90.0) * DegreesToRadians;
             var lon2 = ring.GetX(i + 1) * DegreesToRadians;
-            var lat2 = ring.GetY(i + 1) * DegreesToRadians;
+            var lat2 = Math.Clamp(ring.GetY(i + 1), -90.0, 90.0) * DegreesToRadians;
             var dLon = NormalizeLongitudeRadians(lon2 - lon1);
-            total += dLon * (2.0 + Math.Sin(lat1) + Math.Sin(lat2));
+            if (Math.Abs(dLon) < 1e-18)
+            {
+                continue;
+            }
+
+            var midLat = 0.5 * (lat1 + lat2);
+            var halfDLat = 0.5 * (lat2 - lat1);
+            var segmentIntegral = 0.0;
+            for (var q = 0; q < GaussNodes.Length; q++)
+            {
+                var lat = midLat + (halfDLat * GaussNodes[q]);
+                segmentIntegral += GaussWeights[q] * EllipsoidalAreaLatitudePrimitive(lat);
+            }
+
+            signedArea += 0.5 * dLon * segmentIntegral;
         }
 
-        return Math.Abs(total) * Wgs84AuthalicRadiusMeters * Wgs84AuthalicRadiusMeters * 0.5;
+        return Math.Abs(signedArea);
+    }
+
+    private static double EllipsoidalAreaLatitudePrimitive(double latRad)
+    {
+        var sinLat = Math.Sin(latRad);
+        var eSin = Wgs84Eccentricity * sinLat;
+        var oneMinusESinSq = 1.0 - (eSin * eSin);
+
+        var term1 = sinLat / oneMinusESinSq;
+        var term2 = (0.5 / Wgs84Eccentricity) * Math.Log((1.0 + eSin) / (1.0 - eSin));
+        return 0.5 * Wgs84SemiMajorMeters * Wgs84SemiMajorMeters * (1.0 - Wgs84EccentricitySquared) * (term1 + term2);
     }
 
     private static double SumCollection(GeometryCollection collection, Func<Geometry, double> measure)

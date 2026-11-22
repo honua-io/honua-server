@@ -23,6 +23,7 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/messages"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),

@@ -33,4 +33,7 @@ internal static partial class DuckDbLog
         Level = LogLevel.Warning,
         Message = "DuckDB layer {LayerId} table {Table}: attribute column '{Column}' is outside the supported field-name syntax and is not exposed; rename the column or list the columns to expose in DuckDB:Layers:N:Attributes")]
     public static partial void AttributeColumnNotSupported(ILogger logger, int layerId, string table, string column);
+
+    [LoggerMessage(EventId = 8807, Level = LogLevel.Warning, Message = "Could not remove a staged DuckDB managed source.")]
+    public static partial void ManagedSourceCleanupFailed(ILogger logger, Exception exception);
 }

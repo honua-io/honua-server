@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Transforms;
@@ -157,7 +158,37 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         }
 
         // Slow path: one PostGIS ST_Transform round trip for the entire batch.
-        return await TransformPointsWithPostGisAsync(xs, ys, fromSrid, toSrid, cancellationToken)
+        return await TransformPointsWithPostGisAsync(xs, ys, fromSrid, toSrid, selection: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<bool> TransformPointsAsync(
+        double[] xs,
+        double[] ys,
+        int fromSrid,
+        int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+    {
+        if (selection?.ProjPipeline is not { Length: > 0 })
+        {
+            return await TransformPointsAsync(xs, ys, fromSrid, toSrid, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        ArgumentNullException.ThrowIfNull(xs);
+        ArgumentNullException.ThrowIfNull(ys);
+        if (xs.Length != ys.Length)
+        {
+            throw new ArgumentException("Coordinate arrays must have the same length.", nameof(ys));
+        }
+
+        if (xs.Length == 0 || IsIdentityTransform(fromSrid, toSrid))
+        {
+            return true;
+        }
+
+        return await TransformPointsWithPostGisAsync(xs, ys, fromSrid, toSrid, selection, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -243,10 +274,11 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         {
             Log.PostGisFallbackExtent(_logger, fromSrid, toSrid);
 
-            // Execute selected pipelines as coordinate operations, not CRS definitions.
-            string TransformOf(string pointExpression) => selection?.ProjPipeline is { Length: > 0 }
-                ? $"ST_TransformPipeline({pointExpression}, @pipeline, @toSrid)"
-                : $"ST_Transform({pointExpression}, @toSrid)";
+            // Execute selected pipelines as coordinate operations, not CRS definitions,
+            // routing through DatumTransformSql so +proj=noop, projected-endpoint composition,
+            // and Web Mercator latitude clamping apply consistently.
+            string TransformOf(string pointExpression) =>
+                DatumTransformSql.BuildTransformExpression(pointExpression, toSrid, selection, fromSrid);
 
             var transformExpression = TransformOf("geom");
 
@@ -256,12 +288,18 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             // bounds from the transformed western/eastern edges directly (mirrors the in-memory
             // WebMercatorMath.TransformSampledExtent), keeping MinX > MaxX.
             var wrapped = WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
+            var halfSpan = IsWebMercatorSrid(fromSrid) ? SpatialConstants.WebMercatorExtent : 180.0;
+            var fullSpan = 2.0 * halfSpan;
             var edgesCte = wrapped
                 ? $$"""
                     ,
                     edges AS (
-                        SELECT {{TransformOf("ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid)")}} AS min_edge,
-                               {{TransformOf("ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid)")}} AS max_edge
+                        SELECT {{TransformOf("edge_points.min_pt")}} AS min_edge,
+                               {{TransformOf("edge_points.max_pt")}} AS max_edge
+                        FROM (
+                            SELECT ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid) AS min_pt,
+                                   ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid) AS max_pt
+                        ) edge_points
                     )
                     """
                 : string.Empty;
@@ -282,9 +320,9 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                             WHEN @maxX >= @minX THEN @minX + ((@maxX - @minX) * t)
                             ELSE
                                 CASE
-                                    WHEN @minX + (((@maxX + 360.0) - @minX) * t) > 180.0
-                                        THEN @minX + (((@maxX + 360.0) - @minX) * t) - 360.0
-                                    ELSE @minX + (((@maxX + 360.0) - @minX) * t)
+                                    WHEN @minX + (((@maxX + @fullSpan) - @minX) * t) > @halfSpan
+                                        THEN @minX + (((@maxX + @fullSpan) - @minX) * t) - @fullSpan
+                                    ELSE @minX + (((@maxX + @fullSpan) - @minX) * t)
                                 END
                         END AS x,
                         t
@@ -309,9 +347,9 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                                 WHEN @maxX >= @minX THEN (@minX + @maxX) / 2.0
                                 ELSE
                                     CASE
-                                        WHEN @minX + (((@maxX + 360.0) - @minX) * 0.5) > 180.0
-                                            THEN @minX + (((@maxX + 360.0) - @minX) * 0.5) - 360.0
-                                        ELSE @minX + (((@maxX + 360.0) - @minX) * 0.5)
+                                        WHEN @minX + (((@maxX + @fullSpan) - @minX) * 0.5) > @halfSpan
+                                            THEN @minX + (((@maxX + @fullSpan) - @minX) * 0.5) - @fullSpan
+                                        ELSE @minX + (((@maxX + @fullSpan) - @minX) * 0.5)
                                     END
                             END,
                             (@minY + @maxY) / 2.0
@@ -336,10 +374,8 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@fromSrid", fromSrid);
             AddParameter(command, "@toSrid", toSrid);
             AddParameter(command, "@sampleSegments", ExtentSampleSegmentsPerEdge);
-            if (selection?.ProjPipeline is { Length: > 0 } pipeline)
-            {
-                AddParameter(command, "@pipeline", ProjPipelineInverter.Orient(pipeline, selection!.TransformForward));
-            }
+            AddParameter(command, "@halfSpan", halfSpan);
+            AddParameter(command, "@fullSpan", fullSpan);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -383,15 +419,18 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
 
-            // Execute selected pipelines as coordinate operations, not CRS definitions.
-            var transformExpression = selection?.ProjPipeline is { Length: > 0 }
-                ? "ST_TransformPipeline(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @pipeline, @toSrid)"
-                : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @toSrid)";
+            // Execute selected pipelines as coordinate operations, not CRS definitions,
+            // routing through DatumTransformSql so +proj=noop, projected-endpoint composition,
+            // and Web Mercator latitude clamping apply consistently.
+            var transformExpression = DatumTransformSql.BuildTransformExpression("p.src", toSrid, selection, fromSrid);
 
             command.CommandText = $"""
                 SELECT ST_X(geom) AS x, ST_Y(geom) AS y
                 FROM (
                     SELECT {transformExpression} AS geom
+                    FROM (
+                        SELECT ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid) AS src
+                    ) p
                 ) t
                 """;
 
@@ -399,10 +438,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@y", y);
             AddParameter(command, "@fromSrid", fromSrid);
             AddParameter(command, "@toSrid", toSrid);
-            if (selection?.ProjPipeline is { Length: > 0 } pipeline)
-            {
-                AddParameter(command, "@pipeline", ProjPipelineInverter.Orient(pipeline, selection!.TransformForward));
-            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -436,6 +471,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         double[] ys,
         int fromSrid,
         int toSrid,
+        DatumTransformationSelection? selection,
         CancellationToken cancellationToken)
     {
         try
@@ -446,12 +482,17 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 .OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = """
+            var transformExpression = DatumTransformSql.BuildTransformExpression("p.src", toSrid, selection, fromSrid);
+            command.CommandText = $"""
                 SELECT ST_X(t.geom) AS x, ST_Y(t.geom) AS y
                 FROM (
-                    SELECT ST_Transform(ST_SetSRID(ST_MakePoint(p.x, p.y), @fromSrid), @toSrid) AS geom,
+                    SELECT {transformExpression} AS geom,
                            p.ord
-                    FROM unnest(@xs, @ys) WITH ORDINALITY AS p(x, y, ord)
+                    FROM (
+                        SELECT ST_SetSRID(ST_MakePoint(u.x, u.y), @fromSrid) AS src,
+                               u.ord
+                        FROM unnest(@xs, @ys) WITH ORDINALITY AS u(x, y, ord)
+                    ) p
                 ) t
                 ORDER BY t.ord
                 """;

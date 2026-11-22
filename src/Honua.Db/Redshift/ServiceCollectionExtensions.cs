@@ -2,9 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Warehouse.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Redshift.Features.FeatureStore;
 using Honua.Db.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.Infrastructure;
 using Honua.Db.Redshift.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,7 @@ public static class ServiceCollectionExtensions
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<RedshiftFeatureStore>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, RedshiftWarehouseCapabilityDescriptor>());
 
         // Capability provider for the feature-change transactional outbox. Redshift is read-only in
         // this slice and reports SupportsTransactionalOutbox = false so the server skips dispatcher

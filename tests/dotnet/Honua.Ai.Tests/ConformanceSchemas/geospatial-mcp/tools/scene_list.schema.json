@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/scene_list.schema.json",
+  "title": "scene_list inputSchema",
+  "description": "List caller-readable scenes with format and content filters and pagination.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "servingFormat": {
+      "type": "string",
+      "enum": [
+        "3d-tiles",
+        "i3s",
+        "copc",
+        "quantized-mesh",
+        "terrain-rgb"
+      ],
+      "description": "Optional canonical serving format filter."
+    },
+    "contentKind": {
+      "type": "string",
+      "enum": [
+        "mesh",
+        "buildings",
+        "point-cloud",
+        "terrain",
+        "vector-3d",
+        "unclassified"
+      ],
+      "description": "Optional semantic content kind filter."
+    },
+    "filter": {
+      "type": "string",
+      "description": "Optional case-insensitive substring to match scene id, name, or description."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50,
+      "description": "Maximum number of scenes to return on this page."
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Matching scenes to skip for pagination."
+    }
+  }
+}

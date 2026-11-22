@@ -790,10 +790,12 @@ internal sealed class ImageServerExportHandler
             }
 
             // A pixelType naming the stored sample type is a no-op; that needs the selected
-            // rasters, so it is checked once they are known. Anything else is a conversion.
+            // rasters, so it is checked once they are known. An unrecognized token is a 400 Bad Request.
             if (!string.IsNullOrWhiteSpace(request.PixelType) && !IsEsriPixelType(request.PixelType))
             {
-                error = new ExportParameterParseError(PixelTypeConversionNotImplemented, IsNotImplemented: true);
+                error = new ExportParameterParseError(
+                    "pixelType must be one of: U1, U2, U4, U8, S8, U16, S16, U32, S32, F32, F64, C64, C128, UNKNOWN.",
+                    IsNotImplemented: false);
                 return false;
             }
 

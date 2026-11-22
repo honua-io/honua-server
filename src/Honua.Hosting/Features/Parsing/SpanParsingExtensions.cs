@@ -48,7 +48,8 @@ internal static class SpanParsingExtensions
                 continue;
             }
 
-            if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+                !double.IsFinite(parsed))
             {
                 error = $"Invalid coordinate value: {token}";
                 return false;

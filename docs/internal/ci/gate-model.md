@@ -961,6 +961,10 @@ repository-wide artifact collection. Full creation-ordered histories preserve di
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
 inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
 run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+When more than 25 unprocessed run versions remain, five slots serve the oldest pending
+runs and twenty serve the newest. This preserves historical reconciliation while new
+evidence avoids waiting behind months of empty runs; processed versions do not spend
+either allocation again. Deferred evidence remains behind the watermark.
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
@@ -3259,3 +3263,50 @@ Measured on the build host (Release, 3 interleaved base/head rounds of the
 Shard filters are unchanged, so every case runs in the same shards on selected PR runs
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### OData client integration host lifetime
+
+`ODataClientIntegrationTests` initializes its Pro-licensed, `odata.yaml`-seeded
+application once per class instead of once per case. All 44 cases only read the
+seed. Each case still creates and disposes a fresh HTTP client and creates its
+own OData context; all 98 assertions and endpoint attributes are unchanged.
+The existing `Database` collection still serializes these cases. The separate
+`ODataClientCertificationTests` fixture retains its own schema, authentication
+configuration and mutable certification data.
+
+Every case remains in the OData Client Certification shard on selected PR runs
+and twice-daily full trunk runs. Runner count, shard filters, required check names
+and the required aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Two paired build-host runs of the complete 56-case owning shard passed with no
+failures or skips and identical test identities. Median summed class duration
+fell from 14.80 to 2.95 seconds. Median shard wall time, including fixture setup
+and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runner
+minutes) with one runner before and after. Individual baseline/candidate shard
+pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
+time and do not claim a reduction in the parallel PR Gate's critical path.
+
+### Observability endpoint fixture initialization
+
+`ObservabilityEndpointsTests` starts its default private host only in the five
+migration/error cases that use it. The five telemetry cases retain their separately
+configured private hosts and no longer start an unused default host. All 10 cases,
+79 assertions, endpoint metadata and configuration isolation are retained.
+
+Two interleaved base/head Release runs of the unchanged owning Admin Observability /
+Operations shard on one build-host runner passed the same 123 cases in each run
+(zero skipped). Fixture-inclusive TRX session seconds were 92.572 / 93.402 at base
+and 86.363 / 88.605 at head: median 92.987 to 87.484 seconds, saving 5.503 seconds
+(0.092 runner-minutes). Both pairs improved, by 6.209 and 4.797 seconds.
+`ObservabilityEndpointsTests` summed TRX case seconds were 13.497 / 17.553 at base
+and 44.454 / 45.573 at head (medians 15.525 to 45.013). Those class figures are
+not directly comparable: moving initialization from `IAsyncLifetime.InitializeAsync`
+into the five consuming test bodies makes that initialization visible in case time.
+The fixture-inclusive shard measurement includes setup and teardown in both versions;
+compilation is excluded. This is a small measured shard saving, not evidence of an
+end-to-end CI critical-path improvement.
+
+The shard filter, test selection, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case still runs in its existing selected PR
+shard and full trunk runs; no assertions or gate coverage move to another schedule.

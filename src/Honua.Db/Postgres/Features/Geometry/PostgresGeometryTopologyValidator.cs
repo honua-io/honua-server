@@ -121,7 +121,7 @@ internal sealed class PostgresGeometryTopologyValidator(
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT
-                ST_AsBinary(repaired),
+                ST_AsEWKB(repaired),
                 ST_GeometryType(repaired),
                 ST_GeometryType($1::geometry) as original_type,
                 ST_IsEmpty(repaired)

@@ -1,0 +1,30 @@
+{
+  "sceneId": "protected-campus",
+  "servingFormat": "3d-tiles",
+  "contentKind": "mesh",
+  "tilesetUrl": "https://maps.example.test/scenes/protected-campus/tileset.json",
+  "endpoints": [
+    {
+      "kind": "3d-tiles",
+      "endpointFormat": "3d-tiles",
+      "url": "https://maps.example.test/scenes/protected-campus/tileset.json",
+      "mediaType": "application/json",
+      "format": "3d-tiles",
+      "requiresAuthentication": true,
+      "accessSession": {
+        "href": "https://maps.example.test/scenes/protected-campus/access-envelope",
+        "method": "POST"
+      }
+    }
+  ],
+  "capabilities": [
+    "3d-tiles"
+  ],
+  "auth": {
+    "requiresAuthentication": true,
+    "schemes": [
+      "Bearer",
+      "ApiKey"
+    ]
+  }
+}

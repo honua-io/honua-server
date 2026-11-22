@@ -1,0 +1,23 @@
+{
+  "sceneId": "downtown-buildings",
+  "servingFormat": "3d-tiles",
+  "contentKind": "buildings",
+  "tilesetUrl": "https://maps.example.test/scenes/downtown-buildings/tileset.json",
+  "endpoints": [
+    {
+      "kind": "3d-tiles",
+      "endpointFormat": "3d-tiles",
+      "url": "https://maps.example.test/scenes/downtown-buildings/tileset.json",
+      "mediaType": "application/json",
+      "format": "3d-tiles",
+      "requiresAuthentication": false
+    }
+  ],
+  "capabilities": [
+    "3d-tiles"
+  ],
+  "auth": {
+    "requiresAuthentication": false,
+    "schemes": []
+  }
+}

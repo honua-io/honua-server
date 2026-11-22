@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Snowflake.Features.FeatureStore.Services;
@@ -17,6 +18,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -103,6 +105,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         var effective = query ?? new FeatureQuery();
         GuardUnsupportedTemporalFilter(effective);
+        GuardUnsupportedOutputSrid(mapping, effective);
         AppendWhereClause(sb, effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
@@ -157,6 +160,148 @@ internal static partial class SnowflakeFeatureQueryBuilder
         AppendStatisticsPagination(sb, query, fallbackOrder, hasOrderBy);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    public static ParameterizedQuery BuildH3AggregationQuery(
+        SnowflakeLayerMapping mapping,
+        FeatureQuery query,
+        H3AggregationQuery h3Query)
+    {
+        h3Query.RejectSummaryDefinitions();
+
+        ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
+
+        if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            throw new InvalidOperationException(
+                $"Layer {mapping.LayerId} has no geometry column configured; H3 aggregation is not available.");
+        }
+
+        if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 resolution must be between {H3AggregationQuery.MinResolution} and {H3AggregationQuery.MaxResolution}.");
+        }
+
+        if (h3Query.KRingDistance is < 0 or > H3AggregationQuery.MaxKRingDistance)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 k-ring distance must be between 0 and {H3AggregationQuery.MaxKRingDistance}.");
+        }
+
+        if (mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geometry
+            && mapping.Srid is > 0 and not 4326)
+        {
+            throw new NotSupportedException(
+                $"Snowflake H3 aggregation requires WGS 84 (EPSG:4326) geometry or GEOGRAPHY; layer {mapping.LayerId} uses SRID {mapping.Srid.Value}.");
+        }
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var geomCol = mapping.QuotedGeometryColumn!;
+        var polyfillCteLength = 0;
+
+        if (h3Query.PolyfillGeometry is { Length: > 0 })
+        {
+            if (h3Query.PolyfillSrid is > 0 and not 4326)
+            {
+                throw new NotSupportedException(
+                    $"Snowflake H3 polyfill requires WGS 84 (EPSG:4326) geometry; received SRID {h3Query.PolyfillSrid.Value}.");
+            }
+
+            parameters.Add(h3Query.PolyfillGeometry);
+            parameters.Add(h3Query.Resolution);
+            sb.Append("WITH polyfill_cells AS (SELECT VALUE::VARCHAR AS cell FROM TABLE(FLATTEN(INPUT => H3_POLYGON_TO_CELLS_STRINGS(TO_GEOGRAPHY(?, TRUE), ?))))");
+            polyfillCteLength = sb.Length;
+            sb.Append(' ');
+        }
+
+        parameters.Add(h3Query.Resolution);
+        var cellExpr = mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geography
+            ? $"H3_POINT_TO_CELL_STRING(ST_CENTROID({geomCol}), ?)"
+            : $"H3_LATLNG_TO_CELL_STRING(ST_Y(ST_CENTROID({geomCol})), ST_X(ST_CENTROID({geomCol})), ?)";
+
+        sb.Append("SELECT _h3cell AS \"cellIndex\", ST_ASGEOJSON(H3_CELL_TO_BOUNDARY(_h3cell)) AS \"cellGeometry\"");
+        if (h3Query.OutStatistics is { IsDefaultOrEmpty: false } stats)
+        {
+            sb.Append(", ").Append(BuildStatisticColumns(stats));
+        }
+        else
+        {
+            sb.Append(", COUNT(").Append(mapping.QuotedPrimaryKeyColumn).Append(") AS \"count\"");
+        }
+
+        sb.Append(" FROM (SELECT *, ").Append(cellExpr).Append(" AS _h3cell FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE ").Append(geomCol).Append(" IS NOT NULL");
+        AppendWhereClause(sb, query, parameters);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+        sb.Append(") _src");
+
+        if (polyfillCteLength > 0)
+        {
+            sb.Append(" WHERE _h3cell IN (SELECT cell FROM polyfill_cells)");
+        }
+
+        sb.Append(" GROUP BY _h3cell");
+
+        if (h3Query.KRingDistance is > 0)
+        {
+            var innerSql = sb.ToString();
+            sb.Clear();
+            if (polyfillCteLength > 0)
+            {
+                sb.Append(innerSql[..polyfillCteLength]);
+                sb.Append(", aggregated AS (");
+                sb.Append(innerSql[(polyfillCteLength + 1)..]);
+            }
+            else
+            {
+                sb.Append("WITH aggregated AS (");
+                sb.Append(innerSql);
+            }
+
+            parameters.Add(h3Query.KRingDistance.Value);
+            sb.Append(") SELECT k.VALUE::VARCHAR AS \"cellIndex\", ST_ASGEOJSON(H3_CELL_TO_BOUNDARY(k.VALUE::VARCHAR)) AS \"cellGeometry\"");
+            AppendH3KRingReaggregateColumns(sb, h3Query);
+            sb.Append(" FROM aggregated a, LATERAL FLATTEN(INPUT => H3_GRID_DISK(a.\"cellIndex\", ?)) k GROUP BY k.VALUE::VARCHAR");
+        }
+        else
+        {
+            sb.Append(" ORDER BY COUNT(*) DESC");
+        }
+
+        if (h3Query.MaxCells is > 0)
+        {
+            sb.Append(" LIMIT ").Append(h3Query.MaxCells.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    private static void AppendH3KRingReaggregateColumns(StringBuilder sb, H3AggregationQuery h3Query)
+    {
+        if (h3Query.OutStatistics is not { IsDefaultOrEmpty: false } stats)
+        {
+            sb.Append(", SUM(a.\"count\") AS \"count\"");
+            return;
+        }
+
+        foreach (var stat in stats)
+        {
+            var alias = SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
+            var agg = stat.StatisticType switch
+            {
+                StatisticType.Count or StatisticType.Sum => $"SUM(a.{alias})",
+                StatisticType.Min => $"MIN(a.{alias})",
+                StatisticType.Max => $"MAX(a.{alias})",
+                _ => $"AVG(a.{alias})",
+            };
+            sb.Append(", ").Append(agg).Append(" AS ").Append(alias);
+        }
     }
 
     private static List<string> QuoteGroupByColumns(FeatureQuery query)
@@ -326,6 +471,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
             throw new NotSupportedException(
                 "Temporal filters are not supported by the Snowflake provider in this slice. " +
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
+    }
+
+    private static void GuardUnsupportedOutputSrid(SnowflakeLayerMapping mapping, FeatureQuery query)
+    {
+        if (query.OutputSrid is > 0 && mapping.Srid is > 0 && query.OutputSrid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Output SRID transforms are not supported by the Snowflake provider " +
+                $"(layer SRID is {mapping.Srid.Value}, requested {query.OutputSrid.Value}). " +
+                "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
         }
     }
 
@@ -499,9 +655,14 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 $"Pre-project the filter geometry to SRID {mapping.Srid.Value} before submitting the request.");
         }
 
-        parameters.Add(filter.Geometry);
+        parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 
-        // TO_GEOGRAPHY/TO_GEOMETRY parse a WKB byte string when the second argument is true.
+        if (mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geometry && mapping.Srid is > 0)
+        {
+            return $"TO_GEOMETRY(?, {mapping.Srid.Value.ToString(CultureInfo.InvariantCulture)}, TRUE)";
+        }
+
+        // TO_GEOGRAPHY/TO_GEOMETRY parse a WKB byte string when the trailing argument is true.
         return $"{mapping.SpatialConstructor}(?, TRUE)";
     }
 

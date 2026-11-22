@@ -127,8 +127,7 @@ internal sealed class FeatureMutationValidator
             return wkb;
         }
 
-        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: cut.SRID > 0);
-        return writer.Write(cut);
+        return GeometryTypeEnforcement.WriteWkb(cut, wkb);
     }
 }
 
@@ -303,7 +302,7 @@ internal static class GeometryTypeEnforcement
         return true;
     }
 
-    private static byte[] WriteWkb(NetTopologySuite.Geometries.Geometry geometry, byte[]? source = null)
+    internal static byte[] WriteWkb(NetTopologySuite.Geometries.Geometry geometry, byte[]? source = null)
     {
         // Empty geometries have no coordinates from which to infer dimensions.
         // Preserve the source WKB's EWKB flags or ISO dimensional type offset.

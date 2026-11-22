@@ -356,11 +356,13 @@ internal static class FeatureRegistrationExtensions
         {
             endpoints.MapSceneEndpoints();
             endpoints.MapSceneGenerationEndpoints();
+            endpoints.MapSceneIngestEndpoints();
         }
         if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.i3s-scene"))
         {
             endpoints.MapI3sSceneServerEndpoints();
         }
+        endpoints.MapSceneWorkflowEndpoints();
 #else
         _ = lifecycleConfiguration;
 #endif

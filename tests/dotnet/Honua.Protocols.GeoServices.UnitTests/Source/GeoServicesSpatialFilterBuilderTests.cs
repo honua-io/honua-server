@@ -139,4 +139,33 @@ public sealed class GeoServicesSpatialFilterBuilderTests
         multiPolygon.NumGeometries.Should().Be(2);
         multiPolygon.Coordinates.Should().OnlyContain(coordinate => coordinate.X >= -180d && coordinate.X <= 180d);
     }
+
+    [UnitTest]
+    public void BuildSpatialFilter_IndexIntersects_MapsToEnvelopeIntersects()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters { SpatialRel = "esriSpatialRelIndexIntersects" },
+            new GeoServicesGeometry { Xmin = -10d, Ymin = -10d, Xmax = 10d, Ymax = 10d },
+            4326);
+
+        filter.SpatialRelationship.Should().Be(SpatialRelationship.EnvelopeIntersects);
+        filter.AllowEnvelopeOnly.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_ExplicitUsSurveyFootUnits_ScalesToMeters()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters
+            {
+                SpatialRel = "esriSpatialRelIntersects",
+                Distance = 3937d,
+                Units = "esriSRUnit_SurveyFoot"
+            },
+            new GeoServicesGeometry { X = 0, Y = 0 },
+            2263);
+
+        filter.Distance.Should().BeApproximately(1200d, 1e-9);
+        filter.DistanceUnit.Should().Be(DistanceUnit.Meters);
+    }
 }

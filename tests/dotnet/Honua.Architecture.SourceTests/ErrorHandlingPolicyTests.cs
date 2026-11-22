@@ -54,6 +54,10 @@ public sealed class ErrorHandlingPolicyTests
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
+        // Scene request and COPC file validation helpers return diagnostics to the
+        // register and update handlers in SceneDatasetEndpoints, which shape HTTP errors.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "SceneDatasetEndpoints.Copc.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "SceneDatasetEndpoints.Requests.cs"),
         // Admission partition resolution only: no handler; the session-limit refusal is shaped in FeatureStreamEndpoints.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Streaming", "FeatureStreamEndpoints.Admission.cs"),
         // Pure route wiring. FormXlsFormService shapes every import and export failure

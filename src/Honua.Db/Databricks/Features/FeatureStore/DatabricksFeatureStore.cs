@@ -165,9 +165,13 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         int layerId, FeatureQuery query, BinDefinition binDefinition, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryBinsAsync), layerId);
 
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
-        => throw NotSupported(nameof(QueryH3Async), layerId);
+    {
+        var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var statement = DatabricksFeatureQueryBuilder.BuildH3Aggregation(mapping, query, h3Query);
+        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<DatabricksLayerMapping> ResolveMappingAsync(int layerId, CancellationToken cancellationToken)
     {

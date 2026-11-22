@@ -50,6 +50,7 @@ internal static partial class MapServerEndpoints
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
+        var responseFormat = context.Request.Query["f"].FirstOrDefault() ?? "image";
 
         try
         {
@@ -67,13 +68,13 @@ internal static partial class MapServerEndpoints
                     return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
                 }
 
-                return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+                return CreateExportBadRequest(context, responseFormat, readError ?? "Invalid request body.");
             }
 
-            var responseFormat = GetValue(values, "f") ?? "image";
+            responseFormat = GetValue(values, "f") ?? "image";
             if (!IsSupportedExportResponseFormat(responseFormat))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
+                return CreateExportBadRequest(context, responseFormat,
                     $"Output format '{responseFormat}' is not supported.");
             }
 
@@ -510,7 +511,7 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, InvalidExportRequestMessage);
+            return CreateExportBadRequest(context, responseFormat, InvalidExportRequestMessage);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

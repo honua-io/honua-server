@@ -7,6 +7,7 @@ public static class WebMercatorMath
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
+    private const double MaxMeters = SpatialConstants.WebMercatorExtent;
 
     public static (double X, double Y) LonLatToWebMercator(double longitude, double latitude)
     {
@@ -92,11 +93,19 @@ public static class WebMercatorMath
             return minX + ((maxX - minX) * t);
         }
 
-        var wrappedMaxX = maxX + 360.0;
+        var halfSpan = IsGeographicAntimeridianCrossing(minX, maxX) ? 180.0 : MaxMeters;
+        var fullSpan = 2.0 * halfSpan;
+        var wrappedMaxX = maxX + fullSpan;
         var value = minX + ((wrappedMaxX - minX) * t);
-        return value > 180.0 ? value - 360.0 : value;
+        return value > halfSpan ? value - fullSpan : value;
     }
 
     public static bool IsAntimeridianCrossing(double minX, double maxX)
+        => IsGeographicAntimeridianCrossing(minX, maxX) || IsWebMercatorAntimeridianCrossing(minX, maxX);
+
+    private static bool IsGeographicAntimeridianCrossing(double minX, double maxX)
         => minX > maxX && minX >= -180.0 && minX <= 180.0 && maxX >= -180.0 && maxX <= 180.0;
+
+    private static bool IsWebMercatorAntimeridianCrossing(double minX, double maxX)
+        => minX > maxX && minX >= -MaxMeters && minX <= MaxMeters && maxX >= -MaxMeters && maxX <= MaxMeters;
 }

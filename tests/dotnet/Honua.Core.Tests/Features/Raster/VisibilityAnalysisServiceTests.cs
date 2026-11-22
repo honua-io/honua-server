@@ -81,7 +81,7 @@ public sealed class VisibilityAnalysisServiceTests
         var result = await service.ComputeLineOfSightAsync(
             LayerId,
             new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
-            new VisibilityPoint { Longitude = 0.1, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.05, Latitude = 0, HeightOffsetMeters = 2 },
             sampleCount: 32,
             RasterMergeStrategy.Newest);
 
@@ -103,8 +103,8 @@ public sealed class VisibilityAnalysisServiceTests
 
         var result = await service.ComputeLineOfSightAsync(
             LayerId,
-            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
-            new VisibilityPoint { Longitude = 0.2, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 20 },
+            new VisibilityPoint { Longitude = 0.2, Latitude = 0, HeightOffsetMeters = 20 },
             sampleCount: 64,
             RasterMergeStrategy.Newest);
 
@@ -304,6 +304,81 @@ public sealed class VisibilityAnalysisServiceTests
 
         lat.Should().BeApproximately(1.0, 0.02);
         lon.Should().BeApproximately(0.0, 0.001);
+    }
+
+    [UnitTest]
+    public void ComputeCurvatureAndRefractionDropMeters_At30Km_IsApproximately61Meters()
+    {
+        // At d = 30,000 m, R = 6,371,008.8 m, k = 0.13:
+        // deltaH = -(30000^2 * 0.87) / (2 * 6371008.8) = -61.4502447 m.
+        var drop = VisibilityAnalysisService.ComputeCurvatureAndRefractionDropMeters(30_000d);
+
+        drop.Should().BeApproximately(-61.4502447d, 1e-4);
+    }
+
+    [UnitTest]
+    public void EvaluateSightLine_EarthCurvatureBulgeAtMidpoint_ObstructsAboveCurvedHorizon()
+    {
+        // Over a 30 km path between two 100 m towers, the target drops by 61.45 m in the
+        // observer's tangent plane (adjustedTargetHeight = 38.55 m, midpoint sightHeight = 69.27 m),
+        // while the midpoint terrain at d = 15 km drops by 15.36 m. Thus the net curved-Earth
+        // bulge at the midpoint is 15.36 m, so a ridge > 84.64 m (e.g. 90 m) obstructs the
+        // sightline while an 80 m ridge clears it.
+        var obstructedSamples = new ElevationSample[]
+        {
+            new() { DistanceMeters = 0, Elevation = 0, NoData = false },
+            new() { DistanceMeters = 15_000, Elevation = 90, NoData = false },
+            new() { DistanceMeters = 30_000, Elevation = 0, NoData = false }
+        };
+
+        var (visibleObstructed, indexObstructed, _) = VisibilityAnalysisService.EvaluateSightLine(
+            obstructedSamples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
+
+        visibleObstructed.Should().BeFalse();
+        indexObstructed.Should().Be(1);
+
+        var clearSamples = new ElevationSample[]
+        {
+            new() { DistanceMeters = 0, Elevation = 0, NoData = false },
+            new() { DistanceMeters = 15_000, Elevation = 80, NoData = false },
+            new() { DistanceMeters = 30_000, Elevation = 0, NoData = false }
+        };
+
+        var (visibleClear, indexClear, _) = VisibilityAnalysisService.EvaluateSightLine(
+            clearSamples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
+
+        visibleClear.Should().BeTrue();
+        indexClear.Should().Be(-1);
+    }
+
+    [UnitTest]
+    public async Task ComputeViewshedAsync_LongRangeFlatTerrain_OccludesBeyondCurvedEarthHorizon()
+    {
+        // For a 2 m observer on flat terrain (elevation 50 m), the curved-Earth refracted
+        // horizon is at sqrt(2 * R * 2 / (1 - 0.13)) ~= 5,412 m. Over a 20 km radius, near
+        // samples (< 5 km) are visible while far samples (> 7 km) fall below the horizon.
+        var service = new VisibilityAnalysisService(new FlatTerrainElevationService(elevation: 50));
+
+        var result = await service.ComputeViewshedAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0 },
+            new ViewshedOptions
+            {
+                RadiusMeters = 20_000,
+                RayCount = 8,
+                SamplesPerRay = 40,
+                ObserverHeightOffsetMeters = 2,
+                TargetHeightOffsetMeters = 0
+            },
+            RasterMergeStrategy.Newest);
+
+        var nearSamples = result.Samples.Where(s => s.DistanceMeters <= 5_000).ToArray();
+        var farSamples = result.Samples.Where(s => s.DistanceMeters >= 7_000).ToArray();
+
+        nearSamples.Should().NotBeEmpty();
+        nearSamples.Should().OnlyContain(s => s.Visible);
+        farSamples.Should().NotBeEmpty();
+        farSamples.Should().OnlyContain(s => !s.Visible);
     }
 
     private static ElevationSample[] BuildSamples(double[] elevations, double totalDistance)

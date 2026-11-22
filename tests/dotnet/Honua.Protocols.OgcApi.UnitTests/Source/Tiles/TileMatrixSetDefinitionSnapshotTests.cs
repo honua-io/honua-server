@@ -45,6 +45,7 @@ public class TileMatrixSetDefinitionSnapshotTests
 
         fromRegistry.Should().BeEquivalentTo(legacy, options => options.WithStrictOrdering());
         Serialize(fromRegistry).Should().Be(Serialize(legacy));
+        fromRegistry.WellKnownScaleSet.Should().Be("http://www.opengis.net/def/wkss/OGC/1.0/WorldCRS84Quad");
         fromRegistry.TileMatrices[0].PointOfOrigin.Should().Equal(-180, 90);
     }
 

@@ -927,7 +927,7 @@ public static class Fes20Parser
 
     private static AxisOrder ResolveAxisOrder(string srsName, int srid)
     {
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84SrsName(srsName))
         {
             return AxisOrder.EastNorth;
         }
@@ -935,6 +935,23 @@ public static class Fes20Parser
         return SpatialReference.Create(srid).IsGeographic
             ? AxisOrder.NorthEast
             : AxisOrder.EastNorth;
+    }
+
+    private static bool IsCrs84SrsName(string srsName)
+    {
+        if (string.IsNullOrWhiteSpace(srsName))
+        {
+            return false;
+        }
+
+        var trimmed = srsName.Trim();
+        return trimmed.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("CRS:84", StringComparison.OrdinalIgnoreCase) ||
+               ((trimmed.StartsWith("urn:ogc:def:crs:OGC:", StringComparison.OrdinalIgnoreCase) ||
+                 trimmed.StartsWith("urn:x-ogc:def:crs:OGC:", StringComparison.OrdinalIgnoreCase)) &&
+                trimmed.EndsWith(":84", StringComparison.OrdinalIgnoreCase)) ||
+               (trimmed.Contains("://www.opengis.net/def/crs/OGC/", StringComparison.OrdinalIgnoreCase) &&
+                trimmed.EndsWith("/84", StringComparison.OrdinalIgnoreCase));
     }
 
     private static Literal InferLiteralType(string value, string? typeHint)
@@ -1165,7 +1182,7 @@ public static class Fes20Parser
 
         // CRS84 (bare token or OGC URI/URN form) is WGS 84 in lon,lat axis order. The axis order
         // is applied separately in ResolveAxisOrder; here it resolves to EPSG:4326.
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84SrsName(srsName))
         {
             srid = 4326;
             return true;

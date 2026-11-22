@@ -199,6 +199,23 @@ public sealed class StacSearchSpatialTemporalTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /stac/search")]
+    public async Task SearchGet_EmptyOpenDatetimeBounds_FiltersByTheRemainingBound()
+    {
+        await SeedDatedPointsAsync();
+
+        var after = await SearchIdsAsync(
+            $"/stac/search?collections={CollectionId}&datetime=2026-01-01T00:00:00Z/&limit=100");
+        after.Should().Contain(_insideId);
+        after.Should().NotContain(_outsideId);
+
+        var before = await SearchIdsAsync(
+            $"/stac/search?collections={CollectionId}&datetime=/2026-01-01T00:00:00Z&limit=100");
+        before.Should().Contain(_outsideId);
+        before.Should().NotContain(_insideId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/search")]
     public async Task SearchGet_Collections_ExcludesItemsFromOtherCollections()
     {
         // The existing collections coverage re-checks the same predicate per row, which cannot
