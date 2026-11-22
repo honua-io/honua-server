@@ -88,6 +88,39 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
+    public async Task RecoveryReplayCancelledByItsClient_DoesNotCancelOtherStreamsRefresh()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        using var registry = new LiveStreamSecurityRegistry();
+        var dispatcher = harness.CreateDispatcher(security: registry);
+        await dispatcher.InitializeAsync(CancellationToken.None);
+        await AppendPolicyChangedAsync(harness, CancellationToken.None);
+        var entered = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var bystander = registry.Register(new("alice", null), async token =>
+        {
+            entered.TrySetResult(token);
+            await release.Task;
+        });
+        using var replayClient = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            var replay = dispatcher.RefreshReplaySecurityAsync(replayClient.Token);
+            var bystanderToken = await entered.Task.WaitAsync(deadline.Token);
+            await replayClient.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => replay.WaitAsync(deadline.Token));
+            Assert.False(bystanderToken.IsCancellationRequested);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    [IntegrationTest]
     public async Task RecoveryReplayWithNoPendingSecurity_PublishesWithoutRefresh()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);

@@ -19,12 +19,14 @@ internal sealed partial class RealtimeDispatcher
     private bool ConsumesSecurity(string family) => Security is not null && InternalPriority(family) < 2;
 
     // Replay needs a refresh only while a security or catalog event is committed but not yet
-    // applied by dispatch; dispatch applies each one before it advances past it.
+    // applied by dispatch; dispatch applies each one before it advances past it. The refresh covers
+    // every stream on the task, so one replaying client leaving must not cancel it for the others;
+    // each stream's check keeps its own deadline.
     internal async Task RefreshReplaySecurityAsync(CancellationToken cancellationToken)
     {
         if (Security is not null && await HasPendingSecurityEventsAsync(cancellationToken).ConfigureAwait(false))
         {
-            await Security.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
+            await Security.RefreshAsync(null, CancellationToken.None).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
