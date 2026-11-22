@@ -113,7 +113,7 @@ public partial class StudioPackageLifecycleServiceTests
     {
         var draft = await store.CreateDraftAsync(new StudioPackageDraft
         {
-            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "legacy-map-app",
+            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "legacy-map-app", Generation = 1,
             Family = envelope.Family, Envelope = envelope, CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         });
