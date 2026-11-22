@@ -25,6 +25,7 @@ internal static class DatabricksFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(mapping, query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var parameters = new List<DatabricksSqlParameter>();
         var sql = new StringBuilder("SELECT ");
@@ -63,6 +64,7 @@ internal static class DatabricksFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         var effectiveQuery = query ?? default;
         EnsureSupported(mapping, effectiveQuery);
+        GuardUnsupportedOutputSrid(mapping, effectiveQuery);
 
         var parameters = new List<DatabricksSqlParameter>();
         var geom = Dialect.QuoteIdentifier(mapping.GeometryColumn);
@@ -267,7 +269,8 @@ internal static class DatabricksFeatureQueryBuilder
         h3Query.RejectSummaryDefinitions();
 
         ArgumentNullException.ThrowIfNull(mapping);
-        EnsureSupported(query);
+        EnsureSupported(mapping, query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
         {
@@ -532,7 +535,7 @@ internal static class DatabricksFeatureQueryBuilder
             $"layer {mapping.LayerId}");
     }
 
-    private static void EnsureSupported(DatabricksLayerMapping mapping, FeatureQuery query)
+    private static void GuardUnsupportedOutputSrid(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         if (query.OutputSrid is > 0 && mapping.Srid > 0 && query.OutputSrid.Value != mapping.Srid)
         {
@@ -541,7 +544,10 @@ internal static class DatabricksFeatureQueryBuilder
                 $"(layer SRID is {mapping.Srid}, requested {query.OutputSrid.Value}). " +
                 "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
         }
+    }
 
+    private static void EnsureSupported(DatabricksLayerMapping mapping, FeatureQuery query)
+    {
         if (query.EnforcedSqlFilter is not null)
         {
             throw new NotSupportedException(

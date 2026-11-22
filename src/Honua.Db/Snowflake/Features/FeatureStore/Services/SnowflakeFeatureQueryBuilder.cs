@@ -46,7 +46,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
-        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -65,7 +64,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
-        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -119,7 +117,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
-        GuardUnsupportedOutputSrid(mapping, query);
 
         if (query.OutStatistics is not { IsDefaultOrEmpty: false } statistics)
         {

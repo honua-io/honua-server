@@ -178,7 +178,7 @@ public sealed class ServiceApplyEditsResponseTests
     [InlineData("fortnights")]
     public void TryParseDateBin_WithUnsupportedFixedUnit_RejectsInterval(string unit)
     {
-        var json = $$"""{"fixedBin":{"intervalCount":1,"intervalUnit":"{{unit}}"}}""";
+        var json = $$$"""{"fixedBin":{"intervalCount":1,"intervalUnit":"{{{unit}}}"}}""";
         FeatureServerEndpoints.TryParseDateBin(json, "observed_at", out _, out var error)
             .Should().BeFalse();
         error.Should().Contain("fixedBin.intervalUnit");

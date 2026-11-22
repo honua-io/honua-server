@@ -179,33 +179,71 @@ public static class AntimeridianCutter
             return false;
         }
 
-        var (hasZ, hasM) = DetectOrdinates(lineString);
-        var shifted = (LineString)lineString.Copy();
-        shifted.Apply(new ShiftNegativeLongitudeFilter());
-        var envelope = shifted.EnvelopeInternal;
-        var factory = shifted.Factory;
-        var westBox = factory.ToGeometry(new Envelope(envelope.MinX - 1d, 180d, envelope.MinY - 1d, envelope.MaxY + 1d));
-        var eastBox = factory.ToGeometry(new Envelope(180d, envelope.MaxX + 1d, envelope.MinY - 1d, envelope.MaxY + 1d));
-        var west = shifted.Intersection(westBox);
-        var east = shifted.Intersection(eastBox);
-
-        if (hasZ || hasM)
-        {
-            west = RestoreOrdinates(west, shifted, hasZ, hasM);
-            east = RestoreOrdinates(east, shifted, hasZ, hasM);
-        }
-
-        if (!east.IsEmpty)
-        {
-            east.Apply(new UnshiftLongitudeFilter());
-            east.GeometryChanged();
-        }
-
+        // Split individual crossing segments: shifting every negative longitude would
+        // also turn an ordinary Greenwich crossing into a nearly world-spanning edge.
+        var coordinates = lineString.Coordinates;
+        var current = new List<Coordinate> { coordinates[0].Copy() };
         var startCount = output.Count;
-        CollectLineStrings(west, output);
-        CollectLineStrings(east, output);
+        for (var i = 1; i < coordinates.Length; i++)
+        {
+            var a = coordinates[i - 1];
+            var b = coordinates[i];
+            var delta = b.X - a.X;
+            if (Math.Abs(delta) <= 180d)
+            {
+                current.Add(b.Copy());
+                continue;
+            }
+
+            var boundary = delta < 0d ? 180d : -180d;
+            var unwrappedDelta = delta < 0d ? delta + 360d : delta - 360d;
+            // Opposite representations of the seam have no longitudinal distance.
+            var fraction = unwrappedDelta == 0d ? 0d : (boundary - a.X) / unwrappedDelta;
+            var crossing = InterpolateLineCoordinate(a, b, fraction);
+            if (fraction > 0d)
+            {
+                current.Add(crossing);
+            }
+
+            if (current.Count > 1)
+            {
+                output.Add(lineString.Factory.CreateLineString(current.ToArray()));
+            }
+
+            var opposite = crossing.Copy();
+            opposite.X = -boundary;
+            current = new List<Coordinate> { opposite };
+            if (fraction < 1d)
+            {
+                current.Add(b.Copy());
+            }
+        }
+
+        if (current.Count > 1)
+        {
+            output.Add(lineString.Factory.CreateLineString(current.ToArray()));
+        }
+
         return output.Count > startCount;
     }
+
+    private static Coordinate InterpolateLineCoordinate(Coordinate a, Coordinate b, double fraction)
+    {
+        var longitude = b.X < a.X ? 180d : -180d;
+        var latitude = a.Y + fraction * (b.Y - a.Y);
+        var z = InterpolateLineOrdinate(a.Z, b.Z, fraction);
+        var m = InterpolateLineOrdinate(a.M, b.M, fraction);
+        return (!double.IsNaN(z), !double.IsNaN(m)) switch
+        {
+            (true, true) => new CoordinateZM(longitude, latitude, z, m),
+            (true, false) => new CoordinateZ(longitude, latitude, z),
+            (false, true) => new CoordinateM(longitude, latitude, m),
+            _ => new Coordinate(longitude, latitude)
+        };
+    }
+
+    private static double InterpolateLineOrdinate(double a, double b, double fraction)
+        => double.IsNaN(a) ? b : double.IsNaN(b) ? a : a + fraction * (b - a);
 
     public static Geometry CutStoredGeometry(Geometry geometry, int targetSrid)
     {
@@ -340,28 +378,12 @@ public static class AntimeridianCutter
             return;
         }
 
-        for (var i = 0; i < geometry.NumGeometries; i++)
+        if (geometry is GeometryCollection collection)
         {
-            CollectPolygons(geometry.GetGeometryN(i), polygons);
-        }
-    }
-
-    private static void CollectLineStrings(Geometry geometry, List<LineString> lines)
-    {
-        if (geometry.IsEmpty)
-        {
-            return;
-        }
-
-        if (geometry is LineString line)
-        {
-            lines.Add(line);
-            return;
-        }
-
-        for (var i = 0; i < geometry.NumGeometries; i++)
-        {
-            CollectLineStrings(geometry.GetGeometryN(i), lines);
+            for (var i = 0; i < collection.NumGeometries; i++)
+            {
+                CollectPolygons(collection.GetGeometryN(i), polygons);
+            }
         }
     }
 

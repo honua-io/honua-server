@@ -103,6 +103,32 @@ public sealed class GeoServicesJsonFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_SameWindingNestedRings_PreservesIslandAndItsHole()
+    {
+        const string json = """
+            {"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[
+            {"attributes":{"id":3},"geometry":{"rings":[
+              [[5,5],[5,15],[15,15],[15,5],[5,5]],
+              [[7,7],[7,13],[13,13],[13,7],[7,7]],
+              [[0,0],[0,20],[20,20],[20,0],[0,0]],
+              [[2,2],[2,18],[18,18],[18,2],[2,2]]
+            ]}}]}
+            """;
+
+        var features = await ReadAsync(json);
+
+        features.Should().ContainSingle();
+        var multi = features[0].Geometry.Should().BeOfType<MultiPolygon>().Subject;
+        multi.NumGeometries.Should().Be(2);
+        multi.IsValid.Should().BeTrue();
+        multi.Area.Should().BeApproximately(208, 0.001);
+        multi.Covers(multi.Factory.CreatePoint(new Coordinate(6, 6))).Should().BeTrue();
+        multi.Covers(multi.Factory.CreatePoint(new Coordinate(10, 10))).Should().BeFalse();
+        multi.Covers(multi.Factory.CreatePoint(new Coordinate(3, 3))).Should().BeFalse();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_MultiRingPolygonWithHolesAndNestedShell_PairsHolesWithSmallestContainingShell()
     {
         // Outer shell CW [0..20] (area 400), outer hole CCW [2..18] (area 256),

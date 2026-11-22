@@ -227,38 +227,7 @@ internal static class GeoServicesJsonFormatReader
 
         if (holes.Count == 0 && shells.Count > 1)
         {
-            var shellsToRemove = new List<LinearRing>();
-
-            foreach (var candidate in shells)
-            {
-                var candidatePolygon = factory.CreatePolygon(candidate);
-                var candidateArea = candidatePolygon.Area;
-                var containingShell = FindSmallestCoveringShell(
-                    shells,
-                    factory,
-                    shellPolygon => shellPolygon.Area > candidateArea &&
-                        (shellPolygon.Covers(candidatePolygon) || shellPolygon.Covers(candidatePolygon.InteriorPoint)),
-                    exclude: candidate);
-
-                if (containingShell == null)
-                {
-                    continue;
-                }
-
-                if (!holeAssignments.TryGetValue(containingShell, out var assignedHoles))
-                {
-                    assignedHoles = new List<LinearRing>();
-                    holeAssignments[containingShell] = assignedHoles;
-                }
-
-                assignedHoles.Add(candidate);
-                shellsToRemove.Add(candidate);
-            }
-
-            if (shellsToRemove.Count != 0)
-            {
-                shells.RemoveAll(shellsToRemove.Contains);
-            }
+            AssignSameWindingHoles(shells, holeAssignments, factory);
         }
 
         var polygons = shells.Select(shell =>
@@ -275,6 +244,57 @@ internal static class GeoServicesJsonFormatReader
         };
 
         return result == null ? null : RingOrientationNormalizer.Normalize(result, wantExteriorCcw: true);
+    }
+
+    private static void AssignSameWindingHoles(
+        List<LinearRing> shells,
+        Dictionary<LinearRing, List<LinearRing>> holeAssignments,
+        GeometryFactory factory)
+    {
+        var parents = new Dictionary<LinearRing, LinearRing>();
+        foreach (var candidate in shells)
+        {
+            var candidatePolygon = factory.CreatePolygon(candidate);
+            var parent = FindSmallestCoveringShell(
+                shells,
+                factory,
+                shellPolygon => shellPolygon.Area > candidatePolygon.Area &&
+                    (shellPolygon.Covers(candidatePolygon) || shellPolygon.Covers(candidatePolygon.InteriorPoint)),
+                exclude: candidate);
+            if (parent != null)
+            {
+                parents[candidate] = parent;
+            }
+        }
+
+        var holes = new List<LinearRing>();
+        foreach (var (candidate, parent) in parents)
+        {
+            var depth = 1;
+            var ancestor = parent;
+            while (parents.TryGetValue(ancestor, out var nextAncestor))
+            {
+                depth++;
+                ancestor = nextAncestor;
+            }
+
+            // Alternate holes and islands by containment depth, independent of ring order.
+            if (depth % 2 == 0)
+            {
+                continue;
+            }
+
+            if (!holeAssignments.TryGetValue(parent, out var assignedHoles))
+            {
+                assignedHoles = new List<LinearRing>();
+                holeAssignments[parent] = assignedHoles;
+            }
+
+            assignedHoles.Add(candidate);
+            holes.Add(candidate);
+        }
+
+        shells.RemoveAll(holes.Contains);
     }
 
     private static LinearRing? FindSmallestCoveringShell(

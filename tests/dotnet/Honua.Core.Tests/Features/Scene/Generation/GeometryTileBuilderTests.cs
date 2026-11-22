@@ -827,6 +827,9 @@ public sealed class GeometryTileBuilderTests
         var translation = doc.RootElement.GetProperty("nodes")[0].GetProperty("translation")
             .EnumerateArray().Select(e => e.GetDouble()).ToArray();
 
+        doc.RootElement.GetProperty("asset").GetProperty("extras")
+            .GetProperty("honuaUpAxis").GetString().Should().Be("Y");
+
         // glTF 2.0 Y-up: (X_gltf, Y_gltf, Z_gltf) = (X_ecef, Z_ecef, -Y_ecef)
         translation[0].Should().BeApproximately(xEcef, 1e-6);
         translation[1].Should().BeApproximately(zEcef, 1e-6);

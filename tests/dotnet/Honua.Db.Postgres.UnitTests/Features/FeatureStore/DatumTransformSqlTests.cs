@@ -8,7 +8,8 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Crs;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -296,31 +297,32 @@ public sealed class DatumTransformSqlTests
     }
 
     [UnitTest]
-    public async Task PostgresCrsRegistry_WithSharedCache_PersistsAcrossScopedInstances()
+    public async Task PostgresCrsRegistry_NewScope_DoesNotReuseDatabaseDefinitions()
     {
-        var sharedCache = new PostgresCrsRegistryCache();
-        var provider = new ThrowingConnectionProvider();
-        var scope1Registry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance, sharedCache);
-        var scope2Registry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance, sharedCache);
-
-        var warmed = await scope1Registry.ResolveAsync("urn:ogc:def:crs:OGC:2:84");
-        warmed.Should().NotBeNull();
-        warmed!.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua"
+            }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
+        services.AddSingleton<IAdoNetDatabaseConnectionProvider>(new ThrowingConnectionProvider());
+        await using var provider = services.BuildServiceProvider();
+        using var scope1 = provider.CreateScope();
+        using var scope2 = provider.CreateScope();
+        var scope1Registry = scope1.ServiceProvider.GetRequiredService<ICrsRegistry>();
+        var scope2Registry = scope2.ServiceProvider.GetRequiredService<ICrsRegistry>();
+        var cache = scope1.ServiceProvider.GetRequiredService<PostgresCrsRegistryCache>();
 
         var entry = new PostgresCrsRegistry.CrsCacheEntry(
             new CrsDefinition("http://www.opengis.net/def/crs/EPSG/0/25831", 25831, AxisOrder.EastNorth, false),
             DateTimeOffset.UtcNow);
-        sharedCache.SridCache.TryAdd(25831, entry);
+        cache.SridCache.TryAdd(25831, entry);
+        (await scope1Registry.ResolveBySridAsync(25831)).Should().Be(entry.Definition);
 
-        // Second scoped registry resolves SRID 25831 via versioned URN from the shared cache without touching the DB.
         var fromSecondScope = await scope2Registry.ResolveAsync("urn:ogc:def:crs:EPSG:6.9:25831");
-        fromSecondScope.Should().NotBeNull();
-        fromSecondScope!.Value.Srid.Should().Be(25831);
-
-        // A directly constructed registry without the shared cache uses its own isolated cache.
-        var isolatedRegistry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance);
-        isolatedRegistry.Invoking(r => r.ResolveBySridAsync(25831).AsTask())
-            .Should().ThrowAsync<InvalidOperationException>();
+        fromSecondScope.Should().BeNull();
     }
 
     private sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider

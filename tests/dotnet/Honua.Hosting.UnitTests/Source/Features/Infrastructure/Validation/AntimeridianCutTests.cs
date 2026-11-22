@@ -23,6 +23,89 @@ public sealed class AntimeridianCutTests
     private const string Inland = "POLYGON ((10 0, 20 0, 20 10, 10 10, 10 0))";
 
     [UnitTest]
+    public void Cut_PolygonWithIsolatedSeamTouch_IgnoresPointFromClipping()
+    {
+        var geometry = Geographic("POLYGON ((180 0, -170 0, -170 20, 170 20, 170 10, -175 10, 180 0))");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+
+        cut.Should().BeOfType<MultiPolygon>();
+        cut.NumGeometries.Should().Be(2);
+        cut.Area.Should().BeApproximately(275d, 1e-9);
+        cut.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Cut_LineCrossingGreenwichAndDateline_PreservesOrdinarySegmentsAndDirection()
+    {
+        var geometry = Geographic("LINESTRING (-10 0, 10 1, 170 2, -170 3)");
+        var expected = Geographic("MULTILINESTRING ((-10 0, 10 1, 170 2, 180 2.5), (-180 2.5, -170 3))");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+        var reversed = AntimeridianCutter.Cut(geometry.Reverse());
+
+        cut.EqualsExact(expected).Should().BeTrue();
+        reversed.EqualsExact(Geographic("MULTILINESTRING ((-170 3, -180 2.5), (180 2.5, 170 2, 10 1, -10 0))")).Should().BeTrue();
+        cut.SRID.Should().Be(4326);
+        AntimeridianCutter.Cut(cut).Should().BeSameAs(cut);
+    }
+
+    [UnitTest]
+    public void Cut_LineTouchingSeamBeforeCrossing_PreservesBothSegments()
+    {
+        var geometry = Geographic("LINESTRING (180 0, -170 10, 170 20)");
+        var expected = Geographic("MULTILINESTRING ((-180 0, -170 10, -180 15), (180 15, 170 20))");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+
+        cut.EqualsExact(expected).Should().BeTrue();
+        cut.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Cut_LineEndingAtSeam_DoesNotCreateDegeneratePart()
+    {
+        var geometry = Geographic("LINESTRING (170 0, -180 10)");
+        var expected = Geographic("LINESTRING (170 0, 180 10)");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+
+        cut.EqualsExact(expected).Should().BeTrue();
+        cut.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Cut_LineAlongOppositeSeamRepresentations_PreservesLatitude()
+    {
+        var geometry = Geographic("LINESTRING (180 0, -180 10)");
+        var expected = Geographic("LINESTRING (-180 0, -180 10)");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+
+        cut.EqualsExact(expected).Should().BeTrue();
+        cut.Length.Should().Be(10d);
+    }
+
+    [UnitTest]
+    public void Cut_LineWithZAndM_InterpolatesBoundaryOrdinates()
+    {
+        var geometry = Geographic("LINESTRING ZM (170 0 10 100, -170 10 30 300)");
+
+        var cut = AntimeridianCutter.Cut(geometry);
+
+        cut.NumGeometries.Should().Be(2);
+        var boundaries = cut.Coordinates.Where(coordinate => Math.Abs(coordinate.X) == 180d).ToArray();
+        boundaries.Should().HaveCount(2);
+        foreach (var boundary in boundaries)
+        {
+            boundary.Y.Should().Be(5d);
+            boundary.Z.Should().Be(20d);
+            boundary.M.Should().Be(200d);
+        }
+        cut.Coordinates.Should().OnlyContain(coordinate => !double.IsNaN(coordinate.Z) && !double.IsNaN(coordinate.M));
+    }
+
+    [UnitTest]
     public void Cut_CrossingRing_KeepsOnlyTheShortPacificSide()
     {
         var cut = AntimeridianCutter.Cut(Geographic(Crossing));

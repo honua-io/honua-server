@@ -471,6 +471,9 @@ public static class GeometryTileBuilder
             writer.WritePropertyName("asset");
             writer.WriteStartObject();
             writer.WriteString("version", "2.0");
+            writer.WriteStartObject("extras");
+            writer.WriteString("honuaUpAxis", "Y");
+            writer.WriteEndObject();
             if (!string.IsNullOrEmpty(generatorTag))
             {
                 writer.WriteString("generator", generatorTag);

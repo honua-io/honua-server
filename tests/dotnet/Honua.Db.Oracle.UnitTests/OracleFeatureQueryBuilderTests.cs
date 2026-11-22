@@ -750,7 +750,45 @@ public class OracleFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
+    public void BuildCountQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query with { OutputSrid = null });
+        var actual = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildObjectIdsQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query with { OutputSrid = null });
+        var actual = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildGeometryQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
     {
         var mapping = BuildMapping(srid: 4326);
         var query = new FeatureQuery { OutputSrid = 3857 };
@@ -758,8 +796,6 @@ public class OracleFeatureQueryBuilderTests
         var ex = Assert.Throws<NotSupportedException>(
             () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
         Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
-        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildCountQuery(mapping, query));
-        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
         Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query));
     }
 

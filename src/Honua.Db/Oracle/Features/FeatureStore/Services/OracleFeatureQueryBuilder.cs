@@ -75,7 +75,6 @@ internal static partial class OracleFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
-        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -125,7 +124,6 @@ internal static partial class OracleFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
-        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
