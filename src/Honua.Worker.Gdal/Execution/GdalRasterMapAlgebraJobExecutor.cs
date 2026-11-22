@@ -56,7 +56,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
         if (!GdalCalcInputs.TryDecodeSources(parameters, opts.MaxArtifactBytes, out var sources, out var sourcesError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourcesError);
-            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {sourcesError}");
+            return JobExecutionResult.InvalidInput($"Invalid map-algebra inputs: {sourcesError}");
         }
 
         // Bound the DECLARED pixel footprint before any file is written or GDAL is
@@ -65,19 +65,19 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
         if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
         {
             Log.InvalidInputs(logger, job.OperationId, dimensionError);
-            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {dimensionError}");
+            return JobExecutionResult.InvalidInput($"Invalid map-algebra inputs: {dimensionError}");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "expression", out var expression)
             || string.IsNullOrWhiteSpace(expression))
         {
-            return JobExecutionResult.Failed("Invalid map-algebra inputs: missing required input 'expression'.");
+            return JobExecutionResult.InvalidInput("Invalid map-algebra inputs: missing required input 'expression'.");
         }
 
         if (!MapAlgebraExpression.IsAllowed(expression, sources.Count, out var expressionError))
         {
             Log.InvalidInputs(logger, job.OperationId, expressionError);
-            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {expressionError}");
+            return JobExecutionResult.InvalidInput($"Invalid map-algebra inputs: {expressionError}");
         }
 
         string? dataType = null;
@@ -85,12 +85,12 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             && !string.IsNullOrWhiteSpace(dataTypeRaw)
             && !GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
         {
-            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {dataTypeError}");
+            return JobExecutionResult.InvalidInput($"Invalid map-algebra inputs: {dataTypeError}");
         }
 
         if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))
         {
-            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {noDataError}");
+            return JobExecutionResult.InvalidInput($"Invalid map-algebra inputs: {noDataError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);

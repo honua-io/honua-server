@@ -357,6 +357,9 @@ internal static partial class ServiceCollectionExtensions
         // Register Forms package store
         services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
+        // Task-first asset management: profiles, tasks and completion (ADR-0084)
+        services.AddScoped<Honua.Core.Features.Assets.IAssetProfileStore, Features.Assets.PostgresAssetProfileStore>();
+
         // Register back-office field review store
         services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
             Features.FieldWorkflows.PostgresFieldReviewStore>();

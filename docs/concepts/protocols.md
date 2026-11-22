@@ -30,7 +30,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC API Coverages | `/ogc/coverages` | Science/raster tooling | REST/JSON raster coverage discovery and GeoTIFF export |
 | OGC API Processes | `/ogc/processes` | OGC processing clients | Standards-based async geoprocessing |
 | OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
-| OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
+| OGC API Environmental Data Retrieval (EDR) **(Preview; experimental opt-in)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Disabled by default (returns HTTP 404 `honua:capability-experimental-disabled`); enable `Capabilities:Experimental:serve.ogc-api-edr:Enabled=true`. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
 | OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | Service discovery and linked REST access to Things, Datastreams, Sensors, ObservedProperties, and Observations; FeaturesOfInterest and Locations are not exposed; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |

@@ -1,0 +1,291 @@
+# Manual Arm64 benchmark leg (no new cloud spend).
+# Runs on free GitHub-hosted ubuntu-24.04-arm runners using the immutable-image
+# GeoBench GC diagnostic across five paired runs and reports the paired median.
+name: Arm64 GC Benchmark (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: 'GHCR image tag or digest to benchmark (linux/arm64 leg is pulled)'
+        required: false
+        default: 'ghcr.io/honua-io/honua-server:nightly-aot'
+        type: string
+      source_revision:
+        description: 'Optional 40-char commit SHA (defaults to org.opencontainers.image.revision label)'
+        required: false
+        default: ''
+        type: string
+      sizes:
+        description: 'Comma-separated Launch Stack shapes (Small,Medium)'
+        required: false
+        default: 'Small,Medium'
+        type: string
+      profiles:
+        description: 'Comma-separated GC profiles (defaults,fixed,heap60)'
+        required: false
+        default: 'defaults,fixed,heap60'
+        type: string
+      levels:
+        description: 'Comma-separated k6 concurrency levels'
+        required: false
+        default: '1,10,50,100'
+        type: string
+      duration:
+        description: 'Steady-state measurement duration per level in seconds'
+        required: false
+        default: '60'
+        type: string
+      warmup:
+        description: 'Warmup duration per level in seconds'
+        required: false
+        default: '30'
+        type: string
+      geobench_ref:
+        description: 'Pinned 40-char honua-io/geobench commit SHA'
+        required: false
+        default: 'a0ec832cbe9740e623453f25e3404338cbe8c707'
+        type: string
+      postgis_image:
+        description: 'Multi-arch PostGIS 17-3.5 image (official postgis/postgis:17-3.5 lacks arm64)'
+        required: false
+        default: 'imresamu/postgis:17-3.5@sha256:1e7839db1a45cd1198d81caac3b665554ef97aaf30970c8855fe74a52c9d6bf5'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-gc-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  arm64-pair:
+    name: Arm64 paired run ${{ matrix.pair }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        pair: [1, 2, 3, 4, 5]
+    env:
+      PAIR_INDEX: ${{ matrix.pair }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+      SOURCE_REVISION_INPUT: ${{ inputs.source_revision }}
+      SIZES: ${{ inputs.sizes }}
+      PROFILES: ${{ inputs.profiles }}
+      LEVELS: ${{ inputs.levels }}
+      DURATION: ${{ inputs.duration }}
+      WARMUP: ${{ inputs.warmup }}
+      GEOBENCH_REF: ${{ inputs.geobench_ref }}
+      POSTGIS_IMAGE: ${{ inputs.postgis_image }}
+      K6_IMAGE: 'grafana/k6:0.54.0@sha256:13bd59179939054454d9733025898d9299943c5a119648a3ff32a15e980ba6ea'
+    steps:
+      - name: Validate pinned inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "${GEOBENCH_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::geobench_ref must be a 40-char commit SHA: ${GEOBENCH_REF}"
+            exit 1
+          fi
+          if [[ "${POSTGIS_IMAGE}" != *@sha256:* ]]; then
+            echo "::error::postgis_image must be digest-pinned (@sha256:...): ${POSTGIS_IMAGE}"
+            exit 1
+          fi
+
+      - name: Checkout geobench (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/geobench
+          ref: ${{ inputs.geobench_ref }}
+          path: geobench
+          persist-credentials: false
+
+      - name: Validate runner and pull arm64 images
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          case "$arch" in
+            aarch64|arm64) ;;
+            *)
+              echo "::error::Expected arm64 runner, got ${arch}"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p "pair-output/pair-${PAIR_INDEX}"
+
+          docker pull --platform linux/arm64 "${IMAGE_REF}"
+          image_id="$(docker image inspect --format '{{.Id}}' "${IMAGE_REF}")"
+          image_arch="$(docker image inspect --format '{{.Architecture}}' "${image_id}")"
+          if [ "${image_arch}" != "arm64" ]; then
+            echo "::error::Pulled Honua image architecture is ${image_arch}, expected arm64"
+            exit 1
+          fi
+
+          image_rev="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image_id}")"
+          if [ -n "${SOURCE_REVISION_INPUT}" ]; then
+            source_rev="${SOURCE_REVISION_INPUT}"
+          else
+            source_rev="${image_rev}"
+          fi
+          if ! [[ "${source_rev}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid 40-char source revision: ${source_rev}"
+            exit 1
+          fi
+          if [ "${image_rev}" != "${source_rev}" ]; then
+            echo "::error::Image revision (${image_rev}) does not match requested source_revision (${source_rev})"
+            exit 1
+          fi
+
+          docker pull --platform linux/arm64 "${POSTGIS_IMAGE}"
+          docker pull --platform linux/arm64 "${K6_IMAGE}"
+
+          repo_digest="$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "${image_id}")"
+          IMAGE_ID="${image_id}" \
+          REPO_DIGEST="${repo_digest}" \
+          IMAGE_ARCH="${image_arch}" \
+          SOURCE_REV="${source_rev}" \
+          python3 - <<'PY' > "pair-output/pair-${PAIR_INDEX}/runner-meta.json"
+          import json, os, platform
+
+          meta = {
+              "pair": int(os.environ["PAIR_INDEX"]),
+              "runner_arch": platform.machine(),
+              "runner_cpus": os.cpu_count(),
+              "runner_os": platform.platform(),
+              "hosted_runner_noise_caveat": (
+                  "GitHub-hosted ubuntu-24.04-arm runner; shared noisy host. "
+                  "Interpret via median across 5 paired runs with rotated profile order."
+              ),
+              "image_ref": os.environ["IMAGE_REF"],
+              "image_id": os.environ["IMAGE_ID"],
+              "image_repo_digest": os.environ["REPO_DIGEST"],
+              "image_arch": os.environ["IMAGE_ARCH"],
+              "source_revision": os.environ["SOURCE_REV"],
+              "postgis_image": os.environ["POSTGIS_IMAGE"],
+              "k6_image": os.environ["K6_IMAGE"],
+              "geobench_ref": os.environ["GEOBENCH_REF"],
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+          }
+          print(json.dumps(meta, indent=2))
+          PY
+
+          echo "image_id=${image_id}" >> "${GITHUB_OUTPUT}"
+          echo "source_rev=${source_rev}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run paired GC profiles on arm64
+        shell: bash
+        env:
+          IMAGE_ID: ${{ steps.images.outputs.image_id }}
+          SOURCE_REV: ${{ steps.images.outputs.source_rev }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a raw_profiles <<< "${PROFILES}"
+          count="${#raw_profiles[@]}"
+          if [ "${count}" -lt 1 ]; then
+            echo "::error::profiles input must not be empty"
+            exit 1
+          fi
+          offset=$(( (PAIR_INDEX - 1) % count ))
+          ordered=()
+          for ((i = 0; i < count; i++)); do
+            idx=$(( (offset + i) % count ))
+            p="${raw_profiles[$idx]// /}"
+            case "$p" in
+              defaults|fixed|heap60) ordered+=("$p") ;;
+              *)
+                echo "::error::Unsupported GC profile: ${p}"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Pair ${PAIR_INDEX} rotated profile order: ${ordered[*]}"
+          printf '%s\n' "${ordered[@]}" > "pair-output/pair-${PAIR_INDEX}/profile-order.txt"
+
+          status=0
+          pushd geobench >/dev/null
+          for profile in "${ordered[@]}"; do
+            echo "=== Pair ${PAIR_INDEX}: running profile=${profile} sizes=${SIZES} levels=${LEVELS} ==="
+            if ! POSTGIS_IMAGE="${POSTGIS_IMAGE}" K6_IMAGE="${K6_IMAGE}" \
+              python3 scripts/gc-cohort-diagnostic.py \
+                --image "${IMAGE_ID}" \
+                --source "${SOURCE_REV}" \
+                --profile "${profile}" \
+                --sizes "${SIZES}" \
+                --runs 1 \
+                --levels "${LEVELS}" \
+                --duration "${DURATION}" \
+                --warmup "${WARMUP}" \
+                --max-load 16; then
+              echo "::warning::gc-cohort-diagnostic.py exited non-zero for pair=${PAIR_INDEX} profile=${profile}"
+              status=1
+            fi
+          done
+          popd >/dev/null
+
+          if [ -d geobench/artifacts/gc-diagnostic ]; then
+            cp -R geobench/artifacts/gc-diagnostic "pair-output/pair-${PAIR_INDEX}/gc-diagnostic"
+          fi
+          exit "${status}"
+
+      - name: Upload paired run artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arm64-gc-pair-${{ matrix.pair }}
+          path: pair-output/pair-${{ matrix.pair }}
+          retention-days: 30
+
+  summarize:
+    name: Summarize paired Arm64 medians
+    needs: arm64-pair
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SIZES: ${{ inputs.sizes }}
+      PROFILES: ${{ inputs.profiles }}
+    steps:
+      - name: Checkout honua-server
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download paired artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: arm64-gc-pair-*
+          path: downloaded-pairs
+
+      - name: Aggregate paired medians
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p summary
+          rc=0
+          python3 scripts/ci/summarize-arm64-gc-benchmark.py \
+            --input-dir downloaded-pairs \
+            --min-pairs 5 \
+            --expected-sizes "${SIZES}" \
+            --expected-profiles "${PROFILES}" \
+            --json-out summary/arm64-gc-summary.json \
+            --md-out summary/arm64-gc-summary.md || rc=$?
+          if [ -f summary/arm64-gc-summary.md ]; then
+            cat summary/arm64-gc-summary.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          exit "${rc}"
+
+      - name: Upload paired summary artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arm64-gc-summary
+          path: summary/
+          retention-days: 90

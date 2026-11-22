@@ -111,7 +111,7 @@ graph TB
 
 | Container | Technology | Responsibility |
 |-----------|------------|----------------|
-| **Honua.Server** | ASP.NET Core 10, Native AOT | API host, business logic, protocol translation |
+| **Honua.Server** | ASP.NET Core 11, Native AOT | API host, business logic, protocol translation |
 | **honua-console** | Standalone web application | Active Admin and Studio UI, deployed separately from `Honua.Server` |
 | **PostgreSQL + PostGIS** | PostgreSQL 16, PostGIS 3.4 | Data storage, spatial ops, MVT generation |
 

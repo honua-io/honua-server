@@ -45,6 +45,14 @@ public static class ServerTestData
                     .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
                 await fixture.ExecuteAsync(ddl).ConfigureAwait(false);
             }
+
+            await using var receiptStream = typeof(PostgresFixture).Assembly.GetManifestResourceStream(
+                "Honua.Server.Migrations.130_CreateGrpcApplyEditsReceipt.sql")
+                ?? throw new InvalidOperationException("The gRPC edit receipt migration was not embedded.");
+            using var receiptReader = new StreamReader(receiptStream);
+            var receiptDdl = (await receiptReader.ReadToEndAsync().ConfigureAwait(false))
+                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
+            await fixture.ExecuteAsync(receiptDdl).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

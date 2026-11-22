@@ -23,7 +23,10 @@ internal sealed record TileOperationStartRequest
     // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }
 
-    public string? PublicationId { get; init; }
+    // Set only by the Exports API; the tile-operations route neither binds nor accepts an export.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ExportId { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? IdentityField { get; init; }
 }

@@ -156,6 +156,37 @@ public sealed class MetadataV2EditingConfigurationTests
     }
 
     [UnitTest]
+    public void EditorTracking_AcceptsExactTimestampFieldsForBothTimeSlots()
+    {
+        var graph = CreateGraph();
+        var resource = graph.Resources[0];
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    SchemaFields =
+                    [
+                        .. resource.SchemaFields,
+                        new MetadataV2Field { Name = "created_on", Type = MetadataV2FieldType.TimestampOffset }
+                    ]
+                }
+            ]
+        };
+        var result = Apply(graph, new MetadataV2EditingPatch
+        {
+            CreatedAtField = "CREATED_ON",
+            UpdatedAtField = "created_on"
+        });
+
+        var editing = result.Resources[0].Editing!;
+        editing.CreatedAtField.Should().Be("created_on");
+        editing.UpdatedAtField.Should().Be("created_on");
+        editing.CreatorField.Should().Be("created_by");
+    }
+
+    [UnitTest]
     public void EditorTracking_RejectsUndeclaredOrUnstampableFields()
     {
         var graph = CreateGraph();

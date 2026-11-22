@@ -84,9 +84,9 @@ Every published layer is reachable through every protocol its service enables. T
 | OGC API Coverages **(Preview)** | `/ogc/coverages` | Science and raster tooling |
 | OGC API Processes | `/ogc/processes` | OGC processing clients |
 | OGC API Records | `/ogc/records` | Catalog / metadata search clients |
-| OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental and scientific data clients |
+| OGC API Environmental Data Retrieval (EDR) **(Preview; experimental opt-in)** | `/edr` | Environmental and scientific data clients |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients |
-| OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
+| OGC SensorThings v1.1 **(Preview; experimental opt-in)** | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
 | WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` ([client-specific alias](docs/reference/compatibility/clients.md)), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
@@ -96,10 +96,12 @@ Every published layer is reachable through every protocol its service enables. T
 | STAC API | `/stac` | STAC browsers, catalog/search tooling |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet |
 | Terrain-RGB + elevation API | `/terrain/{datasetId}/…`, `/elevation/{datasetId}/…` | MapLibre `raster-dem`, field apps |
-| 3D Tiles scenes | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients |
+| 3D Tiles scenes **(experimental opt-in)** | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients |
 | PMTiles | `/api/v1/tiles/pmtiles/{artifactId}` | MapLibre, serverless/CDN tile hosting |
 | MCP (JSON-RPC) | `/mcp` | AI agents, operator automation, MCP clients |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services |
+
+Surfaces marked **experimental opt-in** are off by default and answer 404 until you set `Capabilities:Experimental:{capability}:Enabled=true` (`serve.ogc-api-edr`, `serve.sensorthings`, `serve.3d-tiles-scene`); check `available` and `reasonCode` in `/api/v1/capabilities/manifest` to see what a deployment serves.
 
 Path shapes differ on purpose: each protocol carries exactly the scope its own specification makes the addressable unit. WMS, WMTS and WCS render a composition, so a service is in the path; WFS returns features that `TYPENAMES` already identifies, so it is served unscoped at `/wfs` with no service-scoped form and no GeoServices alias. The rule, and why adding one for symmetry would be a regression, is [ADR-0079](docs/internal/contributor/adr/0079-protocol-route-scoping.md).
 

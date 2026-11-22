@@ -125,7 +125,8 @@ internal static class ServerMaintainedEditFields
     {
         MetadataV2FieldType.Date => GeoServicesFieldConventions.ToEpochMilliseconds(
             DateOnly.FromDateTime(utcNow.UtcDateTime)),
-        MetadataV2FieldType.String => utcNow.ToString("O", CultureInfo.InvariantCulture),
+        // Stamped after attribute validation, so an exact timestamp is written as its RFC 3339 text here.
+        MetadataV2FieldType.String or MetadataV2FieldType.TimestampOffset => utcNow.ToString("O", CultureInfo.InvariantCulture),
         _ => utcNow.ToUnixTimeMilliseconds(),
     };
 

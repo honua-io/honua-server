@@ -593,6 +593,36 @@ public class Cql2ParserTests
     }
 
     [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_ParenthesizedArithmeticComparison_ReturnsExpectedExpressionTree()
+    {
+        var result = _parser.Parse("(population + 1) > 10");
+
+        var comparison = result.Should().BeOfType<BinaryExpression>().Subject;
+        comparison.Operator.Should().Be(BinaryOperator.GreaterThan);
+        var add = comparison.Left.Should().BeOfType<BinaryExpression>().Subject;
+        add.Operator.Should().Be(BinaryOperator.Add);
+        add.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("population");
+        add.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(1L);
+        comparison.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(10L);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("(population + 1) * 2 > 10")]
+    [InlineData("((population + 1) * 2) > 10")]
+    [InlineData("((population + 1) > 10) AND status = 'active'")]
+    [InlineData("(population + 1) BETWEEN 10 AND 20")]
+    [InlineData("(population + 1) IN (10, 20)")]
+    [InlineData("(population + 1) IS NOT NULL")]
+    public void Parse_ParenthesizedArithmeticVariants_Succeed(string cql)
+    {
+        var result = _parser.Parse(cql);
+
+        result.Should().NotBeNull();
+    }
+
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

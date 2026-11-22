@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -120,9 +121,11 @@ internal sealed partial class DurableRestoreWorker(
     IPreMigrationRestoreAudit audit,
     ILogger<DurableRestoreWorker> logger,
     IOptionsMonitor<ControlPlaneOptions>? controlPlane = null,
-    IComposeExecutorClient? compose = null) : BackgroundService, IPreMigrationRestoreReconciler
+    IComposeExecutorClient? compose = null,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : BackgroundService, IPreMigrationRestoreReconciler
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
+    private readonly IdlePollPacer _pacer = new(wake);
     private const string CellOwnerId = RestoreDeployAdmission.CellOwnerId;
     private static readonly TimeSpan OwnerRetention = TimeSpan.FromDays(365);
     private readonly string _owner = $"restore:{Environment.MachineName}:{Guid.NewGuid():N}";
@@ -556,9 +559,12 @@ internal sealed partial class DurableRestoreWorker(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var items = await store.ListActiveAsync(WorkflowOperationKind.PreMigrationRestore, stoppingToken).ConfigureAwait(false);
+                idle = items.Count == 0;
                 foreach (var item in items) await ReconcileAsync(item.OperationId, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -566,7 +572,9 @@ internal sealed partial class DurableRestoreWorker(
             {
                 Log.ScanFailed(logger, ex.GetType().Name);
             }
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
+            // Idle scans back off from 5 s to 60 s (the pacer defaults). A local workflow-operation write wakes the
+            // loop; a restore enqueued by another process starts within 60 s, and the backstop sweep runs every 2 min.
+            await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
         }
     }
 

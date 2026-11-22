@@ -845,15 +845,17 @@ internal sealed partial class FeatureServerQueryHandler(
                 // f=pbf must return the ExtentCountResult arm of the FeatureCollectionPBuffer
                 // QueryResult oneof (application/x-protobuf), mirroring the count path; otherwise
                 // the extent branch silently degrades to JSON.
-                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase) && extentInfo is not null)
+                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
                 {
-                    var (extentPayload, extentContentType) = PbfQueryFormatter.FormatExtentAsPbf(
-                        extentInfo.Xmin,
-                        extentInfo.Ymin,
-                        extentInfo.Xmax,
-                        extentInfo.Ymax,
-                        extentInfo.SpatialReference.Wkid,
-                        extentCount);
+                    var (extentPayload, extentContentType) = extentInfo is not null
+                        ? PbfQueryFormatter.FormatExtentAsPbf(
+                            extentInfo.Xmin,
+                            extentInfo.Ymin,
+                            extentInfo.Xmax,
+                            extentInfo.Ymax,
+                            extentInfo.SpatialReference.Wkid,
+                            extentCount)
+                        : PbfQueryFormatter.FormatEmptyExtentAsPbf(extentCount);
                     return await CreateCachedBytesResultAsync(extentPayload, extentContentType);
                 }
 
@@ -911,14 +913,18 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
                 else
                 {
-                    var result = await _queryExecutor.QueryObjectIdsWithValidationAsync(
-                        queryLayer.Service,
-                        queryLayer.Resource,
-                        queryLayer.Publication,
-                        queryLayer.StorageLayerId,
+                    var probed = await _queryExecutor.QueryObjectIdsWithLimitProbeAsync(
+                        new V2LayerQueryTarget
+                        {
+                            Service = queryLayer.Service,
+                            Resource = queryLayer.Resource,
+                            Publication = queryLayer.Publication,
+                            StorageLayerId = queryLayer.StorageLayerId
+                        },
                         query,
                         cancellationToken).ConfigureAwait(false);
-                    objectIds = result.IsDefault ? [] : result.ToArray();
+                    objectIds = probed.ObjectIds.IsDefault ? [] : probed.ObjectIds.ToArray();
+                    idsExceededTransferLimit = probed.ExceededTransferLimit;
                 }
 
                 stopwatch.Stop();
@@ -2057,7 +2063,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
 
-        if (validatedParams.ReturnCountOnly)
+        if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
         {
             var stopwatch = Stopwatch.StartNew();
             var (count, countError) = await ResolveReturnCountAsync(
@@ -2137,6 +2143,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 ObjectIds = result.Items
                         .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
                         .ToArray(),
+                ExceededTransferLimit = result.HasMoreResults,
                 Features = null
             };
         }
@@ -2985,8 +2992,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 fieldTypes[schemaField.Name] = schemaField.Type;
             }
 
-            // Also allow objectid
-            fieldNames.Add(FieldNames.ObjectId);
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+            fieldNames.Add(objectIdFieldName);
 
             foreach (var element in document.RootElement.EnumerateArray())
             {
@@ -3010,6 +3017,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
+                if (!StatisticAliasRegex().IsMatch(outAlias))
+                {
+                    error = $"outStatisticFieldName '{outAlias}' must start with a letter or underscore and contain only letters, digits and underscores, at most 63 characters.";
+                    return false;
+                }
+
                 if (!TryParseStatisticType(statisticTypeStr, out var statisticType))
                 {
                     error = $"Unsupported statisticType: '{statisticTypeStr}'. Supported types: count, sum, min, max, avg, stddev, var.";
@@ -3024,7 +3037,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 // name "objectid" is not a column on those layers.
                 if (statisticType == StatisticType.Count && onField == "*")
                 {
-                    onField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+                    onField = objectIdFieldName;
                 }
 
                 if (!fieldNames.Contains(onField))
@@ -3053,7 +3066,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     OutStatisticFieldName = outAlias,
                     FieldType = fieldTypes.TryGetValue(onField, out var resolvedFieldType)
                         ? resolvedFieldType
-                        : string.Equals(onField, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+                        : string.Equals(onField, objectIdFieldName, StringComparison.OrdinalIgnoreCase)
                             ? MetadataV2FieldType.BigInteger
                             : null
                 });
@@ -3351,7 +3364,7 @@ internal sealed partial class FeatureServerQueryHandler(
     // layer schema, mirroring the onStatisticField/outFields/orderByFields
     // existence checks. An unvalidated groupBy column would otherwise reach the
     // database and surface as a 500 instead of a structured 400.
-    private static bool TryParseGroupByFields(
+    internal static bool TryParseGroupByFields(
         string groupByFieldsForStatistics,
         MetadataV2Object resource,
         out ImmutableArray<string> groupByFields,
@@ -3375,7 +3388,7 @@ internal sealed partial class FeatureServerQueryHandler(
             resource.SchemaFields.Select(f => f.Name),
             StringComparer.OrdinalIgnoreCase)
         {
-            FieldNames.ObjectId
+            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
         };
 
         var missingField = parsed.FirstOrDefault(field => !fieldNames.Contains(field));
@@ -3743,4 +3756,8 @@ internal sealed partial class FeatureServerQueryHandler(
         @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingTermRegex();
+
+    // The alias becomes a SQL column alias; PostgreSQL identifiers stop at 63 bytes.
+    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_]{0,62}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex StatisticAliasRegex();
 }

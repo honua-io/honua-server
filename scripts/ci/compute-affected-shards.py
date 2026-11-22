@@ -717,6 +717,16 @@ def partition_producer_matrices(
     return early, held
 
 
+def place_heavy_shards(include: list[dict[str, Any]], slowdown: float) -> list[dict[str, Any]]:
+    """Mark heavy-pool shards per producer lane; each lane starts when its own producer ends."""
+    early, held = partition_producer_matrices(include)
+    marks = {}
+    for lane in (early, held):
+        for entry, placed in zip(lane, time_budget.place_heavy(lane, slowdown)):
+            marks[id(entry)] = placed["heavy"]
+    return [{**entry, "heavy": marks[id(entry)]} for entry in include]
+
+
 def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[str, Any]]:
     """Project the selection into ci.yml's matrix-entry shape.
 
@@ -898,6 +908,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def emit(result: dict[str, Any], config: dict[str, Any], args: argparse.Namespace) -> int:
     include = matrix_include(result, config)
+    if include:
+        include = place_heavy_shards(include, time_budget.load_heavy_slowdown(config))
     if getattr(args, "annotate_resources", False):
         root = _repo_root()
         include = json.loads(subprocess.check_output(

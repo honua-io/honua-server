@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +25,7 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task McpPublishService_AgentRequestDoesNotPublish_HumanPublicationIsReadableByFreshClient()
     {
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
-        using var errors = new McpPublicationErrorCapture();
+        using var errors = new ErrorLogCapture();
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         await UseServerFeatureStoreConnectionAsync();
         await AssertMcpPublishIsRefusedForAgentAsync();

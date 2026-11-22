@@ -263,7 +263,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
     private void SeedMetadata()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        MetadataV2ObjectMetadata WithAuthoredIdentification(MetadataV2ObjectMetadata metadata, string title) => metadata with
+        static MetadataV2ObjectMetadata WithAuthoredIdentification(MetadataV2ObjectMetadata metadata, string title) => metadata with
         {
             Title = title,
             Description = "Survey <abstract> & details",

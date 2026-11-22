@@ -13,6 +13,7 @@ internal sealed class SecurityHeadersMiddleware
     private readonly SecurityHeadersOptions _options;
     private readonly (string headerName, string policy) _defaultCspHeader;
     private readonly string _hstsHeader;
+    private readonly (PathString Prefix, SecurityHeadersRouteOverride Override)[] _routeOverrides;
 
     public SecurityHeadersMiddleware(
         RequestDelegate next,
@@ -28,9 +29,10 @@ internal sealed class SecurityHeadersMiddleware
         // identical validation warnings on every request.
         _defaultCspHeader = BuildContentSecurityPolicy();
         _hstsHeader = BuildHstsHeader(_options);
+        _routeOverrides = BuildRouteOverrides(_options.RouteOverrides);
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public Task InvokeAsync(HttpContext context)
     {
         // Apply security headers to all responses, respecting HTTPS gating,
         // HEAD/OPTIONS shortcuts, and per-route CSP overrides.
@@ -45,7 +47,7 @@ internal sealed class SecurityHeadersMiddleware
         }
 
         // Continue to next middleware
-        await _next(context);
+        return _next(context);
     }
 
     private static string BuildHstsHeader(SecurityHeadersOptions options)
@@ -130,32 +132,37 @@ internal sealed class SecurityHeadersMiddleware
         }
     }
 
+    private static (PathString Prefix, SecurityHeadersRouteOverride Override)[] BuildRouteOverrides(
+        Dictionary<string, SecurityHeadersRouteOverride>? overrides)
+    {
+        if (overrides is null || overrides.Count == 0)
+        {
+            return [];
+        }
+
+        return overrides
+            .Where(static entry => !string.IsNullOrEmpty(entry.Key))
+            .OrderByDescending(static entry => entry.Key.Length)
+            .Select(static entry => (new PathString(entry.Key), entry.Value))
+            .ToArray();
+    }
+
     private SecurityHeadersRouteOverride? ResolveRouteOverride(PathString path)
     {
-        if (_options.RouteOverrides == null || _options.RouteOverrides.Count == 0 || !path.HasValue)
+        if (_routeOverrides.Length == 0 || !path.HasValue)
         {
             return null;
         }
 
-        SecurityHeadersRouteOverride? match = null;
-        var matchedPrefixLength = -1;
-
-        foreach (var entry in _options.RouteOverrides)
+        for (var i = 0; i < _routeOverrides.Length; i++)
         {
-            if (string.IsNullOrEmpty(entry.Key))
+            if (path.StartsWithSegments(_routeOverrides[i].Prefix, StringComparison.OrdinalIgnoreCase))
             {
-                continue;
-            }
-
-            if (path.StartsWithSegments(new PathString(entry.Key), StringComparison.OrdinalIgnoreCase)
-                && entry.Key.Length > matchedPrefixLength)
-            {
-                match = entry.Value;
-                matchedPrefixLength = entry.Key.Length;
+                return _routeOverrides[i].Override;
             }
         }
 
-        return match;
+        return null;
     }
 
     private (string headerName, string policy) ResolveContentSecurityPolicy(SecurityHeadersRouteOverride? routeOverride)

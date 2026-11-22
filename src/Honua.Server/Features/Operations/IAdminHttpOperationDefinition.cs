@@ -3,34 +3,18 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Hosting;
 
 namespace Honua.Server.Features.Operations;
 
-internal interface IAdminHttpOperationDefinition
-{
-    string OperationId { get; }
-    string Title { get; }
-    HttpMethod Method { get; }
-    string Path { get; }
-    string OpenApiOperationId { get; }
-    OperationSideEffectClass SideEffect { get; }
-    OperationBlastRadiusClass BlastRadius { get; }
-    bool SupportsDryRun { get; }
-    string? DryRunPath { get; }
-    HttpMethod? DryRunMethod { get; }
-    string? ContentType { get; }
-    OperationApprovalModel? ApprovalModel { get; }
-    OperationClass OperationClass { get; }
-}
-
 internal static class AdminOperationEndpointExtensions
 {
-    public static RouteHandlerBuilder WithAdminOperation(
-        this RouteHandlerBuilder endpoint, IAdminHttpOperationDefinition definition)
-        => endpoint.WithName(definition.OpenApiOperationId).WithMetadata(definition);
+    public static TBuilder WithAdminOperation<TBuilder>(
+        this TBuilder endpoint, IAdminHttpOperationDefinition definition)
+        where TBuilder : IEndpointConventionBuilder
+        => AdminHttpOperationBinding.ApplyOperationMetadata(endpoint, definition);
 }
 
 internal sealed record AdminOperationApprovalMapping(

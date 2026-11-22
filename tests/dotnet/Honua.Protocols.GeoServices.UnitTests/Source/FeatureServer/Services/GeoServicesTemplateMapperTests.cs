@@ -114,7 +114,7 @@ public sealed class GeoServicesTemplateMapperTests
     [UnitTest]
     public void MapTypes_DrawingTool_FollowsGeometryType()
     {
-        MetadataV2Subtypes Subtypes() => new()
+        static MetadataV2Subtypes Subtypes() => new()
         {
             SubtypeField = "subtype",
             Subtypes = [new MetadataV2Subtype { Code = Number(1), Name = "A" }],

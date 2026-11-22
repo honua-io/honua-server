@@ -49,6 +49,21 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(self.load(value), {'revision': value['requirements_revision'], 'requirements': value['requirements']})
         self.assertTrue(any(row['surface'] == 'wps-2-0' for row in value['requirements']))
 
+    def test_implemented_only_context_omitting_preview_suites_is_admitted(self):
+        matrix = json.loads((ROOT / 'docs/gis/data/capability-matrix.v1.json').read_text())
+        implemented_keys = {
+            cap['key'] for cap in matrix['capabilities']
+            if cap.get('maturity', {}).get('implemented')
+        }
+        value = valid_context()
+        value['requirements'] = [
+            row for row in value['requirements']
+            if row['capability_key'] in implemented_keys
+        ]
+        self.assertTrue(value['requirements'])
+        self.assertFalse(any(row['surface'] in {'wmts-1-0', 'wps-2-0'} for row in value['requirements']))
+        self.assertEqual(self.load(value), {'revision': value['requirements_revision'], 'requirements': value['requirements']})
+
     def test_context_drift_refused(self):
         mutations = ['source', 'candidate', 'missing-row', 'duplicate', 'facet', 'fixture', 'tier', 'maturity', 'extra', 'test-ids']
         for mutation in mutations:
@@ -56,7 +71,7 @@ class ContextTests(unittest.TestCase):
             row = value['requirements'][0]
             if mutation == 'source': value['producer_source_sha'] = 'c' * 40
             elif mutation == 'candidate': value['candidate']['image_digest'] = 'sha256:' + 'd' * 64
-            elif mutation == 'missing-row': value['requirements'].pop()
+            elif mutation == 'missing-row': value['requirements'].pop(0)
             elif mutation == 'duplicate': value['requirements'].append(copy.deepcopy(row))
             elif mutation == 'facet': row['scenario_facets'].pop()
             elif mutation == 'fixture': row['fixture_revision'] = 'unexecuted@{source_sha}'

@@ -17,6 +17,7 @@ DELETE /api/v{version:apiVersion}/admin/cloud-rasters/{id:long}
 DELETE /api/v{version:apiVersion}/admin/config
 DELETE /api/v{version:apiVersion}/admin/connections/{id:guid}
 DELETE /api/v{version:apiVersion}/admin/connections/{id}/tables
+DELETE /api/v{version:apiVersion}/admin/exports/{exportId}
 DELETE /api/v{version:apiVersion}/admin/field-mask-policies/{id:guid}
 DELETE /api/v{version:apiVersion}/admin/folders/{id}
 DELETE /api/v{version:apiVersion}/admin/import/formats
@@ -144,6 +145,7 @@ POST /api/v{version:apiVersion}/admin/deploy/plan
 POST /api/v{version:apiVersion}/admin/embed/keys/
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/revoke
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/rotate
+POST /api/v{version:apiVersion}/admin/exports/
 POST /api/v{version:apiVersion}/admin/external-services/discover
 POST /api/v{version:apiVersion}/admin/field-mask-policies/
 POST /api/v{version:apiVersion}/admin/field-workflows/exports/
@@ -273,6 +275,7 @@ POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{conten
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/preview
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/reruns
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/runs
+POST /api/v{version:apiVersion}/assets/profiles/
 POST /api/v{version:apiVersion}/console/access/{environmentId}/roles
 POST /api/v{version:apiVersion}/console/actions/check
 POST /api/v{version:apiVersion}/console/content/
@@ -377,6 +380,7 @@ PUT /api/v{version:apiVersion}/admin/services/{serviceName}/protocols
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/timeinfo
 PUT /api/v{version:apiVersion}/admin/share/exports/{exportId}
 PUT /api/v{version:apiVersion}/admin/users/{id}/roles
+PUT /api/v{version:apiVersion}/assets/profiles/{profileId:guid}
 PUT /api/v{version:apiVersion}/console/access/{environmentId}/roles/{roleId:guid}
 PUT /api/v{version:apiVersion}/console/content/{id}
 PUT /api/v{version:apiVersion}/console/content/{id}/open-data/
