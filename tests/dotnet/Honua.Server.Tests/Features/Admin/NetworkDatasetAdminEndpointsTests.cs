@@ -193,12 +193,14 @@ public class NetworkDatasetAdminEndpointsTests
     public void SanitizeForLog_StripsControlCharactersAndBoundsLength()
     {
         var sanitized = Honua.Server.Features.Admin.NetworkDatasetAdminEndpoints.SanitizeForLog(
-            "net-crlf\r\n[ERR] FORGED_NET_ID\u2028tail");
+            "net-crlf\r\n[ERR] FORGED_NET_ID\u0085\u2028\u2029tail");
 
         Assert.DoesNotContain('\r', sanitized);
         Assert.DoesNotContain('\n', sanitized);
+        Assert.DoesNotContain('\u0085', sanitized);
         Assert.DoesNotContain('\u2028', sanitized);
-        Assert.Equal("net-crlf  [ERR] FORGED_NET_ID tail", sanitized);
+        Assert.DoesNotContain('\u2029', sanitized);
+        Assert.Equal("net-crlf__[ERR] FORGED_NET_ID___tail", sanitized);
 
         var oversized = Honua.Server.Features.Admin.NetworkDatasetAdminEndpoints.SanitizeForLog(new string('a', 100));
         Assert.Equal(67, oversized.Length);

@@ -178,6 +178,107 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
         (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task CoordinatedReleaseCreate_WithInvalidMetadataFieldName_RejectsBeforeRollout()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var coordinatedService = new Honua.ControlPlane.CoordinatedReleaseControlService([store]);
+        var container = new CoordinatedReleaseContainerSpec
+        {
+            TargetId = "svc-1",
+            DesiredImage = "honua/server:rev-2",
+        };
+        var invalidPlan = new MetadataReleaseExecutionPlan
+        {
+            PackageId = "pkg-coord-invalid",
+            TargetEnvironment = "dev",
+            ResourceSemanticId = "res-1",
+            NewFieldName = "owner-email",
+            Script = new MetadataReleaseScript
+            {
+                ScriptId = "script-1",
+                Reversible = true,
+                ForwardOperations =
+                [
+                    new MetadataReleaseScriptOperation
+                    {
+                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
+                        ResourceSemanticId = "res-1",
+                        FieldName = "owner-email",
+                        FieldType = "String",
+                        Nullable = true,
+                    },
+                ],
+            },
+        };
+
+        var act = () => coordinatedService.CreateAsync(
+            container, invalidPlan, "dev", "admin", "test", "idem-1", "corr-1");
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*newFieldName*");
+        (await store.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task CoordinatedMetadataStepExecutor_WhenAlreadySubmittedPlanFailsValidation_ReturnsFailedForUnwind()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var metadataService = new Honua.ControlPlane.MetadataReleaseControlService([store]);
+        var executor = new Honua.ControlPlane.CoordinatedMetadataStepExecutor(
+            metadataService,
+            NSubstitute.Substitute.For<IMetadataReleaseOperationReconciler>(),
+            [store]);
+
+        var invalidPlan = new MetadataReleaseExecutionPlan
+        {
+            PackageId = "pkg-coord-legacy",
+            TargetEnvironment = "dev",
+            ResourceSemanticId = "res-1",
+            NewFieldName = "owner-email",
+            Script = new MetadataReleaseScript
+            {
+                ScriptId = "script-legacy",
+                Reversible = true,
+                ForwardOperations =
+                [
+                    new MetadataReleaseScriptOperation
+                    {
+                        Kind = MetadataReleaseScriptOperationKind.AddColumn,
+                        ResourceSemanticId = "res-1",
+                        FieldName = "owner-email",
+                        FieldType = "String",
+                        Nullable = true,
+                    },
+                ],
+            },
+        };
+
+        var context = new CoordinatedReleaseContext
+        {
+            PackageId = invalidPlan.PackageId,
+            TargetEnvironment = "dev",
+            Container = new CoordinatedReleaseContainerSpec { TargetId = "svc-1", DesiredImage = "honua/server:rev-2" },
+            MetadataPlan = invalidPlan,
+            CurrentStep = CoordinatedReleaseStep.MetadataAndSchema,
+        };
+        var operation = new WorkflowOperationRecord
+        {
+            OperationId = "coord-op-legacy",
+            Kind = WorkflowOperationKind.CoordinatedRelease,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo { RequestedBy = "admin", CorrelationId = "corr-1" },
+            CoordinatedRelease = context,
+        };
+
+        var result = await executor.StartAsync(context, operation);
+
+        result.Outcome.Should().Be(CoordinatedStepOutcome.Failed);
+        result.Detail.Should().Contain("newFieldName");
+    }
+
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);

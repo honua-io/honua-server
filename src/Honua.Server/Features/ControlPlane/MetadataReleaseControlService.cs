@@ -186,7 +186,7 @@ internal sealed partial class MetadataReleaseControlService(
         }
     }
 
-    private static void ValidatePlan(MetadataReleaseExecutionPlan plan)
+    internal static void ValidatePlan(MetadataReleaseExecutionPlan plan)
     {
         ValidateRequiredBoundedText(plan.PackageId, "packageId", MaxPackageIdLength);
         ValidateRequiredBoundedText(plan.TargetEnvironment, "targetEnvironment", MaxTargetEnvironmentLength);
@@ -197,7 +197,7 @@ internal sealed partial class MetadataReleaseControlService(
         ValidateScript(plan.Script);
     }
 
-    private static void ValidateAuditFields(string? reason, string? idempotencyKey, string? correlationId)
+    internal static void ValidateAuditFields(string? reason, string? idempotencyKey, string? correlationId)
     {
         ValidateOptionalBoundedText(reason, "reason", MaxReasonLength);
         ValidateOptionalBoundedText(idempotencyKey, "idempotencyKey", MaxIdempotencyKeyLength);

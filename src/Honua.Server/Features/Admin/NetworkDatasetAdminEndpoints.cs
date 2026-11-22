@@ -420,16 +420,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             return fallback;
         }
 
-        var limit = Math.Min(value.Length, maxLength);
-        var sanitized = string.Create(limit, value, static (span, source) =>
-        {
-            for (var i = 0; i < span.Length; i++)
-            {
-                var ch = source[i];
-                span[i] = char.IsControl(ch) || ch is '\u0085' or '\u2028' or '\u2029' ? ' ' : ch;
-            }
-        });
-
+        var sanitized = Honua.Core.Features.Infrastructure.Logging.LogValueRedactor.SanitizeForLog(value, maxLength);
         return value.Length > maxLength ? string.Concat(sanitized, "...") : sanitized;
     }
 
