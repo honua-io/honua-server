@@ -913,6 +913,7 @@ internal static partial class FeatureStreamEndpoints
                     await SendWebSocketResetAsync(
                         new(webSocket, session.WriteLock, RealtimeResetReasons.Retention, head),
                         cancellationToken).ConfigureAwait(false);
+                    session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
                 }
 
                 var snapshotResult = await EmitSnapshotAsync(

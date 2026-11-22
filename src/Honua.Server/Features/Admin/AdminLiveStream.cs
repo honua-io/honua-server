@@ -122,11 +122,11 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         using var heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(15));
         var tick = heartbeat.WaitForNextTickAsync(context.RequestAborted).AsTask();
         var available = reader.WaitToReadAsync(context.RequestAborted).AsTask();
-        // Completes (cancelled) when the lifecycle signals this session to close.
+        // Cancelled when the lifecycle closes this session; first, so WhenAny prefers it over ready frames.
         var draining = Task.Delay(Timeout.InfiniteTimeSpan, session.DrainingToken);
         while (!context.RequestAborted.IsCancellationRequested)
         {
-            var completed = await Task.WhenAny(tick, available, draining).ConfigureAwait(false);
+            var completed = await Task.WhenAny(draining, tick, available).ConfigureAwait(false);
             if (completed == draining)
             {
                 await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, session, context.RequestAborted)
