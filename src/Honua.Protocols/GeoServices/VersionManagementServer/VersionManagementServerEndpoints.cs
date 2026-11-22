@@ -880,7 +880,7 @@ public static class VersionManagementServerEndpoints
         // service's reconcile/post jobs by GUID.
         if (!string.Equals(job.Service, serviceId, StringComparison.OrdinalIgnoreCase) ||
             job.VersionId != versionId ||
-            !await IsVersionVisibleAsync(versionManager, versionId, context, cancellationToken).ConfigureAwait(false))
+            !await IsVersionVisibleAsync(versionManager, versionId, context).ConfigureAwait(false))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
         }
@@ -891,10 +891,9 @@ public static class VersionManagementServerEndpoints
 
     // A job follows its version's visibility: a caller who may not see a Private version gets the
     // same answer for its jobs as for an unknown job, so the job neither leaks nor confirms it.
-    private static async Task<bool> IsVersionVisibleAsync(
-        IVersionManager versionManager, Guid versionId, HttpContext context, CancellationToken cancellationToken)
+    private static async Task<bool> IsVersionVisibleAsync(IVersionManager versionManager, Guid versionId, HttpContext context)
     {
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListAsync(context.RequestAborted).ConfigureAwait(false);
         var version = versions.FirstOrDefault(v => v.VersionId == versionId);
         return version.VersionId == versionId &&
             VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
