@@ -347,9 +347,9 @@ driving-distance query). The caps are configurable via the `Routing` section
 - `honua-io/honua-esri-assess#33` — `epic-esri-ip-compliance-guardrails`
   (tracks legal sign-off on the GPL-over-SQL posture and the bundled-image
   source-offer obligation).
-- [Esri Network Analyst Service (NAServer)](https://developers.arcgis.com/rest/services-reference/enterprise/network-analyst-service/) —
-  route sync service and ServiceArea solve response shapes (`saPolygons`).
-- [Esri Route synchronous service](https://developers.arcgis.com/rest/services-reference/enterprise/route-synchronous-service/).
+- [Esri Service area direct request](https://developers.arcgis.com/rest/services-reference/enterprise/service-area-sync/) —
+  NAServer `solveServiceArea` response shapes (`saPolygons`).
+- [Esri Route direct request](https://developers.arcgis.com/rest/services-reference/enterprise/route-sync-services/).
 - [pgRouting `pgr_dijkstra`](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) —
   route solves.
 - [pgRouting `pgr_drivingDistance`](https://docs.pgrouting.org/latest/en/pgr_drivingDistance.html) —
