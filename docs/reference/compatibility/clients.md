@@ -226,9 +226,12 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
 - **OGC API Maps claims the styled-map conformance class**, while temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
   coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.
-- **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
-  selection, scaling/interpolation extensions, XML POST, NetCDF, and
-  temporal/multidimensional slicing are not implemented.
+- **WCS serves a bounded raster subset through KVP requests.** Versions 2.0.1
+  and 1.0.0 share the service routes. The 2.0.1 adapter supports band selection,
+  scaling, interpolation and temporal filtering, with a bounded registered-Zarr
+  slice path. XML POST and NetCDF output are not supported. See the
+  [WCS reference](../protocols/wms-wfs-wcs-wmts.md#wcs-versions) for parameters
+  and the limits of each version.
 - **ImageServer metadata retains native mosaic resolution.** `pixelSizeX` and
   `pixelSizeY` advertise the finest finite positive source geotransform scale
   on each axis. Aggregate extent rounding or offsets between source rasters
