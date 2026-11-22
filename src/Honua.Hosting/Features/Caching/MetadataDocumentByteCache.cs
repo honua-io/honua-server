@@ -86,12 +86,30 @@ internal sealed class MetadataDocumentByteCache
         }
 
         var bucket = TryGetOrAdvanceBucket(stamp);
-        if (bucket is not null && bucket.Entries.Count < MaxEntriesPerGeneration)
+        if (bucket is not null && HasRoom(bucket))
         {
             bucket.Entries[key] = new CacheEntry(document, _timeProvider.GetTimestamp());
         }
 
         return document;
+    }
+
+    private bool HasRoom(GenerationBucket bucket)
+    {
+        if (bucket.Entries.Count < MaxEntriesPerGeneration)
+        {
+            return true;
+        }
+
+        foreach (var pair in bucket.Entries)
+        {
+            if (_timeProvider.GetElapsedTime(pair.Value.CreatedTicks) > _entryTtl)
+            {
+                bucket.Entries.TryRemove(pair);
+            }
+        }
+
+        return bucket.Entries.Count < MaxEntriesPerGeneration;
     }
 
     internal static CachedMetadataDocument CreateDocument(ReadOnlySpan<byte> bytes, string contentType, IETagService? etagService)
@@ -101,6 +119,7 @@ internal sealed class MetadataDocumentByteCache
         return new CachedMetadataDocument(copy, contentType, etag);
     }
 
+    // Must match the query keys BaseUrlResolver.PreserveToken copies into document links.
     internal static bool HasQueryToken(HttpRequest request) =>
         request.Query.ContainsKey("token");
 

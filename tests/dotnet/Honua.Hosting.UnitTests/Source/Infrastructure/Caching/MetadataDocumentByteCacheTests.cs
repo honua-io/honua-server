@@ -91,6 +91,27 @@ public sealed class MetadataDocumentByteCacheTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public void Set_WhenBucketFullOfExpiredEntries_SweepsAndStoresNewKey()
+    {
+        var clock = new SteppingTimeProvider();
+        var cache = new MetadataDocumentByteCache(clock, TimeSpan.FromSeconds(30));
+        var doc = MetadataDocumentByteCache.CreateDocument("<caps/>"u8, "application/xml", new ETagService());
+        var stamp = cache.CaptureStamp(1);
+        for (var i = 0; i < 256; i++)
+        {
+            cache.Set(stamp, "key-" + i, doc);
+        }
+
+        cache.Set(stamp, "refused-while-fresh", doc);
+        clock.Advance(TimeSpan.FromSeconds(31));
+        cache.Set(stamp, "stored-after-sweep", doc);
+
+        Assert.Null(cache.Get(stamp, "refused-while-fresh"));
+        Assert.Same(doc, cache.Get(stamp, "stored-after-sweep"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public void HasQueryToken_MatchesCaseInsensitively()
     {
         var lower = new DefaultHttpContext();

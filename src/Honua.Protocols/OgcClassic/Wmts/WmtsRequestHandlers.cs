@@ -1670,6 +1670,7 @@ internal static class WmtsRequestHandlers
             // Legend metadata is optional; an unavailable style must not remove the
             // layer or prevent clients from discovering otherwise usable map tiles.
             OgcClassicLog.LegendSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return false;
         }
     }
@@ -1738,6 +1739,7 @@ internal static class WmtsRequestHandlers
             // Intentionally generic: a per-layer temporal resolution failure must degrade to no
             // TIME dimension rather than fail the whole capabilities document (see doc comment above).
             OgcClassicLog.TemporalExtentSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return null;
         }
     }

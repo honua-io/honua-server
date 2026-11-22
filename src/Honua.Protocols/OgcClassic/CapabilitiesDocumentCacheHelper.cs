@@ -63,6 +63,7 @@ internal static class CapabilitiesDocumentCacheHelper
             return hit.ToResult();
         }
 
+        var degraded = CapabilitiesBuildDegradation.Begin();
         var result = await buildAsync().ConfigureAwait(false);
         CachedMetadataDocument cached;
         try
@@ -77,7 +78,7 @@ internal static class CapabilitiesDocumentCacheHelper
             await result.ReleaseAsync().ConfigureAwait(false);
         }
 
-        return docCache.Set(stamp, cacheKey, cached).ToResult();
+        return degraded.Value ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
     }
 
     internal static string BuildWmtsKey(WmtsCapabilitiesCacheRequest request, ReadOnlySpan<CachedLayerIdentity> layers)
