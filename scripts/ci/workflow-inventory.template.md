@@ -2288,3 +2288,16 @@ application boots without splitting cases or reducing assertions.
 Every case remains in the same selected PR shard and twice-daily full trunk runs.
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
+
+### WPS invalid-contract reference host lifetime
+
+Four `Wps20EndpointsTests.ConformanceEcho_InvalidContract_DoesNotResolveReference`
+theory rows share a lazy class-owned application with the unchanged reference
+allowlist. Every row creates and disposes a fresh client; the Database collection
+remains serial. Each request must still fail contract validation before reference
+resolution, report the expected locator, and omit the DNS-resolution failure text.
+The separate unresolvable-reference case retains its private application. All
+124 assertion lines and 154 endpoint, operation and test metadata lines are unchanged.
+
+Every case remains in the same selected PR shard and full trunk runs. No workflow,
+shard filter, required check name or aggregate dependency changes.

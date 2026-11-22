@@ -31,6 +31,19 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
         _fixture = fixture.Default;
         _conformanceFixture = fixture.Conformance;
         _canonicalRejectionHost = canonicalRejectionHost;
+
+public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>,
+    IClassFixture<Wps20EndpointsTests.InvalidContractHost>
+{
+    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _conformanceFixture;
+    private readonly InvalidContractHost _invalidContractHost;
+
+    public Wps20EndpointsTests(Fixture fixture, InvalidContractHost invalidContractHost)
+    {
+        _fixture = fixture.Default;
+        _conformanceFixture = fixture.Conformance;
+        _invalidContractHost = invalidContractHost;
     }
 
     // Shares the default and echo-enabled applications while keeping service overrides
@@ -84,6 +97,11 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             });
             _fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(Jobs);
         }
+
+    public sealed class InvalidContractHost : IAsyncLifetime
+    {
+        private readonly WebAppFixture _fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
+        private Task? _initialized;
 
         public Task InitializeAsync() => Task.CompletedTask;
 
@@ -809,12 +827,11 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
         string responseForm,
         string locator)
     {
-        await using var fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
-        await fixture.InitializeAsync();
+        using var client = await _invalidContractHost.CreateClientAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='{outputId}' transmission='{transmission}'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
-        var response = await fixture.Client.PostAsync("/wps", requestContent);
+        var response = await client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
