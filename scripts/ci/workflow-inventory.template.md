@@ -830,6 +830,13 @@ configurations retain private hosts and directly owned factories. See
 for application ownership and isolation. All assertions, cases, PR/trunk routing,
 required check names and aggregate dependencies remain unchanged.
 
+
+Four complete 96-case owning-shard runs passed identical outcomes with zero skips.
+Class median 32.809937 to 22.685127 seconds; fixture-inclusive shard median
+59.338310 to 47.198992 seconds saves 12.139318 seconds (0.202322 runner-minutes),
+with one runner unchanged. Both pairs improved. Compilation is excluded; the
+linked gate model records individual runs and measurement limits.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at

@@ -1233,6 +1233,19 @@ Every case remains in the Geocoding shard on selected PR runs and twice-daily
 full trunk runs. No workflow, shard definition, runner count, required check
 name or aggregate dependency changes.
 
+
+Four interleaved baseline/candidate Release runs of the complete owning Geocoding
+shard passed the identical 96 cases (68 in this class), with no failures or skips.
+Summed class seconds were 33.164670 / 32.455203 at baseline and 22.150305 /
+23.219949 at candidate: medians 32.809937 to 22.685127 seconds. Fixture-inclusive
+TRX session seconds were 58.891089 / 59.785530 at baseline and 44.361440 /
+50.036544 at candidate: medians 59.338310 to 47.198992 seconds, saving 12.139318
+seconds (0.202322 runner-minutes). Both pairs improved; one runner before and after.
+Both external measurement variants include the same factory ownership correction.
+Process times, including compilation, were 201.761 / 176.196 seconds at baseline
+and 165.060 / 171.671 at candidate and are excluded from shard timing. These are
+owning-shard measurements on a shared build host, not a PR critical-path claim.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
