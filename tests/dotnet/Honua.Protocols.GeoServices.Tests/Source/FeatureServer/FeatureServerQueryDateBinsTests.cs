@@ -227,17 +227,18 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
     }
 
     [IntegrationTheory]
-    [InlineData("months", "calendarBin")]
-    [InlineData("years", "calendarBin")]
-    [InlineData("fortnights", "seconds, minutes, hours, days or weeks")]
+    [InlineData(1, "months", "calendarBin")]
+    [InlineData(1, "years", "calendarBin")]
+    [InlineData(1, "fortnights", "seconds, minutes, hours, days or weeks")]
+    [InlineData(int.MaxValue, "days", "too large")]
     [Operation(Operations.QueryDateBins)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
-    public async Task QueryDateBins_FixedBinUnitWithoutFixedLength_IsRejected(string unit, string expectedHint)
+    public async Task QueryDateBins_FixedBinInvalidUnitOrOverflow_IsRejected(int count, string unit, string expectedHint)
     {
-        // Unsupported units used to bin by intervalCount days without any error (#9106).
+        // Unsupported or overflowing fixed-bin intervals must fail with 400 rather than binning by days or throwing.
         var bin = JsonSerializer.Serialize(new
         {
-            fixedBin = new { intervalCount = 1, intervalUnit = unit }
+            fixedBin = new { intervalCount = count, intervalUnit = unit }
         });
 
         var response = await _fixture.Client.GetAsync(

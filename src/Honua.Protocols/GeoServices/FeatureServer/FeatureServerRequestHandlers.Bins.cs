@@ -532,25 +532,11 @@ internal static partial class FeatureServerEndpoints
         }
         else if (element.TryGetProperty("fixedBin", out var fixEl) && fixEl.ValueKind == JsonValueKind.Object)
         {
-            if (!fixEl.TryGetProperty("intervalCount", out var countEl) || !countEl.TryGetInt32(out var count))
-            {
-                error = "dateBin.fixedBin.intervalCount is required.";
-                return false;
-            }
-
-            if (count <= 0)
-            {
-                error = "dateBin.fixedBin.intervalCount must be a positive integer.";
-                return false;
-            }
-
             // An omitted intervalUnit keeps its historical days default; a present one must be valid.
-            var unit = !fixEl.TryGetProperty("intervalUnit", out var unitEl)
-                ? "days"
-                : unitEl.ValueKind == JsonValueKind.String ? unitEl.GetString()!.ToLowerInvariant() : string.Empty;
-            error = ResolveFixedInterval(count, unit, "dateBin.fixedBin", out var interval);
-            if (error is not null)
+            var (interval, intervalError) = ParseFixedBinInterval(fixEl, "dateBin.fixedBin", defaultUnitToDays: true);
+            if (intervalError is not null)
             {
+                error = intervalError;
                 return false;
             }
 

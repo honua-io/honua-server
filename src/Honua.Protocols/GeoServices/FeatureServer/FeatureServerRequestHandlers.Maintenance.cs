@@ -1702,9 +1702,9 @@ internal static partial class FeatureServerEndpoints
         //   * the canonical validateSQL clause-type enum the real ArcGIS clients send
         //     (esriSQLTypeWhere/OrderBy/Expression) plus its short forms (where/orderBy/
         //     expression) and the ArcGIS API for Python's `statement` alias.
-        // Accept both vocabularies uniformly with the service-level endpoint. Dialect values
-        // (and an omitted sqlType) validate as a where-style ArcGIS SQL expression; clause-type
-        // values route through the shared service validator so orderBy is validated correctly.
+        // Accept both dialect values (standard|native) and the service-level clause-type vocabulary.
+        // Dialect values (and an omitted sqlType) validate as a where-style ArcGIS SQL expression;
+        // clause-type values route through the shared service validator so orderBy is validated correctly.
         var sqlType = GetValueString(values, "sqlType");
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 

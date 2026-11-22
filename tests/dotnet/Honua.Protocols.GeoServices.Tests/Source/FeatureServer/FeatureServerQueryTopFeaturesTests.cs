@@ -90,7 +90,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_ReturnCountOnly_IgnoresResultRecordCountAndOffset()
     {
         // The ArcGIS API for Python reads this count as the paging total, so a page window
-        // must not shrink it (#9105).
+        // must not shrink it.
         var topFilter = Uri.EscapeDataString(JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -104,6 +104,25 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
 
         total.Should().BeGreaterThan(1, "the seed must have more than one top feature for this check");
         windowed.Should().Be(total);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_ReturnIdsOnlyAndReturnCountOnly_PreservesPagingOnIds()
+    {
+        var topFilter = Uri.EscapeDataString(JsonSerializer.Serialize(new
+        {
+            groupByFields = "category",
+            topCount = 2,
+            orderByFields = "objectid desc"
+        }));
+        var route = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={topFilter}&returnIdsOnly=true&returnCountOnly=true&resultRecordCount=1&f=json";
+
+        var response = await _fixture.Client.GetAsync(route);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("objectIds").GetArrayLength().Should().Be(1);
     }
 
     private async Task<long> ReadTopFeaturesCountAsync(string route)

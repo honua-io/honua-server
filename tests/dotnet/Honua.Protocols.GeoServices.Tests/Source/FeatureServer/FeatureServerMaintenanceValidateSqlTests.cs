@@ -11,7 +11,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 // Layer validateSQL checks column names against the layer for every sqlType form, not only
-// the clause-type forms (#9107).
+// the clause-type forms.
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerMaintenanceValidateSqlTests : IClassFixture<FeatureServerMaintenanceTests.ReadOnlyProHost>
