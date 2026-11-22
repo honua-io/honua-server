@@ -938,10 +938,10 @@ internal sealed class OgcMapsRenderingHandler
 
         var (renderRequest, validationError) = CreateMapRenderRequest(
             parameters.Request, parameters.Resource, parameters.LayerId, context);
-        if (renderRequest is not null)
+        if (renderRequest is { } initialRequest)
         {
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                renderRequest.Value, context, cancellationToken).ConfigureAwait(false);
+                initialRequest, context, cancellationToken).ConfigureAwait(false);
         }
 
         if (renderRequest is not null)
