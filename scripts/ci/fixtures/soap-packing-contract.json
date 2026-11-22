@@ -58,5 +58,11 @@
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     }
-  ]
+  ],
+  "estimatedRanks": {
+    "basis": "Unmeasured combined job: conservative sum of the former SOAP (2.7) and SOAP Progress (2.3) measured dispatch ranks; replace with a qualifying combined-filter job measurement.",
+    "ranks": {
+      "GeoServices GPServer SOAP": 5.0
+    }
+  }
 }

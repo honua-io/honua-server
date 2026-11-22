@@ -745,13 +745,16 @@ test_gp_nas_partition_preserves_every_runnable_method_and_budget()
 
 
 def test_soap_packing_preserves_filters_paths_and_execution_contract() -> None:
-    originals = json.loads((SCRIPT.parent / "fixtures/soap-packing-contract.json").read_text())["originalShards"]
+    contract = json.loads((SCRIPT.parent / "fixtures/soap-packing-contract.json").read_text())
+    originals = contract["originalShards"]
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     packed = next(s for s in config["shards"] if s["name"] == originals[0]["name"])
     assert originals[1]["name"] not in {s["name"] for s in config["shards"]}
     assert packed["filter"] == "|".join(f"({s['filter']})" for s in originals)
     assert set(packed["paths"]) == {path for s in originals for path in s["paths"]}
-    assert packed["dispatch_rank"] == sum(s["dispatch_rank"] for s in originals)
+    estimates = contract["estimatedRanks"]["ranks"]
+    assert estimates[packed["name"]] == sum(s["dispatch_rank"] for s in originals)
+    assert packed["dispatch_rank"] == expected_rank(packed["name"], 0, estimates)
     for original in originals:
         for key in ("csproj", "timeout_minutes", "test_timeout_minutes", "max_cpu_count",
                     "upload_operator_eval_report", "upload_odata_evidence"):

@@ -2195,7 +2195,9 @@ and [45000554030](https://github.com/honua-io/honua-server/actions/runs/45000554
 passed all 81 SOAP cases with no skips. Their two shard process-wall sums were
 35, 26 and 17 seconds; even the sum of the individual maxima is 35 seconds,
 2.7% of the unchanged 1,320-second budget. The last full run failed elsewhere;
-its two SOAP shards passed. This reduces the full matrix from 203 to 202 jobs,
+its two SOAP shards passed. The combined dispatch rank of 5.0 minutes is an
+explicit packing estimate (the sum of the former ranks), pending a qualifying
+combined-filter job measurement. This reduces the full matrix from 203 to 202 jobs,
 and a GPServer-affected selection loses one runner. In the last run the two
 jobs occupied 203 runner-seconds (3.38 minutes), including 19 seconds in test
 steps. Combined-job runner-minute savings remain unmeasured until a live run;
