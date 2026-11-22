@@ -16,6 +16,7 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
     private readonly Dictionary<string, DateTimeOffset> _removedSessions = new(StringComparer.Ordinal);
     private readonly object _pollGate = new();
     private readonly CancellationTokenSource _pollLifetime = new();
+    private readonly TaskCompletionSource _stopSignalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task _pollTask = Task.CompletedTask;
     private bool _polling;
     private bool _stopping;
@@ -40,21 +41,40 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         }
     }
 
+    // The host can stop this service twice at once (WebApplication.RunAsync stops and disposes
+    // the host while another caller is still stopping it), so only the first call cancels.
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         Task polling;
+        bool first;
         lock (_capacityGate)
         {
             lock (_pollGate)
             {
+                first = !_stopping;
                 _stopping = true;
                 polling = _pollTask;
             }
         }
 
-        StopAll(_runningRequests.Keys);
-        EndSessions(_sessions.Keys.ToArray());
-        await _pollLifetime.CancelAsync().ConfigureAwait(false);
+        if (first)
+        {
+            try
+            {
+                StopAll(_runningRequests.Keys);
+                EndSessions(_sessions.Keys.ToArray());
+                await _pollLifetime.CancelAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _stopSignalled.TrySetResult();
+            }
+        }
+        else
+        {
+            await _stopSignalled.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await polling.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
