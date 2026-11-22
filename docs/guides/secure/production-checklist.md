@@ -1,11 +1,11 @@
 ---
 type: guide
 title: "Harden a production deployment"
-description: "Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in .env.production.example."
+description: "Work through this checklist before exposing Honua to the internet; each item names the setting that enforces or configures it."
 ---
 # Harden a production deployment
 
-Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in `.env.production.example`.
+Work through this checklist before exposing Honua to the internet. Each item names the setting that enforces or configures it. `.env.production.example` sets most of them; add the others to the same environment.
 
 **Prerequisites:** A deployment you can restart with new environment variables, and an edge proxy/load balancer in front of the server (see [Deployment scenarios](../deploy/cloud-deployments.md)).
 
