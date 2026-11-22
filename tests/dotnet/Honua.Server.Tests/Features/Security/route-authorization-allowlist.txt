@@ -165,6 +165,7 @@ anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versi
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}
 anonymous GET /saml/login
 anonymous GET /saml/metadata
+anonymous GET /scenes/{sceneId}/copc
 anonymous GET /scim/v2/Groups/
 anonymous GET /scim/v2/Groups/{id}
 anonymous GET /scim/v2/ResourceTypes
@@ -177,7 +178,6 @@ anonymous GET /scim/v2/Users/{id}
 anonymous GET /services
 anonymous GET /sharing/rest
 anonymous GET /sharing/rest/community/groups/{groupId}
-anonymous GET /scenes/{sceneId}/copc
 anonymous GET /sharing/rest/community/self
 anonymous GET /sharing/rest/community/users/{username}
 anonymous GET /sharing/rest/content/groups/{groupId}
