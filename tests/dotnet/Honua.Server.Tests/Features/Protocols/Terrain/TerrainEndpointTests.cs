@@ -2,9 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Scene.Terrain;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -101,6 +103,27 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         noData.GetProperty("terrainRgbSentinelMeters").GetDouble().Should().Be(TerrainRgbEncoding.NoDataSentinelMeters);
         noData.GetProperty("terrainRgbSentinel").EnumerateArray().Select(static value => value.GetInt32())
             .Should().Equal(0, 0, 0);
+
+        var coverage = root.GetProperty("coverage");
+        coverage.GetProperty("hasCoverage").GetBoolean().Should().BeTrue();
+        coverage.GetProperty("rasterCount").GetInt32().Should().Be(1);
+
+        var capabilities = root.GetProperty("capabilities");
+        capabilities.GetProperty("terrainRgb").GetProperty("available").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("terrainRgb").GetProperty("status").GetString().Should().Be("available");
+        capabilities.GetProperty("quantizedMesh").GetProperty("available").GetBoolean().Should().BeTrue();
+        capabilities.GetProperty("quantizedMesh").GetProperty("status").GetString().Should().Be("available");
+        capabilities.GetProperty("quantizedMesh").GetProperty("href").GetString().Should().Contain("/terrain/0/layer.json");
+
+        var links = root.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "self"
+            && link.GetProperty("format").GetString() == "terrain-rgb"
+            && link.GetProperty("href").GetString()!.Contains("/terrain/0/tile.json", StringComparison.Ordinal));
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "alternate"
+            && link.GetProperty("format").GetString() == "quantized-mesh-1.0"
+            && link.GetProperty("href").GetString()!.Contains("/terrain/0/layer.json", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -398,6 +421,148 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("CRS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    public async Task GetTerrainLayerJson_WithRasterFixture_ReturnsQuantizedMeshMetadataAndCrossLinks()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/layer.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        root.GetProperty("format").GetString().Should().Be("quantized-mesh-1.0");
+        root.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("projection").GetString().Should().Be("EPSG:4326");
+        root.GetProperty("scheme").GetString().Should().Be("tms");
+        root.GetProperty("bounds").GetArrayLength().Should().Be(4);
+        root.GetProperty("tiles")[0].GetString().Should().Contain("/terrain/0/{z}/{x}/{y}.terrain");
+        root.GetProperty("extensions").EnumerateArray().Select(static value => value.GetString())
+            .Should().Contain("octvertexnormals");
+        root.GetProperty("available").GetArrayLength().Should().BeGreaterThan(0);
+        root.GetProperty("supported").GetBoolean().Should().BeTrue();
+        root.GetProperty("links").EnumerateArray().Select(static link => link.GetProperty("href").GetString())
+            .Should().Contain(static href => href != null && href.Contains("/terrain/0/tile.json", StringComparison.Ordinal))
+            .And.Contain(static href => href != null && href.Contains("/terrain/0/layer.json", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    public async Task GetTerrainLayerJson_WithUnknownDataset_ReturnsNotFound()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
+
+        var response = await _fixture.Client.GetAsync("/terrain/999999/layer.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    public async Task GetTerrainLayerJson_WithUnknownSourceCrs_ReportsUnavailableCapabilities()
+    {
+        await using var heldRasters = await HoldUnknownCrsRasterAsync();
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/layer.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        root.GetProperty("supported").GetBoolean().Should().BeFalse();
+        root.GetProperty("available").GetArrayLength().Should().Be(0);
+        root.GetProperty("capabilities").GetProperty("quantizedMesh").GetProperty("available").GetBoolean().Should().BeFalse();
+        root.GetProperty("capabilities").GetProperty("quantizedMesh").GetProperty("status").GetString().Should().Be("unavailable");
+        root.GetProperty("capabilities").GetProperty("terrainRgb").GetProperty("available").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
+    public async Task GetTerrainQuantizedMeshTile_WithRegisteredDem_ReturnsDecodableGzippedMesh()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.terrain");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(QuantizedMeshTileWriter.MediaType);
+        response.Content.Headers.ContentEncoding.Should().Contain("gzip");
+        response.Headers.Vary.Should().Contain("Accept");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var tile = QuantizedMeshTileReader.Read(bytes);
+        tile.U.Length.Should().Be(TerrainTmsGrid.DefaultGridSize * TerrainTmsGrid.DefaultGridSize);
+        tile.Header.MaximumHeight.Should().BeApproximately(123.4f, 0.5f);
+        tile.OctEncodedNormals.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
+    public async Task GetTerrainQuantizedMeshTile_WithOctVertexNormalsAcceptHeader_ReturnsNormalsExtension()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(250.0);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/terrain/0/1/0/1.terrain");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/vnd.quantized-mesh;extensions=octvertexnormals"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(QuantizedMeshTileWriter.MediaType);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var tile = QuantizedMeshTileReader.Read(bytes);
+        tile.OctEncodedNormals.Should().NotBeNull();
+        tile.OctEncodedNormals!.Length.Should().Be(tile.U.Length * 2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
+    public async Task GetTerrainQuantizedMeshTile_WithInvalidTmsCoordinates_ReturnsBadRequest()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/2/0.terrain");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
+    public async Task GetTerrainQuantizedMeshTile_WithUnsupportedMultibandSource_ReturnsUnprocessableEntity()
+    {
+        await using var heldRasters = await HoldRasterSqlAsync("""
+            ST_AddBand(
+                ST_AddBand(
+                    ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 3857),
+                    '32BF'::text,
+                    10,
+                    NULL),
+                '32BF'::text,
+                20,
+                NULL)
+            """);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.terrain");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("single numeric elevation band");
     }
 
     private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)

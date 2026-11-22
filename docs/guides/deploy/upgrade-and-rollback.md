@@ -694,7 +694,7 @@ The functional query is not inferred. Configure it on the deploy operation's par
 
 An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
 
-Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
+Before recovery to an older image, stop all database writers and restore its matching verified backup unless that exact image has been qualified against the installed schema. If restoring, complete the restore before starting the selected image. Validate schema/version alignment and retained data, then readmit traffic — see [Back up and restore](backup-and-restore.md).
 
 ### Catalog activations
 

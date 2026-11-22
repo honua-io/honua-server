@@ -174,6 +174,24 @@ public readonly record struct SpatialFilter
     // Each antimeridian half is tested on its own because the union box would cover every longitude.
     public bool AntimeridianSplit { get; init; }
 
+    internal (double MinX, double MinY, double MaxX, double MaxY)? GetBboxCoveringBounds(int? layerSrid)
+    {
+        if (SpatialRelationship is SpatialRelationship.Disjoint
+                or SpatialRelationship.WithinDistance
+                or SpatialRelationship.BeyondDistance
+                or SpatialRelationship.NearestNeighbor
+            || (Srid is > 0 && Srid != layerSrid)
+            || EnvelopeMinX is not { } minX
+            || EnvelopeMinY is not { } minY
+            || EnvelopeMaxX is not { } maxX
+            || EnvelopeMaxY is not { } maxY)
+        {
+            return null;
+        }
+
+        return (minX, minY, maxX, maxY);
+    }
+
     public static SpatialFilter Create(
         byte[] geometry,
         SpatialRelationship spatialRelationship,

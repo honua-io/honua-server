@@ -141,7 +141,10 @@ internal static partial class NetworkDatasetAdminEndpoints
 
         if (!TryBuildRecord(request, context, out var record, out var validationError))
         {
-            NetworkDatasetAdminLog.ValidationFailed(logger, request.Id ?? "<unknown>", validationError);
+            NetworkDatasetAdminLog.ValidationFailed(
+                logger,
+                SanitizeForLog(request.Id, "<unknown>"),
+                SanitizeForLog(validationError, "validation failed"));
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
         }
 
@@ -205,7 +208,10 @@ internal static partial class NetworkDatasetAdminEndpoints
 
         if (!TryApplyUpdate(existing, request, context, out var updated, out var validationError))
         {
-            NetworkDatasetAdminLog.ValidationFailed(logger, existing.Id, validationError);
+            NetworkDatasetAdminLog.ValidationFailed(
+                logger,
+                SanitizeForLog(existing.Id, "<unknown>"),
+                SanitizeForLog(validationError, "validation failed"));
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
         }
 
@@ -406,6 +412,17 @@ internal static partial class NetworkDatasetAdminEndpoints
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    internal static string SanitizeForLog(string? value, string fallback = "<unknown>", int maxLength = 64)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return fallback;
+        }
+
+        var sanitized = Honua.Core.Features.Infrastructure.Logging.LogValueRedactor.SanitizeForLog(value, maxLength);
+        return value.Length > maxLength ? string.Concat(sanitized, "...") : sanitized;
+    }
 
     internal sealed class NetworkDatasetAdminLogCategory;
 

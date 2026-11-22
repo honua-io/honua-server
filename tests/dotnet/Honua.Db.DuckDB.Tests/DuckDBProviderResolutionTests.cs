@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Warehouse.Abstractions;
+using Honua.Core.Features.Warehouse.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Queries.Filters;
 using Honua.Db.DuckDB.Features.HealthCheck;
@@ -63,7 +65,27 @@ public sealed class DuckDBProviderResolutionTests
         Assert.IsType<DuckDbSqlFilterTranslator>(translator);
     }
 
-    private static ServiceProvider BuildDuckDbServiceProvider()
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("true", true)]
+    public void AddDuckDBServices_AdvertisesH3OnlyWhenEnabled(string? setting, bool enabled)
+    {
+        using var provider = BuildDuckDbServiceProvider(setting);
+        var descriptor = provider.GetRequiredService<IWarehouseProviderCapabilityDescriptor>();
+
+        var capabilities = descriptor.Describe(new WarehouseSourceCapabilityRequest
+        {
+            ProviderName = descriptor.ProviderName,
+            SourceId = "test",
+        });
+
+        Assert.Equal(enabled, capabilities.Aggregation.SupportsH3Aggregation);
+        Assert.Equal(enabled, capabilities.Aggregation.SupportsH3Polyfill);
+        Assert.Equal(enabled, capabilities.Aggregation.SupportsH3KRing);
+        Assert.Equal(enabled, capabilities.Aggregation.RequiredExtensions.Contains("h3"));
+    }
+
+    private static ServiceProvider BuildDuckDbServiceProvider(string? enableH3 = null)
     {
         // Minimal DuckDB configuration — in-memory mode with no layers so no real
         // file or schema discovery is attempted. The DI tests resolve types only;
@@ -72,7 +94,8 @@ public sealed class DuckDBProviderResolutionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["DuckDB:DatabasePath"] = ":memory:",
-                ["DuckDB:ReadOnly"] = "false"
+                ["DuckDB:ReadOnly"] = "false",
+                ["DuckDB:EnableH3"] = enableH3,
             })
             .Build();
 

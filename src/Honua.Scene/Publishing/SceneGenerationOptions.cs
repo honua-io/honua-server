@@ -7,6 +7,8 @@ internal sealed class SceneGenerationServerOptions
 {
     public const string SectionName = "SceneGeneration";
 
+    public bool EnableExperimentalAsyncJobs { get; set; }
+
     public string OutputRoot { get; set; } = "scenes-generated";
 
     public int MaxFeatureCount { get; set; } = 1_000_000;

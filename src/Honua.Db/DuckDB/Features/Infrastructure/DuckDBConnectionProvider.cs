@@ -13,15 +13,25 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
 {
     private readonly string _connectionString;
     private readonly ILogger<DuckDBConnectionProvider> _logger;
-    private readonly DuckDBSpatialBootstrap _spatialBootstrap;
+    private readonly Func<DbConnection, CancellationToken, Task> _prepareAsync;
 
     public DuckDBConnectionProvider(
         string connectionString,
         DuckDBSpatialBootstrap spatialBootstrap,
         ILogger<DuckDBConnectionProvider> logger)
+        : this(connectionString,
+            (spatialBootstrap ?? throw new ArgumentNullException(nameof(spatialBootstrap))).EnsureSpatialExtensionAsync,
+            logger)
+    {
+    }
+
+    public DuckDBConnectionProvider(
+        string connectionString,
+        Func<DbConnection, CancellationToken, Task> prepareAsync,
+        ILogger<DuckDBConnectionProvider> logger)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _spatialBootstrap = spatialBootstrap ?? throw new ArgumentNullException(nameof(spatialBootstrap));
+        _prepareAsync = prepareAsync ?? throw new ArgumentNullException(nameof(prepareAsync));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -36,7 +46,7 @@ internal sealed class DuckDBConnectionProvider : IAdoNetDatabaseConnectionProvid
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await _spatialBootstrap.EnsureSpatialExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
+            await _prepareAsync(connection, cancellationToken).ConfigureAwait(false);
             return connection;
         }
         catch

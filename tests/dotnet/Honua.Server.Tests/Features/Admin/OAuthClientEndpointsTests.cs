@@ -194,6 +194,70 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [IntegrationTheory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("ftp://example.com/callback")]
+    [InlineData("/relative/callback")]
+    [InlineData("https://app.example.com/cb\r\nX-Injected: 1")]
+    [InlineData("https://app.example.com/cb#fragment")]
+    [Endpoint("POST /api/v1/admin/oauth-clients")]
+    public async Task RegisterClient_WithInvalidRedirectUri_ReturnsBadRequest(string redirectUri)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/oauth-clients",
+            new CreateOAuthClientRequest
+            {
+                Name = "valid-client",
+                ClientType = "confidential",
+                RedirectUris = [redirectUri],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("client\r\ninjected")]
+    [InlineData("client\nline")]
+    [InlineData("client\tcontrol")]
+    [Endpoint("POST /api/v1/admin/oauth-clients")]
+    public async Task RegisterClient_WithControlCharactersInName_ReturnsBadRequest(string badName)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/oauth-clients",
+            new CreateOAuthClientRequest
+            {
+                Name = badName,
+                ClientType = "confidential",
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("scope\r\ninjected")]
+    [InlineData("scope with spaces")]
+    [InlineData("<script>")]
+    [InlineData("../admin")]
+    [InlineData("a\\b")]
+    [InlineData("quoted\"scope")]
+    [Endpoint("PUT /api/v1/admin/oauth-scopes")]
+    public async Task DefineScope_WithInvalidScopeSyntax_ReturnsBadRequest(string badScope)
+    {
+        var response = await _client.PutAsJsonAsync(
+            "/api/v1/admin/oauth-scopes",
+            new DefineOAuthScopeRequest
+            {
+                Scope = badScope,
+                Permissions = ["services:read"],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/oauth-clients")]
     public async Task ManagementSurface_RequiresAdminAuthorization()

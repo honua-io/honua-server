@@ -20,10 +20,12 @@ internal sealed record I3sSceneResources(
     IReadOnlyList<I3sTextureSetDefinition> TextureSets,
     IReadOnlyDictionary<string, I3sAttributeStatisticsDocument> Statistics,
     SceneExtent Extent,
-    IReadOnlyList<I3sAssetIdentity> Assets)
+    IReadOnlyList<I3sAssetIdentity> Assets,
+    I3sNodeGeometry? RootGeometry = null)
 {
     public long ByteSize => Nodes.Values.Sum(node => (long)node.Geometry.Buffer.Length
-        + node.Attributes.Values.Sum(value => (long)value.Length) + node.Textures.Values.Sum(value => value.Bytes.LongLength));
+        + node.Attributes.Values.Sum(value => (long)value.Length) + node.Textures.Values.Sum(value => value.Bytes.LongLength))
+        + (RootGeometry?.Buffer.Length ?? 0L);
 }
 
 internal sealed record I3sNodeResources(

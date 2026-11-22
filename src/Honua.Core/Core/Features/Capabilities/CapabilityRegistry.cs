@@ -426,10 +426,19 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             };
 
             var readable = importFormats.Contains(name);
-            var writable = name is "csv" or "shapefile" or "geopackage";
+            var writable = name is "csv" or "shapefile" or "geopackage" or "geoparquet";
             yield return FileFormatDirection(name, "read", readable);
             yield return FileFormatDirection(name, "write", writable);
         }
+
+        yield return new CapabilityDescriptor
+        {
+            Id = DataFormatIdPrefix + "geoarrow",
+            Category = "format",
+            Kind = CapabilityKind.DataFormat,
+            Maturity = CapabilityMaturity.Implemented,
+            StandardName = "geoarrow",
+        };
     }
 
     private static CapabilityDescriptor FileFormatDirection(string name, string direction, bool served) => new()

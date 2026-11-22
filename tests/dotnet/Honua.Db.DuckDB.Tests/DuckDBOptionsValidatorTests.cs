@@ -117,6 +117,40 @@ public sealed class DuckDBOptionsValidatorTests
         Assert.Contains(errors, error => error.Contains("cannot both be configured", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Validate_WithObjectStorageConnectionBinding_ReturnsNoErrors()
+    {
+        var options = BuildSingleLayerOptions(
+            source: new DuckDBExternalSourceOptions
+            {
+                Format = "GeoParquet",
+                ObjectStorageConnectionId = Guid.NewGuid(),
+                ObjectStorageKey = "analytics/parcels.parquet",
+                BboxColumn = "bbox",
+            });
+
+        var errors = DuckDBOptionsValidator.Validate(options);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_WithSqlInjectionAndInvalidBboxColumn_ReturnsErrors()
+    {
+        var options = BuildSingleLayerOptions(
+            source: new DuckDBExternalSourceOptions
+            {
+                Format = "GeoParquet",
+                Path = "s3://county-data/parcels.parquet; DROP TABLE parcels;--",
+                BboxColumn = "bbox; DROP TABLE x",
+            });
+
+        var errors = DuckDBOptionsValidator.Validate(options);
+
+        Assert.Contains(errors, error => error.Contains("disallowed control characters or SQL syntax", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("not a valid identifier", StringComparison.Ordinal));
+    }
+
     private static DuckDBOptions BuildSingleLayerOptions(DuckDBExternalSourceOptions source)
         => new()
         {

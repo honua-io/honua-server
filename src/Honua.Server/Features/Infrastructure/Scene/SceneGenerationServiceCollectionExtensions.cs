@@ -35,9 +35,12 @@ internal static class SceneGenerationServiceCollectionExtensions
             configuration.GetSection(SceneGenerationServerOptions.SectionName));
 
         services.TryAddScoped<ISceneFeatureSource, PostgresSceneFeatureSource>();
+        services.TryAddSingleton<SceneJobCoordinator>();
         if (scene3dTilesEnabled)
         {
             services.TryAddScoped<SceneTilesPublishExecutor>();
+            services.TryAddScoped<SceneTilesetArchiveImporter>();
+            services.TryAddScoped<ModelScenePublishExecutor>();
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishExecutor, SceneTilesPublishExecutor>());
         }
 

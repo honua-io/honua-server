@@ -326,13 +326,15 @@ public sealed class CapabilityRegistryConformanceTests
             .ToHashSet(StringComparer.Ordinal);
         var writers = Honua.Io.Export.BuiltInExportFormats.Dispatch.Values
             .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
+        var wireResponseFormats = new HashSet<string>(StringComparer.Ordinal) { "geoarrow" };
 
         foreach (var descriptor in Registry.All
                      .Where(d => d.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal)))
         {
             var name = descriptor.StandardName!;
-            (importFormatNames.Contains(name) || writers.Contains(name)).Should().BeTrue(
-                $"format descriptor '{descriptor.Id}' must map to an import format or a built-in export writer");
+            var isWireOnly = descriptor.Category == "format" && wireResponseFormats.Contains(name);
+            (importFormatNames.Contains(name) || writers.Contains(name) || isWireOnly).Should().BeTrue(
+                $"format descriptor '{descriptor.Id}' must map to an import format, a built-in export writer, or a wire response format");
         }
 
         foreach (var name in importFormatNames.Union(writers))
@@ -343,8 +345,38 @@ public sealed class CapabilityRegistryConformanceTests
 
         Registry.All.Where(d => d.Category == "format-write" && d.ImplementationStatus == CapabilityImplementationStatus.Served)
             .Select(d => d.StandardName).Should().BeEquivalentTo(writers);
-        Honua.Io.Export.BuiltInExportFormats.Dispatch.Values.Should()
+        Honua.Io.Export.BuiltInExportFormats.Dispatch.Values.Distinct().Should()
             .BeEquivalentTo(Enum.GetValues<Honua.Io.Export.BuiltInExportFormat>());
+    }
+
+    [UnitTest]
+    public void WarehouseProvidersAndCloudNativeFormats_AreRegisteredAcrossRegistryAndCatalog()
+    {
+        var catalogByKey = CapabilityKeyCatalog.All.ToDictionary(c => c.Key, StringComparer.Ordinal);
+
+        foreach (var providerId in new[] { "provider.redshift", "provider.snowflake", "provider.databricks" })
+        {
+            var descriptor = Registry.Find(providerId);
+            descriptor.Should().NotBeNull();
+            descriptor!.Maturity.Should().Be(CapabilityMaturity.Experimental);
+            catalogByKey.Should().ContainKey(providerId);
+            catalogByKey[providerId].Status.Should().Be(CapabilityKeyCatalog.ExperimentalStatus);
+        }
+
+        foreach (var formatId in new[] { "format.geoparquet", "format.geoarrow" })
+        {
+            var descriptor = Registry.Find(formatId);
+            descriptor.Should().NotBeNull();
+            descriptor!.Kind.Should().Be(CapabilityKind.DataFormat);
+            descriptor.Maturity.Should().Be(CapabilityMaturity.Implemented);
+            catalogByKey.Should().ContainKey(formatId);
+            catalogByKey[formatId].Edition.Should().Be(HonuaEdition.Community);
+        }
+
+        var geoParquetWrite = Registry.Find("format.write.geoparquet");
+        geoParquetWrite.Should().NotBeNull();
+        geoParquetWrite!.Maturity.Should().Be(CapabilityMaturity.Implemented);
+        geoParquetWrite.ImplementationStatus.Should().Be(CapabilityImplementationStatus.Served);
     }
 
     private static void AssertDirection(string direction, string name, bool served)

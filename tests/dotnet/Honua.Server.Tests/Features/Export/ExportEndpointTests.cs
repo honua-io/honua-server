@@ -43,7 +43,6 @@ public sealed class ExportEndpointTests(WebAppFixture fixture) : IClassFixture<W
     [InlineData("wkt")]
     [InlineData("filegdb")]
     [InlineData("flatgeobuf")]
-    [InlineData("geoparquet")]
     [InlineData("geoservicesjson")]
     [InlineData("wkb")]
     [Operation(Operations.Export)]
@@ -59,7 +58,7 @@ public sealed class ExportEndpointTests(WebAppFixture fixture) : IClassFixture<W
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("detail").GetString().Should()
-            .Be($"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg");
+            .Be($"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg, geoparquet");
     }
 
     [IntegrationTest]
