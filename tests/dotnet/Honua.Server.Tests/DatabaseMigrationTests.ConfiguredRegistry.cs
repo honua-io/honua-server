@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
@@ -65,7 +66,7 @@ public sealed partial class DatabaseMigrationTests
         runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
             configuration: configuration);
         var upgrade = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
-        upgrade.Successful.Should().BeTrue(upgrade.ErrorMessage);
+        upgrade.Successful.Should().BeTrue(upgrade.Error?.ToString() ?? upgrade.ErrorMessage);
         await AssertAdoptedRegistryAsync(connection, originalOid);
         await guard.VerifyAsync(_connectionString);
     }
@@ -92,6 +93,69 @@ public sealed partial class DatabaseMigrationTests
         result.Successful.Should().BeFalse();
         command.CommandText = "SELECT sentinel FROM custom_registry.layers;";
         (await command.ExecuteScalarAsync()).Should().Be(42);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_WithUnadoptedRegistry_RejectsServingVerification()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Database:Schema"] = "custom_registry" }).Build();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+        var installed = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        installed.Successful.Should().BeTrue(installed.ErrorMessage);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            ALTER TABLE custom_registry.services SET SCHEMA honua;
+            ALTER TABLE custom_registry.layers SET SCHEMA honua;
+            ALTER TABLE custom_registry.service_layers SET SCHEMA honua;
+            ALTER TABLE custom_registry.layer_fields SET SCHEMA honua;
+            DELETE FROM public.schema_versions
+            WHERE scriptname = 'Honua.Server.Migrations.226_AdoptConfiguredRegistrySchema.sql';
+            """;
+        await command.ExecuteNonQueryAsync();
+        var verify = () => guard.VerifyAsync(_connectionString);
+        await verify.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*226_AdoptConfiguredRegistrySchema*");
+        var plan = await runner.PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_WithLateRasterExtension_ReferencesAdoptedRegistry()
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP EXTENSION IF EXISTS postgis_raster CASCADE;";
+        await command.ExecuteNonQueryAsync();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Database:Schema"] = "custom_registry" }).Build();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+        var installed = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        installed.Successful.Should().BeTrue(installed.ErrorMessage);
+        command.CommandText = "CREATE EXTENSION postgis_raster;";
+        await command.ExecuteNonQueryAsync();
+        var plan = await runner.PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        configuration[MigrationSafetyOptions.ApproveContractMigrationsKey] = plan.ContractApprovalNonce;
+        runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+        var upgrade = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        upgrade.Successful.Should().BeTrue(upgrade.Error?.ToString() ?? upgrade.ErrorMessage);
+        command.CommandText = """
+            SELECT confrelid = 'custom_registry.layers'::regclass
+            FROM pg_constraint WHERE conname = 'raster_data_layer_id_fk';
+            """;
+        (await command.ExecuteScalarAsync()).Should().Be(true);
+        await guard.VerifyAsync(_connectionString);
     }
 
     private static async Task<long> SeedLegacyRegistryAsync(Npgsql.NpgsqlConnection connection)

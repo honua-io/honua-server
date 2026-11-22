@@ -206,7 +206,9 @@ For a non-default `Database:Schema`, migration
 `service_layers`, and `layer_fields` from `honua` into the configured schema.
 It preserves rows, table identities, foreign keys, and owned sequences. Conflicting
 tables in the target schema stop the migration without overwriting either registry.
-The default `honua` schema skips this migration.
+The default `honua` schema skips this migration. With a custom schema, readiness
+requires this migration even when startup migrations are disabled. Optional raster
+provisioning uses the registry location when enabled after the move.
 
 For an existing database, back up the database and stop all older server and worker
 instances before running migrate-only. Review the migration plan and apply its

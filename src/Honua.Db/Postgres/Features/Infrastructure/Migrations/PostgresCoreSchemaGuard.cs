@@ -422,6 +422,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         await VerifyReaderCompatibilityAsync(connection, readerVerifiedMigrations, cancellationToken).ConfigureAwait(false);
         var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
+        if (_schemaName != PostgresSchemaConfiguration.DefaultMetadataSchema &&
+            _migrations.ConfiguredRegistryAdoptionMigration is { } registryAdoption)
+        {
+            VerifyRequiredMigration(state, registryAdoption,
+                ["services", "layers", "service_layers", "layer_fields"], [], []);
+        }
+
         if (state.RequiresRasterFloor)
         {
             VerifyRequiredRasterTablesMigration(state);
