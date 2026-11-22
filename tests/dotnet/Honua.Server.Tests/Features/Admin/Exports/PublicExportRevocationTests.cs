@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -402,12 +403,18 @@ public sealed class PublicExportRevocationTests
         harness.StateStore.Promoted.Keys.Should().Equal("roads");
     }
 
+    // Keys are relative to the default publish root, which ExportStore prepends (for example "pmtiles/").
     private static ICloudFileStorage CreatePrivateExportStorage(Dictionary<string, byte[]> objects)
     {
+        var root = PMTilesPublishKeyRoot.Resolve(new CloudStorageOptions());
+        var rooted = objects.ToDictionary(
+            entry => string.IsNullOrEmpty(root) ? entry.Key : $"{root}/{entry.Key}",
+            entry => entry.Value,
+            StringComparer.Ordinal);
         var storage = new Mock<ICloudFileStorage>();
         storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string key, CancellationToken _) =>
-                objects.TryGetValue(key, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
+                rooted.TryGetValue(key, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
         return storage.Object;
     }
 }
