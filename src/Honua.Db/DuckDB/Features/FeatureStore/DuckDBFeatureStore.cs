@@ -100,6 +100,11 @@ internal sealed class DuckDBFeatureStore :
             throw new InvalidOperationException("Managed DuckDB object storage is unavailable.");
         }
 
+        if (binding.StorageMapping.LayerDiscriminatorColumn is not null)
+        {
+            throw new InvalidOperationException("Managed DuckDB GeoParquet requires one object per publication without a layer discriminator.");
+        }
+
         var attributes = binding.Resource.SchemaFields
             .Select(field => field.Name)
             .Where(name => FeatureFieldNameSyntax.IsValid(name) &&
