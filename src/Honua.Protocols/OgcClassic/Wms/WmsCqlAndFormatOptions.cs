@@ -17,7 +17,7 @@ internal static partial class WmsRequestHandlers
     private const double DefaultWmsDpi = 0.0254 / SpatialConstants.PixelSizeMeters;
     private const double MaxWmsDpi = 1200.0;
 
-    internal static (SqlFragment?[]? LayerFilters, IResult? Error) ParseWmsCqlLayerFilters(
+    private static (SqlFragment?[]? LayerFilters, IResult? Error) ParseWmsCqlLayerFilters(
         HttpContext context,
         WmsLayer[] layers,
         string cqlFilterParam)
