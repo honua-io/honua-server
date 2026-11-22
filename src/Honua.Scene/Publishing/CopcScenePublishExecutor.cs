@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Scene;
@@ -60,7 +59,7 @@ internal sealed partial class CopcScenePublishExecutor
         await PreflightConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
         var serverOptions = _options.Value;
-        var fileName = string.Create(CultureInfo.InvariantCulture, $"{sceneId}.copc.laz");
+        const string fileName = "cloud.copc.laz";
         var outputDirectory = SceneTilesetStaging.ResolveOutputDirectory(
             _environment.ContentRootPath, serverOptions.OutputRoot, sceneId);
         var stagingDirectory = SceneTilesetStaging.ResolveStagingDirectory(
@@ -84,19 +83,28 @@ internal sealed partial class CopcScenePublishExecutor
                     cancellationToken).ConfigureAwait(false);
             }
 
-            var registeredId = await TryRegisterAsync(
-                newDatasetId,
-                sceneId,
-                displayName,
-                request.Description,
-                outputDirectory,
-                storagePrefix,
-                fileName,
-                request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds,
-                request.EditionGate,
-                request.RequiresAuth,
-                request.CreatedBy ?? "publisher",
-                cancellationToken).ConfigureAwait(false);
+            var record = new SceneDatasetRecord
+            {
+                DatasetId = newDatasetId,
+                Id = sceneId,
+                Name = displayName,
+                Description = request.Description,
+                AssetRoot = outputDirectory,
+                AssetStoragePrefix = storagePrefix,
+                TilesetFileName = fileName,
+                DatasetType = SceneDatasetType.PointCloud,
+                ServingFormat = SceneServingFormat.Copc,
+                ContentKind = SceneContentKind.PointCloud,
+                CachePolicy = new SceneCachePolicy(request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds, NoStore: false),
+                EditionGate = request.EditionGate,
+                RequiresAuth = request.RequiresAuth,
+                IsPublic = !request.RequiresAuth,
+                Status = SceneDatasetStatus.Active,
+                Revision = 1,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedBy = request.CreatedBy ?? "publisher"
+            };
+            var registeredId = await TryRegisterAsync(record, cancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -187,45 +195,13 @@ internal sealed partial class CopcScenePublishExecutor
     }
 
     private async Task<Guid?> TryRegisterAsync(
-        Guid datasetId,
-        string sceneId,
-        string displayName,
-        string? description,
-        string outputDirectory,
-        string? assetStoragePrefix,
-        string fileName,
-        int cacheMaxAgeSeconds,
-        string? editionGate,
-        bool requiresAuth,
-        string createdBy,
+        SceneDatasetRecord record,
         CancellationToken cancellationToken)
     {
         if (_registration is null)
         {
             return null;
         }
-
-        var record = new SceneDatasetRecord
-        {
-            DatasetId = datasetId,
-            Id = sceneId,
-            Name = displayName,
-            Description = description,
-            AssetRoot = outputDirectory,
-            AssetStoragePrefix = assetStoragePrefix,
-            TilesetFileName = fileName,
-            DatasetType = SceneDatasetType.PointCloud,
-            ServingFormat = SceneServingFormat.Copc,
-            ContentKind = SceneContentKind.PointCloud,
-            CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
-            EditionGate = editionGate,
-            RequiresAuth = requiresAuth,
-            IsPublic = !requiresAuth,
-            Status = SceneDatasetStatus.Active,
-            Revision = 1,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = createdBy
-        };
 
         try
         {
@@ -235,7 +211,7 @@ internal sealed partial class CopcScenePublishExecutor
         catch (SceneDatasetAlreadyExistsException ex)
         {
             throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' or name '{displayName}' already exists.",
+                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{record.Id}' or name '{record.Name}' already exists.",
                 ex);
         }
     }

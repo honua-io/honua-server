@@ -254,6 +254,13 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
         }
 
+        if ((request.ServingFormat is not null || request.AssetRoot is not null || request.TilesetFileName is not null)
+            && !TryValidateCopcSource(updated, out var copcStatus, out var copcError))
+        {
+            SceneDatasetEndpointsLog.UpdateValidationFailed(logger, existing.Id, copcError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, copcStatus, copcError);
+        }
+
         try
         {
             var saved = await service.UpdateAsync(updated, cancellationToken).ConfigureAwait(false);

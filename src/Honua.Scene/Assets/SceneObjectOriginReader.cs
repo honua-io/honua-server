@@ -312,10 +312,7 @@ internal sealed partial class SceneObjectOriginReader : ISceneObjectOriginReader
         try
         {
             var cloudFile = await _storage.GetMetadataAsync(objectKey, cancellationToken).ConfigureAwait(false);
-            if (cloudFile is not null)
-            {
-                return BuildCloudMetadata(relativeAssetPath, cloudFile);
-            }
+            return cloudFile is null ? null : BuildCloudMetadata(relativeAssetPath, cloudFile);
         }
         catch (NotSupportedException)
         {

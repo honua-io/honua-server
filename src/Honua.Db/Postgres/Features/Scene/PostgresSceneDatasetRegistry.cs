@@ -139,7 +139,10 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             // the connection is released and before projection — makes a scene published on one node
             // servable from any node without touching a single endpoint. A no-op for legacy rows with
             // no storage prefix, and a fast marker check once the local cache is current.
-            if (_hydrator is not null && !string.IsNullOrEmpty(record.AssetStoragePrefix))
+            // Native COPC serving opens bounded ranges directly from the origin.
+            if (_hydrator is not null
+                && SceneServingProjection.ResolveServingFormat(record) != SceneServingFormat.Copc
+                && !string.IsNullOrEmpty(record.AssetStoragePrefix))
             {
                 await _hydrator.EnsureLocalAsync(record, localAssetRoot, cancellationToken).ConfigureAwait(false);
             }

@@ -122,6 +122,32 @@ public sealed class SceneCopcEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/copc")]
+    public async Task GetCopc_StaleIfRange_UsesFullResponseLimit()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/scenes/{PublicCopcSceneId}/copc");
+        request.Headers.Range = new RangeHeaderValue(0, 63);
+        request.Headers.IfRange = new RangeConditionHeaderValue(new EntityTagHeaderValue("\"stale\""));
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    public async Task GetSceneAsset_Copc_RequiresDedicatedBoundedRoute()
+    {
+        using var tileset = await _fixture.Client.GetAsync($"/scenes/{PublicCopcSceneId}/tileset.json");
+        using var asset = await _fixture.Client.GetAsync($"/scenes/{PublicCopcSceneId}/sample.copc.laz");
+
+        tileset.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        asset.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/copc")]
     public async Task GetCopc_InvalidRange_Returns416RangeNotSatisfiable()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/scenes/{PublicCopcSceneId}/copc");

@@ -10,7 +10,7 @@ using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Core.Features.Scene.Catalog;
 
-public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDataset? Scene)
+internal readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDataset? Scene)
 {
     public string Id => Record?.Id ?? Scene!.Id;
 
@@ -41,7 +41,7 @@ public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDat
         : Scene!.AccessPolicy;
 }
 
-public static class SceneCatalog
+internal static class SceneCatalog
 {
     private static readonly string[] ProtectedSchemes = ["Bearer", "ApiKey"];
     private static readonly string[] ThreeDTilesCapabilities = [SceneServingProjection.ThreeDTilesWireFormat];

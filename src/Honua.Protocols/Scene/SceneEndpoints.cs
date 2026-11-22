@@ -382,6 +382,11 @@ internal static partial class SceneEndpoints
             return denied;
         }
 
+        if (SceneServingProjection.ResolveServingFormat(scene) == SceneServingFormat.Copc)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Use the scene's /copc endpoint for native COPC assets.");
+        }
+
         var resolvedAssetPath = assetPath ?? scene.TilesetFileName;
 
         using var activity = HonuaTelemetry.StartActivity(HonuaTelemetry.Activities.TileGeneration);

@@ -5,7 +5,6 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Scene;
 using Honua.Scene.Assets;
@@ -43,7 +42,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
         storage.Put($"{prefix}/tileset.json", tileBytes);
         storage.Put($"{prefix}/tiles/0.b3dm", new byte[4096]);
 
-        ISceneObjectOriginReader reader = new SceneObjectOriginReader(
+        var reader = new SceneObjectOriginReader(
             Options.Create(new SceneObjectOriginOptions()),
             NullLogger<SceneObjectOriginReader>.Instance,
             storage);
@@ -78,7 +77,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
         storage.Put(key, payload);
         var rangeReader = new FakeLocalRangeReader(storage);
 
-        ISceneObjectOriginReader reader = new SceneObjectOriginReader(
+        var reader = new SceneObjectOriginReader(
             Options.Create(new SceneObjectOriginOptions()),
             NullLogger<SceneObjectOriginReader>.Instance,
             storage,
@@ -115,7 +114,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
         var payload = Enumerable.Range(0, 512).Select(i => (byte)(i % 256)).ToArray();
         await File.WriteAllBytesAsync(Path.Join(localRoot, "sample.copc.laz"), payload);
 
-        ISceneObjectOriginReader reader = new SceneObjectOriginReader(
+        var reader = new SceneObjectOriginReader(
             Options.Create(new SceneObjectOriginOptions()),
             NullLogger<SceneObjectOriginReader>.Instance);
 
@@ -144,7 +143,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
         var prefix = SceneAssetHydration.BuildPrefix("guarded");
         storage.Put($"{prefix}/{SceneAssetHydration.ManifestObjectName}", Encoding.UTF8.GetBytes("tileset.json"));
 
-        ISceneObjectOriginReader reader = new SceneObjectOriginReader(
+        var reader = new SceneObjectOriginReader(
             Options.Create(new SceneObjectOriginOptions()),
             NullLogger<SceneObjectOriginReader>.Instance,
             storage);
@@ -173,7 +172,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
         var prefix = SceneAssetHydration.BuildPrefix("budgeted");
         storage.Put($"{prefix}/huge.glb", new byte[2048]);
 
-        ISceneObjectOriginReader reader = new SceneObjectOriginReader(
+        var reader = new SceneObjectOriginReader(
             Options.Create(new SceneObjectOriginOptions { MaxSingleAssetBytes = 1024, MaxRangeReadBytes = 256 }),
             NullLogger<SceneObjectOriginReader>.Instance,
             storage);

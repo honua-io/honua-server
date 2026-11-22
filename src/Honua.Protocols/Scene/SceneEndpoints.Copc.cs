@@ -126,7 +126,12 @@ internal static partial class SceneEndpoints
         CancellationToken cancellationToken)
     {
         var rangeHeader = context.Request.Headers[HeaderNames.Range].ToString();
-        if (!string.IsNullOrWhiteSpace(rangeHeader))
+        if (!string.IsNullOrWhiteSpace(rangeHeader)
+            && (!context.Request.Headers.TryGetValue(HeaderNames.IfRange, out var ifRange)
+                || (EntityTagHeaderValue.TryParse(ifRange.ToString(), out var candidate)
+                    && candidate.Tag != "*"
+                    && EntityTagHeaderValue.TryParse(context.Response.Headers[HeaderNames.ETag].ToString(), out var current)
+                    && candidate.Compare(current, useStrongComparison: true))))
         {
             return await WriteCopcRangeResponseAsync(
                 context,
