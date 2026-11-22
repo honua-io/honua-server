@@ -743,6 +743,13 @@
       "description": "Search and browse spatiotemporal asset catalogs through the STAC API."
     },
     {
+      "key": "serve.terrain-quantized-mesh",
+      "displayName": "Quantized-Mesh Terrain",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve Cesium quantized-mesh-1.0 terrain tiles and layer.json metadata from elevation rasters."
+    },
+    {
       "key": "serve.vector-tiles",
       "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
       "category": "Serve",

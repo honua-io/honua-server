@@ -121,6 +121,8 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately.", Status: ExperimentalStatus),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
+        new("serve.terrain-quantized-mesh", "Quantized-Mesh Terrain", Categories.Serve,
+            HonuaEdition.Community, "Serve Cesium quantized-mesh-1.0 terrain tiles and layer.json metadata from elevation rasters."),
         new("serve.grpc", "gRPC (geospatial.v1)", Categories.Serve,
             HonuaEdition.Community, "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."),
 

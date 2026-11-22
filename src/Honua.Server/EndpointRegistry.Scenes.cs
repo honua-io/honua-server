@@ -16,6 +16,8 @@ public static partial class EndpointRegistry
         new("GET", "/tiles/{layerId}/tile.json"),
         new("GET", "/terrain/{datasetId}/tile.json"),
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
+        new("GET", "/terrain/{datasetId}/layer.json"),
+        new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.terrain"),
 
         // Saved-map collaboration session seam.
         new("POST", "/api/v1/maps/{mapId}/collaboration/sessions/join"),
