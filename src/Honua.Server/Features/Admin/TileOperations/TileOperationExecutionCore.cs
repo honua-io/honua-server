@@ -56,6 +56,8 @@ internal sealed partial class TileOperationExecutionCore
 
     internal Func<TileOperationProgress, CancellationToken, Task>? ProgressWriter { private get; init; }
 
+    internal DateTimeOffset? JobCreatedAt { private get; init; }
+
     private Task WriteProgressAsync(TileOperationProgress progress, CancellationToken cancellationToken)
         => ProgressWriter != null
             ? ProgressWriter(progress, cancellationToken)
@@ -72,7 +74,7 @@ internal sealed partial class TileOperationExecutionCore
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
         var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        var tileSources = request.Operation is "seed" or "warm" or "archive" or "publish" or TileCacheExecutionSpecBuilder.PairedPublishOperation
+        var tileSources = request.Operation is "seed" or "warm" or "archive" or "publish" or TileCacheExecutionSpecBuilder.ExportOperation
             ? await ResolveTileSourcesAsync(request, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false)
             : new Dictionary<int, TileSource>();
 
@@ -84,7 +86,7 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
-            TileCacheExecutionSpecBuilder.PairedPublishOperation => await ExecutePairedPublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
+            TileCacheExecutionSpecBuilder.ExportOperation => await ExecuteExportAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,

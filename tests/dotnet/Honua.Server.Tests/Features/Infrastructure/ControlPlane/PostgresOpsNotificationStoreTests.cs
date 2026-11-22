@@ -46,12 +46,33 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         (await store.TryAdvanceAsync(first, now.AddHours(24))).Should().BeTrue();
         await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(16));
         (await store.ListDueAsync(now.AddMinutes(16), 100)).Should().BeEmpty();
-        await store.CloseMissingFindingsAsync([], now.AddMinutes(17));
-        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(18));
-        (await store.ListDueAsync(now.AddMinutes(18) + settle, 100)).Should().BeEmpty();
+        var absent = now.AddMinutes(17) + PostgresOpsNotificationStore.FindingAbsenceGrace;
+        await store.CloseMissingFindingsAsync([], absent);
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), absent.AddMinutes(1));
+        (await store.ListDueAsync(absent.AddMinutes(1) + settle, 100)).Should().BeEmpty();
         var reopened = (await store.ListDueAsync(now.AddHours(24), 100)).Single();
         reopened.EpisodeId.Should().NotBe(first.EpisodeId);
         reopened.NoticeNumber.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task CloseMissing_AnotherReplicasEarlierSample_KeepsEpisodeOpenWithinGrace()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateNotificationStore();
+        var now = DateTimeOffset.UtcNow;
+        await store.ObserveAsync(new("finding", "per-replica", OpsFindingSeverity.Critical), now);
+        var first = (await store.ListDueAsync(now, 100)).Single();
+        (await store.TryAdvanceAsync(first, now.AddMinutes(30))).Should().BeTrue();
+
+        await store.CloseMissingFindingsAsync([], now.AddMinutes(5));
+        await store.ObserveAsync(new("finding", "per-replica", OpsFindingSeverity.Critical), now.AddMinutes(6));
+
+        var kept = (await store.ListDueAsync(now.AddMinutes(30), 100)).Single();
+        kept.EpisodeId.Should().Be(first.EpisodeId, "a pass that missed the finding must not start a second episode");
+        kept.NoticeNumber.Should().Be(1);
+        await store.CloseMissingFindingsAsync([], now.AddMinutes(6) + PostgresOpsNotificationStore.FindingAbsenceGrace);
+        (await store.ListDueAsync(now.AddMinutes(30), 100)).Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -65,7 +86,7 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         await store.ObserveAsync(new("finding", "critical", OpsFindingSeverity.Critical), now);
         (await store.ListDueAsync(now, 100)).Select(due => due.SubjectId).Should().Equal("critical");
         await store.ObserveAsync(new("finding", "escalates", OpsFindingSeverity.Critical), now.AddMinutes(2));
-        await store.CloseMissingFindingsAsync(["critical", "escalates"], now.AddMinutes(5));
+        await store.CloseMissingFindingsAsync(["critical", "escalates"], now.AddMinutes(5) + PostgresOpsNotificationStore.FindingAbsenceGrace);
         var due = await store.ListDueAsync(now.AddDays(2), 100);
         due.Select(schedule => schedule.SubjectId).Should().BeEquivalentTo("critical", "escalates");
     }
@@ -174,7 +195,7 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         }
         var settled = now + PostgresOpsNotificationStore.WarningSettle;
         (await store.ListDueAsync(settled, 2)).Should().HaveCount(2);
-        await store.CloseMissingFindingsAsync(["a"], now);
+        await store.CloseMissingFindingsAsync(["a"], now + PostgresOpsNotificationStore.FindingAbsenceGrace);
         var remaining = (await store.ListDueAsync(settled, 100)).Single();
         remaining.SubjectId.Should().Be("a");
         (await store.TryAdvanceAsync(remaining, now.AddDays(1))).Should().BeTrue();

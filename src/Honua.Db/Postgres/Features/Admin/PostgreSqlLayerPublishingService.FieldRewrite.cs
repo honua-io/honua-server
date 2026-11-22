@@ -447,6 +447,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var field = fields.FirstOrDefault(candidate =>
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         return field?.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset
             ? field.Name
             : null;
     }

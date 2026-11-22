@@ -8,7 +8,7 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -22,6 +22,7 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     private readonly PostgresJobSubstrateHarness _jobs;
     private readonly DatabaseFixtureAdapter _fixture;
+    private readonly ErrorLogCapture _errors = new();
 
     private RealtimeLogHarness(PostgresJobSubstrateHarness jobs, DatabaseFixtureAdapter fixture)
     {
@@ -37,6 +38,11 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
     public string Schema => _jobs.Schema;
 
     public string ConnectionString => _fixture.ConnectionString;
+
+    // Warnings and errors from every dispatcher, listener and tail created here.
+    public string Diagnostics => _errors.Diagnostics;
+
+    public ILogger<TCategory> CaptureLogger<TCategory>() => _errors.CreateLogger<TCategory>();
 
     public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture)
     {
@@ -83,18 +89,18 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     // A task's dispatcher over this schema.
     public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null)
-        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
+        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), CaptureLogger<RealtimeDispatcher>());
 
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)
         => RealtimeListener.Create(
             connectionString ?? ConnectionString,
             Options.Create(options),
-            NullLogger<RealtimeListener>.Instance);
+            CaptureLogger<RealtimeListener>());
 
     // A serving task: its dispatcher following the log, woken by its listener when it has one.
     public RealtimeTailBackgroundService CreateTail(RealtimeDispatcher dispatcher, RealtimeListener? listener, RealtimeOptions options)
-        => new(dispatcher, new RealtimePresenceBatcher(Log), listener, Options.Create(options), NullLogger<RealtimeTailBackgroundService>.Instance);
+        => new(dispatcher, new RealtimePresenceBatcher(Log), listener, Options.Create(options), CaptureLogger<RealtimeTailBackgroundService>());
 
     public ILeaseStore CreateLeaseStore() => new PostgresLeaseStore(_jobs.CreateNodeJobStore());
 
@@ -119,5 +125,9 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
         return sequences;
     }
 
-    public ValueTask DisposeAsync() => _jobs.DisposeAsync();
+    public ValueTask DisposeAsync()
+    {
+        _errors.Dispose();
+        return _jobs.DisposeAsync();
+    }
 }

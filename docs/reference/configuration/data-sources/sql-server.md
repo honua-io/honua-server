@@ -216,7 +216,6 @@ tiles are not exercised — see the limitations below.
   implements; a collection whose storage binding routes to SQL Server returns a
   `501 Not Implemented` problem response naming the collection/provider instead of silently
   serving PostGIS data for the same layer id. OData and OGC API Tiles raster (PNG) tiles do
-  reach SQL Server-backed layers, routed per layer through `FeatureProviderQueryRouter`
-  . The same MVT
+  reach SQL Server-backed layers, routed per layer through `FeatureProviderQueryRouter`. The same MVT
   gap applies to every other secondary/additional provider (Oracle, Redshift, Snowflake,
   Databricks) — none of them implement `ITileProvider` either.

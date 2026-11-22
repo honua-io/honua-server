@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -193,6 +194,67 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         limits.Should().HaveCount(2, "each collection contributes one ordered prefix");
         limits.Should().AllSatisfy(requested => requested.Should().Be(offset + limit + 1)
             .And.BeLessThanOrEqualTo(StacConstants.MaxSearchLimit + 1));
+    }
+
+    [IntegrationTheory]
+    [InlineData("get")]
+    [InlineData("post")]
+    [Endpoint("GET /stac/search")]
+    [Endpoint("POST /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task UnscopedSearch_SkipsCollectionWhoseTableIsMissing(string route)
+    {
+        StubMissingTable(layerId: 1);
+        var response = route == "get"
+            ? await _fixture.Client.GetAsync("/stac/search?limit=100")
+            : await _fixture.Client.PostAsJsonAsync("/stac/search", new { limit = 100 });
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = JsonDocument.Parse(content);
+        var ids = json.RootElement.GetProperty("features").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).ToArray();
+        ids.Should().Contain(["0-0", "0-1", "0-2"]).And.NotContain(id => id!.StartsWith("1-", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task ScopedSearch_NamingCollectionWhoseTableIsMissing_StillFails()
+    {
+        StubMissingTable(layerId: 1);
+        var response = await _fixture.Client.GetAsync("/stac/search?collections=0,1&limit=100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await ((IPagedFeatureReader)_reader).Received().QueryPageAsync(1, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task UnscopedSearch_WhenTwoTablesAreMissing_StillFails()
+    {
+        StubMissingTables(() => Arg.Is<int>(layerId => layerId == 0 || layerId == 1));
+        var response = await _fixture.Client.GetAsync("/stac/search?limit=100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    private void StubMissingTable(int layerId) => StubMissingTables(() => Arg.Is(layerId));
+
+    private void StubMissingTables(Func<int> layer)
+    {
+        _reader.CountAsync(layer(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<long>>(_ => throw new MissingTableException());
+        _reader.QueryAsync(layer(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<QueryResult<Feature>>>(_ => throw new MissingTableException());
+        ((IPagedFeatureReader)_reader).QueryPageAsync(layer(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PagedQueryResult<Feature>>>(_ => throw new MissingTableException());
+    }
+
+    private sealed class MissingTableException() : DbException("relation does not exist")
+    {
+        public override string? SqlState => "42P01";
     }
 
     private int?[] RequestedLimits()

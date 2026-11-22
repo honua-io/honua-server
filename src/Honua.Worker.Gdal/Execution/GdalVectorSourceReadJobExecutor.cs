@@ -80,7 +80,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid source inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid source inputs: {inputError}");
         }
 
         GdalJobInputReader.TryGetInput(parameters, "layerName", out var layerName);
@@ -88,7 +88,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             && (string.IsNullOrWhiteSpace(layerName) || layerName.Length > 1024
                 || layerName.StartsWith('-') || layerName.Any(char.IsControl)))
         {
-            return JobExecutionResult.Failed("Invalid source inputs: layerName must be a nonempty layer name, not a command option.");
+            return JobExecutionResult.InvalidInput("Invalid source inputs: layerName must be a nonempty layer name, not a command option.");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);

@@ -137,6 +137,7 @@ public sealed class GeometryBufferJobExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("SRID");
         result.ErrorMessage.Should().Contain("3857");
+        result.IsRetryable.Should().BeFalse("the same inputs fail the same way on every attempt");
 
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
     }

@@ -160,12 +160,12 @@ public interface IDeployBackend
 
 public interface ICheckpointedDeployBackend
 {
-    public const string PendingPhase = "Deploy preparation pending.";
-    public const string PreparingPhase = "Deploy preparation in progress; outcome must be verified if interrupted.";
-    public const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
-    public const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
-    public const string RampPhase = "Deploy canary step authorized; submitting traffic shift.";
-    public const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
+    const string PendingPhase = "Deploy preparation pending.";
+    const string PreparingPhase = "Deploy preparation in progress; outcome must be verified if interrupted.";
+    const string PreparedPhase = "Deploy preparation completed and migration outcome recorded.";
+    const string CutoverPhase = "Deploy cutover authorized; submitting traffic shift.";
+    const string RampPhase = "Deploy canary step authorized; submitting traffic shift.";
+    const string ActivatedPhase = "Deploy activation submitted; awaiting convergence.";
 
     bool RequiresCheckpoint(WorkflowOperationRecord operation);
     Task EnsurePreparationAdmittedAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)

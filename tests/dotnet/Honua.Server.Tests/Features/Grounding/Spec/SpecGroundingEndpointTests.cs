@@ -394,6 +394,47 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.GroundingMutate)]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    [InlineData("mutate", "sources", "{\"a\":1}")]
+    [InlineData("summarize", "sources", "\"x\"")]
+    [InlineData("summarize", "compute", "{}")]
+    [InlineData("mutate", "map", "[]")]
+    public async Task WrongTypedSpecSection_ReturnsProblemDetails(
+        string endpoint, string section, string value)
+    {
+        var expectedDetail = section == "map"
+            ? $"spec.{section} must be a JSON object."
+            : $"spec.{section} must be a JSON array.";
+        using var content = new StringContent(
+            $$"""{"spec":{"grammar":"v1.0","{{section}}":{{value}}},"turn":"show rivers on the map"}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync($"/v1/grounding/spec/{endpoint}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        payload.RootElement.GetProperty("detail").GetString().Should().Be(expectedDetail);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    public async Task Summarize_NullSpecSections_TreatsThemAsAbsent()
+    {
+        using var content = new StringContent(
+            """{"spec":{"grammar":"v1.0","sources":null,"map":null}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync("/v1/grounding/spec/summarize", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static int CountSentences(string text)
         => text.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Length;
 }

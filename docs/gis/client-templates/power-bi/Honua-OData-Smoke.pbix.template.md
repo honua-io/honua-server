@@ -7,7 +7,7 @@ This template produces `Honua-OData-Smoke.pbix`.
 1. Open Power BI Desktop.
 2. Go to `Home -> Transform data -> New Source -> Blank Query`.
 3. Open `Advanced Editor` and paste the generated `Honua-OData-Smoke.pq` query.
-4. Apply changes and confirm `${HONUA_ODATA_ENTITY_SET}` loads.
+4. Apply changes and confirm the features of layer `${HONUA_ODATA_LAYER_ID}` load. Expand the **More Columns** column to show the layer attributes.
 5. Add one table visual and one map visual.
 6. Save as `Honua-OData-Smoke.pbix`.
 

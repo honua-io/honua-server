@@ -5,7 +5,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 // Applies the editor-tracking part of an editing patch. Each named field must be declared on the
 // resource with a type the edit protocols can stamp: the caller's name goes into a String field, and
-// the server clock into Date, DateTime, String, BigInteger or Double fields.
+// the server clock into Date, DateTime, TimestampOffset, String, BigInteger or Double fields.
 internal static class MetadataV2EditorTrackingPatch
 {
     private static readonly TrackingSlot Creator = new("creatorField", [MetadataV2FieldType.String]);
@@ -16,6 +16,7 @@ internal static class MetadataV2EditorTrackingPatch
     [
         MetadataV2FieldType.Date,
         MetadataV2FieldType.DateTime,
+        MetadataV2FieldType.TimestampOffset,
         MetadataV2FieldType.String,
         MetadataV2FieldType.BigInteger,
         MetadataV2FieldType.Double
