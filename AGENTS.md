@@ -1,7 +1,7 @@
 # honua-server: agent instructions
 <!-- Budget: scripts/ci/check-agents-md.py. Detail: docs/. Preserve review headings. -->
 
-One geospatial capability set, thin protocol adapters (see README). Clean rewrite: consult archived
+One capability set, thin protocol adapters (README). Clean rewrite: consult archived
 `../Honua.Server` for behaviour; never copy it. .NET 11 Minimal APIs, no controllers, warnings as errors.
 Use AOT-safe source-generated JSON/logging; versions live in `Directory.Packages.props`.
 
@@ -80,8 +80,8 @@ WARNING:
 - **Required checks are `PR Gate` and `Review Gate`**; the full CI matrix trails on trunk. The fleet's
   lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
   Never touch `land/batch/*` branches.
-  [Merge coordination and stacking recovery](docs/internal/contributor/merge-coordination-runbook.md).
-- **Scope**: plan in issues. Before committing, delete scratch notes or fold them into canonical docs/ADRs.
+  [Merge/stacking recovery](docs/internal/contributor/merge-coordination-runbook.md).
+- **Scope**: plan in issues; build nothing unscoped. Before committing, delete scratch plans/notes or fold them into canonical docs/ADRs.
 
 ## Release component versions
 Contract/schema version bumps require `eng/release/component-versions.v1.json` updates; migrations do not.
