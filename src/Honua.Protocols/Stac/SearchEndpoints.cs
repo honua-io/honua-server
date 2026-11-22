@@ -387,7 +387,7 @@ internal static class SearchEndpoints
                     baseUrl,
                     candidate.Projection?.SelectedProperties,
                     geometrySrid: Wgs84Srid,
-                    cogArtifact: cogByLayer.TryGetValue(candidate.Target.LayerIndex, out var artifact) ? artifact : null),
+                    cogArtifact: cogByLayer.TryGetValue(candidate.Target.CollectionNumber, out var artifact) ? artifact : null),
                 candidate.Projection);
 
         using var activity = StacTelemetry.StartActivity(
@@ -551,7 +551,7 @@ internal static class SearchEndpoints
                     var remaining = pageLimit - allItems.Count;
                     if (remaining > 0)
                     {
-                        var matchedCog = await CogForLayerAsync(layerId, cancellationToken);
+                        var matchedCog = await CogForLayerAsync(collectionNumber, cancellationToken);
                         allItems.AddRange(matchedFeatures
                             .Skip(remainingSkip)
                             .Take(remaining)
@@ -671,7 +671,7 @@ internal static class SearchEndpoints
                             targetReader, storageLayerId,
                             query with { Offset = localOffset, Limit = pageLimit - allItems.Count },
                             true, cancellationToken);
-                        var pageCog = await CogForLayerAsync(layerId, cancellationToken);
+                        var pageCog = await CogForLayerAsync(collectionNumber, cancellationToken);
                         allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
                                 f, target.Resource, target.Publication, collectionNumber, baseUrl,
@@ -699,7 +699,7 @@ internal static class SearchEndpoints
 
                     var result = await StacPageReader.ReadAsync(
                         targetReader, storageLayerId, query, false, cancellationToken, layerCount);
-                    var layerCog = await CogForLayerAsync(layerId, cancellationToken);
+                    var layerCog = await CogForLayerAsync(collectionNumber, cancellationToken);
                     allItems.AddRange(result.Items
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -721,7 +721,7 @@ internal static class SearchEndpoints
                     var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     totalMatched += result.TotalCount;
 
-                    var layerCog = await CogForLayerAsync(layerId, cancellationToken);
+                    var layerCog = await CogForLayerAsync(collectionNumber, cancellationToken);
                     allItems.AddRange(result.Features
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -756,7 +756,7 @@ internal static class SearchEndpoints
                     .Skip(offset)
                     .Take(effectiveLimit)
                     .ToList();
-                foreach (var layer in pageCandidates.Select(candidate => candidate.Target.LayerIndex).Distinct())
+                foreach (var layer in pageCandidates.Select(candidate => candidate.Target.CollectionNumber).Distinct())
                 {
                     await CogForLayerAsync(layer, cancellationToken).ConfigureAwait(false);
                 }
@@ -777,7 +777,7 @@ internal static class SearchEndpoints
                     .ToList();
                 // Candidates span layers, so warm every one this page touches before
                 // projecting - the projection itself cannot await.
-                foreach (var layer in pageCandidates.Select(c => c.Target.LayerIndex).Distinct())
+                foreach (var layer in pageCandidates.Select(c => c.Target.CollectionNumber).Distinct())
                 {
                     await CogForLayerAsync(layer, cancellationToken);
                 }

@@ -74,7 +74,7 @@ internal sealed class CogArtifactService
             return null;
         }
 
-        return new CogArtifactSource(layerId, publication, resource, service, binding);
+        return new CogArtifactSource(binding.StorageLayerId.Value, publication, resource, service, binding);
     }
 
     internal static string BuildObjectKey(int layerId, long rasterId)

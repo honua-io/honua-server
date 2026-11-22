@@ -226,8 +226,9 @@ internal sealed class ImageServerTileHandler
             }
 
             // Fallback: Check COGs (Pro edition required)
+            var cogLookupLayerId = snapshot.ResolveStorageLayerId(resolvedLayer.Publication) ?? resolvedLayer.Publication.LayerIndex;
             if (_cogTileResolver != null
-                && resolvedLayer.Publication.LayerIndex is { } publicationLayerIndex
+                && cogLookupLayerId is { } publicationLayerIndex
                 && CogPublicationBinding.Resolve(snapshot, publicationLayerIndex)?.Metadata.Id
                     == resolvedLayer.Publication.Metadata.Id)
             {

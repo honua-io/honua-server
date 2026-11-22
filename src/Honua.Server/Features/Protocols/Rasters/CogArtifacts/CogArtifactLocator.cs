@@ -36,7 +36,7 @@ internal sealed class CogArtifactLocator : ICogArtifactLocator
             return null;
         }
 
-        var artifactId = CogArtifactService.BuildObjectKey(layerId, raster.Id);
+        var artifactId = CogArtifactService.BuildObjectKey(storageLayerId, raster.Id);
         var target = await _service
             .ResolvePublishedAsync(artifactId, cancellationToken)
             .ConfigureAwait(false);

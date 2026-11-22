@@ -63,8 +63,9 @@ internal static class ImageServerCogRasters
         HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
     {
         var cogStore = context.RequestServices.GetService<ICogStore>();
+        var lookupLayerId = layer.Snapshot.ResolveStorageLayerId(layer.Publication) ?? layer.Publication.LayerIndex;
         if (cogStore is null
-            || layer.Publication.LayerIndex is not { } layerIndex
+            || lookupLayerId is not { } layerIndex
             || CogPublicationBinding.Resolve(layer.Snapshot, layerIndex)?.Metadata.Id != layer.Publication.Metadata.Id)
         {
             return [];

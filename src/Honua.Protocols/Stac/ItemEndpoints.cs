@@ -105,8 +105,8 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
 
-            // COG artifacts are keyed on the layer index; item collection ids and links use the
-            // advertised collection number; reads go to readerResolution.StorageLayerId.
+            // COG artifacts and STAC item collection ids/links use the storage layer id;
+            // feature reads go to readerResolution.StorageLayerId.
             var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
             var collectionNumber = snapshot.ResolveStorageLayerId(publication, resource) ?? layerId;
 
@@ -171,7 +171,7 @@ internal static class ItemEndpoints
 
             var cogArtifact = cogArtifactLocator is null
                 ? null
-                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken)
+                : await cogArtifactLocator.TryResolveAsync(collectionNumber, cancellationToken)
                     .ConfigureAwait(false);
             var items = result.Items
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
@@ -290,8 +290,8 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
 
-            // COG artifacts are keyed on the layer index; item collection ids and links use the
-            // advertised collection number; reads go to readerResolution.StorageLayerId.
+            // COG artifacts and STAC item collection ids/links use the storage layer id;
+            // feature reads go to readerResolution.StorageLayerId.
             var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
             var collectionNumber = snapshot.ResolveStorageLayerId(publication, resource) ?? layerId;
 
@@ -361,7 +361,7 @@ internal static class ItemEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var cogArtifact = cogArtifactLocator is null
                 ? null
-                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken).ConfigureAwait(false);
+                : await cogArtifactLocator.TryResolveAsync(collectionNumber, cancellationToken).ConfigureAwait(false);
             var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication,
                 collectionNumber, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact);
 
