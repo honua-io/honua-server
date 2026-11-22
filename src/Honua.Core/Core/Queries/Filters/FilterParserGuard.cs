@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
+
 namespace Honua.Core.Queries.Filters;
 
 internal static class FilterParserGuard
@@ -54,6 +56,131 @@ internal static class FilterParserGuard
     {
         FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
         EnsureAggregateInListValues(expression);
+        EnsureSemanticGuards(expression);
+    }
+
+    internal static void EnsureCompatibleLiteralComparison(FilterExpression left, FilterExpression right)
+    {
+        if (left is not Literal leftLiteral || right is not Literal rightLiteral)
+        {
+            return;
+        }
+
+        if (leftLiteral.Type == LiteralType.Null || rightLiteral.Type == LiteralType.Null)
+        {
+            return;
+        }
+
+        var compatible = leftLiteral.Type == rightLiteral.Type
+            || (leftLiteral.Type is LiteralType.Date or LiteralType.DateTime
+                && rightLiteral.Type is LiteralType.Date or LiteralType.DateTime);
+        if (!compatible)
+        {
+            throw new ArgumentException(
+                $"Incompatible literal types in comparison: {leftLiteral.Type} and {rightLiteral.Type}.");
+        }
+    }
+
+    private static void EnsureSemanticGuards(FilterExpression expression)
+    {
+        var stack = new Stack<FilterExpression>();
+        stack.Push(expression);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            ValidateExpressionSemantics(current);
+
+            foreach (var child in FilterExpressionNormalizer.EnumerateChildren(current))
+            {
+                stack.Push(child);
+            }
+        }
+    }
+
+    private static void ValidateExpressionSemantics(FilterExpression expression)
+    {
+        if (expression is BinaryExpression binary)
+        {
+            if (binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+                or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+                or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual)
+            {
+                EnsureCompatibleLiteralComparison(binary.Left, binary.Right);
+            }
+
+            if (binary.Operator is BinaryOperator.Divide or BinaryOperator.Div or BinaryOperator.Modulo
+                && IsConstantZero(binary.Right))
+            {
+                throw new ArgumentException("Division by zero is not allowed in filter expressions.");
+            }
+        }
+        else if (expression is FunctionCall { Arguments.Count: 2 } function
+            && function.FunctionName.Equals("MOD", StringComparison.OrdinalIgnoreCase)
+            && IsConstantZero(function.Arguments[1]))
+        {
+            throw new ArgumentException("Division by zero is not allowed in filter expressions.");
+        }
+    }
+
+    private static bool IsConstantZero(FilterExpression expression)
+        => TryEvaluateConstantNumber(expression, out var value) && value == 0d;
+
+    private static bool TryEvaluateConstantNumber(FilterExpression expression, out double value)
+    {
+        switch (expression)
+        {
+            case Literal { Type: LiteralType.Number, Value: not null } literal:
+                value = Convert.ToDouble(literal.Value, CultureInfo.InvariantCulture);
+                return double.IsFinite(value);
+            case UnaryExpression { Operator: UnaryOperator.Negate } unary
+                when TryEvaluateConstantNumber(unary.Operand, out var inner):
+                value = -inner;
+                return true;
+            case BinaryExpression binary
+                when TryEvaluateConstantNumber(binary.Left, out var left)
+                     && TryEvaluateConstantNumber(binary.Right, out var right):
+                return TryEvaluateConstantBinary(binary.Operator, left, right, out value);
+            default:
+                value = 0d;
+                return false;
+        }
+    }
+
+    private static bool TryEvaluateConstantBinary(BinaryOperator op, double left, double right, out double value)
+    {
+        switch (op)
+        {
+            case BinaryOperator.Add:
+                value = left + right;
+                return double.IsFinite(value);
+            case BinaryOperator.Subtract:
+                value = left - right;
+                return double.IsFinite(value);
+            case BinaryOperator.Multiply:
+                value = left * right;
+                return double.IsFinite(value);
+            case BinaryOperator.Divide:
+            case BinaryOperator.Div:
+            case BinaryOperator.Modulo:
+                if (right == 0d)
+                {
+                    throw new ArgumentException("Division by zero is not allowed in filter expressions.");
+                }
+
+                value = op switch
+                {
+                    BinaryOperator.Divide => left / right,
+                    BinaryOperator.Div => Math.Truncate(left / right),
+                    _ => left % right
+                };
+                return double.IsFinite(value);
+            case BinaryOperator.Power:
+                value = Math.Pow(left, right);
+                return double.IsFinite(value);
+            default:
+                value = 0d;
+                return false;
+        }
     }
 
     // Each IN/NOT IN value is its own SQL parameter. A single list is already capped;

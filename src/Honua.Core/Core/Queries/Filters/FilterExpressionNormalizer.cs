@@ -69,6 +69,23 @@ public static class FilterExpressionNormalizer
             {
                 left = CoerceLiteral(propertyRight, literalLeft, schema);
             }
+            else
+            {
+                FilterParserGuard.EnsureCompatibleLiteralComparison(left, right);
+            }
+        }
+
+        if (binary.Operator is BinaryOperator.Like or BinaryOperator.NotLike)
+        {
+            if (left is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+            {
+                throw new ArgumentException("LIKE requires a string operand.");
+            }
+
+            if (right is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+            {
+                throw new ArgumentException("LIKE pattern must be a string literal.");
+            }
         }
 
         if (binary.Operator == BinaryOperator.In && left is PropertyReference listProperty && right is ValueList values)

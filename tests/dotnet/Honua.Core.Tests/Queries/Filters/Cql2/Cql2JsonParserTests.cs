@@ -325,14 +325,106 @@ public class Cql2JsonParserTests
     public void Parse_CaseInsensitiveFunction_ReturnsFunctionCall()
     {
         // Arrange
-        const string json = """{"op":"casei","args":["Foo"]}""";
+        const string json = """{"op":"=","args":[{"property":"name"},{"op":"casei","args":["Foo"]}]}""";
 
         // Act
         var result = _parser.Parse(json);
 
         // Assert
-        result.Should().BeOfType<FunctionCall>();
-        var function = (FunctionCall)result;
+        var binary = result.Should().BeOfType<BinaryExpression>().Subject;
+        var function = binary.Right.Should().BeOfType<FunctionCall>().Subject;
         function.FunctionName.Should().Be("casei");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"casei","args":["x"]}""")]
+    [InlineData("""{"op":"accenti","args":["x"]}""")]
+    [InlineData("""{"op":"lower","args":["abc"]}""")]
+    [InlineData("""{"op":"+","args":[1,2]}""")]
+    [InlineData("""{"op":"-","args":[5,3]}""")]
+    [InlineData("""{"op":"-","args":[5]}""")]
+    [InlineData("""{"op":"*","args":[2,3]}""")]
+    [InlineData("""{"op":"/","args":[4,2]}""")]
+    [InlineData("""{"op":"%","args":[5,2]}""")]
+    [InlineData("""{"op":"^","args":[2,3]}""")]
+    [InlineData("""{"op":"ST_Buffer","args":[{"property":"geom"},50]}""")]
+    public void Parse_ScalarOrArithmeticRoot_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("CQL2-JSON filter must be a predicate*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"not","args":[1]}""")]
+    [InlineData("""{"op":"not","args":["abc"]}""")]
+    [InlineData("""{"op":"not","args":[{"op":"+","args":[1,2]}]}""")]
+    [InlineData("""{"op":"and","args":[true,1]}""")]
+    [InlineData("""{"op":"or","args":[false,"abc"]}""")]
+    public void Parse_NonBooleanLogicalOperand_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*requires boolean or predicate operands*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"like","args":[{"property":"name"},123]}""")]
+    [InlineData("""{"op":"like","args":[{"property":"name"},true]}""")]
+    [InlineData("""{"op":"like","args":[123,"%a%"]}""")]
+    [InlineData("""{"op":"notLike","args":[{"property":"name"},123]}""")]
+    public void Parse_LikeWithInvalidOperandType_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"between","args":["a",1,2]}""")]
+    [InlineData("""{"op":"notBetween","args":["a",1,2]}""")]
+    [InlineData("""{"op":"between","args":[{"property":"name"},"a",2]}""")]
+    [InlineData("""{"op":">=","args":["a",1]}""")]
+    public void Parse_BetweenOrComparisonWithIncompatibleLiteralTypes_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Incompatible literal types*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[1,0]},1]}""")]
+    [InlineData("""{"op":"/","args":[1,0]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"%","args":[1,0]},0]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"div","args":[1,0]},1]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[1,{"op":"-","args":[2,2]}]},1]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"mod","args":[1,0]},0]}""")]
+    public void Parse_DivisionByZero_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"like","args":[{"property":"name"},"%foo%"]}""")]
+    [InlineData("""{"op":"like","args":[{"property":"name"},{"op":"casei","args":["%foo%"]}]}""")]
+    [InlineData("""{"op":"between","args":[{"property":"count"},1,5]}""")]
+    [InlineData("""{"op":"ST_IsValid","args":[{"property":"geom"}]}""")]
+    [InlineData("""{"op":"=","args":[{"op":"/","args":[4,2]},2]}""")]
+    public void Parse_ValidPredicatesAndArithmetic_Succeed(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().NotThrow();
     }
 }
