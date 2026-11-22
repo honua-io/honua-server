@@ -132,6 +132,7 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
             }
 
             var h3 = request.H3Query!.Value;
+            h3.RejectSummaryDefinitions();
             if (h3.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
             {
                 throw new ArgumentOutOfRangeException(
@@ -386,30 +387,34 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
             return false;
         }
 
-        var hasEnvelope = spatial.EnvelopeMinX.HasValue
-            && spatial.EnvelopeMinY.HasValue
-            && spatial.EnvelopeMaxX.HasValue
-            && spatial.EnvelopeMaxY.HasValue;
         var relationshipSupportsBbox = spatial.SpatialRelationship is not (
             SpatialRelationship.Disjoint
+            or SpatialRelationship.WithinDistance
             or SpatialRelationship.BeyondDistance
             or SpatialRelationship.NearestNeighbor);
-        var bboxCoveringPushdown = !string.IsNullOrWhiteSpace(request.BboxColumn)
-            && hasEnvelope
-            && relationshipSupportsBbox;
+        var bboxCoveringPushdown = spatial.TryGetBboxCoveringBounds(request.LayerSrid, out var bounds)
+            && !string.IsNullOrWhiteSpace(request.BboxColumn);
 
         if (bboxCoveringPushdown)
         {
             var bboxCol = ValidateAndQuoteIdentifier(request.BboxColumn!, dialect);
-            var minX = AddRedactedParameter(spatial.EnvelopeMinX!.Value, dialect, ref paramIndex, parameters);
-            var maxX = AddRedactedParameter(spatial.EnvelopeMaxX!.Value, dialect, ref paramIndex, parameters);
-            var minY = AddRedactedParameter(spatial.EnvelopeMinY!.Value, dialect, ref paramIndex, parameters);
-            var maxY = AddRedactedParameter(spatial.EnvelopeMaxY!.Value, dialect, ref paramIndex, parameters);
+            var minX = AddRedactedParameter(bounds.MinX, dialect, ref paramIndex, parameters);
+            var maxX = AddRedactedParameter(bounds.MaxX, dialect, ref paramIndex, parameters);
+            var minY = AddRedactedParameter(bounds.MinY, dialect, ref paramIndex, parameters);
+            var maxY = AddRedactedParameter(bounds.MaxY, dialect, ref paramIndex, parameters);
             whereClauses.Add($"{bboxCol}.xmax >= {minX} AND {bboxCol}.xmin <= {maxX} AND {bboxCol}.ymax >= {minY} AND {bboxCol}.ymin <= {maxY}");
             predicates.Add(new WarehousePushedPredicate(
                 "bbox_covering",
                 true,
                 $"Pushed down GeoParquet bbox covering predicate on '{request.BboxColumn}'."));
+        }
+
+        if (capabilities.ProviderName == DataProviderNames.DuckDb
+            && bboxCoveringPushdown
+            && spatial.SpatialRelationship == SpatialRelationship.EnvelopeIntersects
+            && spatial.AllowEnvelopeOnly)
+        {
+            return true;
         }
 
         var geomParam = AddRedactedParameter(spatial.Geometry, dialect, ref paramIndex, parameters);
@@ -420,7 +425,8 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
             $"Pushed down spatial predicate '{spatial.SpatialRelationship}'."));
 
         var bboxPushdown = bboxCoveringPushdown
-            || (capabilities.SupportsBboxPushdown
+            || (capabilities.ProviderName != DataProviderNames.DuckDb
+                && capabilities.SupportsBboxPushdown
                 && relationshipSupportsBbox
                 && (spatial.IsSimpleEnvelope || spatial.SpatialRelationship == SpatialRelationship.EnvelopeIntersects));
         return bboxPushdown;

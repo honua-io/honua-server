@@ -164,6 +164,8 @@ internal static partial class SnowflakeFeatureQueryBuilder
         FeatureQuery query,
         H3AggregationQuery h3Query)
     {
+        h3Query.RejectSummaryDefinitions();
+
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
 

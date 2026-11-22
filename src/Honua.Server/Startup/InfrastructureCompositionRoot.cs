@@ -173,10 +173,12 @@ internal static class InfrastructureCompositionRoot
 #if !HONUA_POSTGIS_ONLY
         if (!duckDbEnabled && configuration.GetValue("DuckDB:Enabled", false))
         {
-            var filterService = new Honua.Core.Queries.Filters.FilterExpressionService(
-                new Honua.Core.Queries.Filters.FilterExpressionTranslator(
-                    new Honua.Db.DuckDB.Queries.Filters.DuckDbSqlFilterTranslator()));
-            Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBManagedFeatureProvider(services, configuration, filterService);
+            Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBManagedFeatureProvider(
+                services,
+                configuration,
+                static () => new Honua.Core.Queries.Filters.FilterExpressionService(
+                    new Honua.Core.Queries.Filters.FilterExpressionTranslator(
+                        new Honua.Db.DuckDB.Queries.Filters.DuckDbSqlFilterTranslator())));
             duckDbEnabled = true;
         }
 #endif

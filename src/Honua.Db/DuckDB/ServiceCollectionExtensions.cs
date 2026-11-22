@@ -24,7 +24,6 @@ using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.HealthCheck;
 using DuckDB.NET.Data;
 using Honua.Db.DuckDB.Features.Infrastructure;
-using Honua.Db.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -209,7 +208,7 @@ internal static class ServiceCollectionExtensions
     public static void AddDuckDBManagedFeatureProvider(
         this IServiceCollection services,
         IConfiguration configuration,
-        IFilterExpressionService filterExpressionService)
+        Func<IFilterExpressionService> createFilterExpressionService)
     {
         var options = new DuckDBOptions();
         configuration.GetSection("DuckDB").Bind(options);
@@ -229,7 +228,7 @@ internal static class ServiceCollectionExtensions
                 new DuckDBFeatureCacheManager(registry),
                 Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
                 sp.GetService<IMetadataV2GraphProvider>(),
-                filterExpressionService,
+                createFilterExpressionService(),
                 options.EnableH3,
                 sp.GetRequiredService<DuckDBManagedSource>(),
                 registry,

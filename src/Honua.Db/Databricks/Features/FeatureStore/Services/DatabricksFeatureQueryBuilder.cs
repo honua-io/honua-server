@@ -264,6 +264,8 @@ internal static class DatabricksFeatureQueryBuilder
         FeatureQuery query,
         H3AggregationQuery h3Query)
     {
+        h3Query.RejectSummaryDefinitions();
+
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
 

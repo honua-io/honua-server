@@ -436,6 +436,18 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildH3AggregationQuery_WithSummaryDefinitions_RejectsUnsupportedSummary()
+    {
+        var query = new H3AggregationQuery
+        {
+            Resolution = 7,
+            SummaryDefinitions = [new() { Id = "total_area", Kind = SpatialAggregationSummaryKind.Sum, Field = "area" }]
+        };
+
+        Assert.Throws<NotSupportedException>(() => _builder.BuildH3AggregationQuery(TestLayerId, new FeatureQuery(), query));
+    }
+
+    [Fact]
     public void BuildH3AggregationQuery_WithPolyfillKRingAndNon4326Layer_TransformsTo4326AndExpandsDisk()
     {
         var projectedMapping = new DuckDBLayerMapping
@@ -505,6 +517,37 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Equal(-122.3, result.WhereParameters[1]);
         Assert.Equal(37.7, result.WhereParameters[2]);
         Assert.Equal(37.8, result.WhereParameters[3]);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithProjectedEnvelope_SkipsSourceBboxCovering()
+    {
+        var mapping = new DuckDBLayerMapping
+        {
+            LayerId = TestLayerId,
+            TableName = "s3_parcels",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 4326,
+            BboxColumn = "bbox",
+            AttributeColumns = [],
+        };
+        var builder = new DuckDBFeatureQueryBuilder(new DuckDBLayerRegistry([mapping]));
+        var filter = SpatialFilter.Create(
+            geometry: [0x01, 0x03, 0x00, 0x00, 0x00],
+            spatialRelationship: SpatialRelationship.Intersects,
+            srid: 3857,
+            isSimpleEnvelope: true,
+            envelopeMinX: -13636638,
+            envelopeMinY: 4531198,
+            envelopeMaxX: -13614374,
+            envelopeMaxY: 4545279);
+
+        var result = builder.BuildSelectQuery(TestLayerId, new FeatureQuery { SpatialFilter = filter });
+
+        Assert.DoesNotContain(".xmax", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Intersects(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Transform(", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

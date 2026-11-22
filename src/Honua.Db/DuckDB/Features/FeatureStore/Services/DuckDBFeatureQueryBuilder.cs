@@ -579,6 +579,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         H3AggregationQuery h3Query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
     {
+        h3Query.RejectSummaryDefinitions();
+
         if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
         {
             throw new ArgumentOutOfRangeException(
@@ -1369,27 +1371,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
-        if (mapping.QuotedBboxColumn is null)
-        {
-            return false;
-        }
-
-        if (filter.SpatialRelationship is SpatialRelationship.Disjoint
-            or SpatialRelationship.BeyondDistance
-            or SpatialRelationship.NearestNeighbor)
-        {
-            return false;
-        }
-
-        if (filter.Srid is > 0 && filter.Srid.Value != mapping.Srid)
-        {
-            return false;
-        }
-
-        if (filter.EnvelopeMinX is not double minX
-            || filter.EnvelopeMinY is not double minY
-            || filter.EnvelopeMaxX is not double maxX
-            || filter.EnvelopeMaxY is not double maxY)
+        if (mapping.QuotedBboxColumn is null
+            || !filter.TryGetBboxCoveringBounds(mapping.Srid, out var bounds))
         {
             return false;
         }
@@ -1399,10 +1382,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var maxXParam = $"${paramIndex++}";
         var minYParam = $"${paramIndex++}";
         var maxYParam = $"${paramIndex++}";
-        parameters.Add(minX);
-        parameters.Add(maxX);
-        parameters.Add(minY);
-        parameters.Add(maxY);
+        parameters.Add(bounds.MinX);
+        parameters.Add(bounds.MaxX);
+        parameters.Add(bounds.MinY);
+        parameters.Add(bounds.MaxY);
 
         sb.Append(CultureInfo.InvariantCulture,
             $" AND {bboxCol}.xmax >= {minXParam} AND {bboxCol}.xmin <= {maxXParam} AND {bboxCol}.ymax >= {minYParam} AND {bboxCol}.ymin <= {maxYParam}");

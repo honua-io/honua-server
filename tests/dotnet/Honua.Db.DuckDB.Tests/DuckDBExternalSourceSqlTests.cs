@@ -3,10 +3,16 @@
 
 using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Features.Security;
+using Honua.Core.Queries.Filters;
+using Honua.Db.DuckDB.Features.FeatureStore;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
@@ -223,21 +229,83 @@ public sealed class DuckDBExternalSourceSqlTests
         Assert.Null(reader.Location);
     }
 
+    [Fact]
+    public async Task ManagedSource_RetranslatesRoutedFiltersForTheBoundProvider()
+    {
+        var connection = new ObjectStorageConnection
+        {
+            Id = Guid.NewGuid(),
+            Name = "county-bucket",
+            Bucket = "county-geoparquet",
+            Prefix = "analytics/",
+            Region = "us-west-2",
+        };
+        var reader = new StubObjectStoreReader(await CreateParquetAsync());
+        using var bootstrap = new DuckDBSpatialBootstrap(null, NullLogger<DuckDBSpatialBootstrap>.Instance);
+        using var source = new DuckDBManagedSource(
+            bootstrap, NullLogger<DuckDBConnectionProvider>.Instance, new StubObjectStorageConnectionResolver(connection), reader);
+        var storage = ManagedStorage(connection.Id, "analytics/parcels.parquet");
+        var mapping = DuckDBLayerMapping.FromStorage(5, storage, []);
+        var registry = new DuckDBLayerRegistry([mapping]);
+        var logger = NullLogger<DuckDBFeatureDataAccess>.Instance;
+        var store = new DuckDBFeatureStore(
+            new DuckDBFeatureQueryBuilder(registry),
+            new DuckDBFeatureDataAccess(source.CreateConnectionProvider(mapping), registry, null, logger),
+            new DuckDBFeatureCacheManager(registry),
+            new LayerReadSecurityResolver(null, null, null, null),
+            filterExpressionService: new FilterExpressionService(new FilterExpressionTranslator(new DuckDbSqlFilterTranslator())),
+            managedSource: source,
+            dataAccessLogger: logger);
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields = [
+                new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }
+            ]
+        };
+        var bound = store.CreateReaderForBinding(new FeatureProviderBinding(
+            null!, resource, null!, null!, storage, mapping.LayerId, store, null));
+
+        var callerFilter = new SqlFragment("id >= @p0", [1L])
+        {
+            Dialect = "postgres",
+            SourceExpression = new BinaryExpression(
+                new PropertyReference("id"), BinaryOperator.GreaterThanOrEqual, new Literal(1L, LiteralType.Number))
+        };
+        var upperBound = new SqlFragment("id <= @p0", [1L])
+        {
+            Dialect = "postgres",
+            SourceExpression = new BinaryExpression(
+                new PropertyReference("id"), BinaryOperator.LessThanOrEqual, new Literal(1L, LiteralType.Number))
+        };
+        var result = await bound.QueryObjectIdsAsync(mapping.LayerId, new FeatureQuery
+        {
+            SqlFilter = SqlFragmentHelpers.CombineSqlFilters(callerFilter, upperBound),
+        });
+
+        Assert.Equal(1L, Assert.Single(result));
+        await Assert.ThrowsAsync<NotSupportedException>(() => bound.QueryObjectIdsAsync(mapping.LayerId, new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("id >= @p0", [1L]),
+        }));
+    }
+
     private static DuckDBLayerMapping ManagedMapping(Guid connectionId, string key)
-        => DuckDBLayerMapping.FromStorage(
-            5,
-            new FeatureStorageMapping(
-                TableName: "parcels",
-                PrimaryKeyColumn: "id",
-                GeometryColumn: "geom",
-                StorageSrid: 4326,
-                ProviderOptions: new Dictionary<string, string>
-                {
-                    [DuckDBProviderOptions.ExternalSourceFormat] = "GeoParquet",
-                    [DuckDBProviderOptions.ObjectStorageConnectionId] = connectionId.ToString(),
-                    [DuckDBProviderOptions.ObjectStorageKey] = key,
-                }),
-            []);
+        => DuckDBLayerMapping.FromStorage(5, ManagedStorage(connectionId, key), []);
+
+    private static FeatureStorageMapping ManagedStorage(Guid connectionId, string key)
+        => new(
+            TableName: "parcels",
+            PrimaryKeyColumn: "id",
+            GeometryColumn: "geom",
+            StorageSrid: 4326,
+            ProviderOptions: new Dictionary<string, string>
+            {
+                [DuckDBProviderOptions.ExternalSourceFormat] = "GeoParquet",
+                [DuckDBProviderOptions.ObjectStorageConnectionId] = connectionId.ToString(),
+                [DuckDBProviderOptions.ObjectStorageKey] = key,
+            });
 
     private static async Task<byte[]> CreateParquetAsync()
     {

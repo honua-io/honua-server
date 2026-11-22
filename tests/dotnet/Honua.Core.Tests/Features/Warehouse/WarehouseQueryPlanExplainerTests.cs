@@ -74,6 +74,41 @@ public sealed class WarehouseQueryPlanExplainerTests
     }
 
     [Fact]
+    public async Task ExplainAsync_DuckDbProjectedEnvelope_DoesNotReportSourceBboxPushdown()
+    {
+        using var services = new ServiceCollection()
+            .AddWarehouseAnalyticsServices()
+            .BuildServiceProvider();
+        var explainer = services.GetRequiredService<IWarehouseQueryPlanExplainer>();
+        var request = new WarehouseQueryPlanRequest
+        {
+            ProviderName = DataProviderNames.DuckDb,
+            SourceId = "s3-parcels",
+            TargetTableOrView = "parcels",
+            BboxColumn = "bbox",
+            LayerSrid = 4326,
+            Query = new FeatureQuery
+            {
+                SpatialFilter = SpatialFilter.Create(
+                    geometry: SampleEnvelopeWkb,
+                    spatialRelationship: SpatialRelationship.Intersects,
+                    srid: 3857,
+                    isSimpleEnvelope: true,
+                    envelopeMinX: -13636638,
+                    envelopeMinY: 4531198,
+                    envelopeMaxX: -13614374,
+                    envelopeMaxY: 4545279),
+            },
+        };
+
+        var plan = await explainer.ExplainAsync(request);
+
+        Assert.False(plan.BboxPushdown);
+        Assert.DoesNotContain(".xmax", plan.RedactedSql, StringComparison.Ordinal);
+        Assert.Contains(plan.Predicates, predicate => predicate.Kind == "spatial" && predicate.PushedDown);
+    }
+
+    [Fact]
     public async Task ExplainAsync_UnboundedOrExcessiveLimits_AppliesRowAndH3Guardrails()
     {
         var explainer = new WarehouseQueryPlanExplainer(new WarehouseSourceCapabilityProvider());

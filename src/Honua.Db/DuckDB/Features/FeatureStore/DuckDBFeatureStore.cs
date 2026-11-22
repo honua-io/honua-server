@@ -8,12 +8,14 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore;
 
@@ -407,6 +409,15 @@ internal sealed class DuckDBFeatureStore :
             throw new InvalidOperationException("DuckDB managed object storage requires a publication binding.");
         }
 
+        if (_binding?.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId) == true)
+        {
+            query = query with
+            {
+                SqlFilter = TranslateManagedFilter(query.SqlFilter, _binding.Resource),
+                EnforcedSqlFilter = TranslateManagedFilter(query.EnforcedSqlFilter, _binding.Resource)
+            };
+        }
+
         if (query.EnforcedSqlFilter != null)
         {
             return query;
@@ -424,6 +435,24 @@ internal sealed class DuckDBFeatureStore :
         }
 
         return query;
+    }
+
+    private SqlFragment? TranslateManagedFilter(SqlFragment? fragment, MetadataV2Object resource)
+    {
+        if (fragment is null || fragment.Dialect == DuckDbSqlDialect.Instance.Name)
+        {
+            return fragment;
+        }
+
+        if (fragment.SourceExpression is not { } expression || _filterExpressionService is null)
+        {
+            throw new NotSupportedException("Managed DuckDB can only query filters with a provider-neutral expression.");
+        }
+
+        var translated = _filterExpressionService.Translate(expression, resource);
+        return translated.IsSuccess && translated.SqlFilter is { } sql
+            ? sql
+            : throw new NotSupportedException("The filter cannot be represented in DuckDB.");
     }
 
     private async Task<QueryResult<T>> ExecuteFormatQueryAsync<T>(
