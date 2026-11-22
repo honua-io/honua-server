@@ -184,7 +184,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-        [InlineData("Lon(170:-170),Lat(-10:10)")]
+    [InlineData("Lon(170:-170),Lat(-10:10)")]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
     public async Task Coverages_GetCoverage_SpatialSubsetContract(string subset)
