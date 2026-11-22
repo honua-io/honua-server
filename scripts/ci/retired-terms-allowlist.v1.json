@@ -3204,6 +3204,12 @@
       "rule": "app-envelope",
       "line": "        var oldId = family == StudioPackageFamily.App ? \"appPackageId\" : \"mapPackageId\";",
       "reason": "Regression fixture asserts legacy immutable history reopens with canonical identities, rejects conflicting identities and preserves historical bytes."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.Vocabulary.cs",
+      "rule": "map-envelope",
+      "line": "        var oldId = family == StudioPackageFamily.App ? \"appPackageId\" : \"mapPackageId\";",
+      "reason": "Regression fixture asserts legacy immutable history reopens with canonical identities, rejects conflicting identities and preserves historical bytes."
     }
   ]
 }
