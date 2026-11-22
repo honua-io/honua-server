@@ -1,32 +1,31 @@
 # honua-server: agent instructions
 <!-- Budget: scripts/ci/check-agents-md.py. Detail: docs/. Preserve review headings. -->
 
-Honua Server exposes one geospatial capability set through thin protocol adapters (protocol list:
-README). It is a clean rewrite: read the archived `../Honua.Server` for behaviour, never copy from it.
-.NET 11 Minimal APIs only (no controllers), warnings as errors, AOT-conscious: use source-generated
-JSON and logging. Package versions are central in `Directory.Packages.props`.
+One geospatial capability set, thin protocol adapters (see README). Clean rewrite: consult archived
+`../Honua.Server` for behaviour; never copy it. .NET 11 Minimal APIs, no controllers, warnings as errors.
+Use AOT-safe source-generated JSON/logging; versions live in `Directory.Packages.props`.
 
 ## Commands (mirror CI)
 ```bash
 dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 dotnet format Honua.sln --verify-no-changes
-scripts/ci/pre-pr-check.sh --dry-run          # what a run would build/test; zero cost
-scripts/ci/pre-pr-check.sh --unit-only        # fast in-process feedback
-scripts/ci/pre-pr-check.sh --affected-tests   # units; --integration adds Docker tests
-scripts/ci/pre-pr-check.sh                    # pre-PR gate; tick the PR box only after it passes
+scripts/ci/pre-pr-check.sh --dry-run          # preview; zero cost
+scripts/ci/pre-pr-check.sh --unit-only        # fast feedback
+scripts/ci/pre-pr-check.sh --affected-tests   # units; --integration for Docker
+scripts/ci/pre-pr-check.sh                    # pre-PR gate; must pass
 dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj
 # Tier filters: Tier=Fast, Tier!=Slow, Category=Scale (scale stack required)
 ```
-Local stack: `docker compose up -d`, then expect `Ready` at http://localhost:8080/healthz/ready. Do not
-build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR validation](docs/internal/contributor/local-pre-pr-validation.md).
+Local stack: `docker compose up -d`; expect `Ready` at http://localhost:8080/healthz/ready.
+Docs-only: no build/tests unless asked. [Pre-PR scope/flags](docs/internal/contributor/local-pre-pr-validation.md).
 
 ## Where things are
 - `src/Honua.Core/<Core|Abstractions>/`: models, abstractions, canonical pipelines. Providers: `src/Honua.Db/<Provider>`.
 - Protocol adapters: `src/Honua.Protocols/<Family>`, `src/Honua.Server/Features/Protocols/`, MCP under `src/Honua.Ai/`.
 - Read the relevant ADR in `docs/internal/contributor/adr/` before changing cross-cutting behaviour.
 
-## Protocol Adapter Architecture (invariants; break one and the PR is wrong)
+## Protocol Adapter Architecture (required invariants)
 - **Thin adapters over canonical pipelines**: query, edit/transaction, metadata/capabilities,
   raster/render/tile/export, process/job, format I/O. Adapters parse, validate, map and format; they
   never reimplement shared behaviour. One protocol never calls another's handler: extract a neutral service.
@@ -43,11 +42,11 @@ build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR va
 - **Docs examples** use the Honua CLI, SDKs or MCP, never raw HTTP (exceptions:
   `scripts/ci/doc-wire-reference-allowlist.v1.json`).
 - **Never quote CITE pass rates from memory**: `docs/cite-status.md` is the single source.
-Full rules and examples: [architecture criteria](docs/internal/contributor/architecture-criteria.md).
+[Architecture criteria](docs/internal/contributor/architecture-criteria.md).
 
 ## Review guidelines: architecture enforcement and Clean Code (BLOCKING / WARNING)
-Reviews judge added or changed lines by *Clean Code* and cite smell codes ([rules](docs/internal/contributor/architecture-criteria.md#clean-code-robert-c-martin)).
-The `Clean code` PR check enforces what a tool can; `quality-exception: <reason>` in the PR body is logged.
+Review changed lines against *Clean Code*, citing [smell codes](docs/internal/contributor/architecture-criteria.md#clean-code-robert-c-martin).
+`Clean code` automates checks; PR body `quality-exception: <reason>` is logged.
 
 BLOCKING:
 - `Honua.Core` depending on a provider (`Honua.Db.*`) or on `Honua.Server`.
@@ -76,18 +75,17 @@ WARNING:
   Others: [known flakes](docs/internal/ci/known-flakes.md). Scale tests: [TestKit](docs/internal/contributor/testkit.md).
 
 ## Issues and PRs
-- **Issues**: search for duplicates, then `gh issue create` with a `.github/ISSUE_TEMPLATE/` form.
-  Cross-repo work gets an umbrella issue plus linked children.
+- **Issues**: search duplicates; use `gh issue create` with a `.github/ISSUE_TEMPLATE/` form.
+  Cross-repo work needs an umbrella and linked children.
 - **Required checks are `PR Gate` and `Review Gate`**; the full CI matrix trails on trunk. The fleet's
   lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
   Never touch `land/batch/*` branches.
-  Details and stacking recovery: [merge coordination runbook](docs/internal/contributor/merge-coordination-runbook.md).
-- **Scope**: planning lives in issues; build nothing unscoped. Delete scratch plans and notes before
-  committing, or fold them into canonical docs and ADRs.
+  [Merge coordination and stacking recovery](docs/internal/contributor/merge-coordination-runbook.md).
+- **Scope**: plan in issues. Before committing, delete scratch notes or fold them into canonical docs/ADRs.
 
 ## Release component versions
-Bump a contract or declared schema version? Update `eng/release/component-versions.v1.json` in the same PR
-(a new migration needs no edit). `ContractVersionsStartupCheck` and the release train refuse a mismatch.
+Contract/schema version bumps require `eng/release/component-versions.v1.json` updates; migrations do not.
+`ContractVersionsStartupCheck` and the release train reject mismatches.
 
 <!-- fleet:begin v3 sha256=2c5c9896ef56430ddcee7221072ff5685b96d73f4c51561e4862a1a965218242 -->
 ## Fleet rules (all Honua repos)
