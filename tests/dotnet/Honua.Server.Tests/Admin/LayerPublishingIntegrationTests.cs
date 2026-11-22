@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -2733,6 +2734,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         return api.Data!;
     }
 
+    [MemberNotNull(nameof(_layerId), nameof(_layerIndex))]
     private void TrackPublishedLayer(PublishedLayerSummary layer)
     {
         _layerId = layer.StorageLayerId;
