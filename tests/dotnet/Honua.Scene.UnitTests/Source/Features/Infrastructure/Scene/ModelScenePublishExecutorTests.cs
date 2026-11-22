@@ -86,6 +86,26 @@ public sealed class ModelScenePublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public void Convert_ConcaveObjFace_RequiresTriangulation()
+    {
+        var bytes = """
+            v 0 0 0
+            v 3 0 0
+            v 3 3 0
+            v 2 3 0
+            v 2 1 0
+            v 1 1 0
+            v 1 3 0
+            v 0 3 0
+            f 1 2 3 4 5 6 7 8
+            """u8.ToArray();
+
+        var convert = () => ObjToGlbConverter.Convert(bytes);
+
+        convert.Should().Throw<ValidationException>().WithMessage("*triangulated before upload*");
+    }
+
+    [UnitTest]
     public async Task IngestAsync_ObjWithPlacement_ProducesValidated3DTiles11Scene()
     {
         var placement = new ModelPlacement(

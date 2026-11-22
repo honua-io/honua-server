@@ -211,11 +211,11 @@ internal static class ScenePublishHelper
         }
     }
 
-    internal static string Slugify(string value, int maxLength)
+    internal static string Slugify(string value, int maxLength, string fallback = "scene")
     {
         if (string.IsNullOrWhiteSpace(value) || maxLength <= 0)
         {
-            return "scene";
+            return fallback;
         }
 
         var span = value.AsSpan();
@@ -240,7 +240,7 @@ internal static class ScenePublishHelper
 
         if (written == 0)
         {
-            return "scene";
+            return fallback;
         }
 
         if (lastDash)

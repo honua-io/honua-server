@@ -6,6 +6,10 @@ namespace Honua.Core.Configuration;
 // Limits enforcement and the tile-package handler share this ceiling so the two cannot drift.
 public static class ImportPayloadSize
 {
+    public const long MaxSceneArchiveBytes = 256L * 1024 * 1024;
+    public const long MaxSceneModelBytes = 128L * 1024 * 1024;
+    public const long SceneMultipartOverheadBytes = 1024 * 1024;
+
     public static long Resolve(string? path, LimitsOptions limits)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -35,6 +39,17 @@ public static class ImportPayloadSize
         if (path.Contains("/admin/geocoding/reference-data/import", StringComparison.OrdinalIgnoreCase))
         {
             return limits.Imports.MaxImportSize;
+        }
+
+        var route = path.AsSpan().TrimEnd('/');
+        if (route.EndsWith("/admin/scenes/ingest/archive", StringComparison.OrdinalIgnoreCase))
+        {
+            return MaxSceneArchiveBytes + SceneMultipartOverheadBytes;
+        }
+
+        if (route.EndsWith("/admin/scenes/ingest/model", StringComparison.OrdinalIgnoreCase))
+        {
+            return MaxSceneModelBytes + SceneMultipartOverheadBytes;
         }
 
         if (path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||

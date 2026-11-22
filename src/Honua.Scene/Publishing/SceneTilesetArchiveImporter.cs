@@ -486,8 +486,15 @@ internal sealed partial class SceneTilesetArchiveImporter
         string tilesetFileName,
         HashSet<string> extractedFiles)
     {
-        var visited = new HashSet<string>(extractedFiles.Comparer);
-        var active = new HashSet<string>(extractedFiles.Comparer);
+        var exactPaths = extractedFiles.ToHashSet(StringComparer.Ordinal);
+        if (!exactPaths.Contains(tilesetFileName))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive does not contain a root '{tilesetFileName}'.");
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var active = new HashSet<string>(StringComparer.Ordinal);
         return Visit(tilesetFileName, 0);
 
         TilesetInspectionResult Visit(string path, int depth)
@@ -501,7 +508,7 @@ internal sealed partial class SceneTilesetArchiveImporter
             var inspection = InspectTileset(stagingDirectory, path, uri =>
             {
                 var target = ResolveContentPath(path, uri);
-                if (!extractedFiles.Contains(target))
+                if (!exactPaths.Contains(target))
                 {
                     throw new ValidationException(
                         $"{SceneGenerationErrorCodes.OptionsInvalid}: Tileset '{path}' references missing content file '{uri}'.");

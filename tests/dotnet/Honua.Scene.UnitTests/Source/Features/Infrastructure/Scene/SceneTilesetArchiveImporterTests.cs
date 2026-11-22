@@ -220,13 +220,15 @@ public sealed class SceneTilesetArchiveImporterTests : IDisposable
 
     [Theory]
     [InlineData("missing.glb", "missing content file")]
+    [InlineData("TILE.glb", "missing content file")]
     [InlineData("../tileset.json", "cycle")]
     [InlineData("../../tile.glb", "safe archive-relative path")]
     public async Task ImportAsync_InvalidExternalTileset_RejectsArchive(string contentUri, string error)
     {
         var zip = CreateZip(
             ("tileset.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson("nested/child.json"))),
-            ("nested/child.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson(contentUri))));
+            ("nested/child.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson(contentUri))),
+            ("nested/tile.glb", BuildSampleGlb()));
 
         var act = () => _importer.ImportAsync(new(zip, SceneId: "nested-invalid"), CancellationToken.None);
 

@@ -168,7 +168,13 @@ public static class ObjToGlbConverter
             }
         }
 
-        // Fan-triangulate polygons with >= 3 vertices.
+        if (corners.Length > 3 && !IsConvexPolygon(corners, positions))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.ModelAssetInvalid}: OBJ face must be a convex polygon or be triangulated before upload.");
+        }
+
+        // Fan-triangulate convex polygons.
         for (var i = 1; i < corners.Length - 1; i++)
         {
             var c0 = corners[0];
@@ -197,6 +203,74 @@ public static class ObjToGlbConverter
                 c1.Tex >= 0 ? texCoords[c1.Tex] : (0f, 0f), outPositions, outNormals, outTexCoords);
             EmitCorner(p2, c2.Norm >= 0 ? Normalize(normals[c2.Norm], faceNormal.Value) : faceNormal.Value,
                 c2.Tex >= 0 ? texCoords[c2.Tex] : (0f, 0f), outPositions, outNormals, outTexCoords);
+        }
+    }
+
+    private static bool IsConvexPolygon(
+        (int Pos, int Tex, int Norm)[] corners,
+        List<(float X, float Y, float Z)> positions)
+    {
+        var origin = positions[corners[0].Pos];
+        (float X, float Y, float Z)? normal = null;
+        for (var i = 1; i < corners.Length - 1 && normal is null; i++)
+        {
+            normal = ComputeFaceNormal(origin, positions[corners[i].Pos], positions[corners[i + 1].Pos]);
+        }
+
+        if (normal is not { } n)
+        {
+            return false;
+        }
+
+        var x = Math.Abs(n.X);
+        var y = Math.Abs(n.Y);
+        var z = Math.Abs(n.Z);
+        var axis = x >= y && x >= z ? 0 : y >= z ? 1 : 2;
+        var winding = 0;
+        var totalTurn = 0.0;
+        for (var i = 0; i < corners.Length; i++)
+        {
+            var previous = Project(i == 0 ? corners.Length - 1 : i - 1);
+            var current = Project(i);
+            var next = Project((i + 1) % corners.Length);
+            var ux = current.U - previous.U;
+            var uy = current.V - previous.V;
+            var vx = next.U - current.U;
+            var vy = next.V - current.V;
+            var cross = ux * vy - uy * vx;
+            var dot = ux * vx + uy * vy;
+            if ((ux == 0 && uy == 0) || (cross == 0 && dot < 0))
+            {
+                return false;
+            }
+
+            if (cross == 0)
+            {
+                continue;
+            }
+
+            var turn = Math.Sign(cross);
+            if (winding != 0 && winding != turn)
+            {
+                return false;
+            }
+
+            winding = turn;
+            totalTurn += Math.Atan2(cross, dot);
+        }
+
+        // A self-crossing polygon can keep the same turn sign while winding more than once.
+        return Math.Abs(Math.Abs(totalTurn) - Math.Tau) < 1e-6;
+
+        (double U, double V) Project(int index)
+        {
+            var position = positions[corners[index].Pos];
+            return axis switch
+            {
+                0 => (position.Y, position.Z),
+                1 => (position.Z, position.X),
+                _ => (position.X, position.Y),
+            };
         }
     }
 

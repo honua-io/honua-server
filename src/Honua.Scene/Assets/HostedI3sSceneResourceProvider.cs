@@ -191,8 +191,31 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
             }
 
             var remainingBytes = ByteBudget - result.ByteSize;
-            var rootGeometry = BuildRootCompositeGeometry(meshes, features, _nodes[0].Entry.Obb!, attributes, remainingBytes, cancellationToken);
+            // A legacy root geometry response has one mesh, with no LOD traversal.
+            // Select the first available mesh on each branch to avoid overlaying replacement LODs.
+            var rootMeshes = CollectCoarsestMeshes(0).ToArray();
+            var rootFeatureIds = rootMeshes.SelectMany(mesh => mesh.Triangles.Select(triangle => mesh.Features[triangle.Feature].Id)).ToHashSet();
+            var rootFeatures = features.Where(feature => rootFeatureIds.Contains(feature.Id)).ToArray();
+            var rootGeometry = BuildRootCompositeGeometry(rootMeshes, rootFeatures, _nodes[0].Entry.Obb!, attributes, remainingBytes, cancellationToken);
             return result with { RootGeometry = rootGeometry };
+        }
+
+        private IEnumerable<SceneDecodedMesh> CollectCoarsestMeshes(int index)
+        {
+            var node = _nodes[index];
+            if (node.Mesh is { } mesh)
+            {
+                yield return mesh;
+                yield break;
+            }
+
+            foreach (var child in node.Entry.Children!)
+            {
+                foreach (var descendant in CollectCoarsestMeshes(child))
+                {
+                    yield return descendant;
+                }
+            }
         }
 
         private static I3sNodeGeometry? BuildRootCompositeGeometry(

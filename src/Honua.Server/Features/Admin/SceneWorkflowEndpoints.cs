@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
@@ -11,6 +12,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Scene;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,10 +22,8 @@ internal static partial class SceneWorkflowEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagScenes = "Scene Workflows";
-    private const long MaxArchiveUploadBytes = 256L * 1024 * 1024;
-    private const long MaxModelUploadBytes = 128L * 1024 * 1024;
 
-    public static IEndpointRouteBuilder MapSceneWorkflowEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapSceneIngestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
@@ -64,6 +64,19 @@ internal static partial class SceneWorkflowEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .DisableAntiforgery();
+
+        return endpoints;
+    }
+
+    public static IEndpointRouteBuilder MapSceneWorkflowEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        var inspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
+        if (inspector is not null && !inspector.IsService(typeof(SceneJobCoordinator)))
+        {
+            return endpoints;
+        }
 
         var jobsGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/scenes/jobs")
             .WithApiVersionSet()
@@ -115,7 +128,11 @@ internal static partial class SceneWorkflowEndpoints
                 "Request must be multipart/form-data with a 'file' field carrying the ZIP/3TZ archive.");
         }
 
-        var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+        var (form, formError) = await ReadUploadFormAsync(context, ImportPayloadSize.MaxSceneArchiveBytes, cancellationToken).ConfigureAwait(false);
+        if (form is null)
+        {
+            return formError!;
+        }
         var file = SceneIngestRequestHelpers.FindUpload(form);
         var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
         if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
@@ -126,13 +143,13 @@ internal static partial class SceneWorkflowEndpoints
         var coordinator = asyncRequested
             ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
             : null;
-        using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxArchiveUploadBytes ? file.Length : 0);
+        using var admission = coordinator?.TryReserve(file is not null && file.Length <= ImportPayloadSize.MaxSceneArchiveBytes ? file.Length : 0);
         if (coordinator is not null && admission is null)
         {
             return SceneIngestRequestHelpers.CreateBusyJobResult(context);
         }
 
-        var (fileBytes, fileError) = await ReadUploadedBytesAsync(file, MaxArchiveUploadBytes, "3D Tiles archive", cancellationToken).ConfigureAwait(false);
+        var (fileBytes, fileError) = await ReadUploadedBytesAsync(file, ImportPayloadSize.MaxSceneArchiveBytes, "3D Tiles archive", cancellationToken).ConfigureAwait(false);
         if (fileError is not null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, fileError);
@@ -243,7 +260,11 @@ internal static partial class SceneWorkflowEndpoints
                 "Request must be multipart/form-data with a 'file' field carrying the GLB, embedded glTF, or OBJ model.");
         }
 
-        var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+        var (form, formError) = await ReadUploadFormAsync(context, ImportPayloadSize.MaxSceneModelBytes, cancellationToken).ConfigureAwait(false);
+        if (form is null)
+        {
+            return formError!;
+        }
         var file = SceneIngestRequestHelpers.FindUpload(form);
         var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
         if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
@@ -254,13 +275,13 @@ internal static partial class SceneWorkflowEndpoints
         var coordinator = asyncRequested
             ? context.RequestServices.GetRequiredService<SceneJobCoordinator>()
             : null;
-        using var admission = coordinator?.TryReserve(file is not null && file.Length <= MaxModelUploadBytes ? file.Length : 0);
+        using var admission = coordinator?.TryReserve(file is not null && file.Length <= ImportPayloadSize.MaxSceneModelBytes ? file.Length : 0);
         if (coordinator is not null && admission is null)
         {
             return SceneIngestRequestHelpers.CreateBusyJobResult(context);
         }
 
-        var (fileBytes, fileName, fileError) = await ReadUploadedModelAsync(file, MaxModelUploadBytes, cancellationToken).ConfigureAwait(false);
+        var (fileBytes, fileName, fileError) = await ReadUploadedModelAsync(file, ImportPayloadSize.MaxSceneModelBytes, cancellationToken).ConfigureAwait(false);
         if (fileError is not null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, fileError);
@@ -417,7 +438,7 @@ internal static partial class SceneWorkflowEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var registration = context.RequestServices.GetService<ISceneRegistrationService>();
             var records = registration is not null
-                ? await registration.ListAsync(includeInactive ?? false, cancellationToken).ConfigureAwait(false)
+                ? await registration.ListAsync(includeInactive: true, cancellationToken).ConfigureAwait(false)
                 : [];
 
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -425,6 +446,11 @@ internal static partial class SceneWorkflowEndpoints
             foreach (var record in records)
             {
                 seen.Add(record.Id);
+                if (includeInactive != true && record.Status != SceneDatasetStatus.Active)
+                {
+                    continue;
+                }
+
                 var latestJob = coordinator.GetLatestJobForScene(record.Id);
                 results.Add(ToAssetResponse(SceneAssetLifecycleProjector.Project(record, latestJob, baseUrl)));
             }
@@ -486,6 +512,30 @@ internal static partial class SceneWorkflowEndpoints
             SceneWorkflowLog.RequestFailed(logger, "assets.get", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to retrieve scene asset lifecycle view.");
+        }
+    }
+
+    private static async Task<(IFormCollection? Form, IResult? Error)> ReadUploadFormAsync(
+        HttpContext context,
+        long maxFileBytes,
+        CancellationToken cancellationToken)
+    {
+        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions
+        {
+            MultipartBodyLengthLimit = maxFileBytes + ImportPayloadSize.SceneMultipartOverheadBytes,
+        }));
+
+        try
+        {
+            return (await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false), null);
+        }
+        catch (Exception ex) when (ex is BadHttpRequestException or InvalidDataException or IOException)
+        {
+            var status = ex is BadHttpRequestException requestError
+                ? requestError.StatusCode
+                : StatusCodes.Status400BadRequest;
+            return (null, ProblemDetailsHelpers.CreateAdminProblem(context, status,
+                "The multipart form data could not be parsed. Check the boundary and upload size."));
         }
     }
 

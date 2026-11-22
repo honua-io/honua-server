@@ -336,7 +336,7 @@ internal static class GltfModelNormalizer
         catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException or IndexOutOfRangeException)
         {
             throw new ValidationException(
-                $"{SceneGenerationErrorCodes.ModelAssetInvalid}: Model GLB validation failed: {ex.Message}",
+                $"{SceneGenerationErrorCodes.ModelAssetInvalid}: Model GLB validation failed.",
                 ex);
         }
 
