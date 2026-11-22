@@ -14,7 +14,7 @@ public partial class StudioPackageLifecycleServiceTests
     [Trait("Tier", "Fast")]
     [InlineData(StudioPackageFamily.Map, "mapPackageId", "mapId", "honua_map_package.v1", "honua_map.v1")]
     [InlineData(StudioPackageFamily.App, "appPackageId", "appId", "honua_app_package.v1", "honua_app.v1")]
-    public async Task ReopenVersion_NormalizesLegacyIdentityWithoutChangingVersion(
+    public async Task ReopenAndRestore_NormalizeHistoricalIdentityWithoutChangingHistory(
         StudioPackageFamily family, string oldId, string newId, string oldFormat, string newFormat)
     {
         using var provider = BuildServiceProvider();
@@ -29,6 +29,7 @@ public partial class StudioPackageLifecycleServiceTests
             }),
         };
         var version = await StoreHistoricalVersionAsync(store, envelope);
+        var originalDraft = (await store.ListDraftsAsync(new())).Items.Single();
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
         var reopened = await service.ReopenVersionAsync(version.ItemId, version.VersionId, "tester");
         Assert.NotNull(reopened);
@@ -40,6 +41,19 @@ public partial class StudioPackageLifecycleServiceTests
         var unchanged = await store.GetVersionAsync(version.ItemId, version.VersionId);
         Assert.Equal(version.ContentHash, unchanged!.ContentHash);
         Assert.Equal(envelope.Body.Value.GetRawText(), unchanged.Envelope.Body!.Value.GetRawText());
+
+        // Simulate the migration archiving the pre-cutover draft before normalizing it.
+        var current = await store.UpdateDraftAsync(originalDraft with { Envelope = reopened.Envelope });
+        Assert.NotNull(current);
+        var restored = await service.RestoreDraftRevisionAsync(originalDraft.DraftId,
+            RestoreCommand(originalDraft.Generation, current.Generation, "tester"));
+        Assert.NotNull(restored);
+        Assert.Equal(newFormat, restored.Envelope.Format);
+        Assert.Equal(reopened.Envelope.Body.Value.GetRawText(), restored.Envelope.Body!.Value.GetRawText());
+        var revision = await store.GetDraftRevisionAsync(originalDraft.DraftId, originalDraft.Generation);
+        Assert.NotNull(revision);
+        Assert.Equal(oldFormat, revision.Envelope.Format);
+        Assert.Equal(envelope.Body.Value.GetRawText(), revision.Envelope.Body!.Value.GetRawText());
     }
 
     [Theory]
@@ -47,7 +61,7 @@ public partial class StudioPackageLifecycleServiceTests
     [InlineData("{\"mapPackageId\":\"old\",\"mapId\":\"new\"}")]
     [InlineData("{\"appPackageId\":\"old\",\"appId\":\"new\"}")]
     [InlineData("[]")]
-    public async Task ReopenVersion_RejectsAmbiguousOrMalformedHistoricalBody(string json)
+    public async Task ReopenAndRestore_RejectAmbiguousOrMalformedHistoricalBody(string json)
     {
         using var provider = BuildServiceProvider();
         var store = provider.GetRequiredService<IStudioPackageStore>();
@@ -61,6 +75,16 @@ public partial class StudioPackageLifecycleServiceTests
             service.ReopenVersionAsync(version.ItemId, version.VersionId, "tester"));
         var unchanged = await store.GetVersionAsync(version.ItemId, version.VersionId);
         Assert.Equal(version.ContentHash, unchanged!.ContentHash);
+
+        var originalDraft = (await store.ListDraftsAsync(new())).Items.Single();
+        var current = await store.UpdateDraftAsync(originalDraft with
+        {
+            Envelope = originalDraft.Envelope with { Body = JsonElement.Parse("{}") },
+        });
+        Assert.NotNull(current);
+        await Assert.ThrowsAsync<JsonException>(() => service.RestoreDraftRevisionAsync(originalDraft.DraftId,
+            RestoreCommand(originalDraft.Generation, current.Generation, "tester")));
+        Assert.Equal(current.Generation, (await store.GetDraftAsync(originalDraft.DraftId))!.Generation);
     }
 
     [Fact]
