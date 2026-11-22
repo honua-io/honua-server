@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -54,6 +55,21 @@ public sealed class ControlPlaneHttpClientsTests
             CancellationToken.None);
 
         factory.Names.Should().HaveCount(2).And.OnlyContain(name => name == ControlPlaneHttpClients.Probe);
+    }
+
+    [Fact]
+    public async Task RestoreCustomerProbe_ConfiguredUrl_UsesTheProbeClient()
+    {
+        var factory = new RecordingHttpClientFactory(new CandidateAndPrometheusHandler());
+        var probe = new HttpServingCustomerProbe(factory, Options.Create(new RestoreCellOptions
+        {
+            CustomerProbeUrl = "https://example.com/customer"
+        }));
+
+        var succeeded = await probe.SucceededAsync(CancellationToken.None);
+
+        succeeded.Should().BeTrue();
+        factory.Names.Should().ContainSingle().Which.Should().Be(ControlPlaneHttpClients.Probe);
     }
 
     [Fact]

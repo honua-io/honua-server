@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,7 +17,8 @@ internal static class ControlPlaneHttpClients
     public static IServiceCollection AddControlPlaneHttpClients(this IServiceCollection services)
     {
         services.AddResilientHttpClient(Telemetry, Telemetry, HttpResiliencePolicies.FastApiDefaults);
-        services.AddHttpClient(Probe);
+        services.AddHttpClient(Probe)
+            .ConfigurePrimaryHttpMessageHandler(() => new DeployProbeTransport(Dns.GetHostAddressesAsync).CreateHandler());
         return services;
     }
 }
