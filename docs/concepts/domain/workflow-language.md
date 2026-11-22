@@ -96,8 +96,10 @@ Resolve resources to stable identities and record relevant versions, generations
 A saved version is immutable. A draft is mutable and generation-checked.
 Studio MCP publication binds the current saved version and hash. Every MCP
 caller, including an administrator, receives a proposal requiring human approval
-in Console before activation. Follow the returned `AwaitingApproval` state;
-the proposal call does not publish or return a public share URL.
+in Console before activation. New proposals return `AwaitingApproval`; retries
+report the existing proposal's current state, including `Published`, `Rejected`,
+or `Denied`. The proposal call does not activate publication or return a public
+share URL.
 A pending proposal cannot be reinterpreted as approval. Do not widen policy to
 clear a failure or substitute a newer version after a decision.
 
