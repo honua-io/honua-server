@@ -20,12 +20,12 @@ public sealed class DatabaseMigrationSafetyTests
         "144_RenameGeoServicesRestSourceKind.sql",
         "145_ProtectImportDependencies.sql",
         "183_RemoveUnusedFeatureIndexes.sql",
-        "226_RenameMapAppDraftIdentities.sql",
-        "227_RenameMapAppDeploymentSources.sql",
-        "228_RenameMapAppResultReferences.sql",
-        "229_RenameMapAppStudioDraftBodies.sql",
-        "230_RenameMapAppReportReferences.sql",
-        "231_AdoptContentPublicationVocabulary.sql"
+        "232_RenameMapAppDraftIdentities.sql",
+        "233_RenameMapAppDeploymentSources.sql",
+        "234_RenameMapAppResultReferences.sql",
+        "235_RenameMapAppStudioDraftBodies.sql",
+        "236_RenameMapAppReportReferences.sql",
+        "237_AdoptContentPublicationVocabulary.sql"
     ];
 
     [ArchitectureTest]

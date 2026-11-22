@@ -262,7 +262,7 @@ class MapAppForwardOnlyBoundary(unittest.TestCase):
     def test_pinned_migrations_require_refusal_and_reject_changed_bytes(self) -> None:
         boundary = json.loads((n1.REPO_ROOT / n1.RELEASE_BOUNDARY).read_text())
         reasons = boundary["readerIncompatibleReasons"]
-        self.assertEqual({int(name.split("_", 1)[0]) for name in reasons}, set(range(226, 232)))
+        self.assertEqual({int(name.split("_", 1)[0]) for name in reasons}, set(range(232, 238)))
         for name, reason in reasons.items():
             with self.subTest(migration=name):
                 self.assertTrue(reason.strip())
