@@ -55,6 +55,12 @@ internal static class AdminConnectImportOperationCatalog
 
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();
 
+    private static readonly HashSet<string> EmptyQueryParameters = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, HashSet<string>> QueryParametersByOperationId = BuildQueryParameters();
+
+    internal static IReadOnlySet<string> QueryParametersFor(string operationId) =>
+        QueryParametersByOperationId.TryGetValue(operationId, out var names) ? names : EmptyQueryParameters;
+
     private static Definition Read(string id, string title, string path, string openApiId) =>
         new(id, title, HttpMethod.Get, path, openApiId, OperationSideEffectClass.ReadOnly);
 
@@ -67,6 +73,35 @@ internal static class AdminConnectImportOperationCatalog
             ?? throw new InvalidOperationException("Embedded admin-api.json contract was not found.");
         using var document = JsonDocument.Parse(stream);
         return Definitions.Select(definition => BuildDescriptor(document.RootElement, definition)).ToArray();
+    }
+
+    private static Dictionary<string, HashSet<string>> BuildQueryParameters()
+    {
+        using var stream = typeof(AdminConnectImportOperationCatalog).Assembly.GetManifestResourceStream("Honua.Server.admin-api.json")
+            ?? throw new InvalidOperationException("Embedded admin-api.json contract was not found.");
+        using var document = JsonDocument.Parse(stream);
+        var root = document.RootElement;
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var definition in Definitions)
+        {
+            var operation = FindOperation(root, definition.OpenApiOperationId);
+            if (!operation.TryGetProperty("parameters", out var parameters))
+            {
+                continue;
+            }
+
+            var queryNames = parameters.EnumerateArray()
+                .Select(value => Resolve(root, value))
+                .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+                .Select(parameter => parameter.GetProperty("name").GetString()!)
+                .ToHashSet(StringComparer.Ordinal);
+            if (queryNames.Count > 0)
+            {
+                result[definition.OperationId] = queryNames;
+            }
+        }
+
+        return result;
     }
 
     private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
