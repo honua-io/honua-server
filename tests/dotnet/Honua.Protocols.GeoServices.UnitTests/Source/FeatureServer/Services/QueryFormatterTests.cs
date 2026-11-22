@@ -20,7 +20,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class QueryFormatterTests
+public sealed partial class QueryFormatterTests
 {
     private static readonly string[] IdGeoJsonProperties = ["id", "name", "distance"];
     private static readonly string[] DeclaredIdGeoJsonProperties = ["id", "objectid", "name", "distance"];
@@ -303,87 +303,6 @@ public sealed class QueryFormatterTests
         {
             result.GetProperty("id").GetInt64().Should().Be(42);
             properties.GetProperty("id").GetInt64().Should().Be(42);
-        }
-    }
-
-    public static IEnumerable<object[]> NullObjectIdCases()
-    {
-        foreach (var streaming in new[] { false, true })
-        foreach (var format in new[] { "json", "geojson" })
-        foreach (var projection in new[] { "*", "id,name", "name" })
-        foreach (var jsonNull in new[] { false, true })
-        {
-            yield return [streaming, format, projection, jsonNull];
-        }
-    }
-
-    [global::Xunit.Trait("Tier", "Fast")]
-    [Theory]
-    [MemberData(nameof(NullObjectIdCases))]
-    public async Task Query_NullDeclaredObjectId_UsesCanonicalIdentity(
-        bool streaming, string format, string projection, bool jsonNull)
-    {
-        var resource = CreateIdBackedPointLayer();
-        var feature = Feature.Create(479, geometry: null,
-            new Dictionary<string, object?>
-            {
-                ["id"] = jsonNull ? JsonSerializer.SerializeToElement<object?>(null) : null,
-                ["name"] = "nearby-row"
-            }.ToImmutableDictionary());
-        var outFields = projection.Split(',');
-        var limits = Options.Create(new LimitsOptions());
-        string json;
-        if (streaming)
-        {
-            using var stream = new MemoryStream();
-            var writer = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
-            var formatter = new StreamingQueryFormatter(limits);
-            if (format == "geojson")
-            {
-                await formatter.StreamAsGeoJsonAsync(
-                    Features(), resource, returnGeometry: false, returnZ: false, returnM: false,
-                    geometryPrecision: null, maxAllowableOffset: null, outFields: outFields,
-                    hasMoreResults: false, outputStream: writer);
-            }
-            else
-            {
-                await formatter.StreamAsGeoServicesJsonAsync(
-                    Features(), resource, returnGeometry: false, outputSrid: null,
-                    returnZ: false, returnM: false, geometryPrecision: null,
-                    maxAllowableOffset: null, outFields: outFields,
-                    hasMoreResults: false, outputStream: writer);
-            }
-            await writer.CompleteAsync();
-            json = System.Text.Encoding.UTF8.GetString(stream.ToArray());
-        }
-        else
-        {
-            var formatter = new QueryFormatter(limits, new PbfQueryFormatter(limits),
-                NullLogger<QueryFormatter>.Instance);
-            var (response, _) = await formatter.FormatQueryResultAsync(
-                QueryResult<Feature>.Create(1, [feature]), resource, format: format,
-                returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
-                geometryPrecision: null, maxAllowableOffset: null, outFields: outFields);
-            json = format == "geojson"
-                ? JsonSerializer.Serialize((GeoJsonFeatureSet)response, FeatureServerJsonContext.Default.GeoJsonFeatureSet)
-                : JsonSerializer.Serialize((QueryResponse)response, FeatureServerJsonContext.Default.QueryResponse);
-        }
-
-        using var document = JsonDocument.Parse(json);
-        var row = document.RootElement.GetProperty("features")[0];
-        var attributes = row.GetProperty(format == "geojson" ? "properties" : "attributes");
-        attributes.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Number);
-        attributes.GetProperty("id").GetInt64().Should().Be(479);
-        attributes.GetProperty("name").GetString().Should().Be("nearby-row");
-        if (format == "geojson")
-        {
-            row.GetProperty("id").GetInt64().Should().Be(479);
-        }
-
-        async IAsyncEnumerable<Feature> Features()
-        {
-            yield return feature;
-            await Task.CompletedTask;
         }
     }
 
