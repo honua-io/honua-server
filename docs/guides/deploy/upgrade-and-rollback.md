@@ -211,7 +211,7 @@ Single-instance Docker is not zero-downtime: pull the new tag, stop the old cont
 
 ## Run migrations out of band
 
-Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see the specific target image’s runtime checks). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records compatibility declarations for the runtime checks. Recovery to a previous image requires qualification of that specific image against the installed database; otherwise restore its matching backup before starting it. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
 
 ### Upgrading a journal that stops at 091
 
