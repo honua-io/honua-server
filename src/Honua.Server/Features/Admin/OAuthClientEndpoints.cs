@@ -223,23 +223,13 @@ internal static partial class OAuthClientEndpoints
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Name))
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl))
         {
-            validationMessage = "Validation failed: name is required";
+            validationMessage = "Validation failed: name is required and must not contain control characters";
             return false;
         }
 
-        var rawType = request.ClientType?.Trim();
-        if (string.IsNullOrWhiteSpace(rawType) ||
-            string.Equals(rawType, "confidential", StringComparison.OrdinalIgnoreCase))
-        {
-            clientType = OAuthClientType.Confidential;
-        }
-        else if (string.Equals(rawType, "public", StringComparison.OrdinalIgnoreCase))
-        {
-            clientType = OAuthClientType.Public;
-        }
-        else
+        if (!TryParseClientType(request.ClientType, out clientType))
         {
             validationMessage = "Validation failed: clientType must be 'confidential' or 'public'";
             return false;
@@ -251,13 +241,73 @@ internal static partial class OAuthClientEndpoints
             return false;
         }
 
-        if (request.AllowedScopes is not null && request.AllowedScopes.Any(string.IsNullOrWhiteSpace))
+        if (request.RedirectUris is not null && request.RedirectUris.Any(uri => !IsValidRedirectUri(uri)))
         {
-            validationMessage = "Validation failed: scope labels are required";
+            validationMessage = "Validation failed: redirectUris must be absolute HTTP(S) URIs without control characters or fragments";
+            return false;
+        }
+
+        if (request.AllowedScopes is not null && request.AllowedScopes.Any(scope => !IsValidScopeToken(scope)))
+        {
+            validationMessage = "Validation failed: scope labels must be valid RFC 6749 scope tokens";
             return false;
         }
 
         validationMessage = string.Empty;
+        return true;
+    }
+
+    private static bool TryParseClientType(string? rawClientType, out OAuthClientType clientType)
+    {
+        var rawType = rawClientType?.Trim();
+        if (string.IsNullOrWhiteSpace(rawType) ||
+            string.Equals(rawType, "confidential", StringComparison.OrdinalIgnoreCase))
+        {
+            clientType = OAuthClientType.Confidential;
+            return true;
+        }
+
+        if (string.Equals(rawType, "public", StringComparison.OrdinalIgnoreCase))
+        {
+            clientType = OAuthClientType.Public;
+            return true;
+        }
+
+        clientType = OAuthClientType.Confidential;
+        return false;
+    }
+
+    private static bool IsValidRedirectUri(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            && string.IsNullOrEmpty(uri.Fragment);
+    }
+
+    private static bool IsValidScopeToken(string? scope)
+    {
+        if (string.IsNullOrEmpty(scope))
+        {
+            return false;
+        }
+
+        foreach (var ch in scope)
+        {
+            if (ch < 0x21 || ch > 0x7E || ch is '"' or '\\' or '/' or '<' or '>')
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -270,9 +320,9 @@ internal static partial class OAuthClientEndpoints
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Scope))
+        if (!IsValidScopeToken(request.Scope))
         {
-            validationMessage = "Validation failed: scope is required";
+            validationMessage = "Validation failed: scope must be a valid RFC 6749 scope token without whitespace, control characters, angle brackets, or path separators";
             return false;
         }
 
