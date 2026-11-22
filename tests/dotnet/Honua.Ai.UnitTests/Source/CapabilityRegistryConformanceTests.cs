@@ -392,55 +392,14 @@ public sealed class CapabilityRegistryConformanceTests
     }
 
     // -----------------------------------------------------------------------
-    // Live-surface construction — mirrors McpTaxonomyAlignmentTests.BuildTools /
-    // BuildResources, extended with the two package-review tools those tests
-    // construct separately, so this enumerates the full advertised tool roster.
+    // The shared taxonomy roster covers all advertised tools except server status.
+    // Compare that same surface, plus status, against the capability registry.
     // -----------------------------------------------------------------------
-    private static IMcpTool[] BuildLiveTools()
-    {
-        var jobService = Substitute.For<IGeoprocessingJobService>();
-        var groundingService = Substitute.For<IGroundingService>();
-        var reviewService = Substitute.For<IPackageReviewService>();
-        return
-        [
-            new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
-            new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
-            new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
-            new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
-            new AdminServerStatusTool(),
-            new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            ..McpToolRoster.DraftAuthoring(jobService),
-            new PlanAnalysisTool(
-                Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
-                jobService,
-                NullLogger<PlanAnalysisTool>.Instance),
-            new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
-            new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
-            new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
-            new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
-            new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance),
-            new IngestJobArtifactTool(NullLogger<IngestJobArtifactTool>.Instance),
-            new RouteTool(jobService, NullLogger<RouteTool>.Instance),
-            new OpsHealthTool(NullLogger<OpsHealthTool>.Instance),
-            new OpsFindingsTool(NullLogger<OpsFindingsTool>.Instance),
-            new AlertEventsTool(NullLogger<AlertEventsTool>.Instance),
-            new OperateEventsTool(NullLogger<OperateEventsTool>.Instance),
-            new PlatformReleaseStatusTool(NullLogger<PlatformReleaseStatusTool>.Instance),
-            new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance),
-            new SupportedOperationKindsTool(NullLogger<SupportedOperationKindsTool>.Instance),
-            new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance),
-            new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
-            new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
-            new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
-            new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
-            new ProposePlatformReleaseConvergenceTool(
-                NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
-            new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
-            new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
-            ..McpToolRoster.MapDiscoveryAndStudio(jobService),
-        ];
-    }
+    private static IMcpTool[] BuildLiveTools() =>
+    [
+        ..McpTaxonomyAlignmentTests.BuildTools(),
+        new AdminServerStatusTool(),
+    ];
 
     private static IMcpResource[] BuildLiveResources()
     {

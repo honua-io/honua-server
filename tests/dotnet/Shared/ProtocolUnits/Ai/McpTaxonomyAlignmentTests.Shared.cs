@@ -14,8 +14,10 @@ using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Reporting.Abstractions;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
@@ -45,7 +47,16 @@ public sealed partial class McpTaxonomyAlignmentTests
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            ..McpToolRoster.DraftAuthoring(jobService),
+            new CreateMapTool(
+                jobService,
+                new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
+                NullLogger<CreateMapTool>.Instance),
+            new CreateAppTool(
+                jobService,
+                new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
+                NullLogger<CreateAppTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,
