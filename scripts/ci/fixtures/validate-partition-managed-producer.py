@@ -137,7 +137,8 @@ class ProducerTests(unittest.TestCase):
             eligible = sorted(project for project, placements in consumers.items()
                               if all(placements) and project not in partition.INDEPENDENT_ROOTS)
             actual = partition.local_only_projects(partition.LocalOnlyRequest(
-                list(consumers), result, config, True, True, True))
+                projects=list(consumers), matrix_result=result, config=config,
+                heavy_ready=True, heavy_runner_configured=True, same_repo_pr=True))
             self.assertEqual(eligible, actual)
             if selected_names == names:
                 self.assertEqual([], actual)
