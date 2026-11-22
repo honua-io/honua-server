@@ -1,9 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -19,7 +19,6 @@ internal static partial class SceneDatasetEndpoints
 {
     private const string ScenesAdminTagAdmin = "Admin";
     private const string ScenesAdminTagScenes = "Scene Datasets";
-    private const string DefaultTilesetFileName = "tileset.json";
 
     public static IEndpointRouteBuilder MapSceneDatasetEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -143,6 +142,12 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
         }
 
+        if (ValidateCopcSource(record) is { } copcFailure)
+        {
+            SceneDatasetEndpointsLog.RegisterValidationFailed(logger, request.Id ?? "<unknown>", copcFailure.Error);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, copcFailure.StatusCode, copcFailure.Error);
+        }
+
         try
         {
             var saved = await service.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
@@ -246,6 +251,13 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
         }
 
+        if ((request.ServingFormat is not null || request.AssetRoot is not null || request.TilesetFileName is not null)
+            && ValidateCopcSource(updated) is { } copcFailure)
+        {
+            SceneDatasetEndpointsLog.UpdateValidationFailed(logger, existing.Id, copcFailure.Error);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, copcFailure.StatusCode, copcFailure.Error);
+        }
+
         try
         {
             var saved = await service.UpdateAsync(updated, cancellationToken).ConfigureAwait(false);
@@ -340,26 +352,42 @@ internal static partial class SceneDatasetEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var tilesetUrl = string.Concat(
-                baseUrl.AsSpan().TrimEnd('/'),
-                "/scenes/".AsSpan(),
-                record.Id.AsSpan(),
-                "/tileset.json".AsSpan());
+            var canonical = SceneCatalog.ResolveEndpoints(SceneCatalog.ToEntry(record), baseUrl);
+            var tilesetUrl = canonical.TilesetUrl ?? string.Empty;
+            var copcUrl = canonical.Endpoints
+                .FirstOrDefault(e => string.Equals(e.EndpointFormat, SceneServingProjection.CopcWireFormat, StringComparison.Ordinal))
+                ?.Url;
 
             var response = new SceneDatasetResolveResponse
             {
                 DatasetId = record.DatasetId,
                 Id = record.Id,
                 Name = record.Name,
+                ServingFormat = SceneServingProjection.ToWireValue(canonical.ServingFormat),
+                ContentKind = SceneServingProjection.ToWireValue(canonical.ContentKind),
                 TilesetUrl = tilesetUrl,
+                CopcUrl = copcUrl,
+                Endpoints = canonical.Endpoints
+                    .Select(static e => new SceneDatasetResolvedEndpointDto
+                    {
+                        Kind = e.Kind,
+                        EndpointFormat = e.EndpointFormat,
+                        Url = e.Url,
+                        MediaType = e.MediaType,
+                        RequiresAuthentication = e.RequiresAuthentication,
+                        AccessSession = e.AccessSession is { } session
+                            ? new SceneDatasetAccessSessionDto { Href = session.Href, Method = session.Method }
+                            : null
+                    })
+                    .ToArray(),
                 Extent = ToDto(record.Extent),
                 Crs = record.Crs,
                 CachePolicy = ToDto(record.CachePolicy),
                 IsPublic = record.IsPublic,
                 RequiresAuth = record.RequiresAuth,
                 Status = StatusToWire(record.Status),
-                CesiumJsSnippet = SceneSnippetGenerator.BuildCesiumJs(tilesetUrl),
-                HonuaSceneSnippet = SceneSnippetGenerator.BuildHonuaSceneTag(tilesetUrl)
+                CesiumJsSnippet = string.IsNullOrEmpty(tilesetUrl) ? string.Empty : SceneSnippetGenerator.BuildCesiumJs(tilesetUrl),
+                HonuaSceneSnippet = string.IsNullOrEmpty(tilesetUrl) ? string.Empty : SceneSnippetGenerator.BuildHonuaSceneTag(tilesetUrl)
             };
 
             return Results.Json(response, SceneDatasetJsonContext.Default.SceneDatasetResolveResponse);
@@ -373,298 +401,6 @@ internal static partial class SceneDatasetEndpoints
                 "Failed to resolve scene dataset.");
         }
     }
-
-    private static bool TryBuildRecord(
-        RegisterSceneDatasetRequest request,
-        HttpContext context,
-        out SceneDatasetRecord record,
-        out string error)
-    {
-        record = null!;
-
-        if (!SceneDatasetValidator.TryValidateSceneId(request.Id, out var idError))
-        {
-            error = idError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateName(request.Name, out var nameError))
-        {
-            error = nameError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateAssetRoot(request.AssetRoot, out var assetRootError))
-        {
-            error = assetRootError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateTilesetFileName(request.TilesetFileName, out var tilesetFileNameError))
-        {
-            error = tilesetFileNameError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateCrs(request.Crs, out var crsError))
-        {
-            error = crsError;
-            return false;
-        }
-
-        var cachePolicy = FromDto(request.CachePolicy) ?? SceneCachePolicy.Default;
-        if (!SceneDatasetValidator.TryValidateCachePolicy(cachePolicy, out var cacheError))
-        {
-            error = cacheError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateEditionGate(request.EditionGate, out var editionError))
-        {
-            error = editionError;
-            return false;
-        }
-
-        if (!TryFromExtentDto(request.Extent, out var extent, out var extentDtoError))
-        {
-            error = extentDtoError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateExtent(extent, out var extentError))
-        {
-            error = extentError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateAccessFlags(request.IsPublic, request.RequiresAuth, out var flagsError))
-        {
-            error = flagsError;
-            return false;
-        }
-
-        if (!TryParseDatasetType(request.DatasetType, out var datasetType, out var datasetTypeError))
-        {
-            error = datasetTypeError;
-            return false;
-        }
-
-        record = new SceneDatasetRecord
-        {
-            DatasetId = Guid.NewGuid(),
-            Id = request.Id,
-            Name = request.Name,
-            Description = NormalizeOptional(request.Description),
-            AssetRoot = request.AssetRoot,
-            TilesetFileName = string.IsNullOrWhiteSpace(request.TilesetFileName)
-                ? DefaultTilesetFileName
-                : request.TilesetFileName!,
-            DatasetType = datasetType,
-            Extent = extent,
-            Crs = NormalizeOptional(request.Crs),
-            CachePolicy = cachePolicy,
-            EditionGate = NormalizeOptional(request.EditionGate),
-            RequiresAuth = request.RequiresAuth,
-            IsPublic = request.IsPublic,
-            AllowedRoles = request.AllowedRoles?.Length > 0 ? request.AllowedRoles : null,
-            Status = SceneDatasetStatus.Active,
-            ValidationMessage = null,
-            Revision = 1,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = ResolveCreatedBy(context),
-            UpdatedAt = null
-        };
-        error = string.Empty;
-        return true;
-    }
-
-    private static bool TryApplyUpdate(
-        SceneDatasetRecord existing,
-        UpdateSceneDatasetRequest request,
-        out SceneDatasetRecord updated,
-        out string error)
-    {
-        updated = existing;
-
-        var name = request.Name ?? existing.Name;
-        if (!SceneDatasetValidator.TryValidateName(name, out var nameError))
-        {
-            error = nameError;
-            return false;
-        }
-
-        var assetRoot = request.AssetRoot ?? existing.AssetRoot;
-        if (!SceneDatasetValidator.TryValidateAssetRoot(assetRoot, out var assetRootError))
-        {
-            error = assetRootError;
-            return false;
-        }
-
-        if (!SceneDatasetValidator.TryValidateTilesetFileName(request.TilesetFileName, out var tilesetFileNameError))
-        {
-            error = tilesetFileNameError;
-            return false;
-        }
-
-        var crs = request.ClearCrs == true ? null : (request.Crs ?? existing.Crs);
-        if (!SceneDatasetValidator.TryValidateCrs(crs, out var crsError))
-        {
-            error = crsError;
-            return false;
-        }
-
-        var cachePolicy = FromDto(request.CachePolicy) ?? existing.CachePolicy ?? SceneCachePolicy.Default;
-        if (!SceneDatasetValidator.TryValidateCachePolicy(cachePolicy, out var cacheError))
-        {
-            error = cacheError;
-            return false;
-        }
-
-        var editionGate = request.ClearEditionGate == true
-            ? null
-            : (request.EditionGate ?? existing.EditionGate);
-        if (!SceneDatasetValidator.TryValidateEditionGate(editionGate, out var editionError))
-        {
-            error = editionError;
-            return false;
-        }
-
-        SceneExtent? extent;
-        if (request.ClearExtent == true)
-        {
-            extent = null;
-        }
-        else if (request.Extent is not null)
-        {
-            if (!TryFromExtentDto(request.Extent, out extent, out var extentDtoError))
-            {
-                error = extentDtoError;
-                return false;
-            }
-        }
-        else
-        {
-            extent = existing.Extent;
-        }
-
-        if (!SceneDatasetValidator.TryValidateExtent(extent, out var extentError))
-        {
-            error = extentError;
-            return false;
-        }
-
-        var isPublic = request.IsPublic ?? existing.IsPublic;
-        var requiresAuth = request.RequiresAuth ?? existing.RequiresAuth;
-        if (!SceneDatasetValidator.TryValidateAccessFlags(isPublic, requiresAuth, out var flagsError))
-        {
-            error = flagsError;
-            return false;
-        }
-
-        var datasetType = existing.DatasetType;
-        if (!string.IsNullOrWhiteSpace(request.DatasetType)
-            && !TryParseDatasetType(request.DatasetType, out datasetType, out var datasetTypeError))
-        {
-            error = datasetTypeError;
-            return false;
-        }
-
-        IReadOnlyList<string>? allowedRoles;
-        if (request.ClearAllowedRoles == true)
-        {
-            allowedRoles = null;
-        }
-        else if (request.AllowedRoles is not null)
-        {
-            allowedRoles = request.AllowedRoles.Length > 0 ? request.AllowedRoles : null;
-        }
-        else
-        {
-            allowedRoles = existing.AllowedRoles;
-        }
-
-        updated = existing with
-        {
-            Name = name,
-            Description = request.Description ?? existing.Description,
-            AssetRoot = assetRoot,
-            TilesetFileName = string.IsNullOrWhiteSpace(request.TilesetFileName)
-                ? existing.TilesetFileName
-                : request.TilesetFileName!,
-            DatasetType = datasetType,
-            Extent = extent,
-            Crs = crs,
-            CachePolicy = cachePolicy,
-            EditionGate = editionGate,
-            RequiresAuth = requiresAuth,
-            IsPublic = isPublic,
-            AllowedRoles = allowedRoles
-        };
-        error = string.Empty;
-        return true;
-    }
-
-    private static bool TryParseDatasetType(string? value, out SceneDatasetType type, out string error)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            type = SceneDatasetType.HostedTiles;
-            error = string.Empty;
-            return true;
-        }
-
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case "hosted_tiles":
-            case "hostedtiles":
-                type = SceneDatasetType.HostedTiles;
-                error = string.Empty;
-                return true;
-            case "terrain":
-                type = SceneDatasetType.Terrain;
-                error = string.Empty;
-                return true;
-            case "building":
-                type = SceneDatasetType.Building;
-                error = string.Empty;
-                return true;
-            case "point_cloud":
-            case "pointcloud":
-                type = SceneDatasetType.PointCloud;
-                error = string.Empty;
-                return true;
-            default:
-                type = SceneDatasetType.HostedTiles;
-                error = $"Unknown dataset type '{value}'. Allowed: hosted_tiles, terrain, building, point_cloud.";
-                return false;
-        }
-    }
-
-    private static bool TryFromExtentDto(
-        SceneExtentDto? dto,
-        out SceneExtent? extent,
-        [System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out string? error)
-    {
-        extent = null;
-        error = null;
-
-        if (dto is null)
-        {
-            return true;
-        }
-
-        if (dto.XMin is null || dto.YMin is null || dto.XMax is null || dto.YMax is null)
-        {
-            error = "Extent requires all four bounds (xMin, yMin, xMax, yMax).";
-            return false;
-        }
-
-        extent = new SceneExtent(dto.XMin.Value, dto.YMin.Value, dto.XMax.Value, dto.YMax.Value);
-        return true;
-    }
-
-    private static SceneCachePolicy? FromDto(SceneCachePolicyDto? dto)
-        => dto is null ? null : new SceneCachePolicy(dto.MaxAgeSeconds, dto.NoStore);
 
     private static SceneExtentDto? ToDto(SceneExtent? extent)
         => extent is null ? null : new SceneExtentDto
@@ -709,6 +445,8 @@ internal static partial class SceneDatasetEndpoints
         Name = record.Name,
         Description = record.Description,
         DatasetType = DatasetTypeToWire(record.DatasetType),
+        ServingFormat = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveServingFormat(record)),
+        ContentKind = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveContentKind(record)),
         IsPublic = record.IsPublic,
         RequiresAuth = record.RequiresAuth,
         Status = StatusToWire(record.Status),
@@ -724,6 +462,8 @@ internal static partial class SceneDatasetEndpoints
         Name = record.Name,
         Description = record.Description,
         DatasetType = DatasetTypeToWire(record.DatasetType),
+        ServingFormat = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveServingFormat(record)),
+        ContentKind = SceneServingProjection.ToWireValue(SceneServingProjection.ResolveContentKind(record)),
         AssetRoot = record.AssetRoot,
         TilesetFileName = record.TilesetFileName,
         Extent = ToDto(record.Extent),
@@ -740,12 +480,6 @@ internal static partial class SceneDatasetEndpoints
         CreatedBy = record.CreatedBy,
         UpdatedAt = record.UpdatedAt
     };
-
-    private static string? NormalizeOptional(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value;
-
-    private static string ResolveCreatedBy(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class SceneDatasetEndpointsLogCategory;
 

@@ -17545,8 +17545,25 @@
           "Scenes"
         ],
         "summary": "Generate Scene From Feature Layer",
-        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Generation runs synchronously inside the request; the response carries the routable tileset URL plus feature/tile counts. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable.",
+        "description": "Generates a 3D Tiles tileset from a published feature layer and registers the resulting scene dataset. Runs synchronously by default; the response carries the routable tileset URL plus feature/tile counts. Request experimental async execution in the query or JSON body, or send Prefer: respond-async. Returns 404 when the source layer does not exist, 409 when the derived scene id collides with an existing registration, and 503 when the generation pipeline is temporarily unavailable or experimental async is disabled. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "generateScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17564,6 +17581,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenerateSceneResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -17592,14 +17627,216 @@
         }
       }
     },
-    "/scenes/ingest/citygml": {
+    "/scenes/jobs": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "List scene jobs",
+        "description": "Lists jobs admitted by this server instance. Job state is held in memory and is lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
+        "operationId": "listSceneJobs",
+        "parameters": [
+          {
+            "name": "sceneId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List scene jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SceneJobStatusResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Get a scene job",
+        "description": "Poll the same server instance that accepted the job. Completed job records are held in memory and lost on restart. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs.",
+        "operationId": "getSceneJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get a scene job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/assets": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "List scene assets",
+        "operationId": "listSceneAssets",
+        "parameters": [
+          {
+            "name": "includeInactive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List scene assets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SceneAssetLifecycleResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/scenes/assets/{sceneId}": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Get a scene asset",
+        "operationId": "getSceneAsset",
+        "parameters": [
+          {
+            "name": "sceneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get a scene asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneAssetLifecycleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/scenes/ingest/archive": {
       "post": {
         "tags": [
           "Scenes"
         ],
-        "summary": "Ingest CityGML Scene",
-        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402.",
-        "operationId": "ingestCityGmlScene",
+        "summary": "Import a pre-tiled 3D Tiles ZIP or 3TZ archive",
+        "operationId": "ingestArchiveScene",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17610,6 +17847,289 @@
                   "file"
                 ],
                 "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "sceneId": {
+                    "type": "string",
+                    "description": "Explicit scene slug. The server derives one when omitted."
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "editionGate": {
+                    "type": "string"
+                  },
+                  "cacheMaxAgeSeconds": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "requiresAuth": {
+                    "type": "boolean"
+                  },
+                  "async": {
+                    "type": "boolean"
+                  },
+                  "tilesetFileName": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The imported scene.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneArchiveIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/ingest/model": {
+      "post": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Import a georeferenced GLB, embedded glTF, or OBJ model",
+        "operationId": "ingestModelScene",
+        "description": "Runs synchronously by default. Request experimental async execution with async=true or Prefer: respond-async. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "longitude",
+                  "latitude"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "sceneId": {
+                    "type": "string",
+                    "description": "Explicit scene slug. The server derives one when omitted."
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "editionGate": {
+                    "type": "string"
+                  },
+                  "cacheMaxAgeSeconds": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "requiresAuth": {
+                    "type": "boolean"
+                  },
+                  "async": {
+                    "type": "boolean"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "height": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "headingDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "pitchDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "rollDegrees": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scale": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleX": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleY": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "scaleZ": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The imported scene.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneModelIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
+          }
+        }
+      }
+    },
+    "/scenes/ingest/citygml": {
+      "post": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Ingest CityGML Scene",
+        "description": "Uploads a CityGML document (multipart/form-data, `file` field, 64 MiB maximum) and converts it into a Building Scene Layer 3D Tiles tileset, registering the result as a servable scene. Enterprise-gated: an authenticated operator without the `scene.bim-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "operationId": "ingestCityGmlScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -17656,6 +18176,24 @@
               }
             }
           },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
@@ -17673,6 +18211,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -17683,8 +18224,25 @@
           "Scenes"
         ],
         "summary": "Ingest Point Cloud Scene",
-        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402.",
+        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Set servingFormat to copc to register a validated COPC upload directly for HTTP range reads. This mode requires a COPC source and returns 409 for LAS/LAZ requiring conversion. Direct COPC ingest is synchronous. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestPointCloudScene",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "example": "respond-async"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -17695,6 +18253,10 @@
                   "file"
                 ],
                 "properties": {
+                  "async": {
+                    "type": "boolean",
+                    "description": "Queue the ingest and return a job reference."
+                  },
                   "file": {
                     "type": "string",
                     "format": "binary",
@@ -17727,7 +18289,7 @@
                   },
                   "sourceCrsAxisOrder": {
                     "type": "string",
-                    "description": "Geographic axis order of the source point cloud. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
+                    "description": "Geographic axis order used for 3D Tiles conversion. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
                     "enum": [
                       "lonlat",
                       "longlat",
@@ -17740,8 +18302,17 @@
                   },
                   "sourceEpsg": {
                     "type": "string",
-                    "description": "Source CRS as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
+                    "description": "Source CRS for 3D Tiles conversion as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
                     "example": "EPSG:32610"
+                  },
+                  "servingFormat": {
+                    "type": "string",
+                    "enum": [
+                      "3d-tiles",
+                      "copc"
+                    ],
+                    "default": "3d-tiles",
+                    "description": "Generate a 3D Tiles point tileset or serve the uploaded COPC directly."
                   }
                 }
               }
@@ -17750,11 +18321,29 @@
         },
         "responses": {
           "201": {
-            "description": "The ingested scene, tileset URL, and point/tile counts.",
+            "description": "The ingested scene, serving URL, and point/tile counts.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScenePointCloudIngestResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The scene job was queued. Poll the status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneJobAcceptedResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Job status URL.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -17776,6 +18365,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Experimental asynchronous scene jobs are disabled on this server."
           }
         }
       }
@@ -25405,6 +25997,314 @@
       }
     },
     "schemas": {
+      "SceneArchiveIngestResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string"
+          },
+          "i3sUrl": {
+            "type": "string"
+          },
+          "tilesetFileName": {
+            "type": "string"
+          },
+          "tilesetVersion": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "xMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "xMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SceneModelIngestResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string"
+          },
+          "i3sUrl": {
+            "type": "string"
+          },
+          "sourceFormat": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "boundingRegionDegrees": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "minHeightMeters": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxHeightMeters": {
+            "type": "number",
+            "format": "double"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SceneJobAcceptedResponse": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "sceneId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SceneJobStatusResponse": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sceneId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "tilesetUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "i3sUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "tileCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "SceneAssetLifecycleResponse": {
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string"
+          },
+          "datasetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "datasetType": {
+            "type": "string"
+          },
+          "lifecycleStatus": {
+            "type": "string"
+          },
+          "jobStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestJobId": {
+            "type": "string",
+            "nullable": true
+          },
+          "publishedRevision": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "tilesetUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "i3sUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "requiresAuth": {
+            "type": "boolean"
+          },
+          "crs": {
+            "type": "string",
+            "nullable": true
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "xMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMin": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "xMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              },
+              "yMax": {
+                "type": "number",
+                "format": "double",
+                "nullable": true
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
       "ToolboxTranslationManifest": {
         "type": "object",
         "description": "SDK-translated toolbox manifest submitted for validation against the canonical process catalog. Produced by the honua-migrate toolbox translation CLI; the server never parses a proprietary binary toolbox itself.",
@@ -47858,6 +48758,29 @@
             "format": "date-time",
             "description": "Last-update timestamp.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -47967,6 +48890,29 @@
             "format": "date-time",
             "description": "Last-update timestamp.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -47989,7 +48935,7 @@
           },
           "tilesetUrl": {
             "type": "string",
-            "description": "Absolute URL of the root tileset document."
+            "description": "Absolute URL of the root tileset document when available. Empty otherwise."
           },
           "extent": {
             "$ref": "#/components/schemas/SceneDatasetExtent"
@@ -48026,6 +48972,77 @@
           "honuaSceneSnippet": {
             "type": "string",
             "description": "Honua scene custom-element snippet for the tileset."
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
+          },
+          "copcUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute URL of the COPC object when served as COPC."
+          },
+          "endpoints": {
+            "type": "array",
+            "description": "Serving endpoints and any required access session.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "endpointFormat": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "mediaType": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "requiresAuthentication": {
+                  "type": "boolean"
+                },
+                "accessSession": {
+                  "type": "object",
+                  "nullable": true,
+                  "properties": {
+                    "href": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "POST"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -48103,6 +49120,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -48194,6 +49234,29 @@
             "type": "boolean",
             "description": "Pass true to clear the allowed-roles list.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -48204,6 +49267,10 @@
           "layerId"
         ],
         "properties": {
+          "async": {
+            "type": "boolean",
+            "description": "Queue generation and return a job reference."
+          },
           "layerId": {
             "type": "integer",
             "format": "int32",
@@ -48364,7 +49431,7 @@
           },
           "tilesetUrl": {
             "type": "string",
-            "description": "Routable URL for the generated point tileset's root document."
+            "description": "URL of the generated root tileset document. Empty for direct COPC ingest."
           },
           "pointCount": {
             "type": "integer",
@@ -48374,19 +49441,38 @@
           "tileCount": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of .pnts tile content files written under the scene asset root."
+            "description": "Number of generated .pnts tiles, or 1 for direct COPC ingest."
           },
           "hasColor": {
             "type": "boolean",
-            "description": "True when the source carried per-point RGB preserved in the output tiles."
+            "description": "True when the served point cloud carries per-point RGB."
           },
           "boundingRegionDegrees": {
             "type": "array",
-            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north].",
+            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north]. Omitted for direct COPC ingest.",
             "items": {
               "type": "number",
               "format": "double"
             }
+          },
+          "copcUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute URL of the COPC object when served as COPC."
+          },
+          "servingFormat": {
+            "type": "string",
+            "enum": [
+              "3d-tiles",
+              "copc"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "enum": [
+              "point-cloud"
+            ]
           }
         }
       },

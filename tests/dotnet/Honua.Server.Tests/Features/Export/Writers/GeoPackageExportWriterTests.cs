@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
+using Honua.TestKit.Attributes;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using WkbWriter = NetTopologySuite.IO.WKBWriter;
@@ -91,6 +92,55 @@ public sealed class GeoPackageExportWriterTests
             var dimensions = await ReadGeometryDimensionsAsync(tempPath);
             dimensions.Z.Should().Be(2);
             dimensions.M.Should().Be(0);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    [UnitTest]
+    public async Task WriteAsync_WithEmbeddedEwkbSrid_StripsEwkbSridFromInnerWkbPayload()
+    {
+        var tempPath = CreateTempGeoPackagePath();
+
+        try
+        {
+            var ewkbPoint = new WkbWriter(NetTopologySuite.IO.ByteOrder.LittleEndian, handleSRID: true, emitZ: true, emitM: false)
+                .Write(new Point(new CoordinateZ(10, 20, 30)) { SRID = 4326 });
+
+            await GeoPackageExportWriter.WriteAsync(
+                tempPath,
+                AsAsyncEnumerable(CreateFeature(1, ewkbPoint)),
+                [],
+                ExportGeometryType.Point,
+                4326,
+                "EPSG:4326",
+                null,
+                CancellationToken.None);
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = tempPath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString();
+
+            await using var connection = new SqliteConnection(connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT geom FROM features LIMIT 1";
+            var blob = (byte[])(await cmd.ExecuteScalarAsync())!;
+
+            // 8-byte GeoPackage header + inner WKB without 4-byte embedded EWKB SRID
+            blob.Length.Should().Be(8 + ewkbPoint.Length - 4);
+            var innerWkb = blob.AsSpan(8).ToArray();
+            var innerType = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(innerWkb.AsSpan(1, 4));
+            (innerType & 0x20000000u).Should().Be(0u, "inner WKB payload must not retain the EWKB SRID flag");
+            var parsed = new NetTopologySuite.IO.WKBReader().Read(innerWkb);
+            parsed.Coordinate.X.Should().Be(10);
+            parsed.Coordinate.Y.Should().Be(20);
+            parsed.Coordinate.Z.Should().Be(30);
         }
         finally
         {

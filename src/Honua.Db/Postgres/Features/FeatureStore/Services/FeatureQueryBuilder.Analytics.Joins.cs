@@ -92,16 +92,19 @@ internal sealed partial class FeatureQueryBuilder
             // operators. Under Geometry storage this reduces to `j.geometry`,
             // which keeps the existing GIST-index friendly `&&` fast-path intact
             // when the join layer happens to share the target layer's SRID.
-            var joinGeometryOperand = _geometryProcessor.GetGeometryOperand(
+            var rawJoinGeometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType,
                 $"j.{DatabaseSchema.GeometryColumn}",
                 joinQuery.JoinLayerSrid);
 
             // Cross-CRS transform: when both SRIDs are known and differ, wrap the
-            // join operand with ST_Transform so the spatial predicate evaluates in
+            // join operand with ST_Transform so planar spatial predicates evaluate in
             // the target layer's CRS. Same-CRS or unknown SRIDs skip the wrap so
-            // PostGIS can keep using the GiST index on the join layer.
-            if (targetQuery.SpatialReferenceSrid.HasValue &&
+            // PostGIS can keep using the GiST index on the join layer. DWithin
+            // normalizes both operands to EPSG:4326 geography in BuildSpatialJoinPredicate.
+            var joinGeometryOperand = rawJoinGeometryOperand;
+            if (joinQuery.Predicate != SpatialJoinPredicate.DWithin &&
+                targetQuery.SpatialReferenceSrid.HasValue &&
                 joinQuery.JoinLayerSrid.HasValue &&
                 targetQuery.SpatialReferenceSrid.Value != joinQuery.JoinLayerSrid.Value)
             {
@@ -111,7 +114,13 @@ internal sealed partial class FeatureQueryBuilder
 
             // Predicate clause references the typed operands established above.
             var predicate = BuildSpatialJoinPredicate(
-                joinQuery, "t.geom", joinGeometryOperand, ref paramIndex, parameters);
+                joinQuery,
+                "t.geom",
+                joinGeometryOperand,
+                targetQuery.SpatialReferenceSrid,
+                joinQuery.JoinLayerSrid ?? targetQuery.SpatialReferenceSrid,
+                ref paramIndex,
+                parameters);
 
             // Outer SELECT — one row per target with stats over matching join rows.
             // The target geometry is reprojected to EPSG:4326 before serialisation
@@ -163,6 +172,8 @@ internal sealed partial class FeatureQueryBuilder
         SpatialJoinQuery joinQuery,
         string targetGeometryExpression,
         string joinGeometryExpression,
+        int? targetSrid,
+        int? joinSrid,
         ref int paramIndex,
         List<object> parameters)
     {
@@ -195,14 +206,21 @@ internal sealed partial class FeatureQueryBuilder
 
                 var distanceParam = $"${paramIndex++}";
                 parameters.Add(joinQuery.DistanceMeters.Value);
+                var targetGeography = ToWgs84Geography(targetGeometryExpression, targetSrid);
+                var joinGeography = ToWgs84Geography(joinGeometryExpression, joinSrid);
                 return FormattableString.Invariant(
-                    $"ST_DWithin({targetGeometryExpression}::geography, {joinGeometryExpression}::geography, {distanceParam})");
+                    $"ST_DWithin({targetGeography}, {joinGeography}, {distanceParam})");
 
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(joinQuery), joinQuery.Predicate, "Unsupported spatial join predicate.");
         }
     }
+
+    private static string ToWgs84Geography(string geometryExpression, int? srid)
+        => srid is int sourceSrid && sourceSrid != 4326
+            ? FormattableString.Invariant($"ST_Transform({geometryExpression}, 4326)::geography")
+            : FormattableString.Invariant($"{geometryExpression}::geography");
 
     private static void AppendJoinCarryFieldColumns(
         StringBuilder sql, ImmutableArray<string>? carryFields)

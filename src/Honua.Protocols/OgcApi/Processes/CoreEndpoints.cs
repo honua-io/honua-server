@@ -65,7 +65,7 @@ internal static class CoreEndpoints
             .Produces(StatusCodes.Status404NotFound);
     }
 
-    private static IResult GetLandingPage(
+    internal static IResult GetLandingPage(
         HttpContext context,
         string? f,
         ILogger<OgcProcessesEndpointsLog> logger)
@@ -103,7 +103,7 @@ internal static class CoreEndpoints
             "Landing page");
     }
 
-    private static IResult GetConformance(
+    internal static IResult GetConformance(
         HttpContext context,
         string? f,
         ILogger<OgcProcessesEndpointsLog> logger)
@@ -120,12 +120,13 @@ internal static class CoreEndpoints
             return errorResult!;
         }
 
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var conformance = new ConformanceDeclaration
         {
             ConformsTo = ConformanceClasses,
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
                 context,
-                $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}/conformance",
+                $"{baseUrl}{BasePath}/conformance",
                 outputFormat)
         };
 

@@ -36,7 +36,7 @@ internal static class OgcRecordMetadataFormats
         ("dcat", DcatMediaType, OgcRecordOutputFormat.DcatAp, "DCAT-AP metadata"),
     ];
 
-    private static readonly string[] GeoJsonMediaTypes = [MediaTypes.GeoJson, MediaTypes.Json, "*/*", "application/*"];
+    private static readonly string[] GeoJsonMediaTypes = [MediaTypes.GeoJson, MediaTypes.Json, MediaTypes.Html, "*/*", "application/*"];
 
     // f wins; otherwise the highest-quality Accept range this record can be served as.
     public static OgcRecordFormatNegotiation Negotiate(HttpRequest request, string? f, DescribedItemKind kind)

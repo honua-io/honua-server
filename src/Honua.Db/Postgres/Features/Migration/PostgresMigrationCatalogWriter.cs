@@ -27,6 +27,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
     private readonly ILogger<PostgresMigrationCatalogWriter> _logger;
     private readonly NpgsqlDataSource? _dataSource;
     private readonly IReadOnlyList<string> _metadataSchemas;
+    private readonly string _quotedMetadataSchema;
 
     public PostgresMigrationCatalogWriter(
         ILogger<PostgresMigrationCatalogWriter> logger,
@@ -36,6 +37,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dataSource = dataSource;
         _metadataSchemas = schemaConfiguration?.MetadataSchemas ?? [PostgresSchemaConfiguration.DefaultMetadataSchema];
+        _quotedMetadataSchema = SchemaSearchPath.ValidateAndQuote(
+            schemaConfiguration?.MetadataSchema ?? PostgresSchemaConfiguration.DefaultMetadataSchema);
     }
 
     private NpgsqlConnection CreateConnection(string connectionString) =>
@@ -57,8 +60,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
 
         // Idempotent upsert: ON CONFLICT (service_name) DO NOTHING lets the apply
         // plan re-run safely against the same target without duplicating catalog rows.
-        const string sql = """
-            INSERT INTO honua.services (
+        var sql = $"""
+            INSERT INTO {_quotedMetadataSchema}.services (
                 service_name,
                 description,
                 srid,

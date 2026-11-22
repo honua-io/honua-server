@@ -1788,4 +1788,35 @@ public class ImageServerExportHandlerTests
         file.FileStream.CopyTo(copy);
         return copy.ToArray();
     }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithInvalidPixelType_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(pixelType: "INVALID_PIXEL_TYPE");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTheory]
+    [InlineData("12", 12)]
+    [InlineData("10,10", 10)]
+    [InlineData("10.4,9.6", 10)]
+    [InlineData("{\"x\":15,\"y\":25}", 20)]
+    [InlineData("{\"x\":18.4}", 18)]
+    public void CreateIdentifyRequest_WithScalarTupleOrJsonPixelSize_ParsesExpectedPixelSize(string rawPixelSize, int expected)
+    {
+        var values = new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["geometry"] = "10,20",
+            ["pixelSize"] = rawPixelSize
+        };
+
+        var request = Honua.Protocols.GeoServices.ImageServer.ImageServerEndpoints.CreateIdentifyRequest(values);
+        request.PixelSize.Should().Be(expected);
+    }
 }

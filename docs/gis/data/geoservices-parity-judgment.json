@@ -2233,6 +2233,14 @@
           "notes": "Job cancellation with route binding validation. Implemented in #723."
         },
         {
+          "name": "Job Messages (generic)",
+          "status": "implemented",
+          "geoServicesPaths": [
+            "/GPServer/{taskName}/jobs/{jobId}/messages"
+          ],
+          "notes": "Returns the Esri GP job messages array for a submitted job with route binding validation."
+        },
+        {
           "name": "Submit Job (generic)",
           "status": "implemented",
           "geoServicesPaths": [

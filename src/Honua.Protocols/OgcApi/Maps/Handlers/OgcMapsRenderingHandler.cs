@@ -133,7 +133,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.CollectionMapRenderCompleted(_logger, layerId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, renderRequest.Value);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -385,7 +385,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.DatasetMapRenderCompleted(_logger, resolvedLayerCount, result.Data.Length);
             scope.SetSuccess(resolvedLayerCount);
 
-            return CreateMapFileResult(context, result, renderRequest.Value);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -489,7 +489,7 @@ internal sealed class OgcMapsRenderingHandler
                     resource,
                     service,
                     stylesheet.Content,
-                    styledRequest,
+                    (styledRequest, request.Crs),
                     context,
                     scope,
                     cancellationToken).ConfigureAwait(false);
@@ -511,7 +511,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, styledRequest);
+            return CreateMapFileResult(context, result, (styledRequest, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -542,11 +542,12 @@ internal sealed class OgcMapsRenderingHandler
         MetadataV2Object resource,
         MetadataV2Service? service,
         string mapLibreStyleJson,
-        MapRenderRequest renderRequest,
+        (MapRenderRequest Request, string? Crs) rendering,
         HttpContext? context,
         HonuaTelemetryScope scope,
         CancellationToken cancellationToken)
     {
+        var renderRequest = rendering.Request;
         // The Skia pipeline resolves request-scoped services (feature reader, capacity
         // limiter, coordinate transform) from the HTTP context, so styled vector rendering
         // requires a live request. Without one we surface the same honest 501 as raster.
@@ -626,7 +627,7 @@ internal sealed class OgcMapsRenderingHandler
             }
         };
 
-        return CreateMapFileResult(context, result, renderRequest);
+        return CreateMapFileResult(context, result, rendering);
     }
 
     private static bool ResourceHasGeometry(MetadataV2Object resource)
@@ -780,8 +781,10 @@ internal sealed class OgcMapsRenderingHandler
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
             : Results.Problem(message, statusCode: 500);
 
-    private static IResult CreateMapFileResult(HttpContext? context, RasterResult result, MapRenderRequest renderRequest)
+    private static IResult CreateMapFileResult(
+        HttpContext? context, RasterResult result, (MapRenderRequest Request, string? Crs) rendering)
     {
+        var renderRequest = rendering.Request;
         if (context is not null)
         {
             string? contentBboxHeader = null;
@@ -797,7 +800,7 @@ internal sealed class OgcMapsRenderingHandler
                 bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
             }
 
-            var spatialHeaders = ResolveSpatialHeaders(context, bboxSrid, contentBboxHeader);
+            var spatialHeaders = ResolveSpatialHeaders(rendering.Crs, bboxSrid, contentBboxHeader);
             contentBboxHeader = spatialHeaders.Bbox;
             var contentCrsHeader = spatialHeaders.Crs;
             if (contentBboxHeader is not null)
@@ -816,11 +819,11 @@ internal sealed class OgcMapsRenderingHandler
         return EncodedRasterResults.File(result.Data, result.ContentType);
     }
 
-    private static (string? Crs, string? Bbox) ResolveSpatialHeaders(HttpContext context, int? bboxSrid, string? bbox)
+    private static (string? Crs, string? Bbox) ResolveSpatialHeaders(string? requestedCrs, int? bboxSrid, string? bbox)
     {
         var crs = FormatContentCrsHeader(bboxSrid);
-        if (SpatialReferenceHelpers.TryParseCrsDefinition(context.Request.Query["crs"].ToString(), out var outputCrs) &&
-            outputCrs.Srid == bboxSrid)
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(requestedCrs, out var outputCrs) &&
+            (bboxSrid is null or <= 0 || outputCrs.Srid == bboxSrid))
         {
             crs = $"<{outputCrs.Uri}>";
             if (bbox is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)

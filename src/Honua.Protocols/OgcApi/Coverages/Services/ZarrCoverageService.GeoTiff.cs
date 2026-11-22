@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
@@ -323,9 +324,12 @@ internal sealed partial class ZarrCoverageService
         context.Response.Headers.Append(
             "Content-Bbox",
             string.Join(",", FormatDouble(extent.XMin), FormatDouble(extent.YMin), FormatDouble(extent.XMax), FormatDouble(extent.YMax)));
-        if (extent.Srid is { } srid and not 4326)
+        if (extent.Srid is { } srid and > 0)
         {
-            context.Response.Headers.Append("Content-Crs", FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{srid}>"));
+            var contentCrs = srid == 4326
+                ? SpatialReferenceHelpers.Crs84Uri
+                : CreateEpsgUri(srid);
+            context.Response.Headers.Append("Content-Crs", $"<{contentCrs}>");
         }
     }
 }

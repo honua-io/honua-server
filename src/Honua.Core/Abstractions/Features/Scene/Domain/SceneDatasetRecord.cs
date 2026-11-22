@@ -22,6 +22,10 @@ public sealed record SceneDatasetRecord
 
     public SceneDatasetType DatasetType { get; init; } = SceneDatasetType.HostedTiles;
 
+    public SceneServingFormat? ServingFormat { get; init; }
+
+    public SceneContentKind? ContentKind { get; init; }
+
     public SceneExtent? Extent { get; init; }
 
     public string? Crs { get; init; }

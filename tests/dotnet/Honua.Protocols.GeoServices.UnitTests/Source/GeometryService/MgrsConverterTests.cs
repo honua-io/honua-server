@@ -135,4 +135,38 @@ public sealed class MgrsConverterTests
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    [UnitTheory]
+    [InlineData(0.001, -71.999)]   // Southern edge & western zone boundary of Band D (Zone 31)
+    [InlineData(5.999, -71.999)]   // Southern edge & eastern zone boundary of Band D (Zone 31)
+    [InlineData(0.001, -39.999)]   // Southern edge & western zone boundary of Band H (Zone 31)
+    [InlineData(0.001, -47.999)]   // Southern edge & western zone boundary of Band G (Zone 31)
+    [Operation(Operations.FromGeoCoordinateString)]
+    public void RoundTrip_SouthernHemisphereBandAndZoneCorner_DoesNotWrap2000Km(double longitude, double latitude)
+    {
+        var mgrs = MgrsConverter.ToMgrs(longitude, latitude, precision: 5, addSpaces: true);
+        var (recoveredLon, recoveredLat) = MgrsConverter.FromMgrs(mgrs);
+
+        recoveredLat.Should().BeApproximately(latitude, 0.0001,
+            "points at the southern/zone-edge corner of a southern-hemisphere band must not jump +2,000 km");
+        recoveredLon.Should().BeApproximately(longitude, 0.0001);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ToGeoCoordinateString)]
+    public void ToMgrs_RoundingJustSouthOfEquator_ClampsNorthingWithinSouthernBandM()
+    {
+        // 11 cm south of the equator on the Zone 31 central meridian (3°E):
+        // raw southern-hemisphere UTM northing is ~9,999,999.89 m. With rounding=true at 1 m
+        // precision, rounding without clamping rolls over to 10,000,000 m (00000 in the next
+        // 100 km square) while keeping band 'M'. Clamping keeps it at 99999 in band 'M'.
+        var mgrs = MgrsConverter.ToMgrs(longitude: 3.0, latitude: -0.000001, precision: 5, addSpaces: true, rounding: true);
+
+        mgrs.Should().StartWith("31M ");
+        mgrs.Should().EndWith(" 99999");
+
+        var (recoveredLon, recoveredLat) = MgrsConverter.FromMgrs(mgrs);
+        recoveredLon.Should().BeApproximately(3.0, 0.0001);
+        recoveredLat.Should().BeApproximately(-0.000001, 0.0001);
+    }
 }

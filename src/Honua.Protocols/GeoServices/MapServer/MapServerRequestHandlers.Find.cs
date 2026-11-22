@@ -654,6 +654,15 @@ internal static partial class MapServerEndpoints
             };
         }
 
+        if (parseResult.Expression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(parseResult.Expression))
+        {
+            return new FindFilterTranslation
+            {
+                IsSuccess = false,
+                Error = "Invalid where clause."
+            };
+        }
+
         var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
         if (!translationResult.IsSuccess)
         {

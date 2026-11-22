@@ -622,11 +622,8 @@ public class SqlServerFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
+    public void BuildSelectQuery_WithinFilter_UsesFeatureColumnAsReceiver()
     {
-        // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
-        // geometry must be the calling instance: filter.STWithin(feature). Leading with the
-        // feature column inverts the relationship and returns the wrong (empty) set.
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -635,15 +632,13 @@ public class SqlServerFeatureQueryBuilderTests
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STWithin([shape]) = 1", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape].STContains(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
+    public void BuildSelectQuery_ContainsFilter_UsesFeatureColumnAsReceiver()
     {
-        // Esri esriSpatialRelContains = filter geometry contains feature geometry, so the filter
-        // geometry must be the calling instance: filter.STContains(feature).
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -652,7 +647,7 @@ public class SqlServerFeatureQueryBuilderTests
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("geometry::STGeomFromWKB(@p0, 4326).STContains([shape]) = 1", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape].STWithin(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -729,19 +724,81 @@ public class SqlServerFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildExtentQuery_GeographyMapping_UsesGeographyEnvelopeAggregateAndLatLongProperties()
+    public void BuildExtentQuery_GeographyMapping_UsesPlanarGeometryEnvelopeAggregate()
     {
         var mapping = BuildMapping(SqlServerGeometryColumnType.Geography);
 
         var result = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query: null);
 
-        Assert.Contains("geography::EnvelopeAggregate([shape])", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("envelope.STPointN(1).Long AS [min_x]", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("envelope.STPointN(1).Lat AS [min_y]", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("envelope.STPointN(3).Long AS [max_x]", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("envelope.STPointN(3).Lat AS [max_y]", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain(".STX", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain(".STY", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("geometry::EnvelopeAggregate(geometry::STGeomFromWKB([shape].STAsBinary(), 4326))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(1).STX AS [min_x]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(1).STY AS [min_y]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(3).STX AS [max_x]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(3).STY AS [max_y]", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("geography::EnvelopeAggregate", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query with { OutputSrid = null });
+        var actual = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildObjectIdsQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query with { OutputSrid = null });
+        var actual = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildGeometryQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 3857 };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OutputSridMatchingLayer_Succeeds()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 4326 };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("[shape].STAsBinary()", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

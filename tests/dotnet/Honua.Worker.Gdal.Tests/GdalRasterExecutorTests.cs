@@ -138,7 +138,38 @@ public sealed class GdalRasterExecutorTests
         var json = GdalRasterClipJobExecutor.WriteCutlineGeoJson(polygon);
         json.Should().Contain("\"FeatureCollection\"");
         json.Should().Contain("\"Polygon\"");
-        json.Should().NotContain("\"crs\":");
+        json.Should().NotContain("\"crs\"");
+    }
+
+    [UnitTest]
+    public void RasterClip_CutlineGeoJsonPreservesCrs_WhenCoordinatesExceedGeographicBoundsOrExplicitCrsProvided()
+    {
+        var projectedPolygon = new GeometryFactory().CreatePolygon(new[]
+        {
+            new Coordinate(500_000, 4_100_000),
+            new Coordinate(501_000, 4_100_000),
+            new Coordinate(501_000, 4_101_000),
+            new Coordinate(500_000, 4_101_000),
+            new Coordinate(500_000, 4_100_000),
+        });
+        projectedPolygon.SRID = 0;
+
+        var autoProjectedJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(projectedPolygon);
+        autoProjectedJson.Should().NotContain("\"crs\"");
+
+        var explicitCrsJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(projectedPolygon, "EPSG:26910");
+        explicitCrsJson.Should().Contain("EPSG:26910");
+
+        var zonesJsonWithCrs = """
+            {
+              "type": "FeatureCollection",
+              "crs": { "type": "name", "properties": { "name": "EPSG:3857" } },
+              "features": []
+            }
+            """;
+        var extracted = GdalRasterZonalStatisticsJobExecutor.TryExtractGeoJsonCrsName(zonesJsonWithCrs, out var extractedSrid);
+        extracted.Should().Be("EPSG:3857");
+        extractedSrid.Should().Be(3857);
     }
 
     [UnitTest]

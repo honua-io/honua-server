@@ -257,7 +257,7 @@ public class SnowflakeFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_GeometryIntersects_UsesToGeometryConstructor()
+    public void BuildSelectQuery_GeometryIntersects_UsesToGeometryConstructorWithLayerSrid()
     {
         var mapping = BuildMapping(SnowflakeGeometryColumnType.Geometry);
         var query = new FeatureQuery
@@ -267,7 +267,109 @@ public class SnowflakeFeatureQueryBuilderTests
 
         var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("ST_INTERSECTS(\"SHAPE\", TO_GEOMETRY(?, TRUE))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_INTERSECTS(\"SHAPE\", TO_GEOMETRY(?, 4326, TRUE))", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_EwkbSpatialFilter_StripsEmbeddedSridAndBindsLayerSrid()
+    {
+        var ewkb = new byte[25];
+        ewkb[0] = 1;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(1), 0x20000001u);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(ewkb.AsSpan(5), 3857);
+        System.Buffers.Binary.BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(9), 100.0);
+        System.Buffers.Binary.BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(17), 200.0);
+
+        var mapping = BuildMapping(SnowflakeGeometryColumnType.Geometry, srid: 3857);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 3857)
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("ST_INTERSECTS(\"SHAPE\", TO_GEOMETRY(?, 3857, TRUE))", result.Sql, StringComparison.Ordinal);
+        var bound = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        Assert.Equal(21, bound.Length);
+        Assert.Equal(1u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bound.AsSpan(1)));
+    }
+
+    [Fact]
+    public void BuildCountQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query with { OutputSrid = null });
+        var actual = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildObjectIdsQuery_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+        };
+
+        var expected = SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query with { OutputSrid = null });
+        var actual = SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildStatistics_DifferentOutputSrid_PreservesFilteredQuery()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery
+        {
+            OutputSrid = 3857,
+            ObjectIds = [7L, 9L],
+            OutStatistics = [new StatisticDefinition { StatisticType = StatisticType.Count, OnStatisticField = "NAME", OutStatisticFieldName = "total" }],
+        };
+
+        var expected = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query with { OutputSrid = null });
+        var actual = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query);
+
+        Assert.Equal(expected.Sql, actual.Sql);
+        Assert.NotEmpty(actual.WhereParameters);
+        Assert.Equal(expected.WhereParameters, actual.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildGeometryQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 3857 };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_OutputSridMatchingLayer_Succeeds()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 4326 };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("ST_ASWKB(\"SHAPE\")", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -38,20 +38,36 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Collection("Database.OidcAuthentication")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public class OidcAuthenticationTests
+public class OidcAuthenticationTests : IClassFixture<OidcAuthenticationTests.BearerHost>
 {
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
     private readonly DatabaseFixtureAdapter _database;
+    private readonly BearerHost _bearerHost;
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
     private const string TestIssuer = "https://test-issuer.example.com";
     private const string TestAudience = "test-client-id";
 
-    public OidcAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
+    public OidcAuthenticationTests(DatabaseFixtureAdapter database, BearerHost bearerHost, ITestOutputHelper output)
     {
         _database = database;
+        _bearerHost = bearerHost;
         _output = output;
+    }
+
+    public sealed class BearerHost : IDisposable
+    {
+        private WebApplicationFactory<Program>? _factory;
+
+        internal HttpClient CreateClient(Func<WebApplicationFactory<Program>> create)
+        {
+            // xUnit serializes this collection; clients and request headers remain case-local.
+            _factory ??= create();
+            return _factory.CreateClient();
+        }
+
+        public void Dispose() => _factory?.Dispose();
     }
 
     private WebApplicationFactory<Program> CreateOidcTestFactory(
@@ -645,9 +661,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_ValidBearerToken_AllowsAccess()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var token = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act
@@ -1239,9 +1254,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_InvalidIssuerToken_DeniesAccess()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var token = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
 
         // Act
@@ -1258,9 +1272,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_InvalidAudienceToken_DeniesAccess()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var token = GenerateTestJwtToken(roles: ["admin"], audience: "wrong-audience");
 
         // Act
@@ -1277,9 +1290,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_ExpiredToken_DeniesAccess()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var token = GenerateTestJwtToken(roles: ["admin"], expiresInMinutes: -60);
 
         // Act
@@ -1296,9 +1308,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_NonAdminRole_ReturnsForbidden()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var token = GenerateTestJwtToken(
             roles: [$"non-admin-{Guid.NewGuid():N}"],
             tenantId: "test-tenant");
@@ -1317,9 +1328,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_BearerAndApiKey_BearerTakesPrecedence_WhenInvalid()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var invalidBearer = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
 
         // Act - valid API key is present, but invalid bearer should still fail due bearer precedence
@@ -1337,9 +1347,8 @@ public class OidcAuthenticationTests
     public async Task AdminEndpoint_OidcEnabled_BearerAndApiKey_BearerTakesPrecedence_WhenValid()
     {
         // Arrange
-        var settings = CreateEnabledOidcSettings();
-        using var factory = CreateOidcTestFactory(oidcSettings: settings);
-        using var client = factory.CreateClient();
+        using var client = _bearerHost.CreateClient(
+            () => CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings()));
         var validBearer = GenerateTestJwtToken(roles: ["admin"], tenantId: "test-tenant");
 
         // Act - invalid API key is present, valid bearer should still succeed

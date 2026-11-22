@@ -359,7 +359,7 @@ internal sealed class QueryFormatter
             // returnDistinctValues has no stable OID; do not force-append it.
             if (!suppressObjectId)
             {
-                if (!all.ContainsKey(objectIdFieldName))
+                if (!all.TryGetValue(objectIdFieldName, out var storedObjectId) || storedObjectId is null)
                 {
                     all[objectIdFieldName] = objectIdValue;
                 }
@@ -376,7 +376,7 @@ internal sealed class QueryFormatter
         if (!suppressObjectId)
         {
             filtered[objectIdFieldName] = attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes)
-                ? GeoServicesAttributeProjection.ToEsriValue(objectIdFromAttributes)
+                ? GeoServicesAttributeProjection.ToEsriValue(objectIdFromAttributes) ?? objectIdValue
                 : objectIdValue;
         }
 
@@ -403,6 +403,11 @@ internal sealed class QueryFormatter
                 filtered[name] = GeoServicesAttributeProjection.ToEsriValue(value);
                 break;
             }
+        }
+
+        if (!suppressObjectId && filtered[objectIdFieldName] is null)
+        {
+            filtered[objectIdFieldName] = objectIdValue;
         }
 
         return filtered;
@@ -1271,6 +1276,11 @@ internal sealed class StreamingQueryFormatter
                 if (string.Equals(fieldName, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 {
                     objectIdWritten = true;
+                    var objectId = kvp.Value is null or JsonElement { ValueKind: JsonValueKind.Null }
+                        ? GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName)
+                        : kvp.Value;
+                    WriteJsonValue(writer, fieldName, objectId, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);
+                    continue;
                 }
 
                 WriteJsonValue(writer, fieldName, kvp.Value, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);
@@ -1406,7 +1416,8 @@ internal sealed class StreamingQueryFormatter
 
     private static HashSet<string>? CreateFieldLookup(string[]? outFields)
     {
-        if (outFields == null || outFields.Length == 0)
+        if (outFields == null || outFields.Length == 0 ||
+            (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)))
         {
             return null;
         }

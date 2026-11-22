@@ -152,7 +152,7 @@ internal sealed partial class ODataQueryHandler(
             var probeLimit = pagination.Limit is > 0 and < int.MaxValue ? pagination.Limit + 1 : pagination.Limit;
             var layerData = layerQuery.Take(probeLimit).ToArray();
 
-            var hasMoreLayers = pagination.Limit > 0 && layerData.Length > pagination.Limit;
+            var hasMoreLayers = pagination.Limit >= 0 && layerData.Length > pagination.Limit;
             if (hasMoreLayers)
             {
                 layerData = layerData[..pagination.Limit];

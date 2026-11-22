@@ -161,4 +161,16 @@ public class BoundingBoxAntimeridianTests
         atPositive180.IsValid.Should().BeTrue();
         atNegative180.IsValid.Should().BeTrue();
     }
+
+    [UnitTheory]
+    [InlineData(3857)]
+    [InlineData(26910)]
+    [InlineData(32618)]
+    public void IsAntimeridianCrossing_WhenProjectedSrid_ReturnsFalseAndIsInvalid(int projectedSrid)
+    {
+        var invertedProjected = BoundingBox.Create(100, -10, -50, 10, projectedSrid);
+
+        invertedProjected.IsAntimeridianCrossing.Should().BeFalse();
+        invertedProjected.IsValid.Should().BeFalse();
+    }
 }

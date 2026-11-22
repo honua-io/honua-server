@@ -55,6 +55,20 @@ internal static class MapLibreStyleNormalizer
         "typeof"
     };
 
+    private static readonly HashSet<string> SupportedLayerProperties = new(StringComparer.Ordinal)
+    {
+        "id",
+        "type",
+        "metadata",
+        "source",
+        "source-layer",
+        "minzoom",
+        "maxzoom",
+        "filter",
+        "layout",
+        "paint"
+    };
+
     private static readonly string[] HueUnitSuffixes = ["deg", "grad", "rad", "turn"];
 
     public static bool TryNormalize(
@@ -181,7 +195,10 @@ internal static class MapLibreStyleNormalizer
             return false;
         }
 
-        if (!TryGetVersion(root, out var version) || version != 8)
+        if (root["version"] is not JsonValue versionValue
+            || versionValue.GetValueKind() != JsonValueKind.Number
+            || !TryGetVersion(root, out var version)
+            || version != 8)
         {
             error = "MapLibre style must include version 8.";
             return false;
@@ -207,6 +224,15 @@ internal static class MapLibreStyleNormalizer
             {
                 error = $"MapLibre style layer at index {index} must be a JSON object.";
                 return false;
+            }
+
+            foreach (var property in layerObject)
+            {
+                if (!SupportedLayerProperties.Contains(property.Key))
+                {
+                    error = $"MapLibre style layer at index {index} contains unsupported property '{property.Key}'.";
+                    return false;
+                }
             }
 
             if (!TryValidateLayerStructure(

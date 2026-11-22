@@ -158,9 +158,10 @@ internal static class CollectionEndpoints
         StacLog.CollectionRequested(logger, collectionId);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Catalog);
+            context.Request, StacConstants.AllowedQueryParameters.Collections);
         if (validationError is not null)
         {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
@@ -227,7 +228,8 @@ internal static class CollectionEndpoints
             context.Request, StacConstants.AllowedQueryParameters.Catalog);
         if (validationError is not null)
         {
-            return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters."));
+            return Task.FromResult(StandardErrorHelpers.CreateBadRequest(
+                context, validationError.Value ?? "Invalid query parameters."));
         }
 
         try
@@ -256,7 +258,7 @@ internal static class CollectionEndpoints
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Catalog);
+            context.Request, StacConstants.AllowedQueryParameters.Collections);
         if (validationError is not null)
         {
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");

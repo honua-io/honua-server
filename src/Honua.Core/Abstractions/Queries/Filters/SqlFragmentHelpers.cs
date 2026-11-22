@@ -23,7 +23,13 @@ public static class SqlFragmentHelpers
         var rightSql = RenumberSqlFragmentParameters(right.Sql, left.Parameters.Count);
         return new SqlFragment(
             $"({left.Sql}) AND ({rightSql})",
-            left.Parameters.Concat(right.Parameters).ToArray());
+            left.Parameters.Concat(right.Parameters).ToArray())
+        {
+            Dialect = left.Dialect == right.Dialect ? left.Dialect : null,
+            SourceExpression = left.SourceExpression is { } leftExpression && right.SourceExpression is { } rightExpression
+                ? new BinaryExpression(leftExpression, BinaryOperator.And, rightExpression)
+                : null
+        };
     }
 
     public static string RenumberSqlFragmentParameters(string sql, int offset)

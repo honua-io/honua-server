@@ -27,6 +27,10 @@ public sealed class SceneDatasetEntry
 
     public string? TilesetFileName { get; set; }
 
+    public string? ServingFormat { get; set; }
+
+    public string? ContentKind { get; set; }
+
     public SceneAccessPolicyOptions? AccessPolicy { get; set; }
 }
 

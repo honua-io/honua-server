@@ -133,6 +133,18 @@ Run `POST /api/v1/admin/scenes/ingest/pointcloud` with form values `file=cloud.l
 
 The registered tileset serves through the standard [hosted serving](#hosted-3d-tiles-serving) routes and loads in CesiumJS like any other point tileset.
 
+### Experimental asynchronous scene jobs
+
+Scene generation and ingest return their results synchronously by default.
+Setting `SceneGeneration__EnableExperimentalAsyncJobs=true` on the server enables
+the experimental async preference and the admin job status routes. With the
+setting disabled, explicit async requests and the status routes return HTTP 503.
+
+The experimental queue is bounded per server instance. A full queue returns
+HTTP 429 with `Retry-After`. Poll the instance that accepted the job. Restarting
+that instance loses accepted jobs and their status. Durable staging, shared job
+status across replicas, and idempotent async submission remain future work.
+
 ## gRPC scene access
 
 `SceneService`, `TileService`, and `ElevationService` expose the same scene/tile/elevation reads over gRPC — see [gRPC](grpc.md). `SceneService` needs `scene.catalog` and `TileService` needs `serve.3d-tiles-scene` ([enable the 3D surfaces](#enable-the-3d-surfaces)); `ElevationService` is always on.

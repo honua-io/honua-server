@@ -1,0 +1,49 @@
+{
+  "id": "downtown-buildings",
+  "name": "Downtown Buildings",
+  "description": "CityGML building footprints.",
+  "servingFormat": "3d-tiles",
+  "contentKind": "buildings",
+  "tileset": {
+    "kind": "3d-tiles",
+    "endpointFormat": "3d-tiles",
+    "url": "https://maps.example.test/scenes/downtown-buildings/tileset.json",
+    "mediaType": "application/json",
+    "format": "3d-tiles",
+    "requiresAuthentication": false
+  },
+  "center": {
+    "latitude": 21.305,
+    "longitude": -157.85500000000002,
+    "height": 1200
+  },
+  "bounds": {
+    "west": -157.87,
+    "south": 21.29,
+    "east": -157.84,
+    "north": 21.32
+  },
+  "capabilities": [
+    "3d-tiles"
+  ],
+  "attribution": [],
+  "auth": {
+    "requiresAuthentication": false,
+    "schemes": []
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://maps.example.test/api/scenes/downtown-buildings",
+      "type": "application/json",
+      "title": "Scene metadata"
+    },
+    {
+      "rel": "resolve",
+      "href": "https://maps.example.test/api/scenes/downtown-buildings/resolve",
+      "type": "application/json",
+      "title": "Scene render endpoint resolution"
+    }
+  ],
+  "updatedAt": "2026-08-22T00:00:00+00:00"
+}

@@ -248,6 +248,54 @@ public sealed partial class FeatureServerQueryExecutorTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public async Task QueryWithValidationAsync_WhenLimitIsZero_UsesPagedFastPathAndPropagatesHasMoreResults()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedFeatureReader>();
+        ((IPagedFeatureReader)featureReader)
+            .QueryPageAsync(5, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<Feature>.Create(ImmutableArray<Feature>.Empty, hasMoreResults: true)));
+
+        var sut = CreateSut(featureReader);
+        var query = new FeatureQuery { Limit = 0 };
+
+        var result = await sut.QueryWithValidationAsync(5, query, CancellationToken.None);
+
+        result.Items.Should().BeEmpty();
+        result.HasMoreResults.Should().BeTrue();
+        result.TotalCount.Should().Be(1);
+        await ((IPagedFeatureReader)featureReader).Received(1).QueryPageAsync(5, query, Arg.Any<CancellationToken>());
+        await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task StreamIdsAsync_NonStreamingReaderWithLimit_ProbesExtraRowAndWritesExceededTransferLimit()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.QueryObjectIdsAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(10L, 20L, 30L));
+        var sut = CreateSut(featureReader);
+        var context = CreateHttpContext();
+
+        await sut.StreamIdsAsync(
+            7,
+            new FeatureQuery { Limit = 2 },
+            "objectid",
+            context,
+            CancellationToken.None);
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("objectIds").EnumerateArray().Select(e => e.GetInt64()).Should().Equal(10L, 20L);
+        document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+        await featureReader.Received(1).QueryObjectIdsAsync(
+            7,
+            Arg.Is<FeatureQuery>(q => q.Limit == 3 && q.ReturnPublicObjectIds),
+            Arg.Any<CancellationToken>());
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public async Task QueryWithValidationAsync_WhenPagedQueryNotSupported_FallsBackToRegularQuery()
     {
         var featureReader = Substitute.For<IFeatureReader>();

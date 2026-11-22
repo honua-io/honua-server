@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/scene_get.schema.json",
+  "title": "scene_get inputSchema",
+  "description": "Get metadata for a caller-readable scene by identifier.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sceneId"
+  ],
+  "properties": {
+    "sceneId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Scene identifier from honua_scene_list."
+    }
+  }
+}

@@ -34,14 +34,17 @@ internal sealed partial class GeoservicesImportService
         // This converts common geometry types to GeoJSON
         try
         {
-            // Esri geometries carry explicit hasZ/hasM flags. When hasZ is false but
-            // hasM is true, the third ordinate in each coordinate is M, NOT Z — so we
-            // must not promote it to GeoJSON Z. When the flag is absent (older/partial
-            // payloads), treat index 2 as Z.
+            // Esri geometries carry explicit hasZ/hasM flags. When hasZ is false (or
+            // omitted while hasM is true), the third ordinate in each coordinate is M,
+            // NOT Z — so we must not promote it to GeoJSON Z. When both flags are absent
+            // (older/partial payloads), treat index 2 as Z.
             var hasExplicitZ = geometry.TryGetProperty("hasZ", out var hasZFlag);
-            var coordsCarryZ = layerHasZ ?? (!hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.False);
-            var coordsCarryM = layerHasM ?? (geometry.TryGetProperty("hasM", out var hasMFlag) &&
-                hasMFlag.ValueKind == JsonValueKind.True);
+            var hasExplicitM = geometry.TryGetProperty("hasM", out var hasMFlag);
+            var isExplicitMOnly = hasExplicitM && hasMFlag.ValueKind == JsonValueKind.True &&
+                (!hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.True);
+            var coordsCarryZ = layerHasZ ?? (!isExplicitMOnly && (!hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.False));
+            var coordsCarryM = layerHasM ?? (hasExplicitM && hasMFlag.ValueKind == JsonValueKind.True);
+            var retainArrayM = layerHasM == true;
 
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
@@ -58,7 +61,9 @@ internal sealed partial class GeoservicesImportService
                 return BuildPointGeoJson(x.GetDouble(), y.GetDouble(), z, m, coordsCarryZ, coordsCarryM);
             }
 
-            if (geometry.TryGetProperty("rings", out var rings))
+            var hasRings = geometry.TryGetProperty("rings", out var rings);
+            var hasCurveRings = geometry.TryGetProperty("curveRings", out var curveRings);
+            if (hasRings || hasCurveRings)
             {
                 // Polygon. Carry the optional Z (coord[2]) through ring extraction,
                 // closing, classification, and orientation so elevation-enabled
@@ -69,12 +74,29 @@ internal sealed partial class GeoservicesImportService
                 // for the WKT insertion path, which supplies explicit layer dimensions
                 // and writes an M/ZM marker. Geometry flags alone must not turn an M
                 // measure into an elevation in the standalone GeoJSON conversion.
-                var ringCoordinates = rings.EnumerateArray()
-                    .Select(ring => ring.EnumerateArray()
-                        .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(coord => ExtractDimensions(coord, coordsCarryZ, layerHasM == true))
-                        .ToArray())
-                    .Select(EnsureClosedRing)
+                var extractedRings = new List<double[][]>();
+                if (hasRings)
+                {
+                    foreach (var ring in rings.EnumerateArray())
+                    {
+                        var coords = ring.EnumerateArray()
+                            .Where(coord => coord.GetArrayLength() >= 2)
+                            .Select(coord => ExtractDimensions(coord, coordsCarryZ, retainArrayM))
+                            .ToArray();
+                        extractedRings.Add(EnsureClosedRing(coords));
+                    }
+                }
+
+                if (hasCurveRings)
+                {
+                    foreach (var curveRing in curveRings.EnumerateArray())
+                    {
+                        var coords = ReadCurvePart(curveRing, coordsCarryZ, retainArrayM);
+                        extractedRings.Add(EnsureClosedRing(coords));
+                    }
+                }
+
+                var ringCoordinates = extractedRings
                     .Where(ring => ring.Length >= 4)
                     .ToArray();
 
@@ -92,7 +114,7 @@ internal sealed partial class GeoservicesImportService
                 var coordinates = paths.EnumerateArray()
                     .Select(path => path.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(coord => ExtractDimensions(coord, coordsCarryZ, coordsCarryM))
+                        .Select(coord => ExtractDimensions(coord, coordsCarryZ, retainArrayM))
                         .ToArray())
                     .Where(path => path.Length >= 2)
                     .ToArray();
@@ -105,8 +127,9 @@ internal sealed partial class GeoservicesImportService
 
             if (geometry.TryGetProperty("curvePaths", out var curvePaths))
             {
+                var retainCurveM = layerHasM ?? (coordsCarryZ && coordsCarryM);
                 var coordinates = curvePaths.EnumerateArray()
-                    .Select(ReadCurvePath)
+                    .Select(path => ReadCurvePart(path, coordsCarryZ, retainCurveM))
                     .Where(path => path.Length >= 2)
                     .ToArray();
 
@@ -119,7 +142,7 @@ internal sealed partial class GeoservicesImportService
                 // ArcGIS REST multipoints round-trip instead of flattening to 2D.
                 var coordinates = points.EnumerateArray()
                     .Where(p => p.GetArrayLength() >= 2)
-                    .Select(coord => ExtractDimensions(coord, coordsCarryZ, coordsCarryM))
+                    .Select(coord => ExtractDimensions(coord, coordsCarryZ, retainArrayM))
                     .ToArray();
 
                 if (coordinates.Length == 0)
@@ -208,6 +231,12 @@ internal sealed partial class GeoservicesImportService
     {
         try
         {
+            var hasExplicitZ = geometry.TryGetProperty("hasZ", out var hasZFlag);
+            if (hasExplicitZ && hasZFlag.ValueKind == JsonValueKind.False)
+            {
+                return false;
+            }
+
             // Point: check for z property
             if (geometry.TryGetProperty("z", out _))
                 return true;
@@ -228,7 +257,13 @@ internal sealed partial class GeoservicesImportService
             }
 
             if (geometry.TryGetProperty("curvePaths", out var curvePaths) &&
-                curvePaths.EnumerateArray().Any(static path => path.GetArrayLength() > 1))
+                curvePaths.EnumerateArray().Any(CurvePartHasHigherDimensionCoordinates))
+            {
+                return true;
+            }
+
+            if (geometry.TryGetProperty("curveRings", out var curveRings) &&
+                curveRings.EnumerateArray().Any(CurvePartHasHigherDimensionCoordinates))
             {
                 return true;
             }
@@ -249,6 +284,36 @@ internal sealed partial class GeoservicesImportService
             // own error handling/logging).
             return false;
         }
+    }
+
+    private static bool CurvePartHasHigherDimensionCoordinates(JsonElement part)
+    {
+        if (part.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var element in part.EnumerateArray())
+        {
+            if (element.ValueKind == JsonValueKind.Array && element.GetArrayLength() >= 3)
+            {
+                return true;
+            }
+
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in element.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Array &&
+                        prop.Value.EnumerateArray().Any(static v => v.ValueKind == JsonValueKind.Array && v.GetArrayLength() >= 3))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private static string BuildPointGeoJson(
@@ -295,8 +360,38 @@ internal sealed partial class GeoservicesImportService
         return values.ToArray();
     }
 
-    private static double[][] ReadCurvePath(JsonElement path)
-        => CurveGeometryConverter.Densify(path.EnumerateArray().ToArray());
+    private static double[][] ReadCurvePart(JsonElement part, bool carryZ, bool carryM)
+    {
+        var densified = CurveGeometryConverter.Densify(part.EnumerateArray().ToArray());
+        for (var i = 0; i < densified.Length; i++)
+        {
+            densified[i] = ProjectDimensions(densified[i], carryZ, carryM);
+        }
+
+        return densified;
+    }
+
+    private static double[] ProjectDimensions(double[] coord, bool carryZ, bool carryM)
+    {
+        if (coord.Length <= 2)
+        {
+            return coord;
+        }
+
+        var values = new List<double>(4) { coord[0], coord[1] };
+        var index = 2;
+        if (carryZ && coord.Length > index)
+        {
+            values.Add(coord[index]);
+        }
+        index += carryZ ? 1 : 0;
+        if (carryM && coord.Length > index)
+        {
+            values.Add(coord[index]);
+        }
+
+        return values.ToArray();
+    }
 
     private static void WriteCoordinate(Utf8JsonWriter writer, double[] coord)
     {

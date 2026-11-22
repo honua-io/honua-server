@@ -825,12 +825,10 @@ internal sealed partial class ZarrCoverageService
                     FormatDouble(yMax.Value)));
         }
 
-        if (metadata.Srid != 4326)
-        {
-            context.Response.Headers.Append(
-                "Content-Crs",
-                FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{metadata.Srid}>"));
-        }
+        var contentCrs = metadata.Srid == 4326
+            ? OgcFeaturesUtilities.Crs84Uri
+            : CreateEpsgUri(metadata.Srid);
+        context.Response.Headers.Append("Content-Crs", $"<{contentCrs}>");
     }
 
     private static bool IsFloatingPoint(string dtype)

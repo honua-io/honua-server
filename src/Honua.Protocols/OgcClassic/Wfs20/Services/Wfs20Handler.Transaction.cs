@@ -391,6 +391,58 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    private static IResult? ValidateTransactionActionAttributes(
+        HttpContext context,
+        XElement actionElement,
+        out string? actionSrsName)
+    {
+        actionSrsName = actionElement.Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
+            ?.Value
+            ?.Trim();
+        if (!string.IsNullOrWhiteSpace(actionSrsName) &&
+            !SpatialReferenceHelpers.TryParseCrsDefinition(actionSrsName, out _))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Unsupported or unrecognized srsName '{actionSrsName}'.",
+                "srsName");
+        }
+
+        var inputFormatAttribute = actionElement.Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "inputFormat", StringComparison.OrdinalIgnoreCase));
+        if (inputFormatAttribute is not null)
+        {
+            var inputFormat = inputFormatAttribute.Value.Trim();
+            if (!IsSupportedTransactionInputFormat(inputFormat))
+            {
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    "InvalidParameterValue",
+                    $"Unsupported transaction inputFormat '{inputFormat}'.",
+                    "inputFormat");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedTransactionInputFormat(string? inputFormat)
+    {
+        if (string.IsNullOrWhiteSpace(inputFormat))
+        {
+            return false;
+        }
+
+        var normalized = Wfs20Utilities.OutputFormats.NormalizeOutputFormat(inputFormat);
+        return string.Equals(normalized, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, Wfs20Utilities.OutputFormats.Gml32Simplified, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "application/xml", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "text/xml", StringComparison.OrdinalIgnoreCase) ||
+               inputFormat.Contains("gml", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<IResult?> PrepareInsertOperationsAsync(
         HttpContext context,
         XElement insertElement,
@@ -400,6 +452,12 @@ internal sealed partial class Wfs20Handler
         HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
+        var attributeError = ValidateTransactionActionAttributes(context, insertElement, out var actionSrsName);
+        if (attributeError is not null)
+        {
+            return attributeError;
+        }
+
         var handle = insertElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "handle", StringComparison.OrdinalIgnoreCase))
             ?.Value;
@@ -441,7 +499,8 @@ internal sealed partial class Wfs20Handler
             var feature = await BuildTransactionInsertFeatureAsync(
                 descriptor.Resource,
                 featureElement,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                actionSrsName).ConfigureAwait(false);
             // Insert always carries the request's geometry intent in the built feature.
             operations.Add(new PreparedTransactionOperation(
                 operations.Count,
@@ -469,6 +528,12 @@ internal sealed partial class Wfs20Handler
         HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
+        var attributeError = ValidateTransactionActionAttributes(context, updateElement, out var actionSrsName);
+        if (attributeError is not null)
+        {
+            return attributeError;
+        }
+
         var handle = updateElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "handle", StringComparison.OrdinalIgnoreCase))
             ?.Value;
@@ -501,7 +566,7 @@ internal sealed partial class Wfs20Handler
         distinctLayerIds.Add(descriptor.StorageLayerId);
 
         var changes = await ParseTransactionUpdateChangesAsync(
-            descriptor.Resource, updateElement, cancellationToken).ConfigureAwait(false);
+            descriptor.Resource, updateElement, cancellationToken, actionSrsName).ConfigureAwait(false);
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             updateElement,
@@ -655,6 +720,12 @@ internal sealed partial class Wfs20Handler
         HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
+        var attributeError = ValidateTransactionActionAttributes(context, replaceElement, out var actionSrsName);
+        if (attributeError is not null)
+        {
+            return attributeError;
+        }
+
         var handle = replaceElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "handle", StringComparison.OrdinalIgnoreCase))
             ?.Value;
@@ -716,7 +787,8 @@ internal sealed partial class Wfs20Handler
             descriptor.Resource,
             targetIds[0],
             featureElement,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            actionSrsName).ConfigureAwait(false);
         // Compare the stored target snapshot, rather than the new replacement payload.
         replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
         // Replace constructs a fresh feature from the request payload (or null when
@@ -746,10 +818,11 @@ internal sealed partial class Wfs20Handler
     private async Task<Feature> BuildTransactionInsertFeatureAsync(
         MetadataV2Object resource,
         XElement featureElement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? actionSrsName = null)
     {
         var payload = await ReadTransactionFeaturePayloadAsync(
-            resource, featureElement, cancellationToken).ConfigureAwait(false);
+            resource, featureElement, cancellationToken, actionSrsName).ConfigureAwait(false);
 
         return await CreateTransactionFeatureAsync(
             resource,
@@ -765,10 +838,11 @@ internal sealed partial class Wfs20Handler
         MetadataV2Object resource,
         long objectId,
         XElement featureElement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? actionSrsName = null)
     {
         var payload = await ReadTransactionFeaturePayloadAsync(
-            resource, featureElement, cancellationToken).ConfigureAwait(false);
+            resource, featureElement, cancellationToken, actionSrsName).ConfigureAwait(false);
 
         var attributes = _mutationValidator.ValidateAttributes(
             resource,
@@ -870,7 +944,8 @@ internal sealed partial class Wfs20Handler
     private async Task<TransactionFeaturePayload> ReadTransactionFeaturePayloadAsync(
         MetadataV2Object resource,
         XElement featureElement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? actionSrsName = null)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var gmlAssignedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -900,7 +975,7 @@ internal sealed partial class Wfs20Handler
             if (geometryField is null && IsFallbackTransactionGeometryProperty(resource, propertyElement.Name.LocalName))
             {
                 geometry = await ParseTransactionGeometryPropertyAsync(
-                    propertyElement, resource, cancellationToken).ConfigureAwait(false);
+                    propertyElement, resource, cancellationToken, actionSrsName).ConfigureAwait(false);
                 continue;
             }
 
@@ -919,7 +994,7 @@ internal sealed partial class Wfs20Handler
                 resolvedField.Field.Name.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
                 geometry = await ParseTransactionGeometryPropertyAsync(
-                    propertyElement, resource, cancellationToken).ConfigureAwait(false);
+                    propertyElement, resource, cancellationToken, actionSrsName).ConfigureAwait(false);
                 continue;
             }
 
@@ -945,7 +1020,8 @@ internal sealed partial class Wfs20Handler
     private async Task<TransactionFeatureChanges> ParseTransactionUpdateChangesAsync(
         MetadataV2Object resource,
         XElement updateElement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? actionSrsName = null)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var propertyElements = updateElement.Elements()
@@ -1009,7 +1085,7 @@ internal sealed partial class Wfs20Handler
                 geometry = valueElement == null
                     ? null
                     : await ParseTransactionGeometryPropertyAsync(
-                        valueElement, resource, cancellationToken).ConfigureAwait(false);
+                        valueElement, resource, cancellationToken, actionSrsName).ConfigureAwait(false);
                 continue;
             }
 
@@ -1028,7 +1104,7 @@ internal sealed partial class Wfs20Handler
                 geometry = valueElement == null
                     ? null
                     : await ParseTransactionGeometryPropertyAsync(
-                        valueElement, resource, cancellationToken).ConfigureAwait(false);
+                        valueElement, resource, cancellationToken, actionSrsName).ConfigureAwait(false);
                 continue;
             }
 
@@ -1528,7 +1604,8 @@ internal sealed partial class Wfs20Handler
     private async Task<byte[]?> ParseTransactionGeometryPropertyAsync(
         XElement propertyElement,
         MetadataV2Object resource,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? actionSrsName = null)
     {
         if (HasNilAttribute(propertyElement))
         {
@@ -1548,7 +1625,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        var geometry = ParseTransactionGeometry(geometryElement, defaultSrid);
+        var geometry = ParseTransactionGeometry(geometryElement, defaultSrid, actionSrsName);
         if (geometry.SRID != defaultSrid)
         {
             var coordinates = geometry.Coordinates;
@@ -1619,11 +1696,15 @@ internal sealed partial class Wfs20Handler
             or "MultiLineString" or "MultiCurve" or "Polygon" or "Surface"
             or "MultiPolygon" or "MultiSurface";
 
-    internal static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid)
+    internal static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid, string? fallbackSrsName = null)
     {
         var srsNameValue = geometryElement.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
             ?.Value;
+        if (string.IsNullOrWhiteSpace(srsNameValue))
+        {
+            srsNameValue = fallbackSrsName;
+        }
 
         CrsDefinition crsDefinition;
         if (!string.IsNullOrWhiteSpace(srsNameValue))
