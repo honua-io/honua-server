@@ -212,12 +212,12 @@ jobs:
           status=0
           pushd geobench >/dev/null
           # The 1-minute load stays above the diagnostic's quiet ceiling right after a
-          # 100-VU profile, so let it decay to the core count before the next profile.
-          settle_limit="$(nproc)"
+          # 100-VU profile, so let it decay to that ceiling before the next profile.
+          max_load=16
           for profile in "${ordered[@]}"; do
             for ((waited = 0; waited < 600; waited += 10)); do
               load1="$(cut -d ' ' -f1 /proc/loadavg)"
-              awk -v current="${load1}" -v limit="${settle_limit}" 'BEGIN { exit !(current <= limit) }' && break
+              awk -v current="${load1}" -v limit="${max_load}" 'BEGIN { exit !(current <= limit) }' && break
               sleep 10
             done
             echo "=== Pair ${PAIR_INDEX}: running profile=${profile} sizes=${SIZES} levels=${LEVELS} (load1 $(cut -d ' ' -f1 /proc/loadavg) after ${waited}s settle) ==="
@@ -231,7 +231,7 @@ jobs:
                 --levels "${LEVELS}" \
                 --duration "${DURATION}" \
                 --warmup "${WARMUP}" \
-                --max-load 16; then
+                --max-load "${max_load}"; then
               echo "::warning::gc-cohort-diagnostic.py exited non-zero for pair=${PAIR_INDEX} profile=${profile}"
               status=1
             fi
