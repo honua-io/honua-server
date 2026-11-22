@@ -1,6 +1,7 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+-- honua:reader-incompatible reason=canonical Map report references replace fields required by prior readers
 -- Reader-incompatible: restore the pre-upgrade backup and matching server to roll back.
 -- Change only Map embed references. Report identity, expiry and other sections remain unchanged.
 DO $$

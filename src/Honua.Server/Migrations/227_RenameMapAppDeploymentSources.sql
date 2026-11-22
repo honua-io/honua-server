@@ -1,6 +1,7 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+-- honua:reader-incompatible reason=canonical Map/App deployment source kinds replace kinds required by prior readers
 -- Reader-incompatible: restore the pre-upgrade backup and matching server to roll back.
 -- Resolve the complete physical promotion family before updating indexed and JSON
 -- source names together. IDs, CAS revisions, timestamps and opaque targets are unchanged.

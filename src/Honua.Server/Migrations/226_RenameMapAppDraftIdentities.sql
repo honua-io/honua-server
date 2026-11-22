@@ -1,6 +1,7 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+-- honua:reader-incompatible reason=canonical Map/App draft fields and formats replace fields required by prior readers
 -- Reader-incompatible vocabulary change. Roll back with the pre-upgrade backup
 -- and matching server. Draft IDs, owners, timestamps and expiry remain unchanged.
 -- Only envelope fields change; Map specifications and App configuration are opaque.

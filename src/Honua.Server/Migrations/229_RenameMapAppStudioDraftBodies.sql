@@ -1,6 +1,7 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+-- honua:reader-incompatible reason=canonical Map/App draft bodies and formats replace shapes required by prior readers
 -- Reader-incompatible: restore the pre-upgrade backup and matching server to roll back.
 -- Convert mutable Map/App drafts only. Advance generation once to invalidate stale
 -- edits. Published version envelopes, hashes and hash input bytes remain immutable.
