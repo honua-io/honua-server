@@ -348,65 +348,17 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetImageTileAsync_CogFallbackUsesStorageLayerId()
-    {
-        var graphProvider = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-cog", "cog-layer", MetadataV2ObjectType.RasterDataset)
-            .AddStorageBinding("binding-cog", "resource-cog", "cog.rasters", storageLayerId: 42)
-            .AddService("service-cog", "cog-service", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                "publication-cog",
-                "service-cog",
-                "resource-cog",
-                layerIndex: 7,
-                storageBindingId: "binding-cog",
-                serviceLocalId: "cog-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
-        var cogResolver = Substitute.For<ICogTileResolver>();
-        cogResolver.GetTileForLayerAsync(
-                42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
-            .Returns(new CogTileLookup(new RasterResult
-            {
-                Data = [0x89, 0x50, 0x4E, 0x47],
-                ContentType = "image/png",
-                Width = 256,
-                Height = 256,
-                Srid = 3857
-            }, false));
-        var handler = new ImageServerTileHandler(
-            graphProvider,
-            _rasterStore,
-            NullLogger<ImageServerTileHandler>.Instance,
-            cogResolver);
-        _rasterStore.QueryRastersAsync(default, default, default)
-            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
-
-        var context = CreateImageServerContext(services => services.AddValidationServices());
-        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
-        var result = await handler.GetImageTileAsync(
-            context,
-            layerId: 42,
-            level: 0,
-            row: 0,
-            col: 0,
-            format: "png",
-            publicationId: "publication-cog",
-            cacheLayerId: 7);
-
-        await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
-        result.Should().BeOfType<FileContentHttpResult>();
-        await cogResolver.Received(1).GetTileForLayerAsync(
-            42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>());
-        await cogResolver.DidNotReceive().GetTileForLayerAsync(
-            7, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<RasterFormat>(), Arg.Any<CancellationToken>());
-    }
+    public Task GetImageTileAsync_CogFallbackUsesStorageLayerId()
+        => AssertCogFallbackUsesStorageLayerIdAsync(sharedPublicationIndex: false);
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetImageTileAsync_CogFallbackResolvesByStorageLayerIdWhenPublicationIndexIsShared()
+    public Task GetImageTileAsync_CogFallbackResolvesByStorageLayerIdWhenPublicationIndexIsShared()
+        => AssertCogFallbackUsesStorageLayerIdAsync(sharedPublicationIndex: true);
+
+    private async Task AssertCogFallbackUsesStorageLayerIdAsync(bool sharedPublicationIndex)
     {
-        var graphProvider = new TestMetadataV2GraphBuilder()
+        var graphBuilder = new TestMetadataV2GraphBuilder()
             .AddResource("resource-cog", "cog-layer", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("binding-cog", "resource-cog", "cog.rasters", storageLayerId: 42)
             .AddService("service-cog", "cog-service", protocols: [ServiceProtocols.ImageServer])
@@ -417,13 +369,17 @@ public class ImageServerTileHandlerTests
                 layerIndex: 7,
                 storageBindingId: "binding-cog",
                 serviceLocalId: "cog-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .AddResource("resource-other", "other-layer", MetadataV2ObjectType.RasterDataset)
-            .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
-            .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
-                storageBindingId: "binding-other", publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
+                publicationType: MetadataV2LayerType.EsriImageLayer);
+        if (sharedPublicationIndex)
+        {
+            graphBuilder
+                .AddResource("resource-other", "other-layer", MetadataV2ObjectType.RasterDataset)
+                .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
+                .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
+                .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
+                    storageBindingId: "binding-other", publicationType: MetadataV2LayerType.EsriImageLayer);
+        }
+        var graphProvider = graphBuilder.BuildProvider();
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
                 42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
