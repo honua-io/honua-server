@@ -883,7 +883,7 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.GovernedLineageMigration);
         result.AppliedScripts.Should().NotContain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
             "the contract-gated adoption script has no work in the default schema");
-        result.AppliedScripts.Should().NotContain("Honua.Server.Migrations.226_AdoptConfiguredRegistrySchema.sql",
+        result.AppliedScripts.Should().NotContain("Honua.Server.Migrations.227_AdoptConfiguredRegistrySchema.sql",
             "the registry move has no work in the default schema");
 
         var existingDatabasePlan = await runner.PlanMigrationsAsync(

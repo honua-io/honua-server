@@ -27,6 +27,26 @@ public static partial class GeoParquetFeatureWriter
     private static long OutputByteCap(GeoParquetLimits limits)
         => limits.MaxArtifactBytes ?? limits.MaxResponseBytes;
 
+    internal static long EstimateFeatureBytes(Feature feature, int columnCount)
+    {
+        // Conservative admission estimate, not a process-RSS guarantee: allow space for
+        // WKB decoding/copies, UTF-16 plus UTF-8 buffers and fixed per-cell bookkeeping.
+        var bytes = 128L + 32L * columnCount + 6L * (feature.Geometry?.Length ?? 0);
+        foreach (var (name, value) in feature.Attributes)
+        {
+            bytes += 64L + 2L * name.Length + (value switch
+            {
+                string text => 6L * text.Length,
+                byte[] binary => 2L * binary.Length,
+                JsonElement { ValueKind: JsonValueKind.Undefined } => 64L,
+                JsonElement json => 6L * json.GetRawText().Length,
+                _ => 64L
+            });
+        }
+
+        return bytes;
+    }
+
     private static List<(int Offset, int Count)> PlanBatches(
         ImmutableArray<Feature> features, GeoParquetLimits limits, int columnCount = 0)
     {
@@ -37,22 +57,7 @@ public static partial class GeoParquetFeatureWriter
         var count = 0;
         for (var index = 0; index < features.Length; index++)
         {
-            var feature = features[index];
-            // Conservative admission estimate, not a process-RSS guarantee: allow space for
-            // WKB decoding/copies, UTF-16 plus UTF-8 buffers and fixed per-cell bookkeeping.
-            var bytes = 128L + 32L * columnCount + 6L * (feature.Geometry?.Length ?? 0);
-            foreach (var (name, value) in feature.Attributes)
-            {
-                bytes += 64L + 2L * name.Length + (value switch
-                {
-                    string text => 6L * text.Length,
-                    byte[] binary => 2L * binary.Length,
-                    JsonElement { ValueKind: JsonValueKind.Undefined } => 64L,
-                    JsonElement json => 6L * json.GetRawText().Length,
-                    _ => 64L
-                });
-            }
-
+            var bytes = EstimateFeatureBytes(features[index], columnCount);
             totalBytes += bytes;
             if (bytes > limits.MaxEstimatedBatchBytes || totalBytes > limits.MaxEstimatedInputBytes)
             {

@@ -10,6 +10,10 @@ namespace Honua.ControlPlane;
 internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider, IAdminApiKeyStore? apiKeys = null)
 {
     internal const string Refusal = "The proposer API-key authority is unavailable or no longer authorized.";
+    internal const string BootstrapRefusal =
+        "The bootstrap admin credential cannot file a proposal: approval re-checks the proposer's API key, "
+        + "and this credential has none, so the proposal could never be approved. Create a scoped API key with "
+        + "POST /api/v1/admin/api-keys (for an MCP client, grant agent and admin:write) and send it as X-API-Key.";
     private const string Scheme = AuthenticationExtensions.ApiKeyScheme;
     private const string Prefix = Scheme + ":api-key:";
     private const string SupportAgentKeyPrefix = Scheme + ":support-agent:";
@@ -17,6 +21,11 @@ internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider
     internal static bool IsApiKeyActor(string? actor) => actor is not null
         && (string.Equals(actor, Scheme, StringComparison.OrdinalIgnoreCase)
             || actor.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
+
+    // The bootstrap password has no persisted key record, so approval would always refuse its proposal.
+    internal static bool IsBootstrapCredentialActor(string? actor) => IsApiKeyActor(actor)
+        && (actor!.EndsWith(":api-key:" + Guid.Empty.ToString("D"), StringComparison.OrdinalIgnoreCase)
+            || (TryGetKeyId(actor, out var id) && id == ApiKeyAuthenticationHandler.BootstrapAdminActorId));
 
     internal static bool IsSupportOrOAuthActor(string? actor) => actor is not null
         && (actor.Contains(":support-agent:", StringComparison.OrdinalIgnoreCase)

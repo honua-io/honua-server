@@ -42,6 +42,22 @@ internal static class AssetTestData
         await transaction.CommitAsync();
     }
 
+    public static async Task ExecuteAsync(WebAppFixture fixture, string sql)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public static async Task<object?> ScalarAsync(WebAppFixture fixture, string sql)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync();
+    }
+
     // The fixture layer's seed differs from base-schema, so tests read real object IDs and coordinates from the layer.
     public static async Task<IReadOnlyList<(string AssetId, double X)>> DiscoverAssetsAsync(WebAppFixture fixture)
     {
@@ -62,16 +78,18 @@ internal static class AssetTestData
         return assets;
     }
 
-    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture)
+    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture, FormFieldDefinition[]? fields = null)
     {
         using var scope = fixture.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+        fields ??= [new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true }];
         var draft = await store.SaveDraftAsync(
             new FormPackageDocument
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
-                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
+                Fields = fields,
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields.Select(static field => field.FieldId).OfType<string>().ToArray() }],
             },
             "test-admin");
         var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")

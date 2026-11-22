@@ -14,9 +14,11 @@ internal sealed partial class FeatureServerQueryHandler
     private sealed record StreamingQueryDispatch
     {
         public bool UsePbfStreaming { get; init; }
+        public bool UseParquetStreaming { get; init; }
         public required FeatureQuery Query { get; init; }
         public required QueryParameters ValidatedParams { get; init; }
         public int? OutputSrid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public QuantizationTransform? QuantizationTransform { get; init; }
         public required HttpContext Context { get; init; }
         public required string Format { get; init; }
@@ -39,7 +41,25 @@ internal sealed partial class FeatureServerQueryHandler
                     Query = dispatch.Query,
                     QueryParams = dispatch.ValidatedParams,
                     OutputSrid = dispatch.OutputSrid,
+                    RequestedOutputSrid = dispatch.RequestedOutputSrid,
                     QuantizationTransform = dispatch.QuantizationTransform,
+                    Context = dispatch.Context
+                },
+                cancellationToken);
+        }
+
+        if (dispatch.UseParquetStreaming)
+        {
+            return _queryExecutor.StreamParquetQueryAsync(
+                new FeatureServerQueryExecutor.ParquetStreamQueryRequest
+                {
+                    Service = queryLayer.Service,
+                    Resource = queryLayer.Resource,
+                    Publication = queryLayer.Publication,
+                    StorageLayerId = queryLayer.StorageLayerId,
+                    Query = dispatch.Query,
+                    QueryParams = dispatch.ValidatedParams,
+                    OutputSrid = dispatch.OutputSrid,
                     Context = dispatch.Context
                 },
                 cancellationToken);
@@ -71,6 +91,25 @@ internal sealed partial class FeatureServerQueryHandler
             return false;
         }
 
+        return AllRequestedOutFieldsInSchema(resource, validatedParams);
+    }
+
+    private bool CanStreamParquet(MetadataV2Object resource, QueryParameters validatedParams, int effectiveLimit)
+    {
+        if (effectiveLimit <= StreamingThreshold
+            || validatedParams.ReturnDistance
+            || validatedParams.ReturnDistinctValues
+            || _queryExecutor.HasComputedFields
+            || resource.SchemaFields.Count == 0)
+        {
+            return false;
+        }
+
+        return AllRequestedOutFieldsInSchema(resource, validatedParams);
+    }
+
+    private static bool AllRequestedOutFieldsInSchema(MetadataV2Object resource, QueryParameters validatedParams)
+    {
         if (string.IsNullOrWhiteSpace(validatedParams.OutFields))
         {
             return true;

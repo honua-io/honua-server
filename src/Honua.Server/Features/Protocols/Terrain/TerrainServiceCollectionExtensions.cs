@@ -29,5 +29,12 @@ internal static class TerrainServiceCollectionExtensions
             => throw new TerrainTileException(
                 TerrainTileFailureKind.SourceUnavailable,
                 "No terrain tile provider is registered for the active data source.");
+
+        public Task<TerrainElevationGrid> GetGeographicElevationGridAsync(
+            TerrainGeographicGridRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new TerrainTileException(
+                TerrainTileFailureKind.SourceUnavailable,
+                "No terrain tile provider is registered for the active data source.");
     }
 }

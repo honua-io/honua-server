@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Protocols.Zarr.Models;
 
@@ -21,36 +22,14 @@ internal sealed record RegisterZarrRequest
 
     public bool IsValid(out string error)
     {
-        if (LayerId <= 0)
+        if (CloudRasterRegistrationValidation.ValidateMetadata(LayerId, Name, Description) is { } metadataError)
         {
-            error = "LayerId must be a positive integer.";
+            error = metadataError;
             return false;
         }
-        if (string.IsNullOrWhiteSpace(Name))
+        if (CloudRasterRegistrationValidation.ValidateStorageLocation(Bucket, RootPath, "rootPath") is { } storageError)
         {
-            error = "Name is required.";
-            return false;
-        }
-        if (string.IsNullOrWhiteSpace(Bucket))
-        {
-            error = "Bucket is required.";
-            return false;
-        }
-        if (string.IsNullOrWhiteSpace(RootPath))
-        {
-            error = "RootPath is required.";
-            return false;
-        }
-        if (RootPath.Contains("..", StringComparison.Ordinal) ||
-            RootPath.Contains('\\', StringComparison.Ordinal) ||
-            RootPath.StartsWith('/'))
-        {
-            error = "RootPath must be a relative object key with no traversal sequences.";
-            return false;
-        }
-        if (Bucket.Length > 255 || RootPath.Length > 1024)
-        {
-            error = "Bucket must be 255 characters or fewer and RootPath must be 1024 characters or fewer.";
+            error = storageError;
             return false;
         }
         if (!Enum.IsDefined(Provider))

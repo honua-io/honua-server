@@ -154,7 +154,7 @@ internal static class SceneAssetResolver
         }
     }
 
-    private static bool IsSafeRelativePath(string assetPath)
+    internal static bool IsSafeRelativePath(string assetPath)
     {
         if (assetPath.Length == 0)
         {

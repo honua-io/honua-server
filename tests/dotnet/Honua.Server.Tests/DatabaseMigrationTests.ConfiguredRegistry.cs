@@ -115,12 +115,12 @@ public sealed partial class DatabaseMigrationTests
             ALTER TABLE custom_registry.service_layers SET SCHEMA honua;
             ALTER TABLE custom_registry.layer_fields SET SCHEMA honua;
             DELETE FROM public.schema_versions
-            WHERE scriptname = 'Honua.Server.Migrations.226_AdoptConfiguredRegistrySchema.sql';
+            WHERE scriptname = 'Honua.Server.Migrations.227_AdoptConfiguredRegistrySchema.sql';
             """;
         await command.ExecuteNonQueryAsync();
         var verify = () => guard.VerifyAsync(_connectionString);
         await verify.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*226_AdoptConfiguredRegistrySchema*");
+            .WithMessage("*227_AdoptConfiguredRegistrySchema*");
         var plan = await runner.PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
         plan.Successful.Should().BeTrue(plan.ErrorMessage);
     }

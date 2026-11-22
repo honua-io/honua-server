@@ -8,7 +8,7 @@ description: "Client-visible behavior clarified for the 2026.1 rc.2 release."
 ## Upgrade from rc.1
 
 With a custom `Database:Schema`, migration
-`226_AdoptConfiguredRegistrySchema.sql` moves the service and layer registry out
+`227_AdoptConfiguredRegistrySchema.sql` moves the service and layer registry out
 of `honua` into the configured schema, preserving its rows and table identities.
 Stop older server and worker instances before applying the migration: they still
 use the previous registry location. Migrations are forward-only. To return to

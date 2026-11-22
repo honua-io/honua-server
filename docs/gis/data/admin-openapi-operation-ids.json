@@ -261,6 +261,12 @@
       "path": "/embed/keys"
     },
     {
+      "operationId": "createExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/exports"
+    },
+    {
       "operationId": "createFieldMaskPolicy",
       "catalogOperationId": "admin.field-mask-policy.create",
       "method": "POST",
@@ -385,6 +391,12 @@
       "catalogOperationId": null,
       "method": "DELETE",
       "path": "/connections/{id}"
+    },
+    {
+      "operationId": "deleteExport",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/exports/{exportId}"
     },
     {
       "operationId": "deleteFieldMaskPolicy",
@@ -525,6 +537,12 @@
       "path": "/compliance/report"
     },
     {
+      "operationId": "exportFormXlsForm",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/forms/{formId}/export"
+    },
+    {
       "operationId": "exportLayerSldStyle",
       "catalogOperationId": "admin.layer.style.export-sld",
       "method": "GET",
@@ -639,6 +657,12 @@
       "path": "/metadata/layers/{storageLayerId}/filter"
     },
     {
+      "operationId": "getAdminLayerMetadataHistory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{storageLayerId}/history"
+    },
+    {
       "operationId": "getAdminLayerPopupInfo",
       "catalogOperationId": "admin.layer.popup-info.get",
       "method": "GET",
@@ -669,6 +693,18 @@
       "path": "/metadata/layers/{storageLayerId}/validation"
     },
     {
+      "operationId": "getAdminMetadataHistory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/history"
+    },
+    {
+      "operationId": "getAdminMetadataSchemas",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/schemas"
+    },
+    {
       "operationId": "getAdminOpenApi",
       "catalogOperationId": null,
       "method": "GET",
@@ -679,6 +715,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/services/{serviceName}/discovery"
+    },
+    {
+      "operationId": "getAdminServiceMetadataHistory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/history"
     },
     {
       "operationId": "getAdminVersion",
@@ -919,6 +961,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/performance/enhanced/database/slow-queries"
+    },
+    {
+      "operationId": "getExport",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/exports/{exportId}"
     },
     {
       "operationId": "getFeatureOverview",
@@ -1395,6 +1443,12 @@
       "path": "/forms/{formId}/versions/{formVersion}/publish"
     },
     {
+      "operationId": "importFormXlsForm",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/import"
+    },
+    {
       "operationId": "importGeocoderReferenceData",
       "catalogOperationId": null,
       "method": "POST",
@@ -1561,6 +1615,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/embed/keys"
+    },
+    {
+      "operationId": "listExports",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/exports"
     },
     {
       "operationId": "listFeatureStreamSessions",
@@ -2434,7 +2494,7 @@
     },
     {
       "operationId": "updateAdminLayerDiscovery",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.metadata.layer-discovery.set",
       "method": "PUT",
       "path": "/metadata/layers/{storageLayerId}/discovery"
     },
@@ -2457,8 +2517,14 @@
       "path": "/metadata/layers/{storageLayerId}/style"
     },
     {
-      "operationId": "updateAdminServiceDiscovery",
+      "operationId": "updateAdminMetadataSchemas",
       "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/schemas"
+    },
+    {
+      "operationId": "updateAdminServiceDiscovery",
+      "catalogOperationId": "admin.metadata.service-discovery.set",
       "method": "PUT",
       "path": "/services/{serviceName}/discovery"
     },
