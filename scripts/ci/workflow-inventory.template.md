@@ -2273,3 +2273,19 @@ seconds (0.116 runner minutes), with one runner before and after. Individual
 baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
+
+### Durable GPServer feature schema lifetime
+
+Six read-only geometry and unavailable-workspace cases in
+`GPServerDurableRuntimeTests` borrow the feature schema seeded by their class
+fixture. Each case still starts and disposes its own production job host,
+clears the global job tables through `PostgresJobHost.StartAsync`, and asserts
+that the Postgres job store, queue and execution service are registered. The
+schema owner uses the default test composition without production job workers.
+The job-substrate collection remains serial. Restart, migration, ownership,
+authentication, scoped-key and node-local cases retain their existing lifetimes.
+Every assertion, request and endpoint/operation attribute is unchanged.
+
+All cases remain in the complete GeoServices GPServer Durable and Aliases shard
+on selected PR runs and full trunk runs. No workflow, shard filter, required
+check name or aggregate dependency changes.
