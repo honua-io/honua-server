@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using Asp.Versioning.Builder;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -178,6 +179,42 @@ internal static partial class OidcProviderEndpoints
         HandleUndoProviderChange(Guid id, UndoSettingsChangeRequest request, HttpContext context)
         => SettingsRevisionHandlers.UndoAsync(new(ProviderDocument(id), DeletedDocumentUndo.Refuse), request, context);
 
+    private static async Task<string?> ValidateProviderInputAsync(
+        object request,
+        string? name,
+        string? authority,
+        bool isUpdate,
+        CancellationToken cancellationToken)
+    {
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        {
+            var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+            return $"Validation failed: {errors}";
+        }
+
+        if ((name is not null || !isUpdate) && (string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl)))
+        {
+            return "Validation failed: name must not be empty or contain control characters.";
+        }
+
+        if (authority is not null || !isUpdate)
+        {
+            if (string.IsNullOrWhiteSpace(authority) || authority.Any(char.IsControl))
+            {
+                return "Validation failed: authority must be a valid HTTPS URL without control characters.";
+            }
+
+            var ssrf = await OutboundHttpUrlValidator.ValidateAsync(authority, cancellationToken).ConfigureAwait(false);
+            if (!ssrf.IsValid && !ssrf.IsHostResolutionUnavailable)
+            {
+                return $"Validation failed: authority {ssrf.ErrorMessage}";
+            }
+        }
+
+        return null;
+    }
+
     private static ConfigurationDocumentKey ProviderDocument(Guid id) => new(PostgresOidcProviderStore.DocumentKind, id.ToString("D"));
 
     private static OidcProviderResponse ToResponse(OidcProviderConfiguration p) => new()
@@ -229,11 +266,11 @@ internal static partial class OidcProviderEndpoints
     {
         try
         {
-            var validationResults = new List<ValidationResult>();
-            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            var validationError = await ValidateProviderInputAsync(
+                request, request.Name, request.Authority, isUpdate: false, context.RequestAborted);
+            if (validationError is not null)
             {
-                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
 
             var provider = new OidcProviderConfiguration
@@ -316,11 +353,11 @@ internal static partial class OidcProviderEndpoints
     {
         try
         {
-            var validationResults = new List<ValidationResult>();
-            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            var validationError = await ValidateProviderInputAsync(
+                request, request.Name, request.Authority, isUpdate: true, context.RequestAborted);
+            if (validationError is not null)
             {
-                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
 
             var result = await store.UpdateProviderAsync(id, existing => new OidcProviderConfiguration

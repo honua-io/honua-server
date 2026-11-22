@@ -155,6 +155,12 @@ internal static partial class RateLimitEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
             }
 
+            if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    "Validation failed: name must not be empty or contain control characters."));
+            }
+
             if (!RateLimitScopes.IsKnown(request.Scope))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(
@@ -229,6 +235,19 @@ internal static partial class RateLimitEndpoints
     {
         try
         {
+            var validationResults = new List<ValidationResult>();
+            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            {
+                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+            }
+
+            if (request.Name is not null && (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl)))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    "Validation failed: name must not be empty or contain control characters."));
+            }
+
             var result = await store.UpdatePolicyAsync(id, existing => new RateLimitPolicy
             {
                 PolicyId = existing.PolicyId,
