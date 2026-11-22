@@ -2305,3 +2305,14 @@ assertions and endpoint metadata remain unchanged.
 Every case remains in its existing selected PR shard and full trunk runs. No
 workflow, shard filter, required check name, runner count or required aggregate
 `needs` contract changes.
+
+Two interleaved base/head Release runs of the complete unchanged Streaming
+Endpoints 4 shard passed the same 28 cases in every run (zero skipped), on one
+runner before and after. Summed `FeatureStreamEndpointsTests` TRX case seconds
+were 33.220638 / 31.768553 at base and 28.079612 / 25.437050 at head: median
+32.494596 to 26.758331 seconds. Fixture-inclusive TRX session seconds were
+49.478414 / 47.762028 at base and 45.713160 / 40.702234 at head: median
+48.620221 to 43.207697 seconds, saving 5.412524 seconds (0.090209 runner-minutes).
+Both pairs improved, by 3.765254 and 7.059794 seconds. Compilation is excluded;
+this is a measured shard saving, not evidence of an end-to-end CI critical-path
+improvement.
