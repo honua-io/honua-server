@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy;
@@ -27,6 +28,7 @@ internal sealed record RevocationScenario
     public int GraphFailuresBeforeSuccess { get; init; }
     public CdnInvalidationResult[]? InvalidationOutcomes { get; init; }
     public IPublicExportStateStore? StateStoreOverride { get; init; }
+    public ICloudFileStorage? PrivateStorage { get; init; }
 }
 
 internal sealed class RevocationHarness
@@ -63,7 +65,9 @@ internal sealed class RevocationHarness
                 OpsNotifier = CreateNotifier(failureNotices).Object,
                 Configuration = config,
                 Destination = destination,
-                StatusReader = CreateStatusReader(pollReceipts).Object
+                StatusReader = CreateStatusReader(pollReceipts).Object,
+                PrivateStorage = opts.PrivateStorage,
+                PrivateStorageOptions = opts.PrivateStorage is null ? null : Options.Create(new CloudStorageOptions())
             },
             NullLogger<PublicExportRevocationService>.Instance);
 

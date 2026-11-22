@@ -55,6 +55,14 @@ internal sealed partial class PublicExportRevocationService(
 
         foreach (var export in promoted)
         {
+            if (await IsUnpublishedAsync(export, cancellationToken).ConfigureAwait(false))
+            {
+                await RequestRevocationAsync(
+                    new PublicExportRevocationRequest(export.PublicationId, ReasonUnpublished, changeId),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
             {
                 continue;
@@ -346,6 +354,26 @@ internal sealed partial class PublicExportRevocationService(
         await deps.StateStore.SaveRevocationAsync(failed, cancellationToken).ConfigureAwait(false);
         await deps.OpsNotifier.NotifyRevocationFailedAsync(failed, detail, cancellationToken).ConfigureAwait(false);
         return failed;
+    }
+
+    private async Task<bool> IsUnpublishedAsync(
+        PromotedExportRecord export,
+        CancellationToken cancellationToken)
+    {
+        if (deps.PrivateStorage is null || deps.PrivateStorageOptions is null)
+        {
+            return false;
+        }
+
+        var store = ExportStore.Create(deps.PrivateStorage, deps.PrivateStorageOptions.Value, export.PublicationId);
+        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        if (pointer is null)
+        {
+            return true;
+        }
+
+        var marker = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+        return marker is not null && pointer.SwitchedAt <= marker.UnpublishedAt;
     }
 
     private async Task<bool> StillEligibleAsync(

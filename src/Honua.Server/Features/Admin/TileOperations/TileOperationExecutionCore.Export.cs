@@ -454,10 +454,10 @@ internal sealed partial class TileOperationExecutionCore
             LayerIndex = context.Source.Published.Publication.LayerIndex ?? context.Source.StorageLayerId,
             MetadataRevision = context.Source.MetadataRevision
         };
+        PublicExportDeliveryStatus result;
         try
         {
-            var result = await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
-            return await FencePromotedAsync(context, result, cancellationToken).ConfigureAwait(false);
+            result = await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
@@ -467,9 +467,11 @@ internal sealed partial class TileOperationExecutionCore
                 Reason = "Public promotion failed; Export remains on signed-in routes."
             };
         }
+
+        return await FencePromotedAsync(context, result, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<PublicExportDeliveryStatus> FencePromotedAsync(
+    private async Task<PublicExportDeliveryStatus> FencePromotedAsync(
         ExportPublishContext context,
         PublicExportDeliveryStatus result,
         CancellationToken cancellationToken)
@@ -487,8 +489,19 @@ internal sealed partial class TileOperationExecutionCore
 
         if (context.PublicRevocation is not null)
         {
-            await context.PublicRevocation.RevokeUnpublishedAsync(
-                context.Run.ExportId, changeId: null, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await context.PublicRevocation.RevokeUnpublishedAsync(
+                    context.Run.ExportId, changeId: null, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+            {
+                TileOperationLog.ExportPublicPromotionFenceRevokeFailed(_logger, VersionLabel(context.Run), ex);
+                return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
+                {
+                    Reason = "Export was unpublished during public promotion; immediate public revocation failed and will be retried by the revocation sweep."
+                };
+            }
         }
 
         return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
