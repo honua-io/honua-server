@@ -606,4 +606,73 @@ public class GeoServicesSqlParserTests
         ((Literal)condition.Right).Value.Should().Be("' OR 1=1 --");
         ((Literal)function.Arguments[1]).Value.Should().Be("x' ; DROP TABLE features --");
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1")]
+    [InlineData("'abc'")]
+    [InlineData("1 + 2")]
+    [InlineData("-1")]
+    [InlineData("LOWER('abc')")]
+    [InlineData("LENGTH(name)")]
+    public void Parse_NonBooleanRootExpression_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1=1 AND 1")]
+    [InlineData("1=1 OR 'abc'")]
+    [InlineData("1 AND 1=1")]
+    [InlineData("NOT 1")]
+    [InlineData("NOT 'abc'")]
+    [InlineData("NOT (1 + 2)")]
+    public void Parse_NonBooleanLogicalOperand_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1 / 0 = 1")]
+    [InlineData("1 / 0.0 = 1")]
+    [InlineData("1 % 0 = 0")]
+    [InlineData("1 / -0 = 1")]
+    [InlineData("1 / -(-0) = 1")]
+    public void Parse_ZeroDivisor_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("name LIKE 123")]
+    [InlineData("123 LIKE 'a%'")]
+    [InlineData("name NOT LIKE 42")]
+    public void Parse_LikeWithNonStringLiteral_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ST_INTERSECTS(geom, other_geom)")]
+    [InlineData("status = 'open' AND ST_WITHIN(geom, boundary)")]
+    [InlineData("CAST(flag AS BOOLEAN)")]
+    [InlineData("status = 'open' AND CAST(flag AS BOOL)")]
+    public void Parse_ValidBooleanSpatialAndCastPredicates_Succeeds(string where)
+    {
+        var expr = _parser.Parse(where);
+
+        expr.Should().NotBeNull();
+    }
 }
