@@ -169,6 +169,18 @@ internal static class InfrastructureCompositionRoot
 
 #endif
 
+        var duckDbEnabled = provider == DataProviderNames.DuckDb;
+#if !HONUA_POSTGIS_ONLY
+        if (!duckDbEnabled && configuration.GetValue("DuckDB:Enabled", false))
+        {
+            var filterService = new Honua.Core.Queries.Filters.FilterExpressionService(
+                new Honua.Core.Queries.Filters.FilterExpressionTranslator(
+                    new Honua.Db.DuckDB.Queries.Filters.DuckDbSqlFilterTranslator()));
+            Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBManagedFeatureProvider(services, configuration, filterService);
+            duckDbEnabled = true;
+        }
+#endif
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
@@ -177,7 +189,7 @@ internal static class InfrastructureCompositionRoot
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
                 provider));
 
-        services.TryAddSingleton(BuildWarehouseRuntimeAvailability(warehouseProviders, provider));
+        services.TryAddSingleton(BuildWarehouseRuntimeAvailability(warehouseProviders, duckDbEnabled));
         services.AddWarehouseAnalyticsServices();
 
         // Add centralized configuration management and secret services
@@ -237,7 +249,7 @@ internal static class InfrastructureCompositionRoot
 
     private static WarehouseRuntimeAvailabilityState BuildWarehouseRuntimeAvailability(
         WarehouseProviderDecisions decisions,
-        string primaryProvider)
+        bool duckDbEnabled)
     {
         var states = new List<KeyValuePair<string, (bool Enabled, string? Reason)>>(decisions.All.Count + 1);
         foreach (var decision in decisions.All)
@@ -250,10 +262,9 @@ internal static class InfrastructureCompositionRoot
             states.Add(new KeyValuePair<string, (bool, string?)>(decision.ProviderName, (decision.Enabled, reason)));
         }
 
-        var duckDbEnabled = primaryProvider == DataProviderNames.DuckDb;
         states.Add(new KeyValuePair<string, (bool, string?)>(
             DataProviderNames.DuckDb,
-            (duckDbEnabled, duckDbEnabled ? null : "DuckDB is not the active primary DataSource provider.")));
+            (duckDbEnabled, duckDbEnabled ? null : "DuckDB is disabled by runtime configuration or excluded from this build profile.")));
         return new WarehouseRuntimeAvailabilityState(states);
     }
 

@@ -1,9 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.ObjectStorage;
+using Honua.Core.Features.Security;
 using Honua.Db.DuckDB.Features.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
@@ -164,51 +168,111 @@ public sealed class DuckDBExternalSourceSqlTests
     }
 
     [Fact]
-    public async Task ResolveObjectStorageBindingAsync_WithValidConnectionAndKey_BuildsCanonicalS3UriWithoutLeakingExternalId()
+    public async Task ManagedSource_UsesBoundObjectAndReusesSnapshotAcrossConnections()
     {
-        var connectionId = Guid.NewGuid();
-        var resolver = new StubObjectStorageConnectionResolver(new ObjectStorageConnection
+        var connection = new ObjectStorageConnection
         {
-            Id = connectionId,
+            Id = Guid.NewGuid(),
             Name = "county-bucket",
             Bucket = "county-geoparquet",
             Prefix = "analytics/",
             Region = "us-west-2",
-            ExternalId = "secret-external-id-must-not-leak",
-        });
+            ExternalId = "test-external-id",
+        };
+        var reader = new StubObjectStoreReader(await CreateParquetAsync());
+        using var bootstrap = new DuckDBSpatialBootstrap(null, NullLogger<DuckDBSpatialBootstrap>.Instance);
+        using var source = new DuckDBManagedSource(
+            bootstrap, NullLogger<DuckDBConnectionProvider>.Instance, new StubObjectStorageConnectionResolver(connection), reader);
+        var provider = source.CreateConnectionProvider(ManagedMapping(connection.Id, "analytics/parcels.parquet"));
 
-        var resolved = await DuckDBExternalSourceSql.ResolveObjectStorageBindingAsync(
-            resolver,
-            connectionId,
-            ["analytics/parcels.parquet"]);
+        for (var i = 0; i < 2; i++)
+        {
+            await using var db = await provider.OpenConnectionAsync();
+            await using var query = db.CreateCommand();
+            query.CommandText = "SELECT count(*) FROM parcels";
+            Assert.Equal(3L, await query.ExecuteScalarAsync());
+        }
 
-        Assert.Equal("county-geoparquet", resolved.Bucket);
-        Assert.Equal("us-west-2", resolved.Region);
-        Assert.Equal("s3://county-geoparquet/analytics/parcels.parquet", Assert.Single(resolved.SourceUris));
-        Assert.Contains("spatial", resolved.RequiredExtensions);
-        Assert.Contains("httpfs", resolved.RequiredExtensions);
-        Assert.Contains(resolved.ConnectionSettings, c => c.Sql == "SET GLOBAL s3_region = 'us-west-2'");
-        Assert.DoesNotContain(resolved.ConnectionSettings, c => c.Sql.Contains("secret-external-id", StringComparison.Ordinal));
+        Assert.Equal(connection, reader.Location?.Connection);
+        Assert.Equal("analytics/parcels.parquet", reader.Location?.Key);
+        Assert.Equal("test-etag", reader.ETag);
+        Assert.Equal(1, reader.ReadCount);
     }
 
     [Fact]
-    public async Task ResolveObjectStorageBindingAsync_WithKeyOutsidePrefix_ThrowsInvalidOperationException()
+    public async Task ManagedSource_RejectsKeyOutsideResolvedPrefixBeforeReading()
     {
-        var connectionId = Guid.NewGuid();
-        var resolver = new StubObjectStorageConnectionResolver(new ObjectStorageConnection
+        var connection = new ObjectStorageConnection
         {
-            Id = connectionId,
+            Id = Guid.NewGuid(),
             Name = "county-bucket",
             Bucket = "county-geoparquet",
             Prefix = "analytics/",
             Region = "us-west-2",
-        });
+        };
+        var reader = new StubObjectStoreReader([]);
+        using var bootstrap = new DuckDBSpatialBootstrap(null, NullLogger<DuckDBSpatialBootstrap>.Instance);
+        using var source = new DuckDBManagedSource(
+            bootstrap, NullLogger<DuckDBConnectionProvider>.Instance, new StubObjectStorageConnectionResolver(connection), reader);
+        var provider = source.CreateConnectionProvider(ManagedMapping(connection.Id, "outside/parcels.parquet"));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            DuckDBExternalSourceSql.ResolveObjectStorageBindingAsync(
-                resolver,
-                connectionId,
-                ["other/parcels.parquet"]));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.OpenConnectionAsync());
+        Assert.Null(reader.Location);
+    }
+
+    private static DuckDBLayerMapping ManagedMapping(Guid connectionId, string key)
+        => DuckDBLayerMapping.FromStorage(
+            5,
+            new FeatureStorageMapping(
+                TableName: "parcels",
+                PrimaryKeyColumn: "id",
+                GeometryColumn: "geom",
+                StorageSrid: 4326,
+                ProviderOptions: new Dictionary<string, string>
+                {
+                    [DuckDBProviderOptions.ExternalSourceFormat] = "GeoParquet",
+                    [DuckDBProviderOptions.ObjectStorageConnectionId] = connectionId.ToString(),
+                    [DuckDBProviderOptions.ObjectStorageKey] = key,
+                }),
+            []);
+
+    private static async Task<byte[]> CreateParquetAsync()
+    {
+        var path = PrivateTempFile.NewPath("honua-duckdb-test-", ".parquet");
+        try
+        {
+            await using var db = new DuckDBConnection("Data Source=:memory:");
+            await db.OpenAsync();
+            await using var query = db.CreateCommand();
+            query.CommandText = $"COPY (SELECT range AS id FROM range(3)) TO {DuckDBExternalSourceSql.QuoteLiteral(path)} (FORMAT parquet)";
+            await query.ExecuteNonQueryAsync();
+            return await File.ReadAllBytesAsync(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private sealed class StubObjectStoreReader(byte[] data) : IImportObjectStoreReader
+    {
+        public ImportObjectLocation? Location { get; private set; }
+        public string? ETag { get; private set; }
+        public int ReadCount { get; private set; }
+
+        public Task<ImportObjectHead> HeadAsync(ImportObjectLocation location, CancellationToken cancellationToken)
+        {
+            Location = location;
+            return Task.FromResult(new ImportObjectHead { SizeBytes = data.Length, ETag = "test-etag" });
+        }
+
+        public Task<Stream> OpenReadAsync(ImportObjectLocation location, string etag, CancellationToken cancellationToken)
+        {
+            Assert.Equal(Location, location);
+            ETag = etag;
+            ReadCount++;
+            return Task.FromResult<Stream>(new MemoryStream(data, writable: false));
+        }
     }
 
     [Fact]

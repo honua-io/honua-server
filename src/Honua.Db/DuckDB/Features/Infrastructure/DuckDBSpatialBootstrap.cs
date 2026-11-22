@@ -47,7 +47,13 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task EnsureSpatialExtensionAsync(DbConnection connection, CancellationToken cancellationToken)
+    public Task EnsureSpatialExtensionAsync(DbConnection connection, CancellationToken cancellationToken)
+        => PrepareConnectionAsync(connection, _externalSourcePlans, cancellationToken);
+
+    public async Task PrepareConnectionAsync(
+        DbConnection connection,
+        ImmutableArray<DuckDBExternalSourcePlan> externalSourcePlans,
+        CancellationToken cancellationToken)
     {
         // A file database is shared across connections: once one connection locked it,
         // its extensions and settings are already in place and SET would fail. Shared
@@ -62,7 +68,7 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         {
             if (!await DuckDBConnectionLockdown.IsLockedAsync(connection, cancellationToken).ConfigureAwait(false))
             {
-                await PrepareInstanceAsync(connection, cancellationToken).ConfigureAwait(false);
+                await PrepareInstanceAsync(connection, externalSourcePlans, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -75,7 +81,7 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
 
         // Temp views are connection-scoped; they bind after the lockdown, so every
         // connection proves the configured sources are inside the allow-list.
-        foreach (var plan in _externalSourcePlans)
+        foreach (var plan in externalSourcePlans)
         {
             await ExecuteNonQueryAsync(
                     connection,
@@ -87,7 +93,10 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         }
     }
 
-    private async Task PrepareInstanceAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task PrepareInstanceAsync(
+        DbConnection connection,
+        ImmutableArray<DuckDBExternalSourcePlan> externalSourcePlans,
+        CancellationToken cancellationToken)
     {
         // SET extension_directory is connection-scoped — apply on every fresh connection
         // when an offline extension path is configured so LOAD can locate the artifact.
@@ -125,7 +134,7 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         var tempDirectory = await DuckDBConnectionLockdown.ReadTempDirectoryAsync(connection, cancellationToken)
             .ConfigureAwait(false);
         var lockdown = DuckDBConnectionLockdown.BuildCommands(
-            _externalSourcePlans.SelectMany(plan => plan.SourcePaths),
+            externalSourcePlans.SelectMany(plan => plan.SourcePaths),
             tempDirectory);
         foreach (var command in lockdown)
         {

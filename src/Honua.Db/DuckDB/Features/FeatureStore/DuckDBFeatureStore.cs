@@ -8,7 +8,9 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.ObjectStorage;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Shared.Models;
+using Microsoft.Extensions.Logging;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
@@ -29,7 +31,10 @@ internal sealed class DuckDBFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
-    private readonly IObjectStorageConnectionResolver? _objectStorageResolver;
+    private readonly DuckDBManagedSource? _managedSource;
+    private readonly DuckDBLayerRegistry? _registry;
+    private readonly ILogger<DuckDBFeatureDataAccess>? _dataAccessLogger;
+    private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly FeatureProviderBinding? _binding;
     private readonly bool _enableH3;
 
@@ -40,9 +45,13 @@ internal sealed class DuckDBFeatureStore :
         LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
         IFilterExpressionService? filterExpressionService = null,
-        IObjectStorageConnectionResolver? objectStorageResolver = null,
-        bool enableH3 = false)
-        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, objectStorageResolver, enableH3, binding: null)
+        bool enableH3 = false,
+        DuckDBManagedSource? managedSource = null,
+        DuckDBLayerRegistry? registry = null,
+        ILogger<DuckDBFeatureDataAccess>? dataAccessLogger = null,
+        IPerformanceMonitor? performanceMonitor = null)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, enableH3,
+            managedSource, registry, dataAccessLogger, performanceMonitor, binding: null)
     {
     }
 
@@ -53,8 +62,11 @@ internal sealed class DuckDBFeatureStore :
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
         LayerReadSecurityResolver readSecurity,
-        IObjectStorageConnectionResolver? objectStorageResolver,
         bool enableH3,
+        DuckDBManagedSource? managedSource,
+        DuckDBLayerRegistry? registry,
+        ILogger<DuckDBFeatureDataAccess>? dataAccessLogger,
+        IPerformanceMonitor? performanceMonitor,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -63,7 +75,10 @@ internal sealed class DuckDBFeatureStore :
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
-        _objectStorageResolver = objectStorageResolver;
+        _managedSource = managedSource;
+        _registry = registry;
+        _dataAccessLogger = dataAccessLogger;
+        _performanceMonitor = performanceMonitor;
         _binding = binding;
         _enableH3 = enableH3;
     }
@@ -71,15 +86,59 @@ internal sealed class DuckDBFeatureStore :
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
+        return (binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId) ||
+                binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageKey) ||
+                binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ExternalSourcePath))
+            ? CreateManagedReader(binding)
+            : CreateBoundReader(binding, _queryBuilder, _dataAccess, _cacheManager);
+    }
+
+    private DuckDBFeatureStore CreateManagedReader(FeatureProviderBinding binding)
+    {
+        if (_managedSource is null || _dataAccessLogger is null)
+        {
+            throw new InvalidOperationException("Managed DuckDB object storage is unavailable.");
+        }
+
+        var attributes = binding.Resource.SchemaFields
+            .Select(field => field.Name)
+            .Where(name => FeatureFieldNameSyntax.IsValid(name) &&
+                !name.Equals(binding.StorageMapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals(binding.StorageMapping.GeometryColumn, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var mapping = DuckDBLayerMapping.FromStorage(binding.StorageLayerId, binding.StorageMapping, attributes);
+        if (!mapping.ObjectStorageConnectionId.HasValue || mapping.ObjectStorageKey is null ||
+            !mapping.ExternalSourcePaths.IsDefaultOrEmpty)
+        {
+            throw new InvalidOperationException("DuckDB publication sources require a managed object storage connection and key.");
+        }
+
+        var registry = new DuckDBLayerRegistry([mapping]);
+        return CreateBoundReader(
+            binding,
+            new DuckDBFeatureQueryBuilder(registry),
+            new DuckDBFeatureDataAccess(_managedSource.CreateConnectionProvider(mapping), registry, _performanceMonitor, _dataAccessLogger),
+            new DuckDBFeatureCacheManager(registry));
+    }
+
+    private DuckDBFeatureStore CreateBoundReader(
+        FeatureProviderBinding binding,
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager)
+    {
         return new DuckDBFeatureStore(
-            _queryBuilder,
-            _dataAccess,
-            _cacheManager,
+            queryBuilder,
+            dataAccess,
+            cacheManager,
             _v2Provider,
             _filterExpressionService,
             _readSecurity,
-            _objectStorageResolver,
             _enableH3,
+            _managedSource,
+            _registry,
+            _dataAccessLogger,
+            _performanceMonitor,
             binding);
     }
 
@@ -225,40 +284,6 @@ internal sealed class DuckDBFeatureStore :
         return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task<DuckDBResolvedObjectStorageBinding?> ResolveExternalObjectStorageBindingAsync(
-        int layerId,
-        CancellationToken cancellationToken = default)
-    {
-        if (_binding is null)
-        {
-            return null;
-        }
-
-        var mapping = DuckDBLayerMapping.FromStorage(layerId, _binding.StorageMapping, []);
-        if (!mapping.ObjectStorageConnectionId.HasValue)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(mapping.ObjectStorageKey))
-        {
-            throw new InvalidOperationException(
-                $"DuckDB layer {layerId} specifies objectStorageConnectionId without an objectStorageKey.");
-        }
-
-        if (_objectStorageResolver is null)
-        {
-            throw new InvalidOperationException(
-                $"DuckDB layer {layerId} requires an IObjectStorageConnectionResolver to bind object storage sources.");
-        }
-
-        return await DuckDBExternalSourceSql.ResolveObjectStorageBindingAsync(
-            _objectStorageResolver,
-            mapping.ObjectStorageConnectionId.Value,
-            [mapping.ObjectStorageKey],
-            cancellationToken).ConfigureAwait(false);
-    }
-
     #endregion
 
     #region IGeoJsonFeatureStore
@@ -366,7 +391,16 @@ internal sealed class DuckDBFeatureStore :
         CancellationToken cancellationToken)
     {
         await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        await ResolveExternalObjectStorageBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (_binding is not null && _binding.StorageLayerId != layerId)
+        {
+            throw new InvalidOperationException("DuckDB bound reader received a different storage layer.");
+        }
+
+        if (_registry?.GetMapping(layerId)?.ObjectStorageConnectionId is not null &&
+            (_binding is null || !_binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId)))
+        {
+            throw new InvalidOperationException("DuckDB managed object storage requires a publication binding.");
+        }
 
         if (query.EnforcedSqlFilter != null)
         {

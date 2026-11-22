@@ -4,18 +4,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
-
-internal sealed record DuckDBResolvedObjectStorageBinding(
-    Guid ConnectionId,
-    string Bucket,
-    string Region,
-    ImmutableArray<string> SourceUris,
-    ImmutableArray<string> RequiredExtensions,
-    ImmutableArray<DuckDBBootstrapSqlCommand> ConnectionSettings);
 
 internal static class DuckDBExternalSourceSql
 {
@@ -49,58 +40,6 @@ internal static class DuckDBExternalSourceSql
         return string.IsNullOrWhiteSpace(source.ObjectStorageKey)
             ? []
             : [source.ObjectStorageKey];
-    }
-
-    public static async Task<DuckDBResolvedObjectStorageBinding> ResolveObjectStorageBindingAsync(
-        IObjectStorageConnectionResolver resolver,
-        Guid connectionId,
-        IReadOnlyList<string> keys,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(resolver);
-        ArgumentNullException.ThrowIfNull(keys);
-
-        if (connectionId == Guid.Empty)
-        {
-            throw new ArgumentException("Object storage connection id must not be empty.", nameof(connectionId));
-        }
-
-        if (keys.Count == 0)
-        {
-            throw new ArgumentException("At least one object storage key is required.", nameof(keys));
-        }
-
-        var uris = ImmutableArray.CreateBuilder<string>(keys.Count);
-        ObjectStorageConnection? connection = null;
-        foreach (var key in keys)
-        {
-            var resolution = await resolver.ResolveObjectAsync(connectionId, key, cancellationToken).ConfigureAwait(false);
-            if (!resolution.Succeeded || resolution.Connection is null)
-            {
-                throw new InvalidOperationException(
-                    string.IsNullOrWhiteSpace(resolution.Message)
-                        ? "Failed to resolve object storage binding for DuckDB external source."
-                        : resolution.Message);
-            }
-
-            connection ??= resolution.Connection;
-            DuckDBOptionsValidator.ThrowIfUnsafeSourcePath(resolution.SourceUri);
-            uris.Add(resolution.SourceUri);
-        }
-
-        var settings = ImmutableArray.CreateBuilder<DuckDBBootstrapSqlCommand>();
-        if (!string.IsNullOrWhiteSpace(connection!.Region))
-        {
-            AddStringSetting(settings, "s3_region", connection.Region, "configure S3 region from object storage connection");
-        }
-
-        return new DuckDBResolvedObjectStorageBinding(
-            connection.Id,
-            connection.Bucket,
-            connection.Region,
-            uris.ToImmutable(),
-            ["spatial", "httpfs"],
-            settings.ToImmutable());
     }
 
     public static ImmutableArray<string> GetRequiredExtensions(DuckDBOptions options)

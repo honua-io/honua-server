@@ -10,6 +10,8 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Features.Security;
@@ -133,11 +135,13 @@ internal static class ServiceCollectionExtensions
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
             sp.GetService<IMetadataV2GraphProvider>(),
             sp.GetService<IFilterExpressionService>(),
-            sp.GetService<IObjectStorageConnectionResolver>(),
-            options.EnableH3));
+            options.EnableH3,
+            sp.GetRequiredService<DuckDBManagedSource>(),
+            sp.GetRequiredService<DuckDBLayerRegistry>(),
+            sp.GetRequiredService<ILogger<DuckDBFeatureDataAccess>>(),
+            sp.GetService<IPerformanceMonitor>()));
 
-        services.AddSingleton(options);
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, DuckDbWarehouseCapabilityDescriptor>());
+        AddManagedSourceServices(services, options);
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -202,6 +206,57 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
+    public static void AddDuckDBManagedFeatureProvider(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IFilterExpressionService filterExpressionService)
+    {
+        var options = new DuckDBOptions();
+        configuration.GetSection("DuckDB").Bind(options);
+        AddManagedSourceServices(services, options);
+        services.AddScoped<IFeatureDataProvider>(sp =>
+        {
+            var registry = new DuckDBLayerRegistry([]);
+            var connection = new DuckDBConnectionProvider(
+                "Data Source=:memory:",
+                static (_, _) => throw new InvalidOperationException("DuckDB requires a managed object storage binding."),
+                sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>());
+            var logger = sp.GetRequiredService<ILogger<DuckDBFeatureDataAccess>>();
+            var performanceMonitor = sp.GetService<IPerformanceMonitor>();
+            return new DuckDBFeatureStore(
+                new DuckDBFeatureQueryBuilder(registry),
+                new DuckDBFeatureDataAccess(connection, registry, performanceMonitor, logger),
+                new DuckDBFeatureCacheManager(registry),
+                Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
+                sp.GetService<IMetadataV2GraphProvider>(),
+                filterExpressionService,
+                options.EnableH3,
+                sp.GetRequiredService<DuckDBManagedSource>(),
+                registry,
+                logger,
+                performanceMonitor);
+        });
+    }
+
+    private static void AddManagedSourceServices(IServiceCollection services, DuckDBOptions options)
+    {
+        const string managedBootstrap = "managed";
+        services.AddSingleton(options);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, DuckDbWarehouseCapabilityDescriptor>());
+        services.AddKeyedSingleton<DuckDBSpatialBootstrap>(managedBootstrap, (sp, _) =>
+            new DuckDBSpatialBootstrap(
+                options.SpatialExtensionPath,
+                options.EnableH3 ? ["h3"] : [],
+                [],
+                [],
+                sp.GetRequiredService<ILogger<DuckDBSpatialBootstrap>>()));
+        services.AddScoped(sp => new DuckDBManagedSource(
+            sp.GetRequiredKeyedService<DuckDBSpatialBootstrap>(managedBootstrap),
+            sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>(),
+            sp.GetService<IObjectStorageConnectionResolver>(),
+            sp.GetService<IImportObjectStoreReader>()));
+    }
+
     internal static List<DuckDBLayerMapping> BuildLayerMappings(
         DuckDBOptions options, string connectionString, ILogger logger)
     {
@@ -211,7 +266,9 @@ internal static class ServiceCollectionExtensions
         {
             var (attributeColumns, attributeColumnTypes) = layerOpt.Attributes is { Length: > 0 }
                 ? (layerOpt.Attributes.ToList(), new Dictionary<string, string>())
-                : DiscoverAttributeColumns(connectionString, options, layerOpt, logger);
+                : layerOpt.ExternalSource?.ObjectStorageConnectionId is not null
+                    ? ([], new Dictionary<string, string>())
+                    : DiscoverAttributeColumns(connectionString, options, layerOpt, logger);
 
             (attributeColumns, attributeColumnTypes) =
                 KeepServableAttributeColumns(attributeColumns, attributeColumnTypes, layerOpt, logger);
