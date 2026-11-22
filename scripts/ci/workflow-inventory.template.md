@@ -2179,3 +2179,25 @@ Measured on the build host (Release, 3 interleaved base/head rounds of the
 Shard filters are unchanged, so every case runs in the same shards on selected PR runs
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Measured SOAP shard packing
+
+The SOAP and SOAP Progress shards now share one GeoServices GPServer SOAP
+runner. Their exact filter union, affected-path union, project, tier selection,
+CPU setting, report flags and 22-minute test / 32-minute job budgets are
+preserved. The method ownership guard covers the combined shard; a frozen
+packing contract checks both former filters and execution settings. MVT keeps
+its separate coverage partition.
+
+Ordinary full runs [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+[44921455496](https://github.com/honua-io/honua-server/actions/runs/44921455496)
+and [45000554030](https://github.com/honua-io/honua-server/actions/runs/45000554030)
+passed all 81 SOAP cases with no skips. Their two shard process-wall sums were
+35, 26 and 17 seconds; even the sum of the individual maxima is 35 seconds,
+2.7% of the unchanged 1,320-second budget. The last full run failed elsewhere;
+its two SOAP shards passed. This reduces the full matrix from 203 to 202 jobs,
+and a GPServer-affected selection loses one runner. In the last run the two
+jobs occupied 203 runner-seconds (3.38 minutes), including 19 seconds in test
+steps. Combined-job runner-minute savings remain unmeasured until a live run;
+these figures do not claim a PR critical-path improvement. The old 132-to-123
+proposal requires fresh qualification for its other groups.

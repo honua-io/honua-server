@@ -1,0 +1,62 @@
+{
+  "originalShards": [
+    {
+      "name": "GeoServices GPServer SOAP",
+      "shard_name": "GeoServices GPServer SOAP",
+      "dispatch_rank": 2.7,
+      "artifact_suffix": "geoservices-gpserver-soap",
+      "log_name": "server-tests-geoservices-gpserver-soap",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 64 cases, 800.3 seconds summed test duration. Excludes only the GetJobStatus progress methods, whose 13 cases run in the progress sibling. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/GeoServices/GPServer/",
+        "src/Honua.Protocols/GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer SOAP Progress",
+      "shard_name": "GeoServices GPServer SOAP Progress",
+      "dispatch_rank": 2.3,
+      "artifact_suffix": "geoservices-gpserver-soap-progress",
+      "log_name": "server-tests-geoservices-gpserver-soap-progress",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 13 GetJobStatus progress cases, 469.5 seconds summed test duration. Theory rows remain together under their original methods. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/GeoServices/GPServer/",
+        "src/Honua.Protocols/GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    }
+  ]
+}
