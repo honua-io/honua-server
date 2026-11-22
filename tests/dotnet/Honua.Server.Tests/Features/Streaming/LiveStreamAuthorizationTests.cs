@@ -349,7 +349,7 @@ public sealed partial class LiveStreamAuthorizationTests
         {
             result.Should().BeSameAs(Results.Empty);
             System.Text.Encoding.UTF8.GetString(output.ToArray()).Should().Be(
-                "event: status\ndata: {\"status\":\"error\",\"code\":\"access-revoked\"}\n\n");
+                "event: status\ndata: {\"status\":\"error\",\"code\":\"authorization-ended\"}\n\n");
         }
         else
         {

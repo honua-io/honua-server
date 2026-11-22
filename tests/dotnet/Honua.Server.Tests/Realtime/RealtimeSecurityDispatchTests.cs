@@ -8,12 +8,15 @@ using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Realtime;
 
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
