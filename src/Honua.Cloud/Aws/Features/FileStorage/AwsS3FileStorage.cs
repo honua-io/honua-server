@@ -154,6 +154,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                     InputStream = request.Content
                 };
                 ApplyResponseHeaders(putRequest.Headers, request);
+                ApplyContentLength(putRequest.Headers, knownLength);
                 if (conditional)
                 {
                     if (expectedETag is null)
@@ -691,7 +692,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return (int)part;
     }
 
-    private static long? KnownContentLength(FileUploadRequest request)
+    internal static long? KnownContentLength(FileUploadRequest request)
     {
         if (request.SizeBytes.HasValue)
         {
@@ -700,7 +701,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         if (request.Content.CanSeek)
         {
-            return request.Content.Length;
+            return Math.Max(0L, request.Content.Length - request.Content.Position);
         }
 
         return null;
@@ -844,6 +845,15 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         if (!string.IsNullOrEmpty(request.ContentEncoding))
         {
             headers.ContentEncoding = request.ContentEncoding;
+        }
+    }
+
+    // Non-seekable streams (such as S3 download responses) need an explicit length on single-part PUTs.
+    internal static void ApplyContentLength(HeadersCollection headers, long? knownLength)
+    {
+        if (knownLength is >= 0)
+        {
+            headers.ContentLength = knownLength.Value;
         }
     }
 
