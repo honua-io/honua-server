@@ -20,6 +20,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
@@ -67,6 +68,43 @@ internal static partial class WmsRequestHandlers
         int StorageLayerId,
         string Identifier,
         MetadataV2GraphSnapshot Snapshot);
+
+    private readonly record struct WmsCapabilitiesCacheScope(
+        HttpContext Context,
+        string SnapshotEtag,
+        string ServiceId,
+        string Version);
+
+    private static string BuildWmsCapabilitiesCacheKey(WmsCapabilitiesCacheScope scope, WmsCapabilitiesLayers layers)
+    {
+        var sb = PooledTextBuilder.Rent();
+        try
+        {
+            sb.Append("wms|").Append(scope.SnapshotEtag).Append('|').Append(scope.ServiceId)
+                .Append('|').Append(GeoServicesServiceUrls.RequestedProtocol(scope.Context, "WMS"))
+                .Append('|').Append(scope.Version);
+            AppendWmsCacheLayers(sb, "|a:", layers.Accessible);
+            AppendWmsCacheLayers(sb, "|c:", layers.Challenge);
+            return MetadataDocumentByteCache.HashKey(sb);
+        }
+        finally
+        {
+            PooledTextBuilder.Return(sb);
+        }
+    }
+
+    private static void AppendWmsCacheLayers(StringBuilder sb, string marker, IReadOnlyList<WmsLayer> layers)
+    {
+        sb.Append(marker);
+        foreach (var layer in layers)
+        {
+            sb.Append('|').Append(layer.StorageLayerId)
+                .Append(':').Append(layer.Resource.Metadata.Id)
+                .Append(':').Append(layer.Resource.Metadata.Generation)
+                .Append(':').Append(layer.Publication.Metadata.Id)
+                .Append(':').Append(layer.Publication.Metadata.Generation);
+        }
+    }
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
@@ -167,13 +205,40 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
+                var docCache = MetadataDocumentByteCache.HasQueryToken(context.Request)
+                    ? null
+                    : context.RequestServices.GetService<MetadataDocumentByteCache>();
+                var cacheKey = docCache is null
+                    ? null
+                    : BuildWmsCapabilitiesCacheKey(
+                        new WmsCapabilitiesCacheScope(context, snapshot.Etag, serviceId, capabilitiesVersion),
+                        new WmsCapabilitiesLayers(accessibleLayers, challengeLayers));
+                var configGeneration = docCache is null
+                    ? 0
+                    : await MetadataDocumentByteCache.ResolveConfigGenerationAsync(context, context.RequestAborted).ConfigureAwait(false);
+                if (docCache is not null && cacheKey is not null && docCache.Get(configGeneration, cacheKey) is { } cachedDocument)
+                {
+                    return cachedDocument.ToResult();
+                }
+
                 var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
                 var capabilities = PooledTextBuilder.Rent();
                 try
                 {
                     await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
-                    return PooledTextBuilder.ToUtf8Result(
+                    var result = PooledTextBuilder.ToUtf8Result(
                         capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
+                    if (docCache is not null && cacheKey is not null)
+                    {
+                        var cached = MetadataDocumentByteCache.CreateDocument(
+                            result.Content.Span,
+                            result.ContentType,
+                            context.RequestServices.GetService<IETagService>());
+                        await result.ReleaseAsync().ConfigureAwait(false);
+                        return docCache.Set(configGeneration, cacheKey, cached).ToResult();
+                    }
+
+                    return result;
                 }
                 finally
                 {
