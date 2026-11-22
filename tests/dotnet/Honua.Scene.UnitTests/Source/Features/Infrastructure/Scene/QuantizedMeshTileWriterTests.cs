@@ -10,7 +10,10 @@ namespace Honua.Scene.UnitTests.Features.Infrastructure.Scene;
 
 public sealed class QuantizedMeshTileWriterTests
 {
-    private static readonly TerrainGeographicBounds MauiTileBounds = new(-156.75, 20.5, -156.25, 21.0);
+    private static readonly TerrainGeographicBounds MauiTileBounds = new()
+    {
+        West = -156.75, South = 20.5, East = -156.25, North = 21.0
+    };
 
     [UnitTest]
     public void Write_AndRead_RoundTripsHeaderVerticesIndicesAndSortedEdges()
