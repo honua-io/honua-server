@@ -261,17 +261,18 @@ public sealed class DuckDBExternalSourceSqlTests
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
             Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = [
-                new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }
+                new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
             ]
         };
         var bound = store.CreateReaderForBinding(new FeatureProviderBinding(
             null!, resource, null!, null!, storage, mapping.LayerId, store, null));
 
-        var callerFilter = new SqlFragment("id >= @p0", [1L])
+        var callerFilter = new SqlFragment("attributes->>'name' = @p0", ["Alice"])
         {
             Dialect = "postgres",
             SourceExpression = new BinaryExpression(
-                new PropertyReference("id"), BinaryOperator.GreaterThanOrEqual, new Literal(1L, LiteralType.Number))
+                new PropertyReference("name"), BinaryOperator.Equal, new Literal("Alice", LiteralType.Text))
         };
         var upperBound = new SqlFragment("id <= @p0", [1L])
         {
@@ -319,7 +320,7 @@ public sealed class DuckDBExternalSourceSqlTests
             await query.ExecuteNonQueryAsync();
             query.CommandText = "LOAD spatial";
             await query.ExecuteNonQueryAsync();
-            query.CommandText = $"COPY (SELECT range AS id, ST_Point(range, 0) AS geom FROM range(3)) TO {DuckDBExternalSourceSql.QuoteLiteral(path)} (FORMAT parquet)";
+            query.CommandText = $"COPY (SELECT range AS id, ST_Point(range, 0) AS geom, CASE range WHEN 0 THEN 'Bob' ELSE 'Alice' END AS name FROM range(3)) TO {DuckDBExternalSourceSql.QuoteLiteral(path)} (FORMAT parquet)";
             await query.ExecuteNonQueryAsync();
             return await File.ReadAllBytesAsync(path);
         }
