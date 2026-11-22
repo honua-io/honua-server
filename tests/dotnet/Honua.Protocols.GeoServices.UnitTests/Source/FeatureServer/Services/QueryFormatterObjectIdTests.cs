@@ -80,6 +80,35 @@ public sealed partial class QueryFormatterTests
         attributes.GetProperty("name").GetString().Should().Be("nearby-row");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(false, "json")]
+    [InlineData(true, "json")]
+    [InlineData(false, "geojson")]
+    [InlineData(true, "geojson")]
+    public async Task Query_LargeJsonObjectId_PreservesExactInteger(bool streaming, string format)
+    {
+        const long identifier = 9007199254740993L;
+        var feature = Feature.Create(479, geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = JsonSerializer.SerializeToElement(identifier),
+                ["name"] = "nearby-row"
+            }.ToImmutableDictionary());
+        var testCase = new NullObjectIdCase(format, "*", "json");
+        var json = streaming
+            ? await SerializeNullObjectIdStreamingAsync(testCase, feature)
+            : await SerializeNullObjectIdMaterializedAsync(testCase, feature);
+        using var document = JsonDocument.Parse(json);
+        var row = document.RootElement.GetProperty("features")[0];
+        var attributes = row.GetProperty(format == "geojson" ? "properties" : "attributes");
+        attributes.GetProperty("id").GetInt64().Should().Be(identifier);
+        if (format == "geojson")
+        {
+            row.GetProperty("id").GetInt64().Should().Be(identifier);
+        }
+    }
+
     private static async Task<string> SerializeNullObjectIdMaterializedAsync(NullObjectIdCase testCase, Feature feature)
     {
         var limits = Options.Create(new LimitsOptions());
