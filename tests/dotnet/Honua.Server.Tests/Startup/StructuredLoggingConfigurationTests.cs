@@ -13,7 +13,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Startup;
 
 [CollectionDefinition("ConsoleLogging", DisableParallelization = true)]
-public sealed class ConsoleLoggingCollection
+public sealed class ConsoleLoggingFixture
 {
 }
 
@@ -63,7 +63,7 @@ public sealed partial class StructuredLoggingConfigurationTests
 
         LogForwarding(app.Services.GetRequiredService<ILogger<StructuredLoggingConfigurationTests>>());
 
-        Assert.Single(logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log)));
+        Assert.Single(logger.ReceivedCalls(), call => call.GetMethodInfo().Name == nameof(ILogger.Log));
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Processing {Value}")]
