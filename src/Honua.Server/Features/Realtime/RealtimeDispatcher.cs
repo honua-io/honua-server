@@ -284,7 +284,7 @@ internal sealed partial class RealtimeDispatcher(
         var firstAfterGap = gap.Batch.Count == 0 ? window.Oldest : gap.Batch[0].Sequence;
         foreach (var subscriber in gap.Subscribers)
         {
-            subscriber.DeliverGap(firstAfterGap, head);
+            subscriber.DeliverGap(firstAfterGap, window.Head);
         }
 
         return head;
