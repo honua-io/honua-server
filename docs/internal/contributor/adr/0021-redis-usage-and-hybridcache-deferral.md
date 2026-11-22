@@ -1,7 +1,11 @@
 # ADR-0021: Redis Usage and HybridCache Deferral
 
 ## Status
-Accepted
+
+Superseded by [ADR-0082](0082-postgres-control-plane-state.md) and
+[ADR-0083](0083-cdn-is-the-shared-cache.md). Redis is removed; PostgreSQL
+holds shared state and the CDN supplies the shared response cache. The Redis
+usage and HybridCache deferral below describe the former architecture.
 
 ## Context
 

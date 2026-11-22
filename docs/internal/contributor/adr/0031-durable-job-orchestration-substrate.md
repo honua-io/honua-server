@@ -4,6 +4,9 @@
 Accepted. Superseded in part by [ADR-0081](0081-postgres-job-substrate.md): execution jobs, the job
 queue, job logs and geoprocessing result packages are stored in PostgreSQL, not Redis. The statement
 "Redis remains the coordination layer for job state" no longer holds for those four.
+[ADR-0082](0082-postgres-control-plane-state.md) supersedes the remaining Redis
+statements: shared control-plane state is stored in PostgreSQL. Redis details
+below are historical; the execution contract remains in force.
 
 ## Context
 

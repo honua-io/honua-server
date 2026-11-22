@@ -3,7 +3,10 @@
 ## Status
 Accepted. Superseded in part by [ADR-0081](0081-postgres-job-substrate.md): the "Redis and
 Durability" section no longer applies to execution jobs, the job queue, job logs and geoprocessing
-result packages, which are stored in PostgreSQL. Workflow operations stay on Redis.
+result packages, which are stored in PostgreSQL.
+[ADR-0082](0082-postgres-control-plane-state.md) supersedes the remaining Redis
+statements, including workflow operations: all shared control-plane state is
+stored in PostgreSQL. Redis references below describe the former architecture.
 
 ## Context
 
