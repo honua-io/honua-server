@@ -46,7 +46,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs;Features/Protocols/Terrain/QuantizedMesh/**/*.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -162,6 +162,7 @@
     <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
     <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
     <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
+    <Compile Remove="Features\Protocols\Terrain\QuantizedMesh\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

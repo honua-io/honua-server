@@ -15,4 +15,8 @@ public interface ITerrainTileService
     Task<TerrainTileResult> GetTerrainRgbTileAsync(
         TerrainTileRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<TerrainElevationGrid> GetGeographicElevationGridAsync(
+        TerrainGeographicGridRequest request,
+        CancellationToken cancellationToken = default);
 }

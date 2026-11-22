@@ -666,12 +666,28 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
             Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
         };
 
+    private static OperationGatewayResult? TryRejectBootstrapProposer(
+        OperationGatewayRequest request,
+        GuardrailDecision decision) =>
+        OperationProposerApiKeyAuthority.IsBootstrapCredentialActor(request.RequestedBy)
+        || OperationProposerApiKeyAuthority.IsBootstrapCredentialActor(request.RequestedByAgent)
+            ? new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.Blocked,
+                Decision = decision,
+                Message = OperationProposerApiKeyAuthority.BootstrapRefusal
+            }
+            : null;
+
     private async Task<OperationGatewayResult> CreateProposalAsync(
         OperationGatewayRequest request,
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
         request = ResolveRequestIdentity(request);
+        if (TryRejectBootstrapProposer(request, decision) is { } bootstrapRefusal)
+            return bootstrapRefusal;
+
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };

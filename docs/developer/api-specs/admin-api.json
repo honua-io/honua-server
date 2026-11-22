@@ -15253,7 +15253,7 @@
           "Services"
         ],
         "summary": "Export Layer Data",
-        "description": "Exports layer features as CSV, Shapefile (zipped), GeoPackage, or a licensed plugin-contributed output format. Small exports stream the file directly with a `Content-Disposition` attachment header. When more than 50,000 features match and a built-in format is requested, the export is queued as a background job and a 202 with a status URL is returned instead.",
+        "description": "Exports layer features as CSV, Shapefile (zipped), GeoPackage, GeoParquet, or a licensed plugin-contributed output format. Small exports stream the file directly with a `Content-Disposition` attachment header. When more than 50,000 features match and a built-in format is requested, the export is queued as a background job and a 202 with a status URL is returned instead.",
         "operationId": "exportServiceLayer",
         "parameters": [
           {
@@ -15279,7 +15279,7 @@
             "name": "format",
             "in": "query",
             "required": true,
-            "description": "Output format: `csv`, `shapefile`, `gpkg`, or the id of an active licensed plugin output format.",
+            "description": "Output format: `csv`, `shapefile`, `gpkg`, `geoparquet` (alias `parquet`), or the id of an active licensed plugin output format.",
             "schema": {
               "type": "string",
               "example": "gpkg"
@@ -15348,6 +15348,12 @@
                   "format": "binary"
                 }
               },
+              "application/vnd.apache.parquet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
               "application/geopackage+sqlite3": {
                 "schema": {
                   "type": "string",
@@ -15378,8 +15384,14 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "413": {
+            "description": "The GeoParquet export exceeds a configured encoding budget."
+          },
+          "501": {
+            "description": "GeoParquet encoding is unavailable on this host."
+          },
           "503": {
-            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running.",
+            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running, or temporary GeoParquet spool storage is full.",
             "content": {
               "application/problem+json": {
                 "schema": {
