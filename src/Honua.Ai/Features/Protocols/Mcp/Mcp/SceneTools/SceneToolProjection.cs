@@ -2,9 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Scene.Domain;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
-using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.SceneTools;
 
@@ -94,6 +94,7 @@ internal static class SceneToolProjection
         if (!decision.IsAllowed)
         {
             throw new GeoprocessingAuthorizationException(
+                decision.RequiresAuthentication,
                 decision.FailureReason ?? $"Caller is not authorized to read scene '{entry.Id}'.");
         }
     }

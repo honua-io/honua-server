@@ -220,6 +220,7 @@ public sealed class SceneObjectOriginReaderTests : IDisposable
                     FileId = fileId,
                     FileName = Path.GetFileName(fileId),
                     StoragePath = fileId,
+                    ContentType = "application/octet-stream",
                     SizeBytes = bytes.Length,
                     ETag = $"\"etag-{bytes.Length}\"",
                     UploadedAt = DateTimeOffset.UtcNow,
