@@ -95,7 +95,7 @@ Use these placeholders across templates:
 | `HONUA_BASE_URL` | `https://demo.honua.example` | No trailing slash |
 | `HONUA_SERVICE_ID` | `test_service` | Service id/name for `/rest/services/{id}`. The ticket `#320` certification seed uses `test_service`. |
 | `HONUA_COLLECTION_ID` | `0` | OGC API Features collection id. Current server contract uses the numeric layer id as the collection id. |
-| `HONUA_ODATA_ENTITY_SET` | `Features` | OData entity set name. The ticket `#320` certification pack defaults to `Features`. |
+| `HONUA_ODATA_LAYER_ID` | `0` | Layer id for the OData feed `/odata/Layers({layerId})/Features` (find it at `/odata/Layers`). The cross-layer `/odata/Features` feed requires a `LayerId` filter. The ticket `#320` certification seed uses `0`. |
 | `HONUA_API_KEY` | `demo-key-123` | Leave blank if not using API-key auth |
 
 1. Prefer the workflow artifact pack when it is available. Copy `artifacts/client-compat/<service>-<timestamp>/pack/templates/.env.example` to `.env` in that same `templates/` directory.
@@ -156,15 +156,15 @@ Save output artifact:
 ## Power BI Desktop Smoke Checklist
 
 Connection target:
-- OData root: `${HONUA_BASE_URL}/odata/`
+- OData feed: `${HONUA_BASE_URL}/odata/Layers(${HONUA_ODATA_LAYER_ID})/Features`
 
 Checklist:
 - [ ] Connect/auth: Use OData feed with API key header or standard credential prompt. Verify that an unauthenticated request is rejected.
-- [ ] Discovery: Confirm `${HONUA_ODATA_ENTITY_SET}` is discoverable in navigator. Verify column names and data types are reported correctly.
+- [ ] Discovery: Confirm the features of layer `${HONUA_ODATA_LAYER_ID}` load and expand **More Columns** to show the layer attributes. Verify column names and data types are reported correctly.
 - [ ] Filter/query: Apply a filter in Power Query and verify row reduction. Apply a page limit and confirm the returned row count; load a second page and verify different rows appear.
 - [ ] Render/table load: Load data model and place at least one map/table visual.
 - [ ] Refresh/reload/export: Trigger refresh and export filtered rows to CSV.
-- [ ] Error handling: Request a non-existent entity set and confirm a structured error response. Submit a malformed `$filter` expression and verify a structured error is returned.
+- [ ] Error handling: Request a non-existent layer (`/odata/Layers(99999)/Features`) and confirm a structured `ResourceNotFound` error. Submit a malformed `$filter` expression and verify a structured error is returned.
 
 Save output artifact:
 - [ ] Save report as `Honua-OData-Smoke.pbix`.
@@ -172,15 +172,15 @@ Save output artifact:
 ## Excel Smoke Checklist
 
 Connection target:
-- OData root: `${HONUA_BASE_URL}/odata/`
+- OData feed: `${HONUA_BASE_URL}/odata/Layers(${HONUA_ODATA_LAYER_ID})/Features`
 
 Checklist:
 - [ ] Connect/auth: Use OData feed with API key header or standard credential prompt. Verify that an unauthenticated request is rejected.
-- [ ] Discovery: Confirm `${HONUA_ODATA_ENTITY_SET}` is discoverable in Power Query. Verify column names and data types are reported correctly.
+- [ ] Discovery: Confirm the features of layer `${HONUA_ODATA_LAYER_ID}` load in Power Query and expand **More Columns** to show the layer attributes. Verify column names and data types are reported correctly.
 - [ ] Filter/query: Apply a Power Query filter and verify row reduction. Apply a page limit and confirm the returned row count; load a second page and verify different rows appear.
 - [ ] Render/table load: Load query output to worksheet table.
 - [ ] Refresh/reload/export: Trigger refresh and export a filtered subset to CSV.
-- [ ] Error handling: Request a non-existent entity set and confirm a structured error response. Submit a malformed `$filter` expression and verify a structured error is returned.
+- [ ] Error handling: Request a non-existent layer (`/odata/Layers(99999)/Features`) and confirm a structured `ResourceNotFound` error. Submit a malformed `$filter` expression and verify a structured error is returned.
 
 Save output artifact:
 - [ ] Save workbook as `Honua-OData-Smoke.xlsx`.
