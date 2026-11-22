@@ -1393,10 +1393,12 @@ public sealed partial class JobExecutionServiceTests
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                // Wait for the timeout to fire, then also trigger shutdown.
-                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
+                var executionToken = callInfo.Arg<CancellationToken>();
+                var timeoutObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var registration = executionToken.Register(() => timeoutObserved.TrySetResult());
+                await timeoutObserved.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
                 await stoppingCts.CancelAsync().ConfigureAwait(false);
-                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                executionToken.ThrowIfCancellationRequested();
                 return JobExecutionResult.Succeeded(); // Unreachable.
             });
 
