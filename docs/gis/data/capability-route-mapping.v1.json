@@ -239,6 +239,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/assets",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/forms",
       "capability": "fieldops.forms"
     },
