@@ -1243,7 +1243,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
