@@ -44,7 +44,7 @@ internal static class CoreEndpoints
             .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
             .ExcludeFromDescription();
 
-        endpoints.MapGet($"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}/conformance", GetConformance)
+        endpoints.MapGet($"{BasePath}/conformance", GetConformance)
             .WithTags(Tag)
             .WithName("OgcProcessesConformance")
             .WithSummary("OGC API Processes conformance declaration")
