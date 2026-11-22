@@ -89,3 +89,47 @@ internal static class AssetTestData
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
                 AttachmentPolicy = new FormAttachmentPolicy { Enabled = fields.Any(static field => field.Type is "attachment" or "media") },
+                Fields = fields,
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields.Select(static field => field.FieldId).OfType<string>().ToArray() }],
+            },
+            "test-admin");
+        var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")
+            ?? throw new InvalidOperationException("The test form did not publish.");
+        return new WorkTaskFormReference { FormId = published.FormId, Version = published.Version };
+    }
+
+    // An active profile over the fixture layer keyed by objectid, with the form bound for inspections and service work.
+    // Profiles are an admin API, so setup authenticates with the fixture's admin key rather than test claim headers.
+    public static async Task<Guid> CreateActiveProfileAsync(WebAppFixture fixture, WorkTaskFormReference form)
+    {
+        using var client = fixture.CreateAdminClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/assets/profiles",
+            new AssetProfileWriteRequest
+            {
+                CommandId = Guid.NewGuid(),
+                ServiceId = WebAppFixture.TestServiceId,
+                LayerId = WebAppFixture.TestLayerId,
+                Name = "Signs",
+                Fields = new AssetProfileFieldMap { AssetId = "objectid" },
+                ConditionLabels = ["Very poor", "Poor", "Fair", "Good", "Very good"],
+                InspectionFormId = form.FormId,
+                ServiceFormId = form.FormId,
+                State = AssetProfileState.Active,
+            },
+            AssetsJsonContext.Default.AssetProfileWriteRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        return Guid.Parse((await ReadJsonAsync(response))["profile"]!["profileId"]!.GetValue<string>());
+    }
+
+    public static async Task<JsonObject> ReadJsonAsync(HttpResponseMessage response)
+        => JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+
+    public static async Task<long> CountAsync(WebAppFixture fixture, string table)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT count(*) FROM honua.{table}";
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+}

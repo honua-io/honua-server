@@ -313,3 +313,68 @@ public sealed partial class WorkTaskCompletionTests : IAsyncLifetime
         (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(6);
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
         (await SummaryAsync(_assets[0].AssetId)).Should().Be((4, 1L));
+    }
+
+    private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);
+
+    private async Task<Guid> StartedTaskAsync(string assetId, string type)
+    {
+        var taskId = await CreateTaskAsync(assetId, type);
+        var started = await _fixture.Client.PostAsJsonAsync(
+            $"{TasksPath}/{taskId}/transitions",
+            new WorkTaskTransitionRequest { CommandId = Guid.NewGuid(), ExpectedVersion = 1, Action = WorkTaskAction.Start },
+            AssetsJsonContext.Default.WorkTaskTransitionRequest);
+        started.StatusCode.Should().Be(HttpStatusCode.OK, await started.Content.ReadAsStringAsync());
+
+        // A reassignment gives every started task the same version arithmetic: create 1, start 2, reassign 3.
+        var reassigned = await _fixture.Client.PostAsJsonAsync(
+            $"{TasksPath}/{taskId}/transitions",
+            new WorkTaskTransitionRequest { CommandId = Guid.NewGuid(), ExpectedVersion = 2, Action = WorkTaskAction.Reassign, Assignee = "crew-b" },
+            AssetsJsonContext.Default.WorkTaskTransitionRequest);
+        reassigned.StatusCode.Should().Be(HttpStatusCode.OK, await reassigned.Content.ReadAsStringAsync());
+        return taskId;
+    }
+
+    private Task<Guid> CreateInspectionAsync(string assetId) => CreateTaskAsync(assetId, WorkTaskType.Inspection);
+
+    private async Task<Guid> CreateTaskAsync(string assetId, string type)
+    {
+        var response = await _fixture.Client.PostAsJsonAsync(
+            TasksPath,
+            new WorkTaskCreateRequest
+            {
+                CommandId = Guid.NewGuid(),
+                TaskId = Guid.NewGuid(),
+                ServiceId = WebAppFixture.TestServiceId,
+                Type = type,
+                Title = type + " " + assetId,
+                ProfileId = _profileId,
+                AssetId = assetId,
+                Assignee = "crew-a",
+            },
+            AssetsJsonContext.Default.WorkTaskCreateRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        return Guid.Parse((await AssetTestData.ReadJsonAsync(response))["task"]!["taskId"]!.GetValue<string>());
+    }
+
+    private WorkTaskCompletionRequest Completion(long expectedVersion, DateTimeOffset observedAt, int? condition) => new()
+    {
+        CommandId = Guid.NewGuid(),
+        ExpectedVersion = expectedVersion,
+        ObservedAt = observedAt,
+        Form = _form,
+        Condition = condition,
+        Answers = JsonElement.Parse("""{"name":"Sign inspection"}"""),
+        Notes = "Post leaning slightly.",
+    };
+
+    private Task<HttpResponseMessage> CompleteAsync(Guid taskId, WorkTaskCompletionRequest request)
+        => _fixture.Client.PostAsJsonAsync($"{TasksPath}/{taskId}/completion", request, AssetsJsonContext.Default.WorkTaskCompletionRequest);
+
+    private async Task<(int Condition, long Revision)> SummaryAsync(string assetId)
+    {
+        var condition = await AssetTestData.ScalarAsync(_fixture, $"SELECT condition FROM honua.asset_summaries WHERE asset_id = '{assetId}'");
+        var revision = await AssetTestData.ScalarAsync(_fixture, $"SELECT revision FROM honua.asset_summaries WHERE asset_id = '{assetId}'");
+        return (Convert.ToInt32(condition, System.Globalization.CultureInfo.InvariantCulture), (long)revision!);
+    }
+}
