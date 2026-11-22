@@ -590,7 +590,7 @@ public sealed class ContentPublicationServiceTests
         round.Policy.Visibility.Should().Be(ContentPublicationVisibility.Organization);
         round.DefaultViewBbox!.Crs.Should().Be("EPSG:4326");
         round.Dependencies.Should().ContainSingle(d => d.RefId == "pkg-1");
-        json.Should().Contain("\"generated-app\"");
+        json.Should().Contain("\"kind\":\"app\"");
     }
 
     [UnitTest]

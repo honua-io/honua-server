@@ -544,14 +544,14 @@
         "artifacts": [
           {
             "artifactId": "map-pkg-ops-dashboard",
-            "kind": "MapPackage",
+            "kind": "Map",
             "format": "honua_map.v1",
             "resourceUri": "honua://maps/map-pkg-ops-dashboard",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-ops-dashboard",
-            "kind": "AppPackage",
+            "kind": "App",
             "format": "honua_app.v1",
             "resourceUri": "honua://apps/app-pkg-ops-dashboard",
             "packageable": true
@@ -823,14 +823,14 @@
         "artifacts": [
           {
             "artifactId": "map-pkg-ops-dashboard",
-            "kind": "MapPackage",
+            "kind": "Map",
             "format": "honua_map.v1",
             "resourceUri": "honua://maps/map-pkg-ops-dashboard",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-ops-dashboard",
-            "kind": "AppPackage",
+            "kind": "App",
             "format": "honua_app.v1",
             "resourceUri": "honua://apps/app-pkg-ops-dashboard",
             "packageable": true
