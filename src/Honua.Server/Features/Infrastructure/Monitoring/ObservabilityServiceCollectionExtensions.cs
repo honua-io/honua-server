@@ -30,6 +30,7 @@ internal static class ObservabilityServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         ConfigureOutputCaching(services, configuration);
+        services.AddSingleton<MetadataDocumentByteCache>();
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
             sp.GetRequiredService<OutputCacheInvalidationService>());

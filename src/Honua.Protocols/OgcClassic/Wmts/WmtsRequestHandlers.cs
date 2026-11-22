@@ -14,6 +14,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Monitoring;
@@ -62,6 +63,42 @@ internal static class WmtsRequestHandlers
         string Identifier)
     {
         public MetadataV2GraphSnapshot? Snapshot { get; init; }
+    }
+
+    private readonly record struct WmtsCapabilitiesCacheScope(
+        HttpContext Context,
+        string SnapshotEtag,
+        string ServiceId,
+        string ResponseMimeType,
+        WmtsCapabilitiesSections Sections,
+        int MaxZoom);
+
+    private static string BuildWmtsCapabilitiesCacheKey(WmtsCapabilitiesCacheScope scope, WmtsLayer[] visibleLayers)
+    {
+        var sb = PooledTextBuilder.Rent();
+        try
+        {
+            sb.Append("wmts|").Append(scope.SnapshotEtag).Append('|').Append(scope.ServiceId)
+                .Append('|').Append(BaseUrlResolver.GetBaseUrl(scope.Context))
+                .Append('|').Append(scope.Context.Request.Path.Value)
+                .Append('|').Append(scope.ResponseMimeType)
+                .Append('|').Append((int)scope.Sections)
+                .Append('|').Append(scope.MaxZoom);
+            foreach (var layer in visibleLayers)
+            {
+                sb.Append('|').Append(layer.StorageLayerId)
+                    .Append(':').Append(layer.Resource.Metadata.Id)
+                    .Append(':').Append(layer.Resource.Metadata.Generation)
+                    .Append(':').Append(layer.Publication.Metadata.Id)
+                    .Append(':').Append(layer.Publication.Metadata.Generation);
+            }
+
+            return MetadataDocumentByteCache.HashKey(sb);
+        }
+        finally
+        {
+            PooledTextBuilder.Return(sb);
+        }
     }
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
@@ -335,6 +372,22 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => OgcClassicRasterSupport.IsRenderableResource(l.Resource))
                 .ToArray();
+            var docCache = ShouldDisableWmtsCaching(context) || MetadataDocumentByteCache.HasQueryToken(context.Request)
+                ? null
+                : context.RequestServices.GetService<MetadataDocumentByteCache>();
+            var cacheKey = docCache is null
+                ? null
+                : BuildWmtsCapabilitiesCacheKey(
+                    new WmtsCapabilitiesCacheScope(context, snapshot.Etag, serviceId, responseMimeType, sections, wmtsMaxZoom),
+                    visibleLayers);
+            var configGeneration = docCache is null
+                ? 0
+                : await MetadataDocumentByteCache.ResolveConfigGenerationAsync(context, cancellationToken).ConfigureAwait(false);
+            if (docCache is not null && cacheKey is not null && docCache.Get(configGeneration, cacheKey) is { } cachedDocument)
+            {
+                return cachedDocument.ToResult();
+            }
+
             var capabilities = PooledTextBuilder.Rent();
             try
             {
@@ -350,7 +403,18 @@ internal static class WmtsRequestHandlers
                     tileMatrixSetRegistry,
                     logger,
                     cancellationToken).ConfigureAwait(false);
-                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+                var result = PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+                if (docCache is not null && cacheKey is not null)
+                {
+                    var cached = MetadataDocumentByteCache.CreateDocument(
+                        result.Content.Span,
+                        result.ContentType,
+                        context.RequestServices.GetService<IETagService>());
+                    await result.ReleaseAsync().ConfigureAwait(false);
+                    return docCache.Set(configGeneration, cacheKey, cached).ToResult();
+                }
+
+                return result;
             }
             finally
             {

@@ -283,6 +283,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
     {
+        InvalidateMetadataDocumentCache();
         if (_cacheStore == null)
         {
             return;
@@ -299,6 +300,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
                 LogEvictTagFailed(_logger, tag, ex);
             }
         }
+    }
+
+    private void InvalidateMetadataDocumentCache()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        scope.ServiceProvider.GetService<MetadataDocumentByteCache>()?.Invalidate();
     }
 
     private async Task EvictResponseCacheAsync(IEnumerable<string> patterns, CancellationToken cancellationToken)

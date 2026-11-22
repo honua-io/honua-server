@@ -34,6 +34,11 @@ internal static class SharedResponseETag
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
 
+        if (result is CachedUtf8ContentResult cached)
+        {
+            return await ApplyToCachedContentAsync(context, cached, tags).ConfigureAwait(false);
+        }
+
         if (result is PooledUtf8ContentResult pooled)
         {
             return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
@@ -55,6 +60,13 @@ internal static class SharedResponseETag
         var etag = await ConfigurationResponseETag.ForResponseAsync(context,
             tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
         return new ConditionalTextResult(pooled, etag, tags);
+    }
+
+    private static async ValueTask<object?> ApplyToCachedContentAsync(HttpContext context, CachedUtf8ContentResult cached, IETagService tags)
+    {
+        var rawTag = cached.ContentETag ?? tags.ComputeETag(cached.Content.Span);
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context, rawTag, cached.ContentType).ConfigureAwait(false);
+        return new ConditionalTextResult(cached, etag, tags);
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult
