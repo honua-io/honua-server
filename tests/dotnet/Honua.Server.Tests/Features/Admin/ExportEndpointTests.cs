@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Tests.ParquetUnitSupport;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Authorization;
@@ -23,6 +24,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
@@ -75,6 +77,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.ConfigureTestServices(CloseUploadedStreams);
             });
             await Fixture.InitializeAsync();
             await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
@@ -83,6 +86,17 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
         }
 
         public Task DisposeAsync() => Fixture.DisposeAsync();
+
+        // Storage closes each uploaded stream, as S3 does, so a read after upload fails here too.
+        private static void CloseUploadedStreams(IServiceCollection services)
+        {
+            var registered = services.Last(descriptor => descriptor.ServiceType == typeof(ICloudFileStorage));
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton(provider => ClosingUploadStorage.Wrap((ICloudFileStorage)(
+                registered.ImplementationInstance
+                ?? registered.ImplementationFactory?.Invoke(provider)
+                ?? ActivatorUtilities.CreateInstance(provider, registered.ImplementationType!))));
+        }
 
         // The graph revision only moves forward, as the host's revision-keyed readers expect.
         internal void RestoreSeededGraph()

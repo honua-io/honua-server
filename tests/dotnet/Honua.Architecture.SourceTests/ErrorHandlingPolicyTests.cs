@@ -46,6 +46,9 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route wiring. Request validation and stream failure handling live in
         // AdminLiveStream (400 for an unknown topic, catch of cancellation and IO).
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminLiveEndpoints.cs"),
+        // Pure route wiring. AssetProfileService shapes every error through AssetCommandHttp
+        // (field-level validation problems, 403/404/409 admin problem details).
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Assets", "AssetProfileEndpoints.cs"),
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),

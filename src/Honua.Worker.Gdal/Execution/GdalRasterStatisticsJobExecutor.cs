@@ -61,12 +61,12 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid {processId} inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {sourceError}");
         }
 
         if (!TryParseBands(parameters, out var bandFilter, out var bandError))
         {
-            return JobExecutionResult.Failed($"Invalid {processId} inputs: {bandError}");
+            return JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {bandError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -83,7 +83,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
-                return JobExecutionResult.Failed($"Invalid {processId} inputs: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)
