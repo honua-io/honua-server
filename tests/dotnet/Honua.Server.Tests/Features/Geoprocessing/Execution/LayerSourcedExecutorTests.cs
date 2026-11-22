@@ -29,7 +29,7 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-public sealed class LayerSourcedExecutorTests
+public sealed partial class LayerSourcedExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
     private const string HonuaLayerSourceId = "source.honua-layer";

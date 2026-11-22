@@ -254,7 +254,7 @@ failed checks.
 
 ## 6. Inspect the same operation in Console
 
-Point Console `/operate` at the same verified endpoint. Compare finding,
+Point Console `/console/operate` at the same verified endpoint. Compare finding,
 proposal and operation IDs with the terminal receipt. Approval uses its verified
 human session and focused inbox as described above; the requester may approve.
 Other visual inspection is optional. Console does not host the model or create

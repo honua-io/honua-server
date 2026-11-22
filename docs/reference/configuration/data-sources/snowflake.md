@@ -120,10 +120,12 @@ The provider name resolves from `snowflake` (canonical) or the alias `snowflaked
 
 `Snowflake.Data` uses internal reflection and is **not** Native AOT-compatible. Deployments
 published with Native AOT must set `Snowflake:Enabled=false` (or otherwise exclude the assembly).
-The default Honua publish image references the provider; the AOT-verification publish drops the
+The default Honua publish image builds with `HONUA_STORE_PROFILE=postgis`, which excludes
+Snowflake (`eng/Honua.BuildProfiles.props`); build with `HONUA_STORE_PROFILE=full` to include it.
+The AOT-verification publish also drops the
 `Honua.Snowflake` project (via `HonuaSkipSnowflakeForAotVerification=true`, which defines
 `HONUA_SKIP_SNOWFLAKE`) so the non-single-file-safe driver is never linked into the AOT image. The
-`slim` build profile also excludes Snowflake. Operators publishing trimmed/AOT artifacts should
+`slim` build profile excludes Snowflake too. Operators publishing trimmed/AOT artifacts should
 leave the provider disabled.
 
 ### GEOGRAPHY vs GEOMETRY and SRID

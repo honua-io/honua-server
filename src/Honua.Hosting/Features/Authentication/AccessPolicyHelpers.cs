@@ -170,6 +170,24 @@ internal static partial class AccessPolicyHelpers
         return CreateServiceAccessDeniedResult(context, decision);
     }
 
+    public static async Task<AccessDecision> EvaluateServiceQueryAccessAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        var evaluation = await EvaluateServiceAccessCoreAsync(new ServiceAccessContext
+        {
+            Services = context.RequestServices,
+            Principal = context.User,
+            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+            Operation = AuthorizationOperation.Query,
+            RequestCache = context.Items
+        }, service, cancellationToken).ConfigureAwait(false);
+        return ResponseAccessVerdict.ObserveGrant(context, evaluation.Decision);
+    }
+
     public static async Task<AccessDecision> EvaluateResourceAccessAsync(
         HttpContext context,
         MetadataV2Object resource,

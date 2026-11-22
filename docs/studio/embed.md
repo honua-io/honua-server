@@ -5,13 +5,18 @@ description: "Embedding is a preview browser surface in 2026.1."
 ---
 # Embed Studio
 
-Embedding is a **preview** browser surface in 2026.1. The source package
-registers one `<honua-studio-app>` custom element. A host owns authentication
+Embedding is a **preview** browser surface in 2026.1. The Studio element kit
+defines `<honua-studio-app>` and the other `honua-studio-*` custom elements. It
+is not published to a package registry: build it from the Studio source or a
+versioned release archive. Importing the kit defines nothing; the host registers
+the elements it uses. A host owns authentication
 and assigns a short-lived session adapter; Studio must not receive model,
 provider, or administrator credentials.
 
 ```ts
-import "@honua/studio";
+import { registerStudioElement } from "@honua/studio/elements";
+
+registerStudioElement("honua-studio-app");
 
 const studio = document.querySelector("honua-studio-app");
 studio.session = {

@@ -43,6 +43,20 @@ public sealed class FeatureDeleteAttachmentCleanupTests
     }
 
     [Fact]
+    public void DiscardAfter_RowRollback_PreservesEarlierCommittedRowCandidates()
+    {
+        var pending = new PendingAttachmentBlobs();
+        var earlier = new DeletedAttachmentBlob(4, 10, "earlier");
+        pending.Hold([earlier], batchTransactionOpen: true);
+        var checkpoint = pending.Count;
+        pending.Hold([new DeletedAttachmentBlob(4, 11, "failed-row")], batchTransactionOpen: true);
+
+        pending.DiscardAfter(checkpoint);
+
+        pending.TakeForConfirmedCommit().Should().Equal(earlier);
+    }
+
+    [Fact]
     public void Hold_Autocommit_ReturnsBlobsImmediatelyAndDoesNotStage()
     {
         var pending = new PendingAttachmentBlobs();

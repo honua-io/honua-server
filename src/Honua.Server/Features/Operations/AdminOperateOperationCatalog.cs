@@ -38,6 +38,10 @@ internal static class AdminOperateOperationCatalog
         Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
         Read("admin.metadata.releases.status", "Get metadata release status", "/metadata/releases/{packageId}/operation", "getMetadataReleaseOperationByPackageId"),
         Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
+        Read("admin.exports.list", "List Exports", "/exports", "listExports"),
+        Read("admin.exports.get", "Get Export", "/exports/{exportId}", "getExport"),
+        Write("admin.exports.create", "Export a Layer as files", HttpMethod.Post, "/exports", "createExport", OperationSideEffectClass.MutatesData),
+        Write("admin.exports.delete", "Unpublish Export", HttpMethod.Delete, "/exports/{exportId}", "deleteExport", OperationSideEffectClass.DestroysState),
         Read("admin.cache.status", "Get cache status", "/cache/status", "getAdminCacheStatus"),
         Write("admin.cache.invalidate", "Invalidate cache", HttpMethod.Post, "/cache/invalidate", "invalidateAdminCache", OperationSideEffectClass.DestroysState),
         Read("admin.license.status", "Get license status", "/license/status", "getPlatformLicenseStatus"),
@@ -227,19 +231,17 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
 {
     public string OperationId => definition.OperationId;
 
-    public OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         }
 
         var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);

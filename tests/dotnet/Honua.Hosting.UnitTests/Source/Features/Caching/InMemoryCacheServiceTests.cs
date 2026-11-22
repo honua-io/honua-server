@@ -359,8 +359,7 @@ public sealed partial class InMemoryCacheServiceTests : IDisposable
         var entriesField = typeof(InMemoryCacheService).GetField("_entries", BindingFlags.NonPublic | BindingFlags.Instance);
         entriesField.Should().NotBeNull();
 
-        var entries = entriesField!.GetValue(cacheService) as System.Collections.IEnumerable;
-        if (entries is null)
+        if (entriesField!.GetValue(cacheService) is not System.Collections.IEnumerable entries)
         {
             throw new InvalidOperationException("_entries field was not the expected IEnumerable type.");
         }

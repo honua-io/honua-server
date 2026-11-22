@@ -63,48 +63,63 @@
     {
       "url": "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections",
       "sources": [
+        "docker/monitoring/alerting/rules/honua-core.yaml",
+        "docker/monitoring/prometheus/alerts.yml",
         "docs/guides/deploy/examples/prometheus-alerts.yml",
         "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
-      "why": "runbook_url for HonuaDbPoolUtilizationHigh, HonuaDbPoolUtilizationCritical, HonuaDbConnectionFailures. Retargeted from the dead /operations/runbook#database-connection-issues (#3592). Also CapabilityUnavailableCodes.SystemDatabaseRemediationRef: the remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data) when the system database that holds the durable stores is missing.",
+      "why": "runbook_url for HonuaDbPoolUtilizationHigh, HonuaDbPoolUtilizationCritical, HonuaDbConnectionFailures, and the docker monitoring stack's HonuaDatabaseLatencyP95. Retargeted from the dead /operations/runbook#database-connection-issues (#3592). Also CapabilityUnavailableCodes.SystemDatabaseRemediationRef: the remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data) when the system database that holds the durable stores is missing.",
       "alerts": [
         "HonuaDbPoolUtilizationHigh",
         "HonuaDbPoolUtilizationCritical",
-        "HonuaDbConnectionFailures"
+        "HonuaDbConnectionFailures",
+        "HonuaDatabaseLatencyP95"
       ]
     },
     {
       "url": "https://honua.io/docs/guides/deploy/troubleshooting/#memory-and-performance",
       "sources": [
+        "docker/monitoring/alerting/rules/honua-core.yaml",
+        "docker/monitoring/prometheus/alerts.yml",
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the memory and query-latency alerts. The section's symptom table covers working-set growth, container OOM, and high latency against a healthy database. Retargeted from /operations/runbook#memory-and-gc-issues and #general-troubleshooting (#3592).",
+      "why": "runbook_url for the memory, query-latency and active-request alerts. The section's symptom table covers working-set growth, container OOM, and high latency against a healthy database. Retargeted from /operations/runbook#memory-and-gc-issues and #general-troubleshooting (#3592).",
       "alerts": [
         "HonuaMemoryUsageHigh",
         "HonuaMemoryUsageCritical",
         "HonuaQueryLatencyHigh",
-        "HonuaQueryLatencyCritical"
+        "HonuaQueryLatencyCritical",
+        "HonuaHighLatencyP95",
+        "HonuaHighActiveRequests",
+        "HonuaActiveRequestsHigh"
       ]
     },
     {
       "url": "https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage",
       "sources": [
+        "docker/monitoring/alerting/rules/honua-core.yaml",
+        "docker/monitoring/prometheus/alerts.yml",
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the error-rate alerts. Quick triage names the liveness/readiness probes and GET /api/v1/admin/observability/errors, which is the first real step. Retargeted from /operations/runbook#general-troubleshooting (#3592).",
+      "why": "runbook_url for the error-rate alerts (including the docker monitoring stack's HonuaHigh5xxRate and HonuaHighErrorRate). Quick triage names the liveness/readiness probes and GET /api/v1/admin/observability/errors, which is the first real step. Retargeted from /operations/runbook#general-troubleshooting (#3592).",
       "alerts": [
         "HonuaErrorRateHigh",
-        "HonuaErrorRateCritical"
+        "HonuaErrorRateCritical",
+        "HonuaHigh5xxRate",
+        "HonuaHighErrorRate"
       ]
     },
     {
       "url": "https://honua.io/docs/guides/deploy/troubleshooting/#emergency-procedures",
       "sources": [
+        "docker/monitoring/alerting/rules/honua-core.yaml",
+        "docker/monitoring/prometheus/alerts.yml",
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
       "why": "runbook_url for HonuaServiceDown. Covers scope confirmation, graceful and forced restart, targeted connection termination, maintenance posture, and escalation (#3592).",
       "alerts": [
-        "HonuaServiceDown"
+        "HonuaServiceDown",
+        "HonuaInstanceDown"
       ]
     },
     {
@@ -131,6 +146,7 @@
     {
       "url": "https://honua.io/docs/guides/deploy/scaling-and-performance/#caching-layers",
       "sources": [
+        "docker/monitoring/prometheus/alerts.yml",
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
       "why": "runbook_url for the cache-hit-ratio alerts. The section is the canonical description of the edge and in-memory cache stack and the fallback behaviour a low hit ratio implies. Retargeted from /operations/runbook#cache-performance-problems (#3592).",

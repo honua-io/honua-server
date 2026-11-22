@@ -69,7 +69,13 @@ internal sealed partial class AdminOperationApprovalBridge(
 
         try
         {
-            var mapped = mapper?.Map(descriptor, request, context, decision) ?? request.GatewayRequest!;
+            var mapped = mapper?.Map(new OperationApprovalRequestContext
+            {
+                Descriptor = descriptor,
+                Request = request,
+                Context = context,
+                Decision = decision,
+            }) ?? request.GatewayRequest!;
             var gatewayRequest = mapped with
             {
                 OperationId = descriptor.OperationId,

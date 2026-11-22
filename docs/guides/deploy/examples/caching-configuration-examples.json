@@ -188,7 +188,7 @@
         "layer:metadata": "00:30:00",
         "service:definition": "00:05:00",
         "service:metadata": "00:05:00",
-        "spatial:reference": "24:00:00",
+        "spatial:reference": "1.00:00:00",
         "user:session": "00:20:00"
       }
     },

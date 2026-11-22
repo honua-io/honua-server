@@ -177,16 +177,20 @@ internal static class GrpcConversionHelpers
         return null;
     }
 
-    public static GeometryLimits CreateEffectiveGeometryLimits(GeometryLimits baseLimits, Proto.QueryFeaturesRequest request)
+    // geometrySrid is the SRID the response geometries are in (out_sr, else the layer's).
+    public static GeometryLimits CreateEffectiveGeometryLimits(
+        GeometryLimits baseLimits, Proto.QueryFeaturesRequest request, int? geometrySrid = null)
     {
         var precisionOverride = request.GeometryPrecision > 0 ? (int?)request.GeometryPrecision : null;
         var simplifyToleranceOverride = request.MaxAllowableOffset > 0 ? (double?)request.MaxAllowableOffset : null;
 
-        return GeometryOutputProcessor.CreateEffectiveLimits(
-            baseLimits,
-            precisionOverride,
-            simplifyToleranceOverride,
-            forceSimplify: simplifyToleranceOverride.HasValue);
+        return GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                baseLimits,
+                precisionOverride,
+                simplifyToleranceOverride,
+                forceSimplify: simplifyToleranceOverride.HasValue),
+            geometrySrid);
     }
 
     public static Proto.Feature ToProtoFeature(
@@ -359,7 +363,7 @@ internal static class GrpcConversionHelpers
                 av.BoolValue = b;
                 break;
             case DateTime dt:
-                av.DatetimeValue = new DateTimeOffset(dt, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                av.DatetimeValue = ToUnixMilliseconds(dt);
                 break;
             case DateTimeOffset dto:
                 av.DatetimeValue = dto.ToUnixTimeMilliseconds();
@@ -378,6 +382,32 @@ internal static class GrpcConversionHelpers
                 break;
         }
         return av;
+    }
+
+    // Local times are converted; unspecified ones are stored UTC, as every other read path treats them.
+    internal static long ToUnixMilliseconds(DateTime value) => new DateTimeOffset(
+        value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc))
+        .ToUnixTimeMilliseconds();
+
+    // Features carry the object ID as their id, so its field is declared unless the caller passes
+    // none (distinct rows have no object ID, as on FeatureServer).
+    internal static IReadOnlyList<MetadataV2Field> SelectResponseFields(
+        IReadOnlyList<MetadataV2Field> schemaFields,
+        ImmutableArray<string>? outFields,
+        string? objectIdFieldName)
+    {
+        if (outFields is not { IsDefaultOrEmpty: false } requested)
+        {
+            return schemaFields;
+        }
+
+        var names = new HashSet<string>(requested, StringComparer.OrdinalIgnoreCase);
+        if (objectIdFieldName is { Length: > 0 })
+        {
+            names.Add(objectIdFieldName);
+        }
+
+        return schemaFields.Where(field => names.Contains(field.Name)).ToArray();
     }
 
     private static Feature ToDomainFeature(Proto.Feature feature, bool requireId)
@@ -514,6 +544,19 @@ internal static class GrpcConversionHelpers
     }
 
     private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
+    {
+        // Without simplification the stored WKB maps straight onto the response geometry.
+        if (geometryLimits is not { SimplifyTolerance: > 0 }
+            && GrpcWkbProjection.Project(wkb, geometryLimits?.MaxCoordinatePrecision ?? -1) is { } projected)
+        {
+            return projected;
+        }
+
+        return ToProtoGeometryThroughNts(wkb, geometryLimits);
+    }
+
+    // The general path: decode, apply simplification and precision limits, then project.
+    internal static Proto.Geometry ToProtoGeometryThroughNts(byte[] wkb, GeometryLimits? geometryLimits)
     {
         var geometry = WkbReader.Read(wkb);
         if (geometryLimits != null)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
@@ -244,33 +245,31 @@ internal static partial class MapServerEndpoints
                 var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
                 var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
-                SqlFragment? layerSqlFilter = null;
-                if (!string.IsNullOrWhiteSpace(layerDef) &&
-                    !TryTranslateFindFilter(filterExpressionService, layer.Resource, layerDef, out layerSqlFilter))
+                var filterResolution = ResolveFindLayerFilter(
+                    filterExpressionService,
+                    layer.Resource,
+                    new FindLayerFilterInput
+                    {
+                        LayerDef = layerDef,
+                        FieldsToSearch = fieldsToSearch,
+                        SearchText = searchText,
+                        Contains = contains
+                    });
+                if (!filterResolution.IsSuccess)
                 {
-                    continue;
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        filterResolution.Error ?? "Invalid filter parameter.");
                 }
 
-                // Push the search text into SQL so the database filters rows instead of the
-                // server scanning the whole table; when the clause cannot be built or
-                // translated (unusual field names, provider limitations) fall back to a
-                // capped in-memory scan. The in-memory match below still decides which
-                // field(s) produced each result.
-                var searchPushedDown = false;
-                var searchWhere = BuildFindSearchWhereClause(fieldsToSearch, searchText, contains);
-                if (searchWhere is not null &&
-                    TryTranslateFindFilter(
-                        filterExpressionService,
-                        layer.Resource,
-                        CombineDefinitionExpressions(layerDef, searchWhere)!,
-                        out var combinedFilter))
-                {
-                    layerSqlFilter = combinedFilter;
-                    searchPushedDown = true;
-                }
+                var layerSqlFilter = filterResolution.SqlFilter;
+                var searchPushedDown = filterResolution.SearchPushedDown;
 
                 var pageSize = Math.Clamp(Math.Max(maxFindResults * 10, 50), 50, 500);
                 var offset = 0;
+                var stableOrderField = layer.Resource.FindPrimaryIdField();
+                ImmutableArray<OrderByClause> stableOrderBy =
+                    [new OrderByClause(stableOrderField?.Name ?? objectIdField, ascending: true, stableOrderField?.Type)];
 
                 while (results.Count < maxFindResults)
                 {
@@ -280,6 +279,7 @@ internal static partial class MapServerEndpoints
                         OutputSrid = outputSrid,
                         Limit = pageSize,
                         Offset = offset,
+                        OrderBy = stableOrderBy,
                         SqlFilter = layerSqlFilter
                     };
 
@@ -589,27 +589,93 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    private static bool TryTranslateFindFilter(
+    private static FindLayerFilterResult ResolveFindLayerFilter(
         IFilterExpressionService filterExpressionService,
         MetadataV2Object resource,
-        string whereClause,
-        out SqlFragment? sqlFilter)
+        FindLayerFilterInput input)
     {
-        sqlFilter = null;
+        SqlFragment? layerSqlFilter = null;
+        if (!string.IsNullOrWhiteSpace(input.LayerDef))
+        {
+            var layerTranslation = TranslateFindFilter(filterExpressionService, resource, input.LayerDef);
+            if (!layerTranslation.IsSuccess)
+            {
+                return new FindLayerFilterResult { IsSuccess = false, Error = layerTranslation.Error };
+            }
+
+            layerSqlFilter = layerTranslation.SqlFilter;
+        }
+
+        // Push the search text into SQL when translatable; otherwise fall back to a capped in-memory scan.
+        var searchWhere = BuildFindSearchWhereClause(input.FieldsToSearch, input.SearchText, input.Contains);
+        if (searchWhere is not null)
+        {
+            var combined = TranslateFindFilter(
+                filterExpressionService,
+                resource,
+                CombineDefinitionExpressions(input.LayerDef, searchWhere)!);
+            if (combined.IsSuccess)
+            {
+                return new FindLayerFilterResult { IsSuccess = true, SqlFilter = combined.SqlFilter, SearchPushedDown = true };
+            }
+        }
+
+        return new FindLayerFilterResult { IsSuccess = true, SqlFilter = layerSqlFilter, SearchPushedDown = false };
+    }
+
+    private readonly record struct FindLayerFilterInput
+    {
+        public string? LayerDef { get; init; }
+        public required MetadataV2Field[] FieldsToSearch { get; init; }
+        public required string SearchText { get; init; }
+        public bool Contains { get; init; }
+    }
+
+    private readonly record struct FindLayerFilterResult
+    {
+        public bool IsSuccess { get; init; }
+        public SqlFragment? SqlFilter { get; init; }
+        public bool SearchPushedDown { get; init; }
+        public string? Error { get; init; }
+    }
+
+    private static FindFilterTranslation TranslateFindFilter(
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Object resource,
+        string whereClause)
+    {
         var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
-            return false;
+            return new FindFilterTranslation
+            {
+                IsSuccess = false,
+                Error = parseResult.ErrorMessage ?? "Invalid filter parameter."
+            };
         }
 
         var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
         if (!translationResult.IsSuccess)
         {
-            return false;
+            return new FindFilterTranslation
+            {
+                IsSuccess = false,
+                Error = translationResult.ErrorMessage ?? "Invalid filter parameter."
+            };
         }
 
-        sqlFilter = translationResult.SqlFilter;
-        return true;
+        return new FindFilterTranslation
+        {
+            IsSuccess = true,
+            SqlFilter = translationResult.SqlFilter
+        };
+    }
+
+    private readonly record struct FindFilterTranslation
+    {
+        public bool IsSuccess { get; init; }
+        public SqlFragment? SqlFilter { get; init; }
+        public string? Error { get; init; }
     }
 
     private static bool TryMatchSearchField(

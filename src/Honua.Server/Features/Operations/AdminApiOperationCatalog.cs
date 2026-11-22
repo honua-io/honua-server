@@ -64,12 +64,14 @@ internal static class AdminApiOperationCatalog
         new("folder.delete", "Delete folder", HttpMethod.Delete, "/folders/{id}", "deleteFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("service.move", "Move service", HttpMethod.Put, "/services/{serviceName}/folder", "moveService", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("admin.services.list", "List services", HttpMethod.Get, "/services", "listServices", false,
-            QueryParameters: new HashSet<string>(["folderId", "page", "pageSize", "q"], StringComparer.Ordinal)),
+            QueryParameters: new HashSet<string>(["folderId", "page", "pageSize", "q", "connectionId", "storageLayerId"], StringComparer.Ordinal)),
         new("admin.services.settings.get", "Get service settings", HttpMethod.Get, "/services/{serviceName}/settings", "getServiceSettings", false),
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
         new("admin.services.timeinfo.set", "Set service time info", HttpMethod.Put, "/services/{serviceName}/timeinfo", "updateServiceTimeInfo", true),
-        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{serviceLayerIndex}/metadata", "updateLayerMetadata", true)
+        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{serviceLayerIndex}/metadata", "updateLayerMetadata", true),
+        new("admin.metadata.layer-discovery.set", "Set layer discovery metadata", HttpMethod.Put, "/metadata/layers/{storageLayerId}/discovery", "updateAdminLayerDiscovery", true),
+        new("admin.metadata.service-discovery.set", "Set service discovery metadata", HttpMethod.Put, "/services/{serviceName}/discovery", "updateAdminServiceDiscovery", true)
     ];
 
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();
@@ -244,15 +246,16 @@ internal sealed class AdminApiOperationApprovalRequestMapper(
 {
     public string OperationId => definition.OperationId;
 
-    public OperationGatewayRequest Map(IOperationDescriptor descriptor, OperationRequest request,
-        OperationPolicyContext context, PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);
         var serialized = JsonSerializer.Serialize(payload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);

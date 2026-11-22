@@ -415,6 +415,7 @@ internal static class SearchEndpoints
             targets.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        StacV2Lookups.ResolvedStacPublication? readingTarget = null;
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
@@ -466,6 +467,7 @@ internal static class SearchEndpoints
                 : null;
             foreach (var target in targets)
             {
+                readingTarget = target;
                 if (hasEmptyIdFilter)
                 {
                     break;
@@ -564,20 +566,22 @@ internal static class SearchEndpoints
                     if (remaining > 0)
                     {
                         var matchedCog = await CogForLayerAsync(layerId, cancellationToken);
-                        allItems.AddRange(matchedFeatures
-                            .Skip(remainingSkip)
-                            .Take(remaining)
-                            .Select(f => ApplyFieldProjection(
-                                StacMappingService.MapFeatureToItem(
-                                    f,
-                                    target.Resource,
-                                    target.Publication,
-                                    layerId,
-                                    baseUrl,
-                                    projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid,
-                                    cogArtifact: matchedCog),
-                                projection)));
+                        var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+                        {
+                            Resource = target.Resource,
+                            Publication = target.Publication,
+                            LayerIndex = layerId,
+                            BaseUrl = baseUrl,
+                            SelectedProperties = projection?.SelectedProperties,
+                            GeometrySrid = Wgs84Srid,
+                            CogArtifact = matchedCog
+                        });
+                        var takeEnd = Math.Min(matchedFeatures.Length, remainingSkip + remaining);
+                        for (var i = remainingSkip; i < takeEnd; i++)
+                        {
+                            allItems.Add(ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(matchedFeatures[i], mappingContext), projection));
+                        }
                     }
 
                     remainingSkip = 0;
@@ -684,11 +688,21 @@ internal static class SearchEndpoints
                             query with { Offset = localOffset, Limit = pageLimit - allItems.Count },
                             true, cancellationToken);
                         var pageCog = await CogForLayerAsync(layerId, cancellationToken);
-                        allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f, target.Resource, target.Publication, layerId, baseUrl,
-                                projection?.SelectedProperties, geometrySrid: Wgs84Srid,
-                                cogArtifact: pageCog), projection)));
+                        var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+                        {
+                            Resource = target.Resource,
+                            Publication = target.Publication,
+                            LayerIndex = layerId,
+                            BaseUrl = baseUrl,
+                            SelectedProperties = projection?.SelectedProperties,
+                            GeometrySrid = Wgs84Srid,
+                            CogArtifact = pageCog
+                        });
+                        foreach (var f in page.Items)
+                        {
+                            allItems.Add(ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(f, mappingContext), projection));
+                        }
                     }
 
                     continue;
@@ -712,18 +726,21 @@ internal static class SearchEndpoints
                     var result = await StacPageReader.ReadAsync(
                         targetReader, storageLayerId, query, false, cancellationToken, layerCount);
                     var layerCog = await CogForLayerAsync(layerId, cancellationToken);
-                    allItems.AddRange(result.Items
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                target.Resource,
-                                target.Publication,
-                                layerId,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid,
-                                cogArtifact: layerCog),
-                            projection)));
+                    var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+                    {
+                        Resource = target.Resource,
+                        Publication = target.Publication,
+                        LayerIndex = layerId,
+                        BaseUrl = baseUrl,
+                        SelectedProperties = projection?.SelectedProperties,
+                        GeometrySrid = Wgs84Srid,
+                        CogArtifact = layerCog
+                    });
+                    foreach (var f in result.Items)
+                    {
+                        allItems.Add(ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(f, mappingContext), projection));
+                    }
                 }
                 else if (allItems.Count < effectiveLimit)
                 {
@@ -734,24 +751,28 @@ internal static class SearchEndpoints
                     totalMatched += result.TotalCount;
 
                     var layerCog = await CogForLayerAsync(layerId, cancellationToken);
-                    allItems.AddRange(result.Features
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                target.Resource,
-                                target.Publication,
-                                layerId,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid,
-                                cogArtifact: layerCog),
-                            projection)));
+                    var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+                    {
+                        Resource = target.Resource,
+                        Publication = target.Publication,
+                        LayerIndex = layerId,
+                        BaseUrl = baseUrl,
+                        SelectedProperties = projection?.SelectedProperties,
+                        GeometrySrid = Wgs84Srid,
+                        CogArtifact = layerCog
+                    });
+                    foreach (var f in result.Features)
+                    {
+                        allItems.Add(ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(f, mappingContext), projection));
+                    }
                 }
                 else
                 {
                     totalMatched += await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                 }
             }
+            readingTarget = null;
 
             // No collection declared any property the filter references: that is an
             // invalid filter for this catalog, not an empty result set.
@@ -861,6 +882,12 @@ internal static class SearchEndpoints
         {
             StacTelemetry.RecordException(activity, ex);
             throw;
+        }
+        catch (Exception ex) when (readingTarget is { } missing && StacSearchTargetSkip.IsMissingStorage(ex) && StacSearchTargetSkip.TryClaim(context, request, targets))
+        {
+            return await ExecuteSearchAcrossPublicationsAsync(request, offset, context, baseUrl, featureReader, geometryService,
+                filterProcessor, defaultFilterLangIsText, logger, StacSearchTargetSkip.Without(logger, targets, new(missing, ex)),
+                requestedItemIds, effectiveLimit, isPostSearch, cogArtifactLocator).ConfigureAwait(false);
         }
         // Not an endpoint boundary: this rethrows after tagging the shared search activity,
         // so the outer HandleSearch catch (which logs and maps to a 500) still applies.
@@ -1165,7 +1192,8 @@ internal static class SearchEndpoints
                 if (availableFields.TryGetValue(candidate, out var temporalField) &&
                     temporalField.Type is MetadataV2FieldType.Date
                         or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time)
+                        or MetadataV2FieldType.Time
+                        or MetadataV2FieldType.TimestampOffset)
                 {
                     fieldName = temporalField.Name;
                     fieldType = temporalField.Type;
@@ -1378,7 +1406,8 @@ internal static class SearchEndpoints
                 if (availableFields.TryGetValue(candidate, out var field) &&
                     field.Type is MetadataV2FieldType.Date
                         or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time &&
+                        or MetadataV2FieldType.Time
+                        or MetadataV2FieldType.TimestampOffset &&
                     !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 {
                     queryFields = queryFields.Add(candidate);

@@ -233,17 +233,26 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Feature responses page at the service record cap and read one probe row for
-        // exceededTransferLimit; count and ids responses carry no page, as on query.
+        // exceededTransferLimit; ids responses carry no page cap, as on query. A count-only
+        // response ignores resultOffset and resultRecordCount so it is the paging total.
         var featurePage = !returnIdsOnly && !returnCountOnly;
-        var pageLimit = featurePage
-            ? ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount)
-            : resultRecordCount;
+        var countOnlyResponse = returnCountOnly && !returnIdsOnly;
+        int? pageLimit = resultRecordCount;
+        if (featurePage)
+        {
+            pageLimit = ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount);
+        }
+        else if (countOnlyResponse)
+        {
+            pageLimit = null;
+        }
+
         query = query with
         {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
-            Offset = resultOffset,
+            Offset = countOnlyResponse ? null : resultOffset,
             Limit = featurePage && pageLimit < int.MaxValue ? pageLimit + 1 : pageLimit
         };
 

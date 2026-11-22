@@ -482,10 +482,7 @@ public sealed partial class OperationGatewayStateMachineTests
         public string OperationId => "control-plane.deploy";
 
         public OperationGatewayRequest Map(
-            Honua.Core.Features.Operations.Abstractions.IOperationDescriptor descriptor,
-            Honua.Core.Features.Operations.Domain.OperationRequest request,
-            Honua.Core.Features.Operations.Domain.OperationPolicyContext context,
-            Honua.Core.Features.Operations.Domain.PolicyDecision decision)
+            Honua.Core.Features.Operations.Abstractions.OperationApprovalRequestContext input)
             => throw new NotSupportedException();
 
         public Honua.Core.Features.Operations.Abstractions.OperationApprovalReplayMapping MapReplay(

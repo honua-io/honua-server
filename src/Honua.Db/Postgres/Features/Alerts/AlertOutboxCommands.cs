@@ -23,9 +23,17 @@ internal static class AlertOutboxCommands
         RETURNING event_id
         """;
 
-    public const string EnqueueDispatchSql = """
+    // Operations notices get about two hours of retries at the default backoff (1 s doubling to 5 min), so a reminder
+    // ordinal that falls due during a short channel outage still reaches the recipient; other alerts keep five attempts.
+    public const int DefaultDispatchAttempts = 5;
+    public const int OpsDispatchAttempts = 30;
+
+    public static readonly string EnqueueDispatchSql = $"""
         INSERT INTO honua.alert_dispatch (event_id, channel_type, status, attempts, max_attempts, next_attempt_at)
-        SELECT @event_id, ct, 0, 0, 5, now()
+        SELECT @event_id, ct, 0, 0,
+            CASE WHEN EXISTS (SELECT 1 FROM honua.alert_events e WHERE e.event_id = @event_id AND e.source = '{AlertEventSources.Ops}')
+                THEN {OpsDispatchAttempts} ELSE {DefaultDispatchAttempts} END,
+            now()
         FROM unnest(@channel_types) AS ct
         """;
 

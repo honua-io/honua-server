@@ -21,6 +21,7 @@ public sealed class AgentApprovalRuleTests
     [InlineData("admin.layer.publish")]
     [InlineData("service.publish")]
     [InlineData("dataset.stage.import")]
+    [InlineData("dataset.stage.discard")]
     [InlineData("studio.content.rollback")]
     public async Task EvaluateAsync_AgentGatedOperation_PolicyDisabled_RequiresApproval(string operationId)
     {

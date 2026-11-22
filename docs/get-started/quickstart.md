@@ -61,8 +61,9 @@ The serving API is at `http://localhost:18080`; the stable management API and MC
 are at `http://localhost:18082`. Its bootstrap credential is the private
 `secrets/honua_manager_admin_password` file, distinct from the serving admin
 credential in `secrets/honua_admin_password`. Give the MCP client a scoped proposer key.
-Configure the management service's OIDC provider and sign in to that service through
-Console to review and approve the exact proposal. The requester may approve; API
+Review and approve the exact proposal in the manager's Console
+(`https://127.0.0.1:18084/console/`, see [Add Console and embedded Studio](#add-console-and-embedded-studio)),
+signed in with the manager credential or the manager's identity provider. The requester may approve; API
 keys and MCP bearers cannot. See [human operation approval](../guides/secure/authentication.md#human-operation-approval).
 The operation handle records execution and final readback;
 an awaiting-approval proposal has not changed the serving stack.
@@ -117,8 +118,8 @@ Browser sign-in sessions, CSRF tokens and the identity-provider callback need on
 HTTPS origin, so Console is not offered over plain HTTP. The certificate is
 self-signed and created locally in `secrets/console_tls_certificate` (key in
 `secrets/console_tls_key`) for `localhost` and `127.0.0.1`; your browser asks you
-to trust it once, or you can add that certificate to your operating system's trust
-store. It is valid for 397 days; `python3 quickstart.py` issues a new one when fewer
+to trust it once for each of those hosts, or you can add that certificate to your
+operating system's trust store. It is valid for 397 days; `python3 quickstart.py` issues a new one when fewer
 than 30 days remain and restarts the Console edge to serve it. Trust the new
 certificate the same way after a renewal. Visits to `127.0.0.1` are redirected to `localhost`, the host the sign-in
 callback uses. The serving API trusts forwarded scheme and host headers only from
@@ -150,6 +151,27 @@ Sign in with one of:
 
   Console then offers the server's identity providers instead of the password
   field.
+
+Proposals held by `compose-manager` (upgrades, rollback and their approvals) are
+approved in a second Console at `https://127.0.0.1:18084/console/`. Set
+`HONUA_MANAGER_CONSOLE_PORT` in `.env` to choose another port. The overlay's
+`console-manager` service is the same edge in front of the manager. Sign in there
+with the manager credential in `secrets/honua_manager_admin_password`. An approval
+needs an interactive browser session on the manager itself, so the serving Console
+cannot approve these proposals, and the two credentials stay separate. The manager
+Console uses `127.0.0.1` because browsers keep cookies per host, not per port.
+Visits to `localhost` on this port are redirected to `127.0.0.1`, so the two
+sessions never replace each other. With OIDC sign-in, also enable OIDC on
+`compose-manager` in a customer override file and register
+`https://127.0.0.1:18084/admin/auth/callback` (with your port). The manager
+trusts forwarded headers only from this edge's fixed address on its own
+`manager-edge` network (`HONUA_MANAGER_EDGE_SUBNET`, `HONUA_MANAGER_EDGE_ADDRESS`
+and `HONUA_MANAGER_EDGE_SERVER_ADDRESS`, default `172.31.250.248/29`,
+`172.31.250.250` and `172.31.250.251`; if that range is in use, change all three
+the same way). Initialization refuses a Console or manager Console port that
+another Honua listener in `.env` already uses. A second install on the same host
+needs its own ports and both edge ranges. MCP clients of the manager that support
+URL-mode elicitation open its proposals in this Console.
 
 `console.config.json` holds Console's public settings and is rewritten from `.env`
 on each run (a change restarts the Console edge); it never contains a credential. Set `HONUA_CONSOLE_V4=false` to show

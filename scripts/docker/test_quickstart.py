@@ -328,5 +328,23 @@ class QuickstartTests(unittest.TestCase):
         spa = config.split('location /console/ {', 1)[1].split('}', 1)[0]
         self.assertIn('try_files $uri /console/index.html;', spa)
 
+    def test_compose_postgres_uses_real_flags_instead_of_ignored_env_vars(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            initialize(env_file)
+            postgres = self.render(env_file)["postgres"]
+            self.assertFalse(
+                any(key.startswith("POSTGRESQL_CONF_") for key in postgres.get("environment", {})),
+                "docker-compose.yml must not declare no-op POSTGRESQL_CONF_* variables",
+            )
+            self.assertEqual(
+                postgres.get("command"),
+                ["postgres", "-c", "log_connections=on", "-c", "log_disconnections=on"],
+            )
+        for rel in ("docker-compose.yml", "docker/docker-compose.test-db.yml", "docker/scale-test/compose.yml"):
+            text = (ROOT / rel).read_text()
+            self.assertNotIn("POSTGRESQL_CONF_", text, f"{rel} still contains ignored POSTGRESQL_CONF_* settings")
+
+
 if __name__ == "__main__":
     unittest.main()

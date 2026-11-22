@@ -25,8 +25,11 @@ through the server's MCP endpoint (`POST /mcp`) with the official MCP Python cli
 `$HONUA_SERVICE` is the service name the publish step exported.
 
 The tool requires the durable operator workflow capability, which needs the system database.
-A deployment without one refuses the operation; it does not enable anonymous access. Use the
-quickstart profile and retain a successful policy-change result before opening the map.
+A deployment without one refuses the operation; it does not enable anonymous access. Over `/mcp`,
+access-policy changes are proposal-gated: the call returns `isError: false` with
+`status: "RequiresApproval"` and `requiresApproval: true`, and anonymous reads take effect only
+after a human approves the resulting proposal in Console Approvals. Use the quickstart profile and
+ensure the policy change is approved before opening the map.
 
 ```bash
 python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2' 'mcp==2.1.1'
@@ -54,9 +57,20 @@ async def allow_anonymous():
 
 
 call = asyncio.run(allow_anonymous())
+result = call.structured_content or {}
+status = result.get("status")
 if call.is_error:
     raise SystemExit(f"access policy not set: {call.content}")
-print(f"anonymous read enabled on {service}")
+if result.get("requiresApproval") or status == "RequiresApproval":
+    proposal_id = result.get("proposalId")
+    print(
+        f"approval required before anonymous read takes effect on {service} "
+        f"(proposalId={proposal_id}); approve it in Console Approvals"
+    )
+elif status == "Completed":
+    print(f"anonymous read enabled on {service}")
+else:
+    raise SystemExit(f"access policy not applied (status={status}): {call.content}")
 PY
 ```
 

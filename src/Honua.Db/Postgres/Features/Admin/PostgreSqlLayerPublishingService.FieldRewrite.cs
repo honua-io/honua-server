@@ -321,7 +321,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
     }
 
-    private static async Task ReplaceLayerFieldRowsAsync(
+    private async Task ReplaceLayerFieldRowsAsync(
         string connectionString,
         int layerId,
         List<LayerFieldInsert> fields,
@@ -331,7 +331,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using (var delete = new NpgsqlCommand(
-            "DELETE FROM honua.layer_fields WHERE layer_id = @layerId",
+            $"DELETE FROM {LayerFieldsTable} WHERE layer_id = @layerId",
             connection,
             transaction))
         {
@@ -343,12 +343,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<LayerFieldRewriteTarget?> ReadLayerFieldRewriteTargetAsync(
+    private async Task<LayerFieldRewriteTarget?> ReadLayerFieldRewriteTargetAsync(
         string connectionString,
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
                 layer_id,
                 layer_name,
@@ -360,7 +360,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 srid,
                 enabled,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
-            FROM honua.layers
+            FROM {LayersTable}
             WHERE layer_id = @layerId;
             """;
 
@@ -387,14 +387,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     // Null when the layer has no exact fields; otherwise the fields it kept as DateTime.
-    private static async Task<string[]?> ReadExactLayerDateTimeFieldsAsync(
+    private async Task<string[]?> ReadExactLayerDateTimeFieldsAsync(
         string connectionString,
         int layerId,
         CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(RewriteFieldTypePolicySql, connection);
+        await using var command = new NpgsqlCommand(BuildRewriteFieldTypePolicySql(LayerFieldsTable), connection);
         command.Parameters.AddWithValue("@layerId", layerId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && !reader.IsDBNull(0) && reader.GetBoolean(0)
@@ -407,6 +407,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             bool_or(field_type IN ('Decimal', 'TimestampOffset')),
             COALESCE(array_agg(field_name::text) FILTER (WHERE field_type = 'DateTime'), ARRAY[]::text[])
         FROM honua.layer_fields
+        WHERE layer_id = @layerId;
+        """;
+
+    private static string BuildRewriteFieldTypePolicySql(string layerFieldsTable) => $"""
+        SELECT
+            bool_or(field_type IN ('Decimal', 'TimestampOffset')),
+            COALESCE(array_agg(field_name::text) FILTER (WHERE field_type = 'DateTime'), ARRAY[]::text[])
+        FROM {layerFieldsTable}
         WHERE layer_id = @layerId;
         """;
 
@@ -447,6 +455,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var field = fields.FirstOrDefault(candidate =>
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         return field?.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset
             ? field.Name
             : null;
     }
