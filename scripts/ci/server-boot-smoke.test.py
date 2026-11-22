@@ -31,7 +31,9 @@ exit 1
 
 class BootSmokeReadinessTests(unittest.TestCase):
     def run_smoke(self, ready_after):
-        with tempfile.TemporaryDirectory() as directory:
+        # The never-ready case kills the probe loop mid-probe; a mock docker
+        # exec can still write its counter while the directory is removed.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             root = Path(directory)
             (root / "server.dll").touch()
             commands = {
