@@ -221,13 +221,42 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(0, false)]
-    [InlineData(6, false)]
-    [InlineData(1, true)]
-    [InlineData(5, true)]
+    [InlineData(0)]
+    [InlineData(6)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
-    public async Task Complete_PinnedRangeDomain_EnforcesInclusiveBounds(int answer, bool valid)
+    public async Task Complete_PinnedRangeDomain_RejectsOutsideBoundsWithoutWrites(int answer)
+    {
+        var (taskId, request) = await RangeCompletionAsync(answer);
+
+        var response = await CompleteAsync(taskId, request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(0);
+        (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(0);
+        (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
+            .Should().Be(WorkTaskStatus.InProgress);
+    }
+
+    [IntegrationTheory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_PinnedRangeDomain_AcceptsInclusiveBounds(int answer)
+    {
+        var (taskId, request) = await RangeCompletionAsync(answer);
+
+        var response = await CompleteAsync(taskId, request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
+        (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(1);
+        (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
+            .Should().Be(WorkTaskStatus.Completed);
+    }
+
+    private async Task<(Guid TaskId, WorkTaskCompletionRequest Request)> RangeCompletionAsync(int answer)
     {
         _form = await AssetTestData.PublishFormAsync(_fixture,
         [
@@ -243,19 +272,10 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         await AssetTestData.ExecuteAsync(_fixture,
             $"UPDATE honua.asset_profiles SET inspection_form_id = '{_form.FormId}', service_form_id = '{_form.FormId}', version = version + 1 WHERE profile_id = '{_profileId}'");
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
-        var request = Completion(3, Later, condition: 3) with
+        return (taskId, Completion(3, Later, condition: 3) with
         {
             Answers = JsonSerializer.SerializeToElement(new { score = answer }),
-        };
-
-        var response = await CompleteAsync(taskId, request);
-
-        response.StatusCode.Should().Be(valid ? HttpStatusCode.OK : HttpStatusCode.BadRequest,
-            await response.Content.ReadAsStringAsync());
-        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(valid ? 1 : 0);
-        (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(valid ? 1 : 0);
-        (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
-            .Should().Be(valid ? WorkTaskStatus.Completed : WorkTaskStatus.InProgress);
+        });
     }
 
     private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);

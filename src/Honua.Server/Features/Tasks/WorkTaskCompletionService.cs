@@ -12,8 +12,7 @@ namespace Honua.Server.Features.Tasks;
 internal sealed class WorkTaskCompletionService(
     IWorkTaskStore tasks,
     IWorkTaskCompletionStore completions,
-    AssetFormLookup forms,
-    FormPackageValidator formValidator,
+    WorkTaskCompletionForms forms,
     TimeProvider clock)
 {
     private const int MaxNotesLength = 4000;
@@ -125,7 +124,7 @@ internal sealed class WorkTaskCompletionService(
             return [new("form", $"The task is pinned to form {task.Form.FormId} version {task.Form.Version}.")];
         }
 
-        var published = await forms.FindPinnedAsync(task, cancellationToken).ConfigureAwait(false);
+        var published = await forms.Lookup.FindPinnedAsync(task, cancellationToken).ConfigureAwait(false);
         if (published is null)
         {
             return [new("form", "The pinned form version is unavailable.")];
@@ -137,7 +136,7 @@ internal sealed class WorkTaskCompletionService(
             return [new("answers", "Answer field names must be unique.")];
         }
 
-        var validation = await formValidator.ValidateRecordAsync(published, (values, []), cancellationToken).ConfigureAwait(false);
+        var validation = await forms.Validator.ValidateRecordAsync(published, (values, []), cancellationToken).ConfigureAwait(false);
         return validation.Issues
             .Where(static issue => issue.Severity == "error")
             .Select(static issue => new AssetFieldError(issue.FieldId is { } field ? $"answers.{field}" : issue.Path ?? "form", issue.Message))
@@ -172,3 +171,5 @@ internal sealed class WorkTaskCompletionService(
         _ => false,
     };
 }
+
+internal sealed record WorkTaskCompletionForms(AssetFormLookup Lookup, FormPackageValidator Validator);
