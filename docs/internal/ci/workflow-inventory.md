@@ -2331,6 +2331,15 @@ The shard filter, selected cases, workflows, required check names and aggregate
 `needs` contract are unchanged. Every case continues to run in its selected PR
 shard and full trunk runs. No test or gate coverage moves to another schedule.
 
+Two interleaved base/head Release runs of the complete Streaming Endpoints 2 shard
+passed the same 23 cases in each run, with zero failures or skips. Summed class
+case medians fell from 26.418 to 22.098 seconds. Fixture-inclusive TRX session
+seconds were 42.367 / 40.345 at base and 37.157 / 37.190 at head: median
+41.356 to 37.173 seconds, saving 4.183 seconds (0.070 runner-minutes), with one
+runner before and after. Both pairs improved, by 5.210 and 3.155 seconds.
+Compilation is excluded; this small shared-host measurement does not establish
+a reduction in the parallel PR Gate's critical path.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
