@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Assets;
 // Real API keys, no dev-auth bypass: planners hold admin:write, crew hold write:<service>, outsiders another service.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class WorkTaskCrewAccessTests : IAsyncLifetime
+public sealed partial class WorkTaskCrewAccessTests : IAsyncLifetime
 {
     private const string TasksPath = "/api/v1/tasks";
 

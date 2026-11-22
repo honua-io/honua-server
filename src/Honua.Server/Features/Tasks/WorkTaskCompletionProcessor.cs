@@ -3,34 +3,30 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Assets;
-using Honua.Core.Features.Forms.Packages;
 using Honua.Server.Features.Assets;
 
 namespace Honua.Server.Features.Tasks;
 
-internal sealed class WorkTaskCompletionValidator(
-    AssetFormLookup forms,
-    FormPackageValidator validator,
-    TimeProvider clock)
+internal sealed class WorkTaskCompletionProcessor(WorkTaskCompletionForm form, WorkTaskCompletionExecution execution, TimeProvider clock)
 {
     private const int MaxNotesLength = 4000;
     private const int MinCondition = 1;
     private const int MaxCondition = 5;
-
-    // Field devices drift; an observation a few minutes ahead of the server is accepted, later ones are not.
     private static readonly TimeSpan ClockSkewAllowance = TimeSpan.FromMinutes(5);
 
-    public async Task<AssetFieldError[]> ValidateAsync(
-        WorkTaskCompletionRequest request,
-        WorkTask task,
-        CancellationToken cancellationToken)
+    public async Task<IResult> CompleteAsync(HttpContext context,
+        (WorkTask Task, WorkTaskCompletionRequest Request, AssetCommand Command, long Generation) completion)
     {
+        var (task, request, command, _) = completion;
         if (Validate(request, task) is { } invalid)
         {
-            return [invalid];
+            return AssetCommandHttp.Rejected(context, [invalid]);
         }
-
-        return await ValidateAnswersAsync(request, task, cancellationToken).ConfigureAwait(false);
+        if (await form.ValidateAsync((task, request, command.Actor), context.RequestAborted).ConfigureAwait(false) is { Length: > 0 } errors)
+        {
+            return AssetCommandHttp.Rejected(context, errors);
+        }
+        return await execution.ApplyAsync(context, completion).ConfigureAwait(false);
     }
 
     private AssetFieldError? Validate(WorkTaskCompletionRequest request, WorkTask task)
@@ -65,54 +61,6 @@ internal sealed class WorkTaskCompletionValidator(
         return request.Notes is { Length: > MaxNotesLength } || request.Notes?.Contains('\0', StringComparison.Ordinal) == true
             ? new AssetFieldError("notes", $"notes are at most {MaxNotesLength} characters and cannot contain NUL characters.")
             : null;
-    }
-
-    private async Task<AssetFieldError[]> ValidateAnswersAsync(
-        WorkTaskCompletionRequest request,
-        WorkTask task,
-        CancellationToken cancellationToken)
-    {
-        if (request.Form != task.Form)
-        {
-            return [new("form", $"The task is pinned to form {task.Form.FormId} version {task.Form.Version}.")];
-        }
-
-        var published = await forms.FindPinnedAsync(task, cancellationToken).ConfigureAwait(false);
-        if (published is null)
-        {
-            return [new("form", "The pinned form version is unavailable.")];
-        }
-
-        var values = ReadAnswers(request.Answers);
-        if (values is null)
-        {
-            return [new("answers", "Answer field names must be unique.")];
-        }
-
-        var validation = await validator.ValidateRecordAsync(published, (values, []), cancellationToken).ConfigureAwait(false);
-        return validation.Issues
-            .Where(static issue => issue.Severity == "error")
-            .Select(static issue => new AssetFieldError(issue.FieldId is { } field ? $"answers.{field}" : issue.Path ?? "form", issue.Message))
-            .ToArray();
-    }
-
-    private static Dictionary<string, JsonElement>? ReadAnswers(JsonElement? answers)
-    {
-        var values = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-        if (answers is not { } supplied)
-        {
-            return values;
-        }
-
-        foreach (var answer in supplied.EnumerateObject())
-        {
-            if (!values.TryAdd(answer.Name, answer.Value))
-            {
-                return null;
-            }
-        }
-
-        return values;
     }
 
     private static bool ContainsNul(JsonElement element) => element.ValueKind switch

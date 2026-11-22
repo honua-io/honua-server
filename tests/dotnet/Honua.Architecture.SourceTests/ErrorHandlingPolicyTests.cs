@@ -51,6 +51,8 @@ public sealed class ErrorHandlingPolicyTests
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Assets", "AssetProfileEndpoints.cs"),
         // Pure route wiring. WorkTaskService shapes every error through AssetCommandHttp.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Tasks", "WorkTaskEndpoints.cs"),
+        // Pure route-table partial. WorkTaskAttachmentService shapes every error through AssetCommandHttp.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Tasks", "WorkTaskEndpoints.Attachments.cs"),
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
