@@ -82,11 +82,11 @@ public sealed partial class QueryFormatterTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false, "json")]
-    [InlineData(true, "json")]
-    [InlineData(false, "geojson")]
-    [InlineData(true, "geojson")]
-    public async Task Query_LargeJsonObjectId_PreservesExactInteger(bool streaming, string format)
+    [InlineData("materialized", "json")]
+    [InlineData("streaming", "json")]
+    [InlineData("materialized", "geojson")]
+    [InlineData("streaming", "geojson")]
+    public async Task Query_LargeJsonObjectId_PreservesExactInteger(string mode, string format)
     {
         const long identifier = 9007199254740993L;
         var feature = Feature.Create(479, geometry: null,
@@ -96,7 +96,7 @@ public sealed partial class QueryFormatterTests
                 ["name"] = "nearby-row"
             }.ToImmutableDictionary());
         var testCase = new NullObjectIdCase(format, "*", "json");
-        var json = streaming
+        var json = mode == "streaming"
             ? await SerializeNullObjectIdStreamingAsync(testCase, feature)
             : await SerializeNullObjectIdMaterializedAsync(testCase, feature);
         using var document = JsonDocument.Parse(json);
