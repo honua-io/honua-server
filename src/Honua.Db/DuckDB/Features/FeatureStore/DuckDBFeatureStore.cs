@@ -398,6 +398,29 @@ internal sealed class DuckDBFeatureStore :
         CancellationToken cancellationToken)
     {
         await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareBoundQuery(layerId, query);
+
+        if (query.EnforcedSqlFilter != null)
+        {
+            return query;
+        }
+
+        var enforcedFilter = _binding is not null
+            ? LayerReadSecurityResolver.ResolvePermanentFilter(_binding.Resource, _filterExpressionService)
+            : await PermanentFilterResolver
+                .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (enforcedFilter != null)
+        {
+            query = query with { EnforcedSqlFilter = enforcedFilter };
+        }
+
+        return query;
+    }
+
+    private FeatureQuery PrepareBoundQuery(int layerId, FeatureQuery query)
+    {
         if (_binding is not null && _binding.StorageLayerId != layerId)
         {
             throw new InvalidOperationException("DuckDB bound reader received a different storage layer.");
@@ -416,22 +439,6 @@ internal sealed class DuckDBFeatureStore :
                 SqlFilter = TranslateManagedFilter(query.SqlFilter, _binding.Resource),
                 EnforcedSqlFilter = TranslateManagedFilter(query.EnforcedSqlFilter, _binding.Resource)
             };
-        }
-
-        if (query.EnforcedSqlFilter != null)
-        {
-            return query;
-        }
-
-        var enforcedFilter = _binding is not null
-            ? LayerReadSecurityResolver.ResolvePermanentFilter(_binding.Resource, _filterExpressionService)
-            : await PermanentFilterResolver
-                .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-                .ConfigureAwait(false);
-
-        if (enforcedFilter != null)
-        {
-            query = query with { EnforcedSqlFilter = enforcedFilter };
         }
 
         return query;

@@ -392,10 +392,11 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
             or SpatialRelationship.WithinDistance
             or SpatialRelationship.BeyondDistance
             or SpatialRelationship.NearestNeighbor);
-        var bboxCoveringPushdown = spatial.TryGetBboxCoveringBounds(request.LayerSrid, out var bounds)
-            && !string.IsNullOrWhiteSpace(request.BboxColumn);
+        var bboxCoveringBounds = string.IsNullOrWhiteSpace(request.BboxColumn)
+            ? null
+            : spatial.GetBboxCoveringBounds(request.LayerSrid);
 
-        if (bboxCoveringPushdown)
+        if (bboxCoveringBounds is { } bounds)
         {
             var bboxCol = ValidateAndQuoteIdentifier(request.BboxColumn!, dialect);
             var minX = AddRedactedParameter(bounds.MinX, dialect, ref paramIndex, parameters);
@@ -410,7 +411,7 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
         }
 
         if (capabilities.ProviderName == DataProviderNames.DuckDb
-            && bboxCoveringPushdown
+            && bboxCoveringBounds.HasValue
             && spatial.SpatialRelationship == SpatialRelationship.EnvelopeIntersects
             && spatial.AllowEnvelopeOnly)
         {
@@ -424,7 +425,7 @@ public sealed class WarehouseQueryPlanExplainer : IWarehouseQueryPlanExplainer
             true,
             $"Pushed down spatial predicate '{spatial.SpatialRelationship}'."));
 
-        var bboxPushdown = bboxCoveringPushdown
+        var bboxPushdown = bboxCoveringBounds.HasValue
             || (capabilities.ProviderName != DataProviderNames.DuckDb
                 && capabilities.SupportsBboxPushdown
                 && relationshipSupportsBbox

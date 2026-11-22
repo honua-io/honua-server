@@ -1372,7 +1372,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         List<object> parameters)
     {
         if (mapping.QuotedBboxColumn is null
-            || !filter.TryGetBboxCoveringBounds(mapping.Srid, out var bounds))
+            || filter.GetBboxCoveringBounds(mapping.Srid) is not { } bounds)
         {
             return false;
         }
