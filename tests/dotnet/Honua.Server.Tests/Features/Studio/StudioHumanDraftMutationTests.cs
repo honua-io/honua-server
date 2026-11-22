@@ -169,10 +169,11 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         using var client = _fixture.CreateAdminClient();
         client.DefaultRequestHeaders.Add("X-Honua-Initiation-Kind", "Human");
         client.DefaultRequestHeaders.Add("X-Honua-Client-Type", "console");
+        var proposalIdsBefore = await GetActiveProposalIdsAsync();
 
         using var response = await CreateDraftAsync(client);
 
-        await AssertBootstrapRefusedAsync(response);
+        await AssertBootstrapRefusedAsync(response, proposalIdsBefore);
     }
 
     [IntegrationTest]
@@ -181,10 +182,11 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
     {
         using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
         human.Client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+        var proposalIdsBefore = await GetActiveProposalIdsAsync();
 
         using var response = await CreateDraftAsync(human.Client);
 
-        await AssertBootstrapRefusedAsync(response);
+        await AssertBootstrapRefusedAsync(response, proposalIdsBefore);
     }
 
     [IntegrationTest]
@@ -211,15 +213,21 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         proposal!.RequestedBy.Should().Be($"apikey:api-key:{key.ApiKey.Id:D}");
     }
 
-    private async Task AssertBootstrapRefusedAsync(HttpResponseMessage response)
+    private async Task<string[]> GetActiveProposalIdsAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var proposals = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
+            .ListActiveAsync(OperationClass.StudioDraftMutation);
+        return proposals.Select(proposal => proposal.ProposalId).ToArray();
+    }
+
+    private async Task AssertBootstrapRefusedAsync(HttpResponseMessage response, string[] proposalIdsBefore)
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
         body.Should().Contain("scoped API key").And.Contain("/api/v1/admin/api-keys");
-        using var scope = _fixture.Services.CreateScope();
-        var proposals = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
-            .ListActiveAsync(OperationClass.StudioDraftMutation);
-        proposals.Should().BeEmpty();
+        var proposalIdsAfter = await GetActiveProposalIdsAsync();
+        proposalIdsAfter.Should().BeEquivalentTo(proposalIdsBefore, "a refused request must not create a proposal");
         var drafts = await _fixture.Services.GetRequiredService<IStudioPackageStore>()
             .ListDraftsAsync(new StudioPackageDraftQuery());
         drafts.Items.Should().BeEmpty();
