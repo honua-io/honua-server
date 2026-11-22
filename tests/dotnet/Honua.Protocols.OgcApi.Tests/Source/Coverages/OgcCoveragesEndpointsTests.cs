@@ -232,16 +232,19 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     }
 
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326", "37.7,-122.5,37.9,-122.3")]
+    [InlineData("CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84", "-122.5,37.7,-122.3,37.9")]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
-    public async Task Coverages_GetCoverage_ExplicitEpsg4326HasContentCrs()
+    public async Task Coverages_GetCoverage_ContentBboxMatchesCrsAxes(string crs, string identifier, string bbox)
     {
         using var response = await _fixture.Client.GetAsync(
-            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs=EPSG:4326");
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs={crs}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.GetValues("Content-Crs").Single().Should()
-            .Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
+            .Be($"<{identifier}>");
+        response.Headers.GetValues("Content-Bbox").Single().Should().Be(bbox);
     }
 
     [IntegrationTest]
