@@ -20,6 +20,9 @@ public sealed class NoHonuaServerGeoServicesVersionTests
         // Optimistic-concurrency conflict payload: CurrentVersion is the feature's stored edit
         // version token returned to the client on a stale-write, unrelated to ArcGIS versioning.
         "Honua.Core.Features.Collaboration.FeatureLocks.FeatureVersionConflictError",
+        // Admin Exports API payload: CurrentVersion is the Export's active immutable Version ID
+        // (matching the Console Exports contract), unrelated to GeoServices server versioning.
+        "Honua.Server.Features.Admin.Exports.ExportResponse",
     };
 
     // Reflects over every JsonSerializerContext in the host assembly, so a newly registered

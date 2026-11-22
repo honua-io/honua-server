@@ -239,6 +239,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/assets",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/forms",
       "capability": "fieldops.forms"
     },
@@ -423,7 +428,7 @@
       "capability": "serve.vector-tiles"
     },
     {
-      "family": "Paired Publication HTTP",
+      "family": "Export HTTP",
       "capability": "serve.vector-tiles"
     },
     {

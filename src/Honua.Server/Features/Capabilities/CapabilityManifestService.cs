@@ -65,8 +65,8 @@ internal sealed class CapabilityManifestService(
     CapabilityManifestRuntimeInventory runtimeInventory,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
-    ILogger<CapabilityManifestService> logger,
-    IH3CapabilityChecker? h3CapabilityChecker = null) : ICapabilityManifestService
+    IEnumerable<IH3CapabilityChecker> h3CapabilityCheckers,
+    ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
 
@@ -110,6 +110,9 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var h3Available = await ResolveH3AvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        var limits = BuildLimits(batchCapabilities);
+        limits = limits with { Analysis = limits.Analysis with { H3Available = h3Available } };
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
@@ -124,7 +127,6 @@ internal sealed class CapabilityManifestService(
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
         capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
-        capabilities = [.. capabilities, await BuildH3AnalyticsCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -151,7 +153,7 @@ internal sealed class CapabilityManifestService(
             Packages = packages,
             Capabilities = capabilities,
             Transports = BuildTransports(),
-            Limits = BuildLimits(batchCapabilities),
+            Limits = limits,
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
@@ -1190,6 +1192,16 @@ internal sealed class CapabilityManifestService(
             }
         ];
 
+    // H3 aggregation needs h3_postgis in the primary database. Null means the probe could not answer:
+    // this store has no checker, or the database was unreachable (the H3 endpoints answer 503 meanwhile).
+    private async Task<bool?> ResolveH3AvailabilityAsync(CancellationToken cancellationToken)
+    {
+        var checker = h3CapabilityCheckers.FirstOrDefault();
+        return checker is null
+            ? null
+            : await checker.IsH3AvailableAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<BatchCapabilitySummary> ResolveBatchCapabilitiesAsync(CancellationToken cancellationToken)
     {
         var backends = runtimeInventory.BatchBackends;
@@ -1394,26 +1406,6 @@ internal sealed class CapabilityManifestService(
             entitlementKey: "import.file",
             policyCapability: "metadata.write");
         return capability with { Schemes = ["s3"] };
-    }
-
-    // The H3 routes answer 501 when PostgreSQL lacks the h3-pg extension (the quickstart's bundled
-    // PostGIS image does not ship it). Probe the checker those routes use so a client can tell before
-    // calling. No checker means no PostgreSQL feature store, so the routes cannot serve H3 at all.
-    private async Task<CapabilityManifestCapability> BuildH3AnalyticsCapabilityAsync(
-        CapabilityPolicyContext context,
-        CancellationToken cancellationToken)
-    {
-        var extensionInstalled = h3CapabilityChecker is not null
-            && await h3CapabilityChecker.IsH3AvailableAsync(cancellationToken).ConfigureAwait(false) == true;
-        return Capability(
-            FeatureCatalog.H3AnalyticsKey,
-            "analysis",
-            context,
-            supported: h3CapabilityChecker is not null,
-            configured: extensionInstalled,
-            entitlementKey: FeatureCatalog.H3AnalyticsKey,
-            policyCapability: "features.query",
-            unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
     }
 
     private static CapabilityManifestCapability[] StampRollbackTargets(

@@ -90,7 +90,8 @@ class ResourceTests(unittest.TestCase):
         database = next(s for s in registry['shards'] if 'postgres' in catalog[s.get('csproj') or module.MONOLITH]['resources'])
         result = {'skip': False, 'reason': 'targeted', 'shards': [free['name'], database['name']], 'cap': 6,
                   'deferred_to_trunk': []}
-        expected = selection.matrix_include(result, registry)
+        expected = selection.place_heavy_shards(selection.matrix_include(result, registry),
+                                                selection.time_budget.load_heavy_slowdown(registry))
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'github-output'
             receipt = Path(directory) / 'selection.json'

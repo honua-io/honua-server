@@ -55,7 +55,7 @@ PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested conf
 | `postgis` | Yes | Spatial operations, geometry types, spatial indexing. |
 | `postgis_raster` | For raster features | Raster data storage and analysis. |
 | `unaccent` | Yes | Accent-insensitive text search normalization. |
-| `h3` ([h3-pg](https://github.com/zachasme/h3-pg)) | For H3 aggregation | H3 cell aggregation (`/h3`, `queryH3`) and H3 vector tiles. |
+| `h3`, `h3_postgis` | For H3 aggregation | H3 cell aggregation (`/ogc/features/collections/{collectionId}/h3`, FeatureServer `queryH3`). |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -63,18 +63,27 @@ CREATE EXTENSION IF NOT EXISTS postgis_raster;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 ```
 
+H3 aggregation is optional. Without the h3-pg extensions the H3 endpoints answer
+`501`, and `limits.analysis.h3Available` in `GET /api/v1/capabilities/manifest`
+is `false`, so a client can check before calling. The bundled quickstart
+Postgres image does not include h3-pg. To enable H3, install the h3-pg package
+on the database host and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS h3_postgis CASCADE;
+```
+
+Once Honua has read the extension list it keeps the answer for the life of
+the process, so restart the server after you add the extensions. If the
+database cannot be reached, Honua asks again after 60 seconds, and until then
+the H3 endpoints answer `503` and the manifest omits `h3Available`. H3 aggregation is not available yet on source-backed PostGIS layers
+(layers read from a connected database rather than the Honua database); those
+answer `501` whether or not the extension is installed.
+
 Honua never creates `postgis_raster` from application startup. When the
 extension is absent, the canonical migration runner leaves the optional raster
 migration root unjournaled and verifies the non-raster core floor. Provisioning
 the extension later makes that root eligible on the next migration run.
-
-Honua does not create `h3` either, and the PostGIS image bundled with the
-quickstart does not include it. Without it every H3 route returns `501`, and the
-capability manifest (`GET /api/v1/capabilities/manifest`) reports `analytics.h3`
-as unavailable with reason `dependency-unavailable`. Install the h3-pg package
-for your PostgreSQL version, run `CREATE EXTENSION IF NOT EXISTS h3;`, and
-restart Honua: the extension check is cached for the life of the process
-(only a check that could not reach the database is retried, after 60 seconds).
 
 ## Startup validation
 

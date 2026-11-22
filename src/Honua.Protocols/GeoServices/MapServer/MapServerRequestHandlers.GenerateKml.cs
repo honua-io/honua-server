@@ -764,7 +764,8 @@ internal static partial class MapServerEndpoints
     {
         return resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
+            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset);
     }
 
     private static bool TryNormalizeGenerateKmlOutputFormat(string? format, out string normalized, out string? error)

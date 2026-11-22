@@ -368,6 +368,52 @@ public sealed partial class GrpcFeatureServiceTests
         AssertNoReadWriteOrOutbox();
     }
 
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public Task ApplyServiceEdits_SecondLayerAccessDenied_RejectsBeforeTransaction()
+        => AssertSecondLayerRejectedBeforeTransactionAsync(
+            CreateService("test", accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-editor"] }),
+            ["Query", "Create"],
+            StatusCode.PermissionDenied);
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public Task ApplyServiceEdits_SecondLayerMissingCapability_RejectsBeforeTransaction()
+        => AssertSecondLayerRejectedBeforeTransactionAsync(
+            _testService,
+            ["Query"],
+            StatusCode.FailedPrecondition);
+
+    private async Task AssertSecondLayerRejectedBeforeTransactionAsync(
+        MetadataV2Service secondService, string[] capabilities, StatusCode expectedStatus)
+    {
+        var second = CreateTriple(secondService, _testResource);
+        second = second with
+        {
+            Publication = second.Publication with
+            {
+                Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true },
+                Capabilities = capabilities
+            },
+            StorageLayerId = 1
+        };
+        _resourceValidator.ValidateServiceLayerV2Async("test", 1, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(second));
+        var request = new Proto.ApplyServiceEditsRequest { ServiceId = "test" };
+        foreach (var layerId in new[] { 0, 1 })
+        {
+            request.Edits.Add(new Proto.ServiceLayerEdits { LayerId = layerId, Adds = { new Proto.Feature() } });
+        }
+
+        var act = async () => await _sut.ApplyServiceEdits(request, CreateCallContext(CreateAuthenticatedUser("data-editor")));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(expectedStatus);
+        AssertNoReadWriteOrOutbox();
+        _featureWriter.ReceivedCalls().Should().BeEmpty("every layer must pass preflight before opening a transaction");
+    }
+
     private void UseDeclaredCapabilities(params string[] capabilities)
     {
         var triple = CreateTriple(_testService, _testResource);

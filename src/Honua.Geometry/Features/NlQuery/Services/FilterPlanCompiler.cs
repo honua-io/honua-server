@@ -201,7 +201,8 @@ public static class FilterPlanCompiler
         }
 
         var field = FindField(clause.Property, resource);
-        if (field.Type is not MetadataV2FieldType.Date and not MetadataV2FieldType.DateTime)
+        if (field.Type is not MetadataV2FieldType.Date and not MetadataV2FieldType.DateTime
+            and not MetadataV2FieldType.TimestampOffset)
         {
             throw new FilterPlanCompilationException(
                 $"Temporal property '{clause.Property}' must be a date or datetime field.");

@@ -1,21 +1,16 @@
 let
     BaseUrl = "${HONUA_BASE_URL}",
-    EntitySet = "${HONUA_ODATA_ENTITY_SET}",
+    LayerId = "${HONUA_ODATA_LAYER_ID}",
     ApiKey = "${HONUA_API_KEY}",
-    ServiceRoot = Text.TrimEnd(BaseUrl, "/") & "/odata/",
-    Source =
+    // The cross-layer /odata/Features feed requires a LayerId filter, so read the
+    // layer-scoped feed. MoreColumns keeps the layer's dynamic attribute properties.
+    FeedUrl = Text.TrimEnd(BaseUrl, "/") & "/odata/Layers(" & LayerId & ")/Features",
+    Options =
         if Text.Length(Text.Trim(ApiKey)) = 0 then
-            OData.Feed(ServiceRoot, null, [Implementation = "2.0"])
+            [Implementation = "2.0", MoreColumns = true]
         else
-            OData.Feed(
-                ServiceRoot,
-                null,
-                [
-                    Implementation = "2.0",
-                    Headers = [#"x-api-key" = ApiKey]
-                ]
-            ),
-    Entity = Source{[Name = EntitySet, Signature = "table"]}[Data],
-    Result = Table.FirstN(Entity, 5000)
+            [Implementation = "2.0", MoreColumns = true, Headers = [#"x-api-key" = ApiKey]],
+    Source = OData.Feed(FeedUrl, null, Options),
+    Result = Table.FirstN(Source, 5000)
 in
     Result

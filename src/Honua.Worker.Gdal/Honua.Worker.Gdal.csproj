@@ -11,6 +11,12 @@
     -->
     <PublishAot>false</PublishAot>
     <!--
+      docker/worker-gdal/Dockerfile publishes framework-dependent for one of these runtime
+      identifiers so the image carries only its own platform's native libraries. Listing them
+      here puts their package graphs in packages.lock.json, which the locked restore needs.
+    -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <!--
       The worker image restores from this project's packages.lock.json in locked mode, and CI
       does too, so the image only gets package contents whose hashes are recorded here. After
       changing a package version or project reference in its closure, regenerate the lock:

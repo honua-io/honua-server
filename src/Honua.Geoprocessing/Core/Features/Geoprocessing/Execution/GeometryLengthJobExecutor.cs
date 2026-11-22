@@ -58,7 +58,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid length inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid length inputs: {inputError}");
         }
 
         Geometry geometry;
@@ -70,18 +70,18 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.Failed("Invalid length inputs: WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid length inputs: WKB payload could not be decoded.");
         }
 
         if (geometry == null || geometry.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid length inputs: geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid length inputs: geometry is empty.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
         {
             Log.InvalidInputs(_logger, job.OperationId, sridError);
-            return JobExecutionResult.Failed($"Invalid length inputs: {sridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid length inputs: {sridError}.");
         }
 
         geometry.SRID = inputs.Srid;

@@ -40,7 +40,7 @@ enrichment dataset. Each entry captures: a stable `id` (slug), `title`,
 `geometryType`, joinable `attributes`, default `defaultPredicate`/`distanceMeters`,
 and the provenance/`attribution`/`license`/`minimumEdition` metadata so downstream
 consumers can comply with the data provider's terms. The catalog is persisted in
-`honua.enrichment_datasets` (migration 071), cached through the shared
+`honua.enrichment_datasets` (migration 072), cached through the shared
 generation-stamped catalog scope, and invalidated on register/update/deregister.
 
 `POST /api/enrich` resolves its `datasetId` (or legacy `datasetKey`) through this catalog (falling back to

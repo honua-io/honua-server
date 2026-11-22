@@ -45,19 +45,19 @@ internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecuto
         {
             if (!FeatureCollectionArtifact.TryParseDataUri(dataUri, out collection, out parseError, _options.CurrentValue.MaxArtifactBytes))
             {
-                return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
+                return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
             }
         }
         else if (inputs.TryGet("inline", out var inline))
         {
             if (!FeatureCollectionArtifact.TryParseJson(inline, out collection, out parseError))
             {
-                return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'inline' {parseError}");
+                return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'inline' {parseError}");
             }
         }
         else
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid {HandledProcessId} inputs: requires an 'inline' GeoJSON document or an 'input' data URI.");
         }
 

@@ -13,7 +13,7 @@ Honua serves Mapbox Vector Tiles (MVT) per layer with TileJSON metadata and a ge
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Vector tile for a layer (XYZ scheme, WebMercator). |
-| GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile (returns `501` when the configured feature provider does not support H3 or PostgreSQL lacks the [h3-pg extension](../configuration/data-sources/postgis.md#required-extensions)). |
+| GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile (returns `501` when the configured feature provider does not support H3). |
 | GET | `/tiles/{layerId}/tile.json` | TileJSON 3.0 metadata for the layer. |
 | GET | `/api/styles/{publicationId}.json` | Generated MapLibre style document for the layer. |
 | GET, HEAD | `/api/v1/tiles/pmtiles/{*artifactId}` | Range-proxied access to a published PMTiles artifact. |
