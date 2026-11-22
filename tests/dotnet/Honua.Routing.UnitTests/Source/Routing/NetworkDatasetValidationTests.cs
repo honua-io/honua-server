@@ -211,6 +211,40 @@ public sealed class NetworkDatasetValidationTests
         Assert.Equal(expected, NetworkDatasetValidation.TryValidateStatus(status, out _));
     }
 
+    [Theory]
+    [InlineData("net\r\n[INF] FORGED")]
+    [InlineData("net\nforged")]
+    [InlineData("net\rforged")]
+    [InlineData("net\u0085forged")]
+    [InlineData("net\u2028forged")]
+    [InlineData("net\u2029forged")]
+    [InlineData("net\0null")]
+    public void TryValidateName_RejectsControlCharacters(string name)
+    {
+        Assert.False(NetworkDatasetValidation.TryValidateName(name, out _));
+    }
+
+    [Theory]
+    [InlineData("desc\r\n[INF] FORGED")]
+    [InlineData("desc\nforged")]
+    [InlineData("desc\rforged")]
+    [InlineData("desc\u0085forged")]
+    [InlineData("desc\u2028forged")]
+    [InlineData("desc\u2029forged")]
+    [InlineData("desc\0null")]
+    public void TryValidateDescription_RejectsControlCharacters(string description)
+    {
+        Assert.False(NetworkDatasetValidation.TryValidateDescription(description, out _));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Clean description with spaces and punctuation.")]
+    public void TryValidateDescription_AcceptsNullOrPlainText(string? description)
+    {
+        Assert.True(NetworkDatasetValidation.TryValidateDescription(description, out var error), error);
+    }
+
     [Fact]
     public void AddRouting_RegistersStore_OnPostgres()
     {

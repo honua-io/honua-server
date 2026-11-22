@@ -155,6 +155,58 @@ public class NetworkDatasetAdminEndpointsTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/network-datasets")]
+    public async Task Register_ControlCharactersInNameOrDescription_Returns400()
+    {
+        var withCrlfName = BuildValidRequest(NewId("crlfn"));
+        withCrlfName.Name = "net\r\n[INF] FORGED_NET_NAME";
+        var nameResponse = await _client.PostAsJsonAsync("/api/v1/admin/network-datasets", withCrlfName, _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, nameResponse.StatusCode);
+
+        var withCrlfDescription = BuildValidRequest(NewId("crlfd"));
+        withCrlfDescription.Description = "desc\u2028[INF] FORGED_NET_DESC";
+        var descResponse = await _client.PostAsJsonAsync("/api/v1/admin/network-datasets", withCrlfDescription, _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, descResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/network-datasets/{id}")]
+    public async Task Update_ControlCharactersInNameOrDescription_Returns400()
+    {
+        var id = NewId("updcrlf");
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/network-datasets", BuildValidRequest(id), _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var badName = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/network-datasets/{id}",
+            new UpdateNetworkDatasetRequest { Name = "net\r\n[INF] FORGED" },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, badName.StatusCode);
+
+        var badDescription = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/network-datasets/{id}",
+            new UpdateNetworkDatasetRequest { Description = "desc\n[INF] FORGED" },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, badDescription.StatusCode);
+    }
+
+    [UnitTest]
+    public void SanitizeForLog_StripsControlCharactersAndBoundsLength()
+    {
+        var sanitized = Honua.Server.Features.Admin.NetworkDatasetAdminEndpoints.SanitizeForLog(
+            "net-crlf\r\n[ERR] FORGED_NET_ID\u2028tail");
+
+        Assert.DoesNotContain('\r', sanitized);
+        Assert.DoesNotContain('\n', sanitized);
+        Assert.DoesNotContain('\u2028', sanitized);
+        Assert.Equal("net-crlf  [ERR] FORGED_NET_ID tail", sanitized);
+
+        var oversized = Honua.Server.Features.Admin.NetworkDatasetAdminEndpoints.SanitizeForLog(new string('a', 100));
+        Assert.Equal(67, oversized.Length);
+        Assert.EndsWith("...", oversized, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/network-datasets")]
     public async Task Register_BadStatus_Returns400()
     {
         var id = NewId("status");
