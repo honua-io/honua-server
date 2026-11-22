@@ -59,7 +59,10 @@ internal static class WmtsRequestHandlers
         MetadataV2Object Resource,
         MetadataV2Layer Publication,
         int StorageLayerId,
-        string Identifier);
+        string Identifier)
+    {
+        public MetadataV2GraphSnapshot? Snapshot { get; init; }
+    }
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
@@ -327,11 +330,10 @@ internal static class WmtsRequestHandlers
             OgcClassicLog.WmtsRequested(logger, serviceId, "GetCapabilities");
             var capabilitiesFeatureReader = context.RequestServices.GetService<IFeatureReader>();
             var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
-            // Capabilities only advertises resources that (a) carry geometry and (b) the caller
-            // is allowed to read. V2 carries geometry on Spatial.GeometryType OR via a
-            // Geometry/Geography schema field (matches the resolution used by the renderer).
+            // Capabilities advertises resources that carry geometry or raster imagery and that the
+            // caller is allowed to read.
             var visibleLayers = accessibleLayers
-                .Where(l => ResourceHasGeometry(l.Resource))
+                .Where(l => OgcClassicRasterSupport.IsRenderableResource(l.Resource))
                 .ToArray();
             var capabilities = PooledTextBuilder.Rent();
             try
@@ -568,9 +570,8 @@ internal static class WmtsRequestHandlers
         // shared TemporalExtentHelpers so request handling matches what
         // GetCapabilities advertised.
         var tileTemporalCancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var tileTemporalFeatureReader = context.RequestServices.GetService<IFeatureReader>();
-        var (tileTemporalFilter, tileTemporalFilterError) = await TryBuildWmtsLayerTemporalFilterAsync(
-            context, query, layer, tileTemporalFeatureReader, tileTemporalCancellationToken).ConfigureAwait(false);
+        var (tileTemporalFilter, tileTemporalFilterError) = await TryResolveWmtsTileTemporalFilterAsync(
+            context, (query, layer), tileTemporalCancellationToken).ConfigureAwait(false);
         if (tileTemporalFilterError is not null)
         {
             return tileTemporalFilterError;
@@ -662,6 +663,14 @@ internal static class WmtsRequestHandlers
         if (tileCol > maxColIndex)
         {
             return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
+        }
+
+        if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+        {
+            return await RenderWmtsRasterTileResultAsync(
+                context,
+                (layer, tileMatrix, tileRow, tileCol, isBuiltInGrid ? (TileGridKind?)tileGrid : null, customGridGeometry),
+                tileTemporalCancellationToken).ConfigureAwait(false);
         }
 
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
@@ -1053,7 +1062,10 @@ internal static class WmtsRequestHandlers
                 ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
                 : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
 
-            var candidate = new WmtsLayer(routableResource, publication, storageLayerId.Value, identifier);
+            var candidate = new WmtsLayer(routableResource, publication, storageLayerId.Value, identifier)
+            {
+                Snapshot = snapshot
+            };
             if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
@@ -1071,17 +1083,41 @@ internal static class WmtsRequestHandlers
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Object resource)
-    {
-        if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
-        {
-            return true;
-        }
+    private static Task<(TemporalFilter? Filter, IResult? Error)> TryResolveWmtsTileTemporalFilterAsync(
+        HttpContext context,
+        (IQueryCollection Query, WmtsLayer Layer) target,
+        CancellationToken cancellationToken)
+        => OgcClassicRasterSupport.IsRasterResource(target.Layer.Resource)
+            ? Task.FromResult<(TemporalFilter?, IResult?)>((null, null))
+            : TryBuildWmtsLayerTemporalFilterAsync(
+                context,
+                target.Query,
+                target.Layer,
+                context.RequestServices.GetService<IFeatureReader>(),
+                cancellationToken);
 
-        // V2 graphs that don't fill in the typed Spatial slot still surface geometry through
-        // the schema (Geometry/Geography field). Match the FeatureServer V2 ports — both are
-        // treated as "this layer is renderable".
-        return resource.FindPrimaryGeometryField() is not null;
+    private static async Task<IResult> RenderWmtsRasterTileResultAsync(
+        HttpContext context,
+        (WmtsLayer Layer, int TileMatrix, int TileRow, int TileCol, TileGridKind? BuiltInGrid, GridGeometry? CustomGrid) tile,
+        CancellationToken cancellationToken)
+    {
+        var request = new OgcClassicRasterSupport.RasterTileRequest
+        {
+            StorageLayerId = tile.Layer.StorageLayerId,
+            PublicationLayerIndex = tile.Layer.Publication.LayerIndex,
+            PublicationId = tile.Layer.Publication.Metadata.Id,
+            Snapshot = tile.Layer.Snapshot,
+            TileMatrix = tile.TileMatrix,
+            TileRow = tile.TileRow,
+            TileCol = tile.TileCol,
+            BuiltInGrid = tile.BuiltInGrid,
+            CustomGrid = tile.CustomGrid
+        };
+        var rasterTileResult = await OgcClassicRasterSupport.RenderRasterTileAsync(
+            context, request, cancellationToken).ConfigureAwait(false);
+        return rasterTileResult.IsSuccess
+            ? Results.Bytes(rasterTileResult.ImageBytes, PngMimeType)
+            : rasterTileResult.Error!;
     }
 
     private static RenderLayerDescriptor BuildRenderDescriptor(
@@ -1107,10 +1143,9 @@ internal static class WmtsRequestHandlers
             return false;
         }
 
-        // Restrict matching to layers backed by geometry; non-spatial publications can't
-        // produce a tile and shouldn't be addressable through WMTS regardless of how the
-        // route was specified (numeric or name-based).
-        var candidates = layers.Where(l => ResourceHasGeometry(l.Resource)).ToArray();
+        // Restrict matching to renderable layers (geometry or raster); non-spatial publications
+        // cannot produce a tile and must not be addressable through WMTS.
+        var candidates = layers.Where(l => OgcClassicRasterSupport.IsRenderableResource(l.Resource)).ToArray();
         if (int.TryParse(layerIdOrName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
             // Numeric LAYER values address the publication's protocol-facing index (the
@@ -1452,7 +1487,7 @@ internal static class WmtsRequestHandlers
                     ?? layerId;
                 sb.Append("      <ows:Title>").Append(EscapeXml(layerTitle)).AppendLine("</ows:Title>");
                 sb.Append("      <ows:Identifier>").Append(EscapeXml(layerId)).AppendLine("</ows:Identifier>");
-                await AppendWmtsWgs84BoundingBoxAsync(sb, layer.Resource, request.HttpContext, cancellationToken)
+                await AppendWmtsWgs84BoundingBoxAsync(sb, layer, request.HttpContext, cancellationToken)
                     .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
@@ -1521,7 +1556,8 @@ internal static class WmtsRequestHandlers
     }
 
     private static bool IsWmtsLayerQueryable(WmtsLayer layer)
-        => OgcClassicDeclaredDimensions.IsWmtsQueryable(layer.Resource);
+        => !OgcClassicRasterSupport.IsRasterResource(layer.Resource)
+            && OgcClassicDeclaredDimensions.IsWmtsQueryable(layer.Resource);
 
     private static WmtsDimensionDefinition[] GetDeclaredWmtsDimensionDefinitions(MetadataV2Object resource)
         => [.. OgcClassicDeclaredDimensions.ReadWmtsDimensions(resource).Select(declared => new WmtsDimensionDefinition(
@@ -1605,6 +1641,11 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+        {
+            return false;
+        }
+
         try
         {
             var plan = await GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)
@@ -1636,7 +1677,9 @@ internal static class WmtsRequestHandlers
         }
 
         var temporalLayers = layers
-            .Where(layer => TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource))
+            .Where(layer =>
+                !OgcClassicRasterSupport.IsRasterResource(layer.Resource) &&
+                TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource))
             .ToArray();
 
         if (temporalLayers.Length == 0)
@@ -2347,12 +2390,12 @@ internal static class WmtsRequestHandlers
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
         StringBuilder sb,
-        MetadataV2Object resource,
+        WmtsLayer layer,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         var boundingBox = await TryGetWmtsWgs84BoundingBoxAsync(
-                resource,
+                layer,
                 context,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -2368,28 +2411,25 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
-        MetadataV2Object resource,
+        WmtsLayer layer,
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var bbox = resource.ReadBbox();
-        if (bbox is null)
+        var resolved = await OgcClassicRasterSupport.TryResolveResourceExtentAsync(
+            context, new(layer.Resource, layer.StorageLayerId), cancellationToken).ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        // BBox coordinates live in the CRS of the resource's spatial reference; fall back
-        // to WGS84 when the resource doesn't declare one. OgcExtentTransformer short-circuits
-        // the 4326 case so the fallback doesn't introduce a spurious transform call.
-        var srid = resource.ReadSrid() ?? 4326;
         var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var transformedExtent = await OgcExtentTransformer
             .TryTransformExtentToCrs84Async(
-                bbox.West,
-                bbox.South,
-                bbox.East,
-                bbox.North,
-                srid,
+                resolved.Value.West,
+                resolved.Value.South,
+                resolved.Value.East,
+                resolved.Value.North,
+                resolved.Value.Srid,
                 coordinateTransformService,
                 cancellationToken)
             .ConfigureAwait(false);

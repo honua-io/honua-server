@@ -25,7 +25,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-internal static class StudioPackageEndpoints
+internal static partial class StudioPackageEndpoints
 {
     private const string ProblemType = "https://honua.io/problems/studio";
 
@@ -44,6 +44,7 @@ internal static class StudioPackageEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
+        endpoints.MapStudioDraftRevisionEndpoints();
 
         group.MapGet("/package-families", HandleGetPackageFamilies)
             .WithDisplayName("List Studio Package Families")

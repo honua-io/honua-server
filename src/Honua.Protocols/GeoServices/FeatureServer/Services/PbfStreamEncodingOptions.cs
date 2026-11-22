@@ -7,6 +7,7 @@ internal sealed record PbfStreamEncodingOptions
 {
     public bool ReturnGeometry { get; init; }
     public int? OutputSrid { get; init; }
+    public int? RequestedOutputSrid { get; init; }
     public bool ReturnZ { get; init; }
     public bool ReturnM { get; init; }
     public int? GeometryPrecision { get; init; }

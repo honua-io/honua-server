@@ -244,7 +244,16 @@ internal static partial class WmsRequestHandlers
             var layer = renderLayers[i];
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!ResourceHasGeometry(layer.Resource))
+            if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+            {
+                totalFeatureCount += await TryDrawWmsRasterLayerAsync(
+                    context,
+                    (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (!OgcClassicRasterSupport.ResourceHasGeometry(layer.Resource))
             {
                 continue;
             }
@@ -332,5 +341,30 @@ internal static partial class WmsRequestHandlers
         HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
 
         return Results.Bytes(imageBytes, contentType);
+    }
+
+    private static async Task<int> TryDrawWmsRasterLayerAsync(
+        HttpContext context,
+        (SKCanvas Canvas, (int StorageLayerId, SkiaMapRenderer.RenderExtent Extent, int RequestSrid, int Width, int Height) Input) target,
+        CancellationToken cancellationToken)
+    {
+        var input = new OgcClassicRasterSupport.RasterMapRenderInput
+        {
+            StorageLayerId = target.Input.StorageLayerId,
+            Extent = target.Input.Extent,
+            RequestSrid = target.Input.RequestSrid,
+            Width = target.Input.Width,
+            Height = target.Input.Height
+        };
+        var rasterBytes = await OgcClassicRasterSupport.TryRenderRasterMapLayerAsync(
+            context, input, cancellationToken).ConfigureAwait(false);
+        if (rasterBytes is not { Length: > 0 })
+        {
+            return 0;
+        }
+
+        OgcClassicRasterSupport.DrawEncodedRaster(
+            target.Canvas, rasterBytes, new SKRect(0, 0, input.Width, input.Height));
+        return 1;
     }
 }

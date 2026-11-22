@@ -53,18 +53,18 @@ internal sealed partial class GdalRasterizeJobExecutor(
 
         if (!TryBuildBurnArgs(parameters, out var burnArgs, out var burnError))
         {
-            return JobExecutionResult.Failed($"Invalid rasterize inputs: {burnError}");
+            return JobExecutionResult.InvalidInput($"Invalid rasterize inputs: {burnError}");
         }
 
         if (!TryBuildGridArgs(parameters, opts, out var gridArgs, out var targetCellSize, out var gridError))
         {
-            return JobExecutionResult.Failed($"Invalid rasterize inputs: {gridError}");
+            return JobExecutionResult.InvalidInput($"Invalid rasterize inputs: {gridError}");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid rasterize inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid rasterize inputs: {sourceError}");
         }
 
         // Bound caller-controlled output resolution before gdal_rasterize derives the
@@ -77,12 +77,12 @@ internal sealed partial class GdalRasterizeJobExecutor(
                 if (!GdalOutputGridGuard.TryAdmitResolution(
                         envelope.Width, envelope.Height, cellSize, cellSize, opts, out var resolutionError))
                 {
-                    return JobExecutionResult.Failed($"Invalid rasterize inputs: {resolutionError}");
+                    return JobExecutionResult.InvalidInput($"Invalid rasterize inputs: {resolutionError}");
                 }
             }
             else if (!IsEmptyGeoJsonFeatureCollection(sourceBytes))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     "Invalid rasterize inputs: could not determine a finite GeoJSON extent to bound 'cellSize'; " +
                     "supply valid GeoJSON or specify explicit 'width' and 'height'.");
             }
@@ -106,7 +106,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
                 if (!double.TryParse(nodataRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var nodata)
                     || double.IsNaN(nodata) || double.IsInfinity(nodata))
                 {
-                    return JobExecutionResult.Failed(
+                    return JobExecutionResult.InvalidInput(
                         $"Invalid rasterize inputs: 'nodata' must be a finite number; got '{nodataRaw}'.");
                 }
                 var nodataLiteral = nodata.ToString("R", CultureInfo.InvariantCulture);

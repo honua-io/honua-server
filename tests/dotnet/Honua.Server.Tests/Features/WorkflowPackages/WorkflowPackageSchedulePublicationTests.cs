@@ -277,7 +277,7 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         };
         Assert.NotEqual(WorkflowPackageGraphHasher.Compute(parametersA), WorkflowPackageGraphHasher.Compute(parametersB));
 
-        WorkflowNode Node(string nodeId) => new()
+        static WorkflowNode Node(string nodeId) => new()
         {
             NodeId = nodeId,
             NodeTypeId = "process:geometry.area"

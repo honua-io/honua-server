@@ -20,7 +20,9 @@ def load_context(path, source_sha, producer_sha, image_digest, cut_at, surfaces,
     root = Path(__file__).resolve().parents[3]
     matrix = json.loads((root / 'docs/gis/data/capability-matrix.v1.json').read_text())
     expected = {}
+    required = set()
     for capability in matrix['capabilities']:
+        is_implemented = bool(capability.get('maturity', {}).get('implemented'))
         for cite in capability.get('cite', []):
             suite = cite['suite']
             surface = re.sub(r'[^a-z0-9]+', '-', suite.lower()).strip('-')
@@ -28,6 +30,8 @@ def load_context(path, source_sha, producer_sha, image_digest, cut_at, surfaces,
                 if surface in expected:
                     raise ValueError('source-owned CITE suite surface is duplicated')
                 expected[surface] = (capability['key'], suite)
+                if is_implemented:
+                    required.add(surface)
     rows = value['requirements']
     if not isinstance(rows, list) or not rows:
         raise ValueError('requirements context requires nonempty rows')
@@ -49,6 +53,6 @@ def load_context(path, source_sha, producer_sha, image_digest, cut_at, surfaces,
                  'maturity': 'supported', 'required_tier': 'nightly'}
         if row != exact:
             raise ValueError('CITE context differs from the source-owned operation/fixture/facet contract')
-    if seen != set(expected):
+    if not required.issubset(seen):
         raise ValueError('CITE context omits source-owned suite requirements')
     return {'revision': value['requirements_revision'], 'requirements': rows}

@@ -76,8 +76,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
-| `SecurityHeaders__EnableHsts` | — | Emit HSTS headers (recommended `true` in production). |
-| `SecurityHeaders__HstsMaxAge` | — | HSTS max-age in seconds (e.g. `31536000`). |
+| `SecurityHeaders__EnableHsts` | `true` (`false` in Development/Test) | Emit HSTS headers. |
+| `SecurityHeaders__HstsMaxAge` | `63072000` | HSTS max-age in seconds (2 years; minimum `86400` when HSTS is enabled). |
 | `Honua__SceneAccessSigning__SigningKey` | — | HMAC-SHA256 key for protected 3D Tiles scene access envelopes; required when any scene has an `AccessPolicy`. |
 | `Honua__SceneAccessSigning__TokenTtlMinutes` | `15` | Scene access token lifetime. |
 | `Honua__SceneAccessSigning__RefreshAfterFractionOfTtl` | `0.5` | Fraction of the TTL after which clients should refresh. |
@@ -171,7 +171,7 @@ These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../
 | `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
 | `Mcp__SessionMode` | `Auto` | Session mode on a host without a system database: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
 | `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids and MRTR `requestState` values. When unset, `ConnectionStrings__DefaultConnection` is used. |
-| `Mcp__ApprovalConsoleUrl` | — | Absolute `https` URL of the Console that approves agent changes (`http` only on loopback). When set, a modern MCP request that declares URL-mode elicitation is sent to `<url>/inbox?proposalId=<id>` for approval. When unset, agents report the proposal and people approve in Console as before. The quickstart with Console sets `https://localhost:${HONUA_CONSOLE_PORT}/console/`. |
+| `Mcp__ApprovalConsoleUrl` | — | Absolute `https` URL of the Console that approves agent changes (`http` only on loopback). When set, a modern MCP request that declares URL-mode elicitation is sent to `<url>/inbox?proposalId=<id>` for approval. When unset, agents report the proposal and people approve in Console as before. The quickstart with Console sets `https://localhost:${HONUA_CONSOLE_PORT}/console/` on the serving API and `https://127.0.0.1:${HONUA_MANAGER_CONSOLE_PORT}/console/` on `compose-manager`. |
 | `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
 
 With a system database, MCP session records are shared through the `mcp_sessions` table. A session negotiated on any instance is then honoured by every instance. Without one, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
@@ -198,7 +198,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | --- | --- | --- |
 | `Connections__ObjectStorage__QuickCreateTemplateUrl` | — | HTTPS CloudFormation template that creates the `honua-connection-*` role. The object storage setup endpoint returns a quick-create link only when this is set. |
 | `Connections__ObjectStorage__TrustedPrincipalArn` | — | Principal the role template trusts, passed to the template as `TrustedPrincipalArn`. |
-| `Connections__ObjectStorage__MaxOpenSetupsPerPrincipal` | `5` | Open (unused, unexpired) object storage setups one caller may hold. The installation-wide limit is 100. |
+| `Connections__ObjectStorage__MaxOpenSetupsPerPrincipal` | `5` | Open (unused, unexpired) object storage setups one caller may hold. A new setup past this limit replaces the caller's oldest one. The installation-wide limit is 100. |
 | `Connections__ObjectStorage__BuiltIn__Enabled` | `false` | Shows listed folders of the installation's own bucket as read-only built-in connections. |
 | `Connections__ObjectStorage__BuiltIn__DataPrefixes__N` | — | One folder under `FileStorage__AwsS3__KeyPrefix` per entry. Folders the server writes are refused. No entry means no data connection. |
 | `Connections__ObjectStorage__BuiltIn__PublicFiles` | `false` | Also shows the public PMTiles prefix as a built-in connection. |
@@ -412,12 +412,6 @@ first.
 `StudioAiProxy__MaxRequestBytes` (`1048576`) separately caps the HTTP body
 size, and oversized bodies get HTTP 413.
 
-## Related pages
-
-- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
-- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
-- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
 ### GeoParquet query memory budgets
 
 GeoServices `f=parquet` and OData `$format=parquet` share the configured
@@ -481,3 +475,9 @@ identity and ledger; switching from the retired cache backend requires an
 explicit migration plan for outstanding invocations and charged history.
 See [AI invocation admission](ai-execution-admission.md) for policy fields,
 typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
+
+## Related pages
+
+- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
+- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
+- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.

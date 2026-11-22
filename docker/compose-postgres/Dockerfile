@@ -29,6 +29,7 @@ RUN set -eux; \
     apt-get -y upgrade; \
     apt-get install -y --no-install-recommends \
       postgresql-17-postgis-3 postgresql-17-postgis-3-scripts postgresql-17-pgrouting; \
+    rm -f /etc/ssl/certs/ssl-cert-snakeoil.pem /etc/ssl/private/ssl-cert-snakeoil.key; \
     rm -rf /var/lib/apt/lists/*
 COPY --from=gosu /gosu /usr/local/bin/gosu
 COPY --chmod=0755 honua-postgres-entrypoint.sh honua-collation-refresh.sh /usr/local/bin/

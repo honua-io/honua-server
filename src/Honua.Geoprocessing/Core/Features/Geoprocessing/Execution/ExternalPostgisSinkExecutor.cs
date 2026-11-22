@@ -86,7 +86,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         var inputs = new StepInputReader(job.Spec.Parameters);
         if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
         // Open the input as a streamed feature sequence so a >50 MiB load lands via
@@ -97,7 +97,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
                 _options.CurrentValue.OutputRootDirectory, context))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
 
         string connectionString;
@@ -125,7 +125,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             var hasIdempotencyConstraint = inputs.TryGet("idempotencyConstraint", out var rawIdempotencyConstraint);
             if (hasIdempotencyColumn != hasIdempotencyConstraint)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid {HandledProcessId} inputs: idempotencyColumn and idempotencyConstraint must be supplied together.");
             }
 
@@ -138,7 +138,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
 
         using var jobScope = JobSecurityScope.Current is null && job.Audit?.SubmitterSecurityContext is not null

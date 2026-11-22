@@ -3449,7 +3449,34 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
             // whose target column was not published are dropped.
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
+            Temporal = ResolveTemporalForPublish(request.Temporal, fields),
+            AccessPolicy = request.AccessPolicy,
+            Extensions = request.Extensions is { Count: > 0 }
+                ? new Dictionary<string, JsonElement>(request.Extensions, StringComparer.Ordinal)
+                : new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             Status = LayerReadyStatus(request.Enabled, now)
+        };
+    }
+
+    private static MetadataV2ObjectTemporal? ResolveTemporalForPublish(
+        MetadataV2ObjectTemporal? requested, IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (requested is null)
+        {
+            return null;
+        }
+
+        var startField = string.IsNullOrWhiteSpace(requested.StartTimeField)
+            ? null
+            : ResolveTemporalColumnForPublish(requested.StartTimeField, fields);
+        var endField = string.IsNullOrWhiteSpace(requested.EndTimeField)
+            ? null
+            : ResolveTemporalColumnForPublish(requested.EndTimeField, fields);
+
+        return requested with
+        {
+            StartTimeField = startField,
+            EndTimeField = endField
         };
     }
 
@@ -3464,7 +3491,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var field = fields.FirstOrDefault(candidate =>
             candidate.Name.Equals(requested.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime))
+        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "TemporalColumn must reference a published date or date-time column.");

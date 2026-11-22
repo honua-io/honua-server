@@ -19,7 +19,7 @@ import { HonuaClient } from "@honua/sdk-js/honua";
 
 const client = new HonuaClient({ baseUrl: "http://localhost:8080", apiKey: API_KEY });
 
-const { features } = await client.queryFeatures({
+const { features = [] } = await client.queryFeatures({
   serviceId: "parcels",
   layerId: 0,
   where: "status = 'active'",
@@ -51,7 +51,7 @@ const dataset = createDataset({
 });
 
 const result = await dataset.source("parcels-fs")!.queryAll({
-  where: "STATUS = 'ACTIVE'",
+  where: "status = 'active'",
   outFields: ["OBJECTID", "NAME"],
   returnGeometry: true,
   pagination: { limit: 500 },
@@ -60,30 +60,34 @@ const result = await dataset.source("parcels-fs")!.queryAll({
 console.log(`Loaded ${result.features.length} features`);
 ```
 
-`HonuaFeatureLayer` (from the `honua` subpath) also offers `query`, `stream`, `queryCount`, and `queryObjectIds`. The query fields map onto the FeatureServer parameters in [Query features](../../guides/query-analyze/query-features.md).
+Field names match case-insensitively, but string values do not: `'active'` and `'ACTIVE'` select different rows.
+
+`HonuaFeatureLayer` (from the `honua` subpath) also offers `queryFeatures`, `queryFeaturesAll`, `queryFeaturesStream`, `queryFeatureCount`, and `queryObjectIds`. The query fields map onto the FeatureServer parameters in [Query features](../../guides/query-analyze/query-features.md).
 
 ## Run a STAC search
 
 Honua exposes a [STAC API](../../reference/protocols/stac.md) for spatiotemporal discovery. Use the dedicated STAC search helper:
 
 ```ts
-import { createHonuaStacSearch } from "@honua/sdk-js";
+import { HonuaClient, createHonuaStacSearch } from "@honua/sdk-js/honua";
 
-const stac = createHonuaStacSearch({ baseUrl: "http://localhost:8080" });
+const client = new HonuaClient({ baseUrl: "http://localhost:8080", apiKey: API_KEY });
+const stac = createHonuaStacSearch(client);
 
-const results = await stac.searchAll({
+const items = await stac.searchAll({
   collections: ["imagery"],
   bbox: [-122.5, 37.7, -122.3, 37.9],
   datetime: "2025-01-01T00:00:00Z/..",
-  limit: 10,
+  pageSize: 10,
+  maxPages: 1,
 });
 
-for (const item of results.features) {
+for (const item of items) {
   console.log(item.id, item.collection);
 }
 ```
 
-`searchAll` follows the catalog's paging links so you get every matching item. `collections`, `bbox`, and `datetime` correspond to the [STAC search parameters](../../reference/protocols/stac.md#search-parameters). You can also wire a STAC collection into the protocol-neutral contract with the `stacSearchSource()` factory from `@honua/sdk-js/contract`.
+`searchAll` follows the catalog's paging links and returns the items as one array; `pageSize` sets the items per request and `maxPages` caps the pages fetched (100 by default). `collections`, `bbox`, and `datetime` correspond to the [STAC search parameters](../../reference/protocols/stac.md#search-parameters). You can also wire a STAC collection into the protocol-neutral contract with the `stacSearchSource()` factory from `@honua/sdk-js/contract`.
 
 ## Migrate GeoServices REST JS code
 

@@ -83,21 +83,7 @@ public static partial class GeoParquetFeatureWriter
     internal const string ScratchFullClientMessage =
         "The server's temporary storage is full. Retry the GeoParquet request shortly.";
 
-    // ENOSPC and EDQUOT (Linux), ERROR_HANDLE_DISK_FULL and ERROR_DISK_FULL (Windows HRESULTs).
-    private static readonly int[] StorageFullErrorCodes = [28, 122, unchecked((int)0x80070027), unchecked((int)0x80070070)];
-
-    internal static bool IsStorageFull(Exception? exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is IOException && Array.IndexOf(StorageFullErrorCodes, current.HResult) >= 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    internal static bool IsStorageFull(Exception? exception) => PrivateTempFile.IsStorageFull(exception);
 
     // The encoder's spool: a private delete-on-close scratch file in production. It refuses
     // writes past the response budget and records when the scratch volume itself is full.

@@ -70,7 +70,7 @@ public sealed partial class ProposalEndpointsTests
         var store = _fixture.Services.GetRequiredService<IRlsPolicyStore>();
         var agentRole = $"agent-rls-{Guid.NewGuid():N}";
         var humanRole = $"human-rls-{Guid.NewGuid():N}";
-        object Policy(string role) => new
+        static object Policy(string role) => new
         {
             role,
             service = "*",

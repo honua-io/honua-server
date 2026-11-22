@@ -115,6 +115,8 @@ A cancellation acknowledgment may only mean the request was accepted. Follow the
 
 A successful recovery must retain a retrievable output and honest attempt lineage. If dependencies or the durable runner are unavailable, report that limitation; do not simulate recovery by recreating state in local temporary files.
 
+Over MCP, `honua_list_jobs` is in the `default`, `setup`, `configure` and `analyze` [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery); `honua_cancel_job` is only in `analyze`. An MCP caller cannot cancel a job that has not finished (queued, provisioning or running): `honua_cancel_job` is refused under the `operator.destructive.job` policy with no proposal to approve, and the job is not cancelled. Report it as not cancelled, and ask a person to cancel it outside MCP. A succeeded or failed job is also refused, and both refusals carry the error code `failed_precondition`: tell them apart by `error.kind` (`ApprovalRequired` or `PreconditionFailed`), or by `approvalRequired` and `policyRef`, which only the approval refusal carries. Cancelling an already cancelled job returns `cancellation_requested` and changes nothing, and an unknown job identifier returns `not_found`.
+
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 
 The [source contract](../../guides/query-analyze/run-geoprocessing.md) defines the executable surface.

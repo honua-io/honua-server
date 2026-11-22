@@ -56,18 +56,18 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         if (!GdalJobInputReader.TryGetInput(parameters, "provider", out var providerRaw) ||
             !Enum.TryParse<CloudStorageProvider>(providerRaw, ignoreCase: true, out var provider))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid coverage inputs: 'provider' must be one of Local, AwsS3, AzureBlob.");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "bucket", out var bucket) || string.IsNullOrWhiteSpace(bucket))
         {
-            return JobExecutionResult.Failed("Invalid coverage inputs: missing required input 'bucket'.");
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: missing required input 'bucket'.");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "objectKey", out var objectKey) || string.IsNullOrWhiteSpace(objectKey))
         {
-            return JobExecutionResult.Failed("Invalid coverage inputs: missing required input 'objectKey'.");
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: missing required input 'objectKey'.");
         }
 
         var opts = options.CurrentValue;
@@ -76,20 +76,20 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             || objectKey.Contains('\\')
             || !RasterDescriptorChecks.IsSafeObjectStoreKey(normalizedKey))
         {
-            return JobExecutionResult.Failed("Invalid coverage inputs: 'objectKey' failed safety validation.");
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'objectKey' failed safety validation.");
         }
 
         if (provider != CloudStorageProvider.Local)
         {
             if (!RasterDescriptorChecks.IsOpaqueReference(bucket))
             {
-                return JobExecutionResult.Failed("Invalid coverage inputs: 'bucket' failed safety validation.");
+                return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'bucket' failed safety validation.");
             }
 
             if (opts.AllowedCoverageBuckets.Count > 0
                 && !opts.AllowedCoverageBuckets.Contains(bucket, StringComparer.Ordinal))
             {
-                return JobExecutionResult.Failed("Invalid coverage inputs: 'bucket' is not in the configured AllowedCoverageBuckets allowlist.");
+                return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'bucket' is not in the configured AllowedCoverageBuckets allowlist.");
             }
         }
 

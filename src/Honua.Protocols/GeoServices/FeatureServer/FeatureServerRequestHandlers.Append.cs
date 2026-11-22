@@ -343,7 +343,12 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
+        if (fieldType == MetadataV2FieldType.Decimal)
+        {
+            return NormalizeDecimalMatchKey(value);
+        }
+
+        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.TimestampOffset)
         {
             return GeoServicesFieldConventions.TryConvertTemporalValue(value, fieldType, out var converted) &&
                 converted is not null
@@ -381,6 +386,49 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
+    // Exact decimals match by value whatever their scale (12.5 and 12.50 are one key), never through a
+    // floating-point conversion that could merge distinct values.
+    private static string? NormalizeDecimalMatchKey(object value)
+    {
+        // Numbers go through the exact formatter, which refuses values a decimal would round.
+        var text = value switch
+        {
+            string stored => stored,
+            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+            _ => ExactAttributeValues.FormatDecimalNumber(value)
+        };
+        if (TryParseExactDecimal(text) is not { } key)
+        {
+            return null;
+        }
+
+        var digits = key.ToString(CultureInfo.InvariantCulture);
+        return digits.Contains('.', StringComparison.Ordinal) ? digits.TrimEnd('0').TrimEnd('.') : digits;
+    }
+
+    private static decimal? TryParseExactDecimal(string? text)
+    {
+        if (text is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return ExactAttributeValues.ParseDecimal(text);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static Literal? CreateDecimalMatchLiteral(string key)
+        => decimal.TryParse(key, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+            CultureInfo.InvariantCulture, out var number)
+            ? new Literal(number, LiteralType.Number)
+            : null;
+
     private static bool TryCreateAppendMatchLiteral(MetadataV2FieldType type, string key, out Literal literal)
     {
         switch (type)
@@ -413,7 +461,10 @@ internal static partial class FeatureServerEndpoints
 
                 literal = new Literal(flag, LiteralType.Boolean);
                 return true;
-            case MetadataV2FieldType.DateTime:
+            case MetadataV2FieldType.Decimal:
+                literal = CreateDecimalMatchLiteral(key)!;
+                return literal is not null;
+            case MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset:
                 if (!long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epoch))
                 {
                     literal = null!;

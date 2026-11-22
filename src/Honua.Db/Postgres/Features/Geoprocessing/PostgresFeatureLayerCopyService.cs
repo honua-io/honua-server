@@ -102,8 +102,11 @@ internal sealed class PostgresFeatureLayerCopyService(
             insert.Parameters.Add("attributes", NpgsqlDbType.Jsonb);
             // Selection, permanent filters, RLS, field masking and geometry ordinates
             // remain owned by the canonical reader. No source table SQL is duplicated.
-            await foreach (var feature in source.StreamFeaturesAsync(sourceLayerId,
-                query with { IncludeZ = true, IncludeM = true, OutputSrid = srid }, cancellationToken).ConfigureAwait(false))
+            var copyQuery = query with { IncludeZ = true, IncludeM = true, OutputSrid = srid };
+            await foreach (var feature in UnsupportedWhereSelection.Explain(
+                source.StreamFeaturesAsync(sourceLayerId, copyQuery, cancellationToken),
+                copyQuery.SqlFilter is null ? query.Where : null,
+                cancellationToken).ConfigureAwait(false))
             {
                 var attributes = feature.Attributes.ToDictionary(kv => kv.Key,
                     kv => kv.Value is byte[] binary ? (object)("\\x" + Convert.ToHexString(binary)) : kv.Value);

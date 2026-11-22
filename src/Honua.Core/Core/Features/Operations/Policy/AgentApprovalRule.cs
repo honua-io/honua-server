@@ -32,6 +32,8 @@ public static class AgentApprovalRule
         "admin.connections.create",
         "admin.connections.update",
         "admin.connections.delete",
+        "admin.exports.create",
+        "admin.exports.delete",
         "admin.import.upload-object",
         "service.publish",
         "dataset.stage.import",

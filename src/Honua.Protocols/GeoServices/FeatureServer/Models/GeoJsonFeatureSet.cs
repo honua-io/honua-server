@@ -33,7 +33,7 @@ public sealed class GeoJsonGeometry
 {
     public required string Type { get; init; }
 
-    public required object? Coordinates { get; init; }
+    public object? Coordinates { get; init; }
 
     public GeoJsonGeometry[]? Geometries { get; init; }
 }

@@ -34,6 +34,22 @@ internal static partial class WmsRequestHandlers
         </xs:schema>
         """;
 
+    private static IResult? FindNonQueryableWmsLayerError(HttpContext context, WmsLayer[] queryLayers)
+    {
+        foreach (var queryLayer in queryLayers)
+        {
+            if (OgcClassicRasterSupport.IsRasterResource(queryLayer.Resource))
+            {
+                return CreateWmsServiceException(
+                    context,
+                    "LayerNotQueryable",
+                    $"Layer '{GetWmsLayerDisplayName(queryLayer)}' is not queryable.");
+            }
+        }
+
+        return null;
+    }
+
     private static async Task<IResult> HandleWmsGetFeatureInfo(
         HttpContext context,
         MetadataV2Service service,
@@ -152,6 +168,11 @@ internal static partial class WmsRequestHandlers
         if (queryLayers.Any(layer => !mapLayerStorageIds.Contains(layer.StorageLayerId)))
         {
             return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
+        }
+
+        if (FindNonQueryableWmsLayerError(context, queryLayers) is { } nonQueryableError)
+        {
+            return nonQueryableError;
         }
 
         if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))

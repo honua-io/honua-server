@@ -72,6 +72,7 @@ internal static class OperationsServiceCollectionExtensions
                  {
                      StudioDraftOperations.Create,
                      StudioDraftOperations.Update,
+                     StudioDraftOperations.RestoreRevision,
                      StudioDraftOperations.Delete,
                      StudioDraftOperations.Validate,
                      StudioDraftOperations.PreviewPlan,
@@ -146,6 +147,7 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
         services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
         services.TryAddDeferredOperationExecutor<StudioDraftUpdateExecutor>(StudioDraftOperations.Update);
+        services.TryAddDeferredOperationExecutor<StudioDraftRestoreRevisionExecutor>(StudioDraftOperations.RestoreRevision);
         services.TryAddDeferredOperationExecutor<StudioDraftDeleteExecutor>(StudioDraftOperations.Delete);
         services.TryAddDeferredOperationExecutor<StudioDraftValidateExecutor>(StudioDraftOperations.Validate);
         services.TryAddDeferredOperationExecutor<StudioDraftPreviewPlanExecutor>(StudioDraftOperations.PreviewPlan);

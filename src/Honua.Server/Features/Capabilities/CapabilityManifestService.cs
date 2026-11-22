@@ -10,6 +10,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -62,9 +63,9 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
-    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
+    IEnumerable<IH3CapabilityChecker> h3CapabilityCheckers,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
@@ -109,6 +110,9 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var h3Available = await ResolveH3AvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        var limits = BuildLimits(batchCapabilities);
+        limits = limits with { Analysis = limits.Analysis with { H3Available = h3Available } };
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
@@ -149,7 +153,7 @@ internal sealed class CapabilityManifestService(
             Packages = packages,
             Capabilities = capabilities,
             Transports = BuildTransports(),
-            Limits = BuildLimits(batchCapabilities),
+            Limits = limits,
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
@@ -1188,6 +1192,16 @@ internal sealed class CapabilityManifestService(
             }
         ];
 
+    // H3 aggregation needs h3_postgis in the primary database. Null means the probe could not answer:
+    // this store has no checker, or the database was unreachable (the H3 endpoints answer 503 meanwhile).
+    private async Task<bool?> ResolveH3AvailabilityAsync(CancellationToken cancellationToken)
+    {
+        var checker = h3CapabilityCheckers.FirstOrDefault();
+        return checker is null
+            ? null
+            : await checker.IsH3AvailableAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<BatchCapabilitySummary> ResolveBatchCapabilitiesAsync(CancellationToken cancellationToken)
     {
         var backends = runtimeInventory.BatchBackends;
@@ -1322,7 +1336,7 @@ internal sealed class CapabilityManifestService(
 
     private async Task<bool> HasRestorablePriorRevisionAsync(string targetId, CancellationToken cancellationToken)
     {
-        foreach (var store in workflowOperationStores)
+        foreach (var store in runtimeInventory.WorkflowOperationStores)
         {
             WorkflowOperationRecord? deploy;
             try

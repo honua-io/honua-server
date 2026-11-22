@@ -22,6 +22,7 @@ internal static class StudioDraftOperations
 {
     public const string Create = StudioDraftMutationContext.CreateOperationId;
     public const string Update = StudioDraftMutationContext.UpdateOperationId;
+    public const string RestoreRevision = StudioDraftMutationContext.RestoreRevisionOperationId;
     public const string Delete = StudioDraftMutationContext.DeleteOperationId;
     public const string Validate = StudioDraftMutationContext.ValidateOperationId;
     public const string PreviewPlan = StudioDraftMutationContext.PreviewPlanOperationId;
@@ -38,6 +39,7 @@ internal static class StudioDraftOperations
     [
         Build(Create, "Create Studio draft", OperationSideEffectClass.CreatesMetadata),
         Build(Update, "Update Studio draft", OperationSideEffectClass.MutatesMetadata),
+        Build(RestoreRevision, "Restore Studio draft revision", OperationSideEffectClass.MutatesMetadata),
         Build(Delete, "Delete Studio draft", OperationSideEffectClass.DestroysState),
         Build(
             Validate,
@@ -47,7 +49,7 @@ internal static class StudioDraftOperations
         Build(
             PreviewPlan,
             "Preview Studio draft plan",
-            OperationSideEffectClass.MutatesMetadata,
+            OperationSideEffectClass.ReadOnly,
             OperationDeterminism.RuntimeDynamic),
         Build(
             SaveVersion,
@@ -676,6 +678,17 @@ internal sealed class StudioDraftMutationRuntime(
             context,
             cancellationToken);
 
+    public Task<StudioDraftMutationReceipt<StudioPackageDraft>> RestoreRevisionAsync(
+        StudioDraftRevisionRestore restore,
+        StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.RestoreRevision,
+            new StudioDraftRestoreRevisionPayload { DraftId = restore.DraftId, Command = restore.Command },
+            StudioDraftOperationJsonContext.Default.StudioDraftRestoreRevisionPayload,
+            StudioDraftOperationJsonContext.Default.StudioPackageDraft,
+            context,
+            cancellationToken);
+
     public Task<StudioDraftMutationReceipt<bool>> DeleteAsync(
         Guid draftId,
         StudioDraftMutationContext context,
@@ -876,6 +889,7 @@ internal sealed class StudioDraftMutationRuntime(
         Guid? draftId = payload switch
         {
             StudioDraftUpdatePayload update => update.DraftId,
+            StudioDraftRestoreRevisionPayload restore => restore.DraftId,
             StudioDraftDeletePayload delete => delete.DraftId,
             _ => null,
         };
@@ -1043,6 +1057,10 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload)! with
             { TenantId = context.TenantId, SchemaName = context.SchemaName },
             StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload),
+        StudioDraftOperations.RestoreRevision => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftRestoreRevisionPayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioDraftRestoreRevisionPayload),
         StudioDraftOperations.Delete => JsonSerializer.Serialize(
             JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)! with
             { TenantId = context.TenantId, SchemaName = context.SchemaName },
@@ -1074,6 +1092,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
     {
         StudioDraftOperations.Create => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload)!),
         StudioDraftOperations.Update => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload)!),
+        StudioDraftOperations.RestoreRevision => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftRestoreRevisionPayload)!),
         StudioDraftOperations.Delete => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)!),
         StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload)!),
         StudioDraftOperations.SaveVersion => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload)!),
@@ -1085,6 +1104,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
 
     private static (string? TenantId, string? SchemaName) Read(StudioDraftCreatePayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftUpdatePayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioDraftRestoreRevisionPayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftDeletePayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftActorPayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioSaveVersionPayload payload) => (payload.TenantId, payload.SchemaName);
@@ -1098,6 +1118,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
         {
             StudioDraftOperations.Create => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload),
             StudioDraftOperations.Update => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload),
+            StudioDraftOperations.RestoreRevision => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftRestoreRevisionPayload),
             StudioDraftOperations.Delete => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload),
             StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload),
             StudioDraftOperations.SaveVersion => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload),
@@ -1118,6 +1139,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(StudioDraftCreatePayload))]
 [JsonSerializable(typeof(StudioDraftUpdatePayload))]
+[JsonSerializable(typeof(StudioDraftRestoreRevisionPayload))]
 [JsonSerializable(typeof(StudioDraftDeletePayload))]
 [JsonSerializable(typeof(StudioDraftActorPayload))]
 [JsonSerializable(typeof(StudioSaveVersionPayload))]
