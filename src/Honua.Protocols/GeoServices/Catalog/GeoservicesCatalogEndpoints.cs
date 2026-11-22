@@ -505,6 +505,7 @@ internal static class GeoservicesCatalogEndpoints
                 case "GetFolders":
                     var directory = await BuildServiceDirectoryProjectionAsync(context, graphProvider,
                         rasterStore, licenseStatusProvider, logger).ConfigureAwait(false);
+                    ThrowIfSoapAccessDenied(directory);
                     payload = new XElement(
                         "FolderNames",
                         new XAttribute(xsi + "type", "tns:ArrayOfString"),
@@ -556,6 +557,7 @@ internal static class GeoservicesCatalogEndpoints
         }
         catch (SoapCatalogAccessException exception)
         {
+            AppendChallengeIfUnauthorized(context, exception.StatusCode);
             return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                 exception.StatusCode == StatusCodes.Status401Unauthorized
                     ? "Authentication is required to discover these services."
@@ -636,10 +638,7 @@ internal static class GeoservicesCatalogEndpoints
             throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
         }
 
-        if (projection.AccessError is not null)
-        {
-            throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
-        }
+        ThrowIfSoapAccessDenied(projection);
 
         // Preserve the established ImageServer-first record when one service name
         // publishes several protocol types; protocol-wide discovery adds siblings
@@ -755,23 +754,21 @@ internal static class GeoservicesCatalogEndpoints
                 }
             }
 
-            var advertiseLayerlessGp = false;
-            if (visibleResources.Count == 0
-                && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal))
-            {
-                advertiseLayerlessGp = await AccessPolicyHelpers.RequireServiceAccessAsync(
-                    context,
-                    service,
-                    AuthorizationOperation.Query,
-                    cancellationToken).ConfigureAwait(false) is null;
-            }
-            if (visibleResources.Count == 0 && !advertiseLayerlessGp)
-            {
-                continue;
-            }
-
             if (visibleResources.Count == 0)
             {
+                var gpDecision = directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal)
+                    ? await EvaluateLayerlessGpServerAsync(context, service, cancellationToken).ConfigureAwait(false)
+                    : null;
+                if (gpDecision is { IsAllowed: false } denied)
+                {
+                    deniedDecisions.Add(denied);
+                }
+
+                if (gpDecision is not { IsAllowed: true })
+                {
+                    continue;
+                }
+
                 directoryTypes = [GPServerProtocolName];
             }
 
@@ -990,6 +987,7 @@ internal static class GeoservicesCatalogEndpoints
             logger).ConfigureAwait(false);
         if (projection.AccessError is not null)
         {
+            AppendChallengeIfUnauthorized(context, projection.AccessStatusCode);
             return projection.AccessError;
         }
 
@@ -1050,7 +1048,11 @@ internal static class GeoservicesCatalogEndpoints
                     var serviceProjection = await BuildServiceDirectoryProjectionAsync(
                         context, graphProvider, rasterStore, licenseStatusProvider, logger,
                         snapshot, serviceName: logicalNames.Single()).ConfigureAwait(false);
-                    if (serviceProjection.AccessError is not null) return serviceProjection.AccessError;
+                    if (serviceProjection.AccessError is not null)
+                    {
+                        AppendChallengeIfUnauthorized(context, serviceProjection.AccessStatusCode);
+                        return serviceProjection.AccessError;
+                    }
                 }
                 return StandardErrorHelpers.CreateNotFound(context, "Folder or service was not found.");
             }
@@ -1127,6 +1129,40 @@ internal static class GeoservicesCatalogEndpoints
         return Uri.TryCreate(baseUrl, UriKind.Absolute, out var absolute)
             ? string.Equals(absolute.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             : context.Request.IsHttps;
+    }
+
+    // A GPServer with no layer is listed only when its route would admit the caller, so the
+    // check uses the same Query operation as the GPServer service gate. A service outside the
+    // request tenant returns null and is skipped, so an otherwise empty directory stays a 200.
+    private static async Task<AccessDecision?> EvaluateLayerlessGpServerAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        CancellationToken cancellationToken)
+    {
+        if (!MetadataV2TenantVisibility.IsVisibleToTenant(service, TenantScopeHelpers.ResolveRequestTenantId(context)))
+        {
+            return null;
+        }
+
+        return await AccessPolicyHelpers.EvaluateServiceQueryAccessAsync(
+            context, service, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ThrowIfSoapAccessDenied(ServiceDirectoryProjection projection)
+    {
+        if (projection.AccessError is not null)
+        {
+            throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
+        }
+    }
+
+    // The challenge is written only where the access error is actually returned.
+    private static void AppendChallengeIfUnauthorized(HttpContext context, int? statusCode)
+    {
+        if (statusCode == StatusCodes.Status401Unauthorized)
+        {
+            AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        }
     }
 
     private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)

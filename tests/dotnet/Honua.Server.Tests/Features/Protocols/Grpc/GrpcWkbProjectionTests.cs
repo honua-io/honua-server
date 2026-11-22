@@ -196,6 +196,21 @@ public sealed class GrpcWkbProjectionTests
             .Select(field => field.Name).Should().Equal("Name");
     }
 
+    [UnitTest]
+    public void ToProtoFeature_OgcWkbWithMaxAllowableOffset_SimplifiesInTheLayerSrid()
+    {
+        // ST_AsBinary returns OGC WKB, which carries no SRID; a 20-vertex line that wiggles by about 10 m.
+        var line = _wktReader.Read("LINESTRING (" + string.Join(", ",
+            Enumerable.Range(0, 20).Select(static i => FormattableString.Invariant($"{i * 0.001} {(i % 2) * 0.0001}"))) + ")");
+        var feature = Feature.Create(1, new WKBWriter().Write(line), ImmutableDictionary<string, object?>.Empty);
+        var request = new Proto.QueryFeaturesRequest { MaxAllowableOffset = 100 };
+
+        var limits = GrpcConversionHelpers.CreateEffectiveGeometryLimits(new GeometryLimits(), request, geometrySrid: 4326);
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, geometryLimits: limits);
+
+        proto.Geometry.Polyline.Paths.Single().Coords.Should().HaveCount(2);
+    }
+
     private static IEnumerable<byte[]> Encodings(string wkt)
     {
         var geometry = _wktReader.Read(wkt);

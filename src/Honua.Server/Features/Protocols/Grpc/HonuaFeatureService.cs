@@ -962,7 +962,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         return new QueryContext(
             projected,
             responseSpatialReference,
-            GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
+            GrpcConversionHelpers.CreateEffectiveGeometryLimits(
+                _geometryLimits, request, outputSrid ?? layer.SpatialReference.ToSrid()),
             request.ReturnGeometry)
         {
             GlobalIdField = globalIdField,
