@@ -12,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Realtime;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 
@@ -89,6 +90,13 @@ internal static partial class ObservationStreamEndpoints
                 "WebSocket upgrade or Accept: text/event-stream header required.");
         }
 
+        using var realtime = RealtimeStreamAdmission.TryOpen(context, RealtimeFamily.Observations,
+            isWebSocket ? RealtimeStreamAdmission.WebSocketTransport : RealtimeStreamAdmission.SseTransport);
+        if (realtime is null)
+        {
+            return RealtimeStreamAdmission.Draining(context);
+        }
+
         // Admit before the WebSocket upgrade or SSE headers so a refused caller receives a
         // problem document, not an opened stream. Admission is keyed by the canonical actor
         // within the resolved tenant, so one credential cannot exhaust the node.
@@ -107,6 +115,7 @@ internal static partial class ObservationStreamEndpoints
         }
 
         await using var sessionLease = session;
+        session.Lifecycle = realtime;
         if (isWebSocket)
         {
             await HandleWebSocketAsync(context, session, datastreamId).ConfigureAwait(false);
@@ -188,11 +197,15 @@ internal static partial class ObservationStreamEndpoints
 
             while (!ct.IsCancellationRequested)
             {
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct, session.DrainingToken);
                 var readTask = session.Reader.WaitToReadAsync(readCts.Token).AsTask();
                 var timeoutTask = Task.Delay(HeartbeatInterval, readCts.Token);
                 var completed = await Task.WhenAny(readTask, timeoutTask).ConfigureAwait(false);
                 readCts.Cancel();
+                if (session.DrainingToken.IsCancellationRequested)
+                {
+                    break; // Between frames: the retry frame follows the loop.
+                }
 
                 if (completed == timeoutTask)
                 {
@@ -215,7 +228,7 @@ internal static partial class ObservationStreamEndpoints
                         string.Concat(message.Cursor is null ? "" : "id: " + message.Cursor + "\n",
                             "event: ", message.Event, "\ndata: ", message.Json, "\n\n"), ct).ConfigureAwait(false);
                     await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
-                    if (frame is RealtimeDelivery.Reset) return;
+                    if (RecordDeliveredFrame(session, frame)) return;
                 }
 
                 await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
@@ -242,6 +255,45 @@ internal static partial class ObservationStreamEndpoints
         if (!clientGone)
         {
             await WriteSlowConsumerGapAsync(context, session, datastreamId, socket: null).ConfigureAwait(false);
+            await WriteSseServiceRestartAsync(context, session).ConfigureAwait(false);
+        }
+    }
+
+    // The drain signal ends delivery; tell the client when to reconnect, normally to another task.
+    // Meters a written frame on the shared lifecycle session; true when the frame ends the stream.
+    private static bool RecordDeliveredFrame(ObservationStreamSession session, RealtimeDelivery frame)
+    {
+        switch (frame)
+        {
+            case RealtimeDelivery.Event item:
+                session.Lifecycle?.RecordDelivery(item.Value.CreatedAt);
+                return false;
+            case RealtimeDelivery.Reset reset:
+                session.Lifecycle?.RecordReset(reset.Reason);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static async Task WriteSseServiceRestartAsync(HttpContext context, ObservationStreamSession session)
+    {
+        if (session.Lifecycle is not { } realtime || !realtime.DrainingToken.IsCancellationRequested
+            || context.RequestAborted.IsCancellationRequested
+            || session.DisconnectReason == ObservationStreamDisconnectReason.SlowConsumer)
+        {
+            return;
+        }
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        budget.CancelAfter(TransportWriteBudget);
+        try
+        {
+            await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, realtime, budget.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // The client left, or a stalled write is left to the lifecycle deadline abort.
         }
     }
 
@@ -251,8 +303,13 @@ internal static partial class ObservationStreamEndpoints
         long? datastreamId,
         WebSocket? socket)
     {
-        if (session.DisconnectReason != ObservationStreamDisconnectReason.SlowConsumer
-            || context.RequestAborted.IsCancellationRequested)
+        if (session.DisconnectReason != ObservationStreamDisconnectReason.SlowConsumer)
+        {
+            return;
+        }
+
+        session.Lifecycle?.RecordReset(RealtimeResetReasons.SlowConsumer);
+        if (context.RequestAborted.IsCancellationRequested)
         {
             return;
         }

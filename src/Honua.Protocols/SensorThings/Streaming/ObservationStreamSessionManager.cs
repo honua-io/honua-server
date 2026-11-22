@@ -351,5 +351,11 @@ internal sealed class ObservationStreamSession : IAsyncDisposable
 
     public ObservationStreamDisconnectReason DisconnectReason => _state.Reason;
 
+    // The shared realtime lifecycle registration; null until attached.
+    public IRealtimeStreamSession? Lifecycle { get; set; }
+
+    // Cancelled when task shutdown asks this session to end with a reconnect hint.
+    public CancellationToken DrainingToken => Lifecycle?.DrainingToken ?? CancellationToken.None;
+
     public ValueTask DisposeAsync() => _manager.RemoveSessionAsync(SessionId);
 }
