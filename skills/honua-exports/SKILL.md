@@ -18,4 +18,4 @@ Read the install `AGENTS.md`. Use a human-provisioned agent credential through t
 
 Common failures: HTTP 401 or 403 means missing credentials or export authority — stop and report it. A populated `notPublicReason` with no `publicUrl` means `FileStorage:PublicData` is off or the Layer failed the anonymous-safety gate (multi-tenancy, non-anonymous access, row filter, hidden field, or field mask) — report the exact `notPublicReason` instead of claiming public URLs exist or relaxing Layer access on your own.
 
-Reference: [Export concept](../../docs/concepts/domain/export.md) and [Share parcels as files](../../docs/guides/publish/export-as-files.md).
+Reference: [Export concept](https://honua.io/docs/concepts/domain/export/) and [Share parcels as files](https://honua.io/docs/guides/publish/export-as-files/).
