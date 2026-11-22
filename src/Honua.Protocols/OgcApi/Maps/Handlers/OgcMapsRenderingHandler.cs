@@ -92,9 +92,9 @@ internal sealed class OgcMapsRenderingHandler
 
             var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
                 (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
-            if (requestError is not null)
+            if (renderRequest is null)
             {
-                return requestError;
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -451,9 +451,9 @@ internal sealed class OgcMapsRenderingHandler
 
             var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
                 (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
-            if (requestError is not null)
+            if (renderRequest is null)
             {
-                return requestError;
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
