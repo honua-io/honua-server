@@ -839,14 +839,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
-passing job duration, rounded half-to-even to 0.1 minute, over the nine full trunk
-runs that started server test children, counting a sample only when its filter
-and project selection match the current definition (gate-model.md, "Measured
-ranks"). Full run 44013566836 passed all 225 children and gives every current
-definition at least one matching measurement, so no split-child estimate
-remains. Ranks sum to 1,522.3 runner-minutes, previously 1,581.4; 203 children
-fit the unchanged 10-minute PR shard budget, previously 196. These are
+Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the 26 "CI full"
+trunk runs completed after the previous record that supplied samples, counting a sample
+only when its filter and project selection match the current definition
+(gate-model.md, "Measured ranks"). Scheduled run 44819335862 passed all 225
+children; every split child has 20 to 26 matching samples, so no
+split-child estimate remains. Following that measurement, 11 over-split parents
+(33 children whose combined `Run server test shard` step times on full run
+44921455496 totaled 1.20–3.30 minutes) were re-packed back into 11 single jobs
+(225 → 203 shards, saving 22 runner setups; 192 measured ranks plus 11 conservative
+estimates of 3.7–5.8 minutes; scheduling rank sum 827.1 runner-minutes, previously
+877.5; all 203 shards fit the unchanged 10-minute PR shard budget). These are
 scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.
@@ -993,8 +997,9 @@ them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
 
 PR Gate heavy shard routing also requires current-instance, fresh version-1 heavy
-pool availability, independently of the two-producer idle threshold. The existing
-even/odd split and required dependencies remain. Missing or invalid additive
+pool availability, independently of the two-producer idle threshold. Only entries
+the selector marked `heavy` take the pool (the longest shard of each producer lane
+stays hosted); required dependencies remain. Missing or invalid additive
 heartbeat proof selects hosted runners; deployment is MAIN-owned.
 
 ### Managed producer memory budget
@@ -2136,4 +2141,41 @@ These cases run in Server Features Streaming Endpoints 1, 2 and 4, Server Featur
 Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
 unchanged, so every case runs in the same shards on selected PR runs and
 twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
+
+### Isolated test host boot and teardown overhead
+
+Three changes cut per-host boot and teardown cost across all isolated `WebAppFixture`
+integration suites without reducing any assertion:
+- `ResourceLeakDetector` (#9097): when `_trackedResources` is empty, `ScanForLeaksAsync`
+  returns the same empty `ResourceLeakScanResult` immediately instead of running two
+  forced blocking gen-2 collections and `GC.WaitForPendingFinalizers()` on every
+  Test/Development host stop. Scans with tracked resources are unchanged.
+- `PostgresFixture` (#9110): `GlobalSharedState` retains its shared data source and
+  migrated pool across a 30-second idle grace (`ReleaseIdleNowAsync` plus `ProcessExit`
+  hook) instead of tearing down and re-running extensions/migrations between sequential
+  isolated cases. Private `PostgresSharedState` instances keep `TimeSpan.Zero`.
+- Request Delegate Generator (#9123): enabled `EnableRequestDelegateGenerator` on
+  `Honua.Server` and the 11 endpoint Web SDK libraries so Minimal API delegates are
+  source-generated at compile time rather than JIT-compiled on each isolated host boot.
+- `McpSessionManager.StopAsync`: made idempotent under concurrent host stops exposed by
+  faster teardown.
+
+Measured on the build host (Release, 3 interleaved base/head rounds of the
+`Server Features Capabilities` shard filter, 100/100 passing on all 6 runs):
+- Shard wall time: base 524.8 / 477.5 / 370.2 s (median 477.5 s, 7.96 min) to
+  head 74.8 / 67.6 / 56.1 s (median 67.6 s, 1.13 min); median saving 6.83 min
+  (5.24 min on the lowest-load pair).
+- Per-class median TRX case time (total 1039.0 to 178.3 s):
+  `CapabilityManifestEndpointTests` (40) 411.8 to 45.2 s;
+  `ExperimentalCapabilityGatingIntegrationTests` (34) 263.8 to 35.2 s;
+  `DeploymentCapabilityProfileIntegrationTests` (11) 151.8 to 36.6 s;
+  `CapabilityManifestEndpointTests+RollbackTargets` (5) 111.9 to 31.1 s;
+  `DeploymentCapabilityProfileManifestTests` (4) 80.8 to 28.4 s;
+  `CapabilityManifestEndpointTests+ProductionJobSubstrate` (1) 9.7 to 1.0 s;
+  `CapabilityGateEndpointFilterTests` (3) 0.2 to 0.3 s;
+  `CapabilityGateOpenApiDocumentTransformerTests` (2) 0.4 to 0.3 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR runs
+and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.

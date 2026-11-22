@@ -138,6 +138,11 @@ geometry and deployment limits before retrying. `GET /api/v1/admin/import/limits
 reports the effective bounds as `maxVertices`, `maxRings`, and `maxWkbSize`,
 alongside the file limits.
 
+A single GeoJSON feature object is also limited to 64 MiB while it streams
+(`maxSingleFeatureBytes` in the same response, set with
+`Import__Limits__MaxSingleFeatureBytes`). A larger feature is rejected rather
+than buffered; split the input or raise the limit.
+
 ## Source fields
 
 GeoJSON source attributes named `created_at` (case insensitive) are rejected

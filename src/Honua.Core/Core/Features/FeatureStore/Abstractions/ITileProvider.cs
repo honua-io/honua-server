@@ -30,3 +30,10 @@ public interface ITileProvider
         TileLimits tileLimits,
         CancellationToken cancellationToken = default);
 }
+
+public interface IPooledTileProvider
+{
+    Task<Honua.Core.Features.Tiles.PooledTileData?> GetMvtTilePooledAsync(
+        Honua.Core.Features.Tiles.MvtTileRequest request,
+        CancellationToken cancellationToken = default);
+}

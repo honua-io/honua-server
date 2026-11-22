@@ -117,8 +117,9 @@ class Target:
 class RunHistory:
     """Filtered, fully paged ci.yml run listings on the target branch."""
 
-    def __init__(self, fetch: Callable[[str], dict], target: Target) -> None:
-        self.listing = gh_api.Listing(fetch, DispatchError)
+    def __init__(self, fetch: Callable[[str], dict], target: Target,
+                 retry_delays: tuple[int, ...] = gh_api.LISTING_RETRY_DELAYS) -> None:
+        self.listing = gh_api.Listing(fetch, DispatchError, retry_delays=retry_delays)
         self.target = target
 
     def runs(self, **filters: str) -> list[dict]:
@@ -155,7 +156,7 @@ def gh_json_once(path: str) -> dict:
 
 def wait_for_new_run(target: Target, known: set) -> dict | None:
     """Wait for the run to appear so the next serialized dispatcher sees it as active."""
-    history = RunHistory(gh_json_once, target)
+    history = RunHistory(gh_json_once, target, retry_delays=())
     for _ in range(36):
         time.sleep(5)
         try:

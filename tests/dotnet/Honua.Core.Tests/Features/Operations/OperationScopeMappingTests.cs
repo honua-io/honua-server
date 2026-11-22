@@ -72,6 +72,7 @@ public sealed class OperationScopeMappingTests
     [Theory]
     [InlineData("studio.draft.create", OperatorOperation.Create)]
     [InlineData("studio.draft.update", OperatorOperation.Update)]
+    [InlineData("studio.draft.restore-revision", OperatorOperation.Update)]
     [InlineData("studio.draft.save-version", OperatorOperation.Update)]
     [InlineData("studio.draft.delete", OperatorOperation.Delete)]
     [InlineData("studio.draft.validate", OperatorOperation.Read)]

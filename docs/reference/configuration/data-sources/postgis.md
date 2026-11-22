@@ -55,12 +55,30 @@ PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested conf
 | `postgis` | Yes | Spatial operations, geometry types, spatial indexing. |
 | `postgis_raster` | For raster features | Raster data storage and analysis. |
 | `unaccent` | Yes | Accent-insensitive text search normalization. |
+| `h3`, `h3_postgis` | For H3 aggregation | H3 cell aggregation (`/ogc/features/collections/{collectionId}/h3`, FeatureServer `queryH3`). |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_raster;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 ```
+
+H3 aggregation is optional. Without the h3-pg extensions the H3 endpoints answer
+`501`, and `limits.analysis.h3Available` in `GET /api/v1/capabilities/manifest`
+is `false`, so a client can check before calling. The bundled quickstart
+Postgres image does not include h3-pg. To enable H3, install the h3-pg package
+on the database host and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS h3_postgis CASCADE;
+```
+
+Once Honua has read the extension list it keeps the answer for the life of
+the process, so restart the server after you add the extensions. If the
+database cannot be reached, Honua asks again after 60 seconds, and until then
+the H3 endpoints answer `503` and the manifest omits `h3Available`. H3 aggregation is not available yet on source-backed PostGIS layers
+(layers read from a connected database rather than the Honua database); those
+answer `501` whether or not the extension is installed.
 
 Honua never creates `postgis_raster` from application startup. When the
 extension is absent, the canonical migration runner leaves the optional raster

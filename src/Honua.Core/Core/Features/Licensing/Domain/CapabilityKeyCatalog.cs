@@ -28,7 +28,7 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedExperimentalKeys { get; } =
     [
         new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
-            HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
+            HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers. Off by default: the routes return HTTP 404 until Capabilities:Experimental:serve.i3s-scene:Enabled=true; once enabled, unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
     ];
 
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
@@ -114,11 +114,11 @@ public static class CapabilityKeyCatalog
         new("serve.vector-tiles", "Vector Tiles (MVT/TileJSON/PMTiles)", Categories.Serve,
             HonuaEdition.Community, "Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives."),
         new("serve.sensorthings", "OGC SensorThings API", Categories.Serve,
-            HonuaEdition.Community, "Query sensor observation data through OGC SensorThings API v1.1."),
+            HonuaEdition.Community, "Query sensor observation data through OGC SensorThings API v1.1.", Status: PreviewStatus),
         new("serve.stac", "STAC API", Categories.Serve,
             HonuaEdition.Community, "Search and browse spatiotemporal asset catalogs through the STAC API."),
         new("serve.3d-tiles-scene", "3D Tiles Scene Serving", Categories.Serve,
-            HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."),
+            HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately.", Status: ExperimentalStatus),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
         new("serve.grpc", "gRPC (geospatial.v1)", Categories.Serve,
@@ -188,7 +188,7 @@ public static class CapabilityKeyCatalog
 
         // Scene
         new("scene.catalog", "Scene Catalog", FeatureCatalog.Categories.Scene,
-            HonuaEdition.Community, "Discover published 3D scene layers through the scene catalog surface."),
+            HonuaEdition.Community, "Discover published 3D scene layers through the scene catalog surface.", Status: ExperimentalStatus),
 
         // Raster
         new("raster.terrain-rgb", "Terrain-RGB Tiles", FeatureCatalog.Categories.Raster,
@@ -248,11 +248,16 @@ public static class CapabilityKeyCatalog
     ];
 
     // Release maturity by category: streaming is Experimental; alerts and channels are Preview.
+    // Scene ingest, mTLS and branch versioning are Experimental registry capabilities gated off by default.
     private static string? StatusOf(FeatureDefinition feature)
         => feature.Category switch
         {
             FeatureCatalog.Categories.Streaming => ExperimentalStatus,
             FeatureCatalog.Categories.Alerts or FeatureCatalog.Categories.Channels => PreviewStatus,
+            _ when feature.Key is FeatureCatalog.SceneBimIngestKey
+                or FeatureCatalog.ScenePointCloudIngestKey
+                or FeatureCatalog.MtlsClientCertificateKey
+                or FeatureCatalog.BranchVersioningKey => ExperimentalStatus,
             _ => null,
         };
 

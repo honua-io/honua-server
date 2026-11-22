@@ -323,6 +323,47 @@ public sealed class RealtimeNotificationEndpointsTests
         RealtimeFamily.Catalog, sequence, environment, "catalog.changed",
         JsonElement.Parse("{\"etag\":\"after\",\"previousEtag\":\"before\"}"), DateTimeOffset.UtcNow);
 
+    [UnitTest]
+    public async Task Stream_WhileDraining_RefusesWithRetryAfterBeforeSubscribing()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var lifecycle = Substitute.For<IRealtimeStreamLifecycle>();
+        lifecycle.TryOpen(Arg.Any<RealtimeStreamRegistration>()).Returns((IRealtimeStreamSession?)null);
+        var context = CreateContext("");
+        context.RequestServices = new ServiceCollection().AddSingleton(lifecycle).BuildServiceProvider();
+
+        await RealtimeNotificationEndpoints.StreamAsync(context, provider,
+            new RealtimeNotificationEndpoints.StreamRequest(RealtimeFamily.Jobs, [], 0, (_, _) => Task.FromResult(true)));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Equal("2", context.Response.Headers.RetryAfter.ToString());
+        provider.DidNotReceive().Subscribe(Arg.Any<RealtimeSubscriptionRequest>());
+    }
+
+    [UnitTest]
+    public async Task Stream_DrainSignal_EndsWithRetryFrame()
+    {
+        using var draining = new CancellationTokenSource();
+        var session = Substitute.For<IRealtimeStreamSession>();
+        session.DrainingToken.Returns(draining.Token);
+        session.RetryMilliseconds.Returns(2345);
+        var lifecycle = Substitute.For<IRealtimeStreamLifecycle>();
+        lifecycle.TryOpen(Arg.Is<RealtimeStreamRegistration>(r => r.Family == RealtimeFamily.Jobs && r.Transport == "sse"))
+            .Returns(session);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(_ => draining.Cancel()))
+            .Returns(Substitute.For<IRealtimeSubscription>());
+        var context = CreateContext("");
+        context.RequestServices = new ServiceCollection().AddSingleton(lifecycle).BuildServiceProvider();
+
+        await RealtimeNotificationEndpoints.StreamAsync(context, provider,
+            new RealtimeNotificationEndpoints.StreamRequest(RealtimeFamily.Jobs, [], 0, (_, _) => Task.FromResult(true)))
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.EndsWith("retry: 2345\n\n", Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray()));
+        session.Received(1).Dispose();
+    }
+
     private static DefaultHttpContext CreateContext(string query)
     {
         var context = new DefaultHttpContext

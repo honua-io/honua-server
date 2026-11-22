@@ -147,6 +147,10 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     [JsonPropertyName("temporalResolution")]
     public string? TemporalResolution { get; init; }
 
+    [JsonPropertyName("customFields")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, JsonElement>? CustomFields { get; init; }
+
     private static readonly IReadOnlyDictionary<string, string> EmptyStringMap =
         new Dictionary<string, string>();
 }

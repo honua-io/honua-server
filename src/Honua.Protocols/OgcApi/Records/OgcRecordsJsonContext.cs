@@ -27,6 +27,10 @@ namespace Honua.Protocols.Ogc.Api.Records;
 [JsonSerializable(typeof(ImmutableArray<double>))]
 [JsonSerializable(typeof(ImmutableArray<OgcRecordCollection>))]
 [JsonSerializable(typeof(ImmutableArray<OgcRecordFeature>))]
+[JsonSerializable(typeof(OgcRecordFacetBucket))]
+[JsonSerializable(typeof(ImmutableArray<OgcRecordFacetBucket>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, ImmutableArray<OgcRecordFacetBucket>>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, JsonElement>))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class OgcRecordsJsonContext : JsonSerializerContext
 {

@@ -5,6 +5,7 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Realtime;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
@@ -30,6 +31,7 @@ internal static partial class ObservationStreamEndpoints
             else if (socket.State == WebSocketState.Open)
             {
                 await WriteSlowConsumerGapAsync(context, session, datastreamId, socket).ConfigureAwait(false);
+                await CloseForServiceRestartAsync(context, socket, session).ConfigureAwait(false);
             }
         }
         finally
@@ -127,6 +129,28 @@ internal static partial class ObservationStreamEndpoints
         }
     }
 
+    // The drain signal ends delivery; 1012 tells the client to reconnect, normally to another task.
+    private static async Task CloseForServiceRestartAsync(HttpContext context, WebSocket socket, ObservationStreamSession session)
+    {
+        if (socket.State != WebSocketState.Open || !session.DrainingToken.IsCancellationRequested
+            || session.DisconnectReason == ObservationStreamDisconnectReason.SlowConsumer)
+        {
+            return;
+        }
+
+        using var closeCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        closeCts.CancelAfter(TransportWriteBudget);
+        try
+        {
+            await socket.CloseOutputAsync(RealtimeStreamAdmission.ServiceRestart,
+                RealtimeStreamAdmission.ServiceRestartDescription, closeCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or WebSocketException)
+        {
+            AbortTransport(context, socket);
+        }
+    }
+
     private static async Task AcknowledgeCloseAsync(HttpContext context, WebSocket socket)
     {
         using var closeCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -180,15 +204,16 @@ internal static partial class ObservationStreamEndpoints
             {
                 var message = FormatDelivery(frame);
                 await SendSocketAsync(socket, message.Json, writeToken).ConfigureAwait(false);
-                if (frame is RealtimeDelivery.Reset) return;
+                if (RecordDeliveredFrame(session, frame)) return;
             }
         }
     }
 
     private sealed class WebSocketDeliveryCancellation(HttpContext context, ObservationStreamSession session) : IDisposable
     {
+        // The drain signal stops delivery only; an in-flight write finishes before the 1012 close.
         internal CancellationTokenSource Delivery { get; } = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, session.DisconnectToken);
+            context.RequestAborted, session.DisconnectToken, session.DrainingToken);
         internal CancellationTokenSource Write { get; } = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
         internal CancellationTokenSource Receive { get; } = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);

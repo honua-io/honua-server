@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -169,6 +170,95 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    [IntegrationTest]
+    public async Task ListAsync_AfterEditByActor_PagesNewestFirstWithThatActor()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ListAsync_AfterEditByActor_PagesNewestFirstWithThatActor));
+        try
+        {
+            var store = await SaveEditsAsAliceThenBobAsync(schema);
+
+            var page = await store.ListAsync(new MetadataFieldHistoryQuery { ItemKind = "dataset", ItemId = "survey", Limit = 1 });
+
+            page.Items.Should().ContainSingle().Which.Actor.Should().Be("human:bob@example.org");
+            page.HasMore.Should().BeTrue();
+            page.NextBeforeId.Should().Be(page.Items[0].Id);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ListAsync_WithFieldPrefix_ReturnsOnlyThatCustomField()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ListAsync_WithFieldPrefix_ReturnsOnlyThatCustomField));
+        try
+        {
+            var store = await SaveEditsAsAliceThenBobAsync(schema);
+
+            var customOnly = await store.ListAsync(new MetadataFieldHistoryQuery
+            {
+                ItemKind = "resources",
+                ItemId = "survey",
+                FieldPrefix = "customFields.steward",
+            });
+
+            var entry = customOnly.Items.Should().ContainSingle().Subject;
+            entry.FieldPath.Should().Equal("customFields", "steward");
+            entry.NewValue!.Value.GetString().Should().Be("Planning");
+            entry.Actor.Should().Be("human:bob@example.org");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task<PostgresMetadataV2GraphStore> SaveEditsAsAliceThenBobAsync(string schema)
+    {
+        var actorProvider = new MutableActorProvider { Actor = "human:alice@example.org" };
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+        var store = new PostgresMetadataV2GraphStore(
+            new TestConnectionProvider(fixture.DataSource, schema),
+            "Test",
+            FixtureBypassDatabaseSchemaGuard.Instance,
+            schema)
+        {
+            ActorProvider = actorProvider,
+        };
+
+        var initial = await store.SaveAsync(HistoryGraph("Initial"), null);
+        actorProvider.Actor = "human:bob@example.org";
+        await store.SaveAsync(WithTitleAndSteward(initial.Graph), initial.Etag);
+        return store;
+    }
+
+    private static MetadataV2Graph WithTitleAndSteward(MetadataV2Graph graph) => graph with
+    {
+        Resources =
+        [
+            graph.Resources[0] with
+            {
+                Metadata = graph.Resources[0].Metadata with
+                {
+                    Title = "Updated",
+                    CustomFields = new Dictionary<string, JsonElement>
+                    {
+                        ["steward"] = JsonSerializer.SerializeToElement("Planning"),
+                    },
+                },
+            },
+        ],
+    };
+
+    private sealed class MutableActorProvider : IMetadataActorProvider
+    {
+        public string? Actor { get; set; }
+        public string? GetCurrentActor() => Actor;
     }
 
     private async Task<PostgresMetadataV2GraphStore> CreateHistoryStoreAsync(string schema)

@@ -63,6 +63,17 @@ internal sealed class FormXlsFormImportMapper
             });
         }
 
+        if (!FormPackageIdentifier.IsAcceptable(form.FormId))
+        {
+            _diagnostics.Add(new XlsFormDiagnostic
+            {
+                Sheet = "settings",
+                RowNumber = 2,
+                Column = "form_id",
+                Message = "The form identifier must be 1-128 ASCII letters, digits, hyphens or underscores, and must not be a reserved route segment."
+            });
+        }
+
         return _diagnostics.Count > 0
             ? new XlsFormResult<FormPackageDocument> { Diagnostics = _diagnostics }
             : new XlsFormResult<FormPackageDocument> { Value = CreatePackage(form, sections, fields) };

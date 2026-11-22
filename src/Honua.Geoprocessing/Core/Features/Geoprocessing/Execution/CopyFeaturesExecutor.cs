@@ -63,6 +63,11 @@ internal sealed partial class CopyFeaturesExecutor(
                 ("srid", result.Srid), ("operationId", job.OperationId)), cancellationToken).ConfigureAwait(false);
             return JobExecutionResult.Succeeded();
         }
+        catch (DagSourceSelectionException ex)
+        {
+            // Caller-facing selector rejection (e.g. an unsupported where): fails the same way every attempt.
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.Message}");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;

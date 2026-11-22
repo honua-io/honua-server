@@ -230,6 +230,14 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
         }
 
         var stopwatch = Stopwatch.StartNew();
+
+        // With nothing tracked the scan result is empty, so skip the forced blocking
+        // collections: they pause the whole process for seconds on every host stop.
+        if (_trackedResources.IsEmpty)
+        {
+            return new ResourceLeakScanResult { ScanDuration = stopwatch.Elapsed };
+        }
+
         var resourcesScanned = 0;
         var resourcesGarbageCollected = 0;
         var detectedLeaks = new List<ResourceLeakInfo>();

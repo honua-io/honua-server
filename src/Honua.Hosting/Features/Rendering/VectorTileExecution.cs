@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using Honua.Core.Exceptions;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Core.Configuration;
@@ -61,6 +62,14 @@ internal static partial class VectorTileExecution
                 context, "Invalid query parameters", ["The request references a field that is not available."]);
         }
 
+        if (tileProvider is IPooledTileProvider pooledProvider)
+        {
+            return await ExecutePooledAsync(
+                pooledProvider,
+                new MvtTileRequest { LayerId = storageLayerId, X = tileCol, Y = tileRow, Z = zoomLevel, Query = query.Value, TileOptions = tileOptions, TileLimits = tileLimits, GridGeometry = gridGeometry },
+                new TileResponseContext { HttpContext = context, Activity = activity, ServiceId = serviceId, LayerId = layerId, TileMatrixSetId = tileMatrixSetId, CancellationToken = cancellationToken }).ConfigureAwait(false);
+        }
+
         byte[]? tileData;
         try
         {
@@ -100,6 +109,67 @@ internal static partial class VectorTileExecution
         activity?.SetTag("honua.tile.bytes", tileData.Length);
         UseTilesetLifetime(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
         return Results.Bytes(tileData, MvtContentType);
+    }
+
+    private readonly record struct TileResponseContext
+    {
+        internal required HttpContext HttpContext { get; init; }
+        internal Activity? Activity { get; init; }
+        internal string? ServiceId { get; init; }
+        internal string? LayerId { get; init; }
+        internal string? TileMatrixSetId { get; init; }
+        internal CancellationToken CancellationToken { get; init; }
+    }
+
+    private static async Task<IResult> ExecutePooledAsync(
+        IPooledTileProvider pooledProvider, MvtTileRequest request, TileResponseContext response)
+    {
+        PooledTileData? tileData;
+        try
+        {
+            tileData = await pooledProvider.GetMvtTilePooledAsync(request, response.CancellationToken).ConfigureAwait(false);
+        }
+        catch (TileSizeLimitExceededException ex)
+        {
+            return RefuseOversizedTile(
+                response.HttpContext, response.Activity, request.LayerId, request.X, request.Y, request.Z,
+                ex.EncodedBytes, request.TileLimits.MaxTileSize);
+        }
+
+        return FinalizePooledTile(tileData, request, response);
+    }
+
+    private static IResult FinalizePooledTile(PooledTileData? tileData, MvtTileRequest request, TileResponseContext response)
+    {
+        try
+        {
+            response.CancellationToken.ThrowIfCancellationRequested();
+            if (tileData is { Length: > 0 } && tileData.Length > request.TileLimits.MaxTileSize)
+            {
+                var encodedBytes = tileData.Length;
+                tileData.Dispose();
+                return RefuseOversizedTile(
+                    response.HttpContext, response.Activity, request.LayerId, request.X, request.Y, request.Z,
+                    encodedBytes, request.TileLimits.MaxTileSize);
+            }
+
+            response.Activity?.SetStatus(ActivityStatusCode.Ok);
+            UseTilesetLifetime(response.HttpContext, request.TileOptions, response.ServiceId, response.LayerId, request.LayerId, response.TileMatrixSetId);
+            if (tileData is null || tileData.Length == 0)
+            {
+                tileData?.Dispose();
+                response.Activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
+                return Results.NoContent();
+            }
+
+            response.Activity?.SetTag("honua.tile.bytes", tileData.Length);
+            return new PooledTileContentResult(tileData, MvtContentType);
+        }
+        catch
+        {
+            tileData?.Dispose();
+            throw;
+        }
     }
 
     // The over-budget refusal is logged because a cached refusal skips this path, so the line is once per tile per cache lifetime.

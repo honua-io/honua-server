@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -55,6 +56,19 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         var violations = AdminHttpOperationRouteBinding.Validate(endpoints, AdminAccessOperationCatalog.Definitions);
         violations.Should().BeEmpty(
             "every AdminAccessOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
+    }
+
+    [UnitTest]
+    public void AdminConnectImportCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(static source => source.Endpoints)
+            .ToArray();
+
+        var violations = AdminHttpOperationRouteBinding.Validate(endpoints, AdminConnectImportOperationCatalog.Definitions);
+        violations.Should().BeEmpty(
+            "every AdminConnectImportOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
     }
 
     [UnitTest]
@@ -134,6 +148,31 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         var act = () => AdminHttpOperationRouteBinding.ForAccess("admin.role.get", "/roles", "/{id:guid}/wrong");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*admin.role.get*");
+    }
+
+    [UnitTest]
+    public void ForConnectImport_DriftedRelativeTemplate_ThrowsAtRegistration()
+    {
+        var act = () => AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.test", "/connections", "/{id:guid}/wrong");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*admin.connections.test*");
+    }
+
+    [UnitTest]
+    public void ForConnectImport_DerivedTemplate_KeepsCatalogParameterName()
+    {
+        var binding = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.tables.discover", "/connections");
+
+        binding.RoutePattern.Should().Be("/{id}/tables");
+    }
+
+    [UnitTest]
+    public void ForConnectImport_DerivedTemplateUnderRenamedGroupParameter_KeepsSuffix()
+    {
+        var binding = AdminHttpOperationRouteBinding.ForConnectImport(
+            "admin.connections.extents.refresh", "/connections/{connectionId}/layers");
+
+        binding.RoutePattern.Should().Be("/extents/refresh");
     }
 
     private readonly record struct TestEndpointSpec(string Pattern, string Method, string EndpointName);

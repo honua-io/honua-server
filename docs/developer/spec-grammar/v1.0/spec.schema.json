@@ -30,7 +30,7 @@
     "kind": {
       "type": "string",
       "enum": ["analysis", "map", "app"],
-      "description": "High-level kind of document. 'map' and 'app' are reserved for S2/S3 and emit warnings at S1."
+      "description": "High-level kind of document. 'map' and 'app' are reserved for S2/S3; S1 does not validate their layers or viewport."
     },
     "title": { "type": "string" },
     "sources": {

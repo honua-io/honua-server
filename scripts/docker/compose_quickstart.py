@@ -121,7 +121,8 @@ def console_web_image(directory, lock):
 def console_image_settings(directory, lock, values):
     """The Console pins this package supplies; a restart after an upgrade picks them up."""
     settings = dict(HONUA_CONSOLE_WEB_IMAGE=console_web_image(directory, lock),
-                    HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+                    HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'),
+                    HONUA_MANAGER_CONSOLE_PORT=values.get('HONUA_MANAGER_CONSOLE_PORT', '18084'))
     return {key: value for key, value in settings.items() if values.get(key) != value}
 
 
@@ -230,6 +231,16 @@ def console_certificate_current(certificate):
     return result.returncode == 0 and 'CA:FALSE' in result.stdout
 
 
+LISTENER_PORTS = ('HONUA_HTTP_PORT', 'HONUA_GRPC_PORT', 'HONUA_MANAGER_PORT',
+                  'HONUA_CONSOLE_PORT', 'HONUA_MANAGER_CONSOLE_PORT')
+
+
+def require_distinct_ports(values):
+    ports = [values[name] for name in LISTENER_PORTS if values.get(name)]
+    if len(ports) != len(set(ports)):
+        raise ValueError(f'{", ".join(LISTENER_PORTS)} must be distinct ports')
+
+
 def console_changes(directory, profiles, values):
     """The .env additions and removals for Console. Reads and validates only; writes nothing."""
     enabled = 'console' in profiles or 'console' in values.get('COMPOSE_PROFILES', '').split(',')
@@ -242,6 +253,7 @@ def console_changes(directory, profiles, values):
         # A saved profile keeps the customer's file order; only the package's pins change.
         additions = console_image_settings(directory, lock, values)
     console_configuration({**values, **additions})
+    require_distinct_ports({**values, **additions})
     require_openssl_3()
     # HONUA_CONSOLE_IMAGE pinned the retired server-hosted Console; the overlay reads the web image.
     retired = ('HONUA_CONSOLE_IMAGE',) if 'HONUA_CONSOLE_IMAGE' in values else ()
@@ -389,7 +401,7 @@ def main():
         if result == 0 and marker.exists():
             # Single-file mounts keep the replaced file's old inode; a new container sees the new one.
             result = subprocess.call(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180',
-                                      '--force-recreate', '--no-deps', 'console'], cwd=args.directory, env=env)
+                                      '--force-recreate', '--no-deps', 'console', 'console-manager'], cwd=args.directory, env=env)
             if result == 0:
                 marker.unlink()
         return result

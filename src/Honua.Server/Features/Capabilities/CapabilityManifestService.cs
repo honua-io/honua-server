@@ -10,6 +10,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -62,9 +63,9 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
-    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
+    IEnumerable<IH3CapabilityChecker> h3CapabilityCheckers,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
@@ -81,6 +82,9 @@ internal sealed class CapabilityManifestService(
         "analytics.buffer-aggregate",
         "analytics.density"
     ];
+
+    private static readonly CapabilityManifestPackages StaticPackages = BuildPackages();
+    private static readonly CapabilityManifestLink[] StaticLinks = BuildLinks();
 
     public async Task<CapabilityManifestDocument> GetManifestAsync(
         CapabilityManifestRequest request,
@@ -109,6 +113,9 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var h3Available = await ResolveH3AvailabilityAsync(cancellationToken).ConfigureAwait(false);
+        var limits = BuildLimits(batchCapabilities);
+        limits = limits with { Analysis = limits.Analysis with { H3Available = h3Available } };
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
@@ -117,17 +124,20 @@ internal sealed class CapabilityManifestService(
         // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
-        var capabilities = options.ManifestFromRegistry
+        var baseCapabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
-        capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
-        capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
-        capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
-        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
-        capabilities = ApplyCompiledProtocolProfile(capabilities);
+        baseCapabilities = StampRollbackTargets(baseCapabilities, operationCapabilities, policyContext);
+        var objectStoreCapability = await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false);
+        var capabilitiesList = new List<CapabilityManifestCapability>(baseCapabilities.Length + 16);
+        capabilitiesList.AddRange(baseCapabilities);
+        capabilitiesList.Add(BuildBackgroundImportCapability(policyContext));
+        capabilitiesList.Add(objectStoreCapability);
+        capabilitiesList.AddRange(BuildFileFormatCapabilities(policyContext, request.Principal));
+        var capabilities = ApplyCompiledProtocolProfile(capabilitiesList.ToArray());
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
-            : BuildPackages();
+            : StaticPackages;
         var unavailableCount = capabilities.Count(static c => !c.Available);
         var manifest = new CapabilityManifestDocument
         {
@@ -144,19 +154,20 @@ internal sealed class CapabilityManifestService(
                     : CapabilityReasonCodes.InsufficientPolicy,
                 Authenticated = request.Authenticated
             },
-            Server = BuildServerInfo(),
+            Server = options.GetOrCreateServerInfo(runtimeInventory.EnvironmentName, BuildServerInfo),
             Environment = environment,
             Packages = packages,
             Capabilities = capabilities,
-            Transports = BuildTransports(),
-            Limits = BuildLimits(batchCapabilities),
+            Transports = options.GetOrCreateTransports(BuildTransports),
+            Limits = limits,
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
             {
-                InstalledProviders = runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
+                InstalledProviders = options.GetOrCreateInstalledProviders(
+                    () => runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray())
             } : null,
-            Links = BuildLinks()
+            Links = StaticLinks
         };
 
         activity?.SetTag("honua.license.edition", snapshot.Edition.ToString());
@@ -664,7 +675,7 @@ internal sealed class CapabilityManifestService(
         var gitopsConfigured = options.ControlPlane.DeployTargets.Count > 0;
         var mtlsConfigured = options.ClientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
 
-        return new Dictionary<string, ManifestCapabilitySpec>(StringComparer.Ordinal)
+        return new Dictionary<string, ManifestCapabilitySpec>(64, StringComparer.Ordinal)
         {
             ["package.release-package"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["package.gitops-manifest"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
@@ -1188,6 +1199,16 @@ internal sealed class CapabilityManifestService(
             }
         ];
 
+    // H3 aggregation needs h3_postgis in the primary database. Null means the probe could not answer:
+    // this store has no checker, or the database was unreachable (the H3 endpoints answer 503 meanwhile).
+    private async Task<bool?> ResolveH3AvailabilityAsync(CancellationToken cancellationToken)
+    {
+        var checker = h3CapabilityCheckers.FirstOrDefault();
+        return checker is null
+            ? null
+            : await checker.IsH3AvailableAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<BatchCapabilitySummary> ResolveBatchCapabilitiesAsync(CancellationToken cancellationToken)
     {
         var backends = runtimeInventory.BatchBackends;
@@ -1322,7 +1343,7 @@ internal sealed class CapabilityManifestService(
 
     private async Task<bool> HasRestorablePriorRevisionAsync(string targetId, CancellationToken cancellationToken)
     {
-        foreach (var store in workflowOperationStores)
+        foreach (var store in runtimeInventory.WorkflowOperationStores)
         {
             WorkflowOperationRecord? deploy;
             try

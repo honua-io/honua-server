@@ -56,7 +56,9 @@ jobs:
             smoke: >-
               postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
               dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
-              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]' &&
+              test -z "$(find /etc/ssl/private -type f 2>/dev/null)" &&
+              test ! -e /etc/ssl/certs/ssl-cert-snakeoil.pem
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,7 +139,9 @@ jobs:
             smoke: >-
               postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
               dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
-              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]' &&
+              test -z "$(find /etc/ssl/private -type f 2>/dev/null)" &&
+              test ! -e /etc/ssl/certs/ssl-cert-snakeoil.pem
     permissions:
       contents: read
       packages: write

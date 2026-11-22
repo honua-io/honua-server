@@ -59,11 +59,13 @@ internal sealed class QueryFormatter
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
 
         return format.ToLowerInvariant() switch
         {
@@ -1065,11 +1067,13 @@ internal sealed class StreamingQueryFormatter
             }
         }
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            srid);
 
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
@@ -1174,11 +1178,13 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteStartArray("features");
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            SpatialReference.WGS84.Wkid);
         var featuresSinceFlush = 0;
 
         while (hasFeature)

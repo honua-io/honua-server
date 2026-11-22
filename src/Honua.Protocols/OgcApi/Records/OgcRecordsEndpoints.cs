@@ -248,7 +248,11 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Record collection '{collectionId}' not found.");
         }
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, ItemsQueryParameters);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var customFields = OgcRecordCustomFields.ForRequest(snapshot.Graph.CustomFieldSchemas, context.Request);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
+            context.Request, customFields.AllowedQueryParameters(ItemsQueryParameters));
         if (validationError is not null)
         {
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
@@ -274,10 +278,11 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, datetimeError!);
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
-        var filtered = ApplyFilters(records, bboxFilter, datetimeFilter, q, ids, type, externalIds).ToArray();
+        var filtered = ApplyFilters(records, bboxFilter, datetimeFilter, q, ids, type, externalIds)
+            .Where(record => customFields.Matches(record.Descriptive.CustomFields)).ToArray();
         var page = filtered.Skip(pageOffset).Take(pageLimit).Select(record => record.Feature).ToImmutableArray();
+        var facets = customFields.Facets(filtered.Select(record => record.Descriptive.CustomFields).ToArray());
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var links = BuildItemsLinks(context, baseUrl, collectionId, filtered.Length, pageLimit, pageOffset);
@@ -286,6 +291,7 @@ internal static class OgcRecordsEndpoints
             Features = page,
             NumberMatched = filtered.Length,
             NumberReturned = page.Length,
+            Facets = facets,
             Links = links
         };
 
@@ -547,10 +553,13 @@ internal static class OgcRecordsEndpoints
             Modified: modified,
             ExternalIds: [serviceMetadata.Name],
             SearchText: BuildSearchText(
-                $"service:{serviceMetadata.Name}",
-                serviceMetadata.Name,
-                serviceMetadata.Title,
-                serviceMetadata.Description))
+                [
+                    $"service:{serviceMetadata.Name}",
+                    serviceMetadata.Name,
+                    serviceMetadata.Title,
+                    serviceMetadata.Description,
+                    .. OgcRecordCustomFields.SearchValues(descriptive.CustomFields)
+                ]))
         {
             Descriptive = descriptive,
         };
@@ -614,11 +623,14 @@ internal static class OgcRecordsEndpoints
             Modified: ResolveModified(resource.Metadata),
             ExternalIds: [publicationId, resource.Metadata.Name],
             SearchText: BuildSearchText(
-                $"layer:{publicationId}",
-                publicationId,
-                resource.Metadata.Name,
-                properties.Title,
-                properties.Description))
+                [
+                    $"layer:{publicationId}",
+                    publicationId,
+                    resource.Metadata.Name,
+                    properties.Title,
+                    properties.Description,
+                    .. OgcRecordCustomFields.SearchValues(descriptive.CustomFields)
+                ]))
         {
             Descriptive = descriptive,
         };

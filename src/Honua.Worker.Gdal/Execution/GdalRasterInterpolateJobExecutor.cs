@@ -71,26 +71,26 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
 
         if (!TryBuildAlgorithm(parameters, out var algorithm, out var algorithmError))
         {
-            return JobExecutionResult.Failed($"Invalid interpolation inputs: {algorithmError}");
+            return JobExecutionResult.InvalidInput($"Invalid interpolation inputs: {algorithmError}");
         }
 
         if (!TryReadOutputSize(parameters, opts, out var width, out var height, out var sizeError))
         {
-            return JobExecutionResult.Failed($"Invalid interpolation inputs: {sizeError}");
+            return JobExecutionResult.InvalidInput($"Invalid interpolation inputs: {sizeError}");
         }
 
         GdalJobInputReader.TryGetInput(parameters, "zField", out var zField);
         if (!string.IsNullOrWhiteSpace(zField) && !GdalFieldName.IsValid(zField))
         {
             Log.InvalidInputs(logger, job.OperationId, $"'zField' value '{zField}' is not a valid attribute name");
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid interpolation inputs: 'zField' must match ^[A-Za-z_][A-Za-z0-9_]*$.");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "points", opts.MaxArtifactBytes, out var pointsBytes, out var pointsError))
         {
             Log.InvalidInputs(logger, job.OperationId, pointsError);
-            return JobExecutionResult.Failed($"Invalid interpolation inputs: {pointsError}");
+            return JobExecutionResult.InvalidInput($"Invalid interpolation inputs: {pointsError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -198,7 +198,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         if (!string.IsNullOrWhiteSpace(zField) && !GdalFieldName.IsValid(zField))
         {
             Log.InvalidInputs(logger, job.OperationId, $"'zField' value '{zField}' is not a valid attribute name");
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid kriging inputs: 'zField' must match ^[A-Za-z_][A-Za-z0-9_]*$.");
         }
 
@@ -206,7 +206,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         if (!OrdinaryKriging.TryParseModel(modelRaw, out var model))
         {
             Log.InvalidInputs(logger, job.OperationId, $"'model' value '{modelRaw}' is not an authorized variogram model");
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid kriging inputs: 'model' must be one of spherical, exponential, gaussian.");
         }
 
@@ -215,13 +215,13 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             || !TryReadOptionalDouble(parameters, "range", requirePositive: true, out var range, out tuningError))
         {
             Log.InvalidInputs(logger, job.OperationId, tuningError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {tuningError}");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {tuningError}");
         }
 
         if (!TryReadOutputSize(parameters, opts, out var requestedWidth, out var requestedHeight, out var sizeError))
         {
             Log.InvalidInputs(logger, job.OperationId, sizeError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {sizeError}");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {sizeError}");
         }
 
         var width = requestedWidth ?? DefaultGridSize;
@@ -234,7 +234,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             var cellError = $"requested output grid {width.ToString(CultureInfo.InvariantCulture)}×{height.ToString(CultureInfo.InvariantCulture)} "
                 + $"exceeds configured MaxKrigingCells={opts.MaxKrigingCells.ToString(CultureInfo.InvariantCulture)}";
             Log.InvalidInputs(logger, job.OperationId, cellError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {cellError}");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {cellError}");
         }
 
         var srid = DefaultSrid;
@@ -243,7 +243,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             if (!GdalSrsToken.IsValid(sridRaw))
             {
                 Log.InvalidInputs(logger, job.OperationId, $"'srid' value '{sridRaw}' is not an accepted CRS token");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     "Invalid kriging inputs: 'srid' must be an EPSG code or a short AUTHORITY:CODE token.");
             }
 
@@ -253,13 +253,13 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "points", opts.MaxArtifactBytes, out var pointsBytes, out var pointsError))
         {
             Log.InvalidInputs(logger, job.OperationId, pointsError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {pointsError}");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {pointsError}");
         }
 
         if (!KrigingGridInputs.TryReadSamples(pointsBytes, zField, opts.MaxKrigingSamples, out var samples, out var samplesError))
         {
             Log.InvalidInputs(logger, job.OperationId, samplesError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {samplesError}");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {samplesError}");
         }
 
         // Managed prediction runs before the GDAL timeout. The dual-formulation
@@ -276,14 +276,14 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                 + $"{opts.MaxKrigingPredictionWork.ToString(CultureInfo.InvariantCulture)}; "
                 + "reduce the output grid or thin the sample set";
             Log.InvalidInputs(logger, job.OperationId, workError);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {workError}.");
+            return JobExecutionResult.InvalidInput($"Invalid kriging inputs: {workError}.");
         }
 
         var variogram = OrdinaryKriging.FitDefaults(samples, model, nugget, sill, range);
         if (variogram.Sill < variogram.Nugget)
         {
             Log.InvalidInputs(logger, job.OperationId, "'sill' is below 'nugget'");
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid kriging inputs: 'sill' is the TOTAL sill and must be greater than or equal to 'nugget'.");
         }
 

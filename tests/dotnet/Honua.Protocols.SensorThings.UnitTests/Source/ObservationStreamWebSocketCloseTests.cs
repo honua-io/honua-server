@@ -82,6 +82,38 @@ public sealed class ObservationStreamWebSocketCloseTests
         }
     }
 
+    [UnitTest]
+    public async Task DrainSignal_AfterPendingWrite_ClosesWithServiceRestart()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(Substitute.For<IRealtimeSubscription>());
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        await using var session = manager.TryCreateSession(new("WebSocket", null, new("tenant-a", null))
+        { PrincipalId = "alice" }, out _)!;
+        using var draining = new CancellationTokenSource();
+        var realtime = Substitute.For<IRealtimeStreamSession>();
+        realtime.DrainingToken.Returns(draining.Token);
+        session.Lifecycle = realtime;
+        using var socket = new BlockedWriteSocket();
+        var feature = Substitute.For<IHttpWebSocketFeature>();
+        feature.IsWebSocketRequest.Returns(true);
+        feature.AcceptAsync(Arg.Any<WebSocketAcceptContext>()).Returns(socket);
+        var context = new DefaultHttpContext();
+        context.Features.Set(feature);
+
+        var handling = ObservationStreamEndpoints.HandleWebSocketAsync(context, session, null);
+        await socket.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await draining.CancelAsync();
+        Assert.False(socket.WriteToken.IsCancellationRequested, "the drain signal must not cancel an active transport write");
+        socket.FinishWrite.TrySetResult();
+        await handling.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, socket.CloseWrites);
+        Assert.Equal((WebSocketCloseStatus)1012, socket.AcknowledgedStatus);
+        Assert.Equal("Service restart.", socket.AcknowledgedDescription);
+    }
+
     private sealed class BlockedWriteSocket : WebSocket
     {
         public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

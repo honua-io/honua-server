@@ -99,13 +99,16 @@ internal sealed partial class PbfQueryFormatter
 
     private FeatureHeaderOptions CreateHeaderOptions(MetadataV2Object resource, PbfStreamEncodingOptions options)
     {
-        var limits = GeometryOutputProcessor.CreateEffectiveLimits(_geometryLimits, options.GeometryPrecision,
-            options.MaxAllowableOffset, forceSimplify: options.MaxAllowableOffset is > 0);
+        var srid = options.OutputSrid ?? resource.ReadSrid() ?? 4326;
+        var limits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(_geometryLimits, options.GeometryPrecision,
+                options.MaxAllowableOffset, forceSimplify: options.MaxAllowableOffset is > 0),
+            srid);
         return new FeatureHeaderOptions
         {
             Resource = resource,
             ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-            Srid = options.OutputSrid ?? resource.ReadSrid() ?? 4326,
+            Srid = srid,
             RequestedOutputSrid = options.RequestedOutputSrid,
             ReturnGeometry = options.ReturnGeometry,
             ReturnZ = options.ReturnZ,
