@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net.WebSockets;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -53,16 +54,22 @@ public sealed partial class FeatureStreamEndpointsTests
         initialSubscription.GetProperty("status").GetString().Should().Be("subscribed");
         initialSubscription.GetProperty("subscriptionId").GetString().Should().Be("default");
 
+        await AssertDeniedControlThenAllowedAsync(socket, deniedScope, timeout.Token);
+    }
+
+    private static async Task AssertDeniedControlThenAllowedAsync(
+        WebSocket socket, string deniedScope, CancellationToken cancellationToken)
+    {
         await SendWebSocketJsonAsync(socket,
-            $$"""{"type":"subscribe","subscriptionId":"denied",{{deniedScope}}}""", timeout.Token);
-        var denied = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+            $$"""{"type":"subscribe","subscriptionId":"denied",{{deniedScope}}}""", cancellationToken);
+        var denied = await ReceiveWebSocketJsonAsync(socket, cancellationToken);
         denied.GetProperty("type").GetString().Should().Be("error");
         denied.GetProperty("code").GetString().Should().Be("invalid-subscription");
         denied.GetProperty("message").GetString().Should().Contain("forbidden");
 
         await SendWebSocketJsonAsync(socket,
-            """{"type":"subscribe","subscriptionId":"allowed","layerId":0}""", timeout.Token);
-        var allowed = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+            """{"type":"subscribe","subscriptionId":"allowed","layerId":0}""", cancellationToken);
+        var allowed = await ReceiveWebSocketJsonAsync(socket, cancellationToken);
         allowed.GetProperty("status").GetString().Should().Be("subscribed");
         allowed.GetProperty("subscriptionId").GetString().Should().Be("allowed");
     }
