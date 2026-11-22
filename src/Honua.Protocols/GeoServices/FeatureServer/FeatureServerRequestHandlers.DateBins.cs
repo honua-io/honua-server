@@ -292,8 +292,20 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                var intervalUnit = intervalUnitElement.GetString()?.ToLowerInvariant() ?? "days";
-                var interval = ConvertToTimeSpan(intervalCount, intervalUnit);
+                if (intervalCount <= 0)
+                {
+                    error = "fixedBin.intervalCount must be a positive integer.";
+                    return false;
+                }
+
+                var intervalUnit = intervalUnitElement.ValueKind == JsonValueKind.String
+                    ? intervalUnitElement.GetString()!.ToLowerInvariant()
+                    : string.Empty;
+                error = ResolveFixedInterval(intervalCount, intervalUnit, "fixedBin", out var interval);
+                if (error is not null)
+                {
+                    return false;
+                }
 
                 DateTimeOffset? origin = null;
                 if (fixedElement.TryGetProperty("origin", out var originElement) &&
@@ -322,17 +334,29 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    private static TimeSpan ConvertToTimeSpan(int count, string unit)
+    // A fixed bin has one length, so only fixed-length units are accepted; months and years
+    // vary in length and belong to calendarBin. Unknown units fail instead of binning by days.
+    // Sub-second units are refused because the DuckDB builder bins in whole seconds.
+    internal static string? ResolveFixedInterval(int count, string unit, string paramName, out TimeSpan interval)
     {
-        return unit switch
+        TimeSpan? resolved = unit switch
         {
             "seconds" => TimeSpan.FromSeconds(count),
             "minutes" => TimeSpan.FromMinutes(count),
             "hours" => TimeSpan.FromHours(count),
             "days" => TimeSpan.FromDays(count),
-            "weeks" => TimeSpan.FromDays(count * 7),
-            _ => TimeSpan.FromDays(count)
+            "weeks" => TimeSpan.FromDays(count * 7d),
+            _ => null
         };
+        interval = resolved ?? TimeSpan.Zero;
+        if (resolved is not null)
+        {
+            return null;
+        }
+
+        return unit is "months" or "years"
+            ? $"{paramName}.intervalUnit '{unit}' has no fixed length; use calendarBin for months and years."
+            : $"{paramName}.intervalUnit must be one of seconds, minutes, hours, days or weeks.";
     }
 
     private static bool TryParseOutStatistics(string json, out ImmutableArray<StatisticDefinition> outStats, out string? error)

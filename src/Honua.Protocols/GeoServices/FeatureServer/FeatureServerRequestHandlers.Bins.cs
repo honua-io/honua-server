@@ -538,10 +538,23 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var unit = fixEl.TryGetProperty("intervalUnit", out var unitEl)
-                ? unitEl.GetString()?.ToLowerInvariant() ?? "days"
-                : "days";
-            fixedInterval = ConvertToTimeSpan(count, unit);
+            if (count <= 0)
+            {
+                error = "dateBin.fixedBin.intervalCount must be a positive integer.";
+                return false;
+            }
+
+            // An omitted intervalUnit keeps its historical days default; a present one must be valid.
+            var unit = !fixEl.TryGetProperty("intervalUnit", out var unitEl)
+                ? "days"
+                : unitEl.ValueKind == JsonValueKind.String ? unitEl.GetString()!.ToLowerInvariant() : string.Empty;
+            error = ResolveFixedInterval(count, unit, "dateBin.fixedBin", out var interval);
+            if (error is not null)
+            {
+                return false;
+            }
+
+            fixedInterval = interval;
         }
         else
         {

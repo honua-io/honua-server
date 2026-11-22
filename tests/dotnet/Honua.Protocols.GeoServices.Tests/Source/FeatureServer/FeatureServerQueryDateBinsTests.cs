@@ -225,4 +225,28 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         root.TryGetProperty("features", out var features).Should().BeTrue();
         features.ValueKind.Should().Be(JsonValueKind.Array);
     }
+
+    [IntegrationTheory]
+    [InlineData("months", "calendarBin")]
+    [InlineData("years", "calendarBin")]
+    [InlineData("fortnights", "seconds, minutes, hours, days or weeks")]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_FixedBinUnitWithoutFixedLength_IsRejected(string unit, string expectedHint)
+    {
+        // Unsupported units used to bin by intervalCount days without any error (#9106).
+        var bin = JsonSerializer.Serialize(new
+        {
+            fixedBin = new { intervalCount = 1, intervalUnit = unit }
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        content.Should().Contain(expectedHint);
+    }
 }
