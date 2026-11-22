@@ -269,7 +269,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // analytics query; the failure is logged and mapped to a generic error response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            LogRequestFailed(logger, BufferAggregateOperation, layerId, ex);
+            LogRequestFailed(logger, (BufferAggregateOperation, layerId), ex);
             return CreateReaderFailureResult(context, BufferAggregateOperation, ex);
         }
 

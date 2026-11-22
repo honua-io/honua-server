@@ -419,7 +419,7 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/embed/analytics")]
     public async Task IngestAnalytics_ServiceScopedKey_AllowsMatchingAndDeniesMismatchedService()
     {
-        var serviceScoped = await CreateKeyAsync(
+        var serviceScoped = await CreateScopedKeyAsync(
             "analytics-service-scoped",
             new EmbedKeyScopeDto
             {
@@ -450,7 +450,7 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/embed/analytics")]
     public async Task IngestAnalytics_ContentScopedKey_AllowsMatchingAndDeniesMismatchedContent()
     {
-        var contentScoped = await CreateKeyAsync(
+        var contentScoped = await CreateScopedKeyAsync(
             "analytics-content-scoped",
             new EmbedKeyScopeDto
             {
@@ -473,24 +473,39 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Contains("ContentNotAllowed", await deniedContent.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
-    private Task<EmbedKeySecretResponse> CreateKeyAsync(
-        string name,
-        IReadOnlyList<string> origins,
-        string? integrationId = null,
-        int rateLimit = 0)
-        => CreateKeyAsync(name, new EmbedKeyScopeDto
-        {
-            AllowedEmbedOrigins = origins,
-            IntegrationId = integrationId,
-            RateLimitRequestsPerWindow = rateLimit,
-        });
-
-    private async Task<EmbedKeySecretResponse> CreateKeyAsync(string name, EmbedKeyScopeDto scope)
+    private async Task<EmbedKeySecretResponse> CreateScopedKeyAsync(string name, EmbedKeyScopeDto scope)
     {
         var request = new CreateEmbedKeyRequest
         {
             Name = name,
             Scope = scope,
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/embed/keys", request, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var result = JsonSerializer.Deserialize<ApiResponse<EmbedKeySecretResponse>>(
+            await response.Content.ReadAsStringAsync(), _jsonOptions);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
+        return result.Data;
+    }
+
+    private async Task<EmbedKeySecretResponse> CreateKeyAsync(
+        string name,
+        IReadOnlyList<string> origins,
+        string? integrationId = null,
+        int rateLimit = 0)
+    {
+        var request = new CreateEmbedKeyRequest
+        {
+            Name = name,
+            Scope = new EmbedKeyScopeDto
+            {
+                AllowedEmbedOrigins = origins,
+                IntegrationId = integrationId,
+                RateLimitRequestsPerWindow = rateLimit,
+            },
         };
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/embed/keys", request, _jsonOptions);

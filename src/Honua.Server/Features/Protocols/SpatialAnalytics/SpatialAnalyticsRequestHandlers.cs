@@ -508,7 +508,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return null;
     }
 
-    private static void LogRequestFailed(ILogger? logger, string operation, int layerId, Exception exception)
+    private static void LogRequestFailed(ILogger? logger, (string Operation, int LayerId) target, Exception exception)
     {
         if (logger == null)
         {
@@ -518,8 +518,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         var safeMessage = LogValueRedactor.SanitizeForLog(exception.Message);
         SpatialAnalyticsLog.RequestFailed(
             logger,
-            operation,
-            layerId,
+            target.Operation,
+            target.LayerId,
             safeMessage,
             exception is ArgumentException ? null : exception);
     }

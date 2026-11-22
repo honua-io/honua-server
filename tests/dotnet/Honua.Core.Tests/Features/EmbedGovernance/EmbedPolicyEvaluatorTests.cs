@@ -232,7 +232,9 @@ public sealed class EmbedPolicyEvaluatorTests
         });
 
         var decision = EmbedPolicyEvaluator.EvaluateRequestAccess(
-            key, "https://app.example.com", requestsConsumedInWindow: 1, _now);
+            key,
+            new EmbedPolicyRequest { Origin = "https://app.example.com", RequestsConsumedInWindow = 1 },
+            _now);
 
         decision.Allowed.Should().BeTrue();
     }
@@ -248,16 +250,20 @@ public sealed class EmbedPolicyEvaluatorTests
             TenantId = "acme",
         });
 
-        EmbedPolicyEvaluator.EvaluateEventScope(key, "services/Roads", "layer-1", "acme")
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-1", TenantId = "acme" })
             .Allowed.Should().BeTrue();
 
-        EmbedPolicyEvaluator.EvaluateEventScope(key, "services/Other", "layer-1", "acme")
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Other", ContentId = "layer-1", TenantId = "acme" })
             .Reason.Should().Be(EmbedPolicyDenyReason.ServiceNotAllowed);
 
-        EmbedPolicyEvaluator.EvaluateEventScope(key, "services/Roads", "layer-other", "acme")
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-other", TenantId = "acme" })
             .Reason.Should().Be(EmbedPolicyDenyReason.ContentNotAllowed);
 
-        EmbedPolicyEvaluator.EvaluateEventScope(key, "services/Roads", "layer-1", "globex")
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-1", TenantId = "globex" })
             .Reason.Should().Be(EmbedPolicyDenyReason.TenantMismatch);
     }
 }

@@ -62,11 +62,11 @@ public static class EmbedPolicyEvaluator
 
     public static EmbedPolicyDecision EvaluateRequestAccess(
         EmbedKeyRecord key,
-        string? origin,
-        long requestsConsumedInWindow,
+        EmbedPolicyRequest request,
         DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(request);
 
         if (key.GetStatus(now) != EmbedKeyStatus.Active)
         {
@@ -74,15 +74,15 @@ public static class EmbedPolicyEvaluator
         }
 
         var scope = key.Scope;
-        if (!IsOriginAllowed(origin, scope.AllowedEmbedOrigins))
+        if (!IsOriginAllowed(request.Origin, scope.AllowedEmbedOrigins))
         {
             return EmbedPolicyDecision.Deny(
                 EmbedPolicyDenyReason.OriginNotAllowed,
-                $"origin '{origin ?? "(none)"}' is not allowed for this key");
+                $"origin '{request.Origin ?? "(none)"}' is not allowed for this key");
         }
 
         if (scope.RateLimitRequestsPerWindow > 0
-            && requestsConsumedInWindow > scope.RateLimitRequestsPerWindow)
+            && request.RequestsConsumedInWindow > scope.RateLimitRequestsPerWindow)
         {
             return EmbedPolicyDecision.Deny(
                 EmbedPolicyDenyReason.RateLimited,
@@ -92,32 +92,29 @@ public static class EmbedPolicyEvaluator
         return EmbedPolicyDecision.Allow;
     }
 
-    public static EmbedPolicyDecision EvaluateEventScope(
-        EmbedKeyRecord key,
-        string? serviceId,
-        string? contentId,
-        string? tenantId)
+    public static EmbedPolicyDecision EvaluateEventScope(EmbedKeyRecord key, EmbedPolicyRequest request)
     {
         ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(request);
         var scope = key.Scope;
 
-        if (!IsMemberAllowed(serviceId, scope.AllowedServiceOrigins))
+        if (!IsMemberAllowed(request.ServiceId, scope.AllowedServiceOrigins))
         {
             return EmbedPolicyDecision.Deny(
                 EmbedPolicyDenyReason.ServiceNotAllowed,
-                $"service '{serviceId}' is not allowed for this key");
+                $"service '{request.ServiceId}' is not allowed for this key");
         }
 
-        if (!IsMemberAllowed(contentId, scope.AllowedContentIds))
+        if (!IsMemberAllowed(request.ContentId, scope.AllowedContentIds))
         {
             return EmbedPolicyDecision.Deny(
                 EmbedPolicyDenyReason.ContentNotAllowed,
-                $"content '{contentId}' is not allowed for this key");
+                $"content '{request.ContentId}' is not allowed for this key");
         }
 
         if (!string.IsNullOrWhiteSpace(scope.TenantId)
-            && !string.IsNullOrWhiteSpace(tenantId)
-            && !string.Equals(scope.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+            && !string.IsNullOrWhiteSpace(request.TenantId)
+            && !string.Equals(scope.TenantId, request.TenantId, StringComparison.OrdinalIgnoreCase))
         {
             return EmbedPolicyDecision.Deny(
                 EmbedPolicyDenyReason.TenantMismatch,

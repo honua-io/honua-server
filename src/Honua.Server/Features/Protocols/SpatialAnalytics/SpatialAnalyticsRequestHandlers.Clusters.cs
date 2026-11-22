@@ -305,7 +305,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             // Intentional catch-all request-handling boundary: this is the cluster analytics
             // endpoint; the failure is logged and mapped to a generic error response below.
-            LogRequestFailed(logger, ClusterOperation, layerId, ex);
+            LogRequestFailed(logger, (ClusterOperation, layerId), ex);
             return CreateReaderFailureResult(context, ClusterOperation, ex);
         }
 

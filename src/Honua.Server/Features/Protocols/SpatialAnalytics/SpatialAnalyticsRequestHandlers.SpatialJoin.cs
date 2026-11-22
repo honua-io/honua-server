@@ -306,7 +306,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             // Intentional catch-all request-handling boundary: this is the spatial-join
             // reader call boundary; the failure is logged and mapped to a generic error
             // response below.
-            LogRequestFailed(logger, SpatialJoinOperation, targetLayerId, ex);
+            LogRequestFailed(logger, (SpatialJoinOperation, targetLayerId), ex);
             return CreateReaderFailureResult(context, SpatialJoinOperation, ex);
         }
 

@@ -1,12 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
 {
     private const string AdminPassword = "provider-only-settings-admin-key";
-    private readonly CapturingLoggerProvider _logs = new();
+    private readonly ErrorLogCapture _logs = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -91,37 +91,12 @@ public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
             new { startTimeField = "start_time" });
         timeInfoResponse.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
 
-        var messages = _logs.Messages.ToArray();
-        messages.Should().Contain(m => m.Contains("nosvc__[ERR] FORGED_MAPSERVER", StringComparison.Ordinal));
-        messages.Should().Contain(m => m.Contains("nosvc__[ERR] FORGED_TIMEINFO", StringComparison.Ordinal));
-        messages.Where(m => m.Contains("FORGED_MAPSERVER", StringComparison.Ordinal)
-                || m.Contains("FORGED_TIMEINFO", StringComparison.Ordinal))
-            .Should().OnlyContain(m => !m.Contains('\r') && !m.Contains('\n'));
-    }
-
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        public ConcurrentQueue<string> Messages { get; } = new();
-
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(Messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CapturingLogger(ConcurrentQueue<string> messages) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter)
-                => messages.Enqueue(formatter(state, exception));
-        }
+        var diagnostics = _logs.Diagnostics;
+        diagnostics.Should().Contain("nosvc__[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().Contain("nosvc__[ERR] FORGED_TIMEINFO");
+        diagnostics.Should().NotContain("\r\n[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().NotContain("\n[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().NotContain("\r\n[ERR] FORGED_TIMEINFO");
+        diagnostics.Should().NotContain("\n[ERR] FORGED_TIMEINFO");
     }
 }

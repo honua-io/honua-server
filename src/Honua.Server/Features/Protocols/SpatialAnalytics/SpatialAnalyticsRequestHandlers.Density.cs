@@ -221,7 +221,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // a generic reader-failure response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            LogRequestFailed(logger, DensityOperation, layerId, ex);
+            LogRequestFailed(logger, (DensityOperation, layerId), ex);
             return CreateReaderFailureResult(context, DensityOperation, ex);
         }
 
