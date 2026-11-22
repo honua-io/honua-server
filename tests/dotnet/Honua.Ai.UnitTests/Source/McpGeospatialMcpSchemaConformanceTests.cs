@@ -877,15 +877,12 @@ public sealed partial class McpTaxonomyAlignmentTests
                 StringComparer.Ordinal);
         var indexResources = ReadIndexResourceUriForms();
 
-        // Every advertised tool maps onto a standard name.
-        var advertisedStd = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var tool in manifest.Tools)
-        {
-            indexTools.ContainsKey(tool.StandardName).Should().BeTrue(
-                $"advertised tool '{tool.AdvertisedName}' maps to standardName '{tool.StandardName}' "
-                + "which must exist in the vendored index.json");
-            advertisedStd.Add(tool.StandardName);
-        }
+        // Match geospatial-mcp's project_reference_manifest.py: the STANDARD
+        // artifact contains index-defined tools. Implementation extensions remain
+        // in the full live manifest, whose roster is checked independently above.
+        var standardTools = manifest.Tools.Where(tool => indexTools.ContainsKey(tool.StandardName)).ToArray();
+        standardTools.Should().NotBeEmpty("the standard projection must advertise standard tools");
+        var advertisedStd = standardTools.Select(tool => tool.StandardName).ToHashSet(StringComparer.Ordinal);
 
         // Every 'implemented' index tool is advertised (FULL tool coverage).
         var implementedIndexTools = indexTools.Where(kvp => kvp.Value == "implemented").Select(kvp => kvp.Key);
