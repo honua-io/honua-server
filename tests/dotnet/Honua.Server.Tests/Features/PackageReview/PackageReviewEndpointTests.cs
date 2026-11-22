@@ -160,7 +160,7 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         // Actuation rejects an approved publication whose saved version is Invalid, so the
         // version this route saves must pass the same Studio validation.
         await using var host = await PublishingHost.StartAsync();
-        using var response = await PostPublishAsync(host.Client, $$"""{"map": {{CliMapJson(string.Empty)}}}""");
+        using var response = await PostPublishAsync(host.Client, $$"""{"map": {{CliMapPackageJson(string.Empty)}}}""");
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, payload);
