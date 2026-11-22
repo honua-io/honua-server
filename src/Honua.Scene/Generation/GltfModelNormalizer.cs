@@ -241,7 +241,7 @@ internal static class GltfModelNormalizer
         if (bufferObj["uri"] is not JsonValue bufferUri
             || !bufferUri.TryGetValue<string>(out var uri)
             || string.IsNullOrWhiteSpace(uri)
-            || !TryDecodeBase64DataUri(uri, out var binaryBuffer))
+            || DecodeBase64DataUri(uri) is not { } binaryBuffer)
         {
             throw new ValidationException(
                 $"{SceneGenerationErrorCodes.ModelAssetInvalid}: glTF buffer must be an embedded base64 data URI; external buffer URIs are not permitted.");
@@ -294,28 +294,26 @@ internal static class GltfModelNormalizer
         }
     }
 
-    private static bool TryDecodeBase64DataUri(string uri, out byte[] bytes)
+    private static byte[]? DecodeBase64DataUri(string uri)
     {
-        bytes = [];
         if (!uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return null;
         }
 
         var comma = uri.IndexOf(',', StringComparison.Ordinal);
         if (comma <= 0 || !uri.AsSpan(0, comma).EndsWith(";base64", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return null;
         }
 
         try
         {
-            bytes = Convert.FromBase64String(uri[(comma + 1)..]);
-            return true;
+            return Convert.FromBase64String(uri[(comma + 1)..]);
         }
         catch (FormatException)
         {
-            return false;
+            return null;
         }
     }
 

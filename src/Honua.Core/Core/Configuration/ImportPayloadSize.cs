@@ -41,6 +41,22 @@ public static class ImportPayloadSize
             return limits.Imports.MaxImportSize;
         }
 
+        if (ResolveSceneUploadLimit(path) is { } sceneLimit)
+        {
+            return sceneLimit;
+        }
+
+        if (path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith("/updateAttachment", StringComparison.OrdinalIgnoreCase))
+        {
+            return limits.Attachments.MaxAttachmentSize;
+        }
+
+        return limits.Edits.MaxPayloadSize;
+    }
+
+    private static long? ResolveSceneUploadLimit(string path)
+    {
         var route = path.AsSpan().TrimEnd('/');
         if (route.EndsWith("/admin/scenes/ingest/archive", StringComparison.OrdinalIgnoreCase))
         {
@@ -52,12 +68,6 @@ public static class ImportPayloadSize
             return MaxSceneModelBytes + SceneMultipartOverheadBytes;
         }
 
-        if (path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/updateAttachment", StringComparison.OrdinalIgnoreCase))
-        {
-            return limits.Attachments.MaxAttachmentSize;
-        }
-
-        return limits.Edits.MaxPayloadSize;
+        return null;
     }
 }
