@@ -675,4 +675,15 @@ public class GeoServicesSqlParserTests
 
         expr.Should().NotBeNull();
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("CURRENT_TIMESTAMP - INTERVAL '7' DAY < CURRENT_TIMESTAMP")]
+    [InlineData("CURRENT_DATE + INTERVAL '1' DAY >= CURRENT_DATE")]
+    public void Parse_TimestampIntervalArithmeticComparison_Succeeds(string whereClause)
+    {
+        var act = () => _parser.Parse(whereClause);
+
+        act.Should().NotThrow();
+    }
 }
