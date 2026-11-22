@@ -1,10 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Domain;
+using Honua.Geoprocessing;
 using System.Globalization;
 
 namespace Honua.Server.Features.Orchestration;
@@ -12,6 +14,7 @@ namespace Honua.Server.Features.Orchestration;
 internal static class WorkflowBindingResolver
 {
     private const string ArtifactSelectorPrefix = "artifact:";
+    private static readonly Lazy<IProcessCatalog> FallbackCatalog = new(() => new BuiltInProcessCatalog());
 
     public sealed record BindingResolution(
         IReadOnlyDictionary<string, string> ResolvedValues,
@@ -34,6 +37,7 @@ internal static class WorkflowBindingResolver
                 Array.Empty<string>());
         }
 
+        var targetProcess = ResolveTargetProcess(step);
         var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
         var rasterSources = new Dictionary<string, RasterSourceDescriptor>(StringComparer.Ordinal);
         var failures = new List<string>();
@@ -67,17 +71,58 @@ internal static class WorkflowBindingResolver
                 continue;
             }
 
-            if (artifact.Uri is not null)
+            var (value, failure) = ResolveArtifactValue(artifact, binding, targetProcess);
+            if (failure is not null)
             {
-                resolved[binding.TargetInputKey] = artifact.Uri;
+                failures.Add(failure);
                 continue;
             }
 
-            resolved[binding.TargetInputKey] = artifact.ArtifactId;
+            resolved[binding.TargetInputKey] = value!;
         }
 
         return new BindingResolution(resolved, rasterSources, failures);
     }
+
+    private static (string? Value, string? Failure) ResolveArtifactValue(
+        ArtifactRef artifact,
+        StepInputBinding binding,
+        ProcessDefinition? targetProcess)
+    {
+        if (artifact.Uri is null)
+        {
+            return (artifact.ArtifactId, null);
+        }
+
+        var targetValueType = ResolveTargetParameterValueType(targetProcess, binding.TargetInputKey);
+        if (targetValueType is not (ProcessParameterValueType.Wkb or ProcessParameterValueType.WkbArray)
+            || !WorkflowGeometryBindingCodec.IsDataUri(artifact.Uri))
+        {
+            return (artifact.Uri, null);
+        }
+
+        var extraction = targetValueType == ProcessParameterValueType.WkbArray
+            ? WorkflowGeometryBindingCodec.ExtractWkbArray(artifact.Uri)
+            : WorkflowGeometryBindingCodec.ExtractWkb(artifact.Uri);
+        return extraction.IsSuccess
+            ? (extraction.Value, null)
+            : (null, $"Binding '{binding.TargetInputKey}' could not extract WKB geometry from artifact '{artifact.ArtifactId}' of step '{binding.SourceStepId}': {extraction.Error}");
+    }
+
+    private static ProcessDefinition? ResolveTargetProcess(WorkflowStepDefinition step)
+    {
+        var processId = step.Plan.Steps.Count > 0 ? step.Plan.Steps[0].ProcessId : null;
+        return string.IsNullOrWhiteSpace(processId)
+            ? null
+            : FallbackCatalog.Value.GetProcess(processId);
+    }
+
+    private static ProcessParameterValueType? ResolveTargetParameterValueType(
+        ProcessDefinition? process,
+        string targetInputKey)
+        => process?.Parameters
+            .FirstOrDefault(parameter => string.Equals(parameter.Name, targetInputKey, StringComparison.Ordinal))
+            ?.ValueType;
 
     private static bool IsStaged(ArtifactRef artifact)
         => artifact.Metadata.TryGetValue(RasterOutputArtifactMetadata.Staged, out var staged)
