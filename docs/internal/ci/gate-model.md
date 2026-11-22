@@ -686,8 +686,8 @@ matrix, affected-shard selection, the affected-shard aggregate, CI router valida
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
 `RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
 step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
-and a fixed `/tmp` path collides across them. The existing
-even-index affected-shard split additionally requires independent version-1 heavy
+and a fixed `/tmp` path collides across them. Affected-shard heavy placement
+(below) additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
 from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
 stale, future-dated or replaced-instance proof keeps shards hosted. Producer
@@ -1618,6 +1618,22 @@ are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
 rank, including existing PR budget deferral, until scheduled trunk CI measures
 them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
+
+### Affected-shard heavy placement
+
+The same shard ran a median 1.83 times longer on `honua-heavy` than on a hosted
+runner (27 shards that ran on both pools, 75 green PR Gate runs, 21-22 November
+2026). The heavy pool also queued longer at the tail (p90 12.8 min against 5.9
+min hosted). The former even-index split put matrix index 0, the longest shard,
+on that pool, and a heavy shard was the last job in 26 of 47 runs with shards.
+The selector now marks an entry `heavy` only when
+`dispatch_rank * pr_heavy_placement.heavy_slowdown` fits within the longest
+shard of its producer lane. It takes the shortest shards first and at most half
+the lane, rounded up. The longest shard of each lane stays hosted.
+`affected-shard` and `affected-shard-held` read `matrix.heavy`, and the existing
+pool proof and fork guards are unchanged. Replaying those 47 runs with measured
+durations moves the median shard-run wall from 23.7 to 20.8 min, with 47 heavy
+jobs instead of 100. Fixtures: `scripts/ci/fixtures/validate-heavy-shard-placement.py`.
 
 ### Managed producer memory budget
 

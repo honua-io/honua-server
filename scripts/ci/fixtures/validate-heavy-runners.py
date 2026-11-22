@@ -36,15 +36,15 @@ PINNED_JOBS = {
 }
 
 
-# Forks never reach self-hosted compute; PR Gate retains its proven even-shard split.
-EVEN_INDEX = " || ".join(f"endsWith(format('{{0}}', strategy.job-index), '{digit}')" for digit in "02468")
+# Forks never reach self-hosted compute; PR Gate shards take the pool only when the
+# selector marked the entry `heavy` (compute-affected-shards.py place_heavy_shards).
 FORK_GUARD = (
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
     " && fromJSON(vars.HONUA_HEAVY_RUNNER)"
 )
 TRUSTED_HEAVY_RUNNER = "vars.HONUA_HEAVY_RUNNER" + FORK_GUARD
-HEAVY_SHARD_RUNNER = "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")" + FORK_GUARD
+HEAVY_SHARD_RUNNER = "vars.HONUA_HEAVY_RUNNER && matrix.heavy" + FORK_GUARD
 
 
 def planned_heavy(key):
@@ -426,24 +426,23 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
             "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}",
         )
 
-    def test_only_proven_same_repo_even_shards_use_heavy_runners(self):
-        probe = """const {expression, ready, fork, index, heavy} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    def test_only_proven_same_repo_marked_shards_use_heavy_runners(self):
+        probe = """const {expression, ready, fork, marked, heavy} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const github = {repository: 'owner/repo', event: {pull_request: {head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
 const needs = {'pr-gate': {outputs: {heavy_ready: ready}}, 'runner-select': {outputs: {heavy_ready: ready}}};
-const vars = {HONUA_HEAVY_RUNNER: heavy};
-const strategy = {'job-index': index};
-const format = (_, value) => String(value), endsWith = (value, suffix) => value.endsWith(suffix);
-process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, strategy, fromJSON, format, endsWith} = context; return (${expression});`)({github, needs, vars, strategy, fromJSON: JSON.parse, format, endsWith})));
+const vars = {HONUA_HEAVY_RUNNER: heavy}, matrix = marked === null ? {} : {heavy: marked};
+process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, matrix, fromJSON} = context; return (${expression});`)({github, needs, vars, matrix, fromJSON: JSON.parse})));
 """
         pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
-        expression = self.jobs["affected-shard"]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
-        expression = expression.replace("needs.runner-select", "needs['runner-select']").replace("strategy.job-index", "strategy['job-index']")
-        for ready, fork, index, configured in product(["true", "false", ""], [False, True], [0, 1, 2], [False, True]):
-            context = {"expression": expression, "ready": ready, "fork": fork,
-                       "index": index, "heavy": json.dumps(pool) if configured else ""}
-            expected = pool if ready == "true" and not fork and index % 2 == 0 and configured else "ubuntu-latest"
-            with self.subTest(ready=ready, fork=fork, index=index, configured=configured):
-                self.assertEqual(self.evaluate_routing(probe, context), expected)
+        for job in ("affected-shard", "affected-shard-held"):
+            expression = self.jobs[job]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
+            expression = expression.replace("needs.runner-select", "needs['runner-select']").replace("needs.pr-gate", "needs['pr-gate']")
+            for ready, fork, marked, configured in product(["true", "false", ""], [False, True], [True, False, None], [False, True]):
+                context = {"expression": expression, "ready": ready, "fork": fork,
+                           "marked": marked, "heavy": json.dumps(pool) if configured else ""}
+                expected = pool if ready == "true" and not fork and marked is True and configured else "ubuntu-latest"
+                with self.subTest(job=job, ready=ready, fork=fork, marked=marked, configured=configured):
+                    self.assertEqual(self.evaluate_routing(probe, context), expected)
 
     def test_selection_cannot_fail_and_is_inert_without_the_variable_or_in_enforce_mode(self):
         select = self.jobs["runner-select"]

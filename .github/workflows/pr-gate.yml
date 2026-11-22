@@ -932,10 +932,12 @@ jobs:
     # pr-gate outputs, so they start when that producer finishes instead of
     # waiting for Build and tests (median 2.4 min later on 15-17 Nov).
     needs: [affected-shards-select, server-test-producer, runner-select]
-    # Even matrix indices run on the build host's honua-heavy runners when
+    # Entries the selector marked `heavy` (shards short enough that the slower
+    # pool cannot set this lane's wall clock; .github/ci-shards.json
+    # pr_heavy_placement) run on the build host's honua-heavy runners when
     # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
     # heavy_ready comes from runner-select, which finishes before the producer.
-    runs-on: ${{ needs.runner-select.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ needs.runner-select.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && matrix.heavy && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
@@ -1081,9 +1083,11 @@ jobs:
       && needs.affected-shards-select.outputs.skip != 'true'
       && needs.affected-shards-select.outputs.matrix_other != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
-    # Even matrix indices run on the build host's honua-heavy runners when
+    # Entries the selector marked `heavy` (shards short enough that the slower
+    # pool cannot set this lane's wall clock; .github/ci-shards.json
+    # pr_heavy_placement) run on the build host's honua-heavy runners when
     # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
-    runs-on: ${{ needs.pr-gate.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ needs.pr-gate.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && matrix.heavy && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
