@@ -292,10 +292,17 @@ public sealed class DagSourceReaderTests
     {
         // The connector appends its own watermark predicate; with no caller where, a store
         // argument failure must not be reported as an unsupported caller clause.
+        var translated = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("updated_at >= @p0", [new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)])
+        };
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        translator.TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(LayerSelectionTranslation.Success(translated));
         var store = Substitute.For<IStreamingFeatureStore>();
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(_ => ThrowingAsync(new ArgumentException("WHERE clause format not supported.")));
-        var reader = new HonuaLayerDagSource(store);
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
         var request = new DagSourceRequest { LayerId = 42, Since = "2026-01-01T00:00:00Z", WatermarkField = "updated_at" };
 
         var act = async () => await CollectAsync(reader.ReadAsync(request));
