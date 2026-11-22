@@ -9,9 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
-using Microsoft.Extensions.Logging;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
@@ -33,10 +31,8 @@ internal sealed class DuckDBFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
-    private readonly DuckDBManagedSource? _managedSource;
+    private readonly DuckDBManagedDataAccessFactory? _managedDataAccess;
     private readonly DuckDBLayerRegistry? _registry;
-    private readonly ILogger<DuckDBFeatureDataAccess>? _dataAccessLogger;
-    private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly FeatureProviderBinding? _binding;
     private readonly bool _enableH3;
 
@@ -48,12 +44,10 @@ internal sealed class DuckDBFeatureStore :
         IMetadataV2GraphProvider? v2Provider = null,
         IFilterExpressionService? filterExpressionService = null,
         bool enableH3 = false,
-        DuckDBManagedSource? managedSource = null,
-        DuckDBLayerRegistry? registry = null,
-        ILogger<DuckDBFeatureDataAccess>? dataAccessLogger = null,
-        IPerformanceMonitor? performanceMonitor = null)
+        DuckDBManagedDataAccessFactory? managedDataAccess = null,
+        DuckDBLayerRegistry? registry = null)
         : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, enableH3,
-            managedSource, registry, dataAccessLogger, performanceMonitor, binding: null)
+            managedDataAccess, registry, binding: null)
     {
     }
 
@@ -65,10 +59,8 @@ internal sealed class DuckDBFeatureStore :
         IFilterExpressionService? filterExpressionService,
         LayerReadSecurityResolver readSecurity,
         bool enableH3,
-        DuckDBManagedSource? managedSource,
+        DuckDBManagedDataAccessFactory? managedDataAccess,
         DuckDBLayerRegistry? registry,
-        ILogger<DuckDBFeatureDataAccess>? dataAccessLogger,
-        IPerformanceMonitor? performanceMonitor,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -77,10 +69,8 @@ internal sealed class DuckDBFeatureStore :
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
-        _managedSource = managedSource;
+        _managedDataAccess = managedDataAccess;
         _registry = registry;
-        _dataAccessLogger = dataAccessLogger;
-        _performanceMonitor = performanceMonitor;
         _binding = binding;
         _enableH3 = enableH3;
     }
@@ -97,7 +87,7 @@ internal sealed class DuckDBFeatureStore :
 
     private DuckDBFeatureStore CreateManagedReader(FeatureProviderBinding binding)
     {
-        if (_managedSource is null || _dataAccessLogger is null)
+        if (_managedDataAccess is null)
         {
             throw new InvalidOperationException("Managed DuckDB object storage is unavailable.");
         }
@@ -124,7 +114,7 @@ internal sealed class DuckDBFeatureStore :
         return CreateBoundReader(
             binding,
             new DuckDBFeatureQueryBuilder(registry),
-            new DuckDBFeatureDataAccess(_managedSource.CreateConnectionProvider(mapping), registry, _performanceMonitor, _dataAccessLogger),
+            _managedDataAccess.Create(mapping, registry),
             new DuckDBFeatureCacheManager(registry));
     }
 
@@ -142,10 +132,8 @@ internal sealed class DuckDBFeatureStore :
             _filterExpressionService,
             _readSecurity,
             _enableH3,
-            _managedSource,
+            _managedDataAccess,
             _registry,
-            _dataAccessLogger,
-            _performanceMonitor,
             binding);
     }
 

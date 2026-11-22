@@ -136,10 +136,8 @@ internal static class ServiceCollectionExtensions
             sp.GetService<IMetadataV2GraphProvider>(),
             sp.GetService<IFilterExpressionService>(),
             options.EnableH3,
-            sp.GetRequiredService<DuckDBManagedSource>(),
-            sp.GetRequiredService<DuckDBLayerRegistry>(),
-            sp.GetRequiredService<ILogger<DuckDBFeatureDataAccess>>(),
-            sp.GetService<IPerformanceMonitor>()));
+            sp.GetRequiredService<DuckDBManagedDataAccessFactory>(),
+            sp.GetRequiredService<DuckDBLayerRegistry>()));
 
         AddManagedSourceServices(services, options);
 
@@ -231,10 +229,8 @@ internal static class ServiceCollectionExtensions
                 sp.GetService<IMetadataV2GraphProvider>(),
                 createFilterExpressionService(),
                 options.EnableH3,
-                sp.GetRequiredService<DuckDBManagedSource>(),
-                registry,
-                logger,
-                performanceMonitor);
+                sp.GetRequiredService<DuckDBManagedDataAccessFactory>(),
+                registry);
         });
     }
 
@@ -250,6 +246,7 @@ internal static class ServiceCollectionExtensions
                 [],
                 [],
                 sp.GetRequiredService<ILogger<DuckDBSpatialBootstrap>>()));
+        services.AddScoped<DuckDBManagedDataAccessFactory>();
         services.AddScoped(sp => new DuckDBManagedSource(
             sp.GetRequiredKeyedService<DuckDBSpatialBootstrap>(managedBootstrap),
             sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>(),

@@ -254,8 +254,7 @@ public sealed class DuckDBExternalSourceSqlTests
             new DuckDBFeatureCacheManager(registry),
             new LayerReadSecurityResolver(null, null, null, null),
             filterExpressionService: new FilterExpressionService(new FilterExpressionTranslator(new DuckDbSqlFilterTranslator())),
-            managedSource: source,
-            dataAccessLogger: logger);
+            managedDataAccess: new DuckDBManagedDataAccessFactory(source, logger, null));
         var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
