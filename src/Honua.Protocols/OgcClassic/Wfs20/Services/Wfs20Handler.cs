@@ -203,8 +203,10 @@ internal sealed partial class Wfs20Handler
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
                 srsName,
-                reader,
-                IncludeGeometry: ShouldProjectGeometry(featureType.Resource, propertyName)));
+                reader)
+            {
+                IncludeGeometry = ShouldProjectGeometry(featureType.Resource, propertyName)
+            });
 
             remainingCount -= layerLimit;
         }
@@ -2001,8 +2003,10 @@ internal sealed partial class Wfs20Handler
         FeatureQuery Query,
         long MatchedCount,
         string? RequestedSrsName = null,
-        IFeatureReader? Reader = null,
-        bool IncludeGeometry = true);
+        IFeatureReader? Reader = null)
+    {
+        public bool IncludeGeometry { get; init; } = true;
+    }
 
     private IFeatureReader ReaderFor(LayerQueryPlan plan) => plan.Reader ?? _featureReader;
 

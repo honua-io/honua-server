@@ -573,8 +573,10 @@ internal sealed partial class Wfs20Handler
                     query with { Offset = layerOffset, Limit = layerLimit },
                     layerMatched,
                     xmlQuery.SrsName ?? fallbackSrsName,
-                    reader,
-                    IncludeGeometry: ShouldProjectGeometry(featureType.Resource, xmlQuery.PropertyName)));
+                    reader)
+                {
+                    IncludeGeometry = ShouldProjectGeometry(featureType.Resource, xmlQuery.PropertyName)
+                });
 
                 remainingCount -= layerLimit;
             }
