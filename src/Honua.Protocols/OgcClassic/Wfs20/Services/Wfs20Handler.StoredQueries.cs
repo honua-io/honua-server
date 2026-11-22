@@ -421,17 +421,27 @@ internal sealed partial class Wfs20Handler
 
         descriptor = (await WithCallerMasksAsync(context, [descriptor], cancellationToken).ConfigureAwait(false))[0];
 
-        var query = await BuildFeatureQueryAsync(
-            descriptor,
-            propertyName: null,
-            sortBy: null,
-            bbox: null,
-            filter: null,
-            resourceId: featureId,
-            srsName: null,
-            enforceResourceIdTypeMatch: true,
-            requireResourceIdQualifier: false,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        FeatureQuery query;
+        try
+        {
+            using var cqlScope = WfsCqlFilterHelper.BeginScope(
+                WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
+            query = await BuildFeatureQueryAsync(
+                descriptor,
+                propertyName: null,
+                sortBy: null,
+                bbox: null,
+                filter: null,
+                resourceId: featureId,
+                srsName: null,
+                enforceResourceIdTypeMatch: true,
+                requireResourceIdQualifier: false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (WfsQueryException ex)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(context, ex.ExceptionCode, ex.Message, ex.Locator);
+        }
 
         var reader = await ResolveQueryReaderAsync(descriptor, cancellationToken).ConfigureAwait(false);
         var limitedQuery = query with { Limit = 1 };
