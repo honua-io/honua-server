@@ -93,22 +93,22 @@ class ProducerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 partition.exclude_server(partition.BuildFilterRequest(root, 'full', None, root / 'output.slnf'))
 
-    def test_local_only_projects_respects_even_odd_held_shard_routing(self):
+    def test_local_only_projects_respects_duration_based_held_shard_routing(self):
         proj_a = 'tests/dotnet/Honua.A.Tests/Honua.A.Tests.csproj'
         proj_b = 'tests/dotnet/Honua.B.Tests/Honua.B.Tests.csproj'
         proj_c = 'tests/dotnet/Honua.C.Tests/Honua.C.Tests.csproj'
         proj_shared = 'tests/dotnet/Honua.Shared.Tests/Honua.Shared.Tests.csproj'
-        config = {'shards': [
+        config = {'pr_heavy_placement': {'heavy_slowdown': 2.0}, 'shards': [
             {'name': 'Server Shard', 'csproj': SERVER, 'dispatch_rank': 9.0},
             {'name': 'Held 0', 'csprojs': [proj_a, proj_shared], 'dispatch_rank': 5.0},
             {'name': 'Held 1', 'csprojs': [proj_b, proj_shared], 'dispatch_rank': 4.0},
-            {'name': 'Held 2', 'csproj': proj_c, 'dispatch_rank': 3.0},
+            {'name': 'Held 2', 'csproj': proj_c, 'dispatch_rank': 2.0},
         ]}
         matrix_result = {'skip': False, 'shards': ['Server Shard', 'Held 0', 'Held 1', 'Held 2']}
         projects = [proj_a, proj_b, proj_c, proj_shared]
         req = partition.LocalOnlyRequest
-        # Held order by -dispatch_rank: Held 0 (idx 0, even), Held 1 (idx 1, odd), Held 2 (idx 2, even).
-        self.assertEqual([proj_a, proj_c], partition.local_only_projects(req(
+        # Only Held 2 fits the longest hosted shard after heavy-pool slowdown.
+        self.assertEqual([proj_c], partition.local_only_projects(req(
             projects=projects, matrix_result=matrix_result, config=config,
             heavy_ready=True, heavy_runner_configured=True, same_repo_pr=True)))
         for heavy_ready, heavy_runner_configured, same_repo_pr in (
@@ -119,6 +119,28 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual([], partition.local_only_projects(req(
             projects=projects, matrix_result={'skip': True, 'shards': ['Held 0']}, config=config,
             heavy_ready=True, heavy_runner_configured=True, same_repo_pr=True)))
+
+
+    def test_singleton_and_real_selection_match_emitted_heavy_placement(self):
+        config = json.loads((partition.ROOT / '.github/ci-shards.json').read_text())
+        names = ['OGC API Features 2']
+        for selected_names in (names, [shard['name'] for shard in config['shards']]):
+            result = {'skip': False, 'shards': selected_names}
+            affected = partition.affected_shards
+            entries = affected.place_heavy_shards(
+                affected.matrix_include(result, config), affected.time_budget.load_heavy_slowdown(config))
+            _, held = affected.partition_producer_matrices(entries)
+            consumers = {}
+            for entry in held:
+                for project in partition.shard_projects(entry):
+                    consumers.setdefault(project, []).append(entry['heavy'])
+            eligible = sorted(project for project, placements in consumers.items()
+                              if all(placements) and project not in partition.INDEPENDENT_ROOTS)
+            actual = partition.local_only_projects(partition.LocalOnlyRequest(
+                list(consumers), result, config, True, True, True))
+            self.assertEqual(eligible, actual)
+            if selected_names == names:
+                self.assertEqual([], actual)
 
 
 if __name__ == '__main__':

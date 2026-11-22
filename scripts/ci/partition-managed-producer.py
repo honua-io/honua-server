@@ -90,16 +90,18 @@ def local_only_projects(request: LocalOnlyRequest):
     if not isinstance(request.matrix_result, dict) or request.matrix_result.get('skip'):
         return []
     include = affected_shards.matrix_include(request.matrix_result, request.config)
-    _, held = affected_shards.partition_producer_matrices(include)
-    consumers_by_project: dict[str, set[int]] = {}
-    for index, entry in enumerate(held):
+    placed = affected_shards.place_heavy_shards(
+        include, affected_shards.time_budget.load_heavy_slowdown(request.config))
+    _, held = affected_shards.partition_producer_matrices(placed)
+    consumers_by_project: dict[str, list[bool]] = {}
+    for entry in held:
         for project in shard_projects(entry):
-            consumers_by_project.setdefault(project, set()).add(index)
+            consumers_by_project.setdefault(project, []).append(entry['heavy'])
     return sorted(
         project
         for project in selected
         if consumers_by_project.get(project)
-        and all(index % 2 == 0 for index in consumers_by_project[project])
+        and all(consumers_by_project[project])
     )
 
 

@@ -81,12 +81,13 @@ while identity-contract mismatches remain fatal.
 
 The opt-in planner `scripts/ci/partition-managed-producer.py
 local-only-projects` computes which main-producer projects are consumed solely
-by even-index `affected-shard-held` jobs routed to the build host (requiring
+by `affected-shard-held` jobs assigned `heavy: true` by the same duration-based
+placement calculation as PR Gate (requiring
 `heavy_ready == 'true'`, `HONUA_HEAVY_RUNNER` configured, and a same-repo pull
 request). When wired into a producer, those projects skip remote artifact upload once host-local staging
 succeeds; any local staging failure or unavailable store falls back to remote
 upload automatically. `PR Gate / Server test producer` and `ci.yml` continue to
-upload remotely because they serve hosted consumers (`server-governance`, odd
+upload remotely because they serve hosted consumers (`server-governance`, hosted affected
 shards, and hosted full-CI shards), while consumers with a configured host-local store try that store first. PR Gate job structure, shard definitions, and
 required check names are unchanged.
 
