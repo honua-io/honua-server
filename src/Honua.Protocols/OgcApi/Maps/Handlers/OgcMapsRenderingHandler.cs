@@ -797,16 +797,20 @@ internal sealed class OgcMapsRenderingHandler
                 bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
             }
 
-            if (contentBboxHeader is not null)
-            {
-                context.Response.Headers["Content-Bbox"] = contentBboxHeader;
-            }
-
             var contentCrsHeader = FormatContentCrsHeader(bboxSrid);
             if (SpatialReferenceHelpers.TryParseCrsDefinition(context.Request.Query["crs"].ToString(), out var outputCrs) &&
                 outputCrs.Srid == bboxSrid)
             {
                 contentCrsHeader = $"<{outputCrs.Uri}>";
+                if (contentBboxHeader is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)
+                {
+                    var coordinates = contentBboxHeader.Split(',');
+                    contentBboxHeader = $"{coordinates[1]},{coordinates[0]},{coordinates[3]},{coordinates[2]}";
+                }
+            }
+            if (contentBboxHeader is not null)
+            {
+                context.Response.Headers["Content-Bbox"] = contentBboxHeader;
             }
             if (contentCrsHeader != null)
             {

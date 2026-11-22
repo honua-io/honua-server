@@ -102,7 +102,52 @@ internal static class OgcCoverageSpatialSubset
         }
 
         bounds = new Bounds(x.Value.Low, y.Value.Low, x.Value.High, y.Value.High, geographicNames.Value ? 4326 : storageSrid);
+        if (x.Value.Low.CompareTo(x.Value.High) == 0 || y.Value.Low.CompareTo(y.Value.High) == 0)
+        {
+            // ST_Clip selects pixel centers. A zero-area clip is not a raster slice:
+            // select the native grid cell containing the ordinate before exporting.
+            var expanded = ExpandSlices(bounds, raster, storageSrid);
+            if (!expanded.HasValue)
+            {
+                error = "Spatial slices require an axis-aligned native grid and an ordinate within its extent. Use native x/y axes when the storage CRS is projected.";
+                return false;
+            }
+            bounds = expanded.Value;
+        }
         error = string.Empty;
         return true;
+    }
+
+    private static Bounds? ExpandSlices(Bounds bounds, RasterInfo raster, int storageSrid)
+    {
+        if (bounds.Srid != storageSrid || raster.Extent is not { } extent ||
+            extent.Srid.GetValueOrDefault(storageSrid) != storageSrid || raster.Width <= 0 || raster.Height <= 0 ||
+            (raster.GeoTransform is { Length: >= 6 } transform &&
+                (transform[2].CompareTo(0) != 0 || transform[4].CompareTo(0) != 0)))
+        {
+            return null;
+        }
+
+        var x = ExpandAxis((bounds.MinX, bounds.MaxX), (extent.XMin, extent.XMax), raster.Width);
+        var y = ExpandAxis((bounds.MinY, bounds.MaxY), (extent.YMin, extent.YMax), raster.Height);
+        return x.HasValue && y.HasValue
+            ? bounds with { MinX = x.Value.Low, MaxX = x.Value.High, MinY = y.Value.Low, MaxY = y.Value.High }
+            : null;
+    }
+
+    private static (double Low, double High)? ExpandAxis(
+        (double Low, double High) limits, (double Low, double High) extent, int size)
+    {
+        if (limits.Low.CompareTo(limits.High) != 0)
+        {
+            return limits;
+        }
+        var step = (extent.High - extent.Low) / size;
+        if (!double.IsFinite(step) || step <= 0 || limits.Low < extent.Low || limits.Low > extent.High)
+        {
+            return null;
+        }
+        var cell = Math.Min(size - 1, Math.Floor((limits.Low - extent.Low) / step));
+        return (extent.Low + cell * step, extent.Low + (cell + 1) * step);
     }
 }

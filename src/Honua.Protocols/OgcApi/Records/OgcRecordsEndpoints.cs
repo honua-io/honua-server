@@ -259,7 +259,7 @@ internal static partial class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (PrepareItemsFormat(context, f) is { } formatError)
+        if (PrepareItemsFormat(context, f, out var contentType) is { } formatError)
         {
             return formatError;
         }
@@ -296,10 +296,10 @@ internal static partial class OgcRecordsEndpoints
             Links = links
         };
 
-        return Results.Json(response, OgcRecordsJsonContext.Default.OgcRecordFeatureCollection, MediaTypes.GeoJson);
+        return Results.Json(response, OgcRecordsJsonContext.Default.OgcRecordFeatureCollection, contentType);
     }
 
-    private static IResult? PrepareItemsFormat(HttpContext context, string? f)
+    private static IResult? PrepareItemsFormat(HttpContext context, string? f, out string contentType)
     {
         if (!OgcCommonUtilities.TryGetOutputFormat(
                 f, context,
@@ -309,7 +309,7 @@ internal static partial class OgcRecordsEndpoints
                     ["geojson"] = MediaTypes.GeoJson,
                 },
                 [MediaTypes.GeoJson, MediaTypes.Json], MediaTypes.GeoJson,
-                out _, out var formatError))
+                out contentType, out var formatError))
         {
             return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
