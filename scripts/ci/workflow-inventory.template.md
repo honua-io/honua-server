@@ -870,6 +870,10 @@ Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` ac
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Preparatory host-local managed artifact transport
+
+The managed artifact action can stage SHA-addressed archives in an opt-in host-local store and reuse them through the existing identity and integrity checks. Its planner identifies projects whose selected consumers all run on that host. PR Gate does not yet pass the local-only plan, so every project still publishes remotely. Workflow-owner integration and bounded host-store retention through IaC remain prerequisites; no runner, job, upload or timing savings are claimed. Store misses retain remote download or the existing consumer rebuild fallback.
+
 ### Standalone tooling in affected producer builds
 
 The affected producer keeps solution members in its managed solution filter. The

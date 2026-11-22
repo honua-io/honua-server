@@ -79,17 +79,25 @@ archive into their isolated temporary directory and run the unchanged
 corruption they fall back transparently to GitHub Actions Artifact download,
 while identity-contract mismatches remain fatal.
 
-In `PR Gate / Build and tests`, `scripts/ci/partition-managed-producer.py
+The opt-in planner `scripts/ci/partition-managed-producer.py
 local-only-projects` computes which main-producer projects are consumed solely
 by even-index `affected-shard-held` jobs routed to the build host (requiring
 `heavy_ready == 'true'`, `HONUA_HEAVY_RUNNER` configured, and a same-repo pull
-request). Those projects skip remote artifact upload once host-local staging
+request). When wired into a producer, those projects skip remote artifact upload once host-local staging
 succeeds; any local staging failure or unavailable store falls back to remote
 upload automatically. `PR Gate / Server test producer` and `ci.yml` continue to
 upload remotely because they serve hosted consumers (`server-governance`, odd
-shards, and hosted full-CI shards), while build-host consumers still restore
-from the host-local store. PR Gate job structure, shard definitions, and
+shards, and hosted full-CI shards), while consumers with a configured host-local store try that store first. PR Gate job structure, shard definitions, and
 required check names are unchanged.
+
+The action and planner support are preparatory: PR Gate does not yet pass the
+local-only project plan. The workflow owner must wire that plan after the host
+store has bounded retention and disk limits configured through IaC. Until then,
+remote publication remains enabled for every project; no upload reduction is
+claimed. If the host is replaced after local-only publication, the missing local
+archive has no remote copy: the project remains unrestored and the existing
+consumer build fallback rebuilds it. A local store failure during publication
+still falls back to remote upload.
 
 Missing, expired, corrupt, oversized, or unavailable artifacts leave a project
 unrestored. The consumer restores/builds the union of missing projects once,

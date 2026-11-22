@@ -327,3 +327,41 @@ test('consume keeps identity mismatch fatal on host-local restore',async t=>{
  await assert.rejects(run(f.opts,f.deps),/identity/);
  await cleaned(f.root);
 });
+
+
+test('host replacement after local-only publication leaves project for caller rebuild',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ f.artifact.uploadArtifact=async()=>assert.fail('local-only publication must not upload');
+ await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ await rm(store,{recursive:true});await mkdir(store);
+ f.artifact.getArtifact=async()=>({artifact:null});
+ const result=await run(f.opts,f.deps);
+ assert.deepEqual(JSON.parse(await readFile(result.restoredProjectsFile,'utf8')),[]);
+ const row=(await receipt(result)).projects[0];
+ assert.equal(row.status,'unrestored');assert.equal(row.reason,'artifact-unavailable-or-invalid');
+ assert.equal(row.localStoreFallback,'miss-or-invalid');await cleaned(f.root);
+});
+
+test('local archive integrity failure retries verified remote artifact',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ await run({...f.opts,mode:'publish'},f.deps);
+ await writeFile(path.join(store,'blobs',`${'b'.repeat(64)}.tar.gz`),'invalid');
+ let restoreCalls=0;
+ f.deps.runner=async(file,args,identity)=>{
+   if(file==='git')return f.runner(file,args,identity);
+   restoreCalls++;
+   if(restoreCalls===1)throw Object.assign(Error('corrupt'),{stderr:'Artifact SHA-256 integrity check failed.'});
+   return f.runner(file,args,identity);
+ };
+ const result=await run(f.opts,f.deps);
+ assert.equal(restoreCalls,2);
+ assert.deepEqual(JSON.parse(await readFile(result.restoredProjectsFile,'utf8')),[project]);
+ const row=(await receipt(result)).projects[0];
+ assert.equal(row.transport,'remote');assert.equal(row.artifactId,42);
+ assert.equal(row.localStoreFallback,'miss-or-invalid');await cleaned(f.root);
+});

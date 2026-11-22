@@ -3250,14 +3250,15 @@ aggregate `needs` changed.
 
 ### Host-local managed test artifact handoff (#8701)
 
-Build-host producers and consumers can hand off verified managed test artifacts
-through a shared host-local store when `HONUA_MANAGED_ARTIFACT_LOCAL_STORE` is
-exported by the build host. Archives are stored content-addressed by
-`archiveSha256` alongside a same-run manifest index, and consumers still run
-`scripts/ci/restore-server-test-binaries.sh` with the exact same v2 identity and
-SHA-256 checks. `PR Gate / Build and tests` skips remote Actions upload for
-projects whose `affected-shard-held` consumers all land on the build host
-(even-index shards when `heavy_ready` is true on same-repo PRs); any missing or
-unwritable local store falls back to remote upload and download automatically.
-No workflow job structure, shard definition, required check name or aggregate
-`needs` changed.
+The managed artifact action supports an opt-in shared host-local store, keyed by
+archive SHA-256 and indexed by workflow run and producer attempt. Consumers retain
+the same v2 identity and SHA-256 checks; identity mismatch remains fatal. Local
+misses fall back to remote retrieval and then the existing missing-project build.
+A local-only archive lost with a replaced host is rebuilt, since it has no remote
+copy. Publication falls back to remote upload if local staging fails.
+
+The planner can identify projects whose held-shard consumers all use the build
+host. PR Gate wiring and a host store with bounded retention and disk limits are
+still required before uploads can be skipped. This preparatory change does not
+modify workflow jobs, shard definitions, required checks or aggregate `needs`.
+No deployed upload or runner-time saving is claimed.
