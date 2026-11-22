@@ -194,7 +194,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
+    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesFromSnapshotAsync(
         HttpContext context,
         PublishedFeatureTypeQuery query,
         CancellationToken cancellationToken)

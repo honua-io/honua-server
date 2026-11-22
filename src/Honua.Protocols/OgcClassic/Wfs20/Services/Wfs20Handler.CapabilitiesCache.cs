@@ -28,7 +28,7 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await GetPublishedFeatureTypesAsync(
+        return await GetPublishedFeatureTypesFromSnapshotAsync(
                 context,
                 new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Enforce),
                 cancellationToken)
@@ -40,7 +40,7 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await GetPublishedFeatureTypesAsync(
+        return await GetPublishedFeatureTypesFromSnapshotAsync(
                 context,
                 new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Bypass),
                 cancellationToken)
@@ -81,7 +81,7 @@ internal sealed partial class Wfs20Handler
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var featureTypes = SelectAdvertisedFeatureTypes(
-            await GetPublishedFeatureTypesAsync(
+            await GetPublishedFeatureTypesFromSnapshotAsync(
                 context,
                 new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Enforce),
                 cancellationToken).ConfigureAwait(false));
