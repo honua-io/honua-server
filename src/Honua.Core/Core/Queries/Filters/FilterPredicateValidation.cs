@@ -5,10 +5,6 @@ using System.Globalization;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Shared parse-time validation helpers for boolean predicate context and zero divisors
-/// across filter languages (OData, GeoServices SQL).
-/// </summary>
 public static class FilterPredicateValidation
 {
     private static readonly HashSet<string> _geoServicesSqlBooleanFunctions = new(StringComparer.OrdinalIgnoreCase)
