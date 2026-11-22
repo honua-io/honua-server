@@ -134,17 +134,7 @@ public sealed class Cql2Parser
             return exprResult;
         }
 
-        if (exprResult is BinaryExpression or UnaryExpression or SpatialPredicate or SpatialDistancePredicate or TemporalPredicate or ArrayPredicate)
-        {
-            return exprResult;
-        }
-
-        if (exprResult is FunctionCall)
-        {
-            return exprResult;
-        }
-
-        if (exprResult is Literal literal && literal.Type == LiteralType.Boolean)
+        if (Cql2BooleanExpression.IsPredicate(exprResult))
         {
             return exprResult;
         }
