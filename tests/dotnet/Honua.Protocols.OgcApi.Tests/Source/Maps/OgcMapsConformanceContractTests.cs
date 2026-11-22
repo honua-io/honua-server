@@ -49,16 +49,17 @@ public sealed class OgcMapsConformanceContractTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326")]
-    [InlineData("CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84")]
+    [InlineData("EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326", "-5,-10,15,20")]
+    [InlineData("CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84", "-10,-5,20,15")]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_ContentCrsPreservesIdentifier(string crs, string identifier)
+    public async Task GetCollectionMap_ContentCrsPreservesIdentifier(string crs, string identifier, string bbox)
     {
         using var response = await _fixture.Client.GetAsync(
-            $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map?bbox=-10,-10,10,10&crs={Uri.EscapeDataString(crs)}&width=16&height=16");
+            $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map?bbox=-10,-5,20,15&crs={Uri.EscapeDataString(crs)}&width=16&height=16");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.GetValues("Content-Crs").Single().Should().Be($"<{identifier}>");
+        response.Headers.GetValues("Content-Bbox").Single().Should().Be(bbox);
     }
 
     [IntegrationTheory]

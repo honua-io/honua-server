@@ -83,4 +83,18 @@ public sealed class OgcRecordsQueryContractTests(OgcRecordsEndpointTestsFixture 
 
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
+
+    [IntegrationTheory]
+    [InlineData("application/json, application/geo+json;q=0", "application/json")]
+    [InlineData("application/geo+json, application/json;q=0", "application/geo+json")]
+    [Operation(Operations.ContentNegotiation)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task Items_Accept_ReturnsNegotiatedContentType(string accept, string contentType)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, ItemsPath);
+        request.Headers.Accept.ParseAdd(accept);
+        using var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(contentType);
+    }
 }

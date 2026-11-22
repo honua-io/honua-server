@@ -184,8 +184,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("Lat(37.8)")]
-    [InlineData("Lon(170:-170),Lat(-10:10)")]
+        [InlineData("Lon(170:-170),Lat(-10:10)")]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
     public async Task Coverages_GetCoverage_SpatialSubsetContract(string subset)
@@ -198,20 +197,40 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         clip.Should().NotBeNull();
         clip!.Value.Srid.Should().Be(4326);
         var geometry = new WKBReader().Read(clip.Value.Geometry);
-        if (subset.StartsWith("Lat", StringComparison.Ordinal))
-        {
-            geometry.GeometryType.Should().Be("LineString");
-            geometry.EnvelopeInternal.MinY.Should().Be(37.8);
-            geometry.EnvelopeInternal.MaxY.Should().Be(37.8);
-        }
-        else
-        {
-            geometry.GeometryType.Should().Be("MultiPolygon");
-            geometry.NumGeometries.Should().Be(2);
-            geometry.GetGeometryN(0).EnvelopeInternal.MinX.Should().Be(170);
-            geometry.GetGeometryN(1).EnvelopeInternal.MaxX.Should().Be(-170);
-        }
+        geometry.GeometryType.Should().Be("MultiPolygon");
+        geometry.NumGeometries.Should().Be(2);
+        geometry.GetGeometryN(0).EnvelopeInternal.MinX.Should().Be(170);
+        geometry.GetGeometryN(1).EnvelopeInternal.MaxX.Should().Be(-170);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_PointSlice_ClipsOneRealPostgisPixelRow()
+    {
+        // This ordinate lies between pixel centers, so a degenerate ST_Clip loses all data.
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?subset=Lat(37.8007)");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var clip = _exportQueries.Single().ClipRegion!.Value;
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH clipped AS (
+                SELECT ST_Clip(ST_AddBand(ST_MakeEmptyRaster(64, 64, -122.5, 37.9,
+                    0.003125, -0.003125, 0, 0, 4326), '32BF'::text, 7, -9999),
+                    ST_GeomFromWKB(@clip, 4326), TRUE) AS rast
+            )
+            SELECT ST_Width(rast), ST_Height(rast), ST_Count(rast) FROM clipped
+            """;
+        command.Parameters.AddWithValue("clip", clip.Geometry);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(64);
+        reader.GetInt32(1).Should().Be(1);
+        reader.GetInt64(2).Should().Be(64);
+    }
+
 
     [IntegrationTest]
     [Operation(Operations.Export)]
