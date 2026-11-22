@@ -219,7 +219,6 @@ internal static partial class WmsRequestHandlers
         var dpiScale = requestedDpi.Value / DefaultWmsDpi;
         var logicalWidth = viewport.Width / dpiScale;
         var logicalHeight = viewport.Height / dpiScale;
-        canvas.Save();
         canvas.Scale((float)dpiScale, (float)dpiScale);
         return (
             SkiaMapRenderer.BuildTransform(viewport.Extent, logicalWidth, logicalHeight),

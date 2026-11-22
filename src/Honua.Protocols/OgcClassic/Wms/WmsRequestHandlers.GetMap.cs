@@ -233,7 +233,6 @@ internal static partial class WmsRequestHandlers
         var canvas = surface.Canvas;
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
 
-        var hasDpiScaling = requestedDpi.HasValue;
         var (transformFn, zoomImageWidth, zoomImageHeight) = PrepareDpiCanvas(
             canvas, (requestedExtent, imageWidth, imageHeight), requestedDpi);
 
@@ -256,7 +255,7 @@ internal static partial class WmsRequestHandlers
             if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
             {
                 var rasterTarget = (canvas, (layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight));
-                totalFeatureCount += hasDpiScaling
+                totalFeatureCount += requestedDpi.HasValue
                     ? await DrawWmsRasterLayerUnscaledAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false)
                     : await TryDrawWmsRasterLayerAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false);
                 continue;
@@ -315,25 +314,23 @@ internal static partial class WmsRequestHandlers
                 layer,
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
-            if (!hasDpiScaling)
+            // The point fast path draws in device pixels, so a dpi-scaled canvas takes the general path.
+            var renderedPointCount = requestedDpi.HasValue ? -1 : await TryRenderRasterPointFastPathAsync(
+                canvas,
+                layerReader,
+                layer.StorageLayerId,
+                geometryType,
+                stylePlan,
+                featureQuery,
+                requestedExtent,
+                imageWidth,
+                imageHeight,
+                transformFn,
+                cancellationToken).ConfigureAwait(false);
+            if (renderedPointCount >= 0)
             {
-                var renderedPointCount = await TryRenderRasterPointFastPathAsync(
-                    canvas,
-                    layerReader,
-                    layer.StorageLayerId,
-                    geometryType,
-                    stylePlan,
-                    featureQuery,
-                    requestedExtent,
-                    imageWidth,
-                    imageHeight,
-                    transformFn,
-                    cancellationToken).ConfigureAwait(false);
-                if (renderedPointCount >= 0)
-                {
-                    totalFeatureCount += renderedPointCount;
-                    continue;
-                }
+                totalFeatureCount += renderedPointCount;
+                continue;
             }
 
             var features = await QueryRasterFeaturesAsync(layerReader, layer.StorageLayerId, featureQuery, cancellationToken);
@@ -344,11 +341,6 @@ internal static partial class WmsRequestHandlers
 
             totalFeatureCount += features.Length;
             RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, geometryType, renderZoom);
-        }
-
-        if (hasDpiScaling)
-        {
-            canvas.Restore();
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, imageFormat);

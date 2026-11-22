@@ -26,7 +26,7 @@ internal static class Png8Encoder
         output.Write(PngSignature);
         WriteIhdrChunk(output, width, height);
         WritePaletteChunks(output, palette);
-        WriteIdatChunk(output, indices, width, height);
+        WriteIdatChunk(output, indices, width);
         WriteChunk(output, "IEND"u8, ReadOnlySpan<byte>.Empty);
         return output.ToArray();
     }
@@ -96,8 +96,9 @@ internal static class Png8Encoder
         WriteChunk(output, "tRNS"u8, trns);
     }
 
-    private static void WriteIdatChunk(Stream output, byte[] indices, int width, int height)
+    private static void WriteIdatChunk(Stream output, byte[] indices, int width)
     {
+        var height = indices.Length / width;
         using var idatBuffer = new MemoryStream();
         using (var zlib = new ZLibStream(idatBuffer, CompressionLevel.Fastest, leaveOpen: true))
         {

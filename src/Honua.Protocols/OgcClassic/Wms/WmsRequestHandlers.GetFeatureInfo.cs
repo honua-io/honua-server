@@ -175,7 +175,7 @@ internal static partial class WmsRequestHandlers
             return nonQueryableError;
         }
 
-        if (!TryNormalizeWmsFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
+        if (NormalizeWmsFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT")) is not { } infoFormat)
         {
             return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain, text/html, application/vnd.ogc.gml, and application/json.");
         }
@@ -395,15 +395,12 @@ internal static partial class WmsRequestHandlers
             return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
 
-        if (string.Equals(infoFormat, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.Content(WmsPopupHtmlFormatter.BuildHtml(htmlFeatures), HtmlMimeType, Encoding.UTF8, StatusCodes.Status200OK);
-        }
-
         var body = plainText.Length > 0
             ? plainText.ToString().TrimEnd()
             : "No features found.";
-        return Results.Content(body, PlainTextMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+        return string.Equals(infoFormat, HtmlMimeType, StringComparison.OrdinalIgnoreCase)
+            ? Results.Content(WmsPopupHtmlFormatter.BuildHtml(htmlFeatures), HtmlMimeType, Encoding.UTF8, StatusCodes.Status200OK)
+            : Results.Content(body, PlainTextMimeType, Encoding.UTF8, StatusCodes.Status200OK);
     }
 
     internal static double ComputeGetFeatureInfoMapX(SkiaMapRenderer.RenderExtent extent, double pixelX, int imageWidth)

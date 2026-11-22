@@ -140,8 +140,9 @@ public sealed class WmsCqlAndHtmlTests
     public void TryNormalizeFeatureInfoFormat_GatesHtmlToWmsOnly()
     {
         OgcClassicRequestHelpers.TryNormalizeFeatureInfoFormat("text/html", out _).Should().BeFalse();
-        OgcClassicRequestHelpers.TryNormalizeWmsFeatureInfoFormat("text/html", out var normalized).Should().BeTrue();
-        normalized.Should().Be("text/html");
+        OgcClassicRequestHelpers.NormalizeWmsFeatureInfoFormat("TEXT/HTML").Should().Be("text/html");
+        OgcClassicRequestHelpers.NormalizeWmsFeatureInfoFormat("application/json").Should().Be("application/json");
+        OgcClassicRequestHelpers.NormalizeWmsFeatureInfoFormat("image/png").Should().BeNull();
     }
 
     [UnitTest]

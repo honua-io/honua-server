@@ -85,15 +85,14 @@ internal static class OgcClassicRequestHelpers
         return value.ToString() ?? string.Empty;
     }
 
-    internal static bool TryNormalizeWmsFeatureInfoFormat(string? format, out string normalizedFormat)
+    internal static string? NormalizeWmsFeatureInfoFormat(string? format)
     {
         if (string.Equals(format, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            normalizedFormat = HtmlMimeType;
-            return true;
+            return HtmlMimeType;
         }
 
-        return TryNormalizeFeatureInfoFormat(format, out normalizedFormat);
+        return TryNormalizeFeatureInfoFormat(format, out var normalizedFormat) ? normalizedFormat : null;
     }
 
     internal static bool TryNormalizeFeatureInfoFormat(string? format, out string normalizedFormat)
