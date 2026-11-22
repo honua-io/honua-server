@@ -820,7 +820,7 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         layer.RootElement.GetProperty("store").GetProperty("defaultGeometrySchema")
             .GetProperty("topology").GetString().Should().Be("PerAttributeArray");
 
-        var rootGeoServices = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/root/geometries/0");
+        var rootGeoServices = await _fixture.Client.GetByteArrayAsync("/rest/services/i3s-persisted/SceneServer/layers/0/nodes/root/geometries/0");
         var rootAlias = await _fixture.Client.GetByteArrayAsync("/scenes/i3s-persisted/SceneServer/layers/0/nodes/root/geometries/0");
         var nodeZero = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/0/geometries/0");
 
