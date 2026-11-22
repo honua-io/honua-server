@@ -25,3 +25,4 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)
+- [Terrain and elevation](../../reference/protocols/terrain-and-elevation.md)

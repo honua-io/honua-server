@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 433,
-      "provingTestCount": 1998,
+      "entryCount": 439,
+      "provingTestCount": 2036,
       "maturity": {
-        "implemented": 430,
+        "implemented": 436,
         "experimental": 3
       },
       "noSurface": null,
@@ -819,7 +819,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 181,
+      "provingTestCount": 189,
       "maturity": {
         "implemented": 6
       },
@@ -856,10 +856,10 @@
       "category": "FieldOps",
       "edition": "Community",
       "status": null,
-      "entryCount": 21,
-      "provingTestCount": 37,
+      "entryCount": 23,
+      "provingTestCount": 43,
       "maturity": {
-        "implemented": 21
+        "implemented": 23
       },
       "noSurface": null,
       "cite": [],
@@ -1155,7 +1155,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 79,
-      "provingTestCount": 293,
+      "provingTestCount": 294,
       "maturity": {
         "implemented": 79
       },
@@ -1377,7 +1377,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 10,
-      "provingTestCount": 202,
+      "provingTestCount": 204,
       "maturity": {
         "preview": 10
       },
@@ -1673,7 +1673,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 624,
+      "provingTestCount": 633,
       "maturity": {
         "implemented": 49
       },
@@ -1823,7 +1823,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 463,
+      "provingTestCount": 487,
       "maturity": {
         "implemented": 45,
         "preview": 2
@@ -1890,7 +1890,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 135,
+      "provingTestCount": 136,
       "maturity": {
         "implemented": 21
       },
@@ -1914,7 +1914,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 46,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 9
       },
@@ -2231,7 +2231,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 64,
-      "provingTestCount": 250,
+      "provingTestCount": 251,
       "maturity": {
         "preview": 64
       },
@@ -2261,13 +2261,31 @@
       "geobench": []
     },
     {
+      "key": "serve.terrain-quantized-mesh",
+      "displayName": "Quantized-Mesh Terrain",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 2,
+      "provingTestCount": 7,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "serve.vector-tiles",
       "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
       "category": "Serve",
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 112,
+      "provingTestCount": 116,
       "maturity": {
         "implemented": 11
       },
@@ -2323,7 +2341,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 165,
+      "provingTestCount": 168,
       "maturity": {
         "implemented": 2
       },
@@ -2453,7 +2471,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 1,
-      "provingTestCount": 16,
+      "provingTestCount": 17,
       "maturity": {
         "preview": 1
       },
@@ -2658,10 +2676,10 @@
       "category": "Styling",
       "edition": "Community",
       "status": null,
-      "entryCount": 8,
-      "provingTestCount": 76,
+      "entryCount": 9,
+      "provingTestCount": 86,
       "maturity": {
-        "implemented": 8
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],
@@ -2717,7 +2735,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 24,
+      "provingTestCount": 25,
       "maturity": {
         "implemented": 6
       },

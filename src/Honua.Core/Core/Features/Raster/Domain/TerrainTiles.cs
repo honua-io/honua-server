@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Tiles;
+
 namespace Honua.Core.Features.Raster.Domain;
 
 public static class TerrainRgbEncoding
@@ -126,4 +128,123 @@ public sealed class TerrainTileException : InvalidOperationException
     }
 
     public TerrainTileFailureKind FailureKind { get; }
+}
+
+public readonly record struct TerrainGeographicBounds(double West, double South, double East, double North);
+
+public readonly record struct TerrainTileRange(int StartX, int StartY, int EndX, int EndY);
+
+public readonly record struct TerrainGeographicGridRequest
+{
+    public required int LayerId { get; init; }
+
+    public required int Z { get; init; }
+
+    public required int X { get; init; }
+
+    public required int Y { get; init; }
+
+    public RasterMergeStrategy MergeStrategy { get; init; } = RasterMergeStrategy.Newest;
+
+    public int GridSize { get; init; } = TerrainTmsGrid.DefaultGridSize;
+
+    public TerrainGeographicGridRequest()
+    {
+    }
+}
+
+public sealed record TerrainElevationGrid
+{
+    public required int GridSize { get; init; }
+
+    public required TerrainGeographicBounds Bounds { get; init; }
+
+    public required double?[] Elevations { get; init; }
+
+    public int SelectedRasterCount { get; init; }
+
+    public bool IsAllNoData { get; init; }
+}
+
+public static class TerrainTmsGrid
+{
+    public const int DefaultGridSize = 65;
+
+    public const int MinGridSize = 2;
+
+    public const int MaxGridSize = 257;
+
+    public static bool ValidateTileCoordinates(int z, int x, int y)
+    {
+        if (z is < 0 or > TileMath.MaxSupportedZoomLevel)
+        {
+            return false;
+        }
+
+        var numX = 2L << z;
+        var numY = 1L << z;
+        return x >= 0 && x < numX && y >= 0 && y < numY;
+    }
+
+    public static TerrainGeographicBounds GetTileBounds(int z, int x, int y)
+    {
+        if (!ValidateTileCoordinates(z, x, y))
+        {
+            throw new ArgumentOutOfRangeException(nameof(z), $"Invalid TMS geographic tile coordinates z={z}, x={x}, y={y}.");
+        }
+
+        var numX = 2.0 * Math.Pow(2, z);
+        var numY = Math.Pow(2, z);
+        var tileWidth = 360.0 / numX;
+        var tileHeight = 180.0 / numY;
+
+        var west = -180.0 + x * tileWidth;
+        var south = -90.0 + y * tileHeight;
+        return new TerrainGeographicBounds(west, south, west + tileWidth, south + tileHeight);
+    }
+
+    public static TerrainTileRange[][] ComputeAvailableRanges(double[]? wgs84Bounds, int minZoom, int maxZoom)
+    {
+        if (wgs84Bounds is not { Length: 4 } || maxZoom < 0 || minZoom > maxZoom)
+        {
+            return [];
+        }
+
+        var west = Math.Clamp(wgs84Bounds[0], -180.0, 180.0);
+        var south = Math.Clamp(wgs84Bounds[1], -90.0, 90.0);
+        var east = Math.Clamp(wgs84Bounds[2], -180.0, 180.0);
+        var north = Math.Clamp(wgs84Bounds[3], -90.0, 90.0);
+        if (!double.IsFinite(west) || !double.IsFinite(south) || !double.IsFinite(east) || !double.IsFinite(north)
+            || west > east || south > north)
+        {
+            return [];
+        }
+
+        var clampedMaxZoom = Math.Min(maxZoom, TileMath.MaxSupportedZoomLevel);
+        var clampedMinZoom = Math.Clamp(minZoom, 0, clampedMaxZoom);
+        var levels = new TerrainTileRange[clampedMaxZoom + 1][];
+        for (var z = 0; z <= clampedMaxZoom; z++)
+        {
+            levels[z] = z < clampedMinZoom
+                ? []
+                : [ComputeLevelRange(z, west, south, east, north)];
+        }
+
+        return levels;
+    }
+
+    private static TerrainTileRange ComputeLevelRange(int z, double west, double south, double east, double north)
+    {
+        var numX = 2 << z;
+        var numY = 1 << z;
+        var startX = Math.Clamp((int)Math.Floor((west + 180.0) / 360.0 * numX), 0, numX - 1);
+        var eastSample = east > west ? Math.BitDecrement(east) : east;
+        var endX = Math.Clamp((int)Math.Floor((eastSample + 180.0) / 360.0 * numX), startX, numX - 1);
+
+        var startY = Math.Clamp((int)Math.Floor((south + 90.0) / 180.0 * numY), 0, numY - 1);
+        var northSample = north > south ? Math.BitDecrement(north) : north;
+        var endY = Math.Clamp((int)Math.Floor((northSample + 90.0) / 180.0 * numY), startY, numY - 1);
+
+        return new TerrainTileRange(startX, startY, endX, endY);
+    }
 }

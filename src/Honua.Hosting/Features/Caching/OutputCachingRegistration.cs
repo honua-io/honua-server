@@ -473,6 +473,17 @@ internal static class OutputCachingRegistration
                 policy.Tag("terrain", "tiles");
             });
 
+            // Quantized-mesh terrain tile caching policy (varies by Accept / extensions for octvertexnormals)
+            options.AddPolicy("TerrainQuantizedMeshTile", policy =>
+            {
+                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
+                policy.Expire(ttl.TerrainTile);
+                policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
+                policy.SetVaryByHeader("Accept");
+                policy.SetVaryByQuery("extensions");
+                policy.Tag("terrain", "tiles");
+            });
+
             // Hosted 3D Tiles tileset.json metadata caching policy.
             // Range requests bypass output cache so the static-file pipeline
             // can return 206 Partial Content directly. Responses marked

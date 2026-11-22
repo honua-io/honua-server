@@ -508,6 +508,14 @@
     },
     {
       "family": "Terrain-RGB",
+      "routeContains": [
+        "layer.json",
+        ".terrain"
+      ],
+      "capability": "serve.terrain-quantized-mesh"
+    },
+    {
+      "family": "Terrain-RGB",
       "capability": "raster.terrain-rgb"
     },
     {

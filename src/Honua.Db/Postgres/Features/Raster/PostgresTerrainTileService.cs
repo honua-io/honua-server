@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-internal sealed class PostgresTerrainTileService : ITerrainTileService
+internal sealed partial class PostgresTerrainTileService : ITerrainTileService
 {
     private static readonly HashSet<string> NumericPixelTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -103,24 +103,10 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
                 $"Terrain-RGB tiles must be {TerrainRgbEncoding.TileSize}x{TerrainRgbEncoding.TileSize} pixels.");
         }
 
-        var metadata = await GetDatasetMetadataAsync(
+        _ = await ValidateSupportedMetadataAsync(
             request.LayerId,
             request.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
-        if (metadata is null)
-        {
-            throw new TerrainTileException(
-                TerrainTileFailureKind.SourceUnavailable,
-                "No raster source is registered for this terrain dataset.");
-        }
-
-        if (!metadata.IsSupported)
-        {
-            var kind = metadata.UnsupportedReasons.Any(static reason => reason.Contains("CRS", StringComparison.OrdinalIgnoreCase))
-                ? TerrainTileFailureKind.UnknownCrs
-                : TerrainTileFailureKind.UnsupportedSource;
-            throw new TerrainTileException(kind, string.Join(" ", metadata.UnsupportedReasons));
-        }
 
         var rasterIds = await GetIntersectingRasterIdsAsync(
             request.LayerId,
