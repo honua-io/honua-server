@@ -65,17 +65,9 @@ internal sealed partial class PublicExportRevocationService(
                 continue;
             }
 
-            var unpublishCheck = await TryCheckUnpublishedAsync(export, cancellationToken).ConfigureAwait(false);
-            if (unpublishCheck.IsUnpublished)
-            {
-                await RequestRevocationAsync(
-                    new PublicExportRevocationRequest(export.PublicationId, ReasonUnpublished, changeId),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else if (unpublishCheck.Failure is { } failure)
-            {
-                firstUnpublishCheckFailure ??= failure;
-            }
+            var failure = await TryRevokeIfUnpublishedAsync(
+                export, changeId, cancellationToken).ConfigureAwait(false);
+            firstUnpublishCheckFailure ??= failure;
         }
 
         if (firstUnpublishCheckFailure is not null)
@@ -366,22 +358,30 @@ internal sealed partial class PublicExportRevocationService(
         return failed;
     }
 
-    private readonly record struct UnpublishCheckResult(bool IsUnpublished, Exception? Failure);
-
-    private async Task<UnpublishCheckResult> TryCheckUnpublishedAsync(
+    private async Task<Exception?> TryRevokeIfUnpublishedAsync(
         PromotedExportRecord export,
+        string changeId,
         CancellationToken cancellationToken)
     {
+        bool unpublished;
         try
         {
-            var unpublished = await IsUnpublishedAsync(export, cancellationToken).ConfigureAwait(false);
-            return new UnpublishCheckResult(unpublished, null);
+            unpublished = await IsUnpublishedAsync(export, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             LogUnpublishCheckFailed(logger, export.PublicationId, ex);
-            return new UnpublishCheckResult(false, ex);
+            return ex;
         }
+
+        if (unpublished)
+        {
+            await RequestRevocationAsync(
+                new PublicExportRevocationRequest(export.PublicationId, ReasonUnpublished, changeId),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
     }
 
     private async Task<bool> IsUnpublishedAsync(

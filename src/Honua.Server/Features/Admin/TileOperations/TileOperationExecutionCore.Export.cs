@@ -497,6 +497,11 @@ internal sealed partial class TileOperationExecutionCore
             return result;
         }
 
+        return await RevokeUnpublishedAfterPromotionAsync(context).ConfigureAwait(false);
+    }
+
+    private async Task<PublicExportDeliveryStatus> RevokeUnpublishedAfterPromotionAsync(ExportPublishContext context)
+    {
         if (context.PublicRevocation is not null)
         {
             try
