@@ -8,12 +8,15 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Npgsql;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.TestKit.Extensions;
 using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
@@ -60,6 +63,11 @@ public sealed class AdminAccessProposalRestartTests
                 // and proposal records the first host wrote.
                 services.RemoveAll<IOperationInstanceStore>();
                 services.AddSingleton<IOperationInstanceStore>(sp => sp.GetRequiredService<PostgresOperationInstanceStore>());
+                // The proposer identity must survive the same restart as its proposal.
+                services.RemoveAll<IAdminApiKeyStore>();
+                services.AddSingleton<IAdminApiKeyStore>(sp => new PostgresAdminApiKeyStore(
+                    sp.GetRequiredService<NpgsqlDataSource>(), sp.GetService<TimeProvider>(),
+                    sp.GetRequiredService<IConfiguration>()["Database:Schema"]));
             });
         await fixture.InitializeAsync();
         try
