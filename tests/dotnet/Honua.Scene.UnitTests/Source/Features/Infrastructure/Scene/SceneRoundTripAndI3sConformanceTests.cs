@@ -4,6 +4,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
@@ -195,6 +196,38 @@ public sealed class SceneRoundTripAndI3sConformanceTests : IDisposable
         resources.Extent.YMin.Should().BeApproximately(21.3069, 0.01);
         resources.Extent.ZMin.Should().BeApproximately(12.0, 0.5);
         resources.Extent.ZMax.Should().BeApproximately(32.0, 0.5);
+    }
+
+    [UnitTest]
+    public async Task RoundTrip_ReplacementLods_RootAliasUsesCoarsestMesh()
+    {
+        var executor = new ModelScenePublishExecutor(
+            new TestHostEnvironment(), _options, NullLogger<ModelScenePublishExecutor>.Instance);
+        var outcome = await executor.IngestAsync(
+            new ModelSceneIngestRequest(
+                "v 0 0 0\nv 15 0 0\nv 0 15 0\nf 1 2 3\n"u8.ToArray(),
+                "replacement.obj",
+                new ModelPlacement(-122.4194, 37.7749, 5.0),
+                SceneId: "rt-replacement"),
+            CancellationToken.None);
+
+        var tilesetPath = Path.Join(outcome.AssetRoot, "tileset.json");
+        var tileset = JsonNode.Parse(await File.ReadAllTextAsync(tilesetPath))!;
+        var coarse = tileset["root"]!["children"]![0]!;
+        var detail = coarse.DeepClone();
+        detail.AsObject().Remove("transform");
+        coarse["geometricError"] = 5;
+        coarse["refine"] = "REPLACE";
+        coarse["children"] = new JsonArray(detail);
+        await File.WriteAllTextAsync(tilesetPath, tileset.ToJsonString());
+
+        var scene = ToSceneDataset(outcome.SceneId, outcome.AssetRoot);
+        var resources = await _i3sProvider.GetResourcesAsync(scene, CancellationToken.None);
+
+        resources.Should().NotBeNull();
+        resources!.Nodes.Values.Count(node => node.Geometry is not null).Should().Be(2);
+        resources.RootGeometry.Should().NotBeNull();
+        resources.RootGeometry!.VertexCount.Should().Be(3);
     }
 
     [UnitTest]
