@@ -240,7 +240,8 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
                 },
             },
         ]);
-        _profileId = await AssetTestData.CreateActiveProfileAsync(_fixture, _form);
+        await AssetTestData.ExecuteAsync(_fixture,
+            $"UPDATE honua.asset_profiles SET inspection_form_id = '{_form.FormId}', service_form_id = '{_form.FormId}', version = version + 1 WHERE profile_id = '{_profileId}'");
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
         var request = Completion(3, Later, condition: 3) with
         {
