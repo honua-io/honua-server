@@ -1,12 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using System.Text;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -114,30 +112,6 @@ internal static class CapabilitiesDocumentCacheHelper
         }
     }
 
-    internal static string BuildWfsKey(
-        WfsCapabilitiesCacheRequest request,
-        ImmutableArray<WfsFeatureTypeDescriptor> featureTypes)
-    {
-        var sb = PooledTextBuilder.Rent();
-        try
-        {
-            sb.Append("wfs|").Append(request.SnapshotEtag).Append('|').Append(request.BaseUrl)
-                .Append('|').Append(request.SectionsMask);
-            foreach (var ft in featureTypes)
-            {
-                sb.Append('|').Append(ft.StorageLayerId)
-                    .Append(':').Append(ft.QualifiedName)
-                    .Append(':').Append(ft.NamespaceUri);
-            }
-
-            return MetadataDocumentByteCache.HashKey(sb);
-        }
-        finally
-        {
-            PooledTextBuilder.Return(sb);
-        }
-    }
-
     private static void AppendLayers(StringBuilder sb, string marker, ReadOnlySpan<CachedLayerIdentity> layers)
     {
         sb.Append(marker);
@@ -145,9 +119,9 @@ internal static class CapabilitiesDocumentCacheHelper
         {
             sb.Append('|').Append(layer.StorageLayerId)
                 .Append(':').Append(layer.Resource.Metadata.Id)
-                .Append(':').Append(layer.Resource.Metadata.Generation)
+                .Append(':').Append(layer.Resource.Metadata.Generation.GetValueOrDefault())
                 .Append(':').Append(layer.Publication.Metadata.Id)
-                .Append(':').Append(layer.Publication.Metadata.Generation);
+                .Append(':').Append(layer.Publication.Metadata.Generation.GetValueOrDefault());
         }
     }
 }

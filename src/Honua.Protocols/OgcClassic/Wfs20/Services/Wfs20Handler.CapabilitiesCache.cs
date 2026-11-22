@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
@@ -45,7 +47,7 @@ internal sealed partial class Wfs20Handler
         var featureTypes = SelectAdvertisedFeatureTypes(
             await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false));
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var cacheKey = CapabilitiesDocumentCacheHelper.BuildWfsKey(
+        var cacheKey = BuildWfsCapabilitiesCacheKey(
             new WfsCapabilitiesCacheRequest
             {
                 SnapshotEtag = snapshot.Etag,
@@ -75,5 +77,29 @@ internal sealed partial class Wfs20Handler
         if (ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")) mask |= 1 << 3;
         if (ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")) mask |= 1 << 4;
         return mask;
+    }
+
+    private static string BuildWfsCapabilitiesCacheKey(
+        WfsCapabilitiesCacheRequest request,
+        ImmutableArray<WfsFeatureTypeDescriptor> featureTypes)
+    {
+        var sb = PooledTextBuilder.Rent();
+        try
+        {
+            sb.Append("wfs|").Append(request.SnapshotEtag).Append('|').Append(request.BaseUrl)
+                .Append('|').Append(request.SectionsMask);
+            foreach (var ft in featureTypes)
+            {
+                sb.Append('|').Append(ft.StorageLayerId)
+                    .Append(':').Append(ft.QualifiedName)
+                    .Append(':').Append(ft.NamespaceUri);
+            }
+
+            return MetadataDocumentByteCache.HashKey(sb);
+        }
+        finally
+        {
+            PooledTextBuilder.Return(sb);
+        }
     }
 }
