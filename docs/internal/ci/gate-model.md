@@ -1944,11 +1944,11 @@ needed to verify it.
 
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
+Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
 ### Server-test shard disk-headroom guard
 
 `scripts/ci/server-test-shard-free-disk.sh` checks available space on `/` (`HONUA_FREE_DISK_PATH`, default `/`) before spawning the background `sudo rm -rf` cleanup of preinstalled Android, Swift, GHCup, and CodeQL toolchains. When available space already meets `HONUA_MIN_FREE_DISK_GB` (default `40` GiB; invalid values fall back to `40`), the helper removes any stale PID file, logs the current `df -h` reading, and returns immediately so `Wait for free disk space` (`--await`) finishes without waiting on toolchain deletion. If `df -Pk` fails, returns non-numeric output, or reports less than the threshold, the helper fails safe and runs the existing background cleanup and `--await` barrier unchanged. Measured baseline on full trunk run `44819335862` (`225` `ubuntu-latest` server-test shards with `145` GiB root volumes): `Wait for free disk space` consumed `142.43` runner-minutes total (`36.0` s median, `72.0` s p90, `171.0` s max). Covered by `scripts/ci/fixtures/test-server-test-shard-free-disk.py`.
-
-Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
 
 ### SensorThings collection host lifetime
 
