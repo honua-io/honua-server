@@ -948,15 +948,25 @@ internal sealed partial class FileBackedLicenseService :
         };
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string EntitlementKey, HonuaEdition Edition), string> UpgradeMessageCache = new();
+
     private static string BuildUpgradeMessage(
         string entitlementKey,
         FeatureDefinition? definition,
         LicenseSnapshot snapshot)
     {
-        var featureName = definition?.DisplayName ?? entitlementKey;
-        var requiredEdition = definition?.MinimumEdition.ToString() ?? "a paid edition";
-        return $"{featureName} requires an active {requiredEdition} entitlement. " +
-            $"Current edition is {snapshot.Edition}; install a license that includes '{entitlementKey}'.";
+        if (definition is null)
+        {
+            return $"{entitlementKey} requires an active a paid edition entitlement. " +
+                $"Current edition is {snapshot.Edition}; install a license that includes '{entitlementKey}'.";
+        }
+
+        return UpgradeMessageCache.GetOrAdd(
+            (entitlementKey, snapshot.Edition),
+            static (key, def) =>
+                $"{def.DisplayName} requires an active {def.MinimumEdition} entitlement. " +
+                $"Current edition is {key.Edition}; install a license that includes '{key.EntitlementKey}'.",
+            definition);
     }
 
     private static async Task<byte[]> ReadBoundedLicenseDataAsync(

@@ -83,6 +83,13 @@ internal sealed class CapabilityManifestService(
         "analytics.density"
     ];
 
+    private static readonly CapabilityManifestPackages StaticPackages = BuildPackages();
+    private static readonly CapabilityManifestLink[] StaticLinks = BuildLinks();
+
+    private CapabilityManifestServerInfo? _cachedServerInfo;
+    private CapabilityManifestTransports? _cachedTransports;
+    private string[]? _cachedInstalledProviders;
+
     public async Task<CapabilityManifestDocument> GetManifestAsync(
         CapabilityManifestRequest request,
         CancellationToken cancellationToken = default)
@@ -121,17 +128,20 @@ internal sealed class CapabilityManifestService(
         // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
-        var capabilities = options.ManifestFromRegistry
+        var baseCapabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
-        capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
-        capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
-        capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
-        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
-        capabilities = ApplyCompiledProtocolProfile(capabilities);
+        baseCapabilities = StampRollbackTargets(baseCapabilities, operationCapabilities, policyContext);
+        var objectStoreCapability = await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false);
+        var capabilitiesList = new List<CapabilityManifestCapability>(baseCapabilities.Length + 16);
+        capabilitiesList.AddRange(baseCapabilities);
+        capabilitiesList.Add(BuildBackgroundImportCapability(policyContext));
+        capabilitiesList.Add(objectStoreCapability);
+        capabilitiesList.AddRange(BuildFileFormatCapabilities(policyContext, request.Principal));
+        var capabilities = ApplyCompiledProtocolProfile(capabilitiesList.ToArray());
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
-            : BuildPackages();
+            : StaticPackages;
         var unavailableCount = capabilities.Count(static c => !c.Available);
         var manifest = new CapabilityManifestDocument
         {
@@ -148,19 +158,19 @@ internal sealed class CapabilityManifestService(
                     : CapabilityReasonCodes.InsufficientPolicy,
                 Authenticated = request.Authenticated
             },
-            Server = BuildServerInfo(),
+            Server = _cachedServerInfo ??= BuildServerInfo(),
             Environment = environment,
             Packages = packages,
             Capabilities = capabilities,
-            Transports = BuildTransports(),
+            Transports = _cachedTransports ??= BuildTransports(),
             Limits = limits,
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
             {
-                InstalledProviders = runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
+                InstalledProviders = _cachedInstalledProviders ??= runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
             } : null,
-            Links = BuildLinks()
+            Links = StaticLinks
         };
 
         activity?.SetTag("honua.license.edition", snapshot.Edition.ToString());
@@ -668,7 +678,7 @@ internal sealed class CapabilityManifestService(
         var gitopsConfigured = options.ControlPlane.DeployTargets.Count > 0;
         var mtlsConfigured = options.ClientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
 
-        return new Dictionary<string, ManifestCapabilitySpec>(StringComparer.Ordinal)
+        return new Dictionary<string, ManifestCapabilitySpec>(64, StringComparer.Ordinal)
         {
             ["package.release-package"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["package.gitops-manifest"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
