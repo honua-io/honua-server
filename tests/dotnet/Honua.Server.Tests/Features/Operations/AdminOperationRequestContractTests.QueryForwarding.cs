@@ -49,7 +49,7 @@ public sealed partial class AdminOperationRequestContractTests
         unforwarded.Should().BeEmpty("an input the tool schema advertises must reach the replayed admin route");
     }
 
-    private static IEnumerable<string> ContractQueryParameterNames(JsonElement root, string openApiOperationId)
+    private static string[] ContractQueryParameterNames(JsonElement root, string openApiOperationId)
     {
         var operation = AdminApiOperationCatalog.FindOperation(root, openApiOperationId);
         if (!operation.TryGetProperty("parameters", out var parameters))
