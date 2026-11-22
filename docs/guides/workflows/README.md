@@ -50,6 +50,7 @@ Each guide names MCP tools by their exact names. The [workflow views](../connect
 | [Recover or cancel a job](recover-job.md) | `analyze` |
 | [Run a native conversion](run-native-job.md) | `default` or `setup` |
 | [Clean up owned outputs](cleanup-resources.md) | `default`, `setup`, `configure` or `analyze` |
+| [Design an App through prompt and preview](design-studio.md) | `setup` |
 
 A workflow page is not a release qualification receipt. Follow the source-linked implementation limits, including preview status and the distinction between the current Studio draft adapter and its Git worktree design contract.
 

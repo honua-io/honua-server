@@ -1,11 +1,11 @@
 ---
 type: guide
 title: "Harden a production deployment"
-description: "Work through this checklist before exposing Honua to the internet; each item names the setting that enforces or configures it."
+description: "Work through this checklist before exposing Honua to the internet; where an item has a setting, it names it."
 ---
 # Harden a production deployment
 
-Work through this checklist before exposing Honua to the internet. Each item names the setting that enforces or configures it. `.env.production.example` sets most of them; add the others to the same environment.
+Work through this checklist before exposing Honua to the internet. Where an item has a setting, it names it. `.env.production.example` and the production Compose file set many of them (Compose derives `PUBLIC_BASE_URL` and the forwarded-header settings from `HONUA_HOST` and `HONUA_PROXY_IP`). Add any other setting you change to the same environment file, and keep unset the ones this checklist says to leave unset.
 
 **Prerequisites:** A deployment you can restart with new environment variables, and an edge proxy/load balancer in front of the server (see [Deployment scenarios](../deploy/cloud-deployments.md)).
 
@@ -36,7 +36,7 @@ Work through this checklist before exposing Honua to the internet. Each item nam
 - [ ] Query and geometry limits are production-tuned (`Limits__Query__MaxRecordCount`, `Limits__Query__QueryTimeout`, `Limits__Geometry__MaxGeometrySize`, …).
 - [ ] Attachment limits fit your use case (`Limits__Attachments__MaxAttachmentSize`, `MaxAttachmentsPerFeature`, `AllowedMimeTypes` — defaults 5 MB / 5 per feature / `image/*,application/pdf,text/plain,text/csv,application/json`).
 - [ ] Import upload limits reviewed via `GET /api/v1/admin/import/limits`.
-- [ ] SSRF posture for remote imports understood: URL-based import sources must be HTTPS, without embedded credentials, resolving to public addresses on recognized S3/Azure object-storage hosts — private and loopback targets are rejected server-side. Outbound webhook URLs get the same validation. Keep network egress policies as defense in depth.
+- [ ] SSRF posture for remote imports understood: URL-based import sources must be HTTPS, without embedded credentials, resolving to public addresses on recognized S3/Azure object-storage hosts — private and loopback targets are rejected server-side. Outbound webhook URLs get the same validation. Service migration imports (GeoServices REST, GeoServer and OGC API discover, start, batch and scan) also require HTTPS without embedded credentials and refuse private and loopback addresses, but by default they accept any public host: list the source hosts you migrate from in `Migration__AllowedServiceHostSuffixes__0..n` (an entry matches the host and its subdomains). Keep network egress policies as defense in depth.
 
 ### Demo and development surfaces
 
