@@ -776,6 +776,10 @@ public sealed partial class FormPackageValidator
                 AddError(issues, "fieldValueOutsideDomain", $"Submitted value for '{field.FieldId}' is outside the form domain.", field.FieldId);
             }
         }
+        else if (string.Equals(field.Domain.Type, "range", StringComparison.OrdinalIgnoreCase) && IsOutsideRange(field.Domain, value))
+        {
+            AddError(issues, "fieldValueOutsideDomain", $"Submitted value for '{field.FieldId}' is outside the form domain.", field.FieldId);
+        }
     }
 
     private static void ValidateSubmittedGeometry(

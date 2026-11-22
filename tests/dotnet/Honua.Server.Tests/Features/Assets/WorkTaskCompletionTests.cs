@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
@@ -217,6 +218,43 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         responses.Select(response => response.StatusCode).Should().BeEquivalentTo([HttpStatusCode.OK, HttpStatusCode.Conflict]);
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
         (await SummaryAsync(_assets[1].AssetId)).Revision.Should().Be(1L);
+    }
+
+    [IntegrationTheory]
+    [InlineData(0, false)]
+    [InlineData(6, false)]
+    [InlineData(1, true)]
+    [InlineData(5, true)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_PinnedRangeDomain_EnforcesInclusiveBounds(int answer, bool valid)
+    {
+        _form = await AssetTestData.PublishFormAsync(_fixture,
+        [
+            new FormFieldDefinition
+            {
+                FieldId = "score", Label = "Score", Type = "integer", TargetField = "population", Required = true,
+                Domain = new FormFieldDomainDefinition
+                {
+                    Type = "range", Min = JsonElement.Parse("1"), Max = JsonElement.Parse("5"),
+                },
+            },
+        ]);
+        _profileId = await AssetTestData.CreateActiveProfileAsync(_fixture, _form);
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        var request = Completion(3, Later, condition: 3) with
+        {
+            Answers = JsonSerializer.SerializeToElement(new { score = answer }),
+        };
+
+        var response = await CompleteAsync(taskId, request);
+
+        response.StatusCode.Should().Be(valid ? HttpStatusCode.OK : HttpStatusCode.BadRequest,
+            await response.Content.ReadAsStringAsync());
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(valid ? 1 : 0);
+        (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(valid ? 1 : 0);
+        (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
+            .Should().Be(valid ? WorkTaskStatus.Completed : WorkTaskStatus.InProgress);
     }
 
     private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);
