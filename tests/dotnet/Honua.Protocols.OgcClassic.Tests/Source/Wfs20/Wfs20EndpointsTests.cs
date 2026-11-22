@@ -892,6 +892,65 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("name");
     }
 
+    [IntegrationTheory]
+    [InlineData("1.0.0", "name", false, false)]
+    [InlineData("1.0.0", "name,geometry", true, false)]
+    [InlineData("1.0.0", "*", true, false)]
+    [InlineData("1.0.0", null, true, false)]
+    [InlineData("1.1.0", "name", false, false)]
+    [InlineData("1.1.0", "name,honua:geometry", true, false)]
+    [InlineData("1.1.0", "*", true, false)]
+    [InlineData("1.1.0", null, true, false)]
+    [InlineData("2.0.0", "name", false, false)]
+    [InlineData("2.0.0", "name,honua:geometry", true, false)]
+    [InlineData("2.0.0", "*", true, false)]
+    [InlineData("2.0.0", null, true, false)]
+    [InlineData("2.0.0", "name", false, true)]
+    [InlineData("2.0.0", "name,honua:shape", true, true)]
+    [InlineData("2.0.0", "*", true, true)]
+    [InlineData("2.0.0", null, true, true)]
+    [Protocol(TestProtocols.Wfs10)]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetFeature")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_PropertyProjection_ControlsOptionalGeometry(
+        string version, string? propertyName, bool expectGeometry, bool usePost)
+    {
+        HttpResponseMessage response;
+        if (usePost)
+        {
+            XNamespace wfs = "http://www.opengis.net/wfs/2.0";
+            var query = new XElement(wfs + "Query", new XAttribute("typeNames", "honua:pub-layer-0"));
+            if (propertyName is not null)
+            {
+                query.Add(propertyName.Split(',').Select(name => new XElement(wfs + "PropertyName", name)));
+            }
+
+            var request = new XElement(wfs + "GetFeature",
+                new XAttribute("service", "WFS"), new XAttribute("version", version),
+                new XAttribute("count", "1"), new XAttribute(XNamespace.Xmlns + "honua", "http://honua.io/wfs"),
+                query);
+            using var requestContent = new StringContent(request.ToString(), Encoding.UTF8, "application/xml");
+            response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        }
+        else
+        {
+            response = await _fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=pub-layer-0&MAXFEATURES=1" +
+                (propertyName is null ? string.Empty : $"&PROPERTYNAME={Uri.EscapeDataString(propertyName)}"));
+        }
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        document.Descendants(XName.Get("name", "http://honua.io/wfs")).Should().ContainSingle();
+        document.Descendants(XName.Get("shape", "http://honua.io/wfs"))
+            .Should().HaveCount(expectGeometry ? 1 : 0);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
