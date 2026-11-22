@@ -260,6 +260,30 @@
       "implementationStatus": "implemented",
       "notes": "Honua extension (#6219): Read-only retrieval of sanitized steps, a bounded event tail, and artifact availability for a caller-readable geoprocessing job. Pending formalization in the standard; schema marks x-honua-extension."
     },
+    {
+      "standardName": "scene_list",
+      "referenceToolName": "honua_scene_list",
+      "family": "Scene discovery (Honua extension)",
+      "schema": "tools/scene_list.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "List caller-readable scenes with format and content filters and pagination."
+    },
+    {
+      "standardName": "scene_get",
+      "referenceToolName": "honua_scene_get",
+      "family": "Scene discovery (Honua extension)",
+      "schema": "tools/scene_get.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Get metadata for a caller-readable scene by identifier."
+    },
+    {
+      "standardName": "scene_resolve",
+      "referenceToolName": "honua_scene_resolve",
+      "family": "Scene discovery (Honua extension)",
+      "schema": "tools/scene_resolve.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Resolve endpoint choices for a caller-readable scene in preferred format order."
+    },
     {"standardName":"propose_finding","referenceToolName":"honua_propose_finding","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_finding.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_plan","referenceToolName":"honua_propose_deploy_plan","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_plan.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_operation","referenceToolName":"honua_propose_deploy_operation","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_operation.schema.json","implementationStatus":"implemented"},
