@@ -53,7 +53,7 @@ internal static class OgcCoverageSpatialSubset
                     !double.TryParse(limits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var low) ||
                     !double.TryParse(limits[^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var high) ||
                     !double.IsFinite(low) || !double.IsFinite(high) ||
-                    (limits.Length == 2 && (low == high || (low > high && !(isX && (isGeographic || storageSrid == 4326))))) ||
+                    (limits.Length == 2 && (low.CompareTo(high) == 0 || (low > high && !(isX && (isGeographic || storageSrid == 4326))))) ||
                     (isX ? x.HasValue : y.HasValue))
                 {
                     return false;
