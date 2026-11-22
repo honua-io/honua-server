@@ -309,63 +309,9 @@ _MAP_GROUP_RE = re.compile(r"\.MapGroup\(\s*\"([^\"]+)\"")
 _MAP_METHOD_NOT_ALLOWED_RE = re.compile(
     r"\.MapMethods\(\s*\"([^\"]+)\"\s*,\s*(\w+)\s*,\s*(\w*MethodNotAllowed)\b"
 )
-# ``var formats = BindImportOperation(definitions, "admin.import.formats")``
-_BOUND_OPERATION_VAR_RE = re.compile(
-    r"\bvar\s+(\w+)\s*=\s*(?:BindImportOperation\(\s*\w+\s*,|AdminHttpOperationRouteBinding\.For\w+\()\s*\"([^\"]+)\""
-)
-# ``group.MapMethods(formats.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)``
-_MAP_BOUND_METHOD_NOT_ALLOWED_RE = re.compile(
-    r"\.MapMethods\(\s*(\w+)\.RoutePattern\s*,\s*(\w+)\s*,\s*(\w*MethodNotAllowed)\b"
-)
-# Canonical admin operation catalog path definitions:
-# ``Read("admin.import.formats", "...", "/import/formats", ...)``
-# ``Write("admin.import.upload", "...", HttpMethod.Post, "/import/upload", ...)``
-# ``new("admin.import.preview", "...", HttpMethod.Post, "/import/preview", ...)``
-_CATALOG_OPERATION_PATH_RE = re.compile(
-    r"\b(?:Read|Write|new)\(\s*\"([^\"]+)\"\s*,\s*\"[^\"]*\"\s*,(?:\s*HttpMethod\.\w+\s*,)?\s*\"(/[^\"]+)\""
-)
 # ASP.NET route templates carry the API version as a constrained parameter; the
 # registry records the resolved v1 path.
 _API_VERSION_TOKEN_RE = re.compile(r"\{version:apiVersion\}")
-
-
-def _load_admin_operation_catalog_paths() -> dict[str, str]:
-    catalog_dir = REPO_ROOT / "src" / "Honua.Server" / "Features" / "Operations"
-    if not catalog_dir.is_dir():
-        return {}
-    paths: dict[str, str] = {}
-    for catalog_file in sorted(catalog_dir.glob("Admin*OperationCatalog.cs")):
-        text = catalog_file.read_text(encoding="utf-8")
-        for operation_id, route_path in _CATALOG_OPERATION_PATH_RE.findall(text):
-            paths[operation_id] = route_path
-    return paths
-
-
-def _resolve_bound_responders(
-    text: str,
-    prefix_pair: tuple[str, str],
-    catalog_paths: dict[str, str],
-) -> set[tuple[str, str]]:
-    bound_responders = _MAP_BOUND_METHOD_NOT_ALLOWED_RE.findall(text)
-    if not bound_responders:
-        return set()
-    prefix, owner_prefix = prefix_pair
-    verb_arrays = {
-        name: _HTTP_METHOD_RE.findall(body)
-        for name, body in _VERB_ARRAY_RE.findall(text)
-    }
-    bound_vars = dict(_BOUND_OPERATION_VAR_RE.findall(text))
-    resolved: set[tuple[str, str]] = set()
-    for var_name, verb_array, _handler in bound_responders:
-        verbs = verb_arrays.get(verb_array)
-        operation_id = bound_vars.get(var_name)
-        catalog_path = catalog_paths.get(operation_id) if operation_id else None
-        if not verbs or not catalog_path:
-            continue
-        absolute = normalize_route(owner_prefix + catalog_path)
-        if absolute == prefix or absolute.startswith(prefix + "/"):
-            resolved.update((verb.lower(), absolute) for verb in verbs)
-    return resolved
 
 
 def derive_method_not_allowed_routes(
@@ -378,11 +324,6 @@ def derive_method_not_allowed_routes(
 
         group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
 
-    Routes bound from canonical admin operation catalogs via
-    ``var binding = BindImportOperation(..., "<operationId>")`` and
-    ``group.MapMethods(binding.RoutePattern, ...)`` are resolved against the
-    catalog path under the matching protocol prefix.
-
     Returns the ``(method, path)`` pairs such a call answers, restricted to
     ``protocol_paths``. A file whose route group prefix cannot be resolved
     unambiguously (no ``MapGroup``, or more than one) is skipped, so the route
@@ -390,16 +331,19 @@ def derive_method_not_allowed_routes(
     silently exempted.
     """
 
-    catalog_paths = _load_admin_operation_catalog_paths()
-    derived: set[tuple[str, str]] = set()
+    script_dir = str(Path(__file__).resolve().parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from openapi_bound_routes import derive_bound_method_not_allowed_routes
+
+    derived = derive_bound_method_not_allowed_routes(REPO_ROOT, protocol_paths, normalize_route)
     for source in sorted((REPO_ROOT / "src").rglob("*.cs")):
         text = source.read_text(encoding="utf-8")
         if "MethodNotAllowed" not in text:
             continue
 
         responders = _MAP_METHOD_NOT_ALLOWED_RE.findall(text)
-        has_bound = bool(_MAP_BOUND_METHOD_NOT_ALLOWED_RE.search(text))
-        if not responders and not has_bound:
+        if not responders:
             continue
 
         groups = {
@@ -409,15 +353,10 @@ def derive_method_not_allowed_routes(
         if len(groups) != 1:
             continue
         prefix = groups.pop().rstrip("/")
-        matching_owner = next(
-            (
-                owner
-                for owner in protocol_paths
-                if prefix == owner or prefix.startswith(owner + "/")
-            ),
-            None,
-        )
-        if matching_owner is None:
+        if not any(
+            prefix == owner or prefix.startswith(owner + "/")
+            for owner in protocol_paths
+        ):
             continue
 
         verb_arrays = {
@@ -426,16 +365,10 @@ def derive_method_not_allowed_routes(
         }
         for route, verb_array, _handler in responders:
             verbs = verb_arrays.get(verb_array)
-            if verbs:
-                absolute = normalize_route(prefix + route)
-                derived.update((verb.lower(), absolute) for verb in verbs)
-
-        if has_bound:
-            derived.update(
-                _resolve_bound_responders(
-                    text, (prefix, matching_owner.rstrip("/")), catalog_paths
-                )
-            )
+            if not verbs:
+                continue
+            absolute = normalize_route(prefix + route)
+            derived.update((verb.lower(), absolute) for verb in verbs)
     return derived
 
 
