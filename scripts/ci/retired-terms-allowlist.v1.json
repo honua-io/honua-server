@@ -3192,6 +3192,12 @@
       "rule": "map-envelope",
       "line": "        using var response = await PostPublishAsync(host.Client, $$\"\"\"{\"map\": {{CliMapPackageJson(string.Empty)}}}\"\"\");",
       "reason": "Negative contract assertion rejects the retired Map/App envelope or identity; this is not a supported alias."
+    },
+    {
+      "path": "docs/reference/release-notes/2026.1-rc.2.md",
+      "rule": "map-envelope",
+      "line": "| 230 | Report Map embeds use `mapUri` in place of `mapPackageUri`. |",
+      "reason": "Upgrade table identifies the retired field so operators can understand the forward-only rename."
     }
   ]
 }
