@@ -250,6 +250,12 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parsed.Length > 0)
             {
+                var fieldError = ValidateFieldNameList(context, "carryFields", parsed);
+                if (fieldError != null)
+                {
+                    return fieldError;
+                }
+
                 carryFields = [.. parsed];
             }
         }
@@ -300,10 +306,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             // Intentional catch-all request-handling boundary: this is the spatial-join
             // reader call boundary; the failure is logged and mapped to a generic error
             // response below.
-            if (logger != null)
-            {
-                SpatialAnalyticsLog.RequestFailed(logger, SpatialJoinOperation, targetLayerId, ex.Message, ex);
-            }
+            LogRequestFailed(logger, SpatialJoinOperation, targetLayerId, ex);
             return CreateReaderFailureResult(context, SpatialJoinOperation, ex);
         }
 

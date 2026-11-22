@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -162,9 +163,15 @@ internal static partial class SpatialAnalyticsRequestHandlers
                     return false;
                 }
 
+                if (!IsValidAnalyticsFieldName(onField!) || !IsValidAnalyticsFieldName(outFieldName!))
+                {
+                    error = "Each outStatistics field name must be a valid identifier.";
+                    return false;
+                }
+
                 if (!TryParseStatisticType(statisticType, out var parsedType))
                 {
-                    error = $"Unsupported statisticType: {statisticType}.";
+                    error = $"Unsupported statisticType: {LogValueRedactor.SanitizeForLog(statisticType, 64)}.";
                     return false;
                 }
 
@@ -458,12 +465,74 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return rows.Take(limit).ToImmutableArray();
     }
 
+    private const int MaxAnalyticsFieldNameLength = 128;
+
+    private static bool IsValidAnalyticsFieldName(string? fieldName)
+    {
+        if (string.IsNullOrEmpty(fieldName) || fieldName.Length > MaxAnalyticsFieldNameLength)
+        {
+            return false;
+        }
+
+        var first = fieldName[0];
+        if (!char.IsAsciiLetter(first) && first != '_')
+        {
+            return false;
+        }
+
+        for (var i = 1; i < fieldName.Length; i++)
+        {
+            var c = fieldName[i];
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static IResult? ValidateFieldNameList(HttpContext context, string parameterName, string[] fields)
+    {
+        for (var i = 0; i < fields.Length; i++)
+        {
+            if (!IsValidAnalyticsFieldName(fields[i]))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Invalid {parameterName}",
+                    [$"{parameterName} entries must be valid field identifiers."]);
+            }
+        }
+
+        return null;
+    }
+
+    private static void LogRequestFailed(ILogger? logger, string operation, int layerId, Exception exception)
+    {
+        if (logger == null)
+        {
+            return;
+        }
+
+        var safeMessage = LogValueRedactor.SanitizeForLog(exception.Message);
+        SpatialAnalyticsLog.RequestFailed(
+            logger,
+            operation,
+            layerId,
+            safeMessage,
+            exception is ArgumentException ? null : exception);
+    }
+
     // A reader fault that is not a validation error is a 500, so callers are not told the request was invalid.
     private static IResult CreateReaderFailureResult(HttpContext context, string operation, Exception exception)
     {
         if (exception is ArgumentException)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Spatial analytics {operation} failed", [exception.Message]);
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Spatial analytics {operation} failed",
+                [LogValueRedactor.SanitizeForLog(exception.Message)]);
         }
 
         return StandardErrorHelpers.CreateInternalServerError(
