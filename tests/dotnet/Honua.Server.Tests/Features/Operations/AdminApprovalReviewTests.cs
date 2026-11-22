@@ -97,11 +97,17 @@ public sealed class AdminApprovalReviewTests
         var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
         var committing = mapper.Map(new OperationApprovalRequestContext
         {
-            Descriptor = descriptor, Request = request, Context = context, Decision = decision,
+            Descriptor = descriptor,
+            Request = request,
+            Context = context,
+            Decision = decision,
         }).Plan!;
         var preview = mapper.Map(new OperationApprovalRequestContext
         {
-            Descriptor = descriptor, Request = request with { DryRun = true }, Context = context, Decision = decision,
+            Descriptor = descriptor,
+            Request = request with { DryRun = true },
+            Context = context,
+            Decision = decision,
         }).Plan!;
         Review(preview).Should().Contain("dry-run").And.NotBe(Review(committing));
     }

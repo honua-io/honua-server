@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Npgsql;
 
