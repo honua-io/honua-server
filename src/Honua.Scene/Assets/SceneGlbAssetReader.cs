@@ -150,14 +150,22 @@ internal sealed class SceneGlbAssetReader
         }
 
         var reader = new SceneGlbAssetReader(root, binary, batchRows ?? ReadStructuralTable(root, binary), readRelativeAsset, cancellationToken);
-        var hasStandardAxis = root.GetProperty("asset").TryGetProperty("extras", out var assetExtras)
+        var hasStandardAxis = root.TryGetProperty("asset", out var asset)
+            && asset.ValueKind == JsonValueKind.Object
+            && asset.TryGetProperty("extras", out var assetExtras)
+            && assetExtras.ValueKind == JsonValueKind.Object
             && assetExtras.TryGetProperty("honuaUpAxis", out var encodedAxis)
+            && encodedAxis.ValueKind == JsonValueKind.String
             && encodedAxis.GetString() == "Y";
         var legacyNativeEcef = !hasStandardAxis
             && root.TryGetProperty("extensions", out var extensions)
+            && extensions.ValueKind == JsonValueKind.Object
             && extensions.TryGetProperty("EXT_structural_metadata", out var metadata)
+            && metadata.ValueKind == JsonValueKind.Object
             && metadata.TryGetProperty("schema", out var schema)
+            && schema.ValueKind == JsonValueKind.Object
             && schema.TryGetProperty("id", out var schemaId)
+            && schemaId.ValueKind == JsonValueKind.String
             && schemaId.GetString() == "honua_scene_schema";
         var axis = (upAxis is null && legacyNativeEcef) || string.Equals(upAxis, "Z", StringComparison.OrdinalIgnoreCase)
             ? SceneAffineTransform.Identity : SceneAffineTransform.YUpToZUp;
