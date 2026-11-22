@@ -70,7 +70,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid zonal statistics inputs: {sourceError}");
         }
 
         // Secondary base64 inputs (zone polygons) share the same per-worker
@@ -80,7 +80,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "zones", opts.MaxArtifactBytes, out var zonesBytes, out var zonesError))
         {
             Log.InvalidInputs(logger, job.OperationId, zonesError);
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid zonal statistics inputs: {zonesError}. Layer-resolved zones via zonesLayerId are deferred — supply 'zones' as an inline base64 GeoJSON FeatureCollection.");
         }
 
@@ -94,20 +94,20 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
         {
             Log.ZonesParseFailed(logger, job.OperationId, ex);
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid zonal statistics inputs: 'zones' could not be parsed as a GeoJSON FeatureCollection.");
         }
 
         if (zones.Count == 0)
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid zonal statistics inputs: 'zones' contained no features.");
         }
 
         if (!TryExtractGeoJsonCrsName(zonesBytes, out var zonesCrsName, out var crsError))
         {
             Log.InvalidInputs(logger, job.OperationId, crsError);
-            return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {crsError}");
+            return JobExecutionResult.InvalidInput($"Invalid zonal statistics inputs: {crsError}");
         }
 
         // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
@@ -117,14 +117,14 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         if (!GdalZoneAdmission.TryAdmit(zones, opts, out var zoneError))
         {
             Log.InvalidInputs(logger, job.OperationId, zoneError);
-            return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {zoneError}");
+            return JobExecutionResult.InvalidInput($"Invalid zonal statistics inputs: {zoneError}");
         }
 
         var band = 1;
         if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw)
             && (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid zonal statistics inputs: 'band' value '{bandRaw}' is not a positive integer.");
         }
 
@@ -142,7 +142,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // ' , ,'). Reject explicitly so callers do not silently end up
                 // with an empty requested set; matches the submit-time
                 // validator's comma-only rejection.
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid zonal statistics inputs: 'statistics' must be a comma-separated list of names from " +
                     $"(count, sum, mean, min, max, stddev, variance); got '{statsRaw}'.");
             }
@@ -151,7 +151,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             {
                 if (!SupportedStatistics.Contains(token))
                 {
-                    return JobExecutionResult.Failed(
+                    return JobExecutionResult.InvalidInput(
                         $"Invalid zonal statistics inputs: statistic '{token}' is not in the allowed set " +
                         "(count, sum, mean, min, max, stddev, variance).");
                 }
@@ -173,7 +173,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
-                return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid zonal statistics inputs: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

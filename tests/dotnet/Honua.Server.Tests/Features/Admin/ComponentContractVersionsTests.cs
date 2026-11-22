@@ -130,7 +130,7 @@ public sealed class ComponentContractVersionsTests
     public void DeclaredExportCollectionVersion_MatchesTheHonuaExtensionTheServerWrites()
     {
         ComponentVersionsDeclaration.Embedded.SchemaVersions["export-collection"]
-            .Should().Be(Honua.Core.Features.Publishing.Descriptors.ExportCollectionDocument.HonuaExtensionVersion);
+            .Should().Be(Honua.Core.Features.Exports.ExportCollectionDocument.HonuaExtensionVersion);
     }
 
     [UnitTest]

@@ -59,6 +59,10 @@ internal static partial class StacLog
         Message = "STAC search returned {Count} items")]
     public static partial void SearchReturned(ILogger logger, int count);
 
+    [LoggerMessage(EventId = 5972, Level = LogLevel.Warning,
+        Message = "STAC search skipped collection {CollectionId}: its storage table or schema is missing")]
+    public static partial void SearchCollectionSkipped(ILogger logger, string collectionId, Exception exception);
+
     // 5980: Errors
 
     [LoggerMessage(EventId = 5980, Level = LogLevel.Error,

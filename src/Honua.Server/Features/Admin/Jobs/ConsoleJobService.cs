@@ -16,6 +16,7 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Io.Export;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.Extensions.Options;
 
@@ -378,6 +379,17 @@ internal sealed partial class ConsoleJobService(
                 : Task.FromResult(false)
             : store.TrySetAsync(job, cancellationToken: cancellationToken);
 
+    private async Task EnsureExportNotUnpublishedAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        var blocked = await ExportUnpublishGuard
+            .TryGetRetryBlockedMessageAsync(serviceProvider, job, cancellationToken)
+            .ConfigureAwait(false);
+        if (blocked is not null)
+        {
+            throw new ConsoleJobConflictException(blocked);
+        }
+    }
+
     public async Task<ConsoleJobControlResponse?> RetryAsync(
         HttpContext context,
         string jobId,
@@ -394,6 +406,8 @@ internal sealed partial class ConsoleJobService(
         {
             throw new ConsoleJobConflictException("Only failed or cancelled jobs can be retried.");
         }
+
+        await EnsureExportNotUnpublishedAsync(job, cancellationToken).ConfigureAwait(false);
 
         var policy = job.RetryPolicy ?? JobRetryPolicy.Default;
         var policyDisabledReason = ResolveRetryPolicyDisabledReason(policy, job.AttemptCount);

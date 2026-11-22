@@ -195,7 +195,7 @@ npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --
 npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.2.10. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.4.0. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 
