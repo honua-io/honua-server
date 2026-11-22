@@ -2263,6 +2263,34 @@ baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the sec
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
 
+### Streaming projected-bbox handshake host lifetime
+
+`FeatureStreamEndpointsTests.Stream_WithProjectedBboxLayer_AllowsSseHandshake`
+uses the existing class-owned Pro streaming application and a fresh admin client.
+It previously started a second private Pro application for the same handshake.
+The shared host resets sessions between cases, and the projected layer is seeded
+before requests. The request URL, Accept header, five-second cancellation, status
+and content-type assertions are unchanged. All 193 assertion lines and 134
+selection/endpoint metadata lines in the changed file are retained. Cases with
+specialized configuration, real credential expiry or mutable services retain
+their existing hosts and timing bounds.
+
+Four interleaved baseline/candidate runs of the complete unchanged Server
+Features Streaming Endpoints 2 shard passed the same 23 cases, with zero skips.
+Summed class seconds were 30.821524 / 27.345450 and 27.160965 / 26.675210
+(baseline / candidate); the median was 28.991244 -> 27.010330 seconds.
+Fixture-inclusive TRX shard intervals were 47.529324 / 43.602161 and
+43.948600 / 43.279365 seconds. Their median was 45.738962 -> 43.440763 seconds,
+a measured saving of 2.298199 seconds (0.038303 runner-minutes), with one runner
+before and after. Both pairs improved, with different magnitudes; this small
+sample does not establish PR critical-path savings. Compilation/process time is
+excluded from the shard saving. This removes one redundant application boot
+without splitting the suite or reducing its assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
