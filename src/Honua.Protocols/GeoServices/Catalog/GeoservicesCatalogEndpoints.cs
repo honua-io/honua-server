@@ -979,12 +979,30 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
+        DirectoryCacheSlot? cacheSlot = null;
+        MetadataV2GraphSnapshot? scopedSnapshot = null;
+        if (GeoservicesCatalogCacheHelper.CanCacheAnonymousDirectory(context))
+        {
+            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+            scopedSnapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var cacheKey = GeoservicesCatalogCacheHelper.BuildAnonymousDirectoryKey(
+                context, scopedSnapshot, licenseStatusProvider);
+            var (slot, hit) = await GeoservicesCatalogCacheHelper.TryLookupAsync(context, cacheKey).ConfigureAwait(false);
+            if (hit is not null)
+            {
+                return hit.ToResult();
+            }
+
+            cacheSlot = slot;
+        }
+
         var projection = await BuildServiceDirectoryProjectionAsync(
             context,
             graphProvider,
             rasterStore,
             licenseStatusProvider,
-            logger).ConfigureAwait(false);
+            logger,
+            scopedSnapshot).ConfigureAwait(false);
         if (projection.AccessError is not null)
         {
             AppendChallengeIfUnauthorized(context, projection.AccessStatusCode);
@@ -998,6 +1016,11 @@ internal static class GeoservicesCatalogEndpoints
         };
 
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
+
+        if (cacheSlot is { } activeSlot && !projection.AllImageServerProbesFailed)
+        {
+            return GeoservicesCatalogCacheHelper.StoreAndReturn(context, activeSlot, response);
+        }
 
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
