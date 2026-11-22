@@ -349,16 +349,24 @@ public class ImageServerTileHandlerTests
     [UnitTest]
     [Operation(Operations.GetTile)]
     public Task GetImageTileAsync_CogFallbackUsesStorageLayerId()
-        => AssertCogFallbackUsesStorageLayerIdAsync(sharedPublicationIndex: false);
+        => AssertCogFallbackUsesStorageLayerIdAsync(CreateCogGraphBuilder().BuildProvider());
 
     [UnitTest]
     [Operation(Operations.GetTile)]
     public Task GetImageTileAsync_CogFallbackResolvesByStorageLayerIdWhenPublicationIndexIsShared()
-        => AssertCogFallbackUsesStorageLayerIdAsync(sharedPublicationIndex: true);
-
-    private async Task AssertCogFallbackUsesStorageLayerIdAsync(bool sharedPublicationIndex)
     {
-        var graphBuilder = new TestMetadataV2GraphBuilder()
+        var graphProvider = CreateCogGraphBuilder()
+            .AddResource("resource-other", "other-layer", MetadataV2ObjectType.RasterDataset)
+            .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
+            .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
+                storageBindingId: "binding-other", publicationType: MetadataV2LayerType.EsriImageLayer)
+            .BuildProvider();
+        return AssertCogFallbackUsesStorageLayerIdAsync(graphProvider);
+    }
+
+    private static TestMetadataV2GraphBuilder CreateCogGraphBuilder()
+        => new TestMetadataV2GraphBuilder()
             .AddResource("resource-cog", "cog-layer", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("binding-cog", "resource-cog", "cog.rasters", storageLayerId: 42)
             .AddService("service-cog", "cog-service", protocols: [ServiceProtocols.ImageServer])
@@ -370,16 +378,9 @@ public class ImageServerTileHandlerTests
                 storageBindingId: "binding-cog",
                 serviceLocalId: "cog-layer",
                 publicationType: MetadataV2LayerType.EsriImageLayer);
-        if (sharedPublicationIndex)
-        {
-            graphBuilder
-                .AddResource("resource-other", "other-layer", MetadataV2ObjectType.RasterDataset)
-                .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
-                .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
-                .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
-                    storageBindingId: "binding-other", publicationType: MetadataV2LayerType.EsriImageLayer);
-        }
-        var graphProvider = graphBuilder.BuildProvider();
+
+    private async Task AssertCogFallbackUsesStorageLayerIdAsync(TestMetadataV2GraphProvider graphProvider)
+    {
         var cogResolver = Substitute.For<ICogTileResolver>();
         cogResolver.GetTileForLayerAsync(
                 42, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
