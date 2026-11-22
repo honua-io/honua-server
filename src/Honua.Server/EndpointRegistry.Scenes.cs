@@ -61,6 +61,8 @@ public static partial class EndpointRegistry
         // Persisted I3S geometry, typed attributes and textures, including aliases.
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
+        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}"),
+        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}"),
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/textures/{textureId}"),
@@ -85,6 +87,16 @@ public static partial class EndpointRegistry
 
         // LAS/LAZ/COPC point-cloud scene ingest admin endpoint.
         new("POST", "/api/v1/admin/scenes/ingest/pointcloud"),
+
+        // Pre-tiled 3D Tiles archive and georeferenced 3D model ingest admin endpoints.
+        new("POST", "/api/v1/admin/scenes/ingest/archive"),
+        new("POST", "/api/v1/admin/scenes/ingest/model"),
+
+        // Async scene job status and unified scene asset lifecycle admin endpoints.
+        new("GET", "/api/v1/admin/scenes/jobs"),
+        new("GET", "/api/v1/admin/scenes/jobs/{jobId}"),
+        new("GET", "/api/v1/admin/scenes/assets"),
+        new("GET", "/api/v1/admin/scenes/assets/{sceneId}"),
 
         // Network-dataset registry editing admin endpoints.
         new("GET", "/api/v1/admin/network-datasets"),

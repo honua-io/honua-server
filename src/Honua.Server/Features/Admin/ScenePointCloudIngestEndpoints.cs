@@ -14,6 +14,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Scene;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
@@ -159,6 +160,32 @@ internal static partial class ScenePointCloudIngestEndpoints
             CacheMaxAgeSeconds: cacheMaxAge,
             RequiresAuth: requiresAuth ?? false,
             CreatedBy: context.User.Identity?.Name);
+
+        if (SceneIngestRequestHelpers.IsAsyncRequested(context, form))
+        {
+            var coordinator = context.RequestServices.GetService<SceneJobCoordinator>();
+            if (coordinator is not null)
+            {
+                var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+                var job = coordinator.Submit(
+                    sourceKind: "pointcloud",
+                    requestedSceneId: request.SceneId,
+                    displayName: request.DisplayName,
+                    baseUrl: asyncBaseUrl,
+                    work: async (services, ct) =>
+                    {
+                        var scopedExecutor = services.GetRequiredService<PointCloudScenePublishExecutor>();
+                        var asyncOutcome = await scopedExecutor.IngestAsync(request, ct).ConfigureAwait(false);
+                        return new SceneJobExecutionResult(
+                            asyncOutcome.SceneId,
+                            TileCount: asyncOutcome.TileCount,
+                            FileCount: asyncOutcome.TileCount + 1,
+                            ByteSize: null,
+                            Warnings: Array.Empty<string>());
+                    });
+                return SceneIngestRequestHelpers.CreateAcceptedJobResult(context, job);
+            }
+        }
 
         var executor = context.RequestServices.GetRequiredService<PointCloudScenePublishExecutor>();
 

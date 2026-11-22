@@ -805,6 +805,35 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
         AssertSourcePlacement(geometry, page.RootElement.GetProperty("nodes")[1].GetProperty("obb").GetProperty("center"), 150);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}")]
+    [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}")]
+    [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
+    public async Task RootNodeGeometry_BothSymbolicRootAndZeroIndex_ReturnConformantGeometryBuffer()
+    {
+        using var layer = await GetJsonAsync(Base);
+        var sr = layer.RootElement.GetProperty("spatialReference");
+        sr.GetProperty("wkid").GetInt32().Should().Be(4326);
+        sr.GetProperty("vcsWkid").GetInt32().Should().Be(115700);
+        sr.GetProperty("latestVcsWkid").GetInt32().Should().Be(115700);
+        layer.RootElement.GetProperty("store").GetProperty("defaultGeometrySchema")
+            .GetProperty("topology").GetString().Should().Be("PerAttributeArray");
+
+        var rootGeoServices = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/root/geometries/0");
+        var rootAlias = await _fixture.Client.GetByteArrayAsync("/scenes/i3s-persisted/SceneServer/layers/0/nodes/root/geometries/0");
+        var nodeZero = await _fixture.Client.GetByteArrayAsync(Base + "/nodes/0/geometries/0");
+
+        rootAlias.Should().Equal(rootGeoServices);
+        nodeZero.Should().Equal(rootGeoServices);
+
+        var vertexCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(rootGeoServices);
+        var featureCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(rootGeoServices.AsSpan(4));
+        vertexCount.Should().Be(12);
+        featureCount.Should().Be(2);
+        rootGeoServices.Length.Should().Be(8 + vertexCount * 44 + featureCount * 16);
+    }
+
     private async Task RewriteGlbAsync(string fileName, Action<JsonNode> change)
     {
         var path = Path.Join(_root, fileName);

@@ -174,18 +174,69 @@ internal sealed class HostedI3sSceneResourceProvider(TimeProvider timeProvider) 
 
             var all = meshes.SelectMany(mesh => mesh.Triangles.SelectMany(triangle => new[] { triangle.A.Position, triangle.B.Position, triangle.C.Position }))
                 .Select(point => EcefCoordinateTransform.FromEcef(point.X, point.Y, point.Z)).ToArray();
+            var rootGeometry = BuildRootCompositeGeometry(meshes, features, _nodes[0].Entry.Obb!, attributes, resources, cancellationToken);
             var pages = _nodes.Select(node => node.Entry).Chunk(I3sNodePageProjector.NodesPerPage)
                 .Select(entries => new I3sNodePageDocument { Nodes = entries }).ToArray();
             var result = new I3sSceneResources(pages, resources, attributes, I3sPersistedResourceEncoder.BuildFields(attributes), materials, textures,
                 I3sPersistedResourceEncoder.Statistics(features, attributes),
                 new(all.Min(p => p.Longitude), all.Min(p => p.Latitude), all.Max(p => p.Longitude), all.Max(p => p.Latitude), all.Min(p => p.Height), all.Max(p => p.Height)),
-                _assets.ToArray());
+                _assets.ToArray(),
+                rootGeometry);
             if (result.ByteSize > ByteBudget || !result.Assets.All(asset => IsCurrent(scene, asset)))
             {
                 throw new InvalidDataException("Scene revision changed or exceeds the derived resource budget.");
             }
 
             return result;
+        }
+
+        private static I3sNodeGeometry? BuildRootCompositeGeometry(
+            SceneDecodedMesh[] meshes,
+            SceneCachedFeature[] features,
+            I3sOrientedBoundingBox rootObb,
+            IReadOnlyList<I3sAttributeStorageInfo> attributes,
+            Dictionary<int, I3sNodeResources> existingNodes,
+            CancellationToken cancellationToken)
+        {
+            if (existingNodes.TryGetValue(0, out var directRoot))
+            {
+                return directRoot.Geometry;
+            }
+
+            if (meshes.Length == 0 || features.Length == 0)
+            {
+                return null;
+            }
+
+            var featureIndexById = new Dictionary<long, int>(features.Length);
+            for (var i = 0; i < features.Length; i++)
+            {
+                featureIndexById[features[i].Id] = i;
+            }
+
+            var mergedTriangles = new List<SceneMeshTriangle>(meshes.Sum(m => m.Triangles.Count));
+            foreach (var mesh in meshes)
+            {
+                foreach (var triangle in mesh.Triangles)
+                {
+                    var featureId = mesh.Features[triangle.Feature].Id;
+                    var remappedFeatureIndex = featureIndexById[featureId];
+                    mergedTriangles.Add(triangle with { Feature = remappedFeatureIndex });
+                }
+            }
+
+            if (mergedTriangles.Count == 0)
+            {
+                return null;
+            }
+
+            var compositeMesh = new SceneDecodedMesh(
+                mergedTriangles,
+                features,
+                meshes[0].Material,
+                new Dictionary<string, SceneTextureBinding>(StringComparer.Ordinal));
+            var encoded = I3sPersistedResourceEncoder.Encode(compositeMesh, rootObb, attributes, cancellationToken);
+            return encoded.Geometry;
         }
 
         private void Walk(JsonElement tile, double[] parentTransform, string directory, string? upAxis, int? parent, int depth, bool root = false, string inheritedRefine = "REPLACE")
