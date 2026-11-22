@@ -220,4 +220,50 @@ public sealed class EmbedPolicyEvaluatorTests
         policy.RateLimit.WindowSeconds.Should().Be(30);
         policy.Capabilities.Should().NotBeEmpty();
     }
+
+    [UnitTest]
+    public void EvaluateRequestAccess_ServiceAndContentScopedKey_AllowsRequestWithAllowedOrigin()
+    {
+        var key = Key(new EmbedKeyScope
+        {
+            AllowedEmbedOrigins = ["https://app.example.com"],
+            AllowedServiceOrigins = ["services/Roads"],
+            AllowedContentIds = ["layer-1"],
+        });
+
+        var decision = EmbedPolicyEvaluator.EvaluateRequestAccess(
+            key,
+            new EmbedPolicyRequest { Origin = "https://app.example.com", RequestsConsumedInWindow = 1 },
+            _now);
+
+        decision.Allowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void EvaluateEventScope_EnforcesAllowedServicesContentAndTenant()
+    {
+        var key = Key(new EmbedKeyScope
+        {
+            AllowedEmbedOrigins = ["https://app.example.com"],
+            AllowedServiceOrigins = ["services/Roads"],
+            AllowedContentIds = ["layer-1"],
+            TenantId = "acme",
+        });
+
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-1", TenantId = "acme" })
+            .Allowed.Should().BeTrue();
+
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Other", ContentId = "layer-1", TenantId = "acme" })
+            .Reason.Should().Be(EmbedPolicyDenyReason.ServiceNotAllowed);
+
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-other", TenantId = "acme" })
+            .Reason.Should().Be(EmbedPolicyDenyReason.ContentNotAllowed);
+
+        EmbedPolicyEvaluator.EvaluateEventScope(
+            key, new EmbedPolicyRequest { ServiceId = "services/Roads", ContentId = "layer-1", TenantId = "globex" })
+            .Reason.Should().Be(EmbedPolicyDenyReason.TenantMismatch);
+    }
 }
