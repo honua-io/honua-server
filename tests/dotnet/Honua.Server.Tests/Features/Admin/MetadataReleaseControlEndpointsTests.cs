@@ -92,6 +92,79 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithInvalidFieldName_Returns400()
+    {
+        string[] invalidFieldNames =
+        [
+            "col'; DROP TABLE users;--",
+            "1starts_with_digit",
+            "bad-hyphen",
+            "has space",
+            "col\r\nforged"
+        ];
+
+        foreach (var invalidFieldName in invalidFieldNames)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+            {
+                packageId = "pkg-invalid-field",
+                targetEnvironment = "dev",
+                resourceSemanticId = "res-1",
+                newFieldName = invalidFieldName
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithInvalidDataPopulateField_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+        {
+            packageId = "pkg-invalid-pop",
+            targetEnvironment = "dev",
+            resourceSemanticId = "res-1",
+            newFieldName = "owner_email",
+            dataPopulateFields = new[] { "owner_email", "bad; DROP TABLE x;--" }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/releases/operations")]
+    public async Task CreateMetadataReleaseOperation_WithControlCharactersOrOverLengthIdentifiers_Returns400()
+    {
+        object[] invalidPayloads =
+        [
+            new { packageId = "pkg\r\nforged", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev\u2028forged", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res\nforged", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", scriptId = "scr\r\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", newFieldType = "String\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", reason = "ok\r\n[ERR] forged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", idempotencyKey = "idem\nforged" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", correlationId = "corr\u0085forged" },
+            new { packageId = new string('p', 129), targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email" },
+            new { packageId = "pkg-1", targetEnvironment = "dev", resourceSemanticId = "res-1", newFieldName = "owner_email", reason = new string('r', 513) },
+        ];
+
+        foreach (var payload in invalidPayloads)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
+    }
+
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);

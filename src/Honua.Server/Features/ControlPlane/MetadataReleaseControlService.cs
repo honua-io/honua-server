@@ -14,8 +14,23 @@ namespace Honua.ControlPlane;
 internal sealed partial class MetadataReleaseControlService(
     IEnumerable<IWorkflowOperationStore> workflowStores)
 {
+    private const int MaxPackageIdLength = 128;
+    private const int MaxTargetEnvironmentLength = 128;
+    private const int MaxResourceSemanticIdLength = 256;
+    private const int MaxFieldNameLength = 128;
+    private const int MaxFieldTypeLength = 64;
+    private const int MaxScriptIdLength = 160;
+    private const int MaxWorkloadIdLength = 128;
+    private const int MaxReasonLength = 512;
+    private const int MaxIdempotencyKeyLength = 128;
+    private const int MaxCorrelationIdLength = 128;
+    private const int MaxDataPopulateFieldsCount = 64;
+
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IWorkflowOperationStore? _workflowStore = workflowStores.FirstOrDefault();
+
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant)]
+    private static partial Regex FieldIdentifierPattern();
 
     public async Task<WorkflowOperationRecord> CreateAsync(
         MetadataReleaseExecutionPlan plan,
@@ -27,6 +42,7 @@ internal sealed partial class MetadataReleaseControlService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        ValidateRequest(plan, reason, idempotencyKey, correlationId);
         var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
         EnsureDurableStoreConfigured();
 
@@ -166,6 +182,101 @@ internal sealed partial class MetadataReleaseControlService(
         if (_workflowStore == null)
         {
             throw new InvalidOperationException("Metadata release operations require PostgreSQL-backed durable storage.");
+        }
+    }
+
+    private static void ValidateRequest(
+        MetadataReleaseExecutionPlan plan,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId)
+    {
+        ValidateRequiredBoundedText(plan.PackageId, "packageId", MaxPackageIdLength);
+        ValidateRequiredBoundedText(plan.TargetEnvironment, "targetEnvironment", MaxTargetEnvironmentLength);
+        ValidateRequiredBoundedText(plan.ResourceSemanticId, "resourceSemanticId", MaxResourceSemanticIdLength);
+        ValidateFieldIdentifier(plan.NewFieldName, "newFieldName");
+
+        ValidateOptionalBoundedText(plan.DataPopulateWorkloadId, "dataPopulateWorkloadId", MaxWorkloadIdLength);
+        ValidateOptionalBoundedText(reason, "reason", MaxReasonLength);
+        ValidateOptionalBoundedText(idempotencyKey, "idempotencyKey", MaxIdempotencyKeyLength);
+        ValidateOptionalBoundedText(correlationId, "correlationId", MaxCorrelationIdLength);
+
+        if (plan.DataPopulateFields is not null)
+        {
+            if (plan.DataPopulateFields.Count > MaxDataPopulateFieldsCount)
+            {
+                throw new ArgumentException($"dataPopulateFields must contain {MaxDataPopulateFieldsCount} entries or fewer.");
+            }
+
+            foreach (var field in plan.DataPopulateFields)
+            {
+                ValidateFieldIdentifier(field, "dataPopulateFields");
+            }
+        }
+
+        if (plan.Script is not null)
+        {
+            ValidateRequiredBoundedText(plan.Script.ScriptId, "scriptId", MaxScriptIdLength);
+
+            if (plan.Script.ForwardOperations is not null)
+            {
+                foreach (var operation in plan.Script.ForwardOperations)
+                {
+                    ValidateRequiredBoundedText(operation.ResourceSemanticId, "resourceSemanticId", MaxResourceSemanticIdLength);
+                    ValidateFieldIdentifier(operation.FieldName, "newFieldName");
+                    ValidateOptionalBoundedText(operation.FieldType, "newFieldType", MaxFieldTypeLength);
+                }
+            }
+        }
+    }
+
+    private static void ValidateFieldIdentifier(string? value, string fieldLabel)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{fieldLabel} is required.");
+        }
+
+        if (value.Length > MaxFieldNameLength || !FieldIdentifierPattern().IsMatch(value))
+        {
+            throw new ArgumentException(
+                $"{fieldLabel} must be a valid SQL field identifier (ASCII letter or '_' followed by letters, digits, or '_', max {MaxFieldNameLength} characters).");
+        }
+    }
+
+    private static void ValidateRequiredBoundedText(string? value, string fieldLabel, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{fieldLabel} is required.");
+        }
+
+        ValidateBoundedTextCore(value, fieldLabel, maxLength);
+    }
+
+    private static void ValidateOptionalBoundedText(string? value, string fieldLabel, int maxLength)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        ValidateBoundedTextCore(value, fieldLabel, maxLength);
+    }
+
+    private static void ValidateBoundedTextCore(string value, string fieldLabel, int maxLength)
+    {
+        if (value.Length > maxLength)
+        {
+            throw new ArgumentException($"{fieldLabel} must be {maxLength} characters or fewer.");
+        }
+
+        foreach (var ch in value)
+        {
+            if (char.IsControl(ch) || ch is '\u0085' or '\u2028' or '\u2029')
+            {
+                throw new ArgumentException($"{fieldLabel} must not contain control characters.");
+            }
         }
     }
 }
