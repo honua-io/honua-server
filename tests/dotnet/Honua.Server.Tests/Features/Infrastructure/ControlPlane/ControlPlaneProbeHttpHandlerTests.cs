@@ -90,6 +90,7 @@ public sealed class ControlPlaneProbeHttpHandlerTests
         using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
         while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
         {
+            // Drain request headers before writing the response.
         }
 
         await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"u8.ToArray(), cancellationToken);

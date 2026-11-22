@@ -57,6 +57,7 @@ public sealed class ControlPlanePrivateProbeTests
             using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
             while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
             {
+                // Drain request headers before writing the response.
             }
 
             var status = statusCode == HttpStatusCode.OK ? "200 OK" : "503 Service Unavailable";
