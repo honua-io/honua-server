@@ -12,14 +12,20 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class ControlPlaneProbeHttpHandlerTests
 {
-    [UnitTheory]
-    [InlineData(false, "https://127.0.0.1/")]
-    [InlineData(false, "https://169.254.169.254/")]
-    [InlineData(true, "http://169.254.169.254/")]
-    [InlineData(true, "http://[fe80::1]/")]
-    public async Task ConnectionPolicy_RejectsDisallowedLiteral(bool allowPrivateNetworks, string url)
+    public enum NetworkPolicy
     {
-        using var handler = ControlPlaneProbeHttpHandler.Create(() => allowPrivateNetworks);
+        PublicOnly,
+        AllowPrivate
+    }
+
+    [UnitTheory]
+    [InlineData(NetworkPolicy.PublicOnly, "https://127.0.0.1/")]
+    [InlineData(NetworkPolicy.PublicOnly, "https://169.254.169.254/")]
+    [InlineData(NetworkPolicy.AllowPrivate, "http://169.254.169.254/")]
+    [InlineData(NetworkPolicy.AllowPrivate, "http://[fe80::1]/")]
+    public async Task ConnectionPolicy_RejectsDisallowedLiteral(NetworkPolicy networkPolicy, string url)
+    {
+        using var handler = ControlPlaneProbeHttpHandler.Create(() => networkPolicy == NetworkPolicy.AllowPrivate);
         using var client = new HttpClient(handler);
         var connect = async () => await client.GetAsync(url);
 
@@ -27,11 +33,11 @@ public sealed class ControlPlaneProbeHttpHandlerTests
     }
 
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ConnectionPolicy_RejectsMixedResolution(bool allowPrivateNetworks)
+    [InlineData(NetworkPolicy.PublicOnly)]
+    [InlineData(NetworkPolicy.AllowPrivate)]
+    public async Task ConnectionPolicy_RejectsMixedResolution(NetworkPolicy networkPolicy)
     {
-        using var handler = ControlPlaneProbeHttpHandler.Create(() => allowPrivateNetworks,
+        using var handler = ControlPlaneProbeHttpHandler.Create(() => networkPolicy == NetworkPolicy.AllowPrivate,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("8.8.8.8"), IPAddress.Parse("169.254.169.254") }));
         using var client = new HttpClient(handler);
         var connect = async () => await client.GetAsync("https://probe.example/");

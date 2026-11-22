@@ -15,9 +15,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class ControlPlanePrivateProbeTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task RegisteredPrivateProbes_PreserveResponseVerdicts(bool successful)
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task RegisteredPrivateProbes_PreserveResponseVerdicts(HttpStatusCode statusCode)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -31,7 +31,7 @@ public sealed class ControlPlanePrivateProbeTests
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         var health = new HttpDeployHealthProbe(factory, provider.GetRequiredService<IOptionsMonitor<ControlPlaneOptions>>());
         var restore = new HttpServingCustomerProbe(factory, Options.Create(new RestoreCellOptions { CustomerProbeUrl = url }));
-        var server = RespondAsync(listener, successful, timeout.Token);
+        var server = RespondAsync(listener, statusCode, timeout.Token);
 
         var readiness = await health.ProbeAsync(new DeployHealthProbeRequest { Url = url, Samples = 1 }, timeout.Token);
         var golden = await health.ProbeGoldenQueryAsync(
@@ -39,6 +39,7 @@ public sealed class ControlPlanePrivateProbeTests
         var serving = await restore.SucceededAsync(timeout.Token);
         await server;
 
+        var successful = statusCode == HttpStatusCode.OK;
         readiness.Validated.Should().BeTrue();
         readiness.Attempts.Should().Be(1);
         readiness.Failures.Should().Be(successful ? 0 : 1);
@@ -47,7 +48,7 @@ public sealed class ControlPlanePrivateProbeTests
         serving.Should().Be(successful);
     }
 
-    private static async Task RespondAsync(TcpListener listener, bool successful, CancellationToken cancellationToken)
+    private static async Task RespondAsync(TcpListener listener, HttpStatusCode statusCode, CancellationToken cancellationToken)
     {
         for (var request = 0; request < 3; request++)
         {
@@ -58,7 +59,7 @@ public sealed class ControlPlanePrivateProbeTests
             {
             }
 
-            var status = successful ? "200 OK" : "503 Service Unavailable";
+            var status = statusCode == HttpStatusCode.OK ? "200 OK" : "503 Service Unavailable";
             var response = Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Length: 5\r\nConnection: close\r\n\r\nready");
             await stream.WriteAsync(response, cancellationToken);
         }

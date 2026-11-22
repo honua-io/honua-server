@@ -15,37 +15,36 @@ internal static class ControlPlaneProbeHttpHandler
     internal static SocketsHttpHandler Create(
         Func<bool> allowPrivateNetworks,
         Func<string, CancellationToken, Task<IPAddress[]>>? resolver = null)
-        => new()
+    {
+        return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             UseProxy = false,
             UseCookies = false,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            ConnectCallback = (context, cancellationToken) => ConnectAsync(
-                context, allowPrivateNetworks(), resolver ?? Dns.GetHostAddressesAsync, cancellationToken)
+            ConnectCallback = ConnectAsync
         };
 
-    private static async ValueTask<Stream> ConnectAsync(
-        SocketsHttpConnectionContext context,
-        bool allowPrivateNetworks,
-        Func<string, CancellationToken, Task<IPAddress[]>> resolver,
-        CancellationToken cancellationToken)
-    {
-        IPAddress[]? addresses = null;
-        async Task<IPAddress[]> ResolveAsync(string host, CancellationToken token)
-            => addresses ??= await resolver(host, token).ConfigureAwait(false);
-
-        var validation = await DeployProbeUrlPolicy.ValidateAsync(
-            context.InitialRequestMessage.RequestUri!.AbsoluteUri, allowPrivateNetworks, ResolveAsync, cancellationToken)
-            .ConfigureAwait(false);
-        if (!validation.IsValid)
+        async ValueTask<Stream> ConnectAsync(
+            SocketsHttpConnectionContext context,
+            CancellationToken cancellationToken)
         {
-            throw new HttpRequestException(validation.ErrorMessage);
-        }
+            IPAddress[]? addresses = null;
+            async Task<IPAddress[]> ResolveAsync(string host, CancellationToken token)
+                => addresses ??= await (resolver ?? Dns.GetHostAddressesAsync)(host, token).ConfigureAwait(false);
 
-        // Use the addresses the policy checked rather than resolving the host again when connecting.
-        addresses ??= [IPAddress.Parse(context.DnsEndPoint.Host)];
-        return await Connector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
-            .ConfigureAwait(false);
+            var validation = await DeployProbeUrlPolicy.ValidateAsync(
+                context.InitialRequestMessage.RequestUri!.AbsoluteUri, allowPrivateNetworks(), ResolveAsync, cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                throw new HttpRequestException(validation.ErrorMessage);
+            }
+
+            // Use the addresses the policy checked rather than resolving the host again when connecting.
+            addresses ??= [IPAddress.Parse(context.DnsEndPoint.Host)];
+            return await Connector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 }
