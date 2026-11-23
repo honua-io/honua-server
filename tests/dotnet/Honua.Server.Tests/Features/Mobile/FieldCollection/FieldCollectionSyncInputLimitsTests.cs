@@ -106,7 +106,8 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
             {"changeId":"change\ud800id","featureId":"feat-{{Guid.NewGuid():N}}","layerId":180,"operation":"insert","feature":{"type":"Feature","geometry":null,"properties":{}}}
             """;
 
-        var response = await _client.PostAsync(ChangesPath, new StringContent(body, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(ChangesPath, content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
@@ -170,15 +171,19 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
         json.RootElement.GetProperty("clientId").GetString().Should().Be(clientId);
     }
 
-    private Task<HttpResponseMessage> PushInsertAsync(string changeId, string featureId)
-        => _client.PostAsync(ChangesPath, InsertContent(changeId, featureId));
+    private async Task<HttpResponseMessage> PushInsertAsync(string changeId, string featureId)
+    {
+        using var content = InsertContent(changeId, featureId);
+        return await _client.PostAsync(ChangesPath, content);
+    }
 
-    private Task<HttpResponseMessage> PushRawAsync(string changeId, string featureId, string featureJson)
+    private async Task<HttpResponseMessage> PushRawAsync(string changeId, string featureId, string featureJson)
     {
         var body = $$"""
             {"changeId":{{JsonSerializer.Serialize(changeId)}},"featureId":{{JsonSerializer.Serialize(featureId)}},"layerId":180,"operation":"insert","feature":{{featureJson}}}
             """;
-        return _client.PostAsync(ChangesPath, new StringContent(body, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await _client.PostAsync(ChangesPath, content);
     }
 
     private static JsonContent InsertContent(string changeId, string featureId) => JsonContent.Create(new
