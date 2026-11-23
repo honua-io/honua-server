@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 
@@ -17,39 +16,39 @@ namespace Honua.Protocols.Stac;
 // left out is marked no-store, so neither the output cache nor the CDN keeps it once the table is back.
 internal sealed class StacCollectionListing(HttpContext context, ILogger logger)
 {
-    public async Task<ImmutableArray<StacCollection>> MapVisibleAsync(
-        StacV2Lookups.ResolvedStacPublication[] visible,
+    private Exception? _firstMissing;
+
+    // Maps one publication; a dropped table is logged and yields an empty entry.
+    public async Task<ListedCollection> MapAsync(
+        StacV2Lookups.ResolvedStacPublication resolved,
         StacMappingService.CollectionMappingContext mapping,
         CancellationToken cancellationToken)
     {
-        Exception? firstMissing = null;
-        var listed = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-            visible,
-            async (resolved, ct) =>
-            {
-                try
-                {
-                    return new ListedCollection(
-                        await StacMappingService.MapResourceToCollectionAsync(resolved, mapping, ct).ConfigureAwait(false));
-                }
-                catch (Exception ex) when (StacSearchTargetSkip.IsMissingStorage(ex))
-                {
-                    Interlocked.CompareExchange(ref firstMissing, ex, null);
-                    StacLog.CollectionsListingSkipped(logger, resolved.LayerIndex.ToString(CultureInfo.InvariantCulture), ex);
-                    return new ListedCollection(null);
-                }
-            },
-            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return new ListedCollection(
+                await StacMappingService.MapResourceToCollectionAsync(resolved, mapping, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (StacSearchTargetSkip.IsMissingStorage(ex))
+        {
+            Interlocked.CompareExchange(ref _firstMissing, ex, null);
+            StacLog.CollectionsListingSkipped(logger, resolved.LayerIndex.ToString(CultureInfo.InvariantCulture), ex);
+            return new ListedCollection(null);
+        }
+    }
 
+    // The listed collections, or the first missing-storage error when every one was left out.
+    public ImmutableArray<StacCollection> Complete(IEnumerable<ListedCollection> listed)
+    {
         var collections = listed.Select(static entry => entry.Collection).OfType<StacCollection>().ToImmutableArray();
-        if (firstMissing is null)
+        if (_firstMissing is null)
         {
             return collections;
         }
 
         if (collections.IsEmpty)
         {
-            ExceptionDispatchInfo.Throw(firstMissing);
+            ExceptionDispatchInfo.Throw(_firstMissing);
         }
 
         context.Response.Headers.CacheControl = "no-store";
@@ -58,5 +57,5 @@ internal sealed class StacCollectionListing(HttpContext context, ILogger logger)
     }
 
     // A reference wrapper, because the projection helper takes only non-null class results.
-    private sealed record ListedCollection(StacCollection? Collection);
+    internal sealed record ListedCollection(StacCollection? Collection);
 }

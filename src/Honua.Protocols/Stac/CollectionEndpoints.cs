@@ -301,10 +301,13 @@ internal static class CollectionEndpoints
 
     private static async Task<StacCollectionsResponse> BuildStacCollectionsPayloadAsync(StacCollectionsBuildArgs args)
     {
-        var collections = await new StacCollectionListing(args.Context, args.Logger).MapVisibleAsync(
+        var listing = new StacCollectionListing(args.Context, args.Logger);
+        var mapping = new StacMappingService.CollectionMappingContext(
+            args.FeatureReader, args.BaseUrl, args.CoordinateTransformService);
+        var collections = listing.Complete(await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
             args.Visible,
-            new(args.FeatureReader, args.BaseUrl, args.CoordinateTransformService),
-            args.CancellationToken).ConfigureAwait(false);
+            (resolved, ct) => listing.MapAsync(resolved, mapping, ct),
+            args.CancellationToken).ConfigureAwait(false));
 
         var links = ImmutableArray.Create(
             Link.Create(
