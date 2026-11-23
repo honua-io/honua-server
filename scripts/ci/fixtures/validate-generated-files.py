@@ -112,6 +112,8 @@ class GeneratedGraphFreshness(unittest.TestCase):
         self.assertIn('/docs/okf/domain-graph.v1.json', (ROOT / '.gitignore').read_text())
         self.assertNotIn('docs/okf', paths)
         self.assertNotIn('docs/gis/data/public-interface-proof.json', paths)
+        # Collected observations are inputs; offline regeneration must retain them.
+        self.assertNotIn('docs/gis/data/nightly-capability-evidence.v1.json', paths)
 
     def test_actual_pipeline_refreshes_graph_after_capability_page_changes(self):
         # Isolate unrelated managed emitters, but execute the maintained shell
@@ -401,6 +403,8 @@ class GeneratedFilesContracts(unittest.TestCase):
             for name in ('generated-files.sh', 'publish-generated-files.sh'):
                 shutil.copy(ROOT / 'scripts/ci' / name, scripts / name)
             paths = run('bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"').stdout.splitlines()
+            # Include observed input so real publication/race checks cover it too.
+            paths.append('docs/gis/data/nightly-capability-evidence.v1.json')
             # Exercise a drift confined to a file inside the generated concept directory.
             # The publisher must include nested projections through the directory pathspec.
             paths = ['docs/okf/capabilities/admin.control-plane.md'] + [
@@ -446,7 +450,7 @@ class GeneratedFilesContracts(unittest.TestCase):
 
         # A real diff: commits on the fixed branch, pushes only that branch
         # (never trunk), and opens a PR since none is open yet.
-        (repo / paths[0]).write_text('{"fresh": true}\n')
+        (repo / paths[-1]).write_text('{"fresh": true}\n')
         first = run('bash', 'scripts/ci/publish-generated-files.sh')
         self.assertNotIn('Updated existing', first.stdout)
 
@@ -461,7 +465,7 @@ class GeneratedFilesContracts(unittest.TestCase):
         # never moved: the previous publish advanced only the local branch
         # this checkout happened to be on, not remote trunk.
         run('git', 'reset', '--hard', trunk_before)
-        (repo / paths[0]).write_text('{"fresh": true}\n')
+        (repo / paths[-1]).write_text('{"fresh": true}\n')
         second = run('bash', 'scripts/ci/publish-generated-files.sh')
         self.assertIn('Updated existing generated-files PR #42', second.stdout)
         self.assertNotIn('--method POST repos/honua-io/honua-server/pulls ', gh_calls.read_text())
@@ -487,7 +491,7 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertEqual(commit_identity, f'{bot_identity}|{bot_identity}')
         self.assertEqual(
             run('git', 'diff-tree', '--no-commit-id', '--name-only', '-r', branch_sha).stdout.strip(),
-            paths[0],
+            paths[-1],
         )
         gh_call_lines = gh_calls.read_text().splitlines()
         list_call = next(line for line in gh_call_lines if line.startswith('api repos/'))

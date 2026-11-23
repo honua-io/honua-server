@@ -10,6 +10,7 @@ import re
 
 MAX_AGE_DAYS = 14
 INTEROP_PRODUCER_COUNT = 3
+CITE_NAMES = {"OGC API Features": "OGC API Features 1.0", "OGC API Tiles": "OGC API Tiles 1.0"}
 
 # Actual Honua.LoadTests scenario names and the endpoints they exercise.
 # The GeoBench crosswalk uses different names; never claim those were measured.
@@ -63,7 +64,8 @@ def interop_rows(snapshot, impact):
     producers = [p for p in snapshot["producers"] if p["kind"] == "interop"]
     # A producer that failed before uploading cannot silently preserve another
     # workflow's older green result for an overlapping lane.
-    complete = len(producers) == INTEROP_PRODUCER_COUNT and all(p.get("documents") for p in producers)
+    complete = len(producers) == INTEROP_PRODUCER_COUNT and all(
+        p.get("documents") and p.get("conclusion") == "success" for p in producers)
     for producer in sorted(producers, key=lambda p: p.get("observedAt", "")):
         for document in producer["documents"]:
             key = (document.get("client_lane") or document.get("clientLane"), document.get("protocol"))
@@ -90,7 +92,7 @@ def cite_rows(snapshot):
                          and counters[2:] == [0, 0, 0] and suite.get("status") == "passed"
                          and producer.get("conclusion") == "success")
                 stamp = freshness(document.get("generatedAt"), snapshot["collectedAt"], "success" if green else "failure")
-                suites[suite["name"]] = {"passed": passed, "total": total,
+                suites[CITE_NAMES.get(suite["name"], suite["name"])] = {"passed": passed, "total": total,
                                          "passRate": 100.0 if stamp["state"] == "fresh" else 0.0,
                                          "freshness": stamp, "evidence": provenance(producer),
                                          "testedSha": document.get("git", {}).get("sha")}

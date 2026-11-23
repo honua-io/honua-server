@@ -3,6 +3,10 @@ import copy
 import importlib.util
 import io
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -118,6 +122,29 @@ class JoinTests(unittest.TestCase):
         data['producers'][0]['documents'] = []
         self.assertNotEqual('fresh', self.join(data)['interop'][0]['freshness']['state'])
 
+    def test_real_cite_producer_names_join_versioned_matrix_rows(self):
+        data = snapshot()
+        suites = data['producers'][3]['documents'][0]['suites']
+        base = matrix()
+        for producer_name, matrix_name in [('OGC API Features', 'OGC API Features 1.0'),
+                                           ('OGC API Tiles', 'OGC API Tiles 1.0')]:
+            suites[0]['name'] = producer_name
+            base['capabilities'][0]['cite'][0]['suite'] = matrix_name
+            row = JOIN.apply(base, data, IMPACT)['capabilities'][0]['cite'][0]
+            self.assertEqual(100, row['passRate'])
+
+    def test_failed_partial_producer_invalidates_omitted_protocol(self):
+        data = snapshot()
+        older = data['producers'][0]
+        older['observedAt'] = '2026-11-23T10:30:00Z'
+        omitted = copy.deepcopy(older['documents'][0])
+        omitted['protocol'] = 'ogc-features'
+        older['documents'].append(omitted)
+        data['producers'][1]['conclusion'] = 'failure'
+        data['producers'][2]['documents'][0]['client_lane'] = 'web-openlayers'
+        rows = JOIN.interop_rows(data, IMPACT)
+        self.assertNotEqual('fresh', rows[('desktop-qgis', 'ogc-features')]['freshness']['state'])
+
     def test_source_mismatch_future_and_stale_dates_fail_closed(self):
         for field, value in [('server_commit', 'b' * 40), ('run_date', '2026-11-24T00:00:00Z'),
                              ('run_date', '2026-10-01T00:00:00Z')]:
@@ -145,6 +172,44 @@ class JoinTests(unittest.TestCase):
         before = copy.deepcopy(data)
         self.assertEqual(self.join(data), self.join(data))
         self.assertEqual(before, data)
+
+
+class PublicationTests(unittest.TestCase):
+    def test_offline_prepare_regenerate_verify_retains_observations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            inputs = ['docs/cite-status.md', *[
+                f'docs/gis/data/{name}.json' for name in ('feature-catalog',
+                    'geoservices-rest-parity', 'capability-keys.v1', 'capability-no-surface-allowlist.v1')]]
+            scripts = ['generate-capability-matrix.py', 'nightly-capability-evidence.py',
+                       'capability-impact.py', 'generated-output-diff.py',
+                       'check-submitted-generated-files.py', 'generated-files.sh']
+            for relative in [*inputs, *(f'scripts/ci/{name}' for name in scripts)]:
+                destination = repo / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, destination)
+            def run(*args):
+                return subprocess.check_output(args, cwd=repo, stderr=subprocess.STDOUT, text=True).strip()
+            run('git', 'init', '-q')
+            run('git', 'config', 'user.name', 'Fixture')
+            run('git', 'config', 'user.email', 'fixture@example.invalid')
+            run('git', 'add', '.')
+            run('git', 'commit', '-qm', 'base')
+            base = run('git', 'rev-parse', 'HEAD')
+            observed = repo / 'docs/gis/data/nightly-capability-evidence.v1.json'
+            observed.write_text(json.dumps(snapshot()))
+            run(sys.executable, 'scripts/ci/generate-capability-matrix.py')
+            output = repo / 'docs/gis/data/capability-matrix.v1.json'
+            expected = output.read_bytes()
+            run('git', 'add', '.')
+            run('git', 'commit', '-qm', 'nightly publication')
+            verify = [sys.executable, 'scripts/ci/check-submitted-generated-files.py', '--base', base]
+            run(*verify, '--prepare')
+            self.assertTrue(observed.is_file())
+            self.assertFalse(output.exists())
+            run(sys.executable, 'scripts/ci/generate-capability-matrix.py')
+            self.assertEqual(expected, output.read_bytes())
+            run(*verify)
 
 
 if __name__ == '__main__':

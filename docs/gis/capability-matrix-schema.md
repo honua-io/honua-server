@@ -195,6 +195,9 @@ The scheduled generated-files publisher collects the latest completed trunk
 and proposes both files through the existing generated-files PR. The aggregation
 workflow also collects current evidence for its scheduled/manual artifact;
 PR validation uses only the committed snapshot and performs no network reads.
+The snapshot is an observed input, excluded from the offline generated-output
+allowlist. Publication stages it together with the projections; snapshot changes
+retain ordinary PR checks and offline regeneration preserves the input.
 
 Once a snapshot exists, interop freshness and CITE pass rates use these measured
 observations instead of the committed baseline envelopes and reviewed CITE
@@ -202,7 +205,8 @@ table. Missing, failed, source-mismatched, future-dated, or over-14-day-old
 observations cannot report fresh/100%. Collection chooses the latest completed
 run, including failures, rather than searching backwards for a successful run.
 Expired artifacts and artifacts predating the current run attempt are ignored.
-A missing interop producer report invalidates overlapping older green evidence.
+A missing or failed interop producer invalidates the collected interop batch,
+including protocols omitted by a partially failed producer.
 API/download/parse failures abort publication instead of publishing empty success.
 
 Each measured row carries `evidence` with workflow, run ID/attempt, run URL,

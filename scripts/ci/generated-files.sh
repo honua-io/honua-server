@@ -7,7 +7,6 @@ GENERATED_FILES=(
   docs/gis/data/mcp-tool-roster.v1.json
   docs/gis/data/geoservices-rest-parity.json
   docs/gis/data/capability-matrix.v1.json
-  docs/gis/data/nightly-capability-evidence.v1.json
   docs/okf/capabilities
   docs/internal/ci/workflow-inventory.md
 )
