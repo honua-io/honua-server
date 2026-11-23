@@ -44,7 +44,9 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 observerLon = 0.0,
                 observerLat = 0.0,
                 observerHeight = 2.0,
-                targetLon = 0.1,
+                // ~5.6 km: two 2 m sights over a sphere stay inside the ~10.8 km
+                // refracted horizon; 0.1 degrees (~11.1 km) is beyond it.
+                targetLon = 0.05,
                 targetLat = 0.0,
                 targetHeight = 2.0,
                 sampleCount = 32
