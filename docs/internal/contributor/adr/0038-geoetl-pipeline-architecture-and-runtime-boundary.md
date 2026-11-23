@@ -2,10 +2,10 @@
 
 ## Status
 
-Accepted. The Redis substrate references in the original rollout are superseded
+Accepted. The cache-service substrate references in the original rollout are superseded
 by [ADR-0081](0081-postgres-job-substrate.md) and
 [ADR-0082](0082-postgres-control-plane-state.md): PostgreSQL stores job claims,
-leases, execution logs and pipeline state. GeoETL requires no Redis service.
+leases, execution logs and pipeline state. GeoETL requires no separate cache service.
 
 For raster serving and GP, [ADR-0071](0071-raster-execution-boundary.md) is the
 controlling engine and placement decision. As of ADR-0071's 2026-08-11
@@ -48,8 +48,8 @@ Three constraints dominate:
 3. Baseline delivery cannot require AWS Batch, Azure Batch, Kubernetes
    Jobs, Apache Sedona / Spark, or any other cloud batch backend.
    Operators must be able to run GeoETL on Honua's existing substrate
-   stack — PostgreSQL with PostGIS plus Redis as the substrate's
-   coordination layer (per ADR-0021 / ADR-0025 / ADR-0031). GeoETL
+   stack — PostgreSQL with PostGIS (the separate coordination layer of
+   ADR-0021 / ADR-0025 / ADR-0031 is retired; see Status). GeoETL
    adds no new infrastructure beyond what `#681` already requires.
 
 A handful of secondary forces shape the design:
@@ -371,7 +371,7 @@ Specifically **not required** for baseline:
 The `#361` acceptance criterion "baseline runtime requires only
 Honua and PostgreSQL, not cloud batch infrastructure" is preserved:
 PostgreSQL supplies the shared substrate, and the "no cloud batch backend"
-guarantee remains absolute. Redis is not a runtime dependency. External
+guarantee remains absolute. No cache service is a runtime dependency. External
 executors (Kubernetes Jobs, AWS Batch, Sedona) are pluggable add-ons
 under Child Ticket J, never delivery prerequisites.
 

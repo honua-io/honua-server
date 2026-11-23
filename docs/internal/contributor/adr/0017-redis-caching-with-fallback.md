@@ -3,7 +3,7 @@
 ## Status
 
 Superseded by [ADR-0082](0082-postgres-control-plane-state.md) and
-[ADR-0083](0083-cdn-is-the-shared-cache.md). Redis is removed; shared state lives in PostgreSQL and the CDN is the shared
+[ADR-0083](0083-cdn-is-the-shared-cache.md). The former cache service is removed; shared state lives in PostgreSQL and the CDN is the shared
 response cache. Local in-memory caches remain process-local. The decision below is retained as history.
 
 ## Context

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The Redis persistence statements below are superseded by
+Accepted. The cache-service persistence statements below are superseded by
 [ADR-0082](0082-postgres-control-plane-state.md): workflow definitions, runs
 and operations are stored in PostgreSQL. The workflow model and canonical
 process/job boundary remain in force.
