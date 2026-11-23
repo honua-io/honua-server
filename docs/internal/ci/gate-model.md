@@ -1860,8 +1860,7 @@ human-authored PR only when its body closes at least three distinct issues, or
 when it carries the `bundle-exception` label with a
 `Bundle-exception: trunk-red|security-tracker|main-named — reason` line. Size is
 not an exception, and the label without one of those reasons fails even on a
-three-issue PR. The generated-files publisher uses `trunk-red`: until its PR
-lands, trunk's generated-file checks fail on the stale projections.
+three-issue PR.
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 

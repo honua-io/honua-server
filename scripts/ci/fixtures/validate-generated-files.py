@@ -506,7 +506,7 @@ class GeneratedFilesContracts(unittest.TestCase):
         label = calls.index('api --method POST repos/honua-io/honua-server/issues/42/labels -f labels[]=bundle-exception')
         edit = calls.index('api --method PATCH repos/honua-io/honua-server/pulls/42 -f body=')
         self.assertLess(label, edit)
-        self.assertRegex(calls[edit:], r'(?m)^Bundle-exception: trunk-red — \S')
+        self.assertRegex(calls[edit:], r'(?m)^Bundle-exception: blocking red — \S')
 
     def assert_stale_publication_attempts(self, run, fixture):
         repo, remote, base = fixture.repo, fixture.remote, fixture.base
