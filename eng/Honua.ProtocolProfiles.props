@@ -115,7 +115,7 @@
       <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
     </ItemGroup>
     <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-      <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+      <Compile Remove="Features\Admin\SceneDatasetEndpoints*.cs" />
       <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
       <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
       <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
