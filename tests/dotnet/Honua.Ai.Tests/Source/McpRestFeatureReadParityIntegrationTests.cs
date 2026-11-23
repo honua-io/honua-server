@@ -128,7 +128,7 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         filteredRest.Select(record => record.ObjectId).Should().Equal(new long[] { 1, 3, 5 });
         filteredMcp.Should().Equal(filteredRest);
 
-        var count = await CallQueryFeaturesAsync(reader, AllowedLayerId, returnCountOnly: true);
+        var count = await CallQueryCountAsync(reader, AllowedLayerId);
         count.GetProperty("isError").GetBoolean().Should().BeFalse();
         count.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(5);
 
@@ -173,7 +173,7 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         var features = await CallQueryFeaturesAsync(denied, AllowedLayerId);
         AssertZeroRecords(features, AllowedLayerMarker);
 
-        var countOnly = await CallQueryFeaturesAsync(denied, AllowedLayerId, returnCountOnly: true);
+        var countOnly = await CallQueryCountAsync(denied, AllowedLayerId);
         AssertZeroRecords(countOnly, AllowedLayerMarker);
         countOnly.GetProperty("structuredContent").TryGetProperty("count", out _).Should().BeFalse(
             "a denied principal must not learn the layer's cardinality either");
@@ -327,18 +327,23 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
     private Task<JsonElement> CallQueryFeaturesAsync(
         HttpClient client,
         int layerId,
-        string? where = null,
-        bool returnCountOnly = false)
-        => CallQueryFeaturesAsync(client, QueryArguments(layerId, where, returnCountOnly));
+        string? where = null)
+        => CallQueryFeaturesAsync(client, QueryArguments(layerId, where));
 
-    private static JsonObject QueryArguments(int layerId, string? where = null, bool returnCountOnly = false)
+    private static Task<JsonElement> CallQueryCountAsync(HttpClient client, int layerId)
+    {
+        var arguments = QueryArguments(layerId);
+        arguments["returnCountOnly"] = true;
+        return CallQueryFeaturesAsync(client, arguments);
+    }
+
+    private static JsonObject QueryArguments(int layerId, string? where = null)
     {
         var arguments = new JsonObject
         {
             ["serviceId"] = ServiceId,
             ["serviceLayerIndex"] = layerId,
             ["limit"] = 1000,
-            ["returnCountOnly"] = returnCountOnly,
         };
         if (where is not null)
         {

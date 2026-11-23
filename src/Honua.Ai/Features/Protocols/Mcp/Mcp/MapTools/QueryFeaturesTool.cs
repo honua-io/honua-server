@@ -493,21 +493,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
     // input size and vertex ceilings, and the filter is a true intersects test against feature geometry.
     private static SpatialFilter BuildGeometryFilter(IGeometryService geometryService, JsonElement geometry, int? geometrySrid)
     {
-        if (geometry.ValueKind != JsonValueKind.Object
-            || !geometry.TryGetProperty("type", out var typeProperty)
-            || typeProperty.ValueKind != JsonValueKind.String)
-        {
-            throw new GeoprocessingValidationException(
-                "'geometry' must be a GeoJSON geometry object with 'type' and 'coordinates'.");
-        }
-
-        var type = typeProperty.GetString();
-        if (type is null || !FilterGeometryTypes.Contains(type))
-        {
-            throw new GeoprocessingValidationException(
-                $"'geometry' type '{type}' is not supported. Send a Point, LineString, Polygon, MultiPoint, "
-                + "MultiLineString or MultiPolygon geometry object (the feature's geometry, not the Feature).");
-        }
+        ValidateFilterGeometry(geometry);
 
         var srid = geometrySrid ?? 4326;
         if (srid <= 0)
@@ -532,6 +518,25 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         return wkb is null
             ? throw new GeoprocessingValidationException("'geometry' could not be read as a GeoJSON geometry.")
             : SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: srid);
+    }
+
+    private static void ValidateFilterGeometry(JsonElement geometry)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object
+            || !geometry.TryGetProperty("type", out var typeProperty)
+            || typeProperty.ValueKind != JsonValueKind.String)
+        {
+            throw new GeoprocessingValidationException(
+                "'geometry' must be a GeoJSON geometry object with 'type' and 'coordinates'.");
+        }
+
+        var type = typeProperty.GetString();
+        if (type is null || !FilterGeometryTypes.Contains(type))
+        {
+            throw new GeoprocessingValidationException(
+                $"'geometry' type '{type}' is not supported. Send a Point, LineString, Polygon, MultiPoint, "
+                + "MultiLineString or MultiPolygon geometry object (the feature's geometry, not the Feature).");
+        }
     }
 
     private static JsonObject ToGeoJsonFeature(
