@@ -96,6 +96,22 @@ public sealed class GeometryInputBudgetTests
     }
 
     [UnitTheory]
+    [InlineData("<script>")]
+    [InlineData("$(")]
+    public async Task GeometryServerGeometryField_RepeatedUnclosedTokens_InspectedInLinearTime(string token)
+    {
+        // A backtracking engine rescans the rest of the value from every unclosed token, which is
+        // quadratic; at 2 MB that takes minutes instead of milliseconds.
+        var value = string.Concat(Enumerable.Repeat(token, 2_000_000 / token.Length));
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await InvokeAsync(value, declared: false, name: "geometries", path: GeometryServerPath + "intersect");
+
+        Assert.True(result.Passed, result.Body);
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), $"Inspection took {timer.Elapsed}.");
+    }
+
+    [UnitTheory]
     [InlineData(GeometryServerPath + "buffer", "distances")]
     [InlineData("/rest/services/test/GPServer/execute", "geometries")]
     public async Task NonGeometryServerGeometryField_OverTextLimit_IsRejected(string path, string name)
