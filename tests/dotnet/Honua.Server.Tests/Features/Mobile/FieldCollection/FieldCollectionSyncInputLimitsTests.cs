@@ -102,9 +102,9 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_IdentifierWithUnpairedSurrogateEscape_Returns400()
     {
-        var body = $$$"""
-            {"changeId":"change\ud800id","featureId":"feat-{{{Guid.NewGuid():N}}}","layerId":180,"operation":"insert","feature":{"type":"Feature","geometry":null,"properties":{}}}
-            """;
+        // Plain concatenation: the JSON ends in more closing braces than an interpolated raw string allows.
+        var body = "{\"changeId\":\"change\\ud800id\",\"featureId\":\"feat-" + Guid.NewGuid().ToString("N")
+            + "\",\"layerId\":180,\"operation\":\"insert\",\"feature\":{\"type\":\"Feature\",\"geometry\":null,\"properties\":{}}}";
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(ChangesPath, content);
