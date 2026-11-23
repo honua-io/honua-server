@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Admin;
 
 public sealed partial class LayerPublishingIntegrationTests
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
     [Operation(Operations.Create)]
@@ -72,7 +72,7 @@ public sealed partial class LayerPublishingIntegrationTests
         field.GetProperty("editable").GetBoolean().Should().BeFalse();
     }
 
-    [Fact]
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("POST /api/v1/admin/forms")]
