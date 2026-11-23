@@ -576,18 +576,10 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            // groupByFields (required)
-            if (!root.TryGetProperty("groupByFields", out var groupByElement) ||
-                groupByElement.ValueKind == JsonValueKind.Null)
-            {
-                error = "topFilter.groupByFields is required.";
-                return false;
-            }
-
-            var groupByFieldsStr = groupByElement.GetString();
+            var groupByFieldsStr = FeatureServerJsonMembers.ReadString(root, "groupByFields");
             if (string.IsNullOrWhiteSpace(groupByFieldsStr))
             {
-                error = "topFilter.groupByFields must not be empty.";
+                error = "topFilter.groupByFields is required and must be a non-empty comma-separated string.";
                 return false;
             }
 
@@ -596,8 +588,7 @@ internal static partial class FeatureServerEndpoints
                 .ToImmutableArray();
 
             // topCount (required)
-            if (!root.TryGetProperty("topCount", out var topCountElement) ||
-                !topCountElement.TryGetInt32(out var topCount))
+            if (FeatureServerJsonMembers.ReadInt32(root, "topCount") is not { } topCount)
             {
                 error = "topFilter.topCount is required and must be a positive integer.";
                 return false;
@@ -609,18 +600,10 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            // orderByFields (required)
-            if (!root.TryGetProperty("orderByFields", out var orderByElement) ||
-                orderByElement.ValueKind == JsonValueKind.Null)
-            {
-                error = "topFilter.orderByFields is required.";
-                return false;
-            }
-
-            var orderByFieldsStr = orderByElement.GetString();
+            var orderByFieldsStr = FeatureServerJsonMembers.ReadString(root, "orderByFields");
             if (string.IsNullOrWhiteSpace(orderByFieldsStr))
             {
-                error = "topFilter.orderByFields must not be empty.";
+                error = "topFilter.orderByFields is required and must be a non-empty comma-separated string.";
                 return false;
             }
 

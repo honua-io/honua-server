@@ -369,7 +369,24 @@ assigns `IsTestProject=true` projects to `tests` and every other project to
 `source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
 and omits test-only compilation roots; imports are respected, incomplete evaluation
 fails closed, and multi-targeted projects conservatively remain included. Each
-partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled.
+Until this change the source partition ignored the affected filter and analyzed all
+51 source roots on every PR; on nine green PR Gates (22-23 November) it was the
+last job in five, at 16.8-18.8 minutes (build 15.6-17.5 minutes on hosted runners;
+the same 51 roots took 9.1 minutes on faster hosts). An unaffected project's
+analyzer inputs are unchanged. `compute-affected-projects.sh` forces a full scope for
+every shared build or analyzer input: root `Directory.Build.*`, `scripts/ci/`
+(baseline, banned symbols, globalconfig), `src/Honua.Analyzers/`, and any changed
+`*.props`, `*.targets`, `.editorconfig`, `*.globalconfig` or `*.ruleset` anywhere
+(nested `Directory.Build.*`, the `eng/*.props` imports). It also maps a file linked
+from outside a project's directory (`Compile`, `EmbeddedResource` or `AdditionalFiles`
+with a `..` path; MSBuild `**`, `*` and `?` globs are honoured) to every project that
+links it. `$(MSBuildThisFileDirectory)` and `$(MSBuildProjectDirectory)` are expanded;
+an include naming any other property cannot be resolved without MSBuild evaluation,
+so its project always counts as affected (no project uses one today). Before this change
+those inputs mapped to no project or only to their home project, so the test
+partitions and the affected build missed them. The scheduled and `full_ci` runs
+keep the whole-solution analyzer build. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
 name is retained for the source partition. Analyzer builds disable persistent
 MSBuild servers and node reuse so process teardown does not depend on a shared

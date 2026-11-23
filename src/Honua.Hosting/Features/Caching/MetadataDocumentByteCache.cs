@@ -154,6 +154,11 @@ internal sealed class MetadataDocumentByteCache
         }
 
         var payload = await request.BuildAsync().ConfigureAwait(false);
+        if (context.Response.GetTypedHeaders().CacheControl?.NoStore == true)
+        {
+            return Results.Json(payload, request.TypeInfo, contentType: request.ContentType);
+        }
+
         var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, request.TypeInfo);
         var etag = context.RequestServices.GetService<IETagService>()?.ComputeETag(bytes);
         var document = new CachedMetadataDocument(bytes, request.ContentType, etag);
