@@ -46,7 +46,7 @@ BEGIN
     END IF;
     -- The migration runner substitutes dollar-delimited tokens, so the resolved schema is
     -- selected through search_path instead of tagged dynamic SQL; restored before END.
-    PERFORM set_config('search_path', format('%I, pg_catalog, pg_temp', physical_schema), true);
+    PERFORM set_config('search_path', format('pg_catalog, %I, pg_temp', physical_schema), true);
 
     SELECT EXISTS (
             SELECT 1 FROM promotion_deployments

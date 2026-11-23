@@ -5194,6 +5194,9 @@
                     "type": "object",
                     "additionalProperties": true
                   },
+                  "mapId": {
+                    "type": "string"
+                  },
                   "workspaceId": {
                     "type": "string"
                   },
@@ -5213,8 +5216,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Map published as a version and publication request.",
+          "202": {
+            "description": "Map saved as an immutable version and its publication proposed for approval.",
             "content": {
               "application/json": {
                 "schema": {
