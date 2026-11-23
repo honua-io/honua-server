@@ -298,11 +298,7 @@ internal sealed class StacMappingService
         MetadataV2Object resource,
         int layerIndex)
     {
-        return publication.TitleOverride
-            ?? publication.Metadata.Title
-            ?? (string.IsNullOrEmpty(publication.Metadata.Name) ? null : publication.Metadata.Name)
-            ?? resource.Metadata.Title
-            ?? (string.IsNullOrEmpty(resource.Metadata.Name) ? null : resource.Metadata.Name)
+        return DescriptiveMetadataResolver.DatasetTitle(resource, publication)
             ?? layerIndex.ToString(CultureInfo.InvariantCulture);
     }
 

@@ -8,6 +8,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -627,7 +628,10 @@ internal sealed partial class Wcs20Handler
             }
 
             coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service,
-                entry.Publication.LayerIndex));
+                entry.Publication.LayerIndex)
+            {
+                Descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(entry.Resource, service.Service, entry.Publication)),
+            });
         }
 
         return new CoverageListResult(coverages, null, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service.Service));
@@ -722,7 +726,10 @@ internal sealed partial class Wcs20Handler
         return raster is null
             ? new CoverageResolutionResult(null, null)
             : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value,
-                service.Service, publication.LayerIndex), null);
+                service.Service, publication.LayerIndex)
+            {
+                Descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource!, service.Service, publication)),
+            }, null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -760,7 +767,10 @@ internal sealed partial class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new LayerCoverageResult(null, null)
-            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, owningService), null);
+            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, owningService)
+            {
+                Descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, owningService)),
+            }, null);
     }
 
     private static bool TryResolveResourceForLayer(
@@ -1251,16 +1261,18 @@ internal sealed partial class Wcs20Handler
 
     private static XElement BuildCoverageSummary(WcsCoverage coverage)
     {
-        var title = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name;
+        var descriptive = coverage.Descriptive;
         var children = new List<object>
         {
-            new XElement(Ows + "Title", title)
+            new XElement(Ows + "Title", descriptive.Title)
         };
 
-        if (!string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description))
+        if (!string.IsNullOrWhiteSpace(descriptive.Description))
         {
-            children.Add(new XElement(Ows + "Abstract", coverage.Resource.Metadata.Description));
+            children.Add(new XElement(Ows + "Abstract", descriptive.Description));
         }
+
+        children.AddRange(CatalogCapabilitiesXml.Keywords(descriptive.Keywords, Ows));
 
         var resourceSrid = coverage.Resource.ReadSrid();
         if (TryResolveExtent(coverage.Raster, out var extent) &&
@@ -3310,7 +3322,10 @@ internal sealed partial class Wcs20Handler
         int LayerId,
         RasterInfo Raster,
         MetadataV2Service? Service,
-        int? PublicationLayerIndex = null);
+        int? PublicationLayerIndex = null)
+    {
+        public required DescriptiveMetadata Descriptive { get; init; }
+    }
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 

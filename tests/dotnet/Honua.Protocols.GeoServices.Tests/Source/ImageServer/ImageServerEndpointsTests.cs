@@ -823,18 +823,18 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
 
             using (var info = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}?f=json"))
             {
-                info.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+                info.RootElement.GetProperty("name").GetString().Should().Be("Aliased image");
             }
 
             // The numeric route addresses storage layers, so it binds the same way.
             using (var numericInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{TestLayerId}/ImageServer?f=json"))
             {
-                numericInfo.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+                numericInfo.RootElement.GetProperty("name").GetString().Should().Be("Aliased image");
             }
 
             using (var collidingInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{collidingServiceId}/ImageServer?f=json"))
             {
-                collidingInfo.RootElement.GetProperty("name").GetString().Should().Be("colliding-image-publication");
+                collidingInfo.RootElement.GetProperty("name").GetString().Should().Be("Colliding image");
             }
 
             using (var identify = await GetGeoServicesJsonAsync(
@@ -861,7 +861,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             using (var legend = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/legend?f=json"))
             {
                 legend.RootElement.GetProperty("layers")[0].GetProperty("layerName").GetString()
-                    .Should().Be("aliased-image-publication");
+                    .Should().Be("Aliased image");
             }
 
             using (await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/keyProperties?f=json"))

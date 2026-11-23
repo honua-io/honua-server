@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Services;
 using System.Collections;
 using System.Collections.Immutable;
@@ -422,13 +423,15 @@ internal sealed partial class Wfs20Handler
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var otherCrs = BuildOtherCrsIdentifiers(srid, _dataSourceProvider);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(
+            featureType.Snapshot.Graph, new(resource, featureType.Service, featureType.Publication));
 
         return new FeatureType
         {
             Name = featureType.QualifiedName,
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Abstract = resource.Metadata.Description,
-            Keywords = BuildKeywords(resource),
+            Title = descriptive.Title,
+            Abstract = descriptive.Description,
+            Keywords = BuildKeywords(resource, descriptive.Keywords),
             DefaultCRS = FormatCrs(srid),
             OtherCRS = otherCrs.Length == 0 ? null : otherCrs,
             OutputFormats = new OutputFormats
@@ -479,7 +482,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string[] BuildKeywords(MetadataV2Object resource)
+    private static string[] BuildKeywords(MetadataV2Object resource, IReadOnlyList<string> describedKeywords)
     {
         var keywords = new List<string>
         {
@@ -487,7 +490,7 @@ internal sealed partial class Wfs20Handler
             "feature"
         };
 
-        keywords.AddRange(resource.Metadata.Keywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)));
+        keywords.AddRange(describedKeywords);
 
         if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {
