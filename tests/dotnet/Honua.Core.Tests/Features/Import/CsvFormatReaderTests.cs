@@ -470,6 +470,7 @@ public sealed class CsvFormatReaderTests
     [Theory]
     [InlineData("name,lon,lat\nA,1,2,extra\nB,3,4\n", 1)]
     [InlineData("name,lon,lat\nA,1,2,\nB,3,4\n", 0)]
+    [InlineData("name,lon,lat\nA,1,2, \nB,3,4\n", 0)]
     public async Task ReadStreamingAsync_FieldsBeyondHeader_AreCounted(string csv, int expectedRows)
     {
         var (features, diagnostics) = await ReadAllAsync(csv);

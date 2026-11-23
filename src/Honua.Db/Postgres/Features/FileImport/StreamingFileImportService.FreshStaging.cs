@@ -132,14 +132,16 @@ internal sealed partial class StreamingFileImportService
 
     // Other load modes keep a CSV row whose geometry could not be parsed or geocoded, without a
     // geometry, and ignore fields beyond the header. A create-only dataset must be complete, so a
-    // missing geometry source or any such row refuses the import. Blank geometry cells stay allowed.
+    // missing geometry source or any such row refuses the import. Blank coordinate or WKT cells
+    // stay allowed; a blank address counts as an address that could not be geocoded.
     private static void ThrowIfCreateOnlyCsvIncomplete(CsvGeometryDiagnostics diagnostics)
     {
         if (!diagnostics.GeometrySourceMapped)
         {
             throw new InvalidDataException(
                 "Create-only CSV import refused: no geometry column was found. Name longitude and latitude columns "
-                + "(longitudeColumn/latitudeColumn) or a WKT column (wkt/geom/geometry/shape); no dataset was created.");
+                + "(longitudeColumn/latitudeColumn), a WKT column (wkt/geom/geometry/shape), or an addressColumn where "
+                + "geocoding is available; no dataset was created.");
         }
         var problems = DescribeIncompleteCsvRows(diagnostics);
         if (problems.Count > 0)
