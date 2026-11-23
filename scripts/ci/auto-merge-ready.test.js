@@ -148,3 +148,12 @@ test('draft or held event cannot re-arm admission after live state changes', asy
     assert.equal(actions[0].action, 'disable');
   }
 });
+
+test('merged or closed pull request with stale admission is left alone', async () => {
+  // Queued runs can start after the merge; disabling then fails with "Can't disable auto-merge".
+  for (const state of ['MERGED', 'CLOSED']) {
+    assert.deepEqual(await run({ ...ready(), state, autoMergeRequest: { mergeMethod: 'SQUASH' } }), []);
+    assert.deepEqual(await run({ ...ready(), state, autoMergeRequest: { mergeMethod: 'SQUASH' } }, null,
+      { draft: false, labels: [{ name: 'hold' }] }), []);
+  }
+});

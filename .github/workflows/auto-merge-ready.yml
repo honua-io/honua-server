@@ -62,6 +62,12 @@ jobs:
               && !pr.labels.pageInfo.hasNextPage
               && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));
             const mergeMethod = pr?.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
+            // A queued run can start after the PR merged or closed; GitHub keeps
+            // autoMergeRequest on it but refuses to disable it, so leave it alone.
+            if (pr && pr.state !== 'OPEN') {
+              core.notice(`Pull request is ${pr.state}; nothing to arm or revoke.`);
+              return;
+            }
             if (pr?.autoMergeRequest && !eligible) {
               await github.graphql(`
                 mutation($pullRequestId: ID!) {
