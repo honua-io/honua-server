@@ -74,6 +74,11 @@ test('Clean code runs are handled with the same rules, per workflow', async () =
   assert.equal(calls[0].workflow_id, 9);
 });
 
+test('a run missing from the listing falls back to the event, and only the PR with this head counts', async () => {
+  const pulls = [{ number: 41, head: { sha: 'b'.repeat(40) } }, { number: 42, head: { sha: HEAD } }];
+  assert.deepEqual((await run({ runs: [success()], pulls })).reruns, [2]);
+});
+
 test('fork heads are matched by owner and branch', async () => {
   const trigger = cancelled({ head_repository: { owner: { login: 'someone' } } });
   const { reruns, calls } = await run({ trigger, runs: [success(), trigger] });
@@ -92,9 +97,7 @@ test('API errors stay failures', async () => {
 test('only cancelled first attempts start a job, with least privilege and no checkout', () => {
   assert.match(workflow, /^on:\n  workflow_run:\n    workflows: \[Repository hygiene, Clean code\]\n    types: \[completed\]\n/m);
   assert.match(workflow, /^permissions: \{\}$/m);
-  assert.match(workflow, /github.event.workflow_run.event == 'pull_request'/);
-  assert.match(workflow, /github.event.workflow_run.conclusion == 'cancelled'/);
-  assert.match(workflow, /github.event.workflow_run.run_attempt == 1/);
+  assert.match(workflow, /    if: >-\n      github.event.workflow_run.event == 'pull_request'\n      && github.event.workflow_run.conclusion == 'cancelled'\n      && github.event.workflow_run.run_attempt == 1\n    runs-on:/);
   assert.match(workflow, /permissions:\n      actions: write\n      pull-requests: read\n    timeout-minutes: 5/);
   assert.doesNotMatch(workflow, /actions\/checkout/);
   assert.doesNotMatch(workflow, /secrets\./);

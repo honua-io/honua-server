@@ -3,8 +3,10 @@ name: Cancelled required check rerun
 # Same-second pull_request events (opened + labeled, opened + edited) start two Repository
 # hygiene or Clean code runs for one head in one concurrency group. GitHub orders that queue
 # independently of check-suite order, so the run it cancels can sit in the newest suite, whose
-# cancelled required check then outranks the success and blocks the merge (#9610, #9611). This
-# reruns that run once, with its own event payload. It checks out nothing and only calls the API.
+# cancelled required check then outranks the success and blocks the merge. This reruns that run
+# once, with its own event payload. A newest-suite run a maintainer cancelled is rerun once too,
+# and that rerun may cancel an older-suite run still in progress; both are bounded by the attempt
+# filter. It checks out nothing and only calls the API.
 on:
   workflow_run:
     workflows: [Repository hygiene, Clean code]

@@ -1097,7 +1097,9 @@ the same shape (#9611). `cancelled-check-rerun.yml` reruns such a run of either
 workflow once, with its own event payload, when it is the newest suite of that
 workflow for a head that is still an open PR's head. Older-suite cancellations,
 superseded heads and later attempts are left alone; every job of the rerun
-workflow still runs, so no check is relaxed.
+workflow still runs, so no check is relaxed. A newest-suite run cancelled by hand
+is rerun once as well, and that rerun may cancel an older-suite run still in
+progress; the attempt filter bounds both.
 
 Operator Eval children keep Ryuk and PostGIS 17, and Core and Cloud Contracts children keep Ryuk, PostGIS 16 and PostGIS 18; the other split children prepare no images. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 

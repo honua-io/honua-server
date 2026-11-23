@@ -1903,7 +1903,9 @@ the same shape (#9611). `cancelled-check-rerun.yml` reruns such a run of either
 workflow once, with its own event payload, when it is the newest suite of that
 workflow for a head that is still an open PR's head. Older-suite cancellations,
 superseded heads and later attempts are left alone; every job of the rerun
-workflow still runs, so no check is relaxed.
+workflow still runs, so no check is relaxed. A newest-suite run cancelled by hand
+is rerun once as well, and that rerun may cancel an older-suite run still in
+progress; the attempt filter bounds both.
 
 Repository hygiene also runs on `labeled` and `unlabeled`. The shared bundle
 policy reads the PR's labels from the event payload, so a `bundle-exception`
