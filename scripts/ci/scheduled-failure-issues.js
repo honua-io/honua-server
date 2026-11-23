@@ -123,35 +123,51 @@ async function closeIssues(ctx, issues, run) {
   }
 }
 
-async function recordFailure(ctx, { issue, run, job }) {
-  const { github, owner, repo, report } = ctx;
-  const marker = runMarkerFor(run);
-  if (!issue.comments) {
-    issue.comments = await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+// The issues list returns `comments` as a count, so the fetched list lives in its own field.
+async function commentsOf(ctx, issue) {
+  const { github, owner, repo } = ctx;
+  if (!issue.fetchedComments) {
+    issue.fetchedComments = await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
       owner, repo, issue_number: issue.number, per_page: 100,
     });
   }
-  const recorded = [issue.body, ...issue.comments.map(item => item.body)]
-    .some(text => text?.includes(marker) || text?.includes(run.html_url));
-  if (recorded) return;
+  return issue.fetchedComments;
+}
+
+const claimText = (ctx, { lane, run, due }) =>
+  `claimed: ${lane.lane} ${isoSeconds(ctx.now)} - auto-assigned owner of ${fileOf(run.path)} (due ${due})`;
+
+// An issue whose claim comment failed after it was opened gets the claim on a later sweep.
+async function recordFailure(ctx, { issue, run, job, lane, due }) {
+  const { repo, report } = ctx;
+  const comments = await commentsOf(ctx, issue);
+  if (!comments.some(item => item.body?.startsWith('claimed: '))) {
+    const claim = claimText(ctx, { lane, run, due });
+    await comment(ctx, issue.number, claim);
+    comments.push({ body: claim });
+  }
+  const marker = runMarkerFor(run);
+  if ([issue.body, ...comments.map(item => item.body)].some(text => text?.includes(marker))) return;
   const body = `Failed again: ${run.html_url} (${run.created_at}, \`${shortSha(run)}\`), job ${job.html_url}.\n\n${marker}`;
   await comment(ctx, issue.number, body);
-  issue.comments.push({ body });
+  comments.push({ body });
   report.updated.push(`${repo}#${issue.number}`);
 }
 
 async function openIssue(ctx, args) {
-  const { github, owner, repo, report, now } = ctx;
+  const { github, owner, repo, report } = ctx;
   for (const name of args.labels) await ensureLabel(ctx, name);
   const body = issueBody(args);
   const { data: issue } = await github.request('POST /repos/{owner}/{repo}/issues', {
     owner, repo, labels: args.labels, body,
     title: `Scheduled run failing: ${args.workflowName} / ${args.job.name}`,
   });
-  const claim = `claimed: ${args.lane.lane} ${isoSeconds(now)} - auto-assigned owner of ${fileOf(args.run.path)} (due ${args.due})`;
-  await comment(ctx, issue.number, claim);
   report.opened.push(`${repo}#${issue.number}`);
-  return { number: issue.number, body, state: 'open', comments: [{ body: claim }] };
+  const opened = { number: issue.number, body, state: 'open', comments: 0, fetchedComments: [] };
+  const claim = claimText(ctx, args);
+  await comment(ctx, issue.number, claim);
+  opened.fetchedComments.push({ body: claim });
+  return opened;
 }
 
 async function fileRunFailures(ctx, { path, run, issues }) {
@@ -168,7 +184,7 @@ async function fileRunFailures(ctx, { path, run, issues }) {
     const key = `${path}::${job.name.replace(/\s+/g, '_')}`;
     const existing = issues.find(issue => issue.state === 'open' && keyOf(issue.body) === key);
     if (existing) {
-      await recordFailure(ctx, { issue: existing, run, job });
+      await recordFailure(ctx, { issue: existing, run, job, lane, due });
     } else if (budget > 0) {
       budget -= 1;
       const workflowName = workflow.name || path;

@@ -35,7 +35,10 @@ function fakeReads(state) {
     if (route === 'GET /repos/{owner}/{repo}/actions/runs') return params.event === 'schedule' ? [...state.runs] : [];
     if (route.endsWith('/workflows/{workflow_id}/runs')) return [...state.dispatchRuns];
     if (route.endsWith('/jobs')) return state.jobs[params.run_id] || [];
-    if (route === 'GET /repos/{owner}/{repo}/issues') return state.issues.filter(issue => issue.state === 'open');
+    if (route === 'GET /repos/{owner}/{repo}/issues') {
+      return state.issues.filter(issue => issue.state === 'open')
+        .map(issue => ({ ...issue, comments: (state.comments[issue.number] || []).length }));
+    }
     if (route.endsWith('/comments')) return state.comments[params.issue_number] || [];
     throw new Error(`unexpected ${route}`);
   };
@@ -105,13 +108,14 @@ test('a failed scheduled run opens one issue per failing job with owner, labels,
 
 test('a repeat failure comments once per run on the existing issue instead of opening another', async () => {
   const key = '.github/workflows/nightly.yml::Build';
-  const issues = [{ number: 7, state: 'open', body: `first run https://github.com/honua-io/app/actions/runs/1\n<!-- scheduled-failure key=${key} -->` }];
+  const issues = [{ number: 7, state: 'open', body: `<!-- scheduled-failure key=${key} -->\n<!-- scheduled-failure run=1 -->` }];
   const github = fakeGithub({
     runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')],
     jobs: { 1: [job('Build', 'failure', 1)], 2: [job('Build', 'failure', 1)] }, issues,
   });
   assert.deepEqual((await go(github)).updated, ['app#7']);
-  assert.match(github.comments[7][0].body, /Failed again: .*runs\/2/);
+  assert.match(github.comments[7][0].body, /^claimed: s-night /);
+  assert.match(github.comments[7][1].body, /Failed again: .*runs\/2/);
   const again = await go(github);
   assert.deepEqual([again.opened, again.updated], [[], []]);
   assert.equal(github.issues.length, 1);
@@ -146,6 +150,19 @@ test('cancelled, ignored, push-dispatched and human-dispatched runs are not swep
   assert.deepEqual(github.issues[0].labels, ['bug', 'area/ci', 'scheduled-failure']);
   const repos = github.calls.filter(([, route]) => route === 'GET /repos/{owner}/{repo}/actions/runs').map(([, , p]) => p.repo);
   assert.deepEqual(repos, ['app']);
+});
+
+test('a later sweep reads the comment list of an issue it opened earlier and records each run once', async () => {
+  const jobs = { 1: [job('Build', 'failure', 1)], 12: [job('Build', 'failure', 1)] };
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs });
+  await go(github);
+  github.issues.forEach(issue => { delete issue.fetchedComments; });
+  const later = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(12, 'nightly.yml', 'failure')],
+    jobs, issues: github.issues, comments: github.comments });
+  const report = await go(later);
+  assert.deepEqual([report.opened, report.updated, report.errors], [[], ['app#100'], []]);
+  assert.equal(github.comments[100].filter(item => item.body.startsWith('claimed: ')).length, 1);
+  assert.deepEqual((await go(later)).updated, []);
 });
 
 test('a successful partial dispatch neither closes issues nor counts as a run', async () => {
