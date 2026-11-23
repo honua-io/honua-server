@@ -414,7 +414,7 @@ internal sealed partial class PostgresVersionManager
         // The ancestor must cover the replayed rows, or later reconciles see them as DEFAULT edits.
         var postedThrough = await ReadVisibleHeadAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        // Committed: finish regardless of the request token so the ancestor is always advanced.
+        // Committed: finish regardless of the request token, and only once the prefix covers these rows.
         var serverGeneration = await FeatureChangePrefix.SettleAndReadHorizonAsync(
             connection, postedThrough, CancellationToken.None).ConfigureAwait(false);
         return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);

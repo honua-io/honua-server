@@ -58,7 +58,8 @@ database (`FeatureChangePrefix` in Honua.Db):
   long import it gets the older, still-safe horizon. Reconcile analyses only DEFAULT changes up
   to the horizon it then records as the ancestor, so a later reconcile neither repeats nor
   misses a change.
-- Version post waits up to 60 s, ignoring request cancellation once committed, for the prefix to cover its own replayed rows before it advances the
+- Version post waits, with no time limit and ignoring request cancellation once committed (the old
+  global writer lock blocked it as long), for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
 - The realtime feature log advances the prefix on every head and cursor read, waiting up to
   250 ms for writers already in flight, so a read that lands during a short edit still
