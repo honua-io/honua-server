@@ -73,19 +73,34 @@ class ShardFindings(unittest.TestCase):
         self.assertEqual([row['name'] for row in report['estimated']], ['a'])
 
 
+def run(identity, event, title, repo=REPO):
+    return dict(id=identity, event=event, display_title=title, head_repository=dict(full_name=repo))
+
+
 class Sampling(unittest.TestCase):
     def test_only_passing_server_shard_jobs_count(self):
         jobs = [job('a', 12), job('b', 30, 'failure'), dict(name='Build & Format Check', conclusion='success')]
         self.assertEqual(drift.shard_samples(jobs), dict(a=[12.0]))
 
     def test_window_keeps_trunk_full_runs_only(self):
-        def run(identity, event, title, repo=REPO):
-            return dict(id=identity, event=event, display_title=title, head_repository=dict(full_name=repo))
         page = dict(workflow_runs=[run(1, 'workflow_dispatch', 'CI affected x'), run(2, 'schedule', 'CI full '),
                                    run(3, 'push', 'CI full '), run(4, 'workflow_dispatch', 'CI full ', 'fork/repo'),
                                    run(5, 'workflow_dispatch', 'CI full '), run(6, 'schedule', 'CI full '),
                                    run(7, 'schedule', 'CI full ')])
         self.assertEqual([r['id'] for r in drift.full_runs(lambda endpoint: page, REPO)], [2, 5, 6])
+
+    def test_window_pages_past_affected_runs(self):
+        pages = {1: [run(n, 'workflow_dispatch', 'CI affected x') for n in range(99)] + [run(100, 'schedule', 'CI full ')],
+                 2: [run(n, 'workflow_dispatch', 'CI full ') for n in (200, 201, 202)]}
+        def call(endpoint):
+            return dict(workflow_runs=pages[int(endpoint.rsplit('page=', 1)[1])])
+        self.assertEqual([r['id'] for r in drift.full_runs(call, REPO)], [100, 200, 201])
+
+    def test_samples_from_a_changed_definition_are_dropped(self):
+        current = drift.definitions(dict(shards=[dict(name='a', filter='A'), dict(name='b', filter='B')]))
+        at_head = drift.definitions(dict(shards=[dict(name='a', filter='A'), dict(name='b', filter='old')]))
+        kept = drift.matching_samples(dict(a=[5.0], b=[9.0], gone=[1.0]), at_head, current)
+        self.assertEqual(kept, dict(a=[5.0]))
 
 
 class TrackingIssue(unittest.TestCase):

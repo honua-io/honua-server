@@ -28,6 +28,8 @@ MIN_COVERAGE = 0.8
 GROWTH_RATIO, GROWTH_MINUTES = 1.5, 3.0
 MIN_SAMPLES = 2
 RUN_WINDOW = 3
+MAX_RUN_PAGES = 10
+DEFINITION_KEYS = ('filter', 'csproj', 'csprojs')
 JOB_NAME = re.compile(r'Server Tests \((.+)\)$')
 MARKER = '<!-- shard-rank-drift -->'
 TITLE = 'ci: server shard dispatch_rank drifted from measured full-run job minutes'
@@ -36,9 +38,9 @@ OWNER_LANE = 's-ci-shards'
 API_TIMEOUT_SECONDS = 120
 
 
-def api(endpoint, payload=None, method=None):
-    """One gh api call; writes send the payload on stdin."""
-    command = ['gh', 'api', endpoint]
+def api(endpoint, payload=None, method=None, raw=False):
+    """One gh api call; writes send the payload on stdin, raw reads skip the 1 MB contents limit."""
+    command = ['gh', 'api', endpoint] + (['-H', 'Accept: application/vnd.github.raw+json'] if raw else [])
     if payload is not None:
         command += ['--method', method or 'POST', '--input', '-']
     result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
@@ -46,14 +48,37 @@ def api(endpoint, payload=None, method=None):
     return json.loads(result.stdout or 'null')
 
 
-def full_runs(call, repo):
-    """The newest RUN_WINDOW completed CI full runs on trunk (scheduled or full dispatch)."""
-    page = call(f'repos/{repo}/actions/workflows/ci.yml/runs?branch=trunk&status=completed&per_page=100')
-    runs = [run for run in page['workflow_runs']
-            if run['event'] in ('schedule', 'workflow_dispatch')
+def is_full_run(run, repo):
+    return (run['event'] in ('schedule', 'workflow_dispatch')
             and run.get('display_title', '').startswith('CI full')
-            and run['head_repository']['full_name'] == repo]
+            and run['head_repository']['full_name'] == repo)
+
+
+def full_runs(call, repo):
+    """The newest RUN_WINDOW completed CI full runs on trunk; affected runs outnumber them, so page."""
+    runs = []
+    for page in range(1, MAX_RUN_PAGES + 1):
+        batch = call(f'repos/{repo}/actions/workflows/ci.yml/runs'
+                     f'?branch=trunk&status=completed&per_page=100&page={page}')['workflow_runs']
+        runs += [run for run in batch if is_full_run(run, repo)]
+        if len(runs) >= RUN_WINDOW or len(batch) < 100:
+            break
     return runs[:RUN_WINDOW]
+
+
+def definitions(config):
+    """Each shard's test selection: a sample counts only when it matches the current one."""
+    return {shard['name']: tuple(json.dumps(shard.get(key), sort_keys=True) for key in DEFINITION_KEYS)
+            for shard in config['shards']}
+
+
+def head_definitions(call, repo, sha):
+    return definitions(call(f'repos/{repo}/contents/.github/ci-shards.json?ref={sha}', raw=True))
+
+
+def matching_samples(samples, at_head, current):
+    return {name: minutes for name, minutes in samples.items()
+            if name in current and at_head.get(name) == current[name]}
 
 
 def job_seconds(job):
@@ -185,9 +210,13 @@ def main(argv=None):
     parser.add_argument('--record', type=Path, default=Path('scripts/ci/fixtures/measured-dispatch-ranks.json'))
     parser.add_argument('--dry-run', action='store_true', help='report only; never touch issues')
     args = parser.parse_args(argv)
+    config = json.loads(args.config.read_text())
+    current = definitions(config)
     runs = full_runs(api, args.repo)
-    samples = merge_samples(shard_samples(run_jobs(api, args.repo, run['id'])) for run in runs)
-    report = analyze(json.loads(args.config.read_text()), json.loads(args.record.read_text()), samples)
+    samples = merge_samples(matching_samples(shard_samples(run_jobs(api, args.repo, run['id'])),
+                                             head_definitions(api, args.repo, run['head_sha']), current)
+                            for run in runs)
+    report = analyze(config, json.loads(args.record.read_text()), samples)
     body = render(report, runs)
     print(body)
     print('issue:', 'dry run' if args.dry_run else reconcile(api, args.repo, report, body))
