@@ -59,6 +59,14 @@
       "protocol": "wfs"
     },
     {
+      "client_lane": "cli",
+      "protocol": "featureserver"
+    },
+    {
+      "client_lane": "cli",
+      "protocol": "mapserver"
+    },
+    {
       "client_lane": "geoservices-rest-stub",
       "protocol": "featureserver"
     },

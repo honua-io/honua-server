@@ -127,6 +127,24 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetTileJson_SendsETag_AndAnswersMatchingIfNoneMatchWith304()
+    {
+        var path = $"/tiles/{WebAppFixture.TestLayerId}/tile.json";
+
+        var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var etag = response.Headers.ETag;
+        etag.Should().NotBeNull("the route is mapped with WithETag and MapLibre revalidates TileJSON");
+        using var conditional = new HttpRequestMessage(HttpMethod.Get, path);
+        conditional.Headers.IfNoneMatch.Add(etag!);
+        var revalidated = await _fixture.Client.SendAsync(conditional);
+        revalidated.StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task MapLibre_CanLoadFromTileJson()

@@ -72,6 +72,11 @@ internal sealed class FieldReviewService
             Offset = TryParseInt(request.Query["offset"], out var offset) && offset is int o ? Math.Max(0, o) : 0
         };
 
+        if (FieldWorkflowInputRules.FindFilterError(query) is { } filterError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, filterError);
+        }
+
         var result = await _store.ListSubmissionsAsync(query, context.RequestAborted).ConfigureAwait(false);
         activity?.SetTag("honua.result_count", result.Items.Length);
         ApplyNoStore(context.Response);
@@ -96,6 +101,11 @@ internal sealed class FieldReviewService
         if (request is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid assignment request.");
+        }
+
+        if (FieldWorkflowInputRules.FindAssigneeError(request.AssignedTo) is { } assigneeError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, assigneeError);
         }
 
         var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
@@ -126,6 +136,11 @@ internal sealed class FieldReviewService
                 context,
                 StatusCodes.Status400BadRequest,
                 $"status must be one of: {FieldReviewStatus.Approved}, {FieldReviewStatus.Rejected}, {FieldReviewStatus.ChangesRequested}.");
+        }
+
+        if (FieldWorkflowInputRules.FindNoteError(request.Note) is { } noteError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, noteError);
         }
 
         var expectedETag = context.Request.Headers["If-Match"].FirstOrDefault();
@@ -161,6 +176,11 @@ internal sealed class FieldReviewService
         if (request is null || string.IsNullOrWhiteSpace(request.Body))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must include a non-empty comment 'body'.");
+        }
+
+        if (FieldWorkflowInputRules.FindCommentError(request.Body) is { } commentError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, commentError);
         }
 
         var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);

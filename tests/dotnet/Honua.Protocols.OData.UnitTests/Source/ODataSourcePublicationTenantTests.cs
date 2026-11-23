@@ -47,7 +47,7 @@ public sealed class ODataSourcePublicationTenantTests
         var (search, query) = CreateSearch(provider, Substitute.For<IRelationshipStore>(), stream);
         var validation = new ODataValidationService(new CommonQueryValidator(Options.Create(new LimitsOptions())),
             Options.Create(new ODataOptions()));
-        var handler = new ODataAdvancedQueryHandler(new ODataQuerySearchService(query, search), validation,
+        var handler = new ODataAdvancedQueryHandler(new ODataQuerySearchService(query, search, Substitute.For<ICrsRegistry>()), validation,
             NullLogger<ODataAdvancedQueryHandler>.Instance);
         var context = Context(services);
 

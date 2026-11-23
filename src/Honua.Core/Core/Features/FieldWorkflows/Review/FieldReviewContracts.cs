@@ -40,6 +40,16 @@ public static class FieldSyncStatus
     public const string Failed = "failed";
 
     public const string Pending = "pending";
+
+    public static readonly string[] All =
+    [
+        Synced,
+        Rejected,
+        Failed,
+        Pending
+    ];
+
+    public static bool IsValid(string? status) => status is not null && Array.IndexOf(All, status) >= 0;
 }
 
 public sealed class FieldSubmissionRecord

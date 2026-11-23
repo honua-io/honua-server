@@ -76,11 +76,9 @@ internal static class ExportUnpublishGuard
     {
         try
         {
-            var currentETag = await store.ReadUnpublishedETagAsync(CancellationToken.None).ConfigureAwait(false);
-            if (string.Equals(currentETag, expectedETag, StringComparison.Ordinal))
-            {
-                await store.ClearUnpublishedAsync(CancellationToken.None).ConfigureAwait(false);
-            }
+            // Compare and delete atomically: a newer unpublish must retain its retry fence.
+            // Providers without conditional deletion leave the marker in place.
+            await store.ClearUnpublishedIfMatchAsync(expectedETag, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

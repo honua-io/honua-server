@@ -76,8 +76,8 @@ manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
 The full-matrix contract is the complete set enumerated by `expected-pairs.json`: 4 `js-cesium`, 6 `js`, 2
-`desktop-qgis`, 2 `cli`, 3 `geoservices-rest-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
-`py-pystac` envelopes — 27 pairs in total. A
+`desktop-qgis`, 4 `cli`, 3 `geoservices-rest-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
+`py-pystac` envelopes — 29 pairs in total. A
 `workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
 only the requested `client_lane` values; the scheduled nightly run evaluates the
 entire manifest.
