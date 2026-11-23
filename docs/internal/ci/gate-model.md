@@ -404,10 +404,9 @@ tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
 runs select every profile with `protocol-profile-selection.py --all`. A range
 selection compares trunk with itself there and would build only `all`, which
 is what full run 44309947920 did. Between full runs, Trunk Sanity's
-`Reduced protocol profiles` job compiles the profiles that
-`trunk_sanity_profiles.py` selects over the range since the newest successful
-Trunk Sanity run that already had the job, whenever that range changes `src/`,
-`eng/` or root build inputs. Both Trunk Sanity jobs queue the newest push
+`Reduced protocol profiles` job (`trunk_sanity_profiles.py`) compiles every
+reduced profile whenever the range since the newest successful Trunk Sanity
+run that already had the job changes `src/`, `eng/` or root build inputs. Both Trunk Sanity jobs queue the newest push
 behind the running one instead of cancelling it, so a burst of merges still
 gets a verdict within about two build lengths.
 

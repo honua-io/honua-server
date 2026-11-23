@@ -5,9 +5,10 @@ Trunk Sanity queues the newest push behind the running one, so intermediate
 pushes may never run. The range therefore starts at the newest successful
 Trunk Sanity ancestor rather than at the push's own predecessor. Only runs
 whose head contains this script count: older runs never compiled profiles.
-Profiles are compiled only when that range changes compiled inputs; the
-profile list comes from protocol-profile-selection.py. Without a successful
-ancestor every profile is compiled.
+When that range changes compiled inputs, or no such run exists, every
+profile is compiled. The selector's module narrowing is not used: it maps
+some server files that still compile in reduced profiles (gRPC hosting, for
+example) to `all` only.
 """
 
 import os
@@ -40,16 +41,12 @@ def compiled_changes(base, head):
 def select(base, head, selection):
     """Write the selector output and return (build, reason)."""
     if not base:
-        scope, environment = ["--all"], os.environ
         reason = "No successful Trunk Sanity ancestor; compiling every protocol profile."
-    elif not compiled_changes(base, head):
-        return False, f"No compiled input changed since {base[:12]}; protocol profiles stay verified."
+    elif compiled_changes(base, head):
+        reason = f"Compiled inputs changed since {base[:12]}; compiling every protocol profile."
     else:
-        scope = ["--changed-from-git"]
-        environment = {**os.environ, "BASE_REF": base, "HEAD_REF": head}
-        reason = f"Compiled inputs changed since {base[:12]}; compiling the selected protocol profiles."
-    output = subprocess.check_output(
-        [sys.executable, str(SELECTOR), "--dry-run", *scope], text=True, env=environment)
+        return False, f"No compiled input changed since {base[:12]}; protocol profiles stay verified."
+    output = subprocess.check_output([sys.executable, str(SELECTOR), "--dry-run", "--all"], text=True)
     Path(selection).write_text(output, encoding="utf-8")
     return True, reason
 

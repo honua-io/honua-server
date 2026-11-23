@@ -54,15 +54,25 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((written, calls), ("", []))
         self.assertIn(BASE[:12], reason)
 
-    def test_compiled_inputs_select_profiles_over_the_whole_range(self):
+    def test_compiled_inputs_compile_every_profile_over_the_whole_range(self):
         for path in ("src/Honua.Server/Features/Admin/Scene/A.cs", "eng/Honua.ProtocolProfiles.props",
                      "Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config"):
             build, _, written, calls = self.select(BASE, f"docs/a.md\n{path}\n")
             self.assertTrue(build, path)
             self.assertEqual(written, SELECTION)
-            command, options = calls[0]
-            self.assertEqual(command[-1], "--changed-from-git")
-            self.assertEqual((options["env"]["BASE_REF"], options["env"]["HEAD_REF"]), (BASE, HEAD))
+            self.assertEqual(calls[0][0][-1], "--all")
+
+    def test_real_selection_builds_every_reduced_profile(self):
+        grpc = "src/Honua.Server/Features/Protocols/Grpc/GrpcServiceCollectionExtensions.cs\n"
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(profiles, "compiled_changes", return_value=[grpc]):
+            selection = Path(directory) / "selection.json"
+            self.assertTrue(profiles.select(BASE, HEAD, selection)[0])
+            built = profiles.subprocess.check_output(
+                [sys.executable, str(ROOT / "scripts/ci/build-selected-protocol-profiles.py"),
+                 "--dry-run", "--selection", str(selection)], text=True)
+        for profile in ("gsr", "ogc-api", "ogc-api-classic"):
+            self.assertIn(f"-p:HonuaProtocolProfile={profile} ", built)
 
 
 class EntryPointTests(unittest.TestCase):
