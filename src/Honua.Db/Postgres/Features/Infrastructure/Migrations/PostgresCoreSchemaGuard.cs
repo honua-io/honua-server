@@ -229,6 +229,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ("sta_observation_default", "feature_of_interest_id"),
     ];
 
+    private const string ConfiguredFeatureStoreTable = "features";
+
     private static readonly string[] _initialSchemaTables =
     [
         "services",
@@ -427,6 +429,14 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         {
             VerifyRequiredMigration(state, registryAdoption,
                 ["services", "layers", "service_layers", "layer_fields"], [], []);
+        }
+
+        // The managed writer, the publish check and the attachment store address
+        // <schema>.features, so serving under a configured schema needs the adopted table.
+        if (_schemaName != PostgresSchemaConfiguration.DefaultMetadataSchema &&
+            _migrations.ConfiguredFeatureStoreAdoptionMigration is { } featureStoreAdoption)
+        {
+            VerifyRequiredMigration(state, featureStoreAdoption, [ConfiguredFeatureStoreTable], [], []);
         }
 
         if (state.RequiresRasterFloor)
@@ -1427,7 +1437,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
             var tablesParameter = schemaCommand.CreateParameter();
             tablesParameter.ParameterName = "tables";
-            tablesParameter.Value = _guardedTables;
+            tablesParameter.Value = _schemaName == PostgresSchemaConfiguration.DefaultMetadataSchema ||
+                _migrations.ConfiguredFeatureStoreAdoptionMigration is null
+                    ? _guardedTables
+                    : _guardedTables.Append(ConfiguredFeatureStoreTable).ToArray();
             if (tablesParameter is NpgsqlParameter npgsqlTablesParameter)
             {
                 npgsqlTablesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;

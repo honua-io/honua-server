@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
@@ -79,6 +80,30 @@ public sealed partial class DatabaseMigrationTests
             "INSERT INTO custom_registry.features(layer_id) VALUES (7) RETURNING objectid;"))
             .Should().Be(2L, "the owned objectid sequence moves with the table");
         await guard.VerifyAsync(_connectionString);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SchemaGuard_WithUnadoptedConfiguredFeatureStore_RejectsServingVerification()
+    {
+        var configuration = ConfiguredRegistryConfiguration();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var installed = await new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration).RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        installed.Successful.Should().BeTrue(installed.ErrorMessage);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await ScalarAsync(connection, "ALTER TABLE custom_registry.features SET SCHEMA public;");
+        var verify = () => guard.VerifyAsync(_connectionString);
+        await verify.Should().ThrowAsync<DatabaseSchemaFloorException>(
+            "the journal claims 231 while the configured schema has no features table")
+            .WithMessage("*231_AdoptConfiguredFeatureStoreSchema*");
+
+        await ScalarAsync(connection, $"DELETE FROM public.schema_versions WHERE scriptname = '{FeatureStoreAdoptionMigration}';");
+        await verify.Should().ThrowAsync<DatabaseSchemaFloorException>(
+            "a node started with migrations skipped must not serve before the table is adopted")
+            .WithMessage("*231_AdoptConfiguredFeatureStoreSchema*");
     }
 
     private static IConfigurationRoot ConfiguredRegistryConfiguration()

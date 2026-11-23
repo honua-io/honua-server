@@ -104,7 +104,8 @@ sequence move with it. It moves only a table with Honua's `layer_id` and
 `attributes` columns, so a user table that happens to be called `features` stays
 where it is. The migration stops without changes when the configured schema
 already has a `features` table and a shared one also exists elsewhere, or when no
-shared table is found. The default `honua` schema skips it.
+shared table is found. The default `honua` schema skips it. With a custom schema,
+readiness requires it, as it does 227, even when startup migrations are disabled.
 
 For an existing database, back up the database and stop all older server and worker
 instances before running migrate-only. Review the migration plan and apply its
