@@ -245,6 +245,15 @@ async function listRuns(ctx, since) {
   return runs;
 }
 
+// Every open issue regardless of age (a weekly workflow's issue may be untouched for days), plus
+// issues closed inside the run window, whose run markers stop a recorded run being filed again.
+async function knownIssues(ctx, since) {
+  const { github, owner, repo } = ctx;
+  const list = params => github.paginate('GET /repos/{owner}/{repo}/issues', { owner, repo, labels: LABEL, per_page: 100, ...params });
+  const issues = [...await list({ state: 'open' }), ...await list({ state: 'closed', since })];
+  return issues.filter(issue => !issue.pull_request && keyOf(issue.body));
+}
+
 // The newest failed runs after the workflow's last success are filed oldest first, so a job that
 // failed only in an earlier run still gets its issue; a successful newest run closes them all.
 // A failure followed by a success before any sweep is not filed.
@@ -252,9 +261,7 @@ async function sweepRepo(ctx) {
   const { github, owner, repo, config, now } = ctx;
   const since = isoSeconds(new Date(now.getTime() - (config.lookbackHours || DEFAULT_LOOKBACK_HOURS) * HOUR));
   const byPath = runsByWorkflow(ctx, await listRuns(ctx, since));
-  const known = (await github.paginate('GET /repos/{owner}/{repo}/issues', {
-    owner, repo, state: 'all', labels: LABEL, since, per_page: 100,
-  })).filter(issue => !issue.pull_request && keyOf(issue.body));
+  const known = await knownIssues(ctx, since);
   for (const [path, swept] of byPath) {
     const runs = await withoutHandoffs(ctx, path, swept);
     if (!runs.length) continue;

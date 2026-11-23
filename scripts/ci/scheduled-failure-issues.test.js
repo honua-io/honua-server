@@ -37,7 +37,8 @@ function fakeReads(state) {
     if (route.endsWith('/workflows/{workflow_id}/runs')) return [...state.dispatchRuns];
     if (route.endsWith('/jobs')) return state.jobs[params.run_id] || [];
     if (route === 'GET /repos/{owner}/{repo}/issues') {
-      return state.issues.filter(issue => params.state === 'all' || issue.state === 'open')
+      const fresh = issue => !params.since || Date.parse(issue.updated_at || NOW) >= Date.parse(params.since);
+      return state.issues.filter(issue => issue.state === params.state && fresh(issue))
         .map(issue => ({ ...issue, comments: (state.comments[issue.number] || []).length }));
     }
     if (route.endsWith('/comments')) return state.comments[params.issue_number] || [];
@@ -236,6 +237,16 @@ test('logs and the report never name a private repository or its issue numbers',
     config, owner: 'honua-io', now: NOW });
   assert.deepEqual(report.opened, ['a private repository#']);
   assert.doesNotMatch(JSON.stringify([report, warnings]), /secret-repo|#100/);
+});
+
+test('an open issue untouched for longer than the run window is still updated and closed', async () => {
+  const old = () => [{ number: 7, state: 'open', updated_at: '2026-11-10T00:00:00Z',
+    body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::Build -->' }];
+  const failing = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] }, issues: old() });
+  const report = await go(failing);
+  assert.deepEqual([report.opened, report.updated], [[], ['app#7']]);
+  const green = fakeGithub({ runs: [run(2, 'nightly.yml', 'success')], issues: old() });
+  assert.deepEqual((await go(green)).closed, ['app#7']);
 });
 
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {
