@@ -40,7 +40,7 @@ On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict
 | `$top` / `$skip` | Implemented | Normalized by server limits; `$top` is capped to the server page size (`OData:MaxPageSize`, see below). |
 | `$skiptoken` | Implemented | Opaque cursor paging; mutually exclusive with `$skip`. |
 | `$count` | Implemented | `@odata.count` in payload; `/$count` routes return text. |
-| `$expand` | Implemented | Relationship names; nested expand paths not supported. |
+| `$expand` | Implemented | Navigation properties declared in `$metadata`; properties of another layer expand to an empty collection. Unknown names and nested expansion return HTTP 400, including empty pages. |
 | `$compute` | Implemented | Arithmetic (`add`/`sub`/`mul`/`div`/`mod`) plus `floor`/`ceiling`/`round`; not combinable with `$apply` or `$search`. See [$compute and compute()](#compute-and-compute). |
 | `$search` | Implemented | Full-text across string fields; AND/OR/NOT and quoted phrases. |
 | `$apply` | Implemented | `aggregate`, `groupby`, `filter`, `compute` transformations, composable into a `/`-separated pipeline. See [$apply aggregation](#apply-aggregation). |
@@ -126,7 +126,7 @@ paging. Child grouping observes request cancellation.
 | String functions | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` |
 | Numeric functions | `round`, `floor`, `ceiling`, `abs` |
 | Date/time functions | `now`, `year`, `month`, `day`, `hour`, `minute`, `second` |
-| Spatial functions | `geo.distance`, `geo.intersects`, and `geo.length` (geodesic length in meters) with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. `geo.length` takes the geography or geometry property, not a literal. |
+| Spatial functions | `geo.distance`, `geo.intersects`, and `geo.length` (geodesic length in meters) with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. Unsupported explicit SRIDs return HTTP 400 before querying storage. `geo.length` takes the geography or geometry property, not a literal. |
 | Typed literals | `date'...'`, `datetime'...'`/`datetimeoffset'...'`, `geography'...'`/`geometry'...'` |
 
 Not supported (rejected with 400): `has`, `any`, `all` operators; `cast`/`isof`; any `geo.*` function beyond `geo.distance`, `geo.intersects`, and `geo.length`; `$levels`.
