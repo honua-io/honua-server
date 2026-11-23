@@ -1027,45 +1027,7 @@ public sealed partial class FormPackageValidator
             return false;
         }
 
-        var capability = ToServiceCapability(operation);
-        return ContainsCapability(publication.Capabilities, capability) ||
-               ContainsCapability(ReadServiceCapabilities(service), capability);
-    }
-
-    // "Editing" grants Create, Update and Delete, as it does for feature edits.
-    private static bool ContainsCapability(IEnumerable<string> capabilities, string capability)
-        => capabilities.Any(candidate =>
-            MatchesCapability(candidate, capability) || MatchesCapability(candidate, MetadataV2EditCapabilities.Editing));
-
-    private static bool MatchesCapability(string candidate, string capability)
-        => string.Equals(candidate, capability, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(candidate, $"FeatureServer.{capability}", StringComparison.OrdinalIgnoreCase);
-
-    private static List<string> ReadServiceCapabilities(MetadataV2Service service)
-    {
-        if (service.Options.TryGetValue("capabilities", out var element) &&
-            element.ValueKind == JsonValueKind.Array)
-        {
-            // Kept as a foreach rather than .Where()/.Select(): the array-length capacity hint
-            // above and the non-null/non-empty narrowing on GetString() don't fold cleanly into
-            // a LINQ chain without fighting nullable-reference analysis.
-            var list = new List<string>(element.GetArrayLength());
-            foreach (var value in element.EnumerateArray()
-                .Where(static item => item.ValueKind == JsonValueKind.String)
-                .Select(static item => item.GetString())
-                .OfType<string>()
-                .Where(static value => value.Length > 0))
-            {
-                list.Add(value);
-            }
-
-            if (list.Count > 0)
-            {
-                return list;
-            }
-        }
-
-        return ["Query"];
+        return MetadataV2EditCapabilities.Supports(service, publication, ToServiceCapability(operation));
     }
 
     private static bool ResourceSupportsAttachments(MetadataV2Object resource)

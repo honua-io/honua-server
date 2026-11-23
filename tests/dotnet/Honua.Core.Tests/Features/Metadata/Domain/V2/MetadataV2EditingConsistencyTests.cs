@@ -12,7 +12,7 @@ public sealed class MetadataV2EditingConsistencyTests
     private static readonly string[] EditablePublication = ["Query", "Create", "Update", "Delete"];
 
     [UnitTest]
-    public void StaleCanModify_OnManagedEditablePublication_IsRepaired()
+    public void RepairCanModify_StaleValueOnManagedEditablePublication_SetsTrue()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
 
@@ -27,7 +27,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void EditingToken_CountsAsAnEditCapability()
+    public void RepairCanModify_EditingToken_CountsAsAnEditCapability()
     {
         var graph = CreateGraph(["Query", "Editing"], MetadataV2StorageBindingCapability.Edit);
 
@@ -35,7 +35,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void QueryOnlyPublication_KeepsCanModifyFalse()
+    public void RepairCanModify_QueryOnlyPublication_KeepsFalse()
     {
         var graph = CreateGraph(["Query", "Extract"], MetadataV2StorageBindingCapability.Edit);
 
@@ -43,7 +43,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void ReadOnlyBinding_KeepsCanModifyFalse()
+    public void RepairCanModify_BindingWithoutEdit_KeepsFalse()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Query);
 
@@ -51,7 +51,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void CompositeRelationshipResource_StaysReadOnly()
+    public void RepairCanModify_CompositeRelationshipResource_KeepsFalse()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
         graph = graph with
@@ -66,7 +66,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void EditingPut_DisablingEveryOperation_IsNotUndoneByTheRepair()
+    public void Apply_DisablingEveryOperation_IsNotUndoneByRepair()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
 
@@ -78,7 +78,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void EditingPut_WithoutOperationChanges_RepairsStaleCanModify()
+    public void Apply_WithoutOperationChanges_RepairsStaleCanModify()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
 
@@ -89,7 +89,7 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
-    public void EditingPut_CreatingTheEditingBlock_KeepsAManagedEditableLayerModifiable()
+    public void Apply_CreatingTheEditingBlock_KeepsManagedEditableLayerModifiable()
     {
         var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
         graph = graph with { Resources = [graph.Resources[0] with { Editing = null }] };

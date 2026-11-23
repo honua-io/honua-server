@@ -3,10 +3,10 @@
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-// Older publishes stored editing.canModify=false for managed layers whose publication declares
-// Create, Update or Delete. The editing PUT derives canModify from exactly those facts, so a stored
-// false that contradicts them is a stale value, not an operator choice: disabling edits through the
-// PUT also removes the edit capabilities, and composite-relationship resources stay read-only.
+// A resource is modifiable when a publication declares Create, Update or Delete against an
+// edit-capable binding, the same rule the editing PUT applies; a stored canModify=false that
+// contradicts it is stale. Disabling edits through the PUT removes the edit capabilities, and
+// composite-relationship resources stay read-only, so neither is overridden.
 public static class MetadataV2EditingConsistency
 {
     public static MetadataV2Graph RepairCanModify(MetadataV2Graph graph)

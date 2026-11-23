@@ -220,6 +220,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        graph = MetadataV2EditingConsistency.RepairCanModify(graph);
 
         var validation = MetadataV2GraphValidator.Validate(graph);
         if (!validation.IsValid)
@@ -383,6 +384,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        graph = MetadataV2EditingConsistency.RepairCanModify(graph);
 
         var validation = MetadataV2GraphValidator.Validate(graph);
         if (!validation.IsValid)

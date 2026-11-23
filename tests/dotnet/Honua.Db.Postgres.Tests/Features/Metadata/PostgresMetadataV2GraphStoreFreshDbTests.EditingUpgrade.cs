@@ -11,8 +11,8 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
-    // A managed layer published before canModify was derived on publish is stored with
-    // editing.canModify=false; reading the graph after an upgrade must make it editable.
+    // A managed layer that declares Create/Update/Delete on an edit-capable binding is modifiable,
+    // whatever canModify value an older release stored for it.
     [IntegrationTest]
     public async Task GetCurrentAsync_StoredManagedEditableLayerWithStaleCanModify_ReadsAsModifiable()
     {
@@ -20,27 +20,15 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         try
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
-            var writer = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
-                "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            var saved = await writer.SaveAsync(PreUpgradeManagedEditableGraph(schema), expectedEtag: null);
-            await using (var connection = await fixture.GetConnectionAsync())
-            await using (var command = connection.CreateCommand())
-            {
-                command.CommandText = $"""
-                    SELECT document -> 'resources' -> 0 -> 'editing' ->> 'canModify'
-                    FROM "{schema}".metadata_v2_snapshots WHERE etag = @etag
-                    """;
-                command.Parameters.AddWithValue("etag", saved.Etag);
-                (await command.ExecuteScalarAsync()).Should().Be("false", "the stored document keeps the pre-upgrade value");
-            }
+            var saved = await CreateStore(schema).SaveAsync(StaleCanModifyGraph(schema), expectedEtag: null);
+            (await ReadStoredCanModifyAsync(schema, saved.Etag)).Should().Be("true", "writes persist the repaired value");
+            await PlantStoredCanModifyFalseAsync(schema, saved.Etag);
 
-            var reader = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
-                "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+            var reader = CreateStore(schema);
             var current = await reader.GetCurrentAsync();
             current.Etag.Should().Be(saved.Etag);
-            var editing = current.Graph.Resources.Single().Editing!;
-            editing.CanModify.Should().BeTrue();
-            editing.SupportsAttachments.Should().BeTrue();
+            current.Graph.Resources.Single().Editing!.CanModify.Should().BeTrue();
+            current.Graph.Resources.Single().Editing!.SupportsAttachments.Should().BeTrue();
             (await reader.GetByRevisionAsync(saved.Graph.Revision))!.Graph.Resources.Single().Editing!.CanModify
                 .Should().BeTrue();
         }
@@ -50,7 +38,57 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
     }
 
-    private static MetadataV2Graph PreUpgradeManagedEditableGraph(string schema) => new()
+    [IntegrationTest]
+    public async Task SaveAsync_StaleCanModifyGraph_CachedSnapshotIsModifiable()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("editing_upgrade_cache");
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var store = CreateStore(schema);
+
+            var saved = await store.SaveAsync(StaleCanModifyGraph(schema), expectedEtag: null);
+
+            saved.Graph.Resources.Single().Editing!.CanModify.Should().BeTrue();
+            (await store.GetCurrentAsync()).Graph.Resources.Single().Editing!.CanModify.Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private PostgresMetadataV2GraphStore CreateStore(string schema)
+        => new(new TestConnectionProvider(fixture.DataSource, schema), "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+
+    private async Task<object?> ReadStoredCanModifyAsync(string schema, string etag)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT document -> 'resources' -> 0 -> 'editing' ->> 'canModify'
+            FROM "{schema}".metadata_v2_snapshots WHERE etag = @etag
+            """;
+        command.Parameters.AddWithValue("etag", etag);
+        return await command.ExecuteScalarAsync();
+    }
+
+    // Rewrites the stored document to the value older releases wrote for this layer.
+    private async Task PlantStoredCanModifyFalseAsync(string schema, string etag)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $$"""
+            UPDATE "{{schema}}".metadata_v2_snapshots
+            SET document = jsonb_set(document, '{resources,0,editing,canModify}', 'false'::jsonb)
+            WHERE etag = @etag
+            """;
+        command.Parameters.AddWithValue("etag", etag);
+        (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        (await ReadStoredCanModifyAsync(schema, etag)).Should().Be("false");
+    }
+
+    private static MetadataV2Graph StaleCanModifyGraph(string schema) => new()
     {
         Environment = "Test",
         GeneratedAt = DateTimeOffset.UtcNow,

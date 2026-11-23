@@ -286,12 +286,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
             geometryColumn,
             geometryType,
             now);
-        var updatedGraph = MetadataV2EditingConsistency.RepairCanModify(graph with
+        var updatedGraph = graph with
         {
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
             Resources = UpsertById(graph.Resources, updatedResource, static item => item.Metadata.Id)
-        });
+        };
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
         if (!validation.IsValid)
         {
