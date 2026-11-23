@@ -156,9 +156,12 @@ class BindPlatformImage(unittest.TestCase):
         nightly = (ROOT / ".github/workflows/security-nightly.yml").read_text()
         release = (ROOT / ".github/workflows/release-security-assets.yml").read_text()
         script = (ROOT / "scripts/security/bind-platform-image.sh").read_text()
-        for text in (nightly, release):
-            self.assertEqual(1, text.count("bash scripts/security/bind-platform-image.sh"))
+        # Nightly: the manual existing-image scan and the supported-release rescan.
+        self.assertEqual(2, nightly.count("bash scripts/security/bind-platform-image.sh"))
+        self.assertEqual(1, release.count("bash scripts/security/bind-platform-image.sh"))
         self.assertIn("image-ref: ${{ env.RESOLVED_IMAGE }}", nightly)
+        # A supported entry may name an index; scanning it directly fails on both platforms.
+        self.assertNotIn("image-ref: ${{ matrix.image }}", nightly)
         self.assertIn("image-ref: ${{ env.RESOLVED_IMAGE }}", release)
         persisted = script.split('>> "$GITHUB_ENV"', 1)[0].rsplit('{', 1)[1]
         self.assertNotIn("SCAN_IMAGE=", persisted)
