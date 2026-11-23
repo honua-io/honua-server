@@ -91,5 +91,5 @@ public sealed class TerrainAuthorizationTests : IAsyncLifetime
     private void RestrictService()
         => _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["terrain-reader"] });
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
 }

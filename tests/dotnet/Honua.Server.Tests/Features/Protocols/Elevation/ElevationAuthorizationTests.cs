@@ -88,5 +88,5 @@ public sealed class ElevationAuthorizationTests : IAsyncLifetime
     private void RestrictService()
         => _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["elevation-reader"] });
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
 }
