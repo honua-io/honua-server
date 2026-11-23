@@ -68,7 +68,8 @@ an explicit `reader-incompatible` declaration for this observed compatibility bo
 Upgrade all server and worker instances together when crossing this pre-rc.2 boundary.
 Application-only rollback across migration 145 to an image older than rc.2 is
 unsupported: restore the pre-upgrade database backup and its matching application
-image. Rollbacks to rc.2 or later retain the supported application-only path. Do not
+image. Recovery to any earlier image likewise needs its matching backup unless that
+specific recovery has been qualified. Do not
 remove the migration journal entry or reintroduce cascading replacement to bypass
 that boundary.
 
@@ -229,7 +230,7 @@ Single-instance Docker is not zero-downtime: pull the new tag, stop the old cont
 
 ## Run migrations out of band
 
-Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records compatibility declarations for the runtime checks. Recovery to a previous image requires qualification of that specific image against the installed database; otherwise restore its matching backup before starting it. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. There is no mixed-version contract: unless that rollout has been qualified, drain and stop older servers and workers before running migrate-only, because startup checks cannot protect processes that are already running. Migrate-only records compatibility declarations for the runtime checks. Recovery to a previous image requires qualification of that specific image against the installed database; otherwise restore its matching backup before starting it. The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
 
 ### Upgrading a journal that stops at 091
 
@@ -549,10 +550,10 @@ rc.1 -> rc.2 with the catalog-selected file and a checksum-verified backup.
 Before you roll back the image, check that the target image can protect itself
 against the schema it will find. Image rollback never reverses migrations.
 
-- **Roll back only to images that include the schema-reader guard.** Across
-  additive (expand-only) migrations, that means schema 135 or later: those
-  images verify the forward-compatibility declarations described in
-  the specific target image’s runtime checks.
+- **Restore the matching backup unless the target image is qualified.** There
+  is no rollback contract across migrations, additive or not. An image rollback
+  without a restore is safe only when that specific image has been qualified
+  against the installed database.
 - **Never roll back across a contract-phase migration without a restore.** This
   applies to scripts marked `-- honua:reader-incompatible` too. Restore the
   backup that matches the target revision instead
