@@ -18,6 +18,13 @@
       "platform": "linux/arm64",
       "sourceRevision": "61bf8068ac03695ebb38ae177a091c1370071966",
       "registeredAt": "2026-11-23"
+    },
+    {
+      "release": "2026.0-rc.1",
+      "image": "ghcr.io/honua-io/honua-server@sha256:0d42283df1067cdb9ab73ccb6dfd6a0e9f89f559f675df42eb034646b462fc6f",
+      "platform": "linux/amd64",
+      "sourceRevision": "61bf8068ac03695ebb38ae177a091c1370071966",
+      "registeredAt": "2026-11-23"
     }
   ]
 }
