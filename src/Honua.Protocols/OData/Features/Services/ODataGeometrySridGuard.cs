@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters.OData;
-using Honua.Hosting.Features.Validation;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -42,7 +42,7 @@ internal static class ODataGeometrySridGuard
         {
             return FilterGeometryCrsValidator.GetExplicitGeometrySrids(new ODataFilterParser().Parse(odataFilter));
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
         {
             // A malformed filter is reported, with its position, by the normal parse path.
             return [];

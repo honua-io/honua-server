@@ -87,6 +87,26 @@ public sealed class ODataSearchServiceSqlTests
         (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain(message);
     }
 
+    [Theory]
+    [InlineData("*")]
+    [InlineData("Children($select=name)")]
+    public async Task ProcessExpandAsync_SupportedExpand_IsAccepted(string expand)
+    {
+        var parent = new MetadataV2Object
+        {
+            Metadata = new() { Id = "parents" },
+            Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+        };
+        var service = new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IMetadataV2GraphProvider>(), null!,
+            Options.Create(new ODataOptions())), null!);
+
+        var result = await service.ProcessExpandAsync(expand, parent, 13, [], CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
     [Fact]
     public void BuildTextSearchCondition_EscapesFieldNamesWithQuotes()
     {

@@ -876,7 +876,7 @@ internal sealed partial class ODataSearchService
                 ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id),
             })
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var unknown = optionsByName.Keys.FirstOrDefault(name => !known.Contains(name));
+        var unknown = optionsByName.Keys.FirstOrDefault(name => name != "*" && !known.Contains(name));
         if (unknown != null)
         {
             throw new ArgumentException($"Unknown navigation property '{unknown}' in $expand.");
@@ -900,13 +900,14 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
-            if (trimmed.Contains('/', StringComparison.Ordinal))
+            var optionIndex = trimmed.IndexOf('(');
+            var namePart = optionIndex >= 0 ? trimmed[..optionIndex] : trimmed;
+            if (namePart.Contains('/', StringComparison.Ordinal))
             {
                 throw new ArgumentException("Nested $expand paths are not supported.");
             }
 
             HashSet<string>? selectFields = null;
-            var optionIndex = trimmed.IndexOf('(');
             if (optionIndex >= 0)
             {
                 if (!trimmed.EndsWith(')'))
