@@ -3,10 +3,9 @@
 
 PR Gate sizes its time budget and heavy placement from `dispatch_rank`
 (.github/ci-shards.json). The only other rank check compares ranks with the committed
-record (scripts/ci/fixtures/measured-dispatch-ranks.json), so a stale record passes
-forever: for two days in November 2026 the ranks summed to ~1.9x the measured minutes
-and PR Gate deferred shards to trunk. This check reads the latest completed CI full runs
-on trunk and keeps one tracking issue open while any finding stands:
+record (scripts/ci/fixtures/measured-dispatch-ranks.json), so a stale record passes.
+This check reads the latest completed CI full runs on trunk and keeps one tracking
+issue open while any finding stands:
 
 - total drift: sum of ranks / sum of median measured minutes outside the band;
 - grown shard: median at least GROWTH_RATIO x and GROWTH_MINUTES over its rank;
@@ -29,6 +28,7 @@ GROWTH_RATIO, GROWTH_MINUTES = 1.5, 3.0
 MIN_SAMPLES = 2
 RUN_WINDOW = 3
 MAX_RUN_PAGES = 10
+MAX_ISSUE_PAGES = 20
 DEFINITION_KEYS = ('filter', 'csproj', 'csprojs')
 JOB_NAME = re.compile(r'Server Tests \((.+)\)$')
 MARKER = '<!-- shard-rank-drift -->'
@@ -190,9 +190,14 @@ def render(report, runs):
 
 
 def tracking_issue(github):
-    issues = github.read(f'issues?state=open&labels=area/ci&per_page={PER_PAGE}')
-    return next((issue for issue in issues
-                 if 'pull_request' not in issue and MARKER in (issue.get('body') or '')), None)
+    """The open tracker, searched across every page of open area/ci issues."""
+    for page in range(1, MAX_ISSUE_PAGES + 1):
+        batch = github.read(f'issues?state=open&labels=area/ci&per_page={PER_PAGE}&page={page}')
+        issue = next((item for item in batch
+                      if 'pull_request' not in item and MARKER in (item.get('body') or '')), None)
+        if issue is not None or len(batch) < PER_PAGE:
+            return issue
+    raise RuntimeError(f'over {MAX_ISSUE_PAGES * PER_PAGE} open area/ci issues; tracker lookup incomplete')
 
 
 def reconcile(github, report, body):

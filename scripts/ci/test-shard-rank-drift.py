@@ -128,6 +128,11 @@ class TrackingIssue(unittest.TestCase):
         self.assertEqual(drift.reconcile(github, self.CLEAN, 'body'), 'closed #5')
         self.assertEqual(github.writes[-1][2]['state'], 'closed')
 
+    def test_tracker_on_a_later_page_is_updated_not_duplicated(self):
+        pages = {1: [dict(number=n, body='other') for n in range(100)], 2: [dict(number=500, body=drift.MARKER)]}
+        github = FakeGitHub(lambda path: pages[int(path.rsplit('page=', 1)[1])])
+        self.assertEqual(drift.reconcile(github, self.DRIFT, f'{drift.MARKER} new'), 'updated #500')
+
     def test_insufficient_window_never_touches_issues(self):
         github = issues(dict(number=5, body=drift.MARKER))
         report = dict(total=dict(status='insufficient'), grown=[], estimated=[])
