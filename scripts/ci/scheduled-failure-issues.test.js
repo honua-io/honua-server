@@ -137,11 +137,11 @@ test('the latest scheduled success closes every open issue of that workflow only
 });
 
 test('cancelled, ignored, push-dispatched and human-dispatched runs are not swept; bot dispatches of listed workflows are', async () => {
-  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI full ' };
+  const bot = { event: 'workflow_dispatch', actor: { login: 'github-actions[bot]' }, display_title: 'CI full ' };
   const github = fakeGithub({
     runs: [run(1, 'later.yml', 'cancelled'), run(2, 'watchdog.yml', 'failure')],
     dispatchRuns: [withRun(run(3, 'ci.yml', 'failure'), bot),
-      withRun(run(4, 'ci.yml', 'failure'), { ...bot, triggering_actor: { login: 'founder' } }),
+      withRun(run(4, 'ci.yml', 'failure'), { ...bot, actor: { login: 'founder' }, triggering_actor: { login: 'github-actions[bot]' } }),
       withRun(run(5, 'ci.yml', 'failure'), { ...bot, head_branch: 'feature' })],
     jobs: { 3: [] },
   });
@@ -171,7 +171,7 @@ test('a successful partial dispatch neither closes issues nor counts as a run', 
   const github = fakeGithub({
     runs: [run(1, 'ci.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] }, issues,
     dispatchRuns: [withRun(run(2, 'ci.yml', 'success'), {
-      event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI affected a..b' })],
+      event: 'workflow_dispatch', actor: { login: 'github-actions[bot]' }, display_title: 'CI affected a..b' })],
   });
   const report = await go(github);
   assert.deepEqual([report.closed, report.updated], [[], ['app#7']]);
@@ -211,7 +211,7 @@ test('a run already recorded on a closed issue is not filed again; a new failing
 });
 
 test('a hand-off-only success is ignored; candidate-ref bot builds count and their publish success closes', async () => {
-  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'honua-io-bot[bot]' }, head_branch: 'candidate-abc' };
+  const bot = { event: 'workflow_dispatch', actor: { login: 'honua-io-bot[bot]' }, triggering_actor: { login: 'founder' }, head_branch: 'candidate-abc' };
   const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/build.yml::Build_JIT -->' }];
   const failing = fakeGithub({
     runs: [run(1, 'build.yml', 'failure'), run(3, 'build.yml', 'success')],

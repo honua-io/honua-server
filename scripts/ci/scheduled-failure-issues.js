@@ -38,7 +38,8 @@ function ownerFor(config, repo, path) {
 function isRuledBotDispatch({ config, repo, defaultBranch }, run) {
   const rule = config.dispatchWorkflows?.[repo]?.[fileOf(run.path)];
   if (run.event !== 'workflow_dispatch' || !rule) return false;
-  if (!/\[bot\]$/.test(run.triggering_actor?.login || '')) return false;
+  // `actor` is who dispatched the run; a person's rerun changes only `triggering_actor`.
+  if (!/\[bot\]$/.test(run.actor?.login || '')) return false;
   const onRef = rule.ref === 'default' ? run.head_branch === defaultBranch : new RegExp(rule.ref).test(run.head_branch || '');
   return onRef && new RegExp(rule.title || '').test(run.display_title || '');
 }
