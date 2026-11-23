@@ -45,9 +45,11 @@ public sealed class FeatureServerAttachmentRbacTests : IClassFixture<FeatureServ
     public async Task AddAttachment_WithoutDataEditorGrant_IsRefused(string roles, string serviceId, int expectedCode)
     {
         using var client = CreateCaller(roles);
-        using var form = CreateFileForm();
+        using var file = new ByteArrayContent("rbac"u8.ToArray());
+        using var format = new StringContent("json");
+        using var form = CreateFileForm(file, format);
 
-        var response = await client.PostAsync(FeatureRoute(serviceId, "addAttachment"), form);
+        using var response = await client.PostAsync(FeatureRoute(serviceId, "addAttachment"), form);
 
         await AssertRefusedAsync(response, expectedCode);
     }
@@ -59,10 +61,13 @@ public sealed class FeatureServerAttachmentRbacTests : IClassFixture<FeatureServ
     public async Task UpdateAttachment_WithoutDataEditorGrant_IsRefused(string roles, string serviceId, int expectedCode)
     {
         using var client = CreateCaller(roles);
-        using var form = CreateFileForm();
-        form.Add(new StringContent(AttachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId");
+        using var file = new ByteArrayContent("rbac"u8.ToArray());
+        using var format = new StringContent("json");
+        using var form = CreateFileForm(file, format);
+        using var attachmentId = new StringContent(AttachmentId.ToString(CultureInfo.InvariantCulture));
+        form.Add(attachmentId, "attachmentId");
 
-        var response = await client.PostAsync(FeatureRoute(serviceId, "updateAttachment"), form);
+        using var response = await client.PostAsync(FeatureRoute(serviceId, "updateAttachment"), form);
 
         await AssertRefusedAsync(response, expectedCode);
     }
@@ -74,13 +79,15 @@ public sealed class FeatureServerAttachmentRbacTests : IClassFixture<FeatureServ
     public async Task DeleteAttachments_WithoutDataEditorGrant_IsRefused(string roles, string serviceId, int expectedCode)
     {
         using var client = CreateCaller(roles);
+        using var attachmentIds = new StringContent(AttachmentId.ToString(CultureInfo.InvariantCulture));
+        using var format = new StringContent("json");
         using var form = new MultipartFormDataContent
         {
-            { new StringContent(AttachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentIds" },
-            { new StringContent("json"), "f" },
+            { attachmentIds, "attachmentIds" },
+            { format, "f" },
         };
 
-        var response = await client.PostAsync(FeatureRoute(serviceId, "deleteAttachments"), form);
+        using var response = await client.PostAsync(FeatureRoute(serviceId, "deleteAttachments"), form);
 
         await AssertRefusedAsync(response, expectedCode);
     }
@@ -97,14 +104,13 @@ public sealed class FeatureServerAttachmentRbacTests : IClassFixture<FeatureServ
         return $"/rest/services/{serviceId}/FeatureServer/{layerId}/{FeatureId}/{operation}";
     }
 
-    private static MultipartFormDataContent CreateFileForm()
+    private static MultipartFormDataContent CreateFileForm(ByteArrayContent file, StringContent format)
     {
-        var file = new ByteArrayContent("rbac"u8.ToArray());
         file.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         return new MultipartFormDataContent
         {
             { file, "attachment", "rbac.txt" },
-            { new StringContent("json"), "f" },
+            { format, "f" },
         };
     }
 
