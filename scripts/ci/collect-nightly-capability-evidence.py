@@ -25,11 +25,16 @@ WORKFLOWS = {
 }
 MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+MAX_DOCUMENTS = 200
+PAGE_SIZE = 100
 
 
-def api(repo: str, endpoint: str, *, binary: bool = False):
-    data = subprocess.check_output(["gh", "api", f"repos/{repo}/{endpoint}"], timeout=120)
-    return data if binary else json.loads(data)
+def archive_api(repo: str, endpoint: str) -> bytes:
+    return subprocess.check_output(["gh", "api", f"repos/{repo}/{endpoint}"], timeout=120)
+
+
+def api(repo: str, endpoint: str):
+    return json.loads(archive_api(repo, endpoint))
 
 
 def latest_run(runs: list[dict], repo: str, workflow: str) -> dict | None:
@@ -73,7 +78,7 @@ def read_documents(data: bytes, kind: str) -> list[dict]:
     documents = []
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         members = [entry for entry in archive.infolist() if wanted(entry.filename, kind)]
-        if len(members) > 200:
+        if len(members) > MAX_DOCUMENTS:
             raise ValueError("too many evidence documents")
         for entry in sorted(members, key=lambda item: item.filename):
             if entry.file_size > MAX_DOCUMENT_BYTES:
@@ -95,7 +100,7 @@ def collect_producer(repo: str, workflow: str, kind: str) -> dict:
                   conclusion=run["conclusion"], observedAt=run["updated_at"],
                   runUrl=run["html_url"])
     artifacts = api(repo, f"actions/runs/{run['id']}/artifacts?per_page=100")["artifacts"]
-    if len(artifacts) >= 100:
+    if len(artifacts) >= PAGE_SIZE:
         raise ValueError("artifact listing exceeds collection bound")
     for artifact in sorted(artifacts, key=lambda row: row["id"]):
         name = artifact["name"]
@@ -107,7 +112,7 @@ def collect_producer(repo: str, workflow: str, kind: str) -> dict:
             continue
         if artifact["size_in_bytes"] > MAX_ARCHIVE_BYTES:
             raise ValueError("oversized evidence artifact")
-        documents = read_documents(api(repo, f"actions/artifacts/{artifact['id']}/zip", binary=True), kind)
+        documents = read_documents(archive_api(repo, f"actions/artifacts/{artifact['id']}/zip"), kind)
         if documents:
             result["artifacts"].append(artifact["id"])
             result["documents"].extend(documents)

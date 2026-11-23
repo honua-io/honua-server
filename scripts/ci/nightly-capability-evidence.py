@@ -3,9 +3,13 @@
 """Join collected nightly observations without promoting diagnostic runs to release proof."""
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import math
 import re
+
+MAX_AGE_DAYS = 14
+INTEROP_PRODUCER_COUNT = 3
 
 # Actual Honua.LoadTests scenario names and the endpoints they exercise.
 # The GeoBench crosswalk uses different names; never claim those were measured.
@@ -28,14 +32,15 @@ def provenance(producer: dict) -> dict:
             ("workflow", "runId", "runAttempt", "runUrl", "sourceSha", "conclusion", "artifacts")}
 
 
-def freshness(observed, anchor, green: bool) -> dict:
+def freshness(observed, anchor, conclusion: str) -> dict:
     at, now = instant(observed), instant(anchor)
     age = (now - at).total_seconds() / 86400 if at and now else None
-    state = "unknown" if age is None else "fresh" if green and 0 <= age <= 14 else "stale"
+    state = "unknown" if age is None else "fresh" if conclusion == "success" and 0 <= age <= MAX_AGE_DAYS else "stale"
     return {"state": state, "ageDays": round(age, 3) if age is not None else None, "runDate": observed}
 
 
-def trusted_document(producer, document, kind, collected_at):
+def trusted_document(producer, document, collected_at):
+    kind = producer["kind"]
     observed = document.get("run_date") if kind == "interop" else document.get("generatedAt")
     at, end, collected = instant(observed), instant(producer.get("observedAt")), instant(collected_at)
     if not at or not end or not collected or not at <= end <= collected:
@@ -58,14 +63,14 @@ def interop_rows(snapshot, impact):
     producers = [p for p in snapshot["producers"] if p["kind"] == "interop"]
     # A producer that failed before uploading cannot silently preserve another
     # workflow's older green result for an overlapping lane.
-    complete = len(producers) == 3 and all(p.get("documents") for p in producers)
+    complete = len(producers) == INTEROP_PRODUCER_COUNT and all(p.get("documents") for p in producers)
     for producer in sorted(producers, key=lambda p: p.get("observedAt", "")):
         for document in producer["documents"]:
             key = (document.get("client_lane") or document.get("clientLane"), document.get("protocol"))
             green = (complete and producer.get("conclusion") == "success"
-                     and trusted_document(producer, document, "interop", snapshot["collectedAt"])
+                     and trusted_document(producer, document, snapshot["collectedAt"])
                      and impact.is_green(document))
-            envelopes[key] = {"freshness": freshness(document.get("run_date"), snapshot["collectedAt"], green),
+            envelopes[key] = {"freshness": freshness(document.get("run_date"), snapshot["collectedAt"], "success" if green else "failure"),
                               "evidence": provenance(producer)}
     return envelopes
 
@@ -76,7 +81,7 @@ def cite_rows(snapshot):
         if producer["kind"] != "cite":
             continue
         for document in producer["documents"]:
-            trusted = trusted_document(producer, document, "cite", snapshot["collectedAt"])
+            trusted = trusted_document(producer, document, snapshot["collectedAt"])
             for suite in document.get("suites", []):
                 total, passed = suite.get("totalTests", 0), suite.get("passed", 0)
                 counters = [total, passed, *(suite.get(k) for k in ("failed", "skipped", "cantTell"))]
@@ -84,7 +89,7 @@ def cite_rows(snapshot):
                 green = (trusted and valid and total > 0 and passed == total
                          and counters[2:] == [0, 0, 0] and suite.get("status") == "passed"
                          and producer.get("conclusion") == "success")
-                stamp = freshness(document.get("generatedAt"), snapshot["collectedAt"], green)
+                stamp = freshness(document.get("generatedAt"), snapshot["collectedAt"], "success" if green else "failure")
                 suites[suite["name"]] = {"passed": passed, "total": total,
                                          "passRate": 100.0 if stamp["state"] == "fresh" else 0.0,
                                          "freshness": stamp, "evidence": provenance(producer),
@@ -98,7 +103,7 @@ def load_rows(snapshot):
         if producer["kind"] != "geobench":
             continue
         for document in producer["documents"]:
-            trusted = trusted_document(producer, document, "geobench", snapshot["collectedAt"])
+            trusted = trusted_document(producer, document, snapshot["collectedAt"])
             for scenario in document.get("scenarios", []):
                 ok, fail = scenario.get("okCount"), scenario.get("failCount")
                 required = [scenario.get(key) for key in ("durationSeconds", "okRps", "meanMs", "maxMs", "p95Ms", "p99Ms")]
@@ -108,12 +113,13 @@ def load_rows(snapshot):
                 metrics = {key: scenario.get(key) for key in
                            ("durationSeconds", "okCount", "failCount", "okRps", "meanMs", "maxMs", "p95Ms", "p99Ms")}
                 scenarios[scenario["name"]] = {"scenario": scenario["name"], "metrics": metrics,
-                    "freshness": freshness(document.get("generatedAt"), snapshot["collectedAt"], green),
+                    "freshness": freshness(document.get("generatedAt"), snapshot["collectedAt"], "success" if green else "failure"),
                     "evidence": provenance(producer)}
     return scenarios
 
 
-def apply(matrix, snapshot, impact):
+def apply(base_matrix, snapshot, impact):
+    matrix = copy.deepcopy(base_matrix)
     if snapshot.get("schemaVersion") != "1.0.0" or snapshot.get("repository") != "honua-io/honua-server":
         raise ValueError("unsupported nightly capability evidence snapshot")
     if not instant(snapshot.get("collectedAt")):
@@ -122,18 +128,18 @@ def apply(matrix, snapshot, impact):
     for capability in matrix["capabilities"]:
         for row in capability["interop"]:
             row.update(interop.get((row["clientLane"], row["protocol"]),
-                                   {"freshness": freshness(None, snapshot["collectedAt"], False)}))
+                                   {"freshness": freshness(None, snapshot["collectedAt"], "missing")}))
         for row in capability["cite"]:
             # No successful fallback to the reviewed table when the latest
             # nightly produced no report, omitted a suite, or failed.
             row.update(cite.get(row["suite"], {"passRate": 0.0,
-                       "freshness": freshness(None, snapshot["collectedAt"], False)}))
+                       "freshness": freshness(None, snapshot["collectedAt"], "missing")}))
         names = list(dict.fromkeys([*capability["geobench"], *LOAD_CAPABILITIES.get(capability["key"], [])]))
         capability["geobenchResults"] = [loads.get(name, {"scenario": name,
-            "freshness": freshness(None, snapshot["collectedAt"], False)}) for name in names]
+            "freshness": freshness(None, snapshot["collectedAt"], "missing")}) for name in names]
     matrix["schemaVersion"] = "1.3.0"
     matrix["sourceArtifacts"].append("docs/gis/data/nightly-capability-evidence.v1.json")
-    matrix["evidenceFreshness"] = {"anchor": snapshot["collectedAt"], "maxAgeDays": 14,
+    matrix["evidenceFreshness"] = {"anchor": snapshot["collectedAt"], "maxAgeDays": MAX_AGE_DAYS,
         "basis": "Nightly collection time; consumers must also enforce snapshot age against their evaluation time."}
     matrix["nightlyEvidence"] = {"collectedAt": snapshot["collectedAt"], "producers": [
         provenance(p) for p in snapshot["producers"]], "scope": "diagnostic; not candidate release proof"}
