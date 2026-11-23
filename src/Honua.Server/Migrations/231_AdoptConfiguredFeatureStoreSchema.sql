@@ -17,6 +17,8 @@ DECLARE
     target_schema text := (SELECT nspname FROM pg_catalog.pg_namespace
         WHERE oid = to_regnamespace('$HonuaSchema$'));
     shared_sources text[];
+    store_relation regclass := to_regclass(format('%I.%I', target_schema, 'features'));
+    move_required boolean := store_relation IS NULL;
 BEGIN
     IF target_schema = 'honua' THEN
         RETURN;
@@ -35,19 +37,45 @@ BEGIN
              AND ((attribute.attname = 'layer_id' AND attribute.atttypid = 'integer'::regtype)
                OR (attribute.attname = 'attributes' AND attribute.atttypid = 'jsonb'::regtype))) = 2;
 
-    IF to_regclass(format('%I.%I', target_schema, 'features')) IS NOT NULL THEN
+    IF NOT move_required THEN
         IF cardinality(shared_sources) > 0 THEN
             RAISE EXCEPTION
                 'Cannot adopt feature store schema: %.features exists and a shared features table also exists in %',
                 target_schema, array_to_string(shared_sources, ', ');
         END IF;
-        RETURN;
-    END IF;
-
-    IF cardinality(shared_sources) <> 1 THEN
+    ELSIF cardinality(shared_sources) <> 1 THEN
         RAISE EXCEPTION
             'Cannot adopt feature store schema: expected one shared features table in honua or public, found % (%)',
             cardinality(shared_sources), array_to_string(shared_sources, ', ');
+    ELSE
+        store_relation := to_regclass(format('%I.%I', shared_sources[1], 'features'));
+    END IF;
+
+    IF NOT (
+        SELECT count(*) = 6
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+        WHERE c.oid = store_relation AND c.relkind = 'r'
+          AND a.attnum > 0 AND NOT a.attisdropped
+          AND CASE a.attname
+            WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype
+            WHEN 'layer_id' THEN a.atttypid = 'integer'::regtype
+            WHEN 'geometry' THEN a.atttypid = (
+                SELECT t.oid FROM pg_catalog.pg_type t
+                JOIN pg_catalog.pg_extension e ON e.extnamespace = t.typnamespace
+                WHERE e.extname = 'postgis' AND t.typname = 'geometry')
+            WHEN 'attributes' THEN a.atttypid = 'jsonb'::regtype
+            WHEN 'created_at' THEN a.atttypid = 'timestamptz'::regtype
+            WHEN 'updated_at' THEN a.atttypid = 'timestamptz'::regtype
+            ELSE FALSE
+          END
+    ) THEN
+        RAISE EXCEPTION 'Cannot adopt feature store schema: % is incompatible with the managed feature store',
+            store_relation;
+    END IF;
+
+    IF NOT move_required THEN
+        RETURN;
     END IF;
 
     EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', shared_sources[1], 'features', target_schema);

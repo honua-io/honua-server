@@ -138,6 +138,48 @@ public sealed partial class DatabaseMigrationTests
             .WithMessage("*231_AdoptConfiguredFeatureStoreSchema*");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_AndSchemaGuard_RejectIncompatibleConfiguredFeatureStore()
+    {
+        var configuration = ConfiguredRegistryConfiguration();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+        var installed = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        installed.Successful.Should().BeTrue(installed.ErrorMessage);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await ScalarAsync(connection, """
+            ALTER TABLE custom_registry.features RENAME TO original_features;
+            CREATE TABLE custom_registry.features (
+                objectid bigint, layer_id integer, geometry text, attributes jsonb,
+                created_at timestamptz, updated_at timestamptz
+            );
+            """);
+
+        var verify = () => guard.VerifyAsync(_connectionString);
+        await verify.Should().ThrowAsync<DatabaseSchemaFloorException>()
+            .WithMessage("*231_AdoptConfiguredFeatureStoreSchema*incompatible*");
+
+        await ScalarAsync(connection, $"DELETE FROM public.schema_versions WHERE scriptname = '{FeatureStoreAdoptionMigration}';");
+        var plan = await runner.PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        plan.ContractScriptNames.Should().Contain(FeatureStoreAdoptionMigration);
+        configuration[MigrationSafetyOptions.ApproveContractMigrationsKey] = plan.ContractApprovalNonce;
+        var rerun = await new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration).RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+
+        rerun.Successful.Should().BeFalse();
+        rerun.Error.Should().NotBeNull();
+        rerun.Error!.ToString().Should().Contain("Cannot adopt feature store schema")
+            .And.Contain("incompatible with the managed feature store");
+        (await ScalarAsync(connection,
+            $"SELECT count(*) FROM public.schema_versions WHERE scriptname = '{FeatureStoreAdoptionMigration}';"))
+            .Should().Be(0L);
+    }
+
     private static IConfigurationRoot ConfiguredRegistryConfiguration()
         => new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["Database:Schema"] = "custom_registry" }).Build();

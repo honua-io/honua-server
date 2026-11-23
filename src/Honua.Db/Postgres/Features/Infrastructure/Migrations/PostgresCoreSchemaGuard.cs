@@ -437,6 +437,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _migrations.ConfiguredFeatureStoreAdoptionMigration is { } featureStoreAdoption)
         {
             VerifyRequiredMigration(state, featureStoreAdoption, [ConfiguredFeatureStoreTable], [], []);
+            await VerifyConfiguredFeatureStoreColumnsAsync(connection, featureStoreAdoption, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (state.RequiresRasterFloor)
@@ -1040,6 +1042,45 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 migration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
                 $"required physical object(s) are absent from schema '{_schemaName}': {string.Join(", ", missingObjects)}.");
+        }
+    }
+
+    private async Task VerifyConfiguredFeatureStoreColumnsAsync(
+        DbConnection connection,
+        string migration,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) = 6
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+            WHERE n.nspname = @schema AND c.relname = 'features' AND c.relkind = 'r'
+              AND a.attnum > 0 AND NOT a.attisdropped
+              AND CASE a.attname
+                WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype
+                WHEN 'layer_id' THEN a.atttypid = 'integer'::regtype
+                WHEN 'geometry' THEN a.atttypid = (
+                    SELECT t.oid FROM pg_catalog.pg_type t
+                    JOIN pg_catalog.pg_extension e ON e.extnamespace = t.typnamespace
+                    WHERE e.extname = 'postgis' AND t.typname = 'geometry')
+                WHEN 'attributes' THEN a.atttypid = 'jsonb'::regtype
+                WHEN 'created_at' THEN a.atttypid = 'timestamptz'::regtype
+                WHEN 'updated_at' THEN a.atttypid = 'timestamptz'::regtype
+                ELSE FALSE
+              END;
+            """;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "schema";
+        parameter.Value = _schemaName;
+        command.Parameters.Add(parameter);
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
+        {
+            throw CreateFailure(
+                migration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"'{_schemaName}.features' is incompatible with the managed feature store column contract.");
         }
     }
 
