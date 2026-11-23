@@ -184,6 +184,7 @@ internal static class Wcs20Utilities
         internal const string InvalidSubsetting = "InvalidSubsetting";
         internal const string InvalidScaleFactor = "InvalidScaleFactor";
         internal const string InvalidExtent = "InvalidExtent";
+        internal const string ScaleAxisUndefined = "ScaleAxisUndefined";
         internal const string NoSuchField = "NoSuchField";
         internal const string VersionNegotiationFailed = "VersionNegotiationFailed";
         internal const string OperationNotSupported = "OperationNotSupported";

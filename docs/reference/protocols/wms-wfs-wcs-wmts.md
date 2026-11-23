@@ -220,6 +220,8 @@ Two intentional divergences apply to the Zarr slice path (they are covered by de
 
 All WCS 2.0.1 coverage exports are limited to 4096 pixels per axis and 16,777,216 pixels overall, including native grids, spatial windows, and every scaling operator. Oversized requests return `InvalidParameterValue` before the raster or slice provider reads the output. The locator names the supplied scaling operator (`SCALESIZE`, `SCALEFACTOR`, `SCALEAXES`, or `SCALEEXTENT`), or `COVERAGEID` when no scaling operator was supplied. Select a smaller native-CRS spatial window or down-scale the coverage to stay within the limits.
 
+Scaling operators name only the `x` and `y` grid axes (with their `E`/`Long`/`Lon` and `N`/`Lat` aliases); any other axis returns `ScaleAxisUndefined`, locator the scaling operator.
+
 > Open `https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)` in a browser.
 
 ### WCS authorization

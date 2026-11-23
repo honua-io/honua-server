@@ -2194,7 +2194,7 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                 return false;
             }
         }
@@ -2258,7 +2258,7 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleExtentError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                error = CreateScaleExtentError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                 return false;
             }
         }
@@ -2295,7 +2295,7 @@ internal sealed partial class Wcs20Handler
         if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
             !string.Equals(axis, "y", StringComparison.Ordinal))
         {
-            exceptionCode = Wcs20Utilities.ExceptionCodes.InvalidAxisLabel;
+            exceptionCode = Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined;
             return false;
         }
 
@@ -2400,7 +2400,7 @@ internal sealed partial class Wcs20Handler
                 if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
                     !string.Equals(axis, "y", StringComparison.Ordinal))
                 {
-                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                     return false;
                 }
 
@@ -3112,6 +3112,7 @@ internal sealed partial class Wcs20Handler
 
     private static IResult CreateGetCoverageParameterError(WcsParameterError error)
         => error.ExceptionCode is Wcs20Utilities.ExceptionCodes.InvalidAxisLabel
+            or Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined
             or Wcs20Utilities.ExceptionCodes.InvalidSubsetting
             or Wcs20Utilities.ExceptionCodes.NoSuchField
             ? Wcs20ErrorResults.CreateNotFound(error.ExceptionCode, error.Detail, error.Locator)
