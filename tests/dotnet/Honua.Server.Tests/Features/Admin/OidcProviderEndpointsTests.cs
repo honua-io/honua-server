@@ -101,6 +101,24 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         Assert.Equal("https://auth.example.com", unchanged.Authority);
     }
 
+    // A key without an admin grant authenticates, but must not read the identity configuration
+    // or make the server call out to an identity provider.
+    [IntegrationTheory]
+    [InlineData("/api/v1/admin/identity/providers")]
+    [InlineData("/api/v1/admin/identity/providers/oidc/test")]
+    [Endpoint("GET /api/v1/admin/identity/providers")]
+    [Endpoint("GET /api/v1/admin/identity/providers/{providerType}/test")]
+    public async Task IdentityProviderAdmin_WithNonAdminKey_IsForbidden(string path)
+    {
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "identity-non-admin", ["read:layers"], null, "test", CancellationToken.None);
+        using var scoped = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        var response = await scoped.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
     public async Task ListProviders_Empty_ReturnsEmptyList()
@@ -236,6 +254,9 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
     [InlineData("https://localhost:8443/")]
     [InlineData("ftp://auth.example.com/oidc")]
     [InlineData("https://auth.example.com/\r\nX-Injected: 1")]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [InlineData("https://auth.example.com/realms/x?")]
     [Endpoint("POST /api/v1/admin/oidc/providers")]
     public async Task CreateProvider_WithInvalidOrDisallowedAuthority_ReturnsBadRequest(string authority)
     {
@@ -289,6 +310,31 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
             new UpdateOidcProviderRequest { Authority = "http://169.254.169.254/" },
             _jsonOptions);
         Assert.Equal(HttpStatusCode.BadRequest, updateBadAuthority.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    public async Task UpdateProvider_WithQueryOrFragmentInAuthority_ReturnsBadRequest(string authority)
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Issuer Shape Provider",
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "client-issuer-shape",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
+            await created.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        var update = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/oidc/providers/{provider.ProviderId}",
+            new UpdateOidcProviderRequest { Authority = authority },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, update.StatusCode);
     }
 
     [IntegrationTest]

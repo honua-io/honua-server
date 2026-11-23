@@ -53,4 +53,32 @@ public sealed class FeatureQueryBuilderWhereClauseTests
         parameters.Should().Equal("first", "second");
         paramIndex.Should().Be(3);
     }
+
+    [Fact]
+    public void ParseAndParameterizeWhereClause_CompoundAnd_ParameterizesEveryTerm()
+    {
+        var parameters = new List<object>();
+        var paramIndex = 1;
+
+        var sql = FeatureQueryBuilder.ParseAndParameterizeWhereClause(
+            "category = 'drainage' AND status <> 'exercise_closed' and priority <= 94", ref paramIndex, parameters);
+
+        sql.Should().Contain("attributes->>'category'")
+            .And.Contain("attributes->>'status'")
+            .And.Contain("attributes->>'priority'");
+        parameters.Should().Equal("drainage", "exercise_closed", 94m);
+        paramIndex.Should().Be(4);
+    }
+
+    [Fact]
+    public void ParseAndParameterizeWhereClause_AndInsideLiteral_StaysInOneTerm()
+    {
+        var parameters = new List<object>();
+        var paramIndex = 1;
+
+        FeatureQueryBuilder.ParseAndParameterizeWhereClause(
+            "name = 'Salt AND Pepper' AND status = 'open'", ref paramIndex, parameters);
+
+        parameters.Should().Equal("Salt AND Pepper", "open");
+    }
 }

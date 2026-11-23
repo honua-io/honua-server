@@ -32,6 +32,7 @@ SCHEMA_VALID_FES_TEMPORAL_OPERATORS = {
 }
 
 MINIMUM_FES_TEMPORAL_OPERATORS = {"After", "Before", "During"}
+ADVERTISED_FES_TEMPORAL_OPERATORS = MINIMUM_FES_TEMPORAL_OPERATORS | {"TEquals"}
 
 
 def _wfs_get_capabilities(http_client: httpx.Client) -> httpx.Response:
@@ -130,7 +131,7 @@ class TestEnhancedStandardsCompliance:
         temporal_names = {op.attrib["name"] for op in temporal_ops}
         constraint_defaults = _constraint_defaults(root)
 
-        assert temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS
+        assert temporal_names == ADVERTISED_FES_TEMPORAL_OPERATORS
         assert constraint_defaults["ImplementsMinTemporalFilter"] == "TRUE"
         assert constraint_defaults["ImplementsTemporalFilter"] == "FALSE"
         assert constraint_defaults["ImplementsTemporalInstant"] == "TRUE"
@@ -268,7 +269,7 @@ class TestEnhancedStandardsCompliance:
             passed_checks += 1
         if full_temporal_enabled and SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
             passed_checks += 1
-        if not full_temporal_enabled and temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS:
+        if not full_temporal_enabled and temporal_names == ADVERTISED_FES_TEMPORAL_OPERATORS:
             passed_checks += 1
 
         # Spatial operator coverage (2 checks)

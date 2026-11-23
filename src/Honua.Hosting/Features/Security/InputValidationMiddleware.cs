@@ -19,7 +19,9 @@ internal sealed class InputValidationMiddleware
     private readonly GeometryLimits _geometryLimits;
     private readonly long _maxProtocolPayloadLength;
 
-    // Common injection patterns to detect and block
+    // Common injection patterns to detect and block. They run before authentication on values up to
+    // the geometry and edit payload limits, so they use the linear-time engine: only IsMatch is
+    // called, and whether a match exists does not depend on the engine.
     private static readonly Regex _sqlInjectionPattern = new(
         @"(\bunion\s+(?:all\s+)?select\b)|(\bselect\b.+\bfrom\b)|(\binsert\s+into\b)" +
         @"|(\bupdate\s+[\w\.\[\]""`]+\s+set\b)|(\bdelete\s+from\b)" +
@@ -29,7 +31,7 @@ internal sealed class InputValidationMiddleware
         @"|(\-\-|\/\*|\*\/)|(\bor\b\s+\d+\s*=\s*\d+)" +
         @"|(\bor\b\s+['""][^'""]*['""]\s*=\s*['""][^'""]*['""])" +
         @"|(;\s*(?:select|insert|update|delete|drop|create|alter|exec|execute)\b)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking);
 
     // Matches a balanced single-quoted SQL string literal, including doubled-quote
     // ('') escapes. Used to mask literal CONTENT (data, bound as a parameter) in
@@ -43,7 +45,7 @@ internal sealed class InputValidationMiddleware
     private static readonly Regex _xssPattern = new(
         @"<script[^>]*>.*?</script>|<iframe[^>]*>.*?</iframe>|javascript:|vbscript:|onload\s*=|onclick\s*=|onerror\s*=" +
         @"|eval\s*\(|expression\s*\(|<object[^>]*>|<embed[^>]*>|<applet[^>]*>",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Singleline);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking | RegexOptions.Singleline);
 
     private static readonly Regex _commandInjectionPattern = new(
         @"(\|\s*(cat|ls|rm|mv|cp|chmod|chown|wget|curl|bash|sh|zsh|cmd|powershell|pwsh|python|perl|php|node|nc|netcat)\b)" +
@@ -51,12 +53,12 @@ internal sealed class InputValidationMiddleware
         @"|(&&\s*(cat|ls|rm|mv|cp|chmod|chown|wget|curl|bash|sh|zsh|cmd|powershell|pwsh|python|perl|php|node|nc|netcat)\b)" +
         @"|(\$\(.*\))|(cmd\s+/c)|(powershell)|(\beval\b)|(\bexec\b)|(\bsystem\b)" +
         @"|(\bshell_exec\b)|(\bpassthru\b)|(\bpopen\b)|(\bproc_open\b)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking);
 
     private static readonly Regex _pathTraversalPattern = new(
         @"(\.{2}[/\\])|(\.\.[/\\])|([/\\]\.\.[/\\])|(\.\.[/\\]\.\.)|(\.{3,})|(\%2e\%2e)|(\%252e\%252e)" +
         @"|(\.%2f)|(\.\%5c)|(\.%252f)|(\.%255c)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking);
 
     // A WKT POINT/MULTIPOINT built only from numbers and WKT punctuation. No LDAP filter operator
     // (| & ! * =) can appear in a value this matches.
@@ -304,20 +306,25 @@ internal sealed class InputValidationMiddleware
                 : null;
             if (geometryMetadata != null && name.Equals(geometryMetadata.ParameterName, StringComparison.OrdinalIgnoreCase))
             {
-                // Bound allocation before protocol parsing; UTF-8 byte size, not
-                // UTF-16 character count, is the published geometry size limit.
-                if (value.Length > _geometryLimits.MaxGeometrySize ||
-                    Encoding.UTF8.GetByteCount(value) > _geometryLimits.MaxGeometrySize)
+                if (CheckGeometrySize(name, value) is { } sizeError)
                 {
-                    return InputValidationResult.Invalid(
-                        $"Geometry parameter '{name}' exceeds {_geometryLimits.MaxGeometrySize} UTF-8 bytes (Limits:Geometry:MaxGeometrySize).",
-                        isSuspicious: false);
+                    return sizeError;
                 }
                 request.HttpContext.RequestAborted.ThrowIfCancellationRequested();
                 var geometryError = geometryMetadata.Validate(value, _geometryLimits.MaxVerticesPerGeometry, request.HttpContext.RequestAborted);
                 if (geometryError != null)
                 {
                     return InputValidationResult.Invalid(geometryError, isSuspicious: false);
+                }
+            }
+            else if (IsGeometryServiceGeometryField(request, paramType, name))
+            {
+                // GeometryServer POSTs exist for geometry too large for a URL. Bound these
+                // fields by the published geometry size, not the generic 8192-character text cap;
+                // the handler then applies its geometry count, vertex and overlay budgets.
+                if (CheckGeometrySize(name, value) is { } sizeError)
+                {
+                    return sizeError;
                 }
             }
             else if (IsGeoServicesProtocolPayloadField(request, paramType, name))
@@ -498,6 +505,40 @@ internal sealed class InputValidationMiddleware
         "groupByFieldsForStatistics",
         "having"
     };
+
+    private static readonly HashSet<string> _geometryServiceGeometryFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "geometries",
+        "geometries1",
+        "geometries2",
+        "geometry",
+        "geometry1",
+        "geometry2",
+        "target",
+        "cutter",
+        "polylines",
+        "polygons",
+        "reshaper",
+        "trimExtendTo",
+        "envelope",
+        "coordinates",
+        "strings"
+    };
+
+    private static bool IsGeometryServiceGeometryField(HttpRequest request, string paramType, string name)
+        => paramType is "form" or "query"
+           && _geometryServiceGeometryFields.Contains(name)
+           && request.Path.Value?.Contains("/Utilities/Geometry/GeometryServer/", StringComparison.OrdinalIgnoreCase) == true;
+
+    // Bound allocation before protocol parsing; UTF-8 byte size, not UTF-16 character
+    // count, is the published geometry size limit.
+    private InputValidationResult? CheckGeometrySize(string name, string value)
+        => value.Length > _geometryLimits.MaxGeometrySize ||
+           Encoding.UTF8.GetByteCount(value) > _geometryLimits.MaxGeometrySize
+            ? InputValidationResult.Invalid(
+                $"Geometry parameter '{name}' exceeds {_geometryLimits.MaxGeometrySize} UTF-8 bytes (Limits:Geometry:MaxGeometrySize).",
+                isSuspicious: false)
+            : null;
 
     private static bool IsGeoServicesProtocolPayloadField(HttpRequest request, string paramType, string name)
     {

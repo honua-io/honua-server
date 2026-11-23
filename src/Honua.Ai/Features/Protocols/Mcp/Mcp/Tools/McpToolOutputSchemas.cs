@@ -58,6 +58,7 @@ internal static class McpToolOutputSchemas
             "conflictingJobId": { "type": ["string", "null"] },
             "currentGeneration": { "type": ["integer", "null"], "minimum": 1 },
             "retryable": { "type": ["boolean", "null"] },
+            "retryAfterSeconds": { "type": ["integer", "null"], "minimum": 0 },
             "violations": {
               "type": ["array", "null"],
               "items": {{ValidationViolationDef}}

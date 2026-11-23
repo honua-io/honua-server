@@ -16,9 +16,10 @@ Search and browse spatiotemporal asset catalogs through the STAC API.
 | Capability key | `serve.stac` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 11 implemented |
 | Registry entries | 11 |
-| Proving tests | 151 |
+| Proving tests | 169 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

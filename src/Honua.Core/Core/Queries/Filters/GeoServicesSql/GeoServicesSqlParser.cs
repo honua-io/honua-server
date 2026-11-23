@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 
@@ -1110,8 +1111,10 @@ public sealed class GeoServicesSqlParser
                         return;
                     }
 
-                    if (IsAlpha(c))
+                    var startWidth = IdentifierRuneWidth(_start, SqlIdentifier.IsIdentifierStart);
+                    if (startWidth > 0)
                     {
+                        _current = _start + startWidth;
                         ScanIdentifier();
                         return;
                     }
@@ -1122,9 +1125,10 @@ public sealed class GeoServicesSqlParser
 
         private void ScanIdentifier()
         {
-            while (IsAlphaNumeric(Peek()))
+            int width;
+            while ((width = IdentifierRuneWidth(_current, SqlIdentifier.IsIdentifierPart)) > 0)
             {
-                Advance();
+                _current += width;
             }
 
             var text = _source[_start.._current];
@@ -1296,10 +1300,21 @@ public sealed class GeoServicesSqlParser
 
         private static bool IsDigit(char c) => c is >= '0' and <= '9';
 
-        private static bool IsAlpha(char c)
-            => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or '_';
+        // Bare identifiers accept letters of any script, as CQL2 does, so a column such as
+        // 名前 or länge_straße can be named without quotes. Judged per Unicode scalar, so a
+        // supplementary-plane letter (a surrogate pair) is one identifier character, exactly
+        // as SqlIdentifier.IsUnicodeIdentifier judges the column name.
+        // Returns the UTF-16 width of the accepted scalar at index, or 0 when none is accepted.
+        private int IdentifierRuneWidth(int index, Func<Rune, bool> accepts)
+        {
+            if (index >= _source.Length
+                || Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) != OperationStatus.Done)
+            {
+                return 0;
+            }
 
-        private static bool IsAlphaNumeric(char c) => IsAlpha(c) || IsDigit(c);
+            return accepts(rune) ? consumed : 0;
+        }
 
         private void AddToken(TokenType type) => AddToken(type, null);
 

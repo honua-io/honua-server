@@ -98,6 +98,60 @@ public sealed class ServicePublishMetadataPinTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_ApprovedReplayOnAMovedCatalog_FailsAsAFreshProposalRequired()
+    {
+        PublishThrows(LayerPublicationBaseChanged.Create());
+
+        var handle = await _executor.SubmitAsync(PinnedReplay(),
+            Context() with { ApprovedProposalId = "proposal-1", OperationInstanceId = "opinst-1" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Be(LayerPublicationBaseChanged.ProposalReason);
+        handle.OperationInstanceId.Should().Be("opinst-1");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ApprovedInlineJobOnAMovedCatalog_FailsAsAFreshProposalRequired()
+    {
+        var jobs = Substitute.For<ILayerPublishJobs>();
+        jobs.SubmitAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<LayerPublishRequest>(), Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<LayerPublishAdmission>(LayerPublicationBaseChanged.Create()));
+        var executor = new ServicePublishExecutor(
+            _publishing, Substitute.For<ISecureConnectionResolver>(), Substitute.For<IMetadataV2GraphProvider>(),
+            TimeProvider.System, jobs: jobs);
+
+        var handle = await executor.SubmitAsync(PinnedReplay(), Context() with { ApprovedProposalId = "proposal-1" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Be(LayerPublicationBaseChanged.ProposalReason);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_DirectPublishOnAMovedCatalog_KeepsTheConflict()
+    {
+        PublishThrows(LayerPublicationBaseChanged.Create());
+
+        var act = () => _executor.SubmitAsync(Request(), Context(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<LayerPublishingException>()).Which.Message
+            .Should().Be(LayerPublicationBaseChanged.Message);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ApprovedReplayWithAnotherConflict_IsNotReportedAsStale()
+    {
+        PublishThrows(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Layer name already exists."));
+
+        var act = () => _executor.SubmitAsync(PinnedReplay(), Context() with { ApprovedProposalId = "proposal-1" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<LayerPublishingException>().WithMessage("Layer name already exists.");
+    }
+
+    [UnitTest]
     public void QueuedPayload_CarriesThePin()
     {
         var payload = new LayerPublishJobPayload
@@ -143,6 +197,13 @@ public sealed class ServicePublishMetadataPinTests
             Parameters = parameters,
         };
     }
+
+    private static OperationRequest PinnedReplay()
+        => Request((ServicePublishMetadataPin.RevisionKey, "7"), (ServicePublishMetadataPin.EtagKey, "\"etag-7\""));
+
+    private void PublishThrows(LayerPublishingException exception)
+        => _publishing.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<PublishedLayerSummary>(exception));
 
     private static OperationPolicyContext Context() => new()
     {

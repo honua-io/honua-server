@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
@@ -17,9 +18,6 @@ internal sealed partial class FeatureQueryBuilder
     // shape an injection attempt takes.
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex ValidFieldNameRegex();
-
-    [GeneratedRegex(@"^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex ValidJsonAttributeKeyRegex();
 
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex NamedParameterRegex();
@@ -41,7 +39,25 @@ internal sealed partial class FeatureQueryBuilder
             return false;
         }
 
-        return ValidJsonAttributeKeyRegex().IsMatch(fieldName);
+        // JSON attribute keys are always bound as parameters. Letters and digits of any
+        // script are admitted, judged per Unicode scalar so a supplementary-plane name is
+        // accepted or rejected exactly as SqlIdentifier.IsUnicodeIdentifier judges it;
+        // quotes, whitespace and control characters are not.
+        var first = true;
+        foreach (var rune in fieldName.EnumerateRunes())
+        {
+            var allowed = first
+                ? SqlIdentifier.IsIdentifierStart(rune) || Rune.IsDigit(rune)
+                : SqlIdentifier.IsIdentifierPart(rune) || rune.Value is ':' or '.' or '-';
+            if (!allowed)
+            {
+                return false;
+            }
+
+            first = false;
+        }
+
+        return true;
     }
 
     internal static bool IsValidEncodedColumnAlias(string fieldName)

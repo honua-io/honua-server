@@ -445,10 +445,10 @@ kubectl -n honua get configmap honua-honua-release-info -o yaml
 helm -n honua history honua
 ```
 
-Application rollback comes first only when the previous image can protect
-itself against the schema it will find. Roll back only to images that include
-the schema-reader guard: schema 135 or later for additive migrations, and never
-across a contract-phase migration without a restore. `honua-2026.1` is not a
+Application rollback without a restore is safe only when the previous image has
+been qualified against the installed database. There is no rollback contract
+across migrations, additive or not; otherwise restore the matching backup.
+`honua-2026.1` is not a
 safe rollback target across any migration, and the only safe way back to 2026.1
 is restoring the backup taken before the upgrade. It predates the schema-reader
 guard and serves a newer schema with no refusal. There is no release-named
@@ -466,12 +466,9 @@ helm -n honua test honua
 `HONUA_SKIP_MIGRATIONS=true` when the revision was installed that way after an
 out-of-band migration Job. With the skip switch the reader still checks the
 journal, but it does not accept forward-compatibility declarations: it must
-ship every applied migration. A newer expand-only entry is refused, and
-`--wait` times out instead of serving. To roll back across additive migrations,
-start the previous image with migrations enabled (leave
-`HONUA_SKIP_MIGRATIONS` unset) so it can verify those declarations. A saved
-skip-migrations revision is a safe rollback only when that image ships every
-applied migration.
+ship every applied migration. A newer entry is refused, and `--wait` times out
+instead of serving. A saved skip-migrations revision is a safe rollback only
+when that image ships every applied migration.
 
 Helm cannot downgrade the database schema. If the previous image is not
 compatible, stop writes and restore the matching PostGIS backup and file-store
