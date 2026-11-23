@@ -18,6 +18,8 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 public sealed class GrpcSpatialInputValidationTests
 {
     private static readonly double[] _square = [0, 0, 1, 0, 1, 1, 0, 1, 0, 0];
+    private static readonly long[] _deltaPath = [0L, 0L, 2L, 2L];
+    private static readonly double[] _packedPath = [10.0, 20.0, 11.0, 21.0];
 
     [UnitTest]
     public void ToFeatureQuery_SpatialFilterWithoutGeometry_IsRejectedInsteadOfDropped()
@@ -135,7 +137,7 @@ public sealed class GrpcSpatialInputValidationTests
     public void ToFeatureEditBatch_DeltaCoordsGeometry_IsRejectedInsteadOfWrittenEmpty()
     {
         var path = new Proto.CoordinateSequence { Stride = 2 };
-        path.DeltaCoords.AddRange([0L, 0L, 2L, 2L]);
+        path.DeltaCoords.AddRange(_deltaPath);
         var polyline = new Proto.PolylineGeometry();
         polyline.Paths.Add(path);
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
@@ -150,7 +152,7 @@ public sealed class GrpcSpatialInputValidationTests
     public void ToFeatureEditBatch_PackedPolyline_KeepsItsVertices()
     {
         var path = new Proto.CoordinateSequence { Stride = 2 };
-        path.Ordinates.AddRange([10.0, 20.0, 11.0, 21.0]);
+        path.Ordinates.AddRange(_packedPath);
         var polyline = new Proto.PolylineGeometry();
         polyline.Paths.Add(path);
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
