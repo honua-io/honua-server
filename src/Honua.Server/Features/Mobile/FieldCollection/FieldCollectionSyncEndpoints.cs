@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Domain;
@@ -114,10 +113,13 @@ internal static class FieldCollectionSyncEndpoints
             return entitlementGate;
         }
 
-        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        var clientResolution = ResolveClientId(context);
+        if (clientResolution.Error is { } clientIdError)
         {
             return clientIdError;
         }
+
+        var clientId = clientResolution.ClientId;
 
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         var cursor = await store.GetSyncCursorAsync(clientId, context.RequestAborted).ConfigureAwait(false);
@@ -167,10 +169,13 @@ internal static class FieldCollectionSyncEndpoints
                 "Field 'lastSyncGeneration' must be greater than or equal to 0.");
         }
 
-        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        var clientResolution = ResolveClientId(context);
+        if (clientResolution.Error is { } clientIdError)
         {
             return clientIdError;
         }
+
+        var clientId = clientResolution.ClientId;
 
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.last_sync_generation", lastSyncGeneration);
@@ -239,10 +244,13 @@ internal static class FieldCollectionSyncEndpoints
                 $"Query parameter 'limit' must be between 1 and {MaxPullLimit}.");
         }
 
-        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        var clientResolution = ResolveClientId(context);
+        if (clientResolution.Error is { } clientIdError)
         {
             return clientIdError;
         }
+
+        var clientId = clientResolution.ClientId;
 
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.since_generation", since);
@@ -309,85 +317,31 @@ internal static class FieldCollectionSyncEndpoints
             return entitlementGate;
         }
 
-        if (body is null)
+        if (ValidateRequiredPushFields(context, body) is { } requiredFieldError)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Request body is required.");
+            return requiredFieldError;
         }
 
-        if (string.IsNullOrWhiteSpace(body.ChangeId))
+        if (!TryParseOperation(body!.Operation, out var operation))
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'changeId' is required.");
+            return BadRequest(context, "Field 'operation' must be one of: insert, update, delete.");
         }
 
-        if (string.IsNullOrWhiteSpace(body.FeatureId))
+        if (ValidatePushContent(context, body, operation) is { } contentError)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'featureId' is required.");
+            return contentError;
         }
 
-        if (body.LayerId is null)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'layerId' is required.");
-        }
-
-        if (!TryParseOperation(body.Operation, out var operation))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'operation' must be one of: insert, update, delete.");
-        }
-
-        // The published contract states that 'feature' must be null for delete
-        // operations. Enforcing it here keeps mobile clients honest about the
-        // wire shape and prevents the store from silently dropping a payload
-        // the caller intended to ship.
-        if (operation == FieldCollectionChangeOperation.Delete && body.Feature is not null)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'feature' must be null for delete operations.");
-        }
-
-        if (ValidateIdentifier(context, "changeId", body.ChangeId) is { } changeIdError)
-        {
-            return changeIdError;
-        }
-
-        if (ValidateIdentifier(context, "featureId", body.FeatureId) is { } featureIdError)
-        {
-            return featureIdError;
-        }
-
-        // PostgreSQL jsonb cannot store U+0000 or an unpaired surrogate; reject them here
-        // instead of letting the insert fail with a 500.
-        if (body.Feature is not null && FeaturePayloadHasUnstorableText(body.Feature))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                "Field 'feature' must not contain NUL (U+0000) characters or unpaired surrogate escapes.");
-        }
-
-        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        var clientResolution = ResolveClientId(context);
+        if (clientResolution.Error is { } clientIdError)
         {
             return clientIdError;
         }
 
+        var clientId = clientResolution.ClientId;
+
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
-        activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId.Value);
+        activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId!.Value);
         activity?.SetTag("honua.fieldcollection.change_operation", OperationToWire(operation));
 
         var pushRequest = new FieldCollectionPushRequest
@@ -470,12 +424,8 @@ internal static class FieldCollectionSyncEndpoints
     // API-key fallback principals share the admin name, so device-specific cursors require X-Honua-Client-Id.
     // An over-long header is rejected rather than truncated: truncation would let two devices whose
     // ids share a prefix share one cursor and one idempotency scope.
-    private static bool TryResolveClientId(
-        HttpContext context,
-        out string clientId,
-        [NotNullWhen(false)] out IResult? error)
+    private static ClientIdResolution ResolveClientId(HttpContext context)
     {
-        error = null;
         if (context.Request.Headers.TryGetValue(ClientIdHeader, out var headerValues))
         {
             for (var i = 0; i < headerValues.Count; i++)
@@ -487,46 +437,82 @@ internal static class FieldCollectionSyncEndpoints
                 }
 
                 var trimmed = raw.Trim();
-                if (trimmed.Length > MaxClientIdLength)
-                {
-                    clientId = string.Empty;
-                    error = ProblemDetailsHelpers.CreateAdminProblem(
-                        context,
-                        StatusCodes.Status400BadRequest,
-                        $"Header '{ClientIdHeader}' must be at most {MaxClientIdLength} characters.");
-                    return false;
-                }
-
-                clientId = trimmed;
-                return true;
+                return trimmed.Length > MaxClientIdLength
+                    ? new ClientIdResolution(
+                        string.Empty,
+                        BadRequest(context, $"Header '{ClientIdHeader}' must be at most {MaxClientIdLength} characters."))
+                    : new ClientIdResolution(trimmed, null);
             }
         }
 
         var name = context.User?.Identity?.Name;
-        clientId = string.IsNullOrWhiteSpace(name) ? DefaultClientId : name.Trim();
-        return true;
+        return new ClientIdResolution(string.IsNullOrWhiteSpace(name) ? DefaultClientId : name.Trim(), null);
     }
 
-    private static IResult? ValidateIdentifier(HttpContext context, string field, string? value)
+    private readonly record struct ClientIdResolution(string ClientId, IResult? Error);
+
+    private static IResult BadRequest(HttpContext context, string detail)
+        => ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, detail);
+
+    private static IResult? ValidateRequiredPushFields(HttpContext context, FieldCollectionPushRequestModel? body)
     {
-        var trimmed = value!.Trim();
+        if (body is null)
+        {
+            return BadRequest(context, "Request body is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(body.ChangeId))
+        {
+            return BadRequest(context, "Field 'changeId' is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(body.FeatureId))
+        {
+            return BadRequest(context, "Field 'featureId' is required.");
+        }
+
+        return body.LayerId is null ? BadRequest(context, "Field 'layerId' is required.") : null;
+    }
+
+    private static IResult? ValidatePushContent(
+        HttpContext context,
+        FieldCollectionPushRequestModel body,
+        FieldCollectionChangeOperation operation)
+    {
+        // The published contract states that 'feature' must be null for delete
+        // operations. Enforcing it here keeps mobile clients honest about the
+        // wire shape and prevents the store from silently dropping a payload
+        // the caller intended to ship.
+        if (operation == FieldCollectionChangeOperation.Delete && body.Feature is not null)
+        {
+            return BadRequest(context, "Field 'feature' must be null for delete operations.");
+        }
+
+        var identifierError = ValidateIdentifier(context, "changeId", body.ChangeId!)
+            ?? ValidateIdentifier(context, "featureId", body.FeatureId!);
+        if (identifierError is not null)
+        {
+            return identifierError;
+        }
+
+        // PostgreSQL jsonb cannot store U+0000 or an unpaired surrogate; reject them here
+        // instead of letting the insert fail with a 500.
+        return body.Feature is not null && FeaturePayloadHasUnstorableText(body.Feature)
+            ? BadRequest(context, "Field 'feature' must not contain NUL (U+0000) characters or unpaired surrogate escapes.")
+            : null;
+    }
+
+    private static IResult? ValidateIdentifier(HttpContext context, string field, string value)
+    {
+        var trimmed = value.Trim();
         if (trimmed.Length > MaxIdentifierLength)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                $"Field '{field}' must be at most {MaxIdentifierLength} characters.");
+            return BadRequest(context, $"Field '{field}' must be at most {MaxIdentifierLength} characters.");
         }
 
-        if (trimmed.Contains('\0', StringComparison.Ordinal))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status400BadRequest,
-                $"Field '{field}' must not contain NUL (U+0000) characters.");
-        }
-
-        return null;
+        return trimmed.Contains('\0', StringComparison.Ordinal)
+            ? BadRequest(context, $"Field '{field}' must not contain NUL (U+0000) characters.")
+            : null;
     }
 
     private static bool FeaturePayloadHasUnstorableText(string featureJson)
