@@ -80,6 +80,58 @@ public sealed class Wfs20MultiTypeReadBoundTests : IClassFixture<Wfs20MultiTypeR
         _fixture.Counts.LayerIds.Should().HaveCount(PublishedTypeCount);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task GetFeature_ResourceIdsAllNamingOneType_CountsOnlyThatType()
+    {
+        await AssertCountedLayersAsync("VERSION=2.0.0&RESOURCEID=bound_type_3.1,bound_type_3.2", [3]);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task GetFeature_ResourceIdListWithoutIds_KeepsFullSelection()
+    {
+        await AssertCountsEveryTypeAsync("VERSION=2.0.0&RESOURCEID=%2C");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task GetFeature_UnqualifiedResourceId_KeepsFullSelection()
+    {
+        await AssertCountsEveryTypeAsync("VERSION=2.0.0&RESOURCEID=bound_type_3.1,7");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task GetFeature_LegacyFeatureIdsWithoutTypeName_CountsOnlyNamedTypes()
+    {
+        await AssertCountedLayersAsync("VERSION=1.1.0&FEATUREID=bound_type_3.1,bound_type_5.2", [3, 5]);
+    }
+
+    private async Task AssertCountsEveryTypeAsync(string query)
+    {
+        await SendHitsAsync(query);
+        _fixture.Counts.LayerIds.Should().HaveCount(PublishedTypeCount);
+    }
+
+    private async Task AssertCountedLayersAsync(string query, int[] expectedLayerIds)
+    {
+        await SendHitsAsync(query);
+        _fixture.Counts.LayerIds.Order().Should().Equal(expectedLayerIds);
+    }
+
+    private async Task SendHitsAsync(string query)
+    {
+        using var response = await _fixture.App.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&RESULTTYPE=hits&{query}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+    }
+
     public sealed class Fixture : IAsyncLifetime
     {
         public CountProbe Counts { get; } = new();

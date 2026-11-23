@@ -23,27 +23,45 @@ public static class RequestFanOut
             return [];
         }
 
-        var results = new TResult[source.Count];
-        var nextIndex = -1;
+        var run = new FanOutRun<TSource, TResult>(source, projector, cancellationToken);
+        var workers = Enumerable.Range(0, Math.Min(MaxConcurrency, source.Count)).Select(_ => run.RunWorkerAsync());
+        await Task.WhenAll(workers).ConfigureAwait(false);
+        return run.Results;
+    }
 
-        async Task RunWorkerAsync()
+    private sealed class FanOutRun<TSource, TResult>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, CancellationToken, Task<TResult>> projector,
+        CancellationToken cancellationToken)
+    {
+        private int _nextIndex = -1;
+        private int _faulted;
+
+        public TResult[] Results { get; } = new TResult[source.Count];
+
+        // After one read fails no worker starts another, so the error surfaces without further reads.
+        public async Task RunWorkerAsync()
         {
-            while (true)
+            while (Volatile.Read(ref _faulted) == 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var index = Interlocked.Increment(ref nextIndex);
+                var index = Interlocked.Increment(ref _nextIndex);
                 if (index >= source.Count)
                 {
                     return;
                 }
 
-                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    Results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    Volatile.Write(ref _faulted, 1);
+                    throw;
+                }
             }
         }
-
-        var workers = Enumerable.Range(0, Math.Min(MaxConcurrency, source.Count)).Select(_ => RunWorkerAsync());
-        await Task.WhenAll(workers).ConfigureAwait(false);
-        return results;
     }
 }

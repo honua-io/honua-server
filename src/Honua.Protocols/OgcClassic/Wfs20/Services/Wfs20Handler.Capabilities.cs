@@ -376,6 +376,12 @@ internal sealed partial class Wfs20Handler
             namedTypes.Add(FilterExpressionHelpers.NormalizeIdentifier(id[..lastDot]));
         }
 
+        // A list with no ids (such as ",") is no id filter, so every type stays selected.
+        if (namedTypes.Count == 0)
+        {
+            return selected;
+        }
+
         var named = selected.Where(featureType => namedTypes.Contains(featureType.LocalName)).ToImmutableArray();
         return namedTypes.All(name => named.Any(featureType => featureType.LocalName == name)) ? named : selected;
     }
