@@ -3,6 +3,7 @@
 
 using Honua.TestKit;
 using Honua.TestKit.Infrastructure;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Terrain;
 
@@ -35,6 +36,19 @@ internal static class TerrainTestRasters
 
     internal static readonly string[] ProtocolsWithoutTerrain =
         AllProtocols.Where(static protocol => !string.Equals(protocol, TerrainProtocolName, StringComparison.Ordinal)).ToArray();
+
+    private static readonly RasterSeed FullWorldSeed = new(
+        Name: "world-dem",
+        Width: 2,
+        Height: 2,
+        UpperLeftX: -WebMercatorExtent,
+        UpperLeftY: WebMercatorExtent,
+        ScaleX: WebMercatorExtent,
+        ScaleY: -WebMercatorExtent,
+        Value: 0,
+        AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+        CreatedAt: RasterIntegrationTestData.WestAcquisition,
+        Srid: 3857);
 
     internal static Task<IAsyncDisposable> HoldFullWorldAsync(WebAppFixture fixture, double elevationMeters)
         => HoldSeedAsync(fixture, FullWorldSeed with { Value = elevationMeters });
@@ -89,31 +103,7 @@ internal static class TerrainTestRasters
         {
             await using var connection = await fixture.Postgres.GetConnectionAsync(schemaName);
 
-            await using (var delete = connection.CreateCommand())
-            {
-                delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-                delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-                await delete.ExecuteNonQueryAsync();
-            }
-
-            await using var insert = connection.CreateCommand();
-            insert.CommandText = $"""
-                INSERT INTO honua.raster_data (layer_id, name, description, raster, acquisition_date, created_at)
-                SELECT @layerId,
-                       'unsupported-dem',
-                       'Unsupported raster for terrain validation tests',
-                       {rasterSql},
-                       @acquisitionDate,
-                       @createdAt;
-                """;
-            insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-            insert.Parameters.AddWithValue("upperLeftX", -WebMercatorExtent);
-            insert.Parameters.AddWithValue("upperLeftY", WebMercatorExtent);
-            insert.Parameters.AddWithValue("scaleX", 2 * WebMercatorExtent);
-            insert.Parameters.AddWithValue("scaleY", -2 * WebMercatorExtent);
-            insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-            insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-            await insert.ExecuteNonQueryAsync();
+            await ReplaceLayerRasterAsync(connection, rasterSql);
         }
         catch
         {
@@ -124,18 +114,34 @@ internal static class TerrainTestRasters
         return lease;
     }
 
-    private static readonly RasterSeed FullWorldSeed = new(
-        Name: "world-dem",
-        Width: 2,
-        Height: 2,
-        UpperLeftX: -WebMercatorExtent,
-        UpperLeftY: WebMercatorExtent,
-        ScaleX: WebMercatorExtent,
-        ScaleY: -WebMercatorExtent,
-        Value: 0,
-        AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
-        CreatedAt: RasterIntegrationTestData.WestAcquisition,
-        Srid: 3857);
+    private static async Task ReplaceLayerRasterAsync(NpgsqlConnection connection, string rasterSql)
+    {
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
+            delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            await delete.ExecuteNonQueryAsync();
+        }
+
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = $"""
+            INSERT INTO honua.raster_data (layer_id, name, description, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'unsupported-dem',
+                   'Unsupported raster for terrain validation tests',
+                   {rasterSql},
+                   @acquisitionDate,
+                   @createdAt;
+            """;
+        insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        insert.Parameters.AddWithValue("upperLeftX", -WebMercatorExtent);
+        insert.Parameters.AddWithValue("upperLeftY", WebMercatorExtent);
+        insert.Parameters.AddWithValue("scaleX", 2 * WebMercatorExtent);
+        insert.Parameters.AddWithValue("scaleY", -2 * WebMercatorExtent);
+        insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
+        insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
+        await insert.ExecuteNonQueryAsync();
+    }
 
     private static Task<IAsyncDisposable> HoldSeedAsync(WebAppFixture fixture, RasterSeed seed)
         => RasterIntegrationTestData.HoldLayerRastersAsync(fixture, WebAppFixture.TestLayerId, seed);
