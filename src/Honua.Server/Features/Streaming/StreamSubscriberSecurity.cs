@@ -39,8 +39,8 @@ internal sealed class StreamSubscriberSecurity
     internal Task<bool> RefreshActivePolicyAsync(CancellationToken cancellationToken)
         => RefreshUntilRetiredAsync(Volatile.Read(ref _retired), cancellationToken);
 
-    // Races the refresh against the generation's retirement: a retired generation never waits on,
-    // or fails because of, a refresh it no longer needs.
+    // Races the refresh against the generation's retirement: once the generation retires, the
+    // refresh result is ignored, so a retired generation neither waits on nor fails because of it.
     internal async Task<bool> RefreshUntilRetiredAsync(Task? retired, CancellationToken cancellationToken)
     {
         if (retired?.IsCompleted == true)
