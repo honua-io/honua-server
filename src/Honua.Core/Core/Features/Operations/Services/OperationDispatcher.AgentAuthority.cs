@@ -48,20 +48,22 @@ public sealed partial class OperationDispatcher
 
     // Re-reads the ceiling just before actuation. Returns the persisted denial when authority was
     // revoked after policy evaluation (or now needs a human approval this call does not carry), or
-    // null when actuation may start. Cancellation here happens
-    // before any side effect and is recorded as such.
+    // null when actuation may start. A dry run needs no approval, as at submission. Cancellation here
+    // happens before any side effect and is recorded as such.
     private async Task<OperationHandle?> RefuseRevokedAgentAuthorityAsync(
-        OperationHandle envelope,
-        OperationDescriptor descriptor,
+        AgentActuation actuation,
         OperationPolicyContext invocationContext,
         CancellationToken cancellationToken)
     {
+        var envelope = actuation.Envelope;
         try
         {
-            var verdict = await AgentAuthorityPolicy.EvaluateAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
+            var verdict = await AgentAuthorityPolicy.EvaluateAsync(
+                    _agentAuthorityStore, actuation.Descriptor, invocationContext, cancellationToken)
                 .ConfigureAwait(false);
             if (verdict == AgentAuthorityVerdict.Unrestricted
-                || (verdict == AgentAuthorityVerdict.ApprovalRequired && !string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)))
+                || (verdict == AgentAuthorityVerdict.ApprovalRequired
+                    && (actuation.DryRun || !string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId))))
             {
                 return null;
             }
@@ -92,5 +94,15 @@ public sealed partial class OperationDispatcher
                     cancellationToken)
                 .ConfigureAwait(false);
         }
+    }
+
+    // What the final ceiling read needs to know about the call that is about to actuate.
+    private sealed record AgentActuation
+    {
+        public required OperationHandle Envelope { get; init; }
+
+        public required OperationDescriptor Descriptor { get; init; }
+
+        public bool DryRun { get; init; }
     }
 }
