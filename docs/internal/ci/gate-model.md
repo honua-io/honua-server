@@ -374,11 +374,15 @@ Until this change the source partition ignored the affected filter and analyzed 
 51 source roots on every PR; on nine green PR Gates (22-23 November) it was the
 last job in five, at 16.8-18.8 minutes (build 15.6-17.5 minutes on hosted runners;
 the same 51 roots took 9.1 minutes on faster hosts). An unaffected project's
-analyzer inputs are unchanged, and every global analyzer input forces a full scope:
-root `Directory.Build.*`, `scripts/ci/` (baseline, banned symbols, globalconfig),
-`src/Honua.Analyzers/` and the root `.editorconfig`, which `compute-affected-projects.sh`
-added to its force-full list with this change (it maps to no project, so the test
-partitions skipped `.editorconfig` edits before). The scheduled and `full_ci` runs
+analyzer inputs are unchanged. `compute-affected-projects.sh` forces a full scope for
+every shared build or analyzer input: root `Directory.Build.*`, `scripts/ci/`
+(baseline, banned symbols, globalconfig), `src/Honua.Analyzers/`, and any changed
+`*.props`, `*.targets`, `.editorconfig`, `*.globalconfig` or `*.ruleset` anywhere
+(nested `Directory.Build.*`, the `eng/*.props` imports). It also maps a file linked
+from outside a project's directory (`Compile`, `EmbeddedResource` or `AdditionalFiles`
+with a `..` path, globs included) to every project that links it. Before this change
+those inputs mapped to no project or only to their home project, so the test
+partitions and the affected build missed them. The scheduled and `full_ci` runs
 keep the whole-solution analyzer build. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
 name is retained for the source partition. Analyzer builds disable persistent

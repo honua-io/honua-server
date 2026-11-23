@@ -72,16 +72,30 @@ if len(re.findall(r"steps\.test-roots\.outcome == 'skipped' \|\|", FORMAT_TEXT))
 # while every global analyzer input forces a full scope.
 if 'source_args+=(--filter "${target}")' not in FORMAT_TEXT:
     raise AssertionError("format-check source analyzer pass must narrow to the affected build filter")
-with tempfile.TemporaryDirectory(prefix="honua-force-full-") as _directory:
-    _changed = Path(_directory) / "changed.txt"
-    _changed.write_text(".editorconfig\n", encoding="utf-8")
-    _affected = subprocess.run(
-        ["bash", str(ROOT / "scripts" / "ci" / "compute-affected-projects.sh")],
-        env={**os.environ, "HONUA_CHANGED_FILES_FILE": str(_changed), "BASE_REF": "HEAD"},
-        cwd=ROOT, capture_output=True, text=True, check=True,
-    ).stdout.split()
-    if _affected != ["ALL"]:
-        raise AssertionError(f".editorconfig must force a full analyzer scope, got {_affected}")
+def _affected_projects(*changed: str) -> list[str]:
+    with tempfile.TemporaryDirectory(prefix="honua-affected-") as directory:
+        listing = Path(directory) / "changed.txt"
+        listing.write_text("".join(f"{path}\n" for path in changed), encoding="utf-8")
+        return subprocess.run(
+            ["bash", str(ROOT / "scripts" / "ci" / "compute-affected-projects.sh")],
+            env={**os.environ, "HONUA_CHANGED_FILES_FILE": str(listing), "BASE_REF": "HEAD"},
+            cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout.split()
+
+
+_TEST_ROOT = "tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj"
+for _config in (".editorconfig", "src/.editorconfig", "src/Directory.Build.props",
+                "eng/Honua.BuildProfiles.props", "eng/Honua.ServerLockFiles.props"):
+    if _affected_projects(_config, _TEST_ROOT) != ["ALL"]:
+        raise AssertionError(f"{_config} must force a full analyzer scope even in a mixed diff")
+_linked = set(_affected_projects("src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs"))
+for _consumer in ("tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj",
+                  "tests/dotnet/Honua.TestKit.Postgres.Hosting/Honua.TestKit.Postgres.Hosting.csproj"):
+    if _consumer not in _linked:
+        raise AssertionError(f"a linked Compile input must affect its linking project {_consumer}")
+if "tests/dotnet/Honua.Azure.UnitTests/Honua.Azure.UnitTests.csproj" not in _affected_projects(
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs"):
+    raise AssertionError("a shared file outside any project must affect the projects that link it")
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",

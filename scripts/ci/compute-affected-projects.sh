@@ -15,7 +15,9 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 #   FORCE_FULL_BUILD_PATHS — newline-separated path prefixes that, when changed,
 #     force a full-graph build (sln/props/CI files). Defaults to a baked-in
 #     list covering .editorconfig, Directory.Packages.props, Directory.Build.props, Honua.sln,
-#     global.json, NuGet.config, .github/, and scripts/ci/.
+#     global.json, NuGet.config, .github/, and scripts/ci/. Any changed *.props,
+#     *.targets, .editorconfig, *.globalconfig or *.ruleset also forces full,
+#     and a file linked from outside a project's directory affects its linkers.
 #
 # Outputs to stdout:
 #   Lines of csproj paths relative to the repo root, or the single token
@@ -109,6 +111,15 @@ while IFS= read -r prefix; do
   fi
 done <<< "${force_full_paths}"
 
+# MSBuild and analyzer configuration outside the list above (nested
+# Directory.Build.*, eng/*.props imported by a few projects, a nested
+# .editorconfig) applies to projects the directory walk below cannot name.
+# These edits are rare, so any of them forces a full-graph build.
+if printf '%s\n' "${changed_files}" | grep -qE '(\.props|\.targets|(^|/)\.editorconfig|\.globalconfig|\.ruleset)$'; then
+  echo "ALL"
+  exit 0
+fi
+
 # Map each changed source file to the nearest enclosing .csproj by walking
 # the directory tree upward. This catches edits to .cs, .razor, .json
 # embedded resources, etc. Files outside any csproj (docs, ADRs) are ignored.
@@ -127,6 +138,29 @@ while IFS= read -r file; do
     dir="$(dirname "${dir}")"
   done
 done <<< "${changed_files}"
+
+# A file a project links from outside its own directory, for example
+# <Compile Include="../Shared/X.cs" /> or a source file linked into a test
+# host, belongs to that project as well. The walk above maps it only to the
+# nearest enclosing project, or to none under tests/dotnet/Shared/.
+while IFS= read -r linking_csproj; do
+  linking_dir="$(dirname "${linking_csproj}")"
+  while IFS= read -r include; do
+    include="${include//\\//}"
+    while IFS= read -r pattern; do
+      [[ -z "${pattern}" ]] && continue
+      pattern="$(realpath -m --relative-to="${REPO_ROOT}" "${linking_dir}/${pattern}" 2>/dev/null || true)"
+      [[ -z "${pattern}" ]] && continue
+      while IFS= read -r file; do
+        # shellcheck disable=SC2053 # the include may be an MSBuild glob
+        if [[ -n "${file}" && "${file}" == ${pattern} ]]; then
+          affected["${linking_csproj}"]=1
+        fi
+      done <<< "${changed_files}"
+    done < <(tr ';' '\n' <<< "${include}")
+  done < <(grep -oE '<(Compile|EmbeddedResource|AdditionalFiles)[[:space:]][^>]*Include="[^"$]*\.\.[^"]*"' "${linking_csproj}" 2>/dev/null \
+           | sed -E 's/.*Include="([^"]+)".*/\1/')
+done < <(find . -maxdepth 6 -name "*.csproj" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*/.claude/*" -printf '%P\n' | sort -u)
 
 # `${#affected[@]}` on an EMPTY associative array is an unbound-variable error
 # under `set -u` (still true in bash 5.2, the hosted-runner shell), so a
