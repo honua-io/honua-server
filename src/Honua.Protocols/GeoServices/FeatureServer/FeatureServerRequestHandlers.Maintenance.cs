@@ -1276,11 +1276,14 @@ internal static partial class FeatureServerEndpoints
     // The calculate evaluator accepts only value-producing SQL, so the operation cannot become a general SQL execution surface.
     private sealed class CalcSqlExpressionParser
     {
+        internal const int MaxNestingDepth = 64;
+
         private readonly string _expression;
         private readonly IReadOnlyDictionary<string, object?> _attributes;
         private readonly bool _validationOnly;
         private readonly HashSet<string> _sourceFields = new(StringComparer.OrdinalIgnoreCase);
         private int _position;
+        private int _depth;
         private Token _current;
 
         public IReadOnlyCollection<string> SourceFields => _sourceFields;
@@ -1311,14 +1314,30 @@ internal static partial class FeatureServerEndpoints
 
         private bool TryParseConcat(out object? value, out string? error)
         {
-            if (!TryParseAdditive(out value, out error)) return false;
-            while (_current.Kind == TokenKind.Concat)
+            // Every nested level (top level, parentheses, function arguments) passes through here.
+            if (_depth >= MaxNestingDepth)
             {
-                Advance();
-                if (!TryParseAdditive(out var right, out error)) return false;
-                value = $"{value ?? string.Empty}{right ?? string.Empty}";
+                value = null;
+                error = $"Expression nesting exceeds the maximum depth of {MaxNestingDepth}.";
+                return false;
             }
-            return true;
+
+            _depth++;
+            try
+            {
+                if (!TryParseAdditive(out value, out error)) return false;
+                while (_current.Kind == TokenKind.Concat)
+                {
+                    Advance();
+                    if (!TryParseAdditive(out var right, out error)) return false;
+                    value = $"{value ?? string.Empty}{right ?? string.Empty}";
+                }
+                return true;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private bool TryParseAdditive(out object? value, out string? error)
@@ -1349,33 +1368,31 @@ internal static partial class FeatureServerEndpoints
 
         private bool TryParseUnary(out object? value, out string? error)
         {
-            if (_current.Kind == TokenKind.Minus)
+            // Consecutive unary minus signs are folded iteratively, so they add no nesting.
+            var negations = 0;
+            while (_current.Kind == TokenKind.Minus)
             {
+                negations++;
                 Advance();
-                if (!TryParseUnary(out var inner, out error))
-                {
-                    value = null;
-                    return false;
-                }
-
-                // SQL semantics: negating NULL yields NULL rather than failing the row.
-                if (inner is null)
-                {
-                    value = null;
-                    return true;
-                }
-
-                if (!TryGetDecimal(inner, out var number))
-                {
-                    value = null;
-                    error ??= "Unary minus requires a numeric value.";
-                    return false;
-                }
-                value = -number;
-                return true;
             }
 
-            return TryParsePrimary(out value, out error);
+            var parsed = TryParsePrimary(out var inner, out error);
+            if (!parsed || negations == 0 || inner is null)
+            {
+                // SQL semantics: negating NULL yields NULL rather than failing the row.
+                value = parsed ? inner : null;
+                return parsed;
+            }
+
+            if (!TryGetDecimal(inner, out var number))
+            {
+                value = null;
+                error = "Unary minus requires a numeric value.";
+                return false;
+            }
+
+            value = negations % 2 == 0 ? number : -number;
+            return true;
         }
 
         private bool TryParsePrimary(out object? value, out string? error)

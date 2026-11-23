@@ -130,4 +130,61 @@ public sealed class FeatureServerCalculateExpressionTests
         value.Should().BeNull();
         error.Should().Contain("numeric range");
     }
+
+    [UnitTheory]
+    [InlineData("(", "1", ")")]
+    [InlineData("UPPER(", "'a'", ")")]
+    [InlineData("COALESCE(NULL, ", "1", ")")]
+    public void CalcExpression_DeepNesting_IsRejected(string open, string core, string close)
+    {
+        var expression = string.Concat(Enumerable.Repeat(open, 50_000)) + core +
+                         string.Concat(Enumerable.Repeat(close, 50_000));
+
+        var inspected = FeatureServerEndpoints.TryInspectCalcExpression(expression, out _, out var inspectError);
+        var evaluated = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression, new Dictionary<string, object?>(), out _, out var evaluateError);
+
+        inspected.Should().BeFalse();
+        inspectError.Should().Contain("maximum depth");
+        evaluated.Should().BeFalse();
+        evaluateError.Should().Contain("maximum depth");
+    }
+
+    [UnitTheory]
+    [InlineData(50_000, 1)]
+    [InlineData(50_001, -1)]
+    public void CalcExpression_RepeatedUnaryMinus_FoldsWithoutNesting(int count, int expected)
+    {
+        var expression = new string('-', count) + "1";
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression, new Dictionary<string, object?>(), out var value, out var error);
+
+        parsed.Should().BeTrue(error);
+        value.Should().Be((decimal)expected);
+    }
+
+    [UnitTest]
+    public void CalcExpression_NestingWithinLimit_StillEvaluates()
+    {
+        var expression = new string('(', 32) + "1 + 1" + new string(')', 32);
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression, new Dictionary<string, object?>(), out var value, out var error);
+
+        parsed.Should().BeTrue(error);
+        value.Should().Be(2m);
+    }
+
+    [UnitTest]
+    public void CalcExpression_LongFlatExpression_IsNotTreatedAsNesting()
+    {
+        var expression = string.Join(" + ", Enumerable.Repeat("1", 1_000));
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression, new Dictionary<string, object?>(), out var value, out var error);
+
+        parsed.Should().BeTrue(error);
+        value.Should().Be(1_000m);
+    }
 }
