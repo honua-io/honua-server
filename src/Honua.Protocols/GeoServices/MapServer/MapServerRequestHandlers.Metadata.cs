@@ -91,9 +91,9 @@ internal static partial class MapServerEndpoints
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Server.MapServerEndpoints");
             // A layer's time extent over a hidden or masked field is left out of the service extent.
-            var timeInfos = await Task.WhenAll(visibleLayers.Select(async layer =>
+            var timeInfos = await RequestFanOut.SelectAsync(visibleLayers, async (layer, layerCancellation) =>
                 GeoServicesWithheldFields.WithoutWithheldTimeFields(
-                    await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, layer.Resource, cancellationToken)
+                    await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, layer.Resource, layerCancellation)
                         .ConfigureAwait(false),
                     await BuildTimeInfoSafeAsync(
                         layer.Resource,
@@ -101,7 +101,7 @@ internal static partial class MapServerEndpoints
                         snapshot,
                         featureReader,
                         logger,
-                        cancellationToken).ConfigureAwait(false)))).ConfigureAwait(false);
+                        layerCancellation).ConfigureAwait(false)), cancellationToken).ConfigureAwait(false);
             var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
             var serviceExtent = await ResolveCachedServiceExtentAsync(
                 service,
