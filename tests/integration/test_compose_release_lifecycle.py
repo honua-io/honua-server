@@ -91,6 +91,20 @@ def contract_plan(refusal):
     return {"scripts": scripts.group(1).split(", "), "nonce": nonce.group(1)}
 
 
+def propose_listed_contract_plan(call, refusal):
+    plan = contract_plan(refusal)
+    listed = call("honua_propose_platform_release_convergence", {
+        "reason": "candidate convergence with its reviewed contract migrations", "contractApproval": plan}, 21)
+    proposal = listed["targets"][0]["proposalId"]
+    assert proposal
+    return plan, proposal
+
+
+def assert_preview_lists_plan(preview, plan):
+    assert any(plan["nonce"] in line for line in preview["diff"])
+    assert any(all(script in line for script in plan["scripts"]) for line in preview["dryRun"])
+
+
 def wait_until_ready(port, failure, timeout=120):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -264,17 +278,10 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         wait_until_ready(port, "prior did not keep serving after the contract refusal")
         assert_live_revision(prior_id, True)
         refused_backups = set((project_dir / "backups").glob("backup-*/manifest.json"))
-        # The refusal names the scripts and their nonce. A proposal that lists them is approved once
-        # and applies exactly them.
+        # A proposal that lists the refused scripts and nonce is approved once and applies exactly them.
         refusal, _ = request(base, f"/api/v1/admin/deploy/operations/{refused['executionOperationId']}", key)
-        plan = contract_plan(refusal["currentPhase"])
-        listed = call("honua_propose_platform_release_convergence", {
-            "reason": "candidate convergence with its reviewed contract migrations", "contractApproval": plan}, 21)
-        proposal = listed["targets"][0]["proposalId"]
-        assert proposal
-        preview = wait_for_approval(base, key, proposal)
-        assert any(plan["nonce"] in line for line in preview["diff"])
-        assert any(all(script in line for script in plan["scripts"]) for line in preview["dryRun"])
+        plan, proposal = propose_listed_contract_plan(call, refusal["currentPhase"])
+        assert_preview_lists_plan(wait_for_approval(base, key, proposal), plan)
         human.approve(proposal)
         first_convergence = wait_for_proposal(base, key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
