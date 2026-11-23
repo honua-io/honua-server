@@ -8,8 +8,8 @@ using Honua.Core.Features.Infrastructure.Validation;
 namespace Honua.Server.Features.FieldWorkflows;
 
 // Reviewer text and list/export filters reach PostgreSQL text columns and parameters, so they are
-// bounded and checked for storable text before the store is called. An unknown syncStatus used to
-// map silently to "pending", and an inverted date range silently matched nothing.
+// bounded and checked for storable text before the store is called. syncStatus must name a known
+// status because the store maps any other value to "pending", and a date range must not be inverted.
 internal static class FieldWorkflowInputRules
 {
     internal const int MaxNameLength = 256;
