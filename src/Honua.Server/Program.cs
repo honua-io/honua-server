@@ -730,6 +730,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DeployPreflightMig
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();
+Honua.Server.Features.HealthCheck.QualificationFaultExtensions.AddQualificationFault(builder.Services, builder.Configuration);
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Edition guardrail ladder: resolves DirectExecute/RequiresApproval/Blocked
@@ -1513,6 +1514,9 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
+
+// Qualification gate stacks inject a serving fault here; without the setting this middleware is inert.
+Honua.Server.Features.HealthCheck.QualificationFaultExtensions.UseQualificationFault(app);
 
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();

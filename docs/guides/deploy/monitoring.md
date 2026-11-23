@@ -48,6 +48,27 @@ An origin test does not qualify the deployed watchdog. Before activation, the
 infrastructure owner must prove the uncached route through CloudFront, failure and
 recovery reporting, and the independent notification path on the Launch Stack.
 
+### Qualification faults
+
+Qualification gate stacks prove recovery behind a load balancer that still sees
+healthy targets. They set `Qualification__Fault` (configuration key
+`Qualification:Fault`); customer installs never carry it, and without it nothing
+changes. Any other value stops startup with an error naming the setting.
+
+| Value | `/healthz/live`, `/healthz/ready` | `/healthz/deep` | Other routes |
+| --- | --- | --- | --- |
+| `ServeErrors` | normal | normal | 500 |
+| `Wedged:<token>` | normal | 503 | 503 |
+
+Fault responses carry `X-Honua-Qualification-Fault`. `ServeErrors` models a bad
+release that starts but serves errors: only the deployment alarms can see it, and
+rolling back removes the setting. `Wedged` is one-shot. The token (8 to 64 letters,
+digits or hyphens, new for each gate run) is recorded in the shared database by the
+first task that checks it as it starts. Tasks that check within 150 seconds,
+the rest of the same rollout, wedge too. Tasks started by the watchdog's rolling
+restart check later and serve normally, so the restart cannot loop. Without a
+database, or if the record cannot be read, the process serves normally.
+
 ## Which replica answered (`Honua-Instance`)
 
 Every response carries a `Honua-Instance` header naming the server instance that produced it, so behind an ALB, a Kubernetes Service, or a Lambda alias you can tell replicas apart and prove that a second instance sees what the first one published. The id is resolved once at startup (and logged with event id `4059`), stays fixed for the life of the process, and comes from the first of these sources that is present: the operator-set `Server__InstanceId` (`Server:InstanceId`), the Lambda execution environment (`AWS_LAMBDA_LOG_STREAM_NAME`), the ECS task id (the task ARN suffix, parsed from `ECS_CONTAINER_METADATA_URI_V4` without calling the metadata endpoint), `HOSTNAME` (the pod name on Kubernetes), the machine name, and finally a random per-process id. Values are limited to letters, digits and `-_.:/[]$`, at most 128 characters; nothing secret is read. Admins also see the id, its `source`, and `startedAt` in the `instance` block of `GET /api/v1/admin/version` and in the `instanceId` detail of the `admin.server.status` operation. Set `Server__InstanceId` yourself when several processes share a hostname. A CDN or other shared cache in front of Honua can replay a stored response with the header of the instance that first produced it, so read the header from uncached requests.
