@@ -130,6 +130,7 @@ internal sealed partial class ODataSearchService
         }
 
         var textSearchFilter = BuildTextSearchCondition(searchTerms, resource);
+        await ThrowOnUnsupportedSridAsync([filter], cancellationToken).ConfigureAwait(false);
 
         var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
@@ -289,6 +290,11 @@ internal sealed partial class ODataSearchService
         var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
         var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);
+        var applyFilters = segments.Select(ODataAggregationHandler.ParseApplyExpression)
+            .Where(parsed => parsed.Type == AggregationType.Filter)
+            .Select(parsed => parsed.FilterExpression)
+            .Prepend(filter);
+        await ThrowOnUnsupportedSridAsync(applyFilters, cancellationToken).ConfigureAwait(false);
 
         // Use existing aggregation handler for processing
         var reader = resolvedLayer.Reader;
@@ -304,6 +310,17 @@ internal sealed partial class ODataSearchService
             baseUrl,
             resolvedLayer.PublicLayerId,
             cancellationToken);
+    }
+
+    private async Task ThrowOnUnsupportedSridAsync(IEnumerable<string?> odataFilters, CancellationToken cancellationToken)
+    {
+        var sridError = await ODataGeometrySridGuard
+            .FindUnsupportedSridErrorAsync(_crsRegistry, odataFilters, cancellationToken)
+            .ConfigureAwait(false);
+        if (sridError != null)
+        {
+            throw new ArgumentException(sridError);
+        }
     }
 
     private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Object resource)

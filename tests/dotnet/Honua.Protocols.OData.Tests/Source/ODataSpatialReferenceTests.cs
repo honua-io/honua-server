@@ -59,6 +59,26 @@ public sealed class ODataSpatialReferenceTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("/odata/Features({0})?$filter={1}", "999999")]
+    [InlineData("/odata/Features({0})?$filter={1}", "12345")]
+    [InlineData("/odata/Features({0})?$filter={1}", "0")]
+    [InlineData("/odata/Features({0})/$count?$filter={1}", "12345")]
+    [InlineData("/odata/Features({0})/$apply?$apply=filter({1})/aggregate($count as n)", "12345")]
+    [Operation(Operations.SpatialQuery)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects()")]
+    public async Task Features_UnknownGeometryLiteralSrid_ReturnsBadRequest(string pathTemplate, string srid)
+    {
+        var filter = Uri.EscapeDataString($"geo.intersects(Geometry, geography'SRID={srid};POINT(0 0)')");
+        var path = string.Format(System.Globalization.CultureInfo.InvariantCulture, pathTemplate, SpatialReferenceTestLayerCatalog.PointLayerId, filter);
+
+        var response = await _fixture.Client.GetAsync(path);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        body.Should().Contain(srid);
+    }
+
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects()")]

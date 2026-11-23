@@ -201,7 +201,7 @@ public sealed class ODataQueryHandlerTests
             Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(),
             Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>(),
             validationService,
-            new ODataQuerySearchService(null!, null!),
+            new ODataQuerySearchService(null!, null!, null!),
             Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>(),
             Substitute.For<Honua.Infrastructure.Caching.IETagService>(),
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Caching.CacheOptions()));
