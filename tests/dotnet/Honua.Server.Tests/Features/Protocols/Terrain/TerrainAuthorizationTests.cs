@@ -45,8 +45,8 @@ public sealed class TerrainAuthorizationTests : IAsyncLifetime
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
         response.Content.Headers.ContentEncoding.Should().NotContain("gzip");
-        response.Content.Headers.ContentType?.MediaType.Should().NotBeOneOf(
-            "image/png", "application/vnd.quantized-mesh", "application/json");
+        new[] { "image/png", "application/vnd.quantized-mesh", "application/json" }
+            .Should().NotContain(response.Content.Headers.ContentType?.MediaType);
     }
 
     [IntegrationTheory]

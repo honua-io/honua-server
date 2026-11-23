@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Scene.Terrain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
