@@ -16,6 +16,7 @@ Deliver alert notifications via Azure Event Grid.
 | Capability key | `channels.azure-eventgrid` |
 | Category | Channels |
 | Edition | Enterprise |
+| Status | preview |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

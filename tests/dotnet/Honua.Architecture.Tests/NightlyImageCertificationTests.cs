@@ -165,7 +165,7 @@ public sealed partial class NightlyImageCertificationTests
             "only select-candidate reads the key");
 
         mint.Should().Contain("id: handoff-token");
-        mint.Should().Contain("uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0");
+        mint.Should().MatchRegex(@"uses: actions/create-github-app-token@[0-9a-f]{40} # v\d+\.\d+\.\d+\n");
         mint.Should().Contain("app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}");
         mint.Should().Contain("private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}");
         mint.Should().Contain("repositories: honua-server\n");

@@ -1855,6 +1855,18 @@ cancel the active run and report the required context without running the
 policy. Concurrency cancels the superseded run, so a label change costs one
 light-runner hygiene run.
 
+The shared bundle policy (honua-io/.github repo-hygiene `bundle.py`) passes a
+human-authored PR only when its body closes at least three distinct issues, or
+when it carries the `bundle-exception` label with a
+`Bundle-exception: trunk-red|security-tracker|main-named — reason` line. Size is
+not an exception, and the label without one of those reasons fails even on a
+three-issue PR.
+Bot authors and same-repository publisher branches (`automation/`,
+`dependabot/`, `renovate/`, `release-please--`) are exempt, so
+`publish-generated-files.sh` opens `automation/regenerate-generated-files` PRs
+with its user token and no label or exception line (#9466). The lane `gh` and
+`pr-slot` gates refuse lane branches with those prefixes.
+
 Numbered Operator Eval Harness children prepare Ryuk and PostGIS 17. Numbered Core and Cloud Contracts children prepare Ryuk, PostGIS 16 and PostGIS 18. The numbered MCP, GPServer/NAServer, Admin Authorization and Migration children request no images through this selector. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Compose readiness failure evidence
@@ -3309,6 +3321,30 @@ Measured on the build host (Release, 3 interleaved base/head rounds of the
 Shard filters are unchanged, so every case runs in the same shards on selected PR runs
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Measured SOAP shard packing
+
+The SOAP and SOAP Progress shards now share one GeoServices GPServer SOAP
+runner. Their exact filter union, affected-path union, project, tier selection,
+CPU setting, report flags and 22-minute test / 32-minute job budgets are
+preserved. The method ownership guard covers the combined shard; a frozen
+packing contract checks both former filters and execution settings. MVT keeps
+its separate coverage partition.
+
+Ordinary full runs [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+[44921455496](https://github.com/honua-io/honua-server/actions/runs/44921455496)
+and [45000554030](https://github.com/honua-io/honua-server/actions/runs/45000554030)
+passed all 81 SOAP cases with no skips. Their two shard process-wall sums were
+35, 26 and 17 seconds; even the sum of the individual maxima is 35 seconds,
+2.7% of the unchanged 1,320-second budget. The last full run failed elsewhere;
+its two SOAP shards passed. The combined dispatch rank of 5.0 minutes is an
+explicit packing estimate (the sum of the former ranks), pending a qualifying
+combined-filter job measurement. This reduces the full matrix from 203 to 202 jobs,
+and a GPServer-affected selection loses one runner. In the last run the two
+jobs occupied 203 runner-seconds (3.38 minutes), including 19 seconds in test
+steps. Combined-job runner-minute savings remain unmeasured until a live run;
+these figures do not claim a PR critical-path improvement. The old 132-to-123
+proposal requires fresh qualification for its other groups.
 
 ### OData client integration host lifetime
 

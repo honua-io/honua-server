@@ -16,6 +16,7 @@ Hex or square grid density (heatmap) binning over a filtered subset.
 | Capability key | `analytics.density` |
 | Category | Analytics |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 10 |

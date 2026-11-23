@@ -183,10 +183,9 @@ internal static partial class SceneEndpoints
         var maxRange = Math.Max(1, originOptions.MaxRangeReadBytes);
         if (length > maxRange)
         {
-            return StandardErrorHelpers.CreatePayloadTooLarge(
-                context,
-                string.Create(CultureInfo.InvariantCulture,
-                    $"Requested COPC byte range ({length} bytes) exceeds the {maxRange}-byte range ceiling."));
+            context.Response.Headers[HeaderNames.ContentRange] =
+                string.Create(CultureInfo.InvariantCulture, $"bytes */{metadata.ContentLength}");
+            return Results.StatusCode(StatusCodes.Status416RangeNotSatisfiable);
         }
 
         await using var rangeRead = await originReader

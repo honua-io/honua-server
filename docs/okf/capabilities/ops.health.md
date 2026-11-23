@@ -16,6 +16,7 @@ Liveness/readiness health-check endpoints.
 | Capability key | `ops.health` |
 | Category | Ops |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 21 implemented |
 | Registry entries | 21 |
 | Proving tests | 91 |

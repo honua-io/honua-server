@@ -1365,10 +1365,22 @@
       "path": "/roles/{id}/permissions"
     },
     {
+      "operationId": "getSceneAsset",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/assets/{sceneId}"
+    },
+    {
       "operationId": "getSceneDataset",
       "catalogOperationId": null,
       "method": "GET",
       "path": "/scenes/{id}"
+    },
+    {
+      "operationId": "getSceneJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/jobs/{jobId}"
     },
     {
       "operationId": "getServiceReplica",
@@ -1491,10 +1503,22 @@
       "path": "/import/tile-package"
     },
     {
+      "operationId": "ingestArchiveScene",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes/ingest/archive"
+    },
+    {
       "operationId": "ingestCityGmlScene",
       "catalogOperationId": null,
       "method": "POST",
       "path": "/scenes/ingest/citygml"
+    },
+    {
+      "operationId": "ingestModelScene",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes/ingest/model"
     },
     {
       "operationId": "ingestPointCloudScene",
@@ -1851,10 +1875,22 @@
       "path": "/roles"
     },
     {
+      "operationId": "listSceneAssets",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/assets"
+    },
+    {
       "operationId": "listSceneDatasets",
       "catalogOperationId": null,
       "method": "GET",
       "path": "/scenes"
+    },
+    {
+      "operationId": "listSceneJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/jobs"
     },
     {
       "operationId": "listServiceReplicaConflicts",
