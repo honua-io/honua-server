@@ -46,6 +46,8 @@ jobs:
             scripts/ci/fixtures/measured-dispatch-ranks.json
           sparse-checkout-cone-mode: false
       - name: Compare ranks and reconcile the tracking issue
+        # bash (-eo pipefail) so a script failure is not masked by tee.
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
