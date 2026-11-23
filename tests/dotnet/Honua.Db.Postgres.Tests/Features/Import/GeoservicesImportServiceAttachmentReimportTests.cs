@@ -374,7 +374,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
             storage.FailDeletes = false;
             store = new PostgresAttachmentStore(new FixtureConnectionProvider(fixture), storage.Mock.Object,
                 NullLogger<PostgresAttachmentStore>.Instance, schema,
-            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3"));
+            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "1695edc30a7aac84af47adb03b3d9a4028cdf811d57af9b91c6778ad0195f102"));
             service = CreateService(handler, store, new StubLayerPublishingService(42), schema);
             (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
             (await PendingCleanupAsync(schema)).Should().Be(3);
@@ -483,7 +483,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         await retryMigration.ExecuteNonQueryAsync();
         return new PostgresAttachmentStore(new FixtureConnectionProvider(fixture), storage.Mock.Object,
             NullLogger<PostgresAttachmentStore>.Instance, schema,
-            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3"));
+            migrationContract: new Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresAttachmentMigrationContract("Honua.Server.Migrations.002_CreateAttachmentsTable.sql", "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql", "Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template", "1695edc30a7aac84af47adb03b3d9a4028cdf811d57af9b91c6778ad0195f102"));
     }
 
     private async Task<Attachment[]> ReadStoredAsync(string schema)

@@ -157,8 +157,17 @@ def _finding_summary(finding):
             ("VulnerabilityID", "PkgName", "InstalledVersion", "FixedVersion", "Severity")}
 
 
+def _scanned_names(identity):
+    """Digests a scan identity answers to: the pulled manifest and the digest the caller named.
+
+    A supported entry may name a multi-arch index; the scan pulls that index's platform
+    manifest and records the index as requestedImage.
+    """
+    return {name for name in (identity.get("image"), identity.get("requestedImage")) if name}
+
+
 def verdict(identity, inventory_entry, trivy):
-    _require(identity.get("image") == inventory_entry["image"]
+    _require(inventory_entry["image"] in _scanned_names(identity)
              and identity.get("platform") == inventory_entry["platform"]
              and identity.get("sourceRevision") == inventory_entry["sourceRevision"],
              "Scan identity does not match the inventory entry")
@@ -173,7 +182,8 @@ def verdict(identity, inventory_entry, trivy):
     return {
         "release": inventory_entry["release"],
         "key": scan_key(inventory_entry),
-        "image": base["image"],
+        "image": inventory_entry["image"],
+        "scannedImage": base["image"],
         "platform": base["platform"],
         "sourceRevision": base["sourceRevision"],
         "status": base["status"],
@@ -336,9 +346,15 @@ def _verdict_entries(args, identity):
                                             "sourceRevision": identity.get("sourceRevision"),
                                             "registeredAt": datetime.date.today().isoformat()})
         return validate_inventory(candidate)
-    return [e for e in validate_inventory(_load_json(INVENTORY))
-            if e["image"] == identity.get("image") and e["platform"] == identity.get("platform")
-            and e["release"] == args.release]
+    return registered_entries(_load_json(INVENTORY), identity, args.release)
+
+
+def registered_entries(inventory, identity, release):
+    """Inventory entries for the digest this scan was asked for (index or platform manifest)."""
+    named = identity.get("requestedImage") or identity.get("image")
+    return [e for e in validate_inventory(inventory)
+            if e["image"] == named and e["platform"] == identity.get("platform")
+            and e["release"] == release]
 
 
 def _cmd_verdict(args):

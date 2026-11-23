@@ -372,6 +372,33 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
         Assert.False(item.GetProperty("typeMetadata").TryGetProperty("url", out _));
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/content/{id}")]
+    public async Task GetContent_PublicationText_DescribesTheLayerLikeEveryProtocol()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Publications = [graph.Publications[0] with
+            {
+                Metadata = graph.Publications[0].Metadata with
+                {
+                    Title = "Published parcels",
+                    Description = "Parcels as published",
+                },
+                TitleOverride = null,
+            }],
+        });
+
+        using var response = await _admin.GetAsync("/api/v1/console/content/publication");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var detail = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var data = detail.RootElement.GetProperty("data");
+        Assert.Equal("Published parcels", data.GetProperty("title").GetString());
+        Assert.Equal("Parcels as published", data.GetProperty("description").GetString());
+    }
+
     private async Task<JsonDocument> ReadContentAsync(string suffix = "")
     {
         using var response = await _admin.GetAsync("/api/v1/console/content" + suffix);

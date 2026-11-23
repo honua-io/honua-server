@@ -28,6 +28,7 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
     private static readonly XNamespace Wfs = "http://www.opengis.net/wfs/2.0";
     private static readonly XNamespace Gml = "http://www.opengis.net/gml/3.2";
     private static readonly XNamespace HonuaNs = "http://honua.io/wfs";
+    private static readonly XNamespace Ows = "http://www.opengis.net/ows/1.1";
 
     private const string ReadProtectedType = "pub-layer-0";
 
@@ -173,6 +174,34 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
         after.SelectMany(static member => member.Elements())
             .Select(static feature => feature.Element(HonuaNs + "name")?.Value)
             .Should().Contain(MutatedName);
+    }
+
+    [IntegrationTheory]
+    [InlineData("Insert")]
+    [InlineData("Update")]
+    [InlineData("Replace")]
+    [InlineData("Delete")]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_Anonymous_IsChallengedAndChangesNothing(string action)
+    {
+        using var reader = CreateClient("query");
+        var before = await ReadFeaturesAsync(reader);
+
+        using var anonymous = _fixture.CreateClient();
+        using var request = Transaction(action);
+        using var denied = await anonymous.PostAsync("/wfs", request);
+
+        var error = await denied.Content.ReadAsStringAsync();
+        denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized, error);
+        denied.Headers.WwwAuthenticate.Should().NotBeEmpty();
+        XDocument.Parse(error).Descendants(Ows + "Exception").Single()
+            .Attribute("exceptionCode")!.Value.Should().Be("AccessDenied");
+        var after = await ReadFeaturesAsync(reader);
+        after.Select(static member => member.ToString()).Should()
+            .Equal(before.Select(static member => member.ToString()));
+        (await ReadStoredNameAsync(101)).Should().Be("Related Feature 1");
     }
 
     [IntegrationTest]

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Authentication;
@@ -144,14 +145,13 @@ internal static class ImageServerV2Lookups
 
     private static ResolvedImageLayer Project(MetadataV2Layer publication, MetadataV2Object? resource)
     {
-        var displayName = publication.TitleOverride
-            ?? publication.Metadata.Title
-            ?? (string.IsNullOrEmpty(publication.Metadata.Name) ? null : publication.Metadata.Name)
-            ?? resource?.Metadata.Title
-            ?? (string.IsNullOrEmpty(resource?.Metadata.Name) ? null : resource?.Metadata.Name)
-            ?? string.Empty;
-
-        var description = resource?.Metadata.Description ?? publication.Metadata.Description;
+        // A publication without a resolvable dataset keeps its own text; otherwise the crosswalk names it.
+        var displayName = resource is null
+            ? publication.TitleOverride ?? publication.Metadata.Title ?? publication.Metadata.Name ?? string.Empty
+            : DescriptiveMetadataResolver.DatasetTitle(resource, publication) ?? string.Empty;
+        var description = resource is null
+            ? publication.Metadata.Description
+            : DescriptiveMetadataResolver.DatasetDescription(resource, publication);
 
         return new ResolvedImageLayer(publication, resource, displayName, description);
     }

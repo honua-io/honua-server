@@ -9,7 +9,9 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
@@ -91,9 +93,9 @@ internal static partial class MapServerEndpoints
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Server.MapServerEndpoints");
             // A layer's time extent over a hidden or masked field is left out of the service extent.
-            var timeInfos = await Task.WhenAll(visibleLayers.Select(async layer =>
+            var timeInfos = await RequestFanOut.SelectAsync(visibleLayers, async (layer, layerCancellation) =>
                 GeoServicesWithheldFields.WithoutWithheldTimeFields(
-                    await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, layer.Resource, cancellationToken)
+                    await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, layer.Resource, layerCancellation)
                         .ConfigureAwait(false),
                     await BuildTimeInfoSafeAsync(
                         layer.Resource,
@@ -101,7 +103,7 @@ internal static partial class MapServerEndpoints
                         snapshot,
                         featureReader,
                         logger,
-                        cancellationToken).ConfigureAwait(false)))).ConfigureAwait(false);
+                        layerCancellation).ConfigureAwait(false)), cancellationToken).ConfigureAwait(false);
             var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
             var serviceExtent = await ResolveCachedServiceExtentAsync(
                 service,
@@ -109,7 +111,7 @@ internal static partial class MapServerEndpoints
                 transformService,
                 cancellationToken).ConfigureAwait(false);
             var response = MapServiceToMapServerResponse(
-                service,
+                service with { Metadata = PublishedMetadataProjection.ForServiceResource(snapshot.Graph, service) },
                 visibleLayers,
                 serviceExtent,
                 limitsOptions.Query.MaxRecordCount,
@@ -448,7 +450,8 @@ internal static partial class MapServerEndpoints
         var displayField = ResolveDisplayField(resource, objectIdField);
         var layerCapabilities = BuildMapServerLayerCapabilities(resource);
         var hasGeometry = HasMapServerGeometry(resource);
-        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
+        var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resource, service);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
 
         return new MapServerLayerResponse
         {
@@ -457,7 +460,7 @@ internal static partial class MapServerEndpoints
                 ? publicLayerId.ToString(CultureInfo.InvariantCulture)
                 : layerName,
             Type = hasGeometry ? "Feature Layer" : "Table",
-            Description = resource.Metadata.Description,
+            Description = descriptive.Description,
             CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
                 ? governance.License
                 : governance.Attribution,

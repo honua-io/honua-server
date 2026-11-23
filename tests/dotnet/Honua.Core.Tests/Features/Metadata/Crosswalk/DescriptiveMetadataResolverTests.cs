@@ -174,6 +174,22 @@ public sealed class DescriptiveMetadataResolverTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void ForDataset_PublicationTitleOverride_NamesTheLayer()
+    {
+        var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset);
+        var layer = new MetadataV2Layer
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer.trails", Name = "trails", Title = "Trails (public)" },
+            TitleOverride = " Trail network ",
+        };
+
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0], layer));
+
+        record.Title.Should().Be("Trail network");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void ForDataset_GeographicLayer_CarriesExtentAndSupportedCrs()
     {
         var graph = CrosswalkFixtures.Graph();

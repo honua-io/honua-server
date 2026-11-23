@@ -1,0 +1,61 @@
+name: Cancelled required check rerun
+
+# Same-second pull_request events (opened + labeled, opened + edited) start two Repository
+# hygiene or Clean code runs for one head in one concurrency group. GitHub orders that queue
+# independently of check-suite order, so the run it cancels can sit in the newest suite, whose
+# cancelled required check then outranks the success and blocks the merge. This reruns that run
+# once, with its own event payload. A newest-suite run a maintainer cancelled is rerun once too,
+# and that rerun may cancel an older-suite run still in progress; both are bounded by the attempt
+# filter. It checks out nothing and only calls the API.
+on:
+  workflow_run:
+    workflows: [Repository hygiene, Clean code]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun:
+    name: Rerun a cancelled newest-suite required check
+    if: >-
+      github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'cancelled'
+      && github.event.workflow_run.run_attempt == 1
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-24.04' }}
+    permissions:
+      actions: write
+      pull-requests: read
+    timeout-minutes: 5
+    steps:
+      - name: Rerun when the cancelled run is the newest suite of an open PR head
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              ...context.repo, workflow_id: run.workflow_id, head_sha: run.head_sha,
+              event: 'pull_request', per_page: 100,
+            });
+            // The listing carries the run's latest attempt; the event carries the first.
+            const current = runs.find(candidate => candidate.id === run.id) ?? run;
+            const newest = runs.reduce((top, other) =>
+              other.check_suite_id > top.check_suite_id ? other : top, current);
+            if (newest.id !== run.id) {
+              core.notice(`Run ${newest.id} is newer for ${run.head_sha}; this cancellation was supersession.`);
+              return;
+            }
+            if (newest.status !== 'completed' || newest.conclusion !== 'cancelled' || newest.run_attempt !== 1) {
+              core.notice(`Run ${run.id} is ${newest.status}/${newest.conclusion} attempt ${newest.run_attempt}; nothing to rerun.`);
+              return;
+            }
+            const owner = run.head_repository?.owner?.login;
+            const pulls = owner ? await github.paginate(github.rest.pulls.list, {
+              ...context.repo, state: 'open', head: `${owner}:${run.head_branch}`, per_page: 100,
+            }) : [];
+            const pull = pulls.find(candidate => candidate.head.sha === run.head_sha);
+            if (!pull) {
+              core.notice(`No open pull request has head ${run.head_sha}; nothing to rerun.`);
+              return;
+            }
+            await github.rest.actions.reRunWorkflow({ ...context.repo, run_id: run.id });
+            core.notice(`Reran cancelled newest-suite ${run.name} run ${run.id} for #${pull.number}.`);

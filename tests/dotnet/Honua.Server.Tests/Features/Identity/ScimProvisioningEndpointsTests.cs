@@ -199,6 +199,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [InlineData("/scim/v2/Groups", "externalId eq \"not-a-group\"")]
     [InlineData("/scim/v2/Users", "userName eq \"\"")]
     [InlineData("/scim/v2/Groups", "displayName eq \"\"")]
+    [InlineData("/scim/v2/Groups", "urn:ietf:params:scim:schemas:core:2.0:User:displayName eq \"x\"")]
     [Endpoint("GET /scim/v2/Users")]
     [Endpoint("GET /scim/v2/Groups")]
     public async Task List_WithUnsupportedFilter_ReturnsInvalidFilterWithoutResources(string path, string filter)
@@ -216,6 +217,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("USERNAME EQ \"quote\\\"d@example.com\"", "quote\"d@example.com")]
     [InlineData("  userName   eq   plain@example.com  ", "plain@example.com")]
+    [InlineData("urn:ietf:params:scim:schemas:core:2.0:User:userName eq \"urn@example.com\"", "urn@example.com")]
     [Endpoint("GET /scim/v2/Users")]
     public async Task ListUsers_WithEqFilterVariants_ReturnsOnlyTheMatch(string filter, string userName)
     {

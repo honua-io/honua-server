@@ -44,6 +44,6 @@ public sealed partial class RequestSecretReferenceOptions
         return errors;
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z", RegexOptions.CultureInvariant)]
     internal static partial Regex EnvironmentVariableNamePattern();
 }
