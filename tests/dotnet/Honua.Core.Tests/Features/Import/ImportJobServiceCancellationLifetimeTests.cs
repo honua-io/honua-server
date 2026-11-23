@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-public sealed class ImportJobServiceCancellationLifetimeTests
+public sealed partial class ImportJobServiceCancellationLifetimeTests
 {
     [Trait("Tier", "Fast")]
     [Theory]

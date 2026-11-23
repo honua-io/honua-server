@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -30,7 +31,6 @@ namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
 internal sealed class OgcCoveragesHandler
 {
-    private const int MaxCollectionProjectionConcurrency = 8;
     private const int MaxScaleSize = 8192;
     private const string CoverageItemType = "coverage";
     private const string GeoTiffContentType = "image/tiff";
@@ -1932,39 +1932,7 @@ internal sealed class OgcCoveragesHandler
         Func<TSource, CancellationToken, Task<TProjection?>> projector,
         CancellationToken cancellationToken)
         where TProjection : class
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(projector);
-
-        if (source.Length == 0)
-        {
-            return [];
-        }
-
-        var results = new TProjection?[source.Length];
-        var workerCount = Math.Min(MaxCollectionProjectionConcurrency, source.Length);
-        var nextIndex = -1;
-
-        async Task RunWorkerAsync()
-        {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var index = Interlocked.Increment(ref nextIndex);
-                if (index >= source.Length)
-                {
-                    return;
-                }
-
-                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
-        await Task.WhenAll(workers).ConfigureAwait(false);
-        return results.ToImmutableArray();
-    }
+        => [.. await RequestFanOut.SelectAsync(source, projector, cancellationToken).ConfigureAwait(false)];
 
     private readonly record struct ScalingResult(bool Success, RasterQuery Query, string Error)
     {

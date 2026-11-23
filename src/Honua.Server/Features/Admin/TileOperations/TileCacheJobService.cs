@@ -6,7 +6,10 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Security;
 using Honua.Migration;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
@@ -164,7 +167,11 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             }
         }
 
-        return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName), cancellationToken)
+        var retry = new TileOperationSubmission(request, requestedBy, schemaName)
+        {
+            TenantId = OperationTenantAuthorization.OwnerTenantOf(job)
+        };
+        return await SubmitAsync(retry, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -195,7 +202,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo { RequestedBy = submission.RequestedBy },
+            Audit = new OperationAuditInfo { RequestedBy = submission.RequestedBy, TenantId = submission.TenantId },
             // Concurrent generations of one (service, gridset, style) window run one at a time, so two
             // workers never seed, expire or delete the same key window at once.
             Concurrency = new OperationConcurrencyPolicy
@@ -385,10 +392,23 @@ internal interface ITileCacheJobService
 }
 
 // RequestedBy records who asked for the operation; the warming targets and expiry sweep use SchedulerIdentityName.
+// TenantId names the tenant that owns the job; scheduler submissions leave it unset.
 internal sealed record TileOperationSubmission(
     TileOperationStartRequest Request,
     string? RequestedBy,
-    string? SchemaName = null);
+    string? SchemaName = null)
+{
+    public string? TenantId { get; init; }
+
+    public static TileOperationSubmission FromRequest(HttpContext context, TileOperationStartRequest request)
+        => new(
+            request,
+            JobOwnershipSecurity.ResolveOwner(context.User),
+            context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
+        {
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId
+        };
+}
 
 internal enum TileOperationListScope { All, Active }
 

@@ -118,7 +118,7 @@ internal sealed partial class ODataQueryHandler(
 
             // Apply filtering and processing
             IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
-                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex, layer.Publication))
                 .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -270,7 +270,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var layerIndex = layerValidation.Publication?.LayerIndex ?? layerId;
-            var payload = ODataUtilityService.BuildLayerPayload(layerValidation.Resource!, layerIndex);
+            var payload = ODataUtilityService.BuildLayerPayload(layerValidation.Resource!, layerIndex, layerValidation.Publication);
             if (!string.IsNullOrWhiteSpace(select))
             {
                 var selected = _querySearchService.ApplyFieldSelection(new[] { payload }, select);
@@ -340,7 +340,7 @@ internal sealed partial class ODataQueryHandler(
             var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
             IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
-                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex, layer.Publication))
                 .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {

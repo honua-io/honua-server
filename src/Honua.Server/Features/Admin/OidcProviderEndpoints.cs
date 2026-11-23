@@ -318,6 +318,10 @@ internal static partial class OidcProviderEndpoints
             return TypedResults.Created($"/api/v1/admin/oidc/providers/{created.ProviderId}",
                 ApiResponse<OidcProviderResponse>.CreateSuccess(response));
         }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
+        }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider creation endpoint; the failure is logged and mapped to a
         // generic error response below.

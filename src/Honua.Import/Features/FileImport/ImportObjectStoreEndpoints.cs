@@ -6,6 +6,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.ObjectStorage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -134,7 +135,10 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        var importRequest = admission.Request!;
+        var importRequest = admission.Request! with
+        {
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId
+        };
         try
         {
             if (admission.Background)

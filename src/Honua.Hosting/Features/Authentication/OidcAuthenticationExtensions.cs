@@ -980,6 +980,8 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcHandlerCallbacks.CompleteRemoteSignOutAsync,
+                OnRemoteFailure = OidcHandlerCallbacks.RefuseRemoteFailureAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1026,6 +1028,8 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcHandlerCallbacks.CompleteRemoteSignOutAsync,
+                OnRemoteFailure = OidcHandlerCallbacks.RefuseRemoteFailureAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1074,6 +1078,8 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcHandlerCallbacks.CompleteRemoteSignOutAsync,
+                OnRemoteFailure = OidcHandlerCallbacks.RefuseRemoteFailureAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1126,6 +1132,8 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcHandlerCallbacks.CompleteRemoteSignOutAsync,
+                OnRemoteFailure = OidcHandlerCallbacks.RefuseRemoteFailureAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1175,6 +1183,8 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcHandlerCallbacks.CompleteRemoteSignOutAsync,
+                OnRemoteFailure = OidcHandlerCallbacks.RefuseRemoteFailureAsync,
                 OnRedirectToIdentityProvider = context =>
                 {
                     // Auth0 requires the audience parameter to issue access tokens

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FieldWorkflows.Export;
 using Honua.Core.Features.FieldWorkflows.Review;
+using Honua.Core.Features.Shared.Services;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
@@ -129,19 +130,5 @@ internal static class FieldExportSerializer
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
 
-    private static string EscapeCsv(string value)
-    {
-        if (value.Length == 0)
-        {
-            return value;
-        }
-
-        var mustQuote = value.IndexOfAny([',', '"', '\n', '\r']) >= 0;
-        if (!mustQuote)
-        {
-            return value;
-        }
-
-        return "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-    }
+    private static string EscapeCsv(string value) => value.Length == 0 ? value : CsvFieldFormatter.Escape(value);
 }

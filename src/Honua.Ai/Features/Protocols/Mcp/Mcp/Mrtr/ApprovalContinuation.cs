@@ -111,6 +111,12 @@ internal static class ApprovalContinuation
         _ => OperationHandleStatus.Failed,
     };
 
+    // A failed proposal's recorded reason says what to do next (for example, submit a fresh proposal).
+    private static string Describe(OperationProposalStatus status, string? resolutionReason)
+        => status == OperationProposalStatus.Failed && !string.IsNullOrWhiteSpace(resolutionReason)
+            ? resolutionReason
+            : Describe(status);
+
     private static string Describe(OperationProposalStatus status) => status switch
     {
         OperationProposalStatus.Planned or OperationProposalStatus.AwaitingApproval =>
@@ -141,7 +147,7 @@ internal static class ApprovalContinuation
             UpdatedAt = execution.UpdatedAt,
             JobId = proposal.ExecutionOperationId,
             Message = execution.Status == proposal.Status.ToString()
-                ? Describe(proposal.Status)
+                ? Describe(proposal.Status, execution.ResolutionReason)
                 : execution.ResolutionReason ?? $"The approved change is {status.ToString().ToLowerInvariant()}.",
         };
     }

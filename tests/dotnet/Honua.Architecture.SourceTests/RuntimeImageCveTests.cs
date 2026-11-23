@@ -60,6 +60,7 @@ public sealed class RuntimeImageCveTests
         var jit = File.ReadAllText(Path.Join(repositoryRoot, "Dockerfile")).ReplaceLineEndings("\n");
         var aot = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.aot")).ReplaceLineEndings("\n");
         var cut = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/cut-rootfs.sh"));
+        var retry = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/cut-rootfs-retry.sh"));
 
         jit.Should().Contain("sh docker/runtime/cut-rootfs.sh /rootfs &&",
             "the JIT image recuts the aspnet-extra slice set");
@@ -74,7 +75,8 @@ public sealed class RuntimeImageCveTests
         }
 
         cut.Should().Contain("runtime-deps) extra_slices=\"\" ;;");
-        cut.Should().Contain("--generate-dpkg-status");
+        cut.Should().Contain("cut-rootfs-retry.sh");
+        retry.Should().Contain("--generate-dpkg-status");
     }
 
     [ArchitectureTest]

@@ -412,7 +412,9 @@ internal static partial class FeatureStreamEndpoints
 
             while (!linkedCts.Token.IsCancellationRequested)
             {
+#pragma warning disable CA2000 // The using declaration disposes it on every path; replay revalidation confuses the interprocedural analysis.
                 using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token, session.ServiceRestartToken);
+#pragma warning restore CA2000
                 var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
                 var diff = nextPollAt - DateTimeOffset.UtcNow;
                 var remainingDelay = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;

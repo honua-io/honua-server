@@ -14,6 +14,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.GeoServices.VectorTileServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -36,6 +37,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the Esri tile-availability index for a block of tiles: 1 for tiles inside the LOD/coordinate bounds, 0 for tiles outside them.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: JsonContentType)
             .Produces(400)
             .Produces(404)
@@ -52,6 +54,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the Esri tile-availability index for the top of the tiling pyramid (level 0).")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: JsonContentType)
             .Produces(404);
     }
