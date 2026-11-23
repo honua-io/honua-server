@@ -186,7 +186,7 @@ internal sealed partial class Wfs20Handler
 
             var selectedTypes = await WithCallerMasksAsync(
                 context,
-                SelectRequestedFeatureTypes(publishedTypes, requestedTypes, featureId, normalizedFilter),
+                SelectRequestedFeatureTypes(publishedTypes, requestedTypes, ResourceIdSelectingTypes(featureId, normalizedFilter)),
                 cancellationToken).ConfigureAwait(false);
             var planSet = await BuildLayerQueryPlansAsync(
                 selectedTypes,

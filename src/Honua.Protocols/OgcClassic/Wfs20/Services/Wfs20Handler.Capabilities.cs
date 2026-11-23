@@ -352,15 +352,14 @@ internal sealed partial class Wfs20Handler
 
     // A request without type names whose every resource id names a published type reads only those
     // types. The other types would match no id, so the result is unchanged and each skipped type saves a
-    // count. Ids from a filter are merged later, so a filter keeps the full selection.
+    // count. Callers pass no ids when a filter is present: its ids are merged later.
     private static ImmutableArray<WfsFeatureTypeDescriptor> SelectRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
         string[] requestedTypes,
-        string? resourceId,
-        string? filter)
+        string? typeSelectingResourceId)
     {
         var selected = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
-        if (requestedTypes.Length > 0 || string.IsNullOrWhiteSpace(resourceId) || !string.IsNullOrWhiteSpace(filter))
+        if (requestedTypes.Length > 0 || typeSelectingResourceId is not { } resourceId || string.IsNullOrWhiteSpace(resourceId))
         {
             return selected;
         }
@@ -380,6 +379,9 @@ internal sealed partial class Wfs20Handler
         var named = selected.Where(featureType => namedTypes.Contains(featureType.LocalName)).ToImmutableArray();
         return namedTypes.All(name => named.Any(featureType => featureType.LocalName == name)) ? named : selected;
     }
+
+    private static string? ResourceIdSelectingTypes(string? resourceId, string? filter)
+        => string.IsNullOrWhiteSpace(filter) ? resourceId : null;
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,

@@ -147,7 +147,7 @@ internal sealed partial class Wfs20Handler
 
             var selectedTypes = await WithCallerMasksAsync(
                 context,
-                SelectRequestedFeatureTypes(publishedTypes, requestedTypes, resourceId, filter),
+                SelectRequestedFeatureTypes(publishedTypes, requestedTypes, ResourceIdSelectingTypes(resourceId, filter)),
                 cancellationToken).ConfigureAwait(false);
             var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             if (selectedTypes.Length == 0)
