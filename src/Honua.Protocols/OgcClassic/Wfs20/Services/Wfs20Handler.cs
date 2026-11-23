@@ -203,7 +203,10 @@ internal sealed partial class Wfs20Handler
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
                 srsName,
-                reader));
+                reader)
+            {
+                IncludeGeometry = ShouldProjectGeometry(featureType.Resource, propertyName)
+            });
 
             remainingCount -= layerLimit;
         }
@@ -397,6 +400,26 @@ internal sealed partial class Wfs20Handler
         normalizedFilter = null;
         resourceIds = string.Join(',', values);
         return true;
+    }
+
+    private static bool ShouldProjectGeometry(MetadataV2Object resource, string? propertyName)
+    {
+        var requested = ParseQualifiedList(propertyName);
+        if (requested.Length == 0 || requested.Any(static name => name is "*"))
+        {
+            return true;
+        }
+
+        var geometryField = resource.FindPrimaryGeometryField();
+        var geometryProperty = ResolveGeometryPropertyName(resource);
+        return requested.Any(name =>
+        {
+            var resolved = WfsPropertyNameResolver.Resolve(resource, name, allowGeometryAlias: true);
+            return geometryField is not null
+                ? string.Equals(resolved, geometryField.Name, StringComparison.OrdinalIgnoreCase)
+                : resolved is null && geometryProperty is not null &&
+                  WfsPropertyNameResolver.MatchesGeometryProperty(name, geometryProperty);
+        });
     }
 
     private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Object resource, string? propertyName)
@@ -1296,7 +1319,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
-        if (geometryPropertyName is not null &&
+        if (plan.IncludeGeometry && geometryPropertyName is not null &&
             !string.IsNullOrWhiteSpace(feature.GeometryGml))
         {
             writer.WriteStartElement(
@@ -1975,7 +1998,10 @@ internal sealed partial class Wfs20Handler
         FeatureQuery Query,
         long MatchedCount,
         string? RequestedSrsName = null,
-        IFeatureReader? Reader = null);
+        IFeatureReader? Reader = null)
+    {
+        public bool IncludeGeometry { get; init; } = true;
+    }
 
     private IFeatureReader ReaderFor(LayerQueryPlan plan) => plan.Reader ?? _featureReader;
 

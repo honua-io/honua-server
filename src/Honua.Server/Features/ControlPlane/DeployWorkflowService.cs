@@ -526,7 +526,7 @@ internal sealed partial class DeployWorkflowService
                         UpdatedAt = DateTimeOffset.UtcNow,
                         ProviderOperationId = submission.ProviderOperationId,
                         CurrentPhase = submission.Message ?? "Submitted to deploy backend",
-                        ErrorMessage = null,
+                        ErrorMessage = submission.Detail,
                         Deploy = operation.Deploy with
                         {
                             CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision,
@@ -718,7 +718,7 @@ internal sealed partial class DeployWorkflowService
                 UpdatedAt = DateTimeOffset.UtcNow,
                 ProviderOperationId = backendSubmission.ProviderOperationId,
                 CurrentPhase = backendSubmission.Message ?? "Submitted to deploy backend",
-                ErrorMessage = null,
+                ErrorMessage = backendSubmission.Detail,
                 Deploy = operation.Deploy with
                 {
                     CurrentRevision = backendSubmission.ObservedRevision ?? operation.Deploy.CurrentRevision,

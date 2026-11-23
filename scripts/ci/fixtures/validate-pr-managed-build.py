@@ -166,18 +166,19 @@ class PrManagedBuildTests(unittest.TestCase):
         script = step['run'].replace("${{ contains(needs.*.result, 'failure') }}", 'false').replace("${{ contains(needs.*.result, 'cancelled') }}", 'false')
         for result in ('success', 'failure', 'cancelled', 'skipped', ''):
             env = dict(os.environ, REQUIRE_MANAGED_BUILD='true', REQUIRE_RUNTIME_PROOFS='true',
-                       BUILD_RESULT='success', REQUIRE_FORMAT='true', FORMAT_RESULT='success',
+                       BUILD_RESULT='success', PROFILES_RESULT='success', REQUIRE_FORMAT='true', FORMAT_RESULT='success',
                        RUNTIME_PROOFS_RESULT=result)
             run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
             self.assertEqual(run.returncode == 0, result == 'success', result)
         unselected = dict(os.environ, REQUIRE_MANAGED_BUILD='true', REQUIRE_RUNTIME_PROOFS='false',
-                          BUILD_RESULT='success', REQUIRE_FORMAT='true', FORMAT_RESULT='success',
+                          BUILD_RESULT='success', PROFILES_RESULT='success', REQUIRE_FORMAT='true', FORMAT_RESULT='success',
                           RUNTIME_PROOFS_RESULT='skipped')
         self.assertEqual(0, subprocess.run(['bash', '-e', '-c', script], env=unselected, capture_output=True).returncode)
         self.assertIn("cron: '23 7 * * *'", CI)
         self.assertIn("cron: '23 13 * * *'", CI)
         self.assertNotIn('Build selected protocol profiles', job('pr-gate'))
-        self.assertIn('Build selected protocol profiles', job('build', CI))
+        self.assertIn('Build selected protocol profiles', job('protocol-profiles', CI))
+        self.assertNotIn('Build selected protocol profiles', job('build', CI))
 
     def test_admission_and_consumer_ownership(self):
         producer, consumer = job('pr-gate'), job('runtime-proofs', CI)

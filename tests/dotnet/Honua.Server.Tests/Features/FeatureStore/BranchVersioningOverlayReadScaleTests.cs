@@ -90,6 +90,7 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
             VALUES ({PointsLayerId}, 'BV Scale Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
             """);
+        await _fixture.SeedIsolatedLayerCatalogAsync(_schema, (PointsLayerId, "BV Scale Points", "Point"));
 
         await SeedBaseTableAsync();
         await SeedOverlayAsync();

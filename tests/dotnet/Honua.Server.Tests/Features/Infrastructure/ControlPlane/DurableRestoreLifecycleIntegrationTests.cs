@@ -502,6 +502,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             var restore = await workflows.GetAsync(id);
             Assert.Equal(WorkflowOperationStatus.Failed, restore?.Status);
             Assert.Equal(ComposeExecutorCodes.ContractApprovalRequired, restore?.ErrorMessage);
+            Assert.Equal(RefusalDetail, restore?.CurrentPhase);
         }
         finally
         {
@@ -511,6 +512,8 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             await ReleaseCellOwnershipAsync(state);
         }
     }
+
+    private const string RefusalDetail = "The release has contract migrations that need operator approval before they are applied: 183.sql.";
 
     // An approved local restore whose nested deploy the executor refused at the contract gate.
     private static async Task<string> SeedLocalDeployRefusedAtContractGateAsync(
@@ -541,6 +544,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
         Kind = WorkflowOperationKind.Deploy,
         Status = WorkflowOperationStatus.Failed,
         CurrentPhase = ComposeExecutorCodes.ContractApprovalRequired,
+        ErrorMessage = RefusalDetail,
         Deploy = new DeployOperationSpec
         {
             TargetId = "local",
