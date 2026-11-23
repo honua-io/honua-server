@@ -38,7 +38,7 @@ X-Honua-Client-Id: <stable-device-id>
 
 Recommended values are durable per-install identifiers (for example, the
 mobile SDK's persisted device GUID). Maximum length is 128 characters;
-a longer value is rejected with `400 Bad Request` on every sync call (it is
+a longer value is rejected with `400 Bad Request` on `sync-cursor` and `changes` (it is
 not truncated, so two devices never share a cursor). When the header is absent, the server falls
 back to the authenticated principal name — which means callers without
 the header collapse onto one shared cursor by design.
@@ -269,7 +269,8 @@ correcting the request.
   required fields, has an unsupported operation, sets `feature` to a
   non-null value while `operation` is `delete`, has a `changeId` or
   `featureId` longer than 256 characters, has a NUL (U+0000) character in
-  `changeId`, `featureId` or any `feature` string or property name, or sends
+  `changeId`, `featureId` or any `feature` string or property name, has an
+  unpaired surrogate escape (such as `\ud800`) in `feature`, or sends
   an `X-Honua-Client-Id` longer than 128 characters.
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
 - `403 Forbidden` when the caller is not an administrator or holds

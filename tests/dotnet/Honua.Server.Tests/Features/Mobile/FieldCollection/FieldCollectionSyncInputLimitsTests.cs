@@ -55,7 +55,7 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
             changeId: field == "changeId" ? oversized : Guid.NewGuid().ToString("N"),
             featureId: field == "featureId" ? oversized : $"feat-{Guid.NewGuid():N}");
 
-        await ShouldBeProblemAsync(response, field);
+        await ShouldBeProblemAsync(response, $"Field '{field}' must be at most");
     }
 
     [IntegrationTest]
@@ -81,19 +81,34 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
             changeId: field == "changeId" ? "change\0id" : Guid.NewGuid().ToString("N"),
             featureId: field == "featureId" ? "feature\0id" : $"feat-{Guid.NewGuid():N}");
 
-        await ShouldBeProblemAsync(response, field);
+        await ShouldBeProblemAsync(response, $"Field '{field}' must not contain NUL");
     }
 
     [IntegrationTheory]
     [InlineData("""{"type":"Feature","geometry":null,"properties":{"name":"a\u0000b"}}""")]
     [InlineData("""{"type":"Feature","geometry":null,"properties":{"na\u0000me":"value"}}""")]
     [InlineData("""{"type":"Feature","geometry":null,"properties":{"tags":["ok","bad\u0000"]}}""")]
+    [InlineData("""{"type":"Feature","geometry":null,"properties":{"name":"lone \ud800 surrogate"}}""")]
+    [InlineData("""{"type":"Feature","geometry":null,"properties":{"\udc00":"lone low surrogate"}}""")]
     [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_FeaturePayloadWithNulCharacter_Returns400(string feature)
     {
         var response = await PushRawAsync(Guid.NewGuid().ToString("N"), $"feat-{Guid.NewGuid():N}", feature);
 
-        await ShouldBeProblemAsync(response, "feature");
+        await ShouldBeProblemAsync(response, "Field 'feature'");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_IdentifierWithUnpairedSurrogateEscape_Returns400()
+    {
+        var body = $$"""
+            {"changeId":"change\ud800id","featureId":"feat-{{Guid.NewGuid():N}}","layerId":180,"operation":"insert","feature":{"type":"Feature","geometry":null,"properties":{}}}
+            """;
+
+        var response = await _client.PostAsync(ChangesPath, new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -191,6 +206,8 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
-        body.Should().Contain(expectedSubject);
+        // The serializer may escape quotes, so compare the decoded problem detail.
+        using var json = JsonDocument.Parse(body);
+        json.RootElement.GetProperty("detail").GetString().Should().Contain(expectedSubject);
     }
 }

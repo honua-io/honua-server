@@ -371,14 +371,14 @@ internal static class FieldCollectionSyncEndpoints
             return featureIdError;
         }
 
-        // PostgreSQL text and jsonb cannot store U+0000; reject it here instead of
-        // letting the insert fail with a 500.
-        if (body.Feature is not null && FeaturePayloadContainsNul(body.Feature))
+        // PostgreSQL jsonb cannot store U+0000 or an unpaired surrogate; reject them here
+        // instead of letting the insert fail with a 500.
+        if (body.Feature is not null && FeaturePayloadHasUnstorableText(body.Feature))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                "Field 'feature' must not contain NUL (U+0000) characters.");
+                "Field 'feature' must not contain NUL (U+0000) characters or unpaired surrogate escapes.");
         }
 
         if (!TryResolveClientId(context, out var clientId, out var clientIdError))
@@ -529,16 +529,25 @@ internal static class FieldCollectionSyncEndpoints
         return null;
     }
 
-    private static bool FeaturePayloadContainsNul(string featureJson)
+    private static bool FeaturePayloadHasUnstorableText(string featureJson)
     {
-        // The raw payload keeps JSON escapes, so a NUL can only appear as the escape "\u0000".
-        if (!featureJson.Contains("\\u0000", StringComparison.OrdinalIgnoreCase))
+        // The raw payload keeps JSON escapes, and valid JSON cannot carry a raw NUL or a
+        // lone surrogate, so either can only arrive as a "\u" escape.
+        if (!featureJson.Contains("\\u", StringComparison.Ordinal))
         {
             return false;
         }
 
         using var document = JsonDocument.Parse(featureJson);
-        return ContainsNul(document.RootElement);
+        try
+        {
+            return ContainsNul(document.RootElement);
+        }
+        catch (InvalidOperationException)
+        {
+            // Unescaping an unpaired surrogate (for example "\ud800") fails; jsonb rejects it too.
+            return true;
+        }
     }
 
     private static bool ContainsNul(JsonElement element)
