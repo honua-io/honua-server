@@ -7,8 +7,10 @@ converter projects the GDAL report into one envelope per protocol with each
 test category mapped to a CERT-* test_case_id.
 
 Mapping rules:
-  protocol "oapif" → cert protocol "ogc-features"
-  protocol "wfs"   → cert protocol "wfs"
+  protocol "oapif"         → cert protocol "ogc-features"
+  protocol "wfs"           → cert protocol "wfs"
+  protocol "featureserver" → cert protocol "featureserver" (ESRIJSON driver)
+  protocol "mapserver"     → cert protocol "mapserver" (WMS driver, AGS minidriver)
 
 Category → CERT-* mapping is many-to-one because the GDAL test suite emits
 fine-grained category labels (e.g. ``feature_read``, ``attribute_query``,
@@ -26,9 +28,11 @@ exercise ogr2ogr serialization paths that the matrix does not certify as
 CERT-RNDR-* evidence for this lane, so they are intentionally **unmapped**
 here — their pass/fail status is preserved in the raw
 ``gdal-ogr-results.json`` for human inspection but does not feed any
-common-core CERT-* result. CERT-RNDR-01 / CERT-RNDR-02 (and the visual /
-style slice IDs) therefore appear in the GDAL envelope as
-``not-applicable``.
+common-core CERT-* result. CERT-RNDR-* IDs therefore appear in the
+feature-protocol envelopes as ``not-applicable``. The one exception is the
+MapServer envelope: GDAL's AGS minidriver fetches a rendered export image,
+and the ``render`` category (drawn over the data, uniform outside it)
+certifies CERT-RNDR-01 for that protocol only (APPLICABLE_BY_PROTOCOL).
 
 Categories not exercised in the input are seeded as ``not-applicable``;
 known-applicable IDs the suite does not exercise are seeded as ``skip`` so
@@ -43,7 +47,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROTOCOL_MAP = {"oapif": "ogc-features", "wfs": "wfs"}
+PROTOCOL_MAP = {"oapif": "ogc-features", "wfs": "wfs", "featureserver": "featureserver", "mapserver": "mapserver"}
 
 # Maps the category labels emitted by tests/python/gdal_ogr/test_*.py (via
 # ``evidence_collector.record(..., category, ...)``) onto the common-core
@@ -67,6 +71,12 @@ CATEGORY_MAP = {
     "attribute_query": "CERT-QFLT-01",
     "spatial_query": "CERT-QFLT-01",
     "query": "CERT-QFLT-01",
+    # GeoServices REST families (test_featureserver_*.py, test_mapserver_*.py)
+    "paging": "CERT-PAGE-01",
+    "errors": "CERT-ERRH-01",
+    "render": "CERT-RNDR-01",
+    "geometry": "CERT-GEOM-01",
+    "schema": "CERT-SCHM-01",
     # Export family is intentionally **unmapped** — see _UNMAPPED_CATEGORIES
     # below and the module docstring. The CLI / SDK lane row in the matrix
     # excludes CERT-RNDR for this lane, so a passing ogr2ogr export must not
@@ -115,9 +125,21 @@ COMMON_CORE_IDS = (
     "CERT-RNDR-LBL-01", "CERT-RNDR-SPR-01", "CERT-RNDR-URL-01",
 )
 
-# Categories the GDAL suite does substantiate (keep as 'skip' if absent
-# from a given run rather than 'not-applicable').
-APPLICABLE_TO_GDAL = {CATEGORY_MAP[c] for c in CATEGORY_MAP}
+# CERT-* IDs the GDAL suite substantiates for each protocol (kept as 'skip'
+# when absent from a run rather than 'not-applicable'). The OGC/WFS read path
+# keeps its original four IDs. The FeatureServer client (ESRIJSON driver) reads,
+# filters, pages and surfaces errors but cannot list layers; the MapServer client (WMS driver, AGS minidriver)
+# only reads an export image, so only connection and rendering apply to it.
+_FEATURE_READ_IDS = frozenset({"CERT-CONN-01", "CERT-DISC-01", "CERT-SCHM-01", "CERT-QFLT-01"})
+APPLICABLE_BY_PROTOCOL: dict[str, frozenset[str]] = {
+    "ogc-features": _FEATURE_READ_IDS,
+    "wfs": _FEATURE_READ_IDS,
+    # GDAL's ESRIJSON client opens one layer query and cannot list services or
+    # layers, so FeatureServer certifies schema but not discovery (DISC-01).
+    "featureserver": frozenset({"CERT-CONN-01", "CERT-SCHM-01", "CERT-QFLT-01",
+                                "CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"}),
+    "mapserver": frozenset({"CERT-CONN-01", "CERT-RNDR-01"}),
+}
 
 
 def _result(case_id: str, status: str, notes: str = "") -> dict:
@@ -163,8 +185,14 @@ def build_envelope(
         cid_status[cid] = _worst(cid_status.get(cid), status)
 
     results: list[dict] = []
+    applicable = APPLICABLE_BY_PROTOCOL.get(cert_protocol, _FEATURE_READ_IDS)
+    for cid, status in sorted(cid_status.items()):
+        if cid not in applicable and status == "fail":
+            print(f"::warning::GDAL {cert_protocol} failure maps to {cid}, which does not apply to that "
+                  "protocol; it is not in the envelope. Fix the test module name or APPLICABLE_BY_PROTOCOL.",
+                  file=sys.stderr)
     for cid in COMMON_CORE_IDS:
-        if cid in APPLICABLE_TO_GDAL:
+        if cid in applicable:
             status = cid_status.get(cid)
             if status is None:
                 results.append(_result(cid, "skip", "Not exercised by GDAL/OGR suite in this run."))
@@ -194,6 +222,20 @@ def build_envelope(
         "cite_results": None,
         "extensions": [],
     }
+
+
+def _apply_measurements(envelope: dict, details: list[dict]) -> None:
+    deltas = {}
+    for row in details:
+        delta = row.get("measured_delta")
+        if delta is None or PROTOCOL_MAP.get(row.get("protocol")) != envelope["protocol"]:
+            continue
+        case_id = CATEGORY_MAP.get(row.get("category"))
+        deltas[case_id] = max(deltas.get(case_id, delta), delta)
+
+    for result in envelope["results"]:
+        if result["status"] != "not-applicable":
+            result["measured_delta"] = deltas.get(result["test_case_id"])
 
 
 def main() -> int:
@@ -237,6 +279,7 @@ def main() -> int:
             server_version=server_version,
             environment=environment,
         )
+        _apply_measurements(envelope, report.get("details") or [])
         out_path = output_dir / f"{run_id}-cli-gdal-{cert_protocol}.cert.json"
         out_path.write_text(json.dumps(envelope, indent=2) + "\n")
         print(f"Wrote {out_path}")

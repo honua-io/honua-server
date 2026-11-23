@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260728T180311Z",
-  "run_date": "2026-07-28T18:03:12.238287+00:00",
-  "server_version": "local",
+  "run_id": "20261123T071530Z",
+  "run_date": "2026-11-23T07:15:30.689673+00:00",
+  "server_version": "b6ef85da6c57b7e2a798b35fa1634c87fd95229b",
   "client_lane": "geoservices-rest-stub",
   "client_version": "stub-1.0",
   "protocol": "portal",
@@ -113,7 +113,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "generateToken with invalid credentials returns Esri error envelope 401/499, no token",
+      "notes": "generateToken with invalid credentials returns Esri error envelope 400, no token",
       "evidence_ref": ""
     },
     {
