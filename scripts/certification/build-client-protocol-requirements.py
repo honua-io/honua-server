@@ -25,8 +25,10 @@ so the mirror records them separately instead of collapsing them into one boolea
     ``(client_lane, surface, client_version)``? The authority is
     ``tests/baselines/client-compat/expected-pairs.json`` -- the contractual set of
     pairs the nightly matrix must produce -- joined to the committed baseline
-    envelopes for the client version each lane actually reports. Nothing here is
-    hand-maintained.
+    envelopes for the client version each lane actually reports. A row no such
+    pair covers is still produced when ``client-roster-certification.yml`` runs
+    ``certification/bounded-roster/run-roster.sh`` and a lane module that script
+    executes declares one of the row's test IDs. Nothing here is hand-maintained.
 
 ``denominatorJoin``
     Can the governed row be resolved from a receipt at all? The consumer is the
@@ -55,6 +57,10 @@ ROOT_MARKER = "Honua.sln"
 OUTPUT_RELATIVE_PATH = "certification/client-protocol-requirements.v1.json"
 EXPECTED_PAIRS_RELATIVE_PATH = "tests/baselines/client-compat/expected-pairs.json"
 BASELINE_ROOT_RELATIVE_PATH = "tests/baselines/client-compat"
+ROSTER_WORKFLOW_RELATIVE_PATH = ".github/workflows/client-roster-certification.yml"
+ROSTER_RUNNER_RELATIVE_PATH = "certification/bounded-roster/run-roster.sh"
+ROSTER_LANES_RELATIVE_PATH = "certification/bounded-roster/lanes"
+ROSTER_TEST_ID_RE = re.compile(r'"(client-cert/[^"]+)"')
 
 SCHEMA = "honua.client-certification-requirements/v1"
 UPSTREAM_SCHEMA = "honua.protocol-certification-requirements/v1"
@@ -208,8 +214,51 @@ def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
     return pairs
 
 
-def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict]) -> dict:
-    """Decide whether a honua-server lane can emit a receipt for one governed row."""
+def roster_test_ids(root: Path) -> frozenset[str]:
+    """Governed test IDs the bounded-roster certification workflow executes.
+
+    The workflow is a producer only while it runs ``run-roster.sh``; the IDs are the
+    ``client-cert/...`` cells declared by the lane modules that script's
+    ``run_lane`` lines execute. A lane module the script names but the repository
+    lacks is refused rather than silently producing fewer cells.
+    """
+    workflow = root / ROSTER_WORKFLOW_RELATIVE_PATH
+    if not workflow.is_file() or ROSTER_RUNNER_RELATIVE_PATH not in workflow.read_text(encoding="utf-8"):
+        return frozenset()
+    runner = (root / ROSTER_RUNNER_RELATIVE_PATH).read_text(encoding="utf-8")
+    modules = sorted({name for line in re.findall(r"^run_lane (.+)$", runner, re.MULTILINE)
+                      for name in re.findall(r"\b(\w+_cells)\b", line)})
+    test_ids: set[str] = set()
+    for name in modules:
+        paths = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
+        if len(paths) != 1:
+            raise SystemExit(f"{ROSTER_RUNNER_RELATIVE_PATH} runs {name}, found {len(paths)} lane modules")
+        test_ids.update(ROSTER_TEST_ID_RE.findall(paths[0].read_text(encoding="utf-8")))
+    return frozenset(test_ids)
+
+
+def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict],
+                      roster: frozenset[str] = frozenset()) -> dict:
+    """Decide whether a honua-server producer can emit a receipt for one governed row.
+
+    A client-compat lane binding wins; otherwise the bounded-roster workflow
+    produces the row when it executes one of the row's test IDs.
+    """
+    compat = classify_client_compat(requirement, pairs)
+    produced = sorted(set(requirement.get("test_ids") or ()) & roster)
+    if compat["status"] == "present" or not produced:
+        return compat
+    return {
+        "status": "present",
+        "producer": {"workflow": ROSTER_WORKFLOW_RELATIVE_PATH,
+                     "runner": ROSTER_RUNNER_RELATIVE_PATH, "testIds": produced},
+        "reasonCode": None,
+        "reason": None,
+    }
+
+
+def classify_client_compat(requirement: dict, pairs: dict[tuple[str, str], dict]) -> dict:
+    """Decide whether a honua-server client-compat lane can emit a receipt for one row."""
     lane = requirement["client_lane"]
     surface = requirement["surface"]
     governed_version = requirement["client_version"]
@@ -323,6 +372,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         raise SystemExit("--upstream-revision must be a lowercase 40-character commit SHA")
 
     pairs = emitted_pairs(root)
+    roster = roster_test_ids(root)
     bounded = [
         governed for governed in upstream["requirements"]
         if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS
@@ -334,7 +384,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
     requirements = []
     for governed in bounded:
         row = dict(governed)
-        producer = classify_producer(governed, pairs)
+        producer = classify_producer(governed, pairs, roster)
         join = classify_denominator_join(governed, collisions)
         row["receiptBinding"] = {
             "status": "implemented" if (
@@ -370,7 +420,9 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         ],
         "receiptContract": RECEIPT_CONTRACT,
         "generator": "scripts/certification/build-client-protocol-requirements.py",
-        "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH],
+        "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH,
+                              ROSTER_WORKFLOW_RELATIVE_PATH, ROSTER_RUNNER_RELATIVE_PATH,
+                              ROSTER_LANES_RELATIVE_PATH],
         "source_revisions": _source_revisions(upstream.get("source_revisions", {})),
         "excludedRequirements": excluded,
         "requirements": requirements,

@@ -1,0 +1,67 @@
+name: Client Roster Certification
+run-name: Client Roster Certification ${{ inputs.candidate_digest }}
+
+# Tier: release. Dispatched by the release coordinator against the frozen
+# candidate image. Runs the bounded 2026.1 external-client roster
+# (certification/bounded-roster, honua-server#3434) on a GitHub runner, so its
+# receipts name this run's commit as producer_source_sha and the exact candidate
+# digest, source revision and cut time. The release-mode and contract verdicts
+# decide the job result; evidence is uploaded either way.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_digest:
+        description: Index digest of ghcr.io/honua-io/honua-server for the candidate (sha256:<64 hex>)
+        required: true
+        type: string
+      candidate_cut_at:
+        description: RFC 3339 UTC candidate cut timestamp; blank uses the image creation time
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-roster-certification-${{ inputs.candidate_digest }}
+  cancel-in-progress: false
+
+jobs:
+  roster:
+    name: Bounded client roster
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Free runner disk for the client lane images
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Run the roster against the candidate
+        env:
+          CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
+          CANDIDATE_CUT_AT: ${{ inputs.candidate_cut_at }}
+        run: |
+          args=(--digest "$CANDIDATE_DIGEST" --evidence artifacts/client-certification --run-root "$RUNNER_TEMP/roster-runs")
+          if [[ -n "$CANDIDATE_CUT_AT" ]]; then args+=(--cut-at "$CANDIDATE_CUT_AT"); fi
+          certification/bounded-roster/run-roster.sh "${args[@]}"
+
+      - name: Keep lane logs with the evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/client-certification/logs
+          find "$RUNNER_TEMP/roster-runs" -maxdepth 2 -name '*.log' -exec cp {} artifacts/client-certification/logs/ \; 2>/dev/null || true
+
+      - name: Upload roster evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: client-roster
+          path: artifacts/client-certification
+          tier: release
+          summary-file: artifacts/client-certification/verdict.release.txt

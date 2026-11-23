@@ -167,17 +167,18 @@ def verify_contract(requirements: dict, root: Path) -> list[dict]:
     """Report, per governed row, whether a joining receipt could be produced today.
 
     The mirror's stored ``receiptBinding`` is not trusted on its own: the producer
-    half is recomputed from ``expected-pairs.json`` and the committed baselines, so
-    a lane that starts (or stops) emitting a governed pair is reported here even if
-    nobody refreshed the mirror.
+    half is recomputed from ``expected-pairs.json``, the committed baselines and the
+    bounded-roster workflow's lane modules, so a lane that starts (or stops)
+    emitting a governed pair is reported here even if nobody refreshed the mirror.
     """
     builder = _load_builder(root)
     pairs = builder.emitted_pairs(root)
+    roster = builder.roster_test_ids(root)
     collisions = builder.ambiguous_test_ids(requirements["requirements"])
 
     verdicts = []
     for requirement in requirements["requirements"]:
-        recomputed_producer = builder.classify_producer(requirement, pairs)
+        recomputed_producer = builder.classify_producer(requirement, pairs, roster)
         recomputed_join = builder.classify_denominator_join(requirement, collisions)
         stored = requirement["receiptBinding"]
 
