@@ -3,12 +3,10 @@
 
 using System.Diagnostics;
 using FluentAssertions;
-using Honua.Core.Configuration;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
-using Honua.Server.Startup;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
+using static Honua.CloudIntegration.Tests.LocalSubstrateMigrationDatabase;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -23,6 +21,8 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
     private const string CreateSecondTable = "CREATE TABLE honua_ci_second (id INTEGER PRIMARY KEY);";
     private const string FailingScript = "INSERT INTO honua_ci_missing_table VALUES (1);";
     private const string FixedThirdScript = "CREATE TABLE honua_ci_third (id INTEGER PRIMARY KEY);";
+    private const string AcquireLockSql = "SELECT pg_advisory_lock(@lock_key);";
+    private const string ReleaseLockSql = "SELECT pg_advisory_unlock(@lock_key);";
 
     private readonly LocalSubstratePostgresFixture _postgres;
 
@@ -43,8 +43,8 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
             ("002_slow_insert_run.sql", SlowInsertRun));
 
         var results = await Task.WhenAll(
-            CreateRunner().RunMigrationsAsync(connectionString, assembly),
-            CreateRunner().RunMigrationsAsync(connectionString, assembly));
+            CreateEnforcingRunner().RunMigrationsAsync(connectionString, assembly),
+            CreateEnforcingRunner().RunMigrationsAsync(connectionString, assembly));
 
         results.Should().OnlyContain(result => result.Successful,
             "the advisory lock makes the second runner wait and then find nothing pending");
@@ -62,13 +62,15 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
         Skip.IfNot(_postgres.Available, SkipReason);
 
         var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        // The corrected release keeps the assembly name, so its scripts carry the same journal names.
+        var assemblyName = $"honua_synthetic_midbatch_{Guid.NewGuid():N}";
         var failing = SyntheticMigrationsCompiler.Compile(
-            $"honua_synthetic_midbatch_{Guid.NewGuid():N}",
+            assemblyName,
             ("001_create_runs.sql", CreateRunsTable),
             ("002_create_second.sql", CreateSecondTable),
             ("003_fails.sql", FailingScript));
 
-        var failed = await CreateRunner().RunMigrationsAsync(connectionString, failing);
+        var failed = await CreateEnforcingRunner().RunMigrationsAsync(connectionString, failing);
 
         failed.Successful.Should().BeFalse();
         failed.AppliedScripts.Should().BeEmpty("one transaction covers the batch, so a failed run commits no script");
@@ -78,12 +80,12 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
         (await JournalCountAsync(connectionString)).Should().Be(0, "a failed run journals nothing");
 
         var corrected = SyntheticMigrationsCompiler.Compile(
-            $"honua_synthetic_midbatch_fixed_{Guid.NewGuid():N}",
+            assemblyName,
             ("001_create_runs.sql", CreateRunsTable),
             ("002_create_second.sql", CreateSecondTable),
             ("003_fails.sql", FixedThirdScript));
 
-        var resumed = await CreateRunner().RunMigrationsAsync(connectionString, corrected);
+        var resumed = await CreateEnforcingRunner().RunMigrationsAsync(connectionString, corrected);
 
         resumed.Successful.Should().BeTrue($"the corrected batch applies from the start. Error: {resumed.ErrorMessage}");
         resumed.AppliedScripts.Should().HaveCount(3);
@@ -103,11 +105,11 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
         await using (var holder = new NpgsqlConnection(connectionString))
         {
             await holder.OpenAsync();
-            await ExecuteLockFunctionAsync(holder, "pg_advisory_lock");
+            await SetLockAsync(holder, AcquireLockSql);
 
             using var stopping = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var stopwatch = Stopwatch.StartNew();
-            var waiting = () => CreateRunner().RunMigrationsAsync(connectionString, assembly, stopping.Token);
+            var waiting = () => CreateEnforcingRunner().RunMigrationsAsync(connectionString, assembly, stopping.Token);
 
             await waiting.Should().ThrowAsync<OperationCanceledException>();
             stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30),
@@ -115,30 +117,21 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
             (await TableExistsAsync(connectionString, "honua_ci_runs")).Should().BeFalse();
             (await JournalCountAsync(connectionString)).Should().Be(0);
 
-            await ExecuteLockFunctionAsync(holder, "pg_advisory_unlock");
+            await SetLockAsync(holder, ReleaseLockSql);
         }
 
-        var later = await CreateRunner().RunMigrationsAsync(connectionString, assembly);
+        var later = await CreateEnforcingRunner().RunMigrationsAsync(connectionString, assembly);
 
         later.Successful.Should().BeTrue($"the lock is free again. Error: {later.ErrorMessage}");
         later.AppliedScripts.Should().ContainSingle();
     }
 
-    private static PostgresDatabaseMigrationRunner CreateRunner()
-        => new(
-            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
-            ServerCoreSchemaMigrations.Manifest,
-            Options.Create(new MigrationSafetyOptions { Enforce = true }));
-
-    private static async Task ExecuteLockFunctionAsync(NpgsqlConnection connection, string function)
+    private static async Task SetLockAsync(NpgsqlConnection holder, string lockSql)
     {
-        await using var command = new NpgsqlCommand($"SELECT {function}(@lock_key);", connection);
+        await using var command = new NpgsqlCommand(lockSql, holder);
         _ = command.Parameters.AddWithValue("lock_key", PostgresDatabaseMigrationRunner.MigrationLockKey);
         _ = await command.ExecuteScalarAsync();
     }
-
-    private static async Task<bool> TableExistsAsync(string connectionString, string table)
-        => await ScalarAsync(connectionString, $"SELECT to_regclass('public.{table}') IS NOT NULL") is true;
 
     private static async Task<long> CountAsync(string connectionString, string table)
         => (long)(await ScalarAsync(connectionString, $"SELECT count(*) FROM public.{table}"))!;
@@ -147,12 +140,4 @@ public sealed class LocalSubstrateMigrationConcurrencyTests : IClassFixture<Loca
         => await TableExistsAsync(connectionString, "schema_versions")
             ? await CountAsync(connectionString, "schema_versions")
             : 0;
-
-    private static async Task<object?> ScalarAsync(string connectionString, string sql)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        return await command.ExecuteScalarAsync();
-    }
 }
