@@ -848,7 +848,8 @@ internal sealed partial class Wfs20Handler
                     [
                         new Models.TemporalOperator { Name = "After" },
                         new Models.TemporalOperator { Name = "Before" },
-                        new Models.TemporalOperator { Name = "During" }
+                        new Models.TemporalOperator { Name = "During" },
+                        new Models.TemporalOperator { Name = "TEquals" }
                     ]
                 }
             }
