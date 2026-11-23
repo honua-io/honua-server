@@ -197,4 +197,22 @@ internal static class Wcs20Utilities
 
         internal const string SubsettingCrsNotSupported = "SubsettingCrs-NotSupported";
     }
+
+    internal static (string Axis, int Open)? ReadSubsetAxis(string subset)
+    {
+        var open = subset.IndexOf('(', StringComparison.Ordinal);
+        if (open <= 0 || !subset.EndsWith(')'))
+        {
+            return null;
+        }
+
+        var axis = subset[..open].Trim();
+        var normalizedAxis = axis.ToLowerInvariant() switch
+        {
+            "x" or "e" or "long" or "lon" => "x",
+            "y" or "n" or "lat" => "y",
+            _ => axis,
+        };
+        return (normalizedAxis, open);
+    }
 }

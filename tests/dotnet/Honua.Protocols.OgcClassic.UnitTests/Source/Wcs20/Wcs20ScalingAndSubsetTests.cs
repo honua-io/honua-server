@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.Ogc.Classic.Wcs20;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +13,8 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
 public sealed class Wcs20ScalingAndSubsetTests
 {
+    private static readonly CrsDefinition Crs84 = new("CRS:84", 4326, AxisOrder.EastNorth, true);
+
     [UnitTest]
     public void ScaleExtent_WithEqualBounds_SelectsOneCell()
     {
@@ -31,6 +35,67 @@ public sealed class Wcs20ScalingAndSubsetTests
 
         error.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.InvalidExtent);
     }
+
+    [UnitTest]
+    public void Subset_WithStarLimits_ExtendsToTheCoverageEdge()
+    {
+        var subsets = new StringValues(["Long(*,-122.4)", "Lat(37.75,*)"]);
+
+        Wcs20Handler.TryParseSubsetEnvelope(subsets, CreateRaster(), Crs84, out var envelope, out _).Should().BeTrue();
+
+        envelope.MinX.Should().BeApproximately(-122.5, 1e-9);
+        envelope.MaxX.Should().BeApproximately(-122.4, 1e-9);
+        envelope.MinY.Should().BeApproximately(37.75, 1e-9);
+        envelope.MaxY.Should().BeApproximately(37.84, 1e-9);
+    }
+
+    [UnitTheory]
+    [InlineData("Long(NaN,*)")]
+    [InlineData("Long(*)")]
+    [InlineData("Long(-122.4,-Infinity)")]
+    public void Subset_WithInvalidLimit_IsInvalidSubsetting(string subset)
+    {
+        var subsets = new StringValues([subset, "Lat(37.75,37.8)"]);
+
+        Wcs20Handler.TryParseSubsetEnvelope(subsets, CreateRaster(), Crs84, out _, out var error).Should().BeFalse();
+
+        error.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.InvalidSubsetting);
+    }
+
+    [UnitTest]
+    public void Subset_WithRepeatedAxisAndMissingLimit_IsInvalidAxisLabel()
+    {
+        var subsets = new StringValues(["Long(-122.5,-122.4)", "Lon(,-122.4)"]);
+
+        Wcs20Handler.TryParseSubsetEnvelope(subsets, CreateRaster(), Crs84, out _, out var error).Should().BeFalse();
+
+        error.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+    }
+
+    [UnitTest]
+    public void Subset_WithStarLimitInNonNativeCrs_IsInvalidSubsetting()
+    {
+        var webMercator = new CrsDefinition("EPSG:3857", 3857, AxisOrder.EastNorth, false);
+        var subsets = new StringValues(["E(*,-13620000)", "N(4540000,4550000)"]);
+
+        Wcs20Handler.TryParseSubsetEnvelope(subsets, CreateRaster(), webMercator, out _, out var error).Should().BeFalse();
+
+        error.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.InvalidSubsetting);
+    }
+
+    private static RasterInfo CreateRaster()
+        => new()
+        {
+            Id = 1,
+            LayerId = 0,
+            Name = "star-limit-raster",
+            Width = 64,
+            Height = 64,
+            BandCount = 1,
+            Srid = 4326,
+            PixelType = "32BF",
+            Extent = new RasterExtent { XMin = -122.5, YMin = 37.7, XMax = -122.35, YMax = 37.84, Srid = 4326 }
+        };
 
     private static QueryCollection Query(string key, string value)
         => new(new Dictionary<string, StringValues> { [key] = value });
