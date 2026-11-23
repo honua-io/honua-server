@@ -180,8 +180,8 @@ def render(report, runs):
     if 'ratio' in total:
         lines[-1] += (f"; ranks {total['rank_minutes']} min vs measured {total['measured_minutes']} min "
                       f"(ratio {total['ratio']}, band {RATIO_LOW}-{RATIO_HIGH})")
-    sections = (('Shards over their rank (#9546)', report['grown']),
-                ('Shards still on a contract estimate (#9547)', report['estimated']))
+    sections = (('Shards over their rank', report['grown']),
+                ('Shards still on a contract estimate', report['estimated']))
     for heading, rows in sections:
         if rows:
             lines += ['', f'### {heading}', '', *shard_table(rows)]
