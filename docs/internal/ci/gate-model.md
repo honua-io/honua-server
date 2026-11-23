@@ -380,7 +380,10 @@ every shared build or analyzer input: root `Directory.Build.*`, `scripts/ci/`
 `*.props`, `*.targets`, `.editorconfig`, `*.globalconfig` or `*.ruleset` anywhere
 (nested `Directory.Build.*`, the `eng/*.props` imports). It also maps a file linked
 from outside a project's directory (`Compile`, `EmbeddedResource` or `AdditionalFiles`
-with a `..` path, globs included) to every project that links it. Before this change
+with a `..` path; MSBuild `**`, `*` and `?` globs are honoured) to every project that
+links it. `$(MSBuildThisFileDirectory)` and `$(MSBuildProjectDirectory)` are expanded;
+an include naming any other property cannot be resolved without MSBuild evaluation,
+so its project always counts as affected (no project uses one today). Before this change
 those inputs mapped to no project or only to their home project, so the test
 partitions and the affected build missed them. The scheduled and `full_ci` runs
 keep the whole-solution analyzer build. The `format` matrix remains

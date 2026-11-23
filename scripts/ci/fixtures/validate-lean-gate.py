@@ -96,6 +96,35 @@ for _consumer in ("tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj
 if "tests/dotnet/Honua.Azure.UnitTests/Honua.Azure.UnitTests.csproj" not in _affected_projects(
         "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs"):
     raise AssertionError("a shared file outside any project must affect the projects that link it")
+if "src/Honua.Geoprocessing/Cli/Honua.Geoprocessing.Cli.csproj" not in _affected_projects(
+        "docker/worker-customcode-dotnet/harness/src/Program.cs", _TEST_ROOT):
+    raise AssertionError("an MSBuild **/ include must also match files zero directories deep")
+_large = ["eng/Honua.BuildProfiles.props", _TEST_ROOT] + [
+    f"docs/internal/generated/long/path/for/a/large/diff/file-{index}.md" for index in range(3000)]
+if _affected_projects(*_large) != ["ALL"]:
+    raise AssertionError("a large diff must not lose the shared-configuration fallback to SIGPIPE")
+# Property-based includes, checked in a throwaway repository with the same script.
+with tempfile.TemporaryDirectory(prefix="honua-linked-") as _directory:
+    _repo = Path(_directory)
+    (_repo / "scripts" / "ci").mkdir(parents=True)
+    (_repo / "scripts" / "ci" / "compute-affected-projects.sh").write_text(
+        (ROOT / "scripts" / "ci" / "compute-affected-projects.sh").read_text(encoding="utf-8"), encoding="utf-8")
+    for _name, _include in (("Known", "$(MSBuildThisFileDirectory)../shared/**/*.cs"),
+                            ("Unknown", "$(SharedRoot)/x.cs"), ("Unrelated", "../other/*.cs")):
+        (_repo / _name).mkdir()
+        (_repo / _name / f"{_name}.csproj").write_text(
+            f'<Project><ItemGroup><Compile Include="{_include}" /></ItemGroup></Project>\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(_repo)], check=True)
+    _listing = _repo / "changed.txt"
+    _listing.write_text("shared/a.cs\n", encoding="utf-8")
+    subprocess.run(["git", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                    "commit", "-q", "--allow-empty", "-m", "fixture"], cwd=_repo, check=True)
+    _owners = set(subprocess.run(
+        ["bash", str(_repo / "scripts" / "ci" / "compute-affected-projects.sh")],
+        env={**os.environ, "HONUA_CHANGED_FILES_FILE": str(_listing), "BASE_REF": "HEAD"},
+        cwd=_repo, capture_output=True, text=True, check=True).stdout.split())
+    if _owners != {"Known/Known.csproj", "Unknown/Unknown.csproj"}:
+        raise AssertionError(f"project-directory properties expand and unknown ones count as affected, got {_owners}")
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",

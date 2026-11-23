@@ -105,7 +105,9 @@ fi
 # Any force-full hit?
 while IFS= read -r prefix; do
   [[ -z "${prefix}" ]] && continue
-  if printf '%s\n' "${changed_files}" | grep -qE "^${prefix}"; then
+  # A here-string, not a pipe: under pipefail an early grep -q match can end
+  # printf with SIGPIPE on a large diff and turn the hit into a miss.
+  if grep -qE "^${prefix}" <<< "${changed_files}"; then
     echo "ALL"
     exit 0
   fi
@@ -115,7 +117,7 @@ done <<< "${force_full_paths}"
 # Directory.Build.*, eng/*.props imported by a few projects, a nested
 # .editorconfig) applies to projects the directory walk below cannot name.
 # These edits are rare, so any of them forces a full-graph build.
-if printf '%s\n' "${changed_files}" | grep -qE '(\.props|\.targets|(^|/)\.editorconfig|\.globalconfig|\.ruleset)$'; then
+if grep -qE '(\.props|\.targets|(^|/)\.editorconfig|\.globalconfig|\.ruleset)$' <<< "${changed_files}"; then
   echo "ALL"
   exit 0
 fi
@@ -139,26 +141,54 @@ while IFS= read -r file; do
   done
 done <<< "${changed_files}"
 
+# Prints an anchored regex for an MSBuild include: ** spans zero or more
+# directories, * and ? stay within one path segment.
+msbuild_glob_regex() {
+  local glob="$1" regex="" index char
+  for ((index = 0; index < ${#glob}; index++)); do
+    char="${glob:index:1}"
+    if [[ "${glob:index:3}" == "**/" ]]; then
+      regex+="(.*/)?"; index=$((index + 2))
+    elif [[ "${glob:index:2}" == "**" ]]; then
+      regex+=".*"; index=$((index + 1))
+    else
+      case "${char}" in
+        '*') regex+="[^/]*" ;;
+        '?') regex+="[^/]" ;;
+        '.'|'['|']'|'^'|'$'|'+'|'('|')'|'{'|'}'|'|'|'\\') regex+="\\${char}" ;;
+        *) regex+="${char}" ;;
+      esac
+    fi
+  done
+  printf '^%s$' "${regex}"
+}
+
 # A file a project links from outside its own directory, for example
 # <Compile Include="../Shared/X.cs" /> or a source file linked into a test
 # host, belongs to that project as well. The walk above maps it only to the
-# nearest enclosing project, or to none under tests/dotnet/Shared/.
+# nearest enclosing project, or to none under tests/dotnet/Shared/. An include
+# that still names an MSBuild property after expanding the project-directory
+# properties cannot be resolved here, so its project counts as affected.
 while IFS= read -r linking_csproj; do
   linking_dir="$(dirname "${linking_csproj}")"
   while IFS= read -r include; do
     include="${include//\\//}"
+    include="${include//\$(MSBuildThisFileDirectory)/}"
+    include="${include//\$(MSBuildProjectDirectory)\//}"
     while IFS= read -r pattern; do
       [[ -z "${pattern}" ]] && continue
+      if [[ "${pattern}" == *'$('* ]]; then
+        affected["${linking_csproj}"]=1
+        continue
+      fi
       pattern="$(realpath -m --relative-to="${REPO_ROOT}" "${linking_dir}/${pattern}" 2>/dev/null || true)"
       [[ -z "${pattern}" ]] && continue
-      while IFS= read -r file; do
-        # shellcheck disable=SC2053 # the include may be an MSBuild glob
-        if [[ -n "${file}" && "${file}" == ${pattern} ]]; then
-          affected["${linking_csproj}"]=1
-        fi
-      done <<< "${changed_files}"
+      # One grep per include keeps large diffs fast.
+      if grep -qE "$(msbuild_glob_regex "${pattern}")" <<< "${changed_files}"; then
+        affected["${linking_csproj}"]=1
+      fi
     done < <(tr ';' '\n' <<< "${include}")
-  done < <(grep -oE '<(Compile|EmbeddedResource|AdditionalFiles)[[:space:]][^>]*Include="[^"$]*\.\.[^"]*"' "${linking_csproj}" 2>/dev/null \
+  done < <(grep -oE '<(Compile|EmbeddedResource|AdditionalFiles)[[:space:]][^>]*Include="[^"]*(\.\.|\$\()[^"]*"' "${linking_csproj}" 2>/dev/null \
            | sed -E 's/.*Include="([^"]+)".*/\1/')
 done < <(find . -maxdepth 6 -name "*.csproj" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*/.claude/*" -printf '%P\n' | sort -u)
 
