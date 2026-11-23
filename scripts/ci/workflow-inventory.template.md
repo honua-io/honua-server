@@ -515,6 +515,7 @@ which is why both the run count and exact observed span are recorded.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
+| `shard-rank-drift.yml` | Shard Rank Drift | completed `workflow_run` [CI], `workflow_dispatch` | Trusted default-branch observer of "CI full" trunk runs: compares each server shard's `dispatch_rank` with its median passing job minutes over the latest three full runs and keeps one `area/ci` tracking issue (owner s-ci-shards) open for total drift outside 0.77-1.30, shards 1.5x and 3 min over their rank, or sampled shards still on a contract estimate (#9545, #9546, #9547). Report-only; skips when under 80% of shards are measured. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
 ## Nightly and scheduled test lanes
@@ -2446,3 +2447,82 @@ Both pairs improved, but the first by only 0.049297 seconds; this is a modest
 observed saving with shared-host variability, not a demonstrated PR critical-path
 improvement. Compilation is excluded. Process times were 426.106 / 56.836 seconds
 at base and 57.608 / 60.113 at head; the first baseline included a cold build.
+
+### Capability plugin discovery schema lifetime
+
+The six `CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery`
+theory cases retain separate applications, service registries, license editions
+and fresh clients. Each application borrows the initialized class fixture's seeded
+schema rather than creating and seeding another schema. The fixture owner outlives
+all serial class cases; borrowers never drop its schema. Requests only read the
+capability manifest. Per-host metadata and plugin registries remain separate.
+The schema-reuse change preserves every assertion. Both measured variants
+include the GeoParquet manifest assertion correction that trunk now carries;
+their only difference is the six plugin hosts borrowing the initialized schema.
+
+Four interleaved base/head Release runs of the complete Server Features
+Capabilities shard passed the identical 103 cases with no skips on one runner
+before and after. Fixture-inclusive TRX session seconds were 88.657 / 67.712
+at base and 65.149 / 74.636 at head: median 78.184 to 69.893 seconds,
+a measured saving of 8.292 seconds (0.138 runner-minutes). The first pair
+improved by 23.508 seconds; the second regressed by 6.925 seconds, so these
+runs show substantial variability rather than a consistent per-run saving.
+The target class's 43 cases summed to 56.155 / 39.371 seconds at base and
+42.806 / 45.035 at head: median 47.763 to 43.920 seconds. Compilation and
+process startup are excluded from the shard measurement; process durations
+were 205.689 / 151.173 seconds at base and 158.666 / 164.087 at head.
+No end-to-end PR Gate critical-path reduction is claimed.
+
+### Experimental capability manifest schema lifetime
+
+The thirteen separately configured manifest GET cases in
+`ExperimentalCapabilityGatingIntegrationTests` borrow the seeded schema from the
+existing eager `DisabledPostureHost` class fixture. Each case still starts its
+own application with the same global/per-capability flags, registry composition,
+Pro edition, tenant, services and fresh client. Per-host metadata stays separate.
+The owner outlives the serial cases; borrowers do not create, seed or drop another
+schema. The mTLS-enabled admin case retains its private schema and application.
+All 32 assertion lines, four assertion-helper calls, 55 test metadata lines and
+14 test methods are unchanged. No parallel collection or polling changes apply.
+
+Four interleaved base/head Release runs of the unchanged Server Features
+Capabilities shard passed the same 103 cases with zero skips, including 34 target
+class cases, on one runner before and after. Target class summed case seconds
+were 34.685 / 27.959 at base and 28.704 / 24.533 at head: median 31.322 to
+26.618 seconds. Fixture-inclusive TRX session seconds were 85.201 / 60.185 at
+base and 72.939 / 62.115 at head: median 72.693 to 67.527 seconds, saving
+5.166 seconds (0.086 runner-minutes). The first shard pair improved by 12.262
+seconds; the second regressed by 1.930 seconds, so variability remains substantial.
+Both external benchmark variants include the same neighboring GeoParquet manifest
+assertion correction required after trunk added the writer; that correction is
+only a common measurement precondition and is not committed in this suite change.
+Process durations were 646.397 / 179.941 seconds at base and 198.986 / 154.497
+at head, including compilation (the first run was cold). They are separate from
+the fixture-inclusive session figures. No PR Gate critical-path saving is claimed.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### Deployment profile folder schema lifetime
+
+`DeploymentCapabilityProfileIntegrationTests.FolderApplications` retains one
+private application per configured capability. The first initialized application
+owns the common feature-data seed; the other three borrow its schema. Each host
+still installs its own deployment profile, metadata graph and clients. Folder-path
+cases only read the seed. Borrowers stop before the owner drops the schema.
+The three standalone profile cases retain their private schemas and hosts.
+
+Four interleaved complete Capabilities shard runs passed the same 103 cases,
+including all 11 class cases, with zero skips. Class test-duration median changed
+from 32.864138 to 30.715827 seconds. Fixture-inclusive shard median changed from
+62.444438 to 60.571979 seconds, saving 1.872459 seconds / 0.031208 runner-minutes
+on one runner before and after. Individual shard pairs were 63.240212/56.698306
+and 61.648663/64.445651 seconds: the second pair regressed 2.796988 seconds, so
+the modest median saving is subject to shared-host variability. Cold compilation
+and process time are separate; no PR critical-path saving is established.
+
+All test methods, assertions, theory rows and endpoint metadata remain unchanged.
+Every case remains in the Capabilities shard on selected PRs and full trunk runs.
+No workflow, shard filter, runner count, required check name or aggregate `needs`
+contract changes.

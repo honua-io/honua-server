@@ -137,6 +137,14 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
     private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
     {
         var content = result.GetProperty("structuredContent");
+        // An owner's own draft edit may execute directly under the built-in draft policy.
+        if (content.TryGetProperty("draftId", out _))
+        {
+            var directFailed = result.TryGetProperty("isError", out var directError) && directError.GetBoolean();
+            directFailed.Should().BeFalse();
+            return content.Clone();
+        }
+
         string proposalId;
         if (content.TryGetProperty("operation", out var operation))
         {
