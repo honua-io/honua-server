@@ -34,7 +34,7 @@ public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        AllowAnonymous(true);
+        ApplyAccessPolicy(new AccessPolicy { AllowAnonymous = true });
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -71,7 +71,7 @@ public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
     public async Task SecuredService_AnonymousStyleRequest_IsRefusedAndNeverShared()
     {
         using var client = _fixture.CreateClient();
-        AllowAnonymous(false);
+        ApplyAccessPolicy(new AccessPolicy { AllowAnonymous = false });
 
         using var response = await client.GetAsync(RootStyle);
 
@@ -93,7 +93,7 @@ public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
     public async Task SecuredService_AnonymousLayerFreeResource_StaysShared(string address)
     {
         using var client = _fixture.CreateClient();
-        AllowAnonymous(false);
+        ApplyAccessPolicy(new AccessPolicy { AllowAnonymous = false });
 
         using var response = await client.GetAsync(address);
 
@@ -129,9 +129,8 @@ public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
         return document.RootElement.GetProperty("error").GetProperty("code").GetInt32();
     }
 
-    private void AllowAnonymous(bool allowed)
+    private void ApplyAccessPolicy(AccessPolicy policy)
     {
-        var policy = new AccessPolicy { AllowAnonymous = allowed };
         _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, accessPolicy: policy);
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: policy);
     }
