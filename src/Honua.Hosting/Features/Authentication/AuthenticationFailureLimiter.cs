@@ -45,6 +45,10 @@ internal sealed class AuthenticationFailureLimiter(
         "honua_authentication_failed_attempts_total",
         unit: null,
         description: "Completed failed credential checks across all tracked sources.");
+    private static readonly Counter<long> SharedFailuresDropped = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua_authentication_shared_failures_dropped_total",
+        unit: null,
+        description: "Failures counted locally whose shared write could not be queued.");
     private static readonly TimeSpan InFlightRetryAfter = TimeSpan.FromSeconds(1);
 
     private readonly AuthenticationFailureLimiterOptions _options = options.Value;
@@ -93,6 +97,8 @@ internal sealed class AuthenticationFailureLimiter(
         }
 
         var now = timeProvider.GetUtcNow();
+        bool sharedWriteDropped;
+        bool blocked;
         lock (_gate)
         {
             if (!_sources.TryGetValue(key.Source, out var window))
@@ -107,17 +113,24 @@ internal sealed class AuthenticationFailureLimiter(
                 return;
             }
 
-            Shared?.Record(key.Source);
-            if (++window.Failures < _options.Threshold)
+            sharedWriteDropped = Shared?.Record(key.Source, now) is false;
+            blocked = ++window.Failures >= _options.Threshold;
+            if (blocked)
             {
-                return;
+                window.RefusedUntil = now + _options.BlockDuration;
             }
-
-            window.RefusedUntil = now + _options.BlockDuration;
         }
 
-        AuthenticationLog.AuthenticationSourceBlocked(
-            logger, LogValueRedactor.Hash(key.Source), (int)_options.BlockDuration.TotalSeconds);
+        if (sharedWriteDropped)
+        {
+            SharedFailuresDropped.Add(1);
+        }
+
+        if (blocked)
+        {
+            AuthenticationLog.AuthenticationSourceBlocked(
+                logger, LogValueRedactor.Hash(key.Source), (int)_options.BlockDuration.TotalSeconds);
+        }
     }
 
     private DateTimeOffset? LocalRefusal(string source, DateTimeOffset now)

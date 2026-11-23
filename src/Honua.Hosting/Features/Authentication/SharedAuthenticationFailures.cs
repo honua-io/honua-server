@@ -16,6 +16,8 @@ internal readonly record struct SharedFailureWindow(int Failures, DateTimeOffset
 
 internal readonly record struct AuthenticationFailurePolicy(int Threshold, TimeSpan Window, TimeSpan BlockDuration);
 
+internal readonly record struct PendingAuthenticationFailure(string Source, DateTimeOffset At);
+
 internal sealed record AuthenticationFailure(byte[] SourceDigest, DateTimeOffset At, AuthenticationFailurePolicy Policy);
 
 // The deployment-wide failure windows that every server instance counts into. Sources are keyed by a SHA-256 digest.
@@ -25,7 +27,7 @@ internal interface IAuthenticationFailureLedger
     Task<SharedFailureWindow> RecordFailureAsync(AuthenticationFailure failure, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>> ReadRefusalsAsync(
-        DateTimeOffset now, int limit, CancellationToken cancellationToken);
+        DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 // What this instance knows of the shared windows: the refusals it polled and the totals its own failures returned.
@@ -34,8 +36,8 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
 {
     private const int PendingCapacity = 4096;
 
-    private readonly Channel<string> _recorded = Channel.CreateBounded<string>(
-        new BoundedChannelOptions(PendingCapacity) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+    private readonly Channel<PendingAuthenticationFailure> _recorded = Channel.CreateBounded<PendingAuthenticationFailure>(
+        new BoundedChannelOptions(PendingCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
     private readonly ConcurrentDictionary<string, SharedFailureWindow> _windows = new(StringComparer.Ordinal);
     private readonly int _maxTrackedSources = options.Value.MaxTrackedSources;
 
@@ -43,9 +45,11 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
 
     internal AuthenticationFailureLimiterOptions Options => options.Value;
 
-    internal ChannelReader<string> Recorded => _recorded.Reader;
+    internal ChannelReader<PendingAuthenticationFailure> Recorded => _recorded.Reader;
 
-    public void Record(string source) => _recorded.Writer.TryWrite(source);
+    public bool Record(string source, DateTimeOffset at) => _recorded.Writer.TryWrite(new(source, at));
+
+    internal void Complete() => _recorded.Writer.TryComplete();
 
     public SharedFailureWindow? For(string source, DateTimeOffset now)
         => _windows.TryGetValue(Key(Digest(source)), out var window) && window.ExpiresAt > now ? window : null;
@@ -53,7 +57,7 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
     // A refusal is always kept; a plain count is dropped once the view is full, so the cap never costs a refusal.
     internal void Apply(byte[] digest, SharedFailureWindow window, DateTimeOffset now)
     {
-        if (!window.IsRefused(now) && _windows.Count >= _maxTrackedSources)
+        if (window.ExpiresAt <= now || (!window.IsRefused(now) && _windows.Count >= _maxTrackedSources))
         {
             return;
         }

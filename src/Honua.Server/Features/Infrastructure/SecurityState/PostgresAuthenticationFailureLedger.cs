@@ -15,6 +15,7 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
     : IAuthenticationFailureLedger, IExpiredRowSweep
 {
     private const string Refused = "stored.refused_until > @now";
+    private const string KeepExisting = $"({Refused} OR stored.window_started > @now)";
     private const string Over = "stored.expires_at <= @now";
     private const string NextFailures = $"(CASE WHEN {Over} THEN 1 ELSE stored.failures + 1 END)";
     private const string ReachesThreshold = $"{NextFailures} >= @threshold";
@@ -32,11 +33,11 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                         CASE WHEN @threshold <= 1 THEN @now + @block END,
                         CASE WHEN @threshold <= 1 THEN @now + @block ELSE @now + @window END)
                     ON CONFLICT (source_digest) DO UPDATE SET
-                        window_started = CASE WHEN {Refused} THEN stored.window_started WHEN {Over} THEN @now ELSE stored.window_started END,
-                        failures = CASE WHEN {Refused} THEN stored.failures ELSE {NextFailures} END,
-                        refused_until = CASE WHEN {Refused} THEN stored.refused_until WHEN {ReachesThreshold} THEN @now + @block END,
+                        window_started = CASE WHEN {KeepExisting} THEN stored.window_started WHEN {Over} THEN @now ELSE stored.window_started END,
+                        failures = CASE WHEN {KeepExisting} THEN stored.failures ELSE {NextFailures} END,
+                        refused_until = CASE WHEN {KeepExisting} THEN stored.refused_until WHEN {ReachesThreshold} THEN @now + @block END,
                         expires_at = CASE
-                            WHEN {Refused} THEN stored.expires_at
+                            WHEN {KeepExisting} THEN stored.expires_at
                             WHEN {ReachesThreshold} THEN @now + @block
                             WHEN {Over} THEN @now + @window
                             ELSE stored.expires_at END
@@ -56,18 +57,17 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             cancellationToken);
 
     public Task<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>> ReadRefusalsAsync(
-        DateTimeOffset now, int limit, CancellationToken cancellationToken)
+        DateTimeOffset now, CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>>(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT source_digest, failures, refused_until, expires_at FROM {_windows} AS stored
-                    WHERE {Refused} ORDER BY refused_until DESC LIMIT @limit
+                    WHERE {Refused}
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = now.ToUniversalTime() });
-                command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = limit });
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
                 var refusals = new List<KeyValuePair<byte[], SharedFailureWindow>>();
                 while (await reader.ReadAsync(token).ConfigureAwait(false))
@@ -80,7 +80,7 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    // Expired windows go first; beyond MaxTrackedSources the oldest unrefused windows go.
+    // Expired windows go first, then the oldest unrefused windows beyond the retention target.
     // Match on the selected row version so a concurrent renewal is left for the next sweep.
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
         => database.ExecuteAsync(
@@ -94,9 +94,11 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                         ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED),
                     overflow AS (
                         SELECT ctid FROM {_windows}
-                        WHERE expires_at > now()
-                        ORDER BY refused_until > now() DESC NULLS LAST, window_started DESC
-                        OFFSET @max_sources LIMIT @batch_size),
+                        WHERE expires_at > now() AND (refused_until IS NULL OR refused_until <= now())
+                        ORDER BY window_started DESC, source_digest
+                        OFFSET GREATEST(0, @max_sources - (
+                            SELECT count(*) FROM {_windows} WHERE refused_until > now()))
+                        LIMIT (@batch_size - (SELECT count(*) FROM expired))),
                     doomed AS (
                         SELECT ctid FROM expired
                         UNION ALL

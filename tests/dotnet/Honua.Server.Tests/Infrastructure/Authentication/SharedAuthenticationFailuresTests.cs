@@ -33,7 +33,7 @@ public sealed class SharedAuthenticationFailuresTests
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options);
         var refusedUntil = _clock.GetUtcNow().AddMinutes(4);
-        _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new[] { KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), new SharedFailureWindow(3, refusedUntil, refusedUntil)) });
         var limiter = CreateLimiter(shared);
 
@@ -59,7 +59,7 @@ public sealed class SharedAuthenticationFailuresTests
         limiter.EndAttempt(first, AuthenticationAttemptOutcome.Failed);
         shared.Recorded.TryRead(out var recorded).Should().BeTrue();
         using var sync = CreateSync(shared);
-        await sync.RecordAsync(recorded!, CancellationToken.None);
+        await sync.RecordAsync(recorded, CancellationToken.None);
 
         limiter.TryBeginAttempt(new(Source, 2)).Admitted.Should().BeTrue("two failures in the deployment, one slot left");
         limiter.TryBeginAttempt(new(Source, 3)).Admitted.Should().BeFalse("the in-flight attempt holds the last slot");
@@ -71,7 +71,7 @@ public sealed class SharedAuthenticationFailuresTests
         var shared = new SharedAuthenticationFailures(_ledger, _options);
         _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("database unavailable"));
-        _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("database unavailable"));
         var limiter = CreateLimiter(shared);
         using var sync = CreateSync(shared);
@@ -82,7 +82,7 @@ public sealed class SharedAuthenticationFailuresTests
             limiter.TryBeginAttempt(key).Admitted.Should().BeTrue();
             limiter.EndAttempt(key, AuthenticationAttemptOutcome.Failed);
             shared.Recorded.TryRead(out var recorded).Should().BeTrue();
-            await sync.RecordAsync(recorded!, CancellationToken.None);
+            await sync.RecordAsync(recorded, CancellationToken.None);
         }
 
         await sync.PollAsync(CancellationToken.None);
@@ -108,6 +108,51 @@ public sealed class SharedAuthenticationFailuresTests
     public void Validator_RefusesAPollIntervalAboveOneMinute()
     {
         var options = new AuthenticationFailureLimiterOptions { SharedPollInterval = TimeSpan.FromMinutes(2) };
+
+        new AuthenticationFailureLimiterOptionsValidator().Validate(null, options).Failures
+            .Should().ContainSingle(failure => failure.Contains("SharedPollInterval", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task Shutdown_DrainsQueuedFailuresWithTheirOriginalTimestamps()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options);
+        var recordedAt = _clock.GetUtcNow().AddSeconds(-10);
+        shared.Record(Source, recordedAt).Should().BeTrue();
+
+        using var sync = CreateSync(shared);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await sync.StartAsync(deadline.Token);
+        await sync.StopAsync(deadline.Token);
+
+        await _ledger.Received(1).RecordFailureAsync(
+            Arg.Is<AuthenticationFailure>(failure => failure.At == recordedAt), Arg.Any<CancellationToken>());
+        shared.Record(Source, recordedAt).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task LedgerCancellation_LeavesPollingAvailable()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options);
+        var now = _clock.GetUtcNow();
+        var refusal = KeyValuePair.Create(
+            SharedAuthenticationFailures.Digest(Source), new SharedFailureWindow(3, now.AddMinutes(2), now.AddMinutes(2)));
+        _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(
+                _ => Task.FromException<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>>(new OperationCanceledException()),
+                _ => Task.FromResult<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>>([refusal]));
+
+        using var sync = CreateSync(shared);
+        await sync.PollAsync(CancellationToken.None);
+        await sync.PollAsync(CancellationToken.None);
+
+        shared.For(Source, now).Should().Be(refusal.Value);
+    }
+
+    [UnitTest]
+    public void Validator_RefusesAPollIntervalBelowOneMillisecond()
+    {
+        var options = new AuthenticationFailureLimiterOptions { SharedPollInterval = TimeSpan.FromTicks(1) };
 
         new AuthenticationFailureLimiterOptionsValidator().Validate(null, options).Failures
             .Should().ContainSingle(failure => failure.Contains("SharedPollInterval", StringComparison.Ordinal));

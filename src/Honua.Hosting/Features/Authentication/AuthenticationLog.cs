@@ -151,4 +151,10 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "The shared failed-attempt store could not be read or written; failed sign-in attempts are counted on this instance only until it recovers")]
     public static partial void SharedFailureStoreUnavailable(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4125,
+        Level = LogLevel.Warning,
+        Message = "Shutdown deadline reached before shared authentication failures could be drained.")]
+    public static partial void SharedFailureDrainTimedOut(ILogger logger);
 }

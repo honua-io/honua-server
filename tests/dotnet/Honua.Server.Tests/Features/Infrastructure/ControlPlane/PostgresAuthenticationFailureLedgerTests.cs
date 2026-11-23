@@ -108,7 +108,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Sweep_BoundsRowsToMaxTrackedSourcesAndDropsARefusalLast()
+    public async Task Sweep_EvictsOldUnrefusedWindowsToReachTheRetentionTarget()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 1);
@@ -125,8 +125,44 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         await harness.CreateAuthenticationFailureLedger(options).DeleteExpiredAsync(100, CancellationToken.None);
 
         (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("authentication_failure_windows")}")).Should().Be(2);
-        (await harness.CreateAuthenticationFailureLedger(options).ReadRefusalsAsync(DateTimeOffset.UtcNow, 10, CancellationToken.None))
+        (await harness.CreateAuthenticationFailureLedger(options).ReadRefusalsAsync(DateTimeOffset.UtcNow, CancellationToken.None))
             .Should().ContainSingle(refusal => refusal.Key.SequenceEqual(SharedAuthenticationFailures.Digest(Source)));
+    }
+
+    [IntegrationTest]
+    public async Task Sweep_SharesTheBatchBudgetAndPreservesRefusalsAboveTheRetentionTarget()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var options = Policy(threshold: 1);
+        options.Value.MaxTrackedSources = 1;
+        var ledger = harness.CreateAuthenticationFailureLedger(options);
+        var now = DateTimeOffset.UtcNow;
+        var refusal = new AuthenticationFailurePolicy(1, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        var unrefused = refusal with { Threshold = 2 };
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.1"), now, refusal), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.2"), now, refusal), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.3"), now, unrefused), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.4"), now.AddHours(-1), unrefused), CancellationToken.None);
+
+        (await ledger.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
+        (await ledger.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
+        (await ledger.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(0);
+        (await ledger.ReadRefusalsAsync(now, CancellationToken.None)).Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
+    public async Task Ledger_IgnoresAnEventOlderThanTheStoredWindow()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var ledger = harness.CreateAuthenticationFailureLedger(Policy(threshold: 2));
+        var digest = SharedAuthenticationFailures.Digest(Source);
+        var now = DateTimeOffset.UtcNow;
+        var policy = new AuthenticationFailurePolicy(2, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        var current = await ledger.RecordFailureAsync(new(digest, now, policy), CancellationToken.None);
+
+        var afterOlderEvent = await ledger.RecordFailureAsync(new(digest, now.AddMinutes(-10), policy), CancellationToken.None);
+
+        afterOlderEvent.Should().Be(current);
     }
 
     private static IOptions<AuthenticationFailureLimiterOptions> Policy(int threshold, TimeSpan? pollInterval = null)

@@ -13,6 +13,8 @@ internal sealed class SharedAuthenticationFailureSync(
 {
     private readonly AuthenticationFailureLimiterOptions _options = shared?.Options ?? new();
 
+    private readonly TaskCompletionSource _writerFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private bool IsActive => shared is not null && _options.Enabled;
 
     public override async Task StartAsync(CancellationToken cancellationToken)
@@ -25,22 +27,36 @@ internal sealed class SharedAuthenticationFailureSync(
         await base.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (IsActive && ExecuteTask is not null)
+        {
+            shared!.Complete();
+            await _writerFinished.Task.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (!_writerFinished.Task.IsCompleted)
+            {
+                AuthenticationLog.SharedFailureDrainTimedOut(logger);
+            }
+        }
+
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
         => IsActive ? Task.WhenAll(WriteFailuresAsync(stoppingToken), PollRefusalsAsync(stoppingToken)) : Task.CompletedTask;
 
-    internal async Task RecordAsync(string source, CancellationToken cancellationToken)
+    internal async Task RecordAsync(PendingAuthenticationFailure recorded, CancellationToken cancellationToken)
     {
-        var digest = SharedAuthenticationFailures.Digest(source);
-        var now = timeProvider.GetUtcNow();
+        var digest = SharedAuthenticationFailures.Digest(recorded.Source);
         try
         {
             var policy = new AuthenticationFailurePolicy(_options.Threshold, _options.Window, _options.BlockDuration);
             var window = await shared!.Ledger
-                .RecordFailureAsync(new(digest, now, policy), cancellationToken)
+                .RecordFailureAsync(new(digest, recorded.At, policy), cancellationToken)
                 .ConfigureAwait(false);
-            shared.Apply(digest, window, now);
+            shared.Apply(digest, window, timeProvider.GetUtcNow());
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             AuthenticationLog.SharedFailureStoreUnavailable(logger, exception);
         }
@@ -52,26 +68,33 @@ internal sealed class SharedAuthenticationFailureSync(
         try
         {
             var refusals = await shared!.Ledger
-                .ReadRefusalsAsync(now, _options.MaxTrackedSources, cancellationToken)
+                .ReadRefusalsAsync(now, cancellationToken)
                 .ConfigureAwait(false);
+            now = timeProvider.GetUtcNow();
             shared.Prune(now);
             foreach (var (digest, window) in refusals)
             {
                 shared.Apply(digest, window, now);
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             AuthenticationLog.SharedFailureStoreUnavailable(logger, exception);
         }
     }
 
-    // On shutdown both loops end as cancelled tasks, which the host does not treat as a fault.
     private async Task WriteFailuresAsync(CancellationToken stoppingToken)
     {
-        await foreach (var source in shared!.Recorded.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+        try
         {
-            await RecordAsync(source, stoppingToken).ConfigureAwait(false);
+            await foreach (var recorded in shared!.Recorded.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+            {
+                await RecordAsync(recorded, stoppingToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _writerFinished.TrySetResult();
         }
     }
 

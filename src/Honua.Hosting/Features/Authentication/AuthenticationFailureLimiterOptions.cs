@@ -41,7 +41,9 @@ internal sealed class AuthenticationFailureLimiterOptionsValidator : IValidateOp
                 OutOfRange(nameof(options.MaxTrackedSources), options.MaxTrackedSources, AuthenticationFailureLimiterOptions.MaxSources),
                 OutOfRange(nameof(options.Window), options.Window),
                 OutOfRange(nameof(options.BlockDuration), options.BlockDuration),
-                OutOfRange(nameof(options.SharedPollInterval), options.SharedPollInterval, AuthenticationFailureLimiterOptions.MaxPollInterval),
+                options.SharedPollInterval < TimeSpan.FromMilliseconds(1)
+                    ? $"{AuthenticationFailureLimiterOptions.SectionName}:{nameof(options.SharedPollInterval)} must be at least 1 ms."
+                    : OutOfRange(nameof(options.SharedPollInterval), options.SharedPollInterval, AuthenticationFailureLimiterOptions.MaxPollInterval),
             }
             .Concat(options.ExemptNetworks.Select(NotANetwork))
             .OfType<string>()

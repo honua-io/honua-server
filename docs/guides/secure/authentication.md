@@ -300,8 +300,11 @@ in PostgreSQL, so a source is refused after `Threshold` failures in total across
 all instances, and a refusal survives a restart. A failed attempt writes one row
 update; successful and uncounted requests write nothing. Another instance applies
 a refusal within `SharedPollInterval`. If the database cannot be reached, each
-instance keeps counting on its own until it recovers. A server without a system
-database counts per instance.
+instance keeps counting on its own until it recovers. The same local counting
+continues when the shared write queue is full. The
+`honua_authentication_shared_failures_dropped_total` metric counts failures
+that could not enter the queue. A server without a system database counts
+per instance.
 
 | Setting (`Authentication:FailedAttempts`) | Default | Meaning |
 |---|---:|---|
@@ -309,8 +312,8 @@ database counts per instance.
 | `Threshold` | `10` | Failures within `Window` that refuse a source. |
 | `Window` | `00:15:00` | Counting window, started by the first failure. |
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
-| `MaxTrackedSources` | `10000` | Addresses tracked, per instance and in the shared store; expired entries are evicted first and refusals last. |
-| `SharedPollInterval` | `00:00:05` | How often an instance reads refusals made by other instances, at most one minute. |
+| `MaxTrackedSources` | `10000` | Retention target for tracked addresses. The shared store keeps active refusals until expiration, even above this target. |
+| `SharedPollInterval` | `00:00:05` | How often an instance reads refusals made by other instances, from 1 ms to one minute. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
 
 The `honua_authentication_failed_attempts_total` counter aggregates completed

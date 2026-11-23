@@ -95,7 +95,11 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
-        services.AddSharedAuthenticationFailures();
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddSharedAuthenticationFailures();
+        }
+
         services.AddOAuthScopeCatalogue();
         services.AddFeatureLockStore();
         services.AddRetentionSweeps();
