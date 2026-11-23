@@ -1959,7 +1959,7 @@ internal sealed partial class Wcs20Handler
             // start of the day, the upper bound the final instant before the next.
             if (!isLowerBound && IsDateOnly(value))
             {
-                bound = parsed.AddDays(1).AddTicks(-1);
+                bound = EndOfUtcDay(parsed);
                 return true;
             }
 
@@ -1976,6 +1976,12 @@ internal sealed partial class Wcs20Handler
            value[7] == '-' &&
            !value.Contains('T', StringComparison.Ordinal) &&
            !value.Contains(':', StringComparison.Ordinal);
+
+    // The final calendar day has no next day to step back from, so it ends at MaxValue.
+    private static DateTimeOffset EndOfUtcDay(DateTimeOffset startOfDay)
+        => startOfDay.UtcDateTime.Date == DateTime.MaxValue.Date
+            ? DateTimeOffset.MaxValue
+            : startOfDay.AddDays(1).AddTicks(-1);
 
     // A trim wholly outside the coverage selects no cells; WCS 2.0 Core answers it with
     // InvalidSubsetting rather than handing the raster store an empty clip. The extent is

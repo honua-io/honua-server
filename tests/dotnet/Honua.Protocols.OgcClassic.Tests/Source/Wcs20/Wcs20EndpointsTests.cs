@@ -624,6 +624,36 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         _exportQueries.Should().ContainSingle();
     }
 
+    [IntegrationTheory]
+    [InlineData("SUBSET=phenomenonTime(\"2023-12-01\",\"9999-12-31\")")]
+    [InlineData("DATETIME=../9999-12-31")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WindowEndingOnFinalCalendarDay_ReturnsCoverage(string window)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&{window}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_TimeOnFinalCalendarDay_ReturnsInvalidSubsetting()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&TIME=9999-12-31");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"").And.Contain("locator=\"TIME\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
