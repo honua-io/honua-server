@@ -116,6 +116,8 @@ public sealed class StudioDraftAgentOwnershipRuntimeTests
             Envelope = Envelope(),
             OwnerId = draftOwner,
             Generation = 1,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
         });
         store.GetPointersAsync(ItemId, Arg.Any<CancellationToken>()).Returns(new StudioContentItemPointers { ItemId = ItemId, OwnerId = itemOwner });
         OperationRequest? captured = null;
