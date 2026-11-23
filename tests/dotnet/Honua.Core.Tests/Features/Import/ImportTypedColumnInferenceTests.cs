@@ -167,4 +167,79 @@ public sealed class ImportTypedColumnInferenceTests
         names.Should().Contain("c0");
         names.Should().NotContain($"c{ImportTypedColumnInference.MaxColumns}");
     }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_UnsafeNames_ReportsEachDistinctNameOnce()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("名前", "a");
+        inference.Observe("名前", "b");
+        inference.Observe("a b", "kept");
+        inference.Observe("xmin", 7);
+        inference.Observe("name", "Alpha");
+
+        var warnings = inference.SkippedNameWarnings();
+
+        warnings.Should().HaveCount(3);
+        warnings[0].Should().Contain("'名前'").And.Contain("hidden in published features");
+        warnings[1].Should().Contain("'a b'");
+        warnings[2].Should().Contain("'xmin'").And.Contain("system column");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_LongNameWithSurrogatePair_KeepsWholeCharacters()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe(new string('a', 79) + "😀tail", "v");
+
+        var warning = inference.SkippedNameWarnings().Should().ContainSingle().Subject;
+
+        warning.Should().Contain("'" + new string('a', 79) + "…'");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_ManyUnsafeNames_ListsTheFirstAndSummarisesTheRest()
+    {
+        var inference = new ImportTypedColumnInference();
+        for (var index = 0; index < ImportTypedColumnInference.MaxReportedNames + 3; index++)
+        {
+            inference.Observe($"é{index}", index);
+        }
+
+        var warnings = inference.SkippedNameWarnings();
+
+        warnings.Should().HaveCount(ImportTypedColumnInference.MaxReportedNames + 1);
+        warnings[^1].Should().StartWith("More source properties whose names cannot be column names: 3.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_PastTheColumnCap_ReportsTheOverflow()
+    {
+        var inference = new ImportTypedColumnInference();
+        for (var index = 0; index < ImportTypedColumnInference.MaxColumns + 2; index++)
+        {
+            inference.Observe($"c{index}", index);
+            inference.Observe($"c{index}", index);
+        }
+
+        inference.SkippedNameWarnings().Should().ContainSingle()
+            .Which.Should().StartWith("Source properties past the 128-column limit that were not published as columns: 2,")
+            .And.Contain("'c128', 'c129'");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_SafeNamesOnly_ReturnsNone()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("id", 1);
+        inference.Observe("geometry", "kept");
+        inference.Observe("name", "Alpha");
+
+        inference.SkippedNameWarnings().Should().BeEmpty();
+    }
 }

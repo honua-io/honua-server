@@ -40,12 +40,14 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
     {
         if (!IsPromotableName(name))
         {
+            NoteUnpromotableName(name);
             return;
         }
 
         var exists = _columns.TryGetValue(name, out var current);
         if (!exists && _columns.Count >= MaxColumns)
         {
+            NoteOverflowName(name);
             return;
         }
 
@@ -75,9 +77,10 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
     }
 
     private static bool IsPromotableName(string name)
-        => name.Length is > 0 and <= 63
-            && IdentifierPattern().IsMatch(name)
-            && !ReservedNames.Contains(name);
+        => IsSafeIdentifier(name) && !ReservedNames.Contains(name);
+
+    private static bool IsSafeIdentifier(string name)
+        => name.Length is > 0 and <= 63 && IdentifierPattern().IsMatch(name);
 
     private static Kind Classify(object? value, bool preserveStringScalars, bool inferTemporalStrings) => value switch
     {
