@@ -14,27 +14,18 @@ namespace Honua.Core.Features.Infrastructure.Validation;
 public static class PostgresTextValidation
 {
     public static string? FindSingleLineError(string field, string? value, int maxLength)
-        => FindError(field, value, maxLength, static _ => false);
+        => FindLengthError(field, value, maxLength)
+            ?? (string.IsNullOrEmpty(value) || IsStorable(value, static _ => false) ? null : ControlCharacterError(field));
 
     public static string? FindMultiLineError(string field, string? value, int maxLength)
-        => FindError(field, value, maxLength, static rune => rune.Value is '\n' or '\r' or '\t');
+        => FindLengthError(field, value, maxLength)
+            ?? (string.IsNullOrEmpty(value) || IsStorable(value, static rune => rune.Value is '\n' or '\r' or '\t') ? null : ControlCharacterError(field));
 
-    private static string? FindError(string field, string? value, int maxLength, Func<Rune, bool> allowedControl)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return null;
-        }
+    private static string? FindLengthError(string field, string? value, int maxLength)
+        => value is not null && value.Length > maxLength ? $"Field '{field}' must be at most {maxLength} characters." : null;
 
-        if (value.Length > maxLength)
-        {
-            return $"Field '{field}' must be at most {maxLength} characters.";
-        }
-
-        return IsStorable(value, allowedControl)
-            ? null
-            : $"Field '{field}' must not contain control characters or unpaired surrogates.";
-    }
+    private static string ControlCharacterError(string field)
+        => $"Field '{field}' must not contain control characters or unpaired surrogates.";
 
     private static bool IsStorable(string value, Func<Rune, bool> allowedControl)
     {
