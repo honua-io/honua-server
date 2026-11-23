@@ -20,29 +20,23 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wps202)]
-public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>, IClassFixture<Wps20EndpointsTests.CanonicalRejectionHost>
-{
-    private readonly WebAppFixture _fixture;
-    private readonly WebAppFixture _conformanceFixture;
-    private readonly CanonicalRejectionHost _canonicalRejectionHost;
-
-    public Wps20EndpointsTests(Fixture fixture, CanonicalRejectionHost canonicalRejectionHost)
-    {
-        _fixture = fixture.Default;
-        _conformanceFixture = fixture.Conformance;
-        _canonicalRejectionHost = canonicalRejectionHost;
-
 public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>,
+    IClassFixture<Wps20EndpointsTests.CanonicalRejectionHost>,
     IClassFixture<Wps20EndpointsTests.InvalidContractHost>
 {
     private readonly WebAppFixture _fixture;
     private readonly WebAppFixture _conformanceFixture;
+    private readonly CanonicalRejectionHost _canonicalRejectionHost;
     private readonly InvalidContractHost _invalidContractHost;
 
-    public Wps20EndpointsTests(Fixture fixture, InvalidContractHost invalidContractHost)
+    public Wps20EndpointsTests(
+        Fixture fixture,
+        CanonicalRejectionHost canonicalRejectionHost,
+        InvalidContractHost invalidContractHost)
     {
         _fixture = fixture.Default;
         _conformanceFixture = fixture.Conformance;
+        _canonicalRejectionHost = canonicalRejectionHost;
         _invalidContractHost = invalidContractHost;
     }
 
@@ -97,6 +91,17 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             });
             _fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(Jobs);
         }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task<HttpClient> CreateClientAsync()
+        {
+            await (_initialized ??= _fixture.InitializeAsync());
+            return _fixture.CreateClient();
+        }
+
+        public Task DisposeAsync() => _initialized is null ? Task.CompletedTask : _fixture.DisposeAsync();
+    }
 
     public sealed class InvalidContractHost : IAsyncLifetime
     {
