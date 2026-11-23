@@ -94,10 +94,12 @@ Exact concept equality is only the first compatibility check. It does not establ
 Resolve resources to stable identities and record relevant versions, generations, hashes, and tenant context. A display name is a search clue, not an object identity. Reading a map and reading its data are separate authorization questions.
 
 A saved version is immutable. A draft is mutable and generation-checked.
-Studio MCP publication binds the current saved version and hash. An authorized
-admin can publish in that call; other callers receive a proposal requiring a
-separate authorized decision before activation. Follow the returned `Published`
-or `AwaitingApproval` state rather than inferring effects from the tool name.
+Studio MCP publication binds the current saved version and hash. Every MCP
+caller, including an administrator, receives a proposal requiring human approval
+in Console before activation. New proposals return `AwaitingApproval`; retries
+report the existing proposal's current state, including `Published`, `Rejected`,
+or `Denied`. The proposal call does not activate publication or return a public
+share URL.
 A pending proposal cannot be reinterpreted as approval. Do not widen policy to
 clear a failure or substitute a newer version after a decision.
 
