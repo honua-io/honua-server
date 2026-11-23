@@ -19,7 +19,8 @@ curl --fail --show-error --location --output /usr/local/bin/chisel-wrapper \
 printf '%s  %s\n' 94f97c7624fbaf84a747e7456726abaf1b5134e75197cfe6f39bd62406714de4 \
     /usr/local/bin/chisel-wrapper | sha256sum -c -
 chmod 755 /usr/local/bin/chisel-wrapper
-# Same cache-layout workaround as the publisher (rocks-toolbox#55).
+# Same cache-layout workaround as the publisher: upstream chisel-wrapper
+# reads only chisel/sha256, but the chisel cache keeps blobs under chisel/sha*/.
 sed --in-place \
     -e 's|dir="$CHISEL_CACHE_DIR/chisel/sha256"|dir="$CHISEL_CACHE_DIR/chisel"|' \
     -e 's|for f in "$dir"/\*; do|for f in "$dir"/sha*/*; do|' \
