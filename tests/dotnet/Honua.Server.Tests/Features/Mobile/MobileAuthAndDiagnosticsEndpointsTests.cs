@@ -80,9 +80,8 @@ public sealed partial class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifet
     [Endpoint("POST /oauth/token")]
     public async Task TokenRefresh_WithMalformedRequest_ReturnsBadRequestWithoutTokens(string mediaType, string body)
     {
-        using var response = await _anonymousClient.PostAsync(
-            "/oauth/token",
-            new StringContent(body, Encoding.UTF8, mediaType));
+        using var content = new StringContent(body, Encoding.UTF8, mediaType);
+        using var response = await _anonymousClient.PostAsync("/oauth/token", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().NotContain("accessToken");
