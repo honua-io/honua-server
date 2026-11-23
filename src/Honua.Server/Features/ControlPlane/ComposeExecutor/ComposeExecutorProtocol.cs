@@ -19,6 +19,9 @@ internal sealed record ComposeExecutorRequest
     public string? RequestId { get; init; }
 
     public bool RequireAudit { get; init; }
+
+    // Converge only: the contract plan the approved release proposal listed.
+    public ComposeContractApproval? ContractApproval { get; init; }
 }
 
 internal sealed record ComposeExecutorResponse

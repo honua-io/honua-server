@@ -296,7 +296,7 @@ internal sealed partial class SceneJobCoordinator : IDisposable
         }
         catch (SceneOutputUnwritableException ex)
         {
-            entry.MarkFailed(SceneGenerationErrorCodes.OutputUnwritable, SceneOutputUnwritableException.OperatorMessage);
+            entry.MarkFailed(ex.Code, ex.Message);
             SceneJobCoordinatorLog.JobFailed(_logger, entry.JobId, entry.SourceKind, ex);
         }
         // Top-level background job boundary: log and record a sanitized failure message without leaking internals.

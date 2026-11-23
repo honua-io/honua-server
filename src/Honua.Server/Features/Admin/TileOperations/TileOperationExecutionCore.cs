@@ -598,12 +598,7 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var providerKeyPrefix = cloudOptions.Provider switch
-        {
-            CloudStorageProvider.AwsS3 => cloudOptions.AwsS3?.KeyPrefix,
-            CloudStorageProvider.AzureBlob => cloudOptions.AzureBlob?.BlobPrefix,
-            _ => null
-        };
+        var providerKeyPrefix = cloudOptions.ProviderKeyPrefix();
 
         var objectKey = BuildPublishObjectKey(
             providerKeyPrefix,

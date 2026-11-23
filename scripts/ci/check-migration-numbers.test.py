@@ -132,6 +132,35 @@ class MigrationNumberTests(unittest.TestCase):
         self.assertIn(str(ledger.relative_to(self.root)),
                       self.git("diff", "--name-only", "--diff-filter=U"))
 
+    def test_license_notice_and_matching_pin_update_passes(self):
+        self.assert_license_update("", 0)
+
+    def test_license_notice_with_executable_change_fails(self):
+        self.assert_license_update("\nSELECT 2;", 1)
+
+    def test_license_notice_with_unrelated_comment_change_fails(self):
+        self.assert_license_update("\n-- changed", 1)
+
+    def test_license_notice_with_incorrect_pin_fails(self):
+        self.stage_license_update("")
+        pin = self.root / "eng/schema/migration-hashes" / SERVER / "001_Initial.sql.sha256"
+        pin.write_text("0" * 64 + "\n")
+        self.commit()
+        self.assertEqual(self.check().returncode, 1)
+
+    def assert_license_update(self, suffix, expected):
+        self.stage_license_update(suffix)
+        self.commit()
+        self.assertEqual(self.check().returncode, expected)
+
+    def stage_license_update(self, suffix):
+        old = "-- Copyright (c) Honua. All rights reserved.\n-- Licensed under the Elastic License 2.0. See LICENSE in the project root.\n\nSELECT 1;"
+        new = old.replace("Elastic License 2.0", "Fair Core License, Version 1.0, ALv2 Future License")
+        self.add(SERVER, "001_Initial.sql", old)
+        self.base = self.commit()
+        self.git("branch", "-f", "trunk", self.base)
+        self.add(SERVER, "001_Initial.sql", new + suffix)
+
     def test_paired_sql_and_pin_modification_fails(self):
         self.add(SERVER, "001_Initial.sql", "SELECT 2;")
         self.commit()

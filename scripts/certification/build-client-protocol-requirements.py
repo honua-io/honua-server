@@ -25,8 +25,10 @@ so the mirror records them separately instead of collapsing them into one boolea
     ``(client_lane, surface, client_version)``? The authority is
     ``tests/baselines/client-compat/expected-pairs.json`` -- the contractual set of
     pairs the nightly matrix must produce -- joined to the committed baseline
-    envelopes for the client version each lane actually reports. Nothing here is
-    hand-maintained.
+    envelopes for the client version each lane actually reports. A row no such
+    pair covers is still produced when ``client-roster-certification.yml`` runs
+    ``certification/bounded-roster/run-roster.sh`` and a lane module that script
+    executes declares one of the row's test IDs. Nothing here is hand-maintained.
 
 ``denominatorJoin``
     Can the governed row be resolved from a receipt at all? The consumer is the
@@ -46,6 +48,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -55,6 +58,16 @@ ROOT_MARKER = "Honua.sln"
 OUTPUT_RELATIVE_PATH = "certification/client-protocol-requirements.v1.json"
 EXPECTED_PAIRS_RELATIVE_PATH = "tests/baselines/client-compat/expected-pairs.json"
 BASELINE_ROOT_RELATIVE_PATH = "tests/baselines/client-compat"
+ROSTER_WORKFLOW_RELATIVE_PATH = ".github/workflows/client-roster-certification.yml"
+ROSTER_RUNNER_RELATIVE_PATH = "certification/bounded-roster/run-roster.sh"
+ROSTER_LANES_RELATIVE_PATH = "certification/bounded-roster/lanes"
+ROSTER_TEST_ID_RE = re.compile(r'"(client-cert/[^"]+)"')
+# Package names a lane pins each bounded-roster client release under.
+ROSTER_PIN_NAMES = {
+    "QGIS": "qgis", "GDAL/OGR": "gdal", "GDAL": "gdal", "MapLibre GL JS": "maplibre",
+    "OWSLib": "owslib", "PySTAC-Client": "pystac",
+}
+VERSION_TOKEN_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?![\d.]*\d)")
 
 SCHEMA = "honua.client-certification-requirements/v1"
 UPSTREAM_SCHEMA = "honua.protocol-certification-requirements/v1"
@@ -208,8 +221,120 @@ def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
     return pairs
 
 
-def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict]) -> dict:
-    """Decide whether a honua-server lane can emit a receipt for one governed row."""
+def roster_cells(root: Path) -> dict[str, list[str]]:
+    """Governed test IDs the bounded-roster certification workflow executes.
+
+    The workflow is a producer only while one of its lines invokes ``run-roster.sh``
+    as a command. Each ``run_lane`` line of that script names a compose service and
+    lane modules; a module produces the ``client-cert/...`` IDs written inside the
+    functions its ``CELLS`` tuple lists. Every ID maps to the pin text of each lane
+    that runs it (its compose service block, Dockerfile and requirements.txt), so
+    a row is produced only by a lane that pins its governed client release. A lane module the script names but the repository lacks is
+    refused rather than silently producing fewer cells.
+    """
+    workflow = root / ROSTER_WORKFLOW_RELATIVE_PATH
+    invocation = re.compile(rf"^\s*(?:run:\s*)?{re.escape(ROSTER_RUNNER_RELATIVE_PATH)}\b", re.MULTILINE)
+    if not workflow.is_file() or not invocation.search(workflow.read_text(encoding="utf-8")):
+        return {}
+    runner_path = root / ROSTER_RUNNER_RELATIVE_PATH
+    compose = (runner_path.parent / "compose.candidate.yml").read_text(encoding="utf-8")
+    cells: dict[str, list[str]] = {}
+    for line in re.findall(r"^run_lane (.+)$", runner_path.read_text(encoding="utf-8"), re.MULTILINE):
+        service = line.split()[0]
+        modules = re.findall(r"\b(\w+_cells)\b", line)
+        lane_dirs = set()
+        for name in modules:
+            paths = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
+            if len(paths) != 1:
+                raise SystemExit(f"{ROSTER_RUNNER_RELATIVE_PATH} runs {name}, found {len(paths)} lane modules")
+            lane_dirs.add(paths[0].parent)
+        pins = _lane_pins(compose, service, lane_dirs)
+        for name in modules:
+            [path] = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
+            for test_id in _executed_test_ids(path):
+                cells.setdefault(test_id, []).append(pins)
+    return cells
+
+
+def _executed_test_ids(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    # A module may choose CELLS per client version under a module-level `if`;
+    # every branch counts, and the lane's pinned versions narrow the binding.
+    executed: list[str] = []
+    statements = list(tree.body)
+    while statements:
+        node = statements.pop(0)
+        if isinstance(node, ast.If):
+            statements.extend([*node.body, *node.orelse])
+        elif (isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "CELLS" for target in node.targets)
+                and isinstance(node.value, (ast.Tuple, ast.List))):
+            executed.extend(element.id for element in node.value.elts if isinstance(element, ast.Name))
+    return {
+        node.value for name in executed if name in functions
+        for node in ast.walk(functions[name])
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and ROSTER_TEST_ID_RE.fullmatch(f'"{node.value}"')
+    }
+
+
+def _lane_pins(compose: str, service: str, lane_dirs: set[Path]) -> str:
+    block = re.search(rf"^  {re.escape(service)}:\n((?:    .*\n|\s*\n)*)", compose, re.MULTILINE)
+    text = block.group(0) if block else ""
+    for lane_dir in sorted(lane_dirs):
+        for pin_file in ("Dockerfile", "requirements.txt"):
+            if (lane_dir / pin_file).is_file():
+                text += (lane_dir / pin_file).read_text(encoding="utf-8")
+    return text
+
+
+def _pins_client_release(requirement: dict, pins: str) -> bool:
+    """True when ``pins`` pins every package release the row's client_version names.
+
+    ``pystac=1.15.2;pystac-client=0.9.0`` names its packages; otherwise the package
+    is the canonical client's. Each version must follow that package name in the
+    same pin, either directly after ``=``/``==`` (``OWSLib==0.36.0``) or through a
+    tag or alias with no ``=`` (``gdal:ubuntu-small-3.8.4``, ``maplibre-5.7``), so a
+    longer package such as ``pystac-client`` never lends its pin to ``pystac``.
+    """
+    named = [part.split("=", 1) for part in requirement["client_version"].split(";") if "=" in part]
+    if not named:
+        package = ROSTER_PIN_NAMES.get(requirement.get("canonical_client", ""))
+        named = [[package, requirement["client_version"]]] if package else []
+    releases = [(package, version) for package, value in named
+                for version in VERSION_TOKEN_RE.findall(value)]
+    return bool(releases) and all(
+        re.search(rf"(?<![\w-]){re.escape(package)}(?:==?|[\w./:@-]*?[-:@]){re.escape(version)}(?![\d.]*\d)",
+                  pins, re.IGNORECASE)
+        for package, version in releases)
+
+
+def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict],
+                      roster: dict[str, list[str]] | None = None) -> dict:
+    """Decide whether a honua-server producer can emit a receipt for one governed row.
+
+    A client-compat lane binding wins; otherwise the bounded-roster workflow
+    produces the row when a lane pinning the governed client release executes one
+    of the row's test IDs.
+    """
+    compat = classify_client_compat(requirement, pairs)
+    produced = sorted(
+        test_id for test_id in requirement.get("test_ids") or ()
+        if any(_pins_client_release(requirement, pins) for pins in (roster or {}).get(test_id, ())))
+    if compat["status"] == "present" or not produced:
+        return compat
+    return {
+        "status": "present",
+        "producer": {"workflow": ROSTER_WORKFLOW_RELATIVE_PATH,
+                     "runner": ROSTER_RUNNER_RELATIVE_PATH, "testIds": produced},
+        "reasonCode": None,
+        "reason": None,
+    }
+
+
+def classify_client_compat(requirement: dict, pairs: dict[tuple[str, str], dict]) -> dict:
+    """Decide whether a honua-server client-compat lane can emit a receipt for one row."""
     lane = requirement["client_lane"]
     surface = requirement["surface"]
     governed_version = requirement["client_version"]
@@ -323,6 +448,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         raise SystemExit("--upstream-revision must be a lowercase 40-character commit SHA")
 
     pairs = emitted_pairs(root)
+    roster = roster_cells(root)
     bounded = [
         governed for governed in upstream["requirements"]
         if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS
@@ -334,7 +460,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
     requirements = []
     for governed in bounded:
         row = dict(governed)
-        producer = classify_producer(governed, pairs)
+        producer = classify_producer(governed, pairs, roster)
         join = classify_denominator_join(governed, collisions)
         row["receiptBinding"] = {
             "status": "implemented" if (
@@ -370,7 +496,9 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         ],
         "receiptContract": RECEIPT_CONTRACT,
         "generator": "scripts/certification/build-client-protocol-requirements.py",
-        "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH],
+        "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH,
+                              ROSTER_WORKFLOW_RELATIVE_PATH, ROSTER_RUNNER_RELATIVE_PATH,
+                              ROSTER_LANES_RELATIVE_PATH],
         "source_revisions": _source_revisions(upstream.get("source_revisions", {})),
         "excludedRequirements": excluded,
         "requirements": requirements,

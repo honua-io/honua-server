@@ -234,6 +234,12 @@ internal static partial class OidcProviderEndpoints
             return "Validation failed: authority must be a valid HTTPS URL without control characters.";
         }
 
+        // OpenID Connect Discovery 1.0: the issuer is an https URL with no query or fragment component.
+        if (authority.AsSpan().IndexOfAny('?', '#') >= 0)
+        {
+            return "Validation failed: authority must not contain a query or fragment component.";
+        }
+
         var ssrf = await OutboundHttpUrlValidator.ValidateAsync(authority, cancellationToken).ConfigureAwait(false);
         return !ssrf.IsValid && !ssrf.IsHostResolutionUnavailable
             ? $"Validation failed: authority {ssrf.ErrorMessage}"

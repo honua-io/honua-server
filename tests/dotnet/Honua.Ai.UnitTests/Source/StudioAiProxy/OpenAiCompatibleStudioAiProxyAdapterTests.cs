@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using System.Text;
@@ -161,16 +160,21 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         var handler = new StudioAiProxySequenceHttpMessageHandler(
             () => new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StreamContent(stalled) },
             () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(TextTurnFixture, Encoding.UTF8, "text/event-stream") });
+        // The deadline fires when the error body stalls, not after real time passes.
+        var clock = new StudioAiProxyTriggeredTimeProvider(stalled.Stalled);
         var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(handler), new StudioAiProxyApiKeyResolver(),
-            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance)
+        {
+            TimeProvider = clock,
+        };
         var options = DefaultOptions();
         options.TimeoutSeconds = 1;
 
-        var stopwatch = Stopwatch.StartNew();
-        var failed = await CollectAsync(adapter, options, ToolFreeRequest());
+        // A missing deadline would stall forever; the outer bound turns that into a failure.
+        var failed = await CollectAsync(adapter, options, ToolFreeRequest()).WaitAsync(TimeSpan.FromSeconds(60));
 
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        clock.DueTimes.Should().Contain(TimeSpan.FromSeconds(1));
         failed.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
         failed.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
         failed.Single().ErrorMessage.Should().Be("Provider request timed out.");

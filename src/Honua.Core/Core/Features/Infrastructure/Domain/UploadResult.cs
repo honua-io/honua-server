@@ -11,6 +11,9 @@ public sealed record UploadResult
 
     public string? ErrorMessage { get; init; }
 
+    // The store refused the write for lack of permission: retrying will not help until access is fixed.
+    public bool IsAccessDenied { get; init; }
+
     public TimeSpan Duration { get; init; }
 
     public static UploadResult CreateSuccess(CloudFile file, TimeSpan duration = default)

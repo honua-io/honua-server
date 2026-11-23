@@ -11,14 +11,7 @@ internal static class PMTilesPublishKeyRoot
     public static string Resolve(CloudStorageOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        var providerPrefix = options.Provider switch
-        {
-            CloudStorageProvider.AwsS3 => options.AwsS3?.KeyPrefix,
-            CloudStorageProvider.AzureBlob => options.AzureBlob?.BlobPrefix,
-            _ => null
-        };
-
-        return string.Join('/', new[] { providerPrefix, options.PMTilesPublish?.KeyPrefix }
+        return string.Join('/', new[] { options.ProviderKeyPrefix(), options.PMTilesPublish?.KeyPrefix }
             .Select(Normalize)
             .Where(segment => segment.Length > 0));
     }

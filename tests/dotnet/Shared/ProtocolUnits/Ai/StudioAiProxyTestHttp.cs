@@ -124,8 +124,9 @@ internal sealed class StudioAiProxyStallingStream : Stream
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
-// Fires every finite timer when the trigger completes, so a deadline test depends on an event, not on
-// wall-clock time.
+// Fires every finite timer created before the trigger completes, when it completes, so a deadline test
+// depends on an event, not on wall-clock time. Timers created afterwards never fire, so a later request
+// in the same test keeps a live deadline instead of timing out at once.
 internal sealed class StudioAiProxyTriggeredTimeProvider(Task trigger) : TimeProvider
 {
     private readonly System.Collections.Concurrent.ConcurrentQueue<TimeSpan> _dueTimes = new();
@@ -137,7 +138,7 @@ internal sealed class StudioAiProxyTriggeredTimeProvider(Task trigger) : TimePro
     {
         _dueTimes.Enqueue(dueTime);
         var timer = new TriggeredTimer();
-        if (dueTime != Timeout.InfiniteTimeSpan)
+        if (dueTime != Timeout.InfiniteTimeSpan && !trigger.IsCompleted)
         {
             _ = trigger.ContinueWith(_ =>
             {

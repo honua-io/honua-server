@@ -75,6 +75,8 @@ class ConsolePackageTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(CONSOLE_WEB_IMAGE, lock['consoleWeb'])
             self.assertEqual(dict(sha256=digest, files=3), lock['consoleBundle'])
             self.assertNotIn('console', lock)
+            self.assertEqual(dict(name='honua-console', bundleSha256=digest, platformVersion='test'),
+                             json.loads((path / 'console.version.json').read_text()))
             self.assertIn('--profile console', (path / 'README.md').read_text())
 
     def test_console_bundle_must_match_its_release_receipt(self):
