@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -227,7 +228,7 @@ public sealed class ImportTypedColumnInferenceTests
         }
 
         inference.SkippedNameWarnings().Should().ContainSingle()
-            .Which.Should().StartWith("Source properties past the 128-column limit that were not published as columns: 2,")
+            .Which.Should().StartWith("Source properties not published as columns (past the 128-column limit or refused by the existing table): 2,")
             .And.Contain("'c128', 'c129'");
     }
 
@@ -294,5 +295,25 @@ public sealed class ImportTypedColumnInferenceTests
 
         inference.SkippedNameWarnings().Should().ContainSingle()
             .Which.Should().StartWith("Source properties 'abc' and 'Abc' and 'aBc' and 'abC' and 'ABc' and other spellings differ");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_WithPromotedColumns_ReportsOnlyTheColumnsTheTableDoesNotPublish()
+    {
+        var inference = new ImportTypedColumnInference();
+        for (var index = 0; index < ImportTypedColumnInference.MaxColumns + 1; index++)
+        {
+            inference.Observe($"c{index}", index);
+        }
+
+        // The table already has c128; it refused c5, and c3 clashes by case with an existing C3.
+        var promoted = Enumerable.Range(0, ImportTypedColumnInference.MaxColumns + 1)
+            .Where(index => index != 5)
+            .Select(index => new ImportTypedColumn { Name = index == 3 ? "C3" : $"c{index}", PostgresType = "bigint" })
+            .ToArray();
+
+        inference.SkippedNameWarnings(promoted).Should().ContainSingle()
+            .Which.Should().Contain("existing table): 2, including 'c3', 'c5'.");
     }
 }

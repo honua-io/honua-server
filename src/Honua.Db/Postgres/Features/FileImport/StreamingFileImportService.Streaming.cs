@@ -335,7 +335,6 @@ internal sealed partial class StreamingFileImportService
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
                 completionWarningsBuilder.AddRange(hiddenSourceWarnings.Values);
-                completionWarningsBuilder.AddRange(typedColumnInference.SkippedNameWarnings());
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {
                     completionWarningsBuilder.Add(string.Format(
@@ -421,6 +420,8 @@ internal sealed partial class StreamingFileImportService
                     }
                 }
 
+                // After promotion, so the warnings match the columns the table publishes.
+                completionWarningsBuilder.AddRange(typedColumnInference.SkippedNameWarnings(dataCommitted ? typedColumns : null));
                 if (dataCommitted && csvSourceIdAlias is not null)
                 {
                     completionWarningsBuilder.Add(BuildCsvSourceIdWarning(csvSourceIdAlias, typedColumns));

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Core.Features.FileImport.Services;
 
@@ -26,7 +27,9 @@ internal sealed partial class ImportTypedColumnInference
     private readonly HashSet<string> _overflowSeen = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CaseVariants> _caseVariants = new(StringComparer.OrdinalIgnoreCase);
 
-    public IReadOnlyList<string> SkippedNameWarnings()
+    // Pass the columns promotion returned: an existing table can publish a key that inference counted
+    // past the limit, and the database can refuse a column inference resolved.
+    public IReadOnlyList<string> SkippedNameWarnings(IReadOnlyCollection<ImportTypedColumn>? promoted = null)
     {
         var warnings = new List<string>(Math.Min(_unsafeNames.Count, MaxReportedNames) + _reservedNames.Count + 2);
         warnings.AddRange(_unsafeNames.Take(MaxReportedNames).Select(name =>
@@ -51,19 +54,45 @@ internal sealed partial class ImportTypedColumnInference
 
         warnings.AddRange(RejectedColumnWarnings());
 
-        if (_overflowNames.Count > 0)
+        if (OverflowWarning(promoted) is { } overflow)
         {
-            warnings.Add(string.Format(
-                CultureInfo.InvariantCulture,
-                "Source properties past the {2}-column limit that were not published as columns: {0}{1}, including {3}. "
-                + "Their values are kept in the stored properties document but are hidden in published features and exports.",
-                _overflowSeen.Count >= MaxTrackedNames ? "at least " : string.Empty,
-                _overflowNames.Count,
-                MaxColumns,
-                string.Join(", ", _overflowNames.Take(MaxOverflowExamples).Select(name => $"'{name}'"))));
+            warnings.Add(overflow);
         }
 
         return warnings;
+    }
+
+    private string? OverflowWarning(IReadOnlyCollection<ImportTypedColumn>? promoted)
+    {
+        var hidden = HiddenOverflowNames(promoted);
+        if (hidden.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "Source properties not published as columns (past the {2}-column limit or refused by the existing table): {0}{1}, including {3}. "
+            + "Their values are kept in the stored properties document but are hidden in published features and exports.",
+            _overflowSeen.Count >= MaxTrackedNames ? "at least " : string.Empty,
+            hidden.Count,
+            MaxColumns,
+            string.Join(", ", hidden.Take(MaxOverflowExamples).Select(name => $"'{name}'")));
+    }
+
+    private List<string> HiddenOverflowNames(IReadOnlyCollection<ImportTypedColumn>? promoted)
+    {
+        if (promoted is null)
+        {
+            return _overflowNames;
+        }
+
+        // Backfill reads each column from the key with exactly its spelling, so match names exactly.
+        var published = promoted.Select(column => column.Name).ToHashSet(StringComparer.Ordinal);
+        return _overflowNames.Concat(Resolve().Select(column => column.Name))
+            .Where(name => !published.Contains(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     private void NoteUnpromotableName(string name)
