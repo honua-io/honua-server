@@ -61,22 +61,23 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
     internal async Task ProcessAsync(FieldCollectionActionInvocation invocation, CancellationToken cancellationToken)
     {
         var actionType = invocation.Action.ActionType;
-        var options = _options.CurrentValue;
-        if (!options.Enabled)
-        {
-            LogSkippedDisabled(_logger, actionType, invocation.InvocationId);
-            return;
-        }
-
         if (!_handlers.TryGetValue(actionType, out var handler))
         {
             LogNoHandler(_logger, actionType, invocation.Action.Id);
             return;
         }
 
-        var maxAttempts = Math.Max(1, options.MaxAttempts);
+        var maxAttempts = Math.Max(1, _options.CurrentValue.MaxAttempts);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            // Checked before every attempt so a reload that disables dispatch also
+            // stops the retries of an invocation already in flight.
+            if (!_options.CurrentValue.Enabled)
+            {
+                LogSkippedDisabled(_logger, actionType, invocation.InvocationId);
+                return;
+            }
+
             FieldCollectionActionResult result;
             try
             {

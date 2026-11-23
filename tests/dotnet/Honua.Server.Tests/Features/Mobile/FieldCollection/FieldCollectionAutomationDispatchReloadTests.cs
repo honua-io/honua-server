@@ -70,6 +70,26 @@ public sealed class FieldCollectionAutomationDispatchReloadTests
         Assert.Equal(1, handler.Calls);
     }
 
+    [UnitTest]
+    public async Task Process_WhenDisabledBetweenAttempts_StopsRetrying()
+    {
+        var monitor = new MutableOptionsMonitor(new FieldCollectionAutomationOptions { Enabled = true, MaxAttempts = 2 });
+        var dispatcher = new ChannelFieldCollectionActionDispatcher(
+            Options.Create(monitor.CurrentValue),
+            NullLogger<ChannelFieldCollectionActionDispatcher>.Instance);
+        var handler = new RecordingHandler
+        {
+            Result = FieldCollectionActionResult.Failure("down", retryable: true),
+            AfterCall = () => monitor.CurrentValue = new FieldCollectionAutomationOptions { Enabled = false, MaxAttempts = 2 },
+        };
+        using var service = new FieldCollectionAutomationDispatchBackgroundService(
+            dispatcher, [handler], monitor, NullLogger<FieldCollectionAutomationDispatchBackgroundService>.Instance);
+
+        await service.ProcessAsync(CreateInvocation("inv-midway"), CancellationToken.None);
+
+        Assert.Equal(1, handler.Calls);
+    }
+
     private static FieldCollectionActionInvocation CreateInvocation(string invocationId)
         => new()
         {
@@ -104,6 +124,8 @@ public sealed class FieldCollectionAutomationDispatchReloadTests
 
         public FieldCollectionActionResult Result { get; init; } = FieldCollectionActionResult.Success();
 
+        public Action? AfterCall { get; init; }
+
         public int Calls => Volatile.Read(ref _calls);
 
         public FieldCollectionAutomationActionType ActionType => FieldCollectionAutomationActionType.Webhook;
@@ -114,6 +136,7 @@ public sealed class FieldCollectionAutomationDispatchReloadTests
         {
             Interlocked.Increment(ref _calls);
             Delivered.TrySetResult(invocation.InvocationId);
+            AfterCall?.Invoke();
             return Task.FromResult(Result);
         }
     }
