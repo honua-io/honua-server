@@ -21,6 +21,14 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> BatchIndex { get; } = new();
     protected ConcurrentDictionary<string, CancellationTokenSource> UploadCancellationTokens { get; } = new();
 
+    protected async Task InitializeUploadProgressAsync(FileUploadRequest request, long totalBytes, CancellationToken cancellationToken)
+    {
+        var initial = UploadProgress.CreateInitial(request.UploadId, request.FileName, totalBytes, request.ContentType)
+            with { TenantId = request.TenantId };
+        await TrySetUploadProgressAsync(request.UploadId, initial, TimeSpan.FromHours(1), cancellationToken);
+        ReportProgressToCaller(request.Progress, request.UploadId, initial);
+    }
+
     public abstract CloudStorageProvider Provider { get; }
 
     public virtual string? ObjectKeyPrefix => null;

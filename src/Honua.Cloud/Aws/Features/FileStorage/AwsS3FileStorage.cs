@@ -106,9 +106,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
-        var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType) with { TenantId = request.TenantId };
-        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
-        ReportProgressToCaller(request.Progress, uploadId, initialProgress);
+        await InitializeUploadProgressAsync(request, totalBytes, cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
         try

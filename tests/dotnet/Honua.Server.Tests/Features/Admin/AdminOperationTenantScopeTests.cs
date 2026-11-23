@@ -29,17 +29,17 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class AdminOperationTenantScopeTests
 {
     [Theory]
-    [InlineData("enabled", "absent", "admin", "denied")]
-    [InlineData("enabled", "blank", "admin", "denied")]
-    [InlineData("enabled", "absent", "platform_admin", "allowed")]
-    [InlineData("enabled", "blank", "platform_admin", "allowed")]
-    [InlineData("disabled", "absent", "admin", "allowed")]
-    [InlineData("disabled", "blank", "admin", "allowed")]
+    [InlineData("enabled:denied", "absent", "admin")]
+    [InlineData("enabled:denied", "blank", "admin")]
+    [InlineData("enabled:allowed", "absent", "platform_admin")]
+    [InlineData("enabled:allowed", "blank", "platform_admin")]
+    [InlineData("disabled:allowed", "absent", "admin")]
+    [InlineData("disabled:allowed", "blank", "admin")]
     public void CanAccess_UnownedOperation_UsesDeploymentPolicy(
-        string deployment, string tenantService, string role, string expected)
+        string deploymentCase, string tenantService, string role)
     {
         var services = new ServiceCollection()
-            .AddSingleton(Options.Create(new TenantContextOptions { Enabled = deployment == "enabled" }));
+            .AddSingleton(Options.Create(new TenantContextOptions { Enabled = deploymentCase.StartsWith("enabled", StringComparison.Ordinal) }));
         if (tenantService == "blank")
         {
             var tenant = Substitute.For<ITenantContext>();
@@ -50,7 +50,7 @@ public sealed class AdminOperationTenantScopeTests
         using var provider = services.BuildServiceProvider();
         var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
 
-        OperationTenantAuthorization.CanAccess(user, provider, null).Should().Be(expected == "allowed");
+        OperationTenantAuthorization.CanAccess(user, provider, null).Should().Be(deploymentCase.EndsWith("allowed", StringComparison.Ordinal));
     }
 
     [Theory]

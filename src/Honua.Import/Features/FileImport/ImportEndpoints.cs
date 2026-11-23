@@ -976,33 +976,6 @@ internal static partial class ImportEndpoints
         return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
     }
 
-    private static Progress<UploadProgress>? CreateUploadProgressReporter(HttpContext context, string uploadId)
-    {
-        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
-        if (progressStore == null)
-        {
-            return null;
-        }
-
-        var progressLogger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
-        return new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
-
-        async Task ReportProgressAsync(UploadProgress progress)
-        {
-            try
-            {
-                await progressStore.SetProgressAsync(uploadId, progress with { TenantId = tenantId }, TimeSpan.FromHours(1), CancellationToken.None);
-            }
-            // Intentionally generic: this is a best-effort progress update callback; a
-            // failure to publish progress must not fail the underlying upload/import.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
-            }
-        }
-    }
-
     private static async Task ReportAcceptedUploadAsync(
         HttpContext context,
         string uploadId,
@@ -1552,23 +1525,6 @@ internal static partial class ImportEndpoints
         var response = new ActiveUploadsResponse { Uploads = await VisibleUploadsAsync(context, uploads, cancellationToken) };
         IResult result = Results.Json(response, ImportJsonContext.Default.ActiveUploadsResponse);
         await result.ExecuteAsync(context);
-    }
-
-    private static async Task<UploadProgress[]> VisibleUploadsAsync(
-        HttpContext context,
-        IReadOnlyList<UploadProgress> uploads,
-        CancellationToken cancellationToken)
-    {
-        var visible = new List<UploadProgress>();
-        foreach (var upload in uploads)
-        {
-            if (await OperationTenantAuthorization.CanAccessOperationAsync(context, upload, cancellationToken))
-            {
-                visible.Add(upload);
-            }
-        }
-
-        return visible.ToArray();
     }
 
     private static async Task HandleGetActiveJobs(HttpContext context)
