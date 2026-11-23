@@ -1057,12 +1057,18 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
             LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN a.attname = 'objectid'
+                    THEN pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid')::regclass
+                END AS owned_sequence
+            ) object_id
             WHERE n.nspname = @schema AND c.relname = 'features' AND c.relkind = 'r'
               AND a.attnum > 0 AND NOT a.attisdropped
               AND CASE a.attname
                 WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype AND a.attnotnull
-                    AND pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid') IS NOT NULL
-                    AND (a.attidentity <> '' OR pg_catalog.pg_get_expr(d.adbin, d.adrelid) LIKE 'nextval(%')
+                    AND object_id.owned_sequence IS NOT NULL
+                    AND (a.attidentity <> '' OR pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+                        = format('nextval(%L::regclass)', object_id.owned_sequence))
                     AND EXISTS (
                         SELECT 1 FROM pg_catalog.pg_index i
                         WHERE i.indrelid = c.oid AND i.indisprimary AND i.indisvalid
@@ -1107,6 +1113,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
             LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN a.attname = 'objectid'
+                    THEN pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid')::regclass
+                END AS owned_sequence
+            ) object_id
             WHERE n.nspname = @schema AND c.relname = 'raster_tiles'
               AND a.attnum > 0 AND NOT a.attisdropped
               AND a.attname IN ('renderer_version', 'renderer_payload_sha256');
