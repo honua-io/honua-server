@@ -8,9 +8,8 @@ namespace Honua.Protocols.OData.Services;
 
 internal sealed partial class ODataSearchService
 {
-    // $metadata declares every resource's relationships on the shared Feature type, so a name is
-    // valid when any resource declares it; "*" keeps its earlier pass-through.
-    internal async Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
+    // Match the request-visible publications used to build the shared Feature type in $metadata.
+    internal async Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken, HttpContext? context = null)
     {
         if (string.IsNullOrWhiteSpace(expand))
         {
@@ -27,8 +26,10 @@ internal sealed partial class ODataSearchService
             return exception.Message;
         }
 
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resources = (snapshot?.Graph.Resources ?? []).Append(resource);
+        var resources = context is null
+            ? [resource]
+            : (await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, cancellationToken).ConfigureAwait(false))
+                .Select(publication => publication.Resource).ToArray();
         var known = resources.SelectMany(NavigationPropertyNames).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unknown = requested.Keys.FirstOrDefault(name => name != "*" && !known.Contains(name));
         return unknown is null ? null : $"Invalid $expand query option: '{unknown}' is not a navigation property.";

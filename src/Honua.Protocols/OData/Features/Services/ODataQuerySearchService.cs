@@ -38,19 +38,15 @@ internal sealed class ODataQuerySearchService
         string? format = null,
         BoundingBox? bbox = null,
         int? publicLayerId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        HttpContext? context = null)
     {
-        var sridError = await ODataGeometrySridGuard
-            .FindUnsupportedSridErrorAsync(_crsRegistry, [filter], cancellationToken)
-            .ConfigureAwait(false);
-        if (sridError != null)
+        var validationError = await ODataGeometrySridGuard
+            .FindUnsupportedSridErrorAsync(_crsRegistry, [filter], cancellationToken).ConfigureAwait(false)
+            ?? await _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken, context).ConfigureAwait(false);
+        if (validationError != null)
         {
-            return (new FeatureQuery(), sridError);
-        }
-
-        if (await FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
-        {
-            return (new FeatureQuery(), expandError);
+            return (new FeatureQuery(), validationError);
         }
 
         return await _queryService.BuildFeatureQueryAsync(
@@ -68,9 +64,6 @@ internal sealed class ODataQuerySearchService
             publicLayerId,
             cancellationToken).ConfigureAwait(false);
     }
-
-    public Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
-        => _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken);
 
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,

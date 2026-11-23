@@ -220,11 +220,11 @@ public sealed class ODataQueryHandlerTests
     }
 
     [UnitTheory]
-    [InlineData(0, false)]
-    [InlineData(-1, false)]
-    [InlineData(999999, false)]
-    [InlineData(999999, true)]
-    public async Task HandleGetFeaturesNonStreamingAsync_WithTopZero_RejectsUnsupportedSridBeforeReadingStorage(int srid, bool count)
+    [InlineData(0, CountOption.Omitted)]
+    [InlineData(-1, CountOption.Omitted)]
+    [InlineData(999999, CountOption.Omitted)]
+    [InlineData(999999, CountOption.Requested)]
+    public async Task HandleGetFeaturesNonStreamingAsync_WithTopZero_RejectsUnsupportedSridBeforeReadingStorage(int srid, CountOption count)
     {
         using var provider = CreateProvider(["OData"]);
         var graph = provider.GetRequiredService<IMetadataV2GraphProvider>();
@@ -240,6 +240,26 @@ public sealed class ODataQueryHandlerTests
         context.Request.Path = "/odata/Layers(1)/Features";
 
         var reader = Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>();
+        var handler = CreateQueryHandler(reader, graph);
+
+        var result = await handler.HandleGetFeaturesNonStreamingAsync(context, 1,
+            filter: $"geo.intersects(Geometry,geography'SRID={srid};POINT(0 0)')", top: 0, count: count == CountOption.Requested ? true : null);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        context.Response.Body.Position = 0;
+        using var document = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("error").GetProperty("message").GetString()
+            .Should().Contain("SRID").And.Contain(srid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        reader.ReceivedCalls().Should().BeEmpty();
+    }
+
+    public enum CountOption { Omitted, Requested }
+
+    private static Honua.Protocols.OData.ODataQueryHandler CreateQueryHandler(
+        Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader reader,
+        IMetadataV2GraphProvider graph)
+    {
         var crs = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>();
         crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
         var filterExpressions = new Honua.Core.Queries.Filters.FilterExpressionService(
@@ -259,7 +279,7 @@ public sealed class ODataQueryHandlerTests
         var validation = new ODataValidationService(new Honua.Core.Features.Validation.CommonQueryValidator(
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Configuration.LimitsOptions())),
             Microsoft.Extensions.Options.Options.Create(new Honua.Protocols.OData.ODataOptions()));
-        var handler = new Honua.Protocols.OData.ODataQueryHandler(new Honua.Protocols.OData.ODataQueryDependencies(
+        return new Honua.Protocols.OData.ODataQueryHandler(new Honua.Protocols.OData.ODataQueryDependencies(
             reader, Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(), crs, validation,
             new ODataQuerySearchService(query, search, crs),
             Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>(),
@@ -267,16 +287,6 @@ public sealed class ODataQueryHandlerTests
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Caching.CacheOptions()), resolver),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<Honua.Protocols.OData.ODataQueryHandler>.Instance);
 
-        var result = await handler.HandleGetFeaturesNonStreamingAsync(context, 1,
-            filter: $"geo.intersects(Geometry,geography'SRID={srid};POINT(0 0)')", top: 0, count: count);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        context.Response.Body.Position = 0;
-        using var document = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
-        document.RootElement.GetProperty("error").GetProperty("message").GetString()
-            .Should().Contain("SRID").And.Contain(srid.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        reader.ReceivedCalls().Should().BeEmpty();
     }
 
     private static async Task<ServiceProvider> CreateTenantProviderAsync(string? tenantId, bool includeVisibleSibling)

@@ -714,7 +714,7 @@ internal sealed partial class ODataSearchService
 
         // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
         // Validate before the empty-page return so @odata.context never names a dropped expansion.
-        if (await FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
+        if (await FindInvalidExpandAsync(expand, resource, cancellationToken, context).ConfigureAwait(false) is { } expandError)
         {
             throw new ValidationException(expandError);
         }

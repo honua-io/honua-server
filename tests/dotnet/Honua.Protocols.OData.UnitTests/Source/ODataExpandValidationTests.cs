@@ -15,6 +15,11 @@ using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Honua.TestKit.Infrastructure;
+using Honua.Infrastructure.Validation;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
@@ -61,7 +66,13 @@ public sealed class ODataExpandValidationTests
     [Fact]
     public async Task ProcessExpandAsync_NavigationPropertyOfAnotherLayer_IsAnEmptyCollection()
     {
-        var result = await CreateService().ProcessExpandAsync("Inspections", Parent, 13, [7], CancellationToken.None);
+        using var services = CreatePublishedServices();
+        var context = new DefaultHttpContext { RequestServices = services };
+        var graph = services.GetRequiredService<IMetadataV2GraphProvider>();
+        var result = await CreateService(graph: graph).ProcessExpandAsync("Inspections", Parent, 13, [7], context);
+
+        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
+        visible.Select(publication => publication.Resource.Metadata.Id).Should().BeEquivalentTo("parents", "siblings");
 
         result[7]["Inspections"].Should().BeEmpty();
     }
@@ -85,14 +96,44 @@ public sealed class ODataExpandValidationTests
         await adapter.DidNotReceiveWithAnyArgs().ConvertAsync(default!, default!, default);
     }
 
-    private static ODataSearchService CreateService(ODataQueryService? query = null, ICrsRegistry? crs = null)
+    private static ODataSearchService CreateService(ODataQueryService? query = null, ICrsRegistry? crs = null,
+        IMetadataV2GraphProvider? graph = null)
     {
-        var graph = Substitute.For<IMetadataV2GraphProvider>();
-        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(
-            new MetadataV2Graph { Resources = [Parent, Sibling] }, "test", DateTimeOffset.UtcNow));
+        graph ??= CreateGraphProvider();
         return new ODataSearchService(new ODataSearchDependencies(
             Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
             Substitute.For<IGeometryService>(), crs ?? Substitute.For<ICrsRegistry>(), graph, null!,
             Options.Create(new ODataOptions())), query!);
+    }
+
+    private static IMetadataV2GraphProvider CreateGraphProvider()
+    {
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [Parent, Sibling] }, "test", DateTimeOffset.UtcNow));
+        return graph;
+    }
+
+    private static ServiceProvider CreatePublishedServices()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("parents", "Parents", accessPolicy: new() { AllowAnonymous = true })
+            .AddResource("siblings", "Siblings", accessPolicy: new() { AllowAnonymous = true })
+            .AddStorageBinding("parent-storage", "parents", "parents", storageLayerId: 13)
+            .AddStorageBinding("sibling-storage", "siblings", "siblings", storageLayerId: 14)
+            .AddService("odata", "OData", protocols: ["OData"], accessPolicy: new() { AllowAnonymous = true })
+            .AddPublication("parents-pub", "odata", "parents", layerIndex: 1, storageBindingId: "parent-storage")
+            .AddPublication("siblings-pub", "odata", "siblings", layerIndex: 2, storageBindingId: "sibling-storage")
+            .Build();
+        graph = graph with
+        {
+            Resources = graph.Resources.Select(resource => resource with
+            {
+                Relationships = resource.Metadata.Id == "parents" ? Parent.Relationships : Sibling.Relationships
+            }).ToArray()
+        };
+        return new ServiceCollection().AddLogging().AddValidationServices()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph)).BuildServiceProvider();
     }
 }
