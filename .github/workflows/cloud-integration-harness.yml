@@ -14,14 +14,11 @@ on:
     # Nightly; the harness is Docker-heavy and not part of the per-PR gate.
     - cron: '0 5 * * *'
   workflow_dispatch:
-  # honua-server#9480: 9 of 14 nightly reds (10-22 Nov) were migration, schema-guard
-  # (including its Postgres raster-store case) or process-pool regressions that merged
-  # green because no PR ran this project. The whole Postgres provider is listed because
-  # CoreSchemaDivergenceGuardTests drive its raster, metadata, attachment and
-  # SensorThings stores. A PR touching those seams runs the Local Substrate job only (one
-  # hosted runner, ~10 min); the kind/LocalStack lane stays nightly. Informational:
-  # not a required check. PR Gate's Analyzers (tests) row already compiles this
-  # project whenever the diff reaches it, so these paths are about behaviour.
+  # A PR touching the migration, schema-guard or process-pool seams runs the Local
+  # Substrate job only; the kind/LocalStack job stays nightly. The whole Postgres
+  # provider is listed because CoreSchemaDivergenceGuardTests drive its raster,
+  # metadata, attachment and SensorThings stores. Informational, not a required check.
+  # PR Gate's Analyzers (tests) row compiles this project whenever the diff reaches it.
   pull_request:
     branches: [trunk]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
