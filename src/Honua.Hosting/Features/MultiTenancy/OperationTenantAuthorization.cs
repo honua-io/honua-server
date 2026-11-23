@@ -34,7 +34,7 @@ internal static class OperationTenantAuthorization
 
         if (tenant is null || string.IsNullOrWhiteSpace(tenant.TenantId))
         {
-            return true;
+            return !options.Enabled;
         }
 
         return !options.Enabled

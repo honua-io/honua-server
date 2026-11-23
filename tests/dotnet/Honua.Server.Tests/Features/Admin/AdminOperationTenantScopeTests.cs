@@ -29,6 +29,31 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class AdminOperationTenantScopeTests
 {
     [Theory]
+    [InlineData(true, false, "admin", false)]
+    [InlineData(true, true, "admin", false)]
+    [InlineData(true, false, "platform_admin", true)]
+    [InlineData(true, true, "platform_admin", true)]
+    [InlineData(false, false, "admin", true)]
+    [InlineData(false, true, "admin", true)]
+    public void CanAccess_UnownedOperation_UsesDeploymentPolicy(
+        bool enabled, bool registerTenant, string role, bool expected)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton(Options.Create(new TenantContextOptions { Enabled = enabled }));
+        if (registerTenant)
+        {
+            var tenant = Substitute.For<ITenantContext>();
+            tenant.TenantId.Returns(string.Empty);
+            services.AddSingleton(tenant);
+        }
+
+        using var provider = services.BuildServiceProvider();
+        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
+
+        OperationTenantAuthorization.CanAccess(user, provider, null).Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("tenant-a", "admin", 200)]
     [InlineData("tenant-b", "admin", 404)]
     [InlineData("tenant-b", "platform_admin", 200)]

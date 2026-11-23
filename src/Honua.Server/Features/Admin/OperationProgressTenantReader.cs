@@ -9,12 +9,12 @@ using Honua.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin;
 
-internal static partial class OperationsProgressEndpoints
+internal static class OperationProgressTenantReader
 {
     // Cross-tenant administrators see every operation; other administrators see only their tenant's,
     // and with tenancy enabled unowned operations are hidden. Each listed operation is repaired from
     // its durable job before the tenant check and the caller's filter.
-    private static async Task<List<IOperationProgress>> ReadVisibleOperationsAsync(
+    internal static async Task<List<IOperationProgress>> ReadVisibleOperationsAsync(
         HttpContext context,
         OperationType? operationType,
         CancellationToken cancellationToken)

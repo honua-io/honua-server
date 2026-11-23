@@ -135,7 +135,7 @@ internal static partial class OperationsProgressEndpoints
             operationType = parsedType;
         }
 
-        var operations = (await ReadVisibleOperationsAsync(httpContext, operationType, cancellationToken).ConfigureAwait(false))
+        var operations = (await OperationProgressTenantReader.ReadVisibleOperationsAsync(httpContext, operationType, cancellationToken).ConfigureAwait(false))
             .Where(progress => progress.Status is OperationStatus.Queued or OperationStatus.Processing)
             .Select(SerializeOperationToElement)
             .ToList();
@@ -156,7 +156,7 @@ internal static partial class OperationsProgressEndpoints
                 $"Invalid operation type '{operationType}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
         }
 
-        var operations = (await ReadVisibleOperationsAsync(httpContext, parsedType, cancellationToken).ConfigureAwait(false))
+        var operations = (await OperationProgressTenantReader.ReadVisibleOperationsAsync(httpContext, parsedType, cancellationToken).ConfigureAwait(false))
             .Where(progress => progress.Type == parsedType)
             .Select(SerializeOperationToElement)
             .ToList();
