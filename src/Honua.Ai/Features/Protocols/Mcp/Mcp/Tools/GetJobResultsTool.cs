@@ -124,9 +124,10 @@ internal sealed class GetJobResultsTool : IMcpTool
         var artifactCount = Math.Max(1, output.Artifacts.Count);
         var previewBytes = JobResultFeatureSummary.ResponsePreviewBytes / artifactCount;
         var encodedLengthLimit = JobResultFeatureSummary.MaxEncodedPreviewLength / artifactCount;
+        var preview = new JobResultFeatureSummary.PreviewRequest(window, previewBytes, encodedLengthLimit);
         foreach (var artifact in output.Artifacts)
         {
-            JobResultFeatureSummary.AttachSummary(artifact, window, previewBytes, encodedLengthLimit, cancellationToken);
+            JobResultFeatureSummary.AttachSummary(artifact, preview, cancellationToken);
             if (argument.IncludeUri != true)
             {
                 JobResultFeatureSummary.OmitLargeInlineUri(artifact);

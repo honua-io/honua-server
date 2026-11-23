@@ -22,13 +22,15 @@ internal static class JobResultFeatureSummary
 
     internal readonly record struct RowWindow(int Offset, int Limit);
 
+    internal readonly record struct PreviewRequest(RowWindow Window, int Bytes, int EncodedLengthLimit);
+
     internal static void AttachSummary(
-        McpArtifactRef artifact, RowWindow window, int previewBytes, int encodedLengthLimit, CancellationToken cancellationToken)
+        McpArtifactRef artifact, PreviewRequest request, CancellationToken cancellationToken)
     {
         if (artifact.Uri is { } uri && uri.StartsWith(GeoJsonDataUriPrefix, StringComparison.OrdinalIgnoreCase))
         {
             artifact.FeatureSummary = TrySummarize(
-                uri.AsSpan(GeoJsonDataUriPrefix.Length), window, previewBytes, encodedLengthLimit, cancellationToken);
+                uri.AsSpan(GeoJsonDataUriPrefix.Length), request, cancellationToken);
         }
     }
 
@@ -43,10 +45,10 @@ internal static class JobResultFeatureSummary
     }
 
     private static McpArtifactFeatureSummary? TrySummarize(
-        ReadOnlySpan<char> base64, RowWindow window, int previewBytes, int encodedLengthLimit, CancellationToken cancellationToken)
+        ReadOnlySpan<char> base64, PreviewRequest request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (base64.Length > encodedLengthLimit || previewBytes / 2 < OmittedOffsetBytes)
+        if (base64.Length > request.EncodedLengthLimit || request.Bytes / 2 < OmittedOffsetBytes)
         {
             return null;
         }
@@ -67,7 +69,7 @@ internal static class JobResultFeatureSummary
                 return null;
             }
 
-            var accumulator = new SummaryAccumulator(window, previewBytes);
+            var accumulator = new SummaryAccumulator(request.Window, request.Bytes);
             foreach (var feature in features.EnumerateArray())
             {
                 cancellationToken.ThrowIfCancellationRequested();
