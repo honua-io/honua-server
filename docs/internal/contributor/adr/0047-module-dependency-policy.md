@@ -41,8 +41,8 @@ several assemblies that share a role.
 | 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. | `Microsoft.Extensions.*`, `Polly` only. The heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) have been migrated out to Geometry / Geocoding / Aws; new code must not reintroduce them here. |
 | 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Routing` (pgRouting), `Honua.Cloud.Aws` (S3 / etc.), `Honua.Cloud.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family / engine so the rest of the graph stays light. May reference Abstractions (and Core where needed). **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. `Honua.Routing` (#1266) houses the pgRouting route / service-area solve engine behind `IRoutingProvider`; it depends on Abstractions only (the `IDatabaseConnectionProvider` surface), is consumed by the GeoServices NAServer protocol adapter, and must never reference a storage provider or back-reference Server. | The relevant SDK family + Abstractions/Core. No other satellite. |
 | 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. Owns the `IGeometryService` abstraction surface, so it also consumes NetTopologySuite via Geometry. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / ServiceDefaults. |
-| 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Cloud.Aws`, `Honua.Cloud.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
-| 4 | **Ai** | `Honua.Ai` | Carved AiBuilder + Grounding + NlQuery + AnalysisContent surface (the four feature subtrees that previously sat in `Honua.Server/Features/`). Sits alongside Hosting / Jobs in tier 4 so Server can depend on it without re-introducing a cycle. Grounding / AnalysisContent orchestrate analysis jobs through `IGeoprocessingJobService`, so Ai also references Geoprocessing; the MCP geocode/route tools (#1597) additionally adapt the canonical `IGeocodeCoordinatorService` / `IRoutingProvider` pipelines, so Ai references the Geocoding and Routing satellites. **Must not reference Honua.Server** — `HonuaAiIsolationTests` guards the one-way edge. | `Asp.Versioning.Http`, `StackExchange.Redis` + Abstractions / Core / Geocoding / Routing / Hosting / Jobs / Geoprocessing / ServiceDefaults. |
+| 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Cloud.Aws`, `Honua.Cloud.Azure`) and Worker.Gdal reuse it. | `Npgsql` for the PostgreSQL-backed job substrate + Abstractions / Core / Hosting / ServiceDefaults. |
+| 4 | **Ai** | `Honua.Ai` | Carved AiBuilder + Grounding + NlQuery + AnalysisContent surface (the four feature subtrees that previously sat in `Honua.Server/Features/`). Sits alongside Hosting / Jobs in tier 4 so Server can depend on it without re-introducing a cycle. Grounding / AnalysisContent orchestrate analysis jobs through `IGeoprocessingJobService`, so Ai also references Geoprocessing; the MCP geocode/route tools (#1597) additionally adapt the canonical `IGeocodeCoordinatorService` / `IRoutingProvider` pipelines, so Ai references the Geocoding and Routing satellites. **Must not reference Honua.Server** — `HonuaAiIsolationTests` guards the one-way edge. | `Asp.Versioning.Http`, `Microsoft.Extensions.AI*`, `AWSSDK.BedrockRuntime` (Studio AI Bedrock adapter), `BouncyCastle.Cryptography` + Abstractions / Core / Geocoding / Routing / Hosting / Jobs / Geoprocessing / ServiceDefaults. |
 | 4 | **Geoprocessing** | `Honua.Geoprocessing` | Canonical process / analysis runtime (plan validation, dry-run, job submission/lifecycle) carved out of Server in the geoprocessing-split refactor so the OGC API Processes / GeoServices GPServer protocol adapters — and Ai's analysis orchestration — can reference it without pulling Server transitively. Sits alongside Hosting / Jobs / Ai in tier 4. Canonical durable routing processes consume the tier 3 `Honua.Routing` engine through `IRoutingProvider`, preserving one executor for GPServer, OGC API Processes and workflows. **Must not reference Honua.Server** — `GeoprocessingIsolationTests` guards the one-way edge. | Abstractions / Core / Geometry / Routing / Hosting / Jobs / ServiceDefaults. |
 | 4 | **Io** | `Honua.Io` | File input/output surface carved out of Server in the io-split refactor: file storage (local disk + cloud stream helpers, upload-progress stores, retention cleanup) and export writers (Shapefile / GeoPackage / CSV); the generic upload primitives are a planned follow-on increment. ASP.NET-coupled like Hosting; sits alongside Hosting / Jobs / Ai / Geoprocessing in tier 4. **Must not reference Honua.Server** — `HonuaIoIsolationTests` guards the one-way edge. The NTS file-format *readers* deliberately stay in Geometry so storage providers can consume them without pulling this ASP.NET surface; the export *writers* live here as part of the HTTP export feature. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / Hosting / ServiceDefaults. |
 | 4 | **Import** | `Honua.Import` | Data-ingest / migration HTTP surface carved out of Server in the import-split refactor: Migration endpoints + job managers (ArcGIS / GeoServer / OGC API Features / WFS / coverage), file-import upload plumbing (multipart parsing, streaming upload, network-address validation), raster-import endpoints. ASP.NET-coupled; sits alongside Hosting / Jobs / Ai / Geoprocessing / Io in tier 4. **Must not reference Honua.Server** — `HonuaImportIsolationTests` guards the one-way edge. The provider-agnostic ingest *domain* (REST source clients, abstractions, evidence model) stays in Core because the storage providers consume it; the NTS readers stay in Geometry. | `Microsoft.AspNetCore.*`, `Asp.Versioning.Http` + Abstractions / Core / Geometry / Hosting / ServiceDefaults. |
@@ -53,14 +53,15 @@ several assemblies that share a role.
 | 7 | **Composition root** | `Honua.Server` | Wires every storage provider + every protocol module into an executable host. The only assembly allowed to reference everything below it. Feature code only lives here when it cannot fit a lower tier. | Anything the runtime needs. |
 
 `Honua.ServiceDefaults` is a sideways utility shared by Hosting and Server
-(it carries .NET Aspire defaults). `Honua.AppHost` is an Aspire orchestration
-shell that references only `Honua.ServiceDefaults`. `Honua.Worker.Gdal` is a
+for telemetry and health-check defaults. The former `Honua.AppHost` Aspire
+orchestration project has been removed; `Honua.Server` remains the composition
+root. `Honua.Worker.Gdal` is a
 separate side-car GDAL process that, per ADR-0038, deliberately does **not**
 reference `Honua.Server` (so the worker image does not pull in the whole
 host); it depends on `Honua.Core.Abstractions`, `Honua.Core`, `Honua.Jobs`,
 and the AWS/Azure satellites for configured license secret resolution.
-These three sit outside the main stack and are matrix entries in their own
-right but do not participate in the tier topology. Runnable sample applications live
+ServiceDefaults and Worker.Gdal sit outside the main stack and have their own
+matrix entries but do not participate in the tier topology. Runnable sample applications live
 in `honua-samples` and build independently of the server.
 
 ### Dependency direction matrix
@@ -142,11 +143,9 @@ Reading the matrix:
 
 | Consumer ↓ \ Provider → | Abstr | Core | Aws | Azure | Hosting | Jobs | Server | SvcDef |
 |--------------------------|:-----:|:----:|:---:|:-----:|:-------:|:----:|:------:|:------:|
-| **AppHost**              |       |      |     |       |         |      |        |   ✓    |
 | **Worker.Gdal**          |   ✓   |  ✓   |  ✓  |   ✓   |         |  ✓   |        |        |
 
-`AppHost` is the Aspire-orchestration entry point; it carries no business
-logic and references only `ServiceDefaults`. `Worker.Gdal` is the GDAL/OGR
+`Worker.Gdal` is the GDAL/OGR
 side-car process; per ADR-0038 it deliberately does **not** reference
 `Honua.Server` and composes Abstractions + Core + Jobs and the cloud satellites.
 
@@ -272,7 +271,7 @@ which:
    `Honua.Db.Postgres*`, `Honua.Db.DuckDB`, `Honua.Db.MySql`, `Honua.Db.SqlServer`,
    `Honua.Db.Oracle`,
    `Honua.Protocols.*`, `Honua.Server`, `Honua.ServiceDefaults`,
-   `Honua.AppHost`, `Honua.Worker.*`). Unclassified csprojs (benchmarks
+   `Honua.Worker.*`). Unclassified csprojs (benchmarks
    and tests) fall through to a default policy that permits any
    reference — they are tooling, not part of the runtime topology.
 3. For every `<ProjectReference>` in a runtime csproj, looks up the

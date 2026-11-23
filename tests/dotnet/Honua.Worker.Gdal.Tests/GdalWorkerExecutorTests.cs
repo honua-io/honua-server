@@ -263,7 +263,7 @@ public sealed class GdalWorkerExecutorTests
             GdalJobInputReader.TryGetRasterInput(
                     job.Spec.Parameters,
                     "source",
-                    long.MaxValue,
+                    new GdalWorkerOptions { MaxArtifactBytes = long.MaxValue },
                     out var input,
                     out var error)
                 .Should().BeTrue(error);

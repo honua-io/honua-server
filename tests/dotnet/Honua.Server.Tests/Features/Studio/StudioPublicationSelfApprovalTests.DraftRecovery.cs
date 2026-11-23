@@ -4,12 +4,15 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Guardrails;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Studio;
 
@@ -23,6 +26,10 @@ public sealed partial class StudioPublicationSelfApprovalTests
     public async Task CreateDraft_AfterHumanApprovalAndRestart_ProposerRecoversIdentityAndCurrentGeneration()
     {
         const string subject = "recover-draft-proposer";
+        // An agent creates its own draft directly under the built-in policy; an operator override
+        // keeps creation behind a human approval so the proposal recovery path runs.
+        _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+            .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
         using var proposer = CreateBearerClient(CreateToken(subject));
         var response = await ApprovedStudioDraftCall.RpcAsync(proposer,
             $$$$"""{"jsonrpc":"2.0","id":"create-recoverable-draft","method":"tools/call","params":{"name":"honua_studio_create_draft","arguments":{"packageKey":"recover-draft-{{{{Guid.NewGuid():N}}}}","family":"dashboard","schemaVersion":"1.0"}}}""");

@@ -35,8 +35,14 @@ differ. `dc` is shorthand throughout:
 
 ```bash
 Install="$PWD"                      # the quickstart project directory
-dc() { docker compose --env-file .env -f compose.yaml "$@"; }
+dc() { docker compose --env-file .env "$@"; }
 ```
+
+The quickstart's `.env` lists the project's files in `COMPOSE_FILE`: `compose.yaml`, the
+executor, Console when enabled, and the approved-image override `compose.executor.image.yaml`.
+Do not add `-f` to `dc`: an explicit file makes Compose ignore `COMPOSE_FILE`, so
+`dc up -d` would recreate `honua` without the approved image, and `dc ps` and
+`dc logs` would miss the executor and Console.
 
 Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
 compiler, or a registry credential.
@@ -172,8 +178,9 @@ services:
       ForwardedHeaders__KnownProxies__0: "${PROXY_ADDRESS}"
 EOF
 
-# the overlay joins every later dc invocation
-dc() { docker compose --env-file .env -f compose.yaml -f edge.yaml "$@"; }
+# add the overlay to the project's file list once; every later dc and quickstart.py run reads it
+grep -q '^COMPOSE_FILE=.*edge\.yaml' .env || sed -i.orig 's|^COMPOSE_FILE=.*|&:edge.yaml|' .env
+rm -f .env.orig
 
 dc config --quiet
 dc up -d --wait --wait-timeout 180
@@ -185,8 +192,9 @@ query from the [quickstart](../../get-started/quickstart.md#4-publish-a-table-an
 A readback over loopback proves nothing about the edge.
 
 
-Retain `edge.yaml` with the installation, and redefine `dc` with the overlay in
-any new shell. Recheck the proxy source address after replacing the proxy or Docker network.
+Retain `edge.yaml` with the installation; it stays in `COMPOSE_FILE`, so the
+executor keeps it on upgrade and rollback. If you set `COMPOSE_PATH_SEPARATOR`,
+use that separator instead of `:`. Recheck the proxy source address after replacing the proxy or Docker network.
 Never disable certificate validation to make public readback pass. DNS, TLS and
 host reboot behavior must also be checked on the actual deployment host.
 
@@ -290,13 +298,28 @@ file-ownership capabilities so the storage owner is preserved; the running
 server keeps its unprivileged, dropped-capabilities configuration. Keep
 `$Backup` — the restore needs it.
 
+The backup keeps the installation directory with the data, as `install.tar.gz`:
+`.env`, every Compose file including your own overrides and `edge.yaml`, the image
+lock `images.json`, the Console files, the PROJ grid build context, and `secrets/`,
+which holds the generated database and admin credentials, the connection
+encryption key and the operation key ring. Without `secrets/` a restored database
+cannot decrypt its stored connection credentials. The same root utility container
+as the storage archive takes it, because the quickstart makes `secrets/keyring.pfx`
+readable only by root and the containers' group; the executor's own `backups/` and
+earlier `backup-*` directories are left out. The bash block creates the backup
+directory owner-only (`mkdir -m 700`); keep the copy that private off-host. The
+local approved operations manager keeps its approvals and audit trail in its own
+volume (`compose-manager-postgres`), which this recipe does not copy: retain that
+volume, or follow the coordinated [backup and restore policy](backup-and-restore.md).
+
 Take the backup:
 
 ```bash
 Backup="$Install/backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -m 700 "$Backup"
-cp .env compose.yaml "$Backup/"
-cp quickstart.py journey.py published-layer.json installed-packages.txt "$Backup/" 2>/dev/null || true
+docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "$Install:/install:ro" -v "$Backup:/backup" \
+  alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf \
+  tar -czf /backup/install.tar.gz --exclude=./backups --exclude='./backup-*' -C /install .
 dc stop honua
 dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
 dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
@@ -320,9 +343,9 @@ on a Linux or Windows package install).
 ```powershell
 $Backup = Join-Path $Install ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $Backup | Out-Null
-Copy-Item -LiteralPath .env, compose.yaml -Destination $Backup
-Copy-Item -LiteralPath quickstart.py, journey.py, published-layer.json, installed-packages.txt -Destination $Backup -ErrorAction SilentlyContinue
-if (Test-Path -LiteralPath edge.yaml) { Copy-Item -LiteralPath edge.yaml -Destination $Backup }
+docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "${Install}:/install:ro" -v "${Backup}:/backup" `
+    alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf `
+    tar -czf /backup/install.tar.gz --exclude=./backups --exclude='./backup-*' -C /install .
 dc stop honua
 try {
     dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
@@ -351,8 +374,12 @@ Honua first. These commands restore into the same project using the original
 credentials. They drop and recreate only the `honua` database in this project
 to restore partitioned tables without inherited-constraint conflicts; they do not
 delete volumes or touch other projects. For a fresh
-host, restore the saved installation files first, install the recorded clients,
-then start only PostgreSQL before continuing. File storage
+host, restore the installation directory first: extract `install.tar.gz` at the
+same absolute path (`.env` records it in `HONUA_COMPOSE_PROJECT_DIRECTORY`) with
+`mkdir -m 770 "$Install" && tar -xzf "$Backup/install.tar.gz" -C "$Install"`, update
+`DOCKER_GID` and `HONUA_PROJECT_GID` in `.env` if the new host's Docker socket group
+or the directory's group differs, install the
+recorded clients, then start only PostgreSQL before continuing. File storage
 is cleared inside this project's mounted `/var/lib/honua/storage` directory before
 extraction, including hidden files and nested paths. Keep Honua stopped if any
 restore command fails; do not resume with a partial database or storage restore.
@@ -427,6 +454,17 @@ The schema-reader guard and contract-apply approval remain safeguards, not a
 rollback guarantee. See
 [Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
+On a quickstart project, `HONUA_IMAGE` in `.env` does not choose the running
+image: `compose.executor.image.yaml` pins it, last in `COMPOSE_FILE`, and the
+executor rewrites that file when an approved upgrade or rollback runs. Upgrade a
+quickstart project through the executor
+([approved operations and recovery](../../get-started/quickstart.md#approved-operations-and-recovery)),
+not by editing `.env`. The manual run below is for an install whose Compose file
+reads the image from `.env`: the hardened production file above, or a
+[Linux](../../get-started/linux-packages.md) or
+[Windows](../../get-started/windows-packages.md) package install, with `dc`
+defined as that install's guide does.
+
 To see the migrations apply, or refuse, before the new server starts, run them
 out of band with the new image after updating the image tag in `.env`. Stop
 the old server first: this is the single-node downtime window.
@@ -457,7 +495,7 @@ out-of-band run; it does not bypass schema-reader startup checks.
 ```bash
 dc ps
 dc logs --no-color --tail 150 honua postgres
-docker image inspect "$(grep '^HONUA_IMAGE=' .env | cut -d= -f2-)" --format '{{json .RepoDigests}}'
+docker image inspect "$(docker inspect "$(dc ps -q honua)" --format '{{.Image}}')" --format '{{json .RepoDigests}}'
 pip freeze
 ```
 

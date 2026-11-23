@@ -622,7 +622,11 @@ def check_matrix_include_shape(config: dict[str, Any]) -> None:
 def check_producer_partition(include: list[dict[str, Any]]) -> None:
     """Server.Tests closures start early; every other closure waits for the main producer."""
     early, held = selector.partition_producer_matrices(include)
-    if [entry["shard_name"] for entry in early + held] != [entry["shard_name"] for entry in include]:
+    order = [entry["shard_name"] for entry in include]
+    lanes = [[entry["shard_name"] for entry in lane] for lane in (early, held)]
+    if sorted(lanes[0] + lanes[1]) != sorted(order) or any(
+        lane != [name for name in order if name in lane] for lane in lanes
+    ):
         raise FixtureError("producer partition dropped, duplicated, or reordered a selected shard")
     server = selector.DEFAULT_TEST_PROJECT
     if any(entry.get("csprojs") or entry.get("csproj") != server for entry in early):

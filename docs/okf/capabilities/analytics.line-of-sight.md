@@ -16,6 +16,7 @@ Determine terrain visibility between an observer and target over the elevation s
 | Capability key | `analytics.line-of-sight` |
 | Category | Analytics |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 7 |

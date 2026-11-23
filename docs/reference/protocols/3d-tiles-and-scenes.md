@@ -68,6 +68,17 @@ can both discover and load.
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
 
+Registered COPC scenes use `GET, HEAD /scenes/{sceneId}/copc`. GET accepts one
+byte range: explicit (`bytes=0-511`), open-ended (`bytes=100-`), or suffix
+(`bytes=-512`). The server resolves the range against the object length and
+returns `206` only when the resulting byte count fits
+`Scenes:ObjectOrigin:MaxRangeReadBytes`. Invalid, multiple, out-of-file, and
+over-ceiling ranges return `416` with `Content-Range: bytes */<object length>`;
+over-ceiling ranges are rejected before opening the body read. Open-ended and
+suffix ranges must fit the same ceiling. Requests without an effective range
+use `Scenes:ObjectOrigin:MaxCopcFullResponseBytes` and return `413` when the
+whole object exceeds that limit.
+
 The I3S adapter derives descriptors, node pages, geometry, scalar attributes,
 statistics, materials, and available PNG/JPEG textures from persisted B3DM/GLB
 mesh content under both the canonical `/rest/services/{sceneId}/SceneServer/...`

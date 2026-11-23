@@ -770,7 +770,7 @@ internal sealed partial class Wcs20Handler
             error = Wcs10ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
                 $"Requested output exceeds the {MaxWcsOutputDimension}px limit per dimension.",
-                Wcs20Utilities.Parameters10.Width);
+                width > MaxWcsOutputDimension ? Wcs20Utilities.Parameters10.Width : Wcs20Utilities.Parameters10.Height);
             return false;
         }
 

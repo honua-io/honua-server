@@ -231,7 +231,7 @@ jobs:
       - name: Mint the release GitHub App token for the candidate hand-off
         id: handoff-token
         if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
           private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
@@ -511,9 +511,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly AOT candidate by digest
         id: build
@@ -684,9 +686,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly Lambda AOT candidate by digest
         id: build
@@ -886,6 +890,7 @@ jobs:
             [ -n "$destination" ] || continue
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" \
               "${tag}-arm64"
@@ -989,9 +994,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Preserve immutable JIT architecture tags
         id: immutable_tags
@@ -1125,6 +1132,7 @@ jobs:
             while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
             docker buildx imagetools create "${tag_args[@]}" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" "${tag}-arm64"
           done
@@ -1218,7 +1226,10 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.title=Honua Compose executor
-          annotations: index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
+          annotations: |
+            index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           provenance: true
           sbom: true
       - name: Bind the published executor digest
@@ -1276,7 +1287,7 @@ jobs:
             -o /dev/null "https://ghcr.io/v2/honua-io/honua-server/manifests/${EXECUTOR_DIGEST}"
       - name: Create read-only Console artifact token
         id: console-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -1427,6 +1438,7 @@ jobs:
             esac
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${source_tag}-amd64" \
               "${source_tag}-arm64"

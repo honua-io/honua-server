@@ -16,9 +16,10 @@ Serve map images, identify, and export through the Esri GeoServices MapServer su
 | Capability key | `serve.geoservices-mapserver` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 45 implemented, 2 preview |
 | Registry entries | 47 |
-| Proving tests | 463 |
+| Proving tests | 496 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

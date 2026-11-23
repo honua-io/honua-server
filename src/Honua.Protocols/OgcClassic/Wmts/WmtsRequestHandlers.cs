@@ -49,6 +49,8 @@ internal static class WmtsRequestHandlers
     private const double Crs84OriginLon = -180.0;
     private const double Crs84OriginLat = 90.0;
     private const string WmtsVersion = "1.0.0";
+    private const int WmtsRestTileSegmentCount = 6;
+    private const int WmtsRestFeatureInfoSegmentCount = 8;
     private const string WmtsMimeType = "application/xml";
     private const string WmtsTextXmlMimeType = "text/xml";
     private const string WmtsUpdateSequence = "20260223";
@@ -449,7 +451,7 @@ internal static class WmtsRequestHandlers
             return await HandleWmts(context);
         }
 
-        if (segments.Length < 6)
+        if (segments.Length is not (WmtsRestTileSegmentCount or WmtsRestFeatureInfoSegmentCount))
         {
             return Results.NotFound();
         }
@@ -485,7 +487,7 @@ internal static class WmtsRequestHandlers
             ["TILECOL"] = tileColValue
         };
 
-        if (segments.Length >= 8)
+        if (segments.Length == WmtsRestFeatureInfoSegmentCount)
         {
             if (!TryUnescapeWmtsValue(segments[6], out var pixelJ) ||
                 !TryParseWmtsResourceSegment(
