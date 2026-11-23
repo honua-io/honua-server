@@ -471,6 +471,18 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task GetImageTile_LevelBeyondAdvertisedTileInfo_ReturnsBadRequest()
+    {
+        // TileMetadata:MaxLevel defaults to 23, the deepest level the service's tileInfo advertises.
+        var response = await GetSeededAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/tile/24/0/0");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
     #endregion
 
     [IntegrationTest]

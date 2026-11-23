@@ -80,15 +80,6 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // The service advertises levels 0..MaxLevel in its tileInfo; a deeper level is not in its tiling scheme.
-            var maxLevel = AdvertisedMaxLevel(context);
-            if (level > maxLevel)
-            {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    $"Tile level {level.ToString(CultureInfo.InvariantCulture)} is outside the service tiling scheme (0-{maxLevel.ToString(CultureInfo.InvariantCulture)}).");
-            }
-
             try
             {
                 WebMercatorTileCoordinates.Validate(level, row, col);
@@ -523,6 +514,18 @@ internal sealed class ImageServerTileHandler
         // (ImageServerLayerResolver defaults to Query), so both checks admit the same principals.
         return await AccessPolicyHelpers.RequireResourceAccessAsync(
             context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
+    }
+
+    // The REST tile route serves only the levels its tileInfo advertises (0..MaxLevel); WMTS shares the
+    // renderer but advertises its own tile matrix set, so it does not pass through this check.
+    internal static IResult? RefuseLevelOutsideTileInfo(HttpContext context, int level)
+    {
+        var maxLevel = AdvertisedMaxLevel(context);
+        return level <= maxLevel
+            ? null
+            : StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Tile level {level.ToString(CultureInfo.InvariantCulture)} is outside the service tiling scheme (0-{maxLevel.ToString(CultureInfo.InvariantCulture)}).");
     }
 
     private static int AdvertisedMaxLevel(HttpContext context)

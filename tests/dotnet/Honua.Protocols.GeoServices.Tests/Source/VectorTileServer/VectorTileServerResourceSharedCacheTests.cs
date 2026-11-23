@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
 {
     private const string Service = "/rest/services/" + WebAppFixture.TestServiceId + "/VectorTileServer";
+    private const string DefaultStyles = Service + "/resources/styles";
     private const string RootStyle = Service + "/resources/styles/root.json";
     private const string SpriteIndex = Service + "/resources/sprites/sprite.json";
     private const string SpriteImage = Service + "/resources/sprites/sprite@2x.png";
@@ -41,11 +42,13 @@ public sealed class VectorTileServerResourceSharedCacheTests : IAsyncLifetime
 
     [IntegrationTheory]
     [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles")]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}")]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}")]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf")]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap")]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z:int}/{y:int}/{x:int}/{dimension:int}/{dimension2:int}")]
+    [InlineData(DefaultStyles)]
     [InlineData(RootStyle)]
     [InlineData(SpriteIndex)]
     [InlineData(SpriteImage)]
