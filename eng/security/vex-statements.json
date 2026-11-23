@@ -25,6 +25,34 @@
       "impactStatement": "The issue concerns the default subordinate-ID ranges that useradd assigns to new accounts. Honua adds one account at build time, as a system account with no subordinate-ID range; the base image's accounts and their /etc/subuid entries are fixed at build. The image runs as the unprivileged UID 1001 with every setuid and setgid bit removed and ships no newuidmap or newgidmap, so no process in the container can create accounts, change /etc/subuid, or use subordinate ranges.",
       "evidence": "Dockerfile and docker/Dockerfile.aot: useradd --system at build, USER 1001:1001, find / -perm /6000 -exec chmod a-s. In the runtime-deps 10.0.15 base, /etc/passwd and /etc/subuid are root-owned 0644 (entries: ubuntu, app) and newuidmap/newgidmap are absent. These are properties of the image, independent of deployment settings.",
       "reviewedAt": "2026-11-11"
+    },
+    {
+      "vulnerability": "CVE-2026-107708",
+      "packages": [
+        "pkg:deb/ubuntu/libgssapi-krb5-2@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libk5crypto3@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libkrb5-3@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libkrb5support0@1.22.1-2ubuntu4.1"
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impactStatement": "The flaw is a NULL pointer dereference in the Kerberos KDC (get_pac_princ_with_realm in krb5kdc), reachable only by a trusted cross-realm KDC sending an S4U2Proxy request. Honua images ship only the Kerberos client shared libraries that the .NET runtime loads for GSS-API; no KDC binary, KDC plugin or KDC database module is installed, so the vulnerable code is not in the image.",
+      "evidence": "docker/runtime/stage-runtime.sh copies only libgssapi_krb5.so.2 and its ldd dependencies (libkrb5, libk5crypto, libkrb5support) into the runtime root; the krb5-kdc package and the krb5kdc binary are never installed. docker/Dockerfile.compose-executor builds on the serving image and adds only the docker CLI and Compose plugin Go binaries.",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "vulnerability": "CVE-2026-107778",
+      "packages": [
+        "pkg:deb/ubuntu/libgssapi-krb5-2@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libk5crypto3@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libkrb5-3@1.22.1-2ubuntu4.1",
+        "pkg:deb/ubuntu/libkrb5support0@1.22.1-2ubuntu4.1"
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impactStatement": "The flaw is a NULL pointer dereference in KRB-CRED parsing (make_cred_list in rd_cred.c), reached when a GSS-API acceptor accepts a security context carrying forwarded credentials from an authenticated Kerberos client. Honua never acts as a GSS-API acceptor: it offers no Negotiate or Kerberos inbound authentication, so no process in the image calls gss_accept_sec_context. The only GSS-API use is as an initiator, when an operator configures Kerberos for an outbound database connection, which does not parse KRB-CRED from a peer.",
+      "evidence": "No source under src/ registers the ASP.NET Core Negotiate handler (AddNegotiate, Microsoft.AspNetCore.Authentication.Negotiate) or uses NegotiateStream or server-side NegotiateAuthentication; the registered inbound schemes (src/Honua.Hosting/Features/Authentication) are API keys, scoped job tokens, client certificates, JWT bearer, OpenID Connect and admin session cookies. The executor image runs the same server plus the static docker CLI and Compose plugin, both Go binaries; the Compose plugin is built with CGO_ENABLED=0 and neither links libkrb5.",
+      "reviewedAt": "2026-11-23"
     }
   ]
 }
