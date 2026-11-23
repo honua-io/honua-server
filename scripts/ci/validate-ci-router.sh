@@ -85,6 +85,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/test-server-test-shard-free-disk.py "${PYTHON_BIN}" scripts/ci/fixtures/test-server-test-shard-free-disk.py
   run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
+  run_fixture scripts/ci/fixtures/test-trunk-sanity-profiles.py "${PYTHON_BIN}" scripts/ci/fixtures/test-trunk-sanity-profiles.py
   run_fixture scripts/ci/fixtures/validate-affected-ci-lanes.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
   run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
   run_fixture scripts/ci/fixtures/validate-native-tools-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py

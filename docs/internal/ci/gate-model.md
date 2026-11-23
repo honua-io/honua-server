@@ -403,7 +403,13 @@ GDAL/PDAL and import/export fidelity proofs, including the existing receipt
 tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
 runs select every profile with `protocol-profile-selection.py --all`. A range
 selection compares trunk with itself there and would build only `all`, which
-is what full run 44309947920 did.
+is what full run 44309947920 did. Between full runs, Trunk Sanity's
+`Reduced protocol profiles` job compiles the profiles that
+`trunk_sanity_profiles.py` selects over the range since the newest successful
+Trunk Sanity run that already had the job, whenever that range changes `src/`,
+`eng/` or root build inputs. Both Trunk Sanity jobs queue the newest push
+behind the running one instead of cancelling it, so a burst of merges still
+gets a verdict within about two build lengths.
 
 ### Import-fidelity gates: correctness and performance
 
