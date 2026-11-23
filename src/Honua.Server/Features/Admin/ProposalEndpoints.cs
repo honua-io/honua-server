@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -468,10 +469,8 @@ internal static class ProposalEndpoints
         PlanHash = proposal.SealedPlanHash,
         Initiation = proposal.Initiation?.Kind.ToString() ?? "Unknown",
         ApprovalChannel = proposal.HumanApproval?.Channel,
-        RequiresReproposal = RequiresFreshProposal(proposal),
-        ApprovalRemediation = RequiresFreshProposal(proposal)
-            ? "Create a fresh proposal with a new idempotency key, then reopen it in Console for human approval."
-            : null,
+        RequiresReproposal = CatalogMoved(proposal, execution) || RequiresFreshProposal(proposal),
+        ApprovalRemediation = ApprovalRemediationFor(proposal, execution),
         Kind = proposal.Kind.ToString(),
         Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,
@@ -494,6 +493,23 @@ internal static class ProposalEndpoints
         UpdatedAt = execution?.UpdatedAt ?? proposal.UpdatedAt,
         ResolvedAt = proposal.ResolvedAt,
     };
+
+    // A publish pinned to a catalog revision that has since moved can only succeed as a fresh proposal.
+    private static bool CatalogMoved(OperationProposal proposal, OperationProposalExecutionView? execution)
+        => ServicePublishProposalFreshness.FailedOnStalePin(
+            proposal, execution?.Status ?? proposal.Status.ToString(), execution?.ResolutionReason ?? proposal.ResolutionReason);
+
+    private static string? ApprovalRemediationFor(OperationProposal proposal, OperationProposalExecutionView? execution)
+    {
+        if (CatalogMoved(proposal, execution))
+        {
+            return LayerPublicationBaseChanged.ProposalReason;
+        }
+
+        return RequiresFreshProposal(proposal)
+            ? "Create a fresh proposal with a new idempotency key, then reopen it in Console for human approval."
+            : null;
+    }
 
     internal static string? SanitizeExecutionPayload(string? executionPayload)
     {
