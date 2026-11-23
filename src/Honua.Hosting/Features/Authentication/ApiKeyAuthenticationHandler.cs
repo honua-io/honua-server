@@ -222,7 +222,11 @@ internal sealed class ApiKeyAuthenticationHandler(
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
         var result = CreateSuccessfulAuthenticationResult(
             presentation.SchemeName, "admin-api-key", record.Id, record.Name, record.Permissions);
-        result.Properties!.ExpiresUtc = record.ExpiresAt;
+        if (result.Properties is { } properties)
+        {
+            properties.ExpiresUtc = record.ExpiresAt;
+        }
+
         return new ApiKeyValidation(result, ApiKeyRejection.None);
     }
 

@@ -901,7 +901,7 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
             lock (_subscriptionLock)
             {
                 return _subscriptions
-                    .Where(pair => (pair.Value.Filter as StreamSubscriptionFilter)?.SubscriberSecurity is { } security
+                    .Where(pair => pair.Value.Filter is StreamSubscriptionFilter { SubscriberSecurity: { } security }
                         && include(security))
                     .Select(pair => new SubscriberSecuritySnapshot(new(pair.Key, pair.Value.Generation),
                         ((StreamSubscriptionFilter)pair.Value.Filter!).SubscriberSecurity!, pair.Value.Retired.Task))
