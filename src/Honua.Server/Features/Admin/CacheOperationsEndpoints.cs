@@ -192,10 +192,7 @@ internal static class CacheOperationsEndpoints
                 scope = "all";
                 detail = "All response and metadata caches on this node invalidated";
                 AdminLog.CacheInvalidationRequested(logger, scope);
-                await Task.WhenAll(
-                    invalidationService.InvalidateLayerAsync(null, null, context.RequestAborted),
-                    invalidationService.InvalidateServiceCatalogAsync(null, null, context.RequestAborted),
-                    invalidationService.InvalidateOgcMetadataAsync(context.RequestAborted)).ConfigureAwait(false);
+                await invalidationService.InvalidateEverythingAsync(context.RequestAborted).ConfigureAwait(false);
             }
             else if (hasServiceId && request.LayerId.HasValue)
             {
