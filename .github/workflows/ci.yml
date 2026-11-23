@@ -887,7 +887,7 @@ jobs:
     # A sibling of the producer, not a step in it. A break that only affects a
     # reduced profile must not fail `build`: every server-test shard, the
     # foundation tests and the runtime proofs need `build`, so the whole
-    # trailing matrix would be skipped and hide unrelated regressions (#9371).
+    # trailing matrix would be skipped and hide unrelated regressions.
     # CI Gate requires this job, so a profile break still fails the run.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
     needs: changes
