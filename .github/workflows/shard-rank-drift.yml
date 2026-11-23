@@ -1,0 +1,53 @@
+name: Shard Rank Drift
+run-name: Shard rank drift check
+
+# After each completed CI full run on trunk, compare every server shard's
+# dispatch_rank with its median passing job minutes over the latest full runs
+# and keep one tracking issue (owner s-ci-shards) open while ranks have drifted
+# (#9545), a shard has outgrown its rank (#9546) or a sampled shard still runs
+# on a contract estimate (#9547). Report-only: it never gates a PR or trunk.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: shard-rank-drift
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Compare shard ranks with measured minutes
+    if: >-
+      github.repository == 'honua-io/honua-server' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.head_branch == 'trunk' &&
+         github.event.workflow_run.head_repository.full_name == github.repository &&
+         contains(fromJSON('["schedule","workflow_dispatch"]'), github.event.workflow_run.event) &&
+         startsWith(github.event.workflow_run.display_title, 'CI full')))
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      # Trusted default-branch code only; nothing from the triggering run executes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/ci-shards.json
+            scripts/ci/shard-rank-drift.py
+            scripts/ci/fixtures/measured-dispatch-ranks.json
+          sparse-checkout-cone-mode: false
+      - name: Compare ranks and reconcile the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci/shard-rank-drift.py --repo "${GITHUB_REPOSITORY}" | tee rank-drift.md
+          { echo '### Shard rank drift'; echo; sed 's/^<!--.*-->$//' rank-drift.md; } >> "${GITHUB_STEP_SUMMARY}"
