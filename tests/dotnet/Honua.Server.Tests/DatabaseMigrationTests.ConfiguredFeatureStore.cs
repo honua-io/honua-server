@@ -1,0 +1,94 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Server.Startup;
+using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+
+namespace Honua.Server.Tests;
+
+public sealed partial class DatabaseMigrationTests
+{
+    private const string FeatureStoreAdoptionMigration =
+        "Honua.Server.Migrations.231_AdoptConfiguredFeatureStoreSchema.sql";
+
+    // Every features table carrying the shared layer_id discriminator, as schema.table(oid).
+    private const string SharedFeatureTablesSql = """
+        SELECT coalesce(string_agg(format('%s.%s', n.nspname, c.relname), ',' ORDER BY n.nspname), '')
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relname = 'features' AND c.relkind = 'r'
+          AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
+                      WHERE a.attrelid = c.oid AND a.attname = 'layer_id' AND NOT a.attisdropped);
+        """;
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_OnFreshConfiguredSchema_CreatesFeatureStoreInConfiguredSchema()
+    {
+        var configuration = ConfiguredRegistryConfiguration();
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
+            ServerCoreSchemaMigrations.Manifest, configuration: configuration);
+
+        var result = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue(result.ErrorMessage);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        (await ScalarAsync(connection, SharedFeatureTablesSql)).Should().Be("custom_registry.features",
+            "the publish check, managed writer and attachment store all address the configured schema");
+        var restart = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        restart.Successful.Should().BeTrue(restart.ErrorMessage);
+        restart.AppliedScripts.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_OnPopulatedDefaultFeatureStore_AdoptsConfiguredSchemaWithoutCopyingRows()
+    {
+        var baseline = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var installed = await baseline.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        installed.Successful.Should().BeTrue(installed.ErrorMessage);
+        installed.AppliedScripts.Should().NotContain(FeatureStoreAdoptionMigration);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var legacyTable = (string)(await ScalarAsync(connection, SharedFeatureTablesSql))!;
+        var originalOid = await ScalarAsync(connection,
+            $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); SELECT '{legacyTable}'::regclass::oid::bigint;");
+
+        var configuration = ConfiguredRegistryConfiguration();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var plan = await new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration).PlanMigrationsAsync(_connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.ErrorMessage);
+        plan.ContractScriptNames.Should().Contain(FeatureStoreAdoptionMigration);
+        configuration[MigrationSafetyOptions.ApproveContractMigrationsKey] = plan.ContractApprovalNonce;
+        var upgrade = await new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration).RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+
+        upgrade.Successful.Should().BeTrue(upgrade.Error?.ToString() ?? upgrade.ErrorMessage);
+        (await ScalarAsync(connection, SharedFeatureTablesSql)).Should().Be("custom_registry.features");
+        (await ScalarAsync(connection, "SELECT 'custom_registry.features'::regclass::oid::bigint;"))
+            .Should().Be(originalOid, "the table moves; its rows are not copied");
+        (await ScalarAsync(connection,
+            "INSERT INTO custom_registry.features(layer_id) VALUES (7) RETURNING objectid;"))
+            .Should().Be(2L, "the owned objectid sequence moves with the table");
+        await guard.VerifyAsync(_connectionString);
+    }
+
+    private static IConfigurationRoot ConfiguredRegistryConfiguration()
+        => new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Database:Schema"] = "custom_registry" }).Build();
+
+    private static async Task<object?> ScalarAsync(Npgsql.NpgsqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync();
+    }
+}

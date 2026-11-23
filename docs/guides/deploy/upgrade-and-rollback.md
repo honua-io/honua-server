@@ -97,6 +97,15 @@ The default `honua` schema skips this migration. With a custom schema, readiness
 requires this migration even when startup migrations are disabled. Optional raster
 provisioning uses the registry location when enabled after the move.
 
+Migration `231_AdoptConfiguredFeatureStoreSchema.sql` moves the shared managed
+`features` table into the configured schema from `honua` or `public`, wherever
+migration 001 created it. Rows, the table identity, indexes and the object ID
+sequence move with it. It moves only a table with Honua's `layer_id` and
+`attributes` columns, so a user table that happens to be called `features` stays
+where it is. The migration stops without changes when the configured schema
+already has a `features` table and a shared one also exists elsewhere, or when no
+shared table is found. The default `honua` schema skips it.
+
 For an existing database, back up the database and stop all older server and worker
 instances before running migrate-only. Review the migration plan and apply its
 one-shot contract approval nonce, then start the new instances with identical

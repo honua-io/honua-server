@@ -67,6 +67,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public string? ConfiguredRegistryAdoptionMigration { get; init; }
 
+    public string? ConfiguredFeatureStoreAdoptionMigration { get; init; }
+
     public string GovernedLineageMigration { get; }
 
     public string? InitialSchemaMigration { get; }

@@ -1388,12 +1388,13 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
-        // The default-schema baseline never discovers 227, so the configured upgrade also plans
-        // the registry adoption that moves services/layers out of honua.
+        // The default-schema baseline never discovers 227 or 231, so the configured upgrade also
+        // plans the registry and feature store adoptions that move those tables out of honua.
         plan.ContractScriptNames.Should().Equal(
             PostgresCoreSchemaGuard.RasterTablesMigration,
             ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
-            ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration);
+            ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration,
+            ServerCoreSchemaMigrations.Manifest.ConfiguredFeatureStoreAdoptionMigration);
         AssertLegacyAttachmentPlanBindings(plan, schema);
 
         var beforeBlockedRun = await CaptureAttachmentAuthorityStateAsync(connectionString);
