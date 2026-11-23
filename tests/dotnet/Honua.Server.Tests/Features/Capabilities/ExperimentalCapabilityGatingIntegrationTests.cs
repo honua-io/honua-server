@@ -268,6 +268,33 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         }
     }
 
+    // The certificate validator is registered only while mTLS is enabled, so every route in the group,
+    // including validation, must stop at the capability gate instead of failing to resolve it.
+    [IntegrationTheory]
+    [InlineData("GET", "/api/v1/admin/security/client-certificates/profiles")]
+    [InlineData("POST", "/api/v1/admin/security/client-certificates/validate")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/validate")]
+    public async Task ClientCertificateAdmin_WhenMtlsDisabled_Returns404ExperimentalDisabled(string method, string path)
+    {
+        var fixture = disabledPosture.Share();
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            request.Content = new StringContent("""{"certificate":"not-a-certificate"}""", System.Text.Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(request);
+
+            await AssertExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/alerts/zones")]
     public async Task AlertsEndpoint_WhenPreviewDisabled_IsNotMapped()

@@ -23,6 +23,7 @@ namespace Honua.Server.Features.Admin;
 internal static partial class OidcProviderEndpoints
 {
     private const string ProviderSettingsName = "OIDC providers";
+    private const string ConcurrentChangeMessage = "Another administrator changed this provider at the same time; read it again and retry.";
 
     internal sealed class OidcProviderEndpointsLog;
 
@@ -367,7 +368,7 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    internal static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    internal static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateProvider(
             Guid id,
             UpdateOidcProviderRequest request,
@@ -404,6 +405,10 @@ internal static partial class OidcProviderEndpoints
 
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(result!)));
         }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
+        }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider update endpoint; the failure is logged and mapped to a
         // generic error response below.
@@ -417,7 +422,7 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleDeleteProvider(
             Guid id,
             [FromServices] IOidcProviderStore store,
@@ -434,6 +439,10 @@ internal static partial class OidcProviderEndpoints
 
             OidcProviderLog.ProviderDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("OIDC provider deleted"));
+        }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
         }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider deletion endpoint; the failure is logged and mapped to a
