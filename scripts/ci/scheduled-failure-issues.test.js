@@ -8,7 +8,8 @@ const config = {
   lookbackHours: 72, maxIssuesPerRun: 2, downstreamJobPattern: '^(CI Gate|.*Summary)$',
   defaultOwner: { lane: 's-ci-doctors', area: 'area/ci' },
   ignore: { app: ['watchdog.yml'] },
-  botDispatchWorkflows: { app: { 'ci.yml': '^CI full' } },
+  dispatchWorkflows: { app: { 'ci.yml': { ref: 'default', title: '^CI full' }, 'build.yml': { ref: '^candidate-' } } },
+  successJobs: { app: { 'build.yml': '^Publish' } },
   repos: { app: { default: { lane: 's-app' }, workflows: { 'nightly.yml': { lane: 's-night', area: 'area/x' } } } },
 };
 
@@ -31,12 +32,12 @@ const REPOS = [{ name: 'app', owner: { login: 'honua-io' }, default_branch: 'tru
 function fakeReads(state) {
   return async (route, params) => {
     state.calls.push(['paginate', route, params]);
-    if (route === 'GET /installation/repositories') return REPOS;
+    if (route === 'GET /installation/repositories') return state.repos;
     if (route === 'GET /repos/{owner}/{repo}/actions/runs') return params.event === 'schedule' ? [...state.runs] : [];
     if (route.endsWith('/workflows/{workflow_id}/runs')) return [...state.dispatchRuns];
     if (route.endsWith('/jobs')) return state.jobs[params.run_id] || [];
     if (route === 'GET /repos/{owner}/{repo}/issues') {
-      return state.issues.filter(issue => issue.state === 'open')
+      return state.issues.filter(issue => params.state === 'all' || issue.state === 'open')
         .map(issue => ({ ...issue, comments: (state.comments[issue.number] || []).length }));
     }
     if (route.endsWith('/comments')) return state.comments[params.issue_number] || [];
@@ -78,8 +79,8 @@ function fakeWrites(state) {
   };
 }
 
-function fakeGithub({ runs = [], dispatchRuns = [], jobs = {}, issues = [], comments = {}, labels = ['bug'] }) {
-  const state = { calls: [], nextIssue: 100, runs, dispatchRuns, jobs, issues, comments, labels };
+function fakeGithub({ runs = [], dispatchRuns = [], jobs = {}, issues = [], comments = {}, labels = ['bug'], repos = REPOS }) {
+  const state = { calls: [], nextIssue: 100, runs, dispatchRuns, jobs, issues, comments, labels, repos };
   return { calls: state.calls, issues, comments, paginate: fakeReads(state), request: fakeWrites(state) };
 }
 const core = { info() {}, warning() {} };
@@ -195,6 +196,46 @@ test('the per-run cap counts only new issues, so later failing jobs are filed on
   assert.equal(github.issues.length, 2);
   await go(github);
   assert.deepEqual(github.issues.map(issue => issue.title.split(' / ')[1]), ['Build', 'Test', 'Lint']);
+});
+
+test('a run already recorded on a closed issue is not filed again; a new failing run is', async () => {
+  const key = '.github/workflows/nightly.yml::Build';
+  const issues = [{ number: 7, state: 'closed', body: `${'<'}!-- scheduled-failure key=${key} -->\n<!-- scheduled-failure run=1 -->` }];
+  const jobs = { 1: [job('Build', 'failure', 1)], 2: [job('Build', 'failure', 1)] };
+  const quiet = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs, issues });
+  assert.deepEqual((await go(quiet)).opened, []);
+  const again = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')], jobs, issues });
+  assert.deepEqual((await go(again)).opened, ['app#100']);
+  assert.match(issues[1].body, /scheduled-failure run=2 -->/);
+});
+
+test('a hand-off-only success is ignored; candidate-ref bot builds count and their publish success closes', async () => {
+  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'honua-io-bot[bot]' }, head_branch: 'candidate-abc' };
+  const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/build.yml::Build_JIT -->' }];
+  const failing = fakeGithub({
+    runs: [run(1, 'build.yml', 'failure'), run(3, 'build.yml', 'success')],
+    dispatchRuns: [withRun(run(2, 'build.yml', 'failure'), bot)],
+    jobs: { 1: [job('Build JIT', 'failure', 1)], 2: [job('Build JIT', 'failure', 1)], 3: [job('Select', 'success', 1)] }, issues,
+  });
+  const first = await go(failing);
+  assert.deepEqual([first.closed, first.updated], [[], ['app#7', 'app#7']]);
+  const green = fakeGithub({
+    runs: [run(1, 'build.yml', 'failure')], dispatchRuns: [withRun(run(4, 'build.yml', 'success'), bot)],
+    jobs: { 4: [job('Publish JIT Manifests', 'success', 9)] }, issues,
+  });
+  assert.deepEqual((await go(green)).closed, ['app#7']);
+});
+
+test('logs and the report never name a private repository or its issue numbers', async () => {
+  const warnings = [];
+  const github = fakeGithub({
+    repos: [{ name: 'secret-repo', private: true, owner: { login: 'honua-io' }, default_branch: 'trunk' }],
+    runs: [run(1, 'nightly.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] },
+  });
+  const report = await sweep({ github, core: { info: text => warnings.push(text), warning: text => warnings.push(text) },
+    config, owner: 'honua-io', now: NOW });
+  assert.deepEqual(report.opened, ['a private repository#']);
+  assert.doesNotMatch(JSON.stringify([report, warnings]), /secret-repo|#100/);
 });
 
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {

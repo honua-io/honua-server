@@ -1,6 +1,7 @@
 {
   "lookbackHours": 72,
   "maxIssuesPerRun": 5,
+  "maxRunsPerWorkflow": 6,
   "defaultOwner": { "lane": "s-ci-doctors", "area": "area/ci" },
   "skipRepos": [],
   "downstreamJobPattern": "^(CI Gate|Test Suite Summary|.*[Ss]ummary|Open, update or close .*)$",
@@ -9,8 +10,14 @@
     "honua-iac": ["bootstrap-drift-plan.yml"],
     "honua-demo-infra": ["drift-plan.yml"]
   },
-  "botDispatchWorkflows": {
-    "honua-server": { "ci.yml": "^CI full" }
+  "dispatchWorkflows": {
+    "honua-server": {
+      "ci.yml": { "ref": "default", "title": "^CI full" },
+      "nightly-container-build.yml": { "ref": "^nightly-candidate-" }
+    }
+  },
+  "successJobs": {
+    "honua-server": { "nightly-container-build.yml": "^Publish .*Manifests" }
   },
   "repos": {
     "honua-server": {
@@ -54,7 +61,6 @@
     "honua-mobile": { "default": { "lane": "s-mobile-sdk" } },
     "honua-studio": { "default": { "lane": "s-rc2-studio" } },
     "honua-samples": { "default": { "lane": "s-site-release" } },
-    "honua-docs": { "default": { "lane": "s-site-release" } },
     "honua-release": { "default": { "lane": "s-release-rc2" } },
     "honua-evidence": { "default": { "lane": "s-rc2-ci" } },
     "honua-iac": { "default": { "lane": "s-aws-marketplace" } },
