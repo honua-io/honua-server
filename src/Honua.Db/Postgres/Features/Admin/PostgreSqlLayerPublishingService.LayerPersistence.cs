@@ -259,7 +259,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var attributesExpression = BuildAttributesExpression(attributeColumns);
 
         // A managed-store publish names the exact features table its binding reads; the
-        // source snapshot keeps resolving the table through the connection search path.
+        // source snapshot resolves it as ResolveCanonicalFeaturesSchemaAsync describes.
         var featuresTable = featuresSchema is null
             ? await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
                 .ConfigureAwait(false)
