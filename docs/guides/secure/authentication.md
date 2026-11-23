@@ -420,7 +420,10 @@ require an audience. See the [Cognito access-token format](https://docs.aws.amaz
 The broker logout URL uses `client_id` and `logout_uri` in Cognito mode, including
 when discovery omits `end_session_endpoint`. Register the public `/admin` URL
 (in this example, `https://api.example.com/honua/admin`) as an allowed sign-out
-URL on the Cognito app client. `LogoutEndpoint` must be an absolute HTTPS URL
+URL on the Cognito app client. After sign-out the provider returns the browser to
+that URL, and `GET /admin` redirects it to the Console sign-in page,
+`/console/auth/signin`. With `Oidc__AdminAuthCallbackUri` set, the redirect goes to
+the sign-in page on that callback's origin. `LogoutEndpoint` must be an absolute HTTPS URL
 without user information, query or fragment. Without Cognito mode, logout retains
 standard `post_logout_redirect_uri` and optional `id_token_hint` parameters.
 See [Cognito logout](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html).
