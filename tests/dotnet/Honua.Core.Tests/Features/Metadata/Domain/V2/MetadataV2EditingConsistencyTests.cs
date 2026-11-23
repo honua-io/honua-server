@@ -88,6 +88,20 @@ public sealed class MetadataV2EditingConsistencyTests
         updated.Resources[0].Editing!.CanModify.Should().BeTrue();
     }
 
+    [UnitTest]
+    public void EditingPut_CreatingTheEditingBlock_KeepsAManagedEditableLayerModifiable()
+    {
+        var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
+        graph = graph with { Resources = [graph.Resources[0] with { Editing = null }] };
+
+        var updated = MetadataV2EditingConfiguration.Apply(graph, "resource", new HashSet<string> { "publication" },
+            new MetadataV2EditingPatch { GlobalIdField = "GlobalID" });
+
+        var editing = updated.Resources[0].Editing!;
+        editing.GlobalIdField.Should().Be("GlobalID");
+        editing.CanModify.Should().BeTrue();
+    }
+
     private static MetadataV2Graph CreateGraph(
         IReadOnlyList<string> publicationCapabilities,
         MetadataV2StorageBindingCapability bindingCapability)
