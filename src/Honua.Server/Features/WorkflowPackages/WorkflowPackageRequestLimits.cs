@@ -18,7 +18,7 @@ internal static class WorkflowPackageRequestLimits
     // Client-chosen package and publication ids become route segments, a Location header and
     // part of the schedule definition id "workflow-package:{packageId}:v{n}:{publicationId}".
     // Letters, digits, '.', '_' and '-' only, so no two (package, publication) pairs can produce
-    // the same definition id and every id addresses its own route. Server-generated ids comply.
+    // the same definition id and every id addresses its own route. Generated ids use ASCII slugs.
     internal static bool IsValidIdentifier(string value)
         => value.Length is > 0 and <= MaxIdentifierLength
             && char.IsAsciiLetterOrDigit(value[0])

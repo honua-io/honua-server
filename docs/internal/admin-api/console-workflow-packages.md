@@ -83,7 +83,9 @@ from the current draft:
 omitted and replaces the draft when a provided id already exists. `PUT` requires
 an existing draft and rejects a body `packageId` that differs from the route.
 Draft save checks that name and graph are present, that a provided `packageId`
-is 1-128 letters, digits, `.`, `_` or `-` starting with a letter or digit, and
+for a new draft is 1-128 ASCII letters, digits, `.`, `_` or `-` starting with a
+letter or digit (drafts saved earlier keep their id; generated ids use an ASCII
+slug of the name), and
 these size limits: name and namespace up to 200 characters, description up to
 4,000, at most 500 nodes, 2,000 edges and 64 entries in each of `metadata` and
 the graph's `editorMetadata`. A save outside them returns ProblemDetails `400`
@@ -201,8 +203,9 @@ publications are immutable run targets and are never silently retargeted. A
 provided `publicationId` follows the same character and length rule as
 `packageId` (ProblemDetails `400` otherwise), so no two publications can share a
 schedule definition id. `target` on publish and `status` on
-`POST /workflow-publications/{publicationId}/status` accept only the named
-values; a numeric value returns ProblemDetails `400` and changes nothing.
+`POST /workflow-publications/{publicationId}/status` must name a defined
+value; a number that maps to no defined value returns ProblemDetails `400` and
+changes nothing.
 
 `Job` and `ProcessEndpoint` publications compile to a single dispatched
 geoprocessing job, which cannot resolve cross-node data bindings. Publishing a

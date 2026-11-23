@@ -50,7 +50,23 @@ public sealed partial class WorkflowPackageEndpointsTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location!.OriginalString.Should().Be($"/api/v1/console/workflow-packages/{packageId}");
-        (await _client.GetAsync(response.Headers.Location)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var reread = await _client.GetAsync(response.Headers.Location);
+        reread.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages")]
+    public async Task SavePackage_WithNonAsciiNameAndNoId_GetsAValidGeneratedId()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-packages",
+            CreatePackageRequest("Écoulement crue 洪水", CreateAreaGraph()),
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var doc = await ReadJsonAsync(response);
+        doc.RootElement.GetProperty("data").GetProperty("packageId").GetString()
+            .Should().MatchRegex("^pkg-[a-z0-9-]+$");
     }
 
     [IntegrationTest]
@@ -83,6 +99,7 @@ public sealed partial class WorkflowPackageEndpointsTests
     [InlineData("nodes")]
     [InlineData("edges")]
     [InlineData("metadata")]
+    [InlineData("editorMetadata")]
     [Endpoint("POST /api/v1/console/workflow-packages")]
     public async Task SavePackage_OverASizeLimit_IsRefusedAndNotStored(string oversized)
     {
@@ -158,12 +175,15 @@ public sealed partial class WorkflowPackageEndpointsTests
         name = oversized == "name" ? new string('n', 201) : "oversized",
         @namespace = oversized == "namespace" ? new string('s', 201) : null,
         description = oversized == "description" ? new string('d', 4_001) : null,
-        graph = AreaNodesGraph(oversized == "nodes" ? 501 : 1, oversized == "edges" ? 2_001 : 0),
+        graph = AreaNodesGraph(
+            oversized == "nodes" ? 501 : 1,
+            oversized == "edges" ? 2_001 : 0,
+            oversized == "editorMetadata" ? 65 : 0),
         metadata = Enumerable.Range(0, oversized == "metadata" ? 65 : 1)
             .ToDictionary(i => $"key{i}", _ => "value"),
     };
 
-    private static object AreaNodesGraph(int nodeCount, int edgeCount) => new
+    private static object AreaNodesGraph(int nodeCount, int edgeCount, int editorMetadataCount = 0) => new
     {
         nodes = Enumerable.Range(0, nodeCount)
             .Select(i => new { nodeId = $"area-{i}", nodeTypeId = "process:geometry.area" })
@@ -171,6 +191,8 @@ public sealed partial class WorkflowPackageEndpointsTests
         edges = Enumerable.Range(0, edgeCount)
             .Select(_ => new { sourceNodeId = "area-0", targetNodeId = "area-0" })
             .ToArray(),
+        editorMetadata = Enumerable.Range(0, editorMetadataCount)
+            .ToDictionary(i => $"key{i}", _ => "value"),
     };
 
     private async Task<WorkflowPackage?> GetStoredPackageAsync(string packageId)
