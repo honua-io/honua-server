@@ -33,7 +33,8 @@ License. Licensor: Honua Geo Inc.
   own managed service is a Competing Use and requires a partner agreement.
 - The repository does not accept external contributions (`close-external-prs.yml`), so Honua Geo
   Inc. retains full copyright and the ability to relicense.
-- Journaled migrations keep their original header bytes and immutable ledger hashes. Historical exact-byte classifier review records are retained in `eng/schema/reviewed-migration-hashes.v1.json`. New migrations use the Fair Core License header and must be idempotent and tested on an installed stack. There is no prior-reader CI gate.
+- Journaled migrations carry the Fair Core License notice. Their second-line notice was corrected once from the ELv2 wording (#9276), with every other byte unchanged and their ledger hashes refreshed; applied migrations are journaled by name, so installed databases are unaffected. Ledger hashes are otherwise immutable. Historical exact-byte classifier review records are retained in `eng/schema/reviewed-migration-hashes.v1.json`. New migrations use the Fair Core License header and must be idempotent and tested on an installed stack. There is no prior-reader CI gate.
 - The attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
-  keeps its immutable v1 bytes. That preamble is pinned by SHA-256 in `ServerCoreSchemaMigrations`,
-  and a header change there makes every non-default-schema attachment migration refuse to load.
+  is pinned by SHA-256 in `ServerCoreSchemaMigrations`. A header change there without the matching pin
+  makes every non-default-schema attachment migration refuse to load; its notice correction (#9276)
+  updated the pin with it.
