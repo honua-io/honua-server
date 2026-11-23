@@ -792,13 +792,49 @@ internal sealed partial class SpecGroundingService
         }
     }
 
-    // Every clause pattern separates words with \s+, so one space is equivalent. Collapsing runs first
-    // keeps the lazy word-or-space captures from backtracking cubically over long whitespace runs.
     private static IEnumerable<string> SplitClauses(string turn)
         => SentenceBreakPattern().Split(turn)
-            .Select(sentence => WhitespaceRunPattern().Replace(sentence, " ").Trim())
+            .Select(sentence => CollapseWhitespaceOutsideQuotes(sentence).Trim())
             .Where(trimmed => trimmed.Length > 0)
             .Select(trimmed => trimmed.TrimEnd('.'));
+
+    // Every clause pattern separates words with \s+, so one space is equivalent. Collapsing runs first
+    // keeps the lazy word-or-space captures from backtracking cubically over long whitespace runs.
+    // Quoted literals keep their spacing: filter values must reach the spec unchanged, and the
+    // word-or-space captures cannot cross a quote character.
+    private static string CollapseWhitespaceOutsideQuotes(string sentence)
+    {
+        var builder = new StringBuilder(sentence.Length);
+        var openQuote = '\0';
+        foreach (var current in sentence)
+        {
+            var insideQuote = openQuote != '\0';
+            openQuote = NextQuoteState(openQuote, current);
+            var collapses = !insideQuote && char.IsWhiteSpace(current);
+            if (!collapses || builder.Length == 0 || builder[^1] != ' ')
+            {
+                builder.Append(collapses ? ' ' : current);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // A quote opens a literal; only the same quote character closes it.
+    private static char NextQuoteState(char openQuote, char current)
+    {
+        if (current is not ('\'' or '"'))
+        {
+            return openQuote;
+        }
+
+        if (openQuote == '\0')
+        {
+            return current;
+        }
+
+        return openQuote == current ? '\0' : openQuote;
+    }
 
     private static bool IsOutOfScope(string clause) => OutOfScopePattern().IsMatch(clause);
 
@@ -1674,9 +1710,6 @@ internal sealed partial class SpecGroundingService
 
     [GeneratedRegex(@"(?<=[A-Za-z0-9""])\.\s+|[\r\n;]+", RegexOptions.CultureInvariant)]
     private static partial Regex SentenceBreakPattern();
-
-    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
-    private static partial Regex WhitespaceRunPattern();
 
     [GeneratedRegex(@"\b(?:schedule|publish|deploy|dashboard|app)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex OutOfScopePattern();
