@@ -66,12 +66,10 @@ internal static class ItemEndpoints
             collectionId);
         StacLog.ItemsRequested(logger, collectionId, limit);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Items);
-        if (validationError is not null)
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Items) is { } queryError)
         {
             StacTelemetry.SetFailed(activity, "invalid_query_parameters");
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return queryError;
         }
 
         try
@@ -189,8 +187,8 @@ internal static class ItemEndpoints
             var items = itemBuilder.MoveToImmutable();
 
             var stacBase = $"{baseUrl}/stac";
-            var escapedCollectionId = Uri.EscapeDataString(collectionId);
-            var itemsPath = $"{stacBase}/collections/{escapedCollectionId}/items";
+            var collectionSegment = Uri.EscapeDataString(collectionId);
+            var itemsPath = $"{stacBase}/collections/{collectionSegment}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
             var collectionTitle = StacMappingService.ResolveDisplayName(publication, resource, layerId);
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
@@ -200,7 +198,7 @@ internal static class ItemEndpoints
                 type: MediaTypes.GeoJson,
                 title: "Items"));
             linksBuilder.Add(Link.Create(
-                href: $"{stacBase}/collections/{escapedCollectionId}",
+                href: $"{stacBase}/collections/{collectionSegment}",
                 rel: RelationTypes.Collection,
                 type: MediaTypes.Json,
                 title: collectionTitle));
@@ -254,6 +252,12 @@ internal static class ItemEndpoints
         }
     }
 
+    private static IResult? ValidateItemQuery(HttpContext context, IReadOnlySet<string> allowedParameters)
+    {
+        var error = OgcCommonUtilities.ValidateQueryParameters(context.Request, allowedParameters);
+        return error is null ? null : StandardErrorHelpers.CreateBadRequest(context, error.Value ?? "Invalid query parameters.");
+    }
+
     private static async Task<IResult> HandleGetItem(
         string collectionId,
         string itemId,
@@ -270,12 +274,10 @@ internal static class ItemEndpoints
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Catalog);
-        if (validationError is not null)
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Catalog) is { } queryError)
         {
             StacTelemetry.SetFailed(activity, "invalid_query_parameters");
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return queryError;
         }
 
         try
