@@ -2499,6 +2499,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         // DEM pixels are [12, 12, 8, 8] over 100 unit² pixels with a base plane of 10:
         //   deltas [+2, +2, -2, -2] => cut = 4·100 = 400, fill = -4·100 = -400,
         //   area = 4·100 = 400, minz = 8, maxz = 12, meanz = 10 (hand-verifiable).
+        // The DEM is Web Mercator, so map-unit areas are scaled to ground m² by cos²(lat) at the
+        // DEM extent centre (y = -500 m); for spherical Web Mercator cos(lat) = 1 / cosh(y / R),
+        // giving 400 · (1 - ~6.1e-9) ≈ 399.9999975.
         var store = CreateVolumeRasterStoreSubstitute([12d, 12d, 8d, 8d]);
         var fixture = await UseRasterStoreAsync(store);
         try
@@ -2556,9 +2559,10 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             response.Should().NotBeNull();
             response!.Results.Should().HaveCount(1);
             var result = response.Results[0];
-            result.Cut.Should().BeApproximately(400d, 1e-6);
-            result.Fill.Should().BeApproximately(-400d, 1e-6);
-            result.Area.Should().BeApproximately(400d, 1e-6);
+            var groundScale = 1d / Math.Pow(Math.Cosh(-500d / 6378137d), 2d);
+            result.Cut.Should().BeApproximately(400d * groundScale, 1e-9);
+            result.Fill.Should().BeApproximately(-400d * groundScale, 1e-9);
+            result.Area.Should().BeApproximately(400d * groundScale, 1e-9);
             result.MinZ.Should().BeApproximately(8d, 1e-6);
             result.MaxZ.Should().BeApproximately(12d, 1e-6);
             result.MeanZ.Should().BeApproximately(10d, 1e-6);
