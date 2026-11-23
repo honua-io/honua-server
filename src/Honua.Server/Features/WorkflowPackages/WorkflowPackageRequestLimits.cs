@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.WorkflowPackages.Domain;
+
 namespace Honua.Server.Features.WorkflowPackages;
 
 // Bounds on what a client may send when it names or saves a workflow package.
@@ -52,4 +54,14 @@ internal static class WorkflowPackageRequestLimits
 
         return null;
     }
+
+    // The string enum converter also accepts integers, so {"status": 7} would otherwise bind an
+    // undefined value. Switch-based to stay reflection-free under trimming and Native AOT.
+    internal static bool IsDefined(WorkflowPublicationStatus value)
+        => value is WorkflowPublicationStatus.Active or WorkflowPublicationStatus.Disabled;
+
+    internal static bool IsDefined(WorkflowPublicationTarget value)
+        => value is WorkflowPublicationTarget.Job
+            or WorkflowPublicationTarget.Schedule
+            or WorkflowPublicationTarget.ProcessEndpoint;
 }

@@ -111,6 +111,47 @@ public sealed partial class WorkflowPackageEndpointsTests
         (await GetStoredPackageAsync(packageId))!.Graph.Nodes.Should().HaveCount(500);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-publications/{publicationId}/status")]
+    public async Task SetPublicationStatus_WithUndefinedNumericStatus_LeavesTheScheduleArmed()
+    {
+        var packageId = await CreatePackageAsync("undefined-status", CreateAreaGraph());
+        var version = await CreateVersionAsync(packageId);
+        var publicationId = $"status-{Guid.NewGuid():N}";
+        await PublishAsync(packageId, version.Version, new
+        {
+            publicationId,
+            target = "Schedule",
+            schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true }
+        });
+
+        using var response = await _client.PostAsJsonAsync(
+            $"/api/v1/console/workflow-publications/{publicationId}/status",
+            new { status = 7 },
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await GetStoredPublicationAsync(publicationId))!.Status.Should().Be(WorkflowPublicationStatus.Active);
+        (await _definitionStore.GetAsync($"workflow-package:{packageId}:v{version.Version}:{publicationId}"))!
+            .Trigger!.Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
+    public async Task PublishVersion_WithUndefinedNumericTarget_DoesNotWriteAPublication()
+    {
+        var packageId = await CreatePackageAsync("undefined-target", CreateAreaGraph());
+        var version = await CreateVersionAsync(packageId);
+        var publicationId = $"target-{Guid.NewGuid():N}";
+        using var response = await _client.PostAsJsonAsync(
+            $"/api/v1/console/workflow-packages/{packageId}/versions/{version.Version}/publish",
+            new { publicationId, target = 9 },
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await GetStoredPublicationAsync(publicationId)).Should().BeNull();
+    }
+
     private static object OversizedPackageRequest(string packageId, string oversized) => new
     {
         packageId,
