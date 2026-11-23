@@ -195,6 +195,34 @@ internal sealed class ServicePublishExecutor
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        try
+        {
+            return await SubmitPublicationAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (LayerPublishingException ex) when (
+            context.ApprovedProposalId is not null && LayerPublicationBaseChanged.Matches(ex))
+        {
+            // The approved pin is stale: a fresh proposal can succeed, so say that instead of an actuation fault.
+            var now = _clock.GetUtcNow();
+            return new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                Status = OperationHandleStatus.Failed,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Reason = LayerPublicationBaseChanged.ProposalReason,
+                Result = new OperationResultSummary { Summary = LayerPublicationBaseChanged.ProposalReason },
+            };
+        }
+    }
+
+    private async Task<OperationHandle> SubmitPublicationAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
         VerifyPreparedSink(request);
         if (request.VerifiedCommittedSinkPublication is { } prepared &&
             (!string.Equals(prepared.PublisherActorId, context.PrincipalId, StringComparison.Ordinal) ||
