@@ -2556,9 +2556,11 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             response.Should().NotBeNull();
             response!.Results.Should().HaveCount(1);
             var result = response.Results[0];
-            result.Cut.Should().BeApproximately(400d, 1e-6);
-            result.Fill.Should().BeApproximately(-400d, 1e-6);
-            result.Area.Should().BeApproximately(400d, 1e-6);
+            // Web Mercator pixel area is scaled to ground area at the DEM centre latitude,
+            // a few parts per billion below the nominal 100 unit² near the equator.
+            result.Cut.Should().BeApproximately(400d, 1e-4);
+            result.Fill.Should().BeApproximately(-400d, 1e-4);
+            result.Area.Should().BeApproximately(400d, 1e-4);
             result.MinZ.Should().BeApproximately(8d, 1e-6);
             result.MaxZ.Should().BeApproximately(12d, 1e-6);
             result.MeanZ.Should().BeApproximately(10d, 1e-6);

@@ -48,20 +48,22 @@ public sealed partial class OperationDispatcher
 
     // Re-reads the ceiling just before actuation. Returns the persisted denial when authority was
     // revoked after policy evaluation (or now needs a human approval this call does not carry), or
-    // null when actuation may start. Cancellation here happens
+    // null when actuation may start. A dry run is held to the same ceiling as its submission:
+    // ApprovalRequired previews without approval, only Denied refuses it. Cancellation here happens
     // before any side effect and is recorded as such.
     private async Task<OperationHandle?> RefuseRevokedAgentAuthorityAsync(
         OperationHandle envelope,
-        OperationDescriptor descriptor,
+        AgentActuationTarget target,
         OperationPolicyContext invocationContext,
         CancellationToken cancellationToken)
     {
         try
         {
-            var verdict = await AgentAuthorityPolicy.EvaluateAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
+            var verdict = await AgentAuthorityPolicy.EvaluateAsync(_agentAuthorityStore, target.Descriptor, invocationContext, cancellationToken)
                 .ConfigureAwait(false);
             if (verdict == AgentAuthorityVerdict.Unrestricted
-                || (verdict == AgentAuthorityVerdict.ApprovalRequired && !string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)))
+                || (verdict == AgentAuthorityVerdict.ApprovalRequired
+                    && (target.Request.DryRun || !string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId))))
             {
                 return null;
             }
@@ -93,4 +95,6 @@ public sealed partial class OperationDispatcher
                 .ConfigureAwait(false);
         }
     }
+
+    private readonly record struct AgentActuationTarget(OperationDescriptor Descriptor, OperationRequest Request);
 }

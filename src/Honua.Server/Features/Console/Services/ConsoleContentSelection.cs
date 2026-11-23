@@ -64,21 +64,21 @@ internal static class ConsoleContentSelection
                || (item.Description is { } description && description.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static int ResolveCursorIndex(string? cursor, List<ConsoleContentItem> source)
+    private static int ResolveCursorIndex(string? cursor, List<ConsoleContentItem> source) =>
+        DecodeCursor(cursor) is { } index ? Math.Clamp(index, 0, source.Count) : 0;
+
+    // A cursor is the base64 of a non-negative offset this class issued; anything else is a client error.
+    public static bool IsValidCursor(string? cursor) => string.IsNullOrWhiteSpace(cursor) || DecodeCursor(cursor) is not null;
+
+    private static int? DecodeCursor(string? cursor)
     {
         if (string.IsNullOrWhiteSpace(cursor))
-            return 0;
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-            return int.TryParse(decoded, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index)
-                ? Math.Clamp(index, 0, source.Count)
-                : 0;
-        }
-        catch (FormatException)
-        {
-            return 0;
-        }
+            return null;
+        Span<byte> buffer = stackalloc byte[64];
+        return Convert.TryFromBase64String(cursor, buffer, out var written)
+            && int.TryParse(Encoding.UTF8.GetString(buffer[..written]), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+                ? index
+                : null;
     }
 
     private static string EncodeCursor(int index)

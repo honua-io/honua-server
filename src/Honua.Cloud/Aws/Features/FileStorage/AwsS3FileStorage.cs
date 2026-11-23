@@ -74,6 +74,8 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
+    public override string? ObjectKeyPrefix => CloudStoragePath.BuildPrefix(folder: null, _options.KeyPrefix?.Trim().Trim('/'));
+
     public override Task<UploadResult> UploadAsync(
         FileUploadRequest request,
         CancellationToken cancellationToken = default)
@@ -902,6 +904,11 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         return filled;
     }
+
+    protected override bool IsAccessDenied(Exception exception) => IsAccessDeniedFailure(exception);
+
+    internal static bool IsAccessDeniedFailure(Exception exception)
+        => exception is AmazonS3Exception { StatusCode: HttpStatusCode.Forbidden };
 
     private static bool IsNotFound(AmazonS3Exception exception)
     {

@@ -651,7 +651,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
         }
     }
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z")]
     private static partial Regex IdentifierRegex();
 
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9 ._\-]*$")]

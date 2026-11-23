@@ -320,9 +320,10 @@ restore last.
 
 3. Single-node compose upgrades are not zero-downtime. The safe flow is:
    preflight, backup, pull the new image, start it with the same environment,
-   verify `/healthz/ready`, then keep the previous tag available for application
-   rollback. Restore the database only if a destructive migration or data
-   corruption makes image rollback insufficient.
+   verify `/healthz/ready`, then keep the previous tag and the verified
+   pre-upgrade backup. Returning to the previous image means restoring that
+   backup first, unless that image has been qualified against the installed
+   schema; otherwise fix forward.
 
 4. Serverless or managed deployments may run migrations out of band with
    `HONUA_SKIP_MIGRATIONS=true`; keep the same preflight and contract-gate

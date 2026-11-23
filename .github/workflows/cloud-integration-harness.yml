@@ -14,6 +14,39 @@ on:
     # Nightly; the harness is Docker-heavy and not part of the per-PR gate.
     - cron: '0 5 * * *'
   workflow_dispatch:
+  # A PR touching the migration, schema-guard or process-pool seams runs the Local
+  # Substrate job only; the kind/LocalStack job stays nightly. The whole Postgres
+  # provider is listed because CoreSchemaDivergenceGuardTests drive its raster,
+  # metadata, attachment and SensorThings stores. Informational, not a required check.
+  # PR Gate's Analyzers (tests) row compiles this project whenever the diff reaches it.
+  pull_request:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - 'src/**/Migrations/**'
+      - 'src/**/MigrationContracts/**'
+      - 'src/Honua.Db/Postgres/**'
+      - 'src/Honua.Db/Postgres.Shared/**'
+      - 'src/Honua.Core/Core/Features/Infrastructure/**'
+      - 'src/Honua.Core/Core/Features/Raster/**'
+      - 'src/Honua.Core/Core/Features/ControlPlane/**'
+      - 'src/Honua.Core/Core/Features/Geoprocessing/Raster/**'
+      - 'src/Honua.Jobs/Features/ControlPlane/**'
+      - 'eng/schema/**'
+      - 'src/Honua.Server/Hosting/**'
+      - 'src/Honua.Server/Startup/**'
+      - 'src/Honua.Server/Program.cs'
+      - 'tests/dotnet/Honua.CloudIntegration.Tests/**'
+      - 'tests/dotnet/Honua.TestKit/**'
+      - 'tests/dotnet/Honua.TestKit.Abstractions/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/OperationHumanApprovalTestHost.cs'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'global.json'
+      - '.github/workflows/cloud-integration-harness.yml'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'scripts/ci/assert-trx-executed.py'
 
 permissions:
   contents: read
@@ -32,12 +65,14 @@ env:
   JOB_SLEEP_IMAGE: honua-ci/job-sleep:latest
 
 concurrency:
-  group: cloud-integration-harness-${{ github.ref }}
+  group: cloud-integration-harness-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   free-tier:
     name: Free Tier (kind + LocalStack Community)
+    # Nightly and manual only; pull requests run the Local Substrate job.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -158,6 +193,8 @@ jobs:
 
   local-substrate:
     name: Local Substrate (local process + migration gate)
+    # Drafts wait; converted_to_draft cancels an in-flight PR run through the concurrency group.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The only container is the Testcontainers PostgreSQL: the deploy workflow store uses the

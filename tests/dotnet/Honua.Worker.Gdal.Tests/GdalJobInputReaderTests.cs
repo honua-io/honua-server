@@ -13,6 +13,8 @@ namespace Honua.Worker.Gdal.Tests;
 
 public sealed class GdalJobInputReaderTests
 {
+    private static readonly GdalWorkerOptions InlineLimit = new() { MaxArtifactBytes = 64 * 1024 };
+
     private static Dictionary<string, string> Param(string name, string value)
         => new(StringComparer.Ordinal)
         {
@@ -51,7 +53,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out var input,
             out var error);
 
@@ -64,6 +66,39 @@ public sealed class GdalJobInputReaderTests
         input.AddReadPin(arguments);
         arguments.Should().Equal("--config", "GDAL_HTTP_HEADERS", "If-Match: etag-7");
     }
+
+    [UnitTest]
+    public void TryGetRasterInput_LocalCog_ResolvesUnderTheConfiguredRootOnly()
+    {
+        var root = Path.Join(Path.GetTempPath(), "honua-local-cog-root");
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] = RasterSourceJson.Serialize(LocalCog()),
+        };
+
+        GdalJobInputReader.TryGetRasterInput(parameters, "source", new GdalWorkerOptions { MaxArtifactBytes = 64 * 1024, LocalCoverageRoot = root }, out var input, out var error)
+            .Should().BeTrue(error);
+        input.ReferencedPath.Should().Be(Path.GetFullPath(Path.Join(root, "gp-inputs", "tenant", "dem.tif")));
+
+        GdalJobInputReader.TryGetRasterInput(parameters, "source", InlineLimit, out _, out error)
+            .Should().BeFalse();
+        error.Should().Contain("configured local storage root");
+    }
+
+    private static ObjectStoreCogRasterSourceDescriptor LocalCog() => new()
+    {
+        Provider = CloudStorageProvider.Local,
+        StoreReference = "gp-inputs",
+        ObjectKey = "tenant/dem.tif",
+        DeclaredDimensions = new RasterSourceDimensions(256, 256, 1, 8),
+        Version = "version-1",
+        Content = new RasterContentIdentity { SizeBytes = 65_536, MediaType = "image/tiff", ETag = "etag-1" },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant-a",
+            AuthorizationSnapshotReference = "catalog-registration:1",
+        },
+    };
 
     [UnitTest]
     public void TryGetRasterInput_InlineSelection_FailsClosedUntilWorkerAppliesIt()
@@ -100,7 +135,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out _,
             out var error);
 
@@ -144,7 +179,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out _,
             out var error);
 
@@ -188,7 +223,7 @@ public sealed class GdalJobInputReaderTests
         var parsed = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out var input,
             out var parseError);
         var admitted = input.TryAdmit(options, out var admissionError);
@@ -228,7 +263,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out _,
             out var error);
 
@@ -266,7 +301,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out _,
             out var error);
 
@@ -305,7 +340,7 @@ public sealed class GdalJobInputReaderTests
         var parsed = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
+            InlineLimit,
             out var input,
             out var parseError);
         var admitted = input.TryAdmit(new GdalWorkerOptions(), out var admissionError);

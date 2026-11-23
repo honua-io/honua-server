@@ -156,7 +156,7 @@ internal static partial class SceneGenerationEndpoints
         {
             SceneGenerationEndpointsLog.OperationFailed(logger, intent.IntentId, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
-                SceneOutputUnwritableException.OperatorMessage);
+                ex.Message);
         }
         catch (ServiceUnavailableException sue)
         {

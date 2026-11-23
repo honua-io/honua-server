@@ -89,6 +89,8 @@ public static class FilterExpressionNormalizer
         FilterExpression right,
         FilterFieldSchema schema)
     {
+        (left, right) = RemoveCaseInsensitivityFromNonStringComparison(left, right, schema);
+
         if (left is PropertyReference property && right is Literal literal)
         {
             return (left, CoerceLiteral(property, literal, schema));
@@ -102,6 +104,39 @@ public static class FilterExpressionNormalizer
         FilterParserGuard.EnsureCompatibleLiteralComparison(left, right);
         return (left, right);
     }
+
+    // Case has no meaning for numbers, dates or booleans, and LOWER() on such a column fails in SQL.
+    private static (FilterExpression Left, FilterExpression Right) RemoveCaseInsensitivityFromNonStringComparison(
+        FilterExpression left,
+        FilterExpression right,
+        FilterFieldSchema schema)
+    {
+        if (CaseInsensitiveOperand(left) is PropertyReference property
+            && CaseInsensitiveOperand(right) is Literal literal
+            && IsNonStringField(property, schema))
+        {
+            return (property, literal);
+        }
+
+        if (CaseInsensitiveOperand(left) is Literal literalLeft
+            && CaseInsensitiveOperand(right) is PropertyReference propertyRight
+            && IsNonStringField(propertyRight, schema))
+        {
+            return (literalLeft, propertyRight);
+        }
+
+        return (left, right);
+    }
+
+    private static FilterExpression? CaseInsensitiveOperand(FilterExpression expression)
+        => expression is FunctionCall { Arguments: [var operand] } function
+            && function.FunctionName.Equals("CASEI", StringComparison.OrdinalIgnoreCase)
+                ? operand
+                : null;
+
+    private static bool IsNonStringField(PropertyReference property, FilterFieldSchema schema)
+        => schema.TryGetFieldType(property.PropertyName, out var fieldType)
+            && fieldType != MetadataV2FieldType.String;
 
     private static void ValidateBetweenBounds(BinaryOperator op, FilterExpression left, FilterExpression right)
     {

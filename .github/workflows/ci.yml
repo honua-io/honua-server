@@ -540,9 +540,9 @@ jobs:
               echo "postgres_matrix=${POSTGRES_BASELINE}" >> "$GITHUB_OUTPUT"
             fi
             echo "full_ci=${FULL_CI}" >> "$GITHUB_OUTPUT"
-            # The Core package proof packs src and checks it against the server.
-            # Docs, workflows, CI scripts and tests cannot change that package.
-            # Unknown paths still run the job. Full runs always run it.
+            # The Core package proof runs only when a changed file is a Core pack
+            # input (trailing_selection.py CORE_PACKAGE_INPUTS). An empty path
+            # list and full runs always run it.
             if [ "${FULL_CI}" = "true" ]; then
               CORE_PACKAGE=true
             else
@@ -831,12 +831,6 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          # On trunk, full and scheduled runs compare trunk with itself, so a
-          # range selection may build only the default profile; they build all.
-          profile_scope=--changed-from-git
-          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
-          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
-          cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Download selected shard matrix
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -878,9 +872,6 @@ jobs:
           python3 scripts/ci/managed-test-build.py standalone
           --projects-file "${RUNNER_TEMP}/standalone-projects.json"
 
-      - name: Build selected protocol profiles
-        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
-
       # Package pristine outputs before any test/coverage process can modify them.
       - name: Publish managed test outputs
         id: managed-publish
@@ -890,6 +881,52 @@ jobs:
           projects-file: ${{ runner.temp }}/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' }}
 
+
+  protocol-profiles:
+    name: Protocol profiles
+    # A sibling of the producer, not a step in it. A break that only affects a
+    # reduced profile must not fail `build`: every server-test shard, the
+    # foundation tests and the runtime proofs need `build`, so the whole
+    # trailing matrix would be skipped and hide unrelated regressions.
+    # CI Gate requires this job, so a profile break still fails the run.
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_PROCESSOR_COUNT: '4'
+      DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+      MSBUILDDISABLENODEREUSE: '1'
+      # Only Honua.Server reads HonuaProtocolProfile, and each profile build
+      # compiles it with analyzers. Referenced projects are built once without
+      # analyzers and reused: `build` analyzes them in full runs, PR Gate in
+      # affected runs.
+      PRODUCER_RUN_ANALYZERS: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select protocol profiles
+        env:
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || needs.changes.outputs.selective_base || inputs.selective_base || 'origin/trunk' }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+        run: |
+          # On trunk, full and scheduled runs compare trunk with itself, so a
+          # range selection may build only the default profile; they build all.
+          profile_scope=--changed-from-git
+          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
+          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
+          cat "${RUNNER_TEMP}/protocol-profiles.json"
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build selected protocol profiles
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
 
   format:
     name: Format Check
@@ -3667,7 +3704,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs, geoparquet-interop, geoarrow-interop]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, protocol-profiles, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs, geoparquet-interop, geoarrow-interop]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3679,6 +3716,7 @@ jobs:
           REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
           RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          PROFILES_RESULT: ${{ needs.protocol-profiles.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
           STORE_IMAGE_RESULT: ${{ needs.store-image-proofs.result }}
           GEOPARQUET_RESULT: ${{ needs.geoparquet-interop.result }}
@@ -3686,6 +3724,10 @@ jobs:
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${PROFILES_RESULT}" != success ]]; then
+            echo "::error::Selected protocol-profile builds must succeed, got ${PROFILES_RESULT}."
             exit 1
           fi
           if [[ "${REQUIRE_RUNTIME_PROOFS}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then

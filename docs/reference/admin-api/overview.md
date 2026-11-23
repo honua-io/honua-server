@@ -18,6 +18,7 @@ All admin endpoints require authentication except the sign-in endpoints under `/
 |---|---|---|
 | Connections, tables, layers, service settings | `/api/v1/admin/connections`, `/api/v1/admin/services` | [Connections and layers](connections-and-layers.md) |
 | File, URL, migration, and raster imports; jobs | `/api/v1/admin/import`, `/api/v1/admin/operations`, `/api/v1/admin/jobs`, `/api/v1/admin/tile-operations` | [Imports and jobs](imports-and-jobs.md) |
+| Discovery metadata, edit history, custom field schemas | `/api/v1/admin/services/{serviceName}/discovery`, `/api/v1/admin/metadata/layers/{storageLayerId}/discovery`, `/api/v1/admin/metadata/history`, `/api/v1/admin/metadata/schemas` | [Discovery metadata](discovery-metadata.md) |
 | Layer styles, SLD, suggestions, themes | `/api/v1/admin/metadata/layers/{storageLayerId}/style` | [Styles](styles.md) |
 | API keys, roles, users, OIDC providers, license | `/api/v1/admin/api-keys`, `/api/v1/admin/roles`, `/api/v1/admin/users`, `/api/v1/admin/oidc`, `/api/v1/admin/license` | [Users, roles, and licensing](users-roles-licensing.md) |
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |

@@ -16,6 +16,7 @@ Register, discover and run enrichment against third-party data-enrichment datase
 | Capability key | `enrichment.datasets` |
 | Category | Enrichment |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 7 implemented |
 | Registry entries | 7 |
 | Proving tests | 29 |

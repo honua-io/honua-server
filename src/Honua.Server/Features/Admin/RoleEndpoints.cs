@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Asp.Versioning.Builder;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -134,7 +133,7 @@ internal static partial class RoleEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<RoleResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Created<ApiResponse<RoleResponse>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleCreateRole(
             CreateRoleRequest request,
             [FromServices] IRoleStore store,
@@ -148,18 +147,16 @@ internal static partial class RoleEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
             }
 
-            var role = new RoleDefinition
-            {
-                Name = request.Name,
-                Description = request.Description,
-            };
-
+            var role = new RoleDefinition { Name = request.Name, Description = request.Description };
             var created = await store.CreateRoleAsync(role, context.RequestAborted);
-            var response = ToResponse(created);
 
             RoleLog.RoleCreated(logger, created.Name, created.RoleId);
             return TypedResults.Created($"/api/v1/admin/roles/{created.RoleId}",
-                ApiResponse<RoleResponse>.CreateSuccess(response));
+                ApiResponse<RoleResponse>.CreateSuccess(ToResponse(created)));
+        }
+        catch (RoleNameConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure($"A role named '{request.Name}' already exists."));
         }
         // Intentional catch-all request-handling boundary: this is the role
         // creation endpoint; the failure is logged and mapped to a generic error
@@ -175,14 +172,24 @@ internal static partial class RoleEndpoints
     }
 
     private static string? CreateRequestError(CreateRoleRequest request)
+        => AdminRequestValidation.DataAnnotationError(request)
+            ?? TextError(request.Name, request.Description)
+            ?? (ReservedRoleNames.Contains(request.Name) ? ReservedRoleNames.Refusal(request.Name) : null);
+
+    private static string? UpdateRequestError(UpdateRoleRequest request)
+        => AdminRequestValidation.DataAnnotationError(request) ?? TextError(request.Name, request.Description);
+
+    // PostgreSQL text cannot hold NUL, and control characters in a role name break audit logs and role claims.
+    private static string? TextError(string? name, string? description)
     {
-        var validationResults = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        if (name is not null && name.Any(char.IsControl))
         {
-            return $"Validation failed: {string.Join(", ", validationResults.Select(r => r.ErrorMessage))}";
+            return "Validation failed: name must not contain control characters.";
         }
 
-        return ReservedRoleNames.Contains(request.Name) ? ReservedRoleNames.Refusal(request.Name) : null;
+        return description is not null && description.Any(static c => char.IsControl(c) && c is not ('\t' or '\r' or '\n'))
+            ? "Validation failed: description must not contain control characters other than tabs and line breaks."
+            : null;
     }
 
     private static async Task<Results<Ok<ApiResponse<RoleResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -225,6 +232,11 @@ internal static partial class RoleEndpoints
     {
         try
         {
+            if (UpdateRequestError(request) is { } error)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
+            }
+
             var existing = await store.GetRoleAsync(id, context.RequestAborted);
             if (existing == null)
             {

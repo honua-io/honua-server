@@ -14,12 +14,12 @@ You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS la
 
 Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves every nested tile, glTF, and texture URI without URL rewriting. You can generate tilesets from feature layers or host tilesets produced elsewhere.
 
-**Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+**Edition and lifecycle:** Existing serving, discovery, elevation, generation from feature layers, and archive and model import remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
 The scene routes are off by default: on a default install they are not mapped and return `404` with an empty body. Before step 1, set both experimental capabilities and restart the server:
 
 - `Capabilities__Experimental__scene.catalog__Enabled=true` for the scene registry (`/api/v1/admin/scenes`) and scene discovery.
-- `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` for `POST /api/v1/admin/scenes/generate` and 3D Tiles serving under `/scenes/{sceneId}/...`.
+- `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` for `POST /api/v1/admin/scenes/generate`, archive and model import, and 3D Tiles serving under `/scenes/{sceneId}/...`.
 
 See [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces) for the other scene capabilities.
 
@@ -58,7 +58,14 @@ Returns `201 Created` with `tilesetUrl`, `featureCount`, and any `warnings`. The
 
 ### 3. Host an existing tileset (alternative to generation)
 
-Externally produced tilesets register through the scene dataset registry (`POST /api/v1/admin/scenes`), or via configuration for deployments without Postgres:
+To upload a tileset or model that is not on the server yet, import it. On a PostgreSQL-backed server, send `multipart/form-data` with a `file` field to:
+
+- `POST /api/v1/admin/scenes/ingest/archive` for a pre-tiled 3D Tiles ZIP or 3TZ archive (up to 256 MiB).
+- `POST /api/v1/admin/scenes/ingest/model` for a georeferenced GLB, embedded glTF or OBJ model (up to 128 MiB), placed with the required `longitude` and `latitude` form fields.
+
+Both return `201` with the scene id and tileset URL and register the scene for you. Add an optional `sceneId` and `displayName` to choose the scene's id and name. See [scene import](../../reference/protocols/3d-tiles-and-scenes.md#scene-import-admin-community) for every form field and the archive limits.
+
+Externally produced tilesets that are already on the server's disk register through the scene dataset registry (`POST /api/v1/admin/scenes`), or via configuration for deployments without Postgres:
 
 ```json
 {
@@ -114,6 +121,12 @@ for a read-only container filesystem.
 `SCENE_OUTPUT_UNWRITABLE` (500) means local scene output could not be written. Check
 `SceneGeneration:OutputRoot`, mount permissions and free space before trying again.
 The response omits filesystem paths and underlying exception details.
+
+`SCENE_ASSET_STORE_UNWRITABLE` (500) means the object store refused to store the scene assets
+for lack of permission. Check that the server's storage credentials (on AWS, the task role) can
+write under the configured `FileStorage` bucket and key prefix. Retrying does not help until
+access is fixed. On `/api/v1/admin/scenes/generate`, other object-store upload failures are
+reported as `503` and can be retried.
 
 ## Troubleshoot
 

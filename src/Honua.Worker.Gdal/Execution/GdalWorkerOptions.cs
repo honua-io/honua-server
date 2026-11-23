@@ -76,6 +76,8 @@ internal sealed class GdalWorkerOptions
     [Range(1L, long.MaxValue, ErrorMessage = "MaxPointCloudPoints must be a positive point count")]
     public long MaxPointCloudPoints { get; set; } = 10_000_000L;
 
+    // Root for Local-provider object-store reads (coverages and typed raster inputs).
+    // Typed raster inputs on the Local provider are refused when it is unset.
     public string? LocalCoverageRoot { get; set; }
 
     public IList<string> AllowedCoverageBuckets { get; set; } = new List<string>();

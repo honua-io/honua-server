@@ -4,6 +4,7 @@
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Scene.Assets;
 
 namespace Honua.Infrastructure.Scene;
@@ -24,7 +25,9 @@ internal static class SceneAssetStorageUploader
             return null;
         }
 
-        var prefix = SceneAssetHydration.BuildPrefix(sceneId);
+        // The returned prefix is recorded on the scene and read back verbatim, so it carries the
+        // provider key prefix: a task role scoped to "<prefix>/*" can then write and read the assets.
+        var prefix = storage.ObjectKeyPrefix + SceneAssetHydration.BuildPrefix(sceneId);
         if (publicationId is { } id)
         {
             prefix = $"{prefix}/{id:N}";
@@ -53,8 +56,7 @@ internal static class SceneAssetStorageUploader
 
             if (!result.Success)
             {
-                throw new InvalidOperationException(
-                    $"Failed to upload scene asset '{relativePath}' to the object store.");
+                throw UploadFailure(result, $"Failed to upload scene asset '{relativePath}' to the object store.");
             }
         }
 
@@ -76,12 +78,18 @@ internal static class SceneAssetStorageUploader
 
             if (!manifestResult.Success)
             {
-                throw new InvalidOperationException(
-                    "Failed to upload the scene asset manifest to the object store.");
+                throw UploadFailure(manifestResult, "Failed to upload the scene asset manifest to the object store.");
             }
         }
 
         return prefix;
+    }
+
+    // A permission refusal is a configuration fault that retrying cannot fix; anything else may be transient.
+    private static Exception UploadFailure(UploadResult result, string message)
+    {
+        var failure = new InvalidOperationException(message);
+        return result.IsAccessDenied ? SceneOutputUnwritableException.ForObjectStore(failure) : failure;
     }
 
     private static List<string> EnumerateRelativePaths(string sourceDirectory)

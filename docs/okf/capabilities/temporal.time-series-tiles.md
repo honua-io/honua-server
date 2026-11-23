@@ -16,6 +16,7 @@ Filter vector tile requests to a bounded time range via the time parameter.
 | Capability key | `temporal.time-series-tiles` |
 | Category | Temporal |
 | Edition | Pro |
+| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

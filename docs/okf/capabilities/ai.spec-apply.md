@@ -16,6 +16,7 @@ Apply executable specs and submit MCP plan execution jobs from agentic tooling.
 | Capability key | `ai.spec-apply` |
 | Category | AI |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 19 |

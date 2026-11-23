@@ -70,6 +70,28 @@ public sealed class SceneAssetHydratorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task UploadTreeAsync_ProviderKeyPrefix_KeepsEveryObjectUnderThePrefixAndHydrates()
+    {
+        var storage = new InMemoryCloudFileStorage(objectKeyPrefix: "honua/");
+        var (prefix, files) = await SeedSceneAsync(storage, "prefixed-scene");
+
+        prefix.Should().Be("honua/scenes/prefixed-scene");
+        storage.Keys.Should().NotBeEmpty().And.OnlyContain(
+            key => key.StartsWith("honua/scenes/prefixed-scene/", StringComparison.Ordinal),
+            "a task role scoped to the provider key prefix must be able to write every scene object.");
+
+        var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
+        var localRoot = Path.Join(_workRoot, "node-c", "prefixed-scene");
+        await hydrator.EnsureLocalAsync(
+            BuildRecord("prefixed-scene", Guid.NewGuid(), prefix, localRoot), localRoot, CancellationToken.None);
+
+        foreach (var (relative, expected) in files)
+        {
+            (await File.ReadAllBytesAsync(Path.Join(localRoot, relative))).Should().Equal(expected);
+        }
+    }
+
+    [UnitTest]
     public async Task EnsureLocalAsync_MarkerCurrent_DoesNotReDownload()
     {
         var storage = new InMemoryCloudFileStorage();
@@ -247,7 +269,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
 
         var prefix = await SceneAssetStorageUploader.UploadTreeAsync(
             storage, stagingDir, sceneId, CancellationToken.None);
-        prefix.Should().Be(SceneAssetHydration.BuildPrefix(sceneId));
+        prefix.Should().Be(storage.ObjectKeyPrefix + SceneAssetHydration.BuildPrefix(sceneId));
         return (prefix!, files);
     }
 

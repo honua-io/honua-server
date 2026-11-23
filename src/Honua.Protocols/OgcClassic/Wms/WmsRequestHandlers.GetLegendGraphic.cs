@@ -74,12 +74,12 @@ internal static partial class WmsRequestHandlers
 
         if (!TryParseLegendDimension(query, "WIDTH", DefaultLegendSwatchWidth, out var swatchWidth, out var widthError))
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", widthError);
+            return CreateWmsServiceException(context, "InvalidParameterValue", widthError);
         }
 
         if (!TryParseLegendDimension(query, "HEIGHT", DefaultLegendSwatchHeight, out var swatchHeight, out var heightError))
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", heightError);
+            return CreateWmsServiceException(context, "InvalidParameterValue", heightError);
         }
 
         if (!TryParseLegendScale(query, out var zoom, out var scaleError))

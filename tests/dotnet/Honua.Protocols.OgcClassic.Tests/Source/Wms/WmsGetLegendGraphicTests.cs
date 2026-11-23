@@ -176,18 +176,22 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
         content.Should().Contain("InvalidParameterValue");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetLegendGraphic_OversizedWidth_ReturnsInvalidDimensionValue()
+    [InlineData("WIDTH=9999")]
+    [InlineData("HEIGHT=9999")]
+    [InlineData("WIDTH=0")]
+    [InlineData("HEIGHT=abc")]
+    public async Task Wms_GetLegendGraphic_InvalidSwatchSize_ReturnsInvalidParameterValue(string swatchSize)
     {
         var response = await _fixture.Client.GetAsync(
-            LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&FORMAT=image/png&WIDTH=9999"));
+            LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&FORMAT=image/png&{swatchSize}"));
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("ServiceExceptionReport");
-        content.Should().Contain("InvalidDimensionValue");
+        content.Should().Contain("code=\"InvalidParameterValue\"");
     }
 
     [IntegrationTest]
