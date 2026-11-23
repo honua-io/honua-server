@@ -233,8 +233,7 @@ COMPOSE = """services:
 class RosterProducerTests(unittest.TestCase):
     """The bounded-roster workflow as a producer, read from the files it runs."""
 
-    def root(self, workflow: str | None, runner: str, modules: dict[str, str],
-             compose: str = COMPOSE) -> Path:
+    def root(self, workflow: str | None, runner: str, modules: dict[str, str]) -> Path:
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         if workflow is not None:
             path = root / module.ROSTER_WORKFLOW_RELATIVE_PATH
@@ -243,7 +242,7 @@ class RosterProducerTests(unittest.TestCase):
         runner_path = root / module.ROSTER_RUNNER_RELATIVE_PATH
         runner_path.parent.mkdir(parents=True)
         runner_path.write_text(runner, encoding="utf-8")
-        (runner_path.parent / "compose.candidate.yml").write_text(compose, encoding="utf-8")
+        (runner_path.parent / "compose.candidate.yml").write_text(COMPOSE, encoding="utf-8")
         lane = root / module.ROSTER_LANES_RELATIVE_PATH / "python"
         lane.mkdir(parents=True)
         (lane / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
