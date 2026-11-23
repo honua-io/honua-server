@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Amazon.ECS;
-using Amazon.ECS.Model;
+using DescribeTasksRequest = Amazon.ECS.Model.DescribeTasksRequest;
 
 namespace Honua.Aws.Features.ControlPlane;
 
