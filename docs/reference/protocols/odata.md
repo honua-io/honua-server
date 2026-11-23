@@ -45,7 +45,12 @@ On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict
 | `$search` | Implemented | Full-text across string fields; AND/OR/NOT and quoted phrases. |
 | `$apply` | Implemented | `aggregate`, `groupby`, `filter`, `compute` transformations, composable into a `/`-separated pipeline. See [$apply aggregation](#apply-aggregation). |
 | `$deltatoken` | Implemented | Durable authorized query snapshots via `@odata.deltaLink`; see change tracking below. |
-| `$format` | Partial | `json` / `application/json` only. |
+| `$format` | Partial | `json` or `application/json` for JSON. For feature collections, use `parquet`, `geoparquet` or `application/vnd.apache.parquet` to download the requested page as GeoParquet. |
+
+For example, `GET /odata/Layers(1)/Features?$format=parquet&$top=100` requests
+a page of up to 100 features. The response media type is
+`application/vnd.apache.parquet`. If the runtime lacks the native Parquet
+encoder, the request returns HTTP 501.
 
 ## Change tracking
 
