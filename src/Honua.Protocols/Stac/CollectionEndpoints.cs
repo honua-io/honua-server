@@ -114,6 +114,8 @@ internal static class CollectionEndpoints
                     BuildAsync = () => BuildStacCollectionsPayloadAsync(
                         new StacCollectionsBuildArgs
                         {
+                            Context = context,
+                            Logger = logger,
                             Visible = visible,
                             BaseUrl = baseUrl,
                             StacBase = stacBase,
@@ -310,6 +312,8 @@ internal static class CollectionEndpoints
 
     private sealed class StacCollectionsBuildArgs
     {
+        internal required HttpContext Context { get; init; }
+        internal required ILogger Logger { get; init; }
         internal required StacV2Lookups.ResolvedStacPublication[] Visible { get; init; }
         internal required string BaseUrl { get; init; }
         internal required string StacBase { get; init; }
@@ -320,13 +324,13 @@ internal static class CollectionEndpoints
 
     private static async Task<StacCollectionsResponse> BuildStacCollectionsPayloadAsync(StacCollectionsBuildArgs args)
     {
-        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+        var listing = new StacCollectionListing(args.Context, args.Logger);
+        var mapping = new StacMappingService.CollectionMappingContext(
+            args.FeatureReader, args.BaseUrl, args.CoordinateTransformService);
+        var collections = listing.Complete(await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
             args.Visible,
-            (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
-                resolved,
-                new(args.FeatureReader, args.BaseUrl, args.CoordinateTransformService),
-                ct),
-            args.CancellationToken).ConfigureAwait(false);
+            (resolved, ct) => listing.MapAsync(resolved, mapping, ct),
+            args.CancellationToken).ConfigureAwait(false));
 
         var links = ImmutableArray.Create(
             Link.Create(
