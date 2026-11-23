@@ -67,14 +67,35 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
         }
     }
 
-    public sealed class CanonicalRejectionHost : IAsyncLifetime
+    // Starts its application on first use, so a host whose cases are not selected never boots.
+    public abstract class LazyApplicationHost(WebAppFixture fixture) : IAsyncLifetime
     {
-        private readonly WebAppFixture _fixture;
         private Task? _initialized;
 
-        internal IGeoprocessingJobService Jobs { get; } = Substitute.For<IGeoprocessingJobService>();
+        public Task InitializeAsync() => Task.CompletedTask;
 
+        public async Task<HttpClient> CreateClientAsync()
+        {
+            await (_initialized ??= fixture.InitializeAsync());
+            return fixture.CreateClient();
+        }
+
+        public Task DisposeAsync() => _initialized is null ? Task.CompletedTask : fixture.DisposeAsync();
+    }
+
+    public sealed class CanonicalRejectionHost : LazyApplicationHost
+    {
         public CanonicalRejectionHost()
+            : this(Substitute.For<IGeoprocessingJobService>())
+        {
+        }
+
+        private CanonicalRejectionHost(IGeoprocessingJobService jobs)
+            : base(CreateFixture(jobs)) => Jobs = jobs;
+
+        internal IGeoprocessingJobService Jobs { get; }
+
+        private static WebAppFixture CreateFixture(IGeoprocessingJobService jobs)
         {
             var catalog = Substitute.For<IProcessCatalog>();
             catalog.GetProcess("canonical.test").Returns(new ProcessDefinition
@@ -89,35 +110,12 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
                 Parameters = [],
                 OutputArtifactKinds = []
             });
-            _fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(Jobs);
+            return new WebAppFixture().ReplaceService(catalog).ReplaceService(jobs);
         }
-
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public async Task<HttpClient> CreateClientAsync()
-        {
-            await (_initialized ??= _fixture.InitializeAsync());
-            return _fixture.CreateClient();
-        }
-
-        public Task DisposeAsync() => _initialized is null ? Task.CompletedTask : _fixture.DisposeAsync();
     }
 
-    public sealed class InvalidContractHost : IAsyncLifetime
-    {
-        private readonly WebAppFixture _fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
-        private Task? _initialized;
-
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public async Task<HttpClient> CreateClientAsync()
-        {
-            await (_initialized ??= _fixture.InitializeAsync());
-            return _fixture.CreateClient();
-        }
-
-        public Task DisposeAsync() => _initialized is null ? Task.CompletedTask : _fixture.DisposeAsync();
-    }
+    public sealed class InvalidContractHost()
+        : LazyApplicationHost(CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]));
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
