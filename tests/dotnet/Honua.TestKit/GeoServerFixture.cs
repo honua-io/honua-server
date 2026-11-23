@@ -15,7 +15,8 @@ public sealed class GeoServerFixture : IAsyncLifetime
     // The state object is process-wide and every mutation is serialized by _sharedLock.
     // The container outlives its last reference for IdleReleaseDelay. The GeoServer classes sit in
     // different serial collections, so without the grace the count reached zero between them and
-    // each class booted its own container. ProcessExit disposes a container still in its grace.
+    // each class booted its own container. ProcessExit disposes a container still in its grace
+    // when the test host raises it; otherwise the Testcontainers reaper removes it.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly GeoServerSharedState SharedState = new();
     private static readonly TimeSpan IdleReleaseDelay = TimeSpan.FromMinutes(2);
