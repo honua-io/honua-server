@@ -511,9 +511,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly AOT candidate by digest
         id: build
@@ -684,9 +686,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly Lambda AOT candidate by digest
         id: build
@@ -886,6 +890,7 @@ jobs:
             [ -n "$destination" ] || continue
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" \
               "${tag}-arm64"
@@ -989,9 +994,11 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Preserve immutable JIT architecture tags
         id: immutable_tags
@@ -1125,6 +1132,7 @@ jobs:
             while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
             docker buildx imagetools create "${tag_args[@]}" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${tag}-amd64" "${tag}-arm64"
           done
@@ -1218,7 +1226,10 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.title=Honua Compose executor
-          annotations: index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
+          annotations: |
+            index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
+            index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           provenance: true
           sbom: true
       - name: Bind the published executor digest
@@ -1427,6 +1438,7 @@ jobs:
             esac
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
+              --annotation "index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
               "${source_tag}-amd64" \
               "${source_tag}-arm64"

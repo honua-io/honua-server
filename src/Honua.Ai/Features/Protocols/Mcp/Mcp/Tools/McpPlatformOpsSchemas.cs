@@ -37,9 +37,11 @@ internal static class McpPlatformOpsSchemas
             },
             "status": {
               "type": "string",
+              "description": "Filter by status. RequiresApproval, the operation-handle name, is accepted as AwaitingApproval.",
               "enum": [
                 "Planned",
                 "AwaitingApproval",
+                "RequiresApproval",
                 "Submitted",
                 "Reconciling",
                 "Succeeded",

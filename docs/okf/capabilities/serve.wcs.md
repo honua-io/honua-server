@@ -16,6 +16,7 @@ Serve coverage data through WCS 2.0.1.
 | Capability key | `serve.wcs` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 33 |

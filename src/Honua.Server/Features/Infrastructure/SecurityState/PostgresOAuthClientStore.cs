@@ -76,6 +76,15 @@ internal sealed class PostgresOAuthClientStore(JobStoreDatabase database, TimePr
             StatementRepeat.NotAfterSend,
             cancellationToken);
 
+    public Task<OAuthClientRecord?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken)
+        => string.IsNullOrWhiteSpace(clientId)
+            ? Task.FromResult<OAuthClientRecord?>(null)
+            : ReadFirstAsync(
+                $"SELECT {SelectColumns} FROM {_clients} WHERE client_id = @client_id",
+                new NpgsqlParameter("client_id", NpgsqlDbType.Text) { Value = clientId },
+                StatementRepeat.SafeToRepeat,
+                cancellationToken);
+
     // A public client has no secret hash and an expired client has no live row, so neither matches.
     public async Task<OAuthClientRecord?> ValidateSecretAsync(
         string clientId,

@@ -798,7 +798,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Redis execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability across local queue and remote retry paths, and durable job event projection",
+          "proofMechanism": "PostgreSQL execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability across local queue and remote retry paths, and durable job event projection",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/PostgresExecutionSubstrateIntegrationTests.cs",
@@ -3487,7 +3487,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SOAP scalar Execute and SubmitJob use the real canonical Redis job runtime and production geometry executor, independently asserting rectangle area 3 * 4 = 12 and all measure/CRS metadata. Adapter regressions cover service/process authorization, ownership and route binding, metadata reads independent of result storage, terminal failure faults, result loading and truthful cancellation outcomes. Installed SDK/ArcPy receipts are retained as diagnostic observations; new-candidate and native Pro desktop certification remain pending.",
+          "proofMechanism": "SOAP scalar Execute and SubmitJob use the real canonical PostgreSQL job runtime and production geometry executor, independently asserting rectangle area 3 * 4 = 12 and all measure/CRS metadata. Adapter regressions cover service/process authorization, ownership and route binding, metadata reads independent of result storage, terminal failure faults, result loading and truthful cancellation outcomes. Installed SDK/ArcPy receipts are retained as diagnostic observations; new-candidate and native Pro desktop certification remain pending.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",

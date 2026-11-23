@@ -20,6 +20,7 @@ from quickstart_testing import EXECUTOR, PACKAGE_IMAGES, ROOT, SERVER, WORKER, Q
 from test_console_edge_quickstart import ConsoleEdgeTests  # noqa: F401
 from test_console_package_quickstart import ConsolePackageTests  # noqa: F401
 from test_console_quickstart import ConsoleLifecycleTests  # noqa: F401
+from test_compose_deploy_guide import ComposeDeployGuideTests  # noqa: F401
 from test_shipped_images import ShippedImageTests  # noqa: F401
 
 
@@ -50,7 +51,7 @@ class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             postgres = json.loads(result.stdout)['services']['postgres']
             self.assertEqual('missing', postgres['pull_policy'])
-            self.assertEqual('ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0', postgres['build']['args']['BASE_IMAGE'])
+            self.assertEqual('ghcr.io/honua-io/honua-server@sha256:2d215e136348f3e0d7139c352f88281b5f980d19d78a00d3d308b56fa0060fb4', postgres['build']['args']['BASE_IMAGE'])
             for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
                 self.assertEqual((ROOT / 'docker/proj-grids' / name).read_bytes(),
                                  (path / 'docker/proj-grids' / name).read_bytes())
