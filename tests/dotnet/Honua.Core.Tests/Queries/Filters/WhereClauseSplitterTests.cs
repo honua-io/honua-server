@@ -39,4 +39,12 @@ public class WhereClauseSplitterTests
 
         Assert.Equal(["start_and_end = 1 ", " and_flag = 2"], parts);
     }
+
+    [UnitTest]
+    public void SplitOnAnd_KeepsTheEmptyTermAfterATrailingAnd()
+    {
+        var parts = WhereClauseSplitter.SplitOnAnd("category = 'drainage' AND");
+
+        Assert.Equal(["category = 'drainage' ", ""], parts);
+    }
 }

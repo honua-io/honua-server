@@ -695,13 +695,14 @@ internal sealed partial class ODataSearchService
         var requestedIds = objectIds.ToHashSet();
         var remainingRows = _maxExpandedRows;
 
+        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
+        // Validate before the empty-page return so @odata.context never names a dropped expansion.
+        var relationshipOptions = ParseExpandRelationshipOptions(expand);
+        EnsureNavigationPropertiesExist(relationshipOptions, resource);
         if (objectIds.Length == 0)
         {
             return result;
         }
-
-        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
-        var relationshipOptions = ParseExpandRelationshipOptions(expand);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // Find matching relationships
@@ -903,6 +904,11 @@ internal sealed partial class ODataSearchService
             }
 
             var key = option[..separator].Trim();
+            if (key.Equals("$expand", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Nested $expand options are not supported.");
+            }
+
             if (!key.Equals("$select", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -918,6 +924,25 @@ internal sealed partial class ODataSearchService
         return selectFields is { Count: > 0 } && !selectFields.Contains("*")
             ? selectFields
             : null;
+    }
+
+    private static void EnsureNavigationPropertiesExist(
+        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
+        MetadataV2Object resource)
+    {
+        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var relationship in resource.Relationships)
+        {
+            known.Add(relationship.Name);
+            known.Add(ODataUtilityService.SanitizeIdentifier(relationship.Name));
+            known.Add(ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id));
+        }
+
+        var unknown = optionsByName.Keys.FirstOrDefault(name => !known.Contains(name));
+        if (unknown is not null)
+        {
+            throw new ArgumentException($"'{unknown}' is not a navigation property of this layer.");
+        }
     }
 
     private static bool TryGetExpandRelationshipOptions(
