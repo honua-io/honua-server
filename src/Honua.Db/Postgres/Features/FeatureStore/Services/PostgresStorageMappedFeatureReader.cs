@@ -1281,7 +1281,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             SpatialRelationship.Equals => $"ST_Equals({geometryColumn}, {filterGeometry})",
             SpatialRelationship.WithinDistance => BuildDistancePredicate(geometryColumn, filterGeometry, filter, sql, beyond: false),
             SpatialRelationship.BeyondDistance => BuildDistancePredicate(geometryColumn, filterGeometry, filter, sql, beyond: true),
-            _ => $"ST_Intersects({geometryColumn}, {filterGeometry})"
+            _ => filter.AntimeridianSplit
+                ? $"({geometryColumn} && ST_GeometryN({filterGeometry}, 1) OR {geometryColumn} && ST_GeometryN({filterGeometry}, 2)) AND ST_Intersects({geometryColumn}, {filterGeometry})"
+                : $"ST_Intersects({geometryColumn}, {filterGeometry})"
         };
     }
 
@@ -1349,10 +1351,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool beyond,
         Func<object?, string> addParameter)
     {
-        var operatorText = beyond ? ">" : "<=";
         var geographyColumn = ToWgs84Geography(geometryColumn, storageSrid);
         var geographyFilter = ToWgs84Geography(filterGeometry, storageSrid);
-        return $"ST_Distance({geographyColumn}, {geographyFilter}) {operatorText} {addParameter(distanceInMeters)}";
+        var distanceParam = addParameter(distanceInMeters);
+        if (beyond)
+        {
+            return $"ST_Distance({geographyColumn}, {geographyFilter}) > {distanceParam}";
+        }
+
+        var prefilter = FeatureQueryBuilder.BuildDistanceEnvelopePrefilter(
+            geometryColumn, filterGeometry, geographyFilter, distanceInMeters, storageSrid);
+        return $"{prefilter} AND ST_DWithin({geographyColumn}, {geographyFilter}, {distanceParam})";
     }
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)

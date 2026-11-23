@@ -338,6 +338,8 @@ internal sealed partial class PointCloudScenePublishExecutor
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
+            ServingFormat = SceneServingFormat.ThreeDTiles,
+            ContentKind = SceneContentKind.PointCloud,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
             // Point-cloud positions are placed on the WGS-84 ellipsoid with
             // ellipsoidal height in meters, so the registered CRS is 4979.

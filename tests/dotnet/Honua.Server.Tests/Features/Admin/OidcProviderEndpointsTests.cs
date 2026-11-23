@@ -228,6 +228,97 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
+    [IntegrationTheory]
+    [InlineData("http://169.254.169.254/latest/meta-data/")]
+    [InlineData("http://127.0.0.1:8080/")]
+    [InlineData("https://169.254.169.254/")]
+    [InlineData("https://127.0.0.1/")]
+    [InlineData("https://localhost:8443/")]
+    [InlineData("ftp://auth.example.com/oidc")]
+    [InlineData("https://auth.example.com/\r\nX-Injected: 1")]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [InlineData("https://auth.example.com/realms/x?")]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task CreateProvider_WithInvalidOrDisallowedAuthority_ReturnsBadRequest(string authority)
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Invalid Authority Provider",
+            ProviderType = "Generic",
+            Authority = authority,
+            ClientId = "client-invalid",
+        }, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("Provider\r\nInjected")]
+    [InlineData("Provider\nLineBreak")]
+    [InlineData("Provider\tTab")]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    public async Task CreateAndUpdateProvider_WithControlCharactersInNameOrInvalidAuthority_ReturnsBadRequest(string badName)
+    {
+        var createBad = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = badName,
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "client-ctrl",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, createBad.StatusCode);
+
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Valid Provider For Update",
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "client-valid",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
+            await created.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        var updateBadName = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/oidc/providers/{provider.ProviderId}",
+            new UpdateOidcProviderRequest { Name = badName },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, updateBadName.StatusCode);
+
+        var updateBadAuthority = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/oidc/providers/{provider.ProviderId}",
+            new UpdateOidcProviderRequest { Authority = "http://169.254.169.254/" },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, updateBadAuthority.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    public async Task UpdateProvider_WithQueryOrFragmentInAuthority_ReturnsBadRequest(string authority)
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Issuer Shape Provider",
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "client-issuer-shape",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
+            await created.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        var update = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/oidc/providers/{provider.ProviderId}",
+            new UpdateOidcProviderRequest { Authority = authority },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, update.StatusCode);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/oidc/providers/{id}/test")]
     public async Task TestProvider_ExistingId_ReturnsTestResult()

@@ -20,6 +20,21 @@ evidence. A green shell status is the verifier status. Write receipts beneath gi
 `artifacts/` and attach retained evidence to the GitHub Release in honua-release.
 Durable receipt URL routing is part of the [output migration](https://github.com/honua-io/honua-server/issues/7064).
 
+For a frozen release candidate, dispatch the governed producer instead of a local
+run. `.github/workflows/client-roster-certification.yml` runs this script on a GitHub
+runner against the candidate digest, so `producer_source_sha` is the run's commit,
+and uploads receipts, verdicts, run identities and lane logs as a 90-day artifact:
+
+```bash
+gh workflow run client-roster-certification.yml -R honua-io/honua-server --ref trunk \
+  -f candidate_digest=sha256:<index digest> -f candidate_cut_at=<RFC 3339 UTC cut>
+```
+
+That workflow is the producer authority for every governed row that no client-compat
+baseline covers: the mirror generator reads the test IDs from the lane modules this
+script's `run_lane` lines execute. The receipts are retained as a run artifact; the
+honua-evidence registry does not yet ingest them.
+
 Contract readiness uses `--check-readiness`: every required cell must have a
 producer and denominator join, with only `no-candidate` remaining. Its JSON still
 records skips and `green: false`; only the release verdict can certify the candidate.

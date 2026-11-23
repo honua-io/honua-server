@@ -1577,8 +1577,8 @@ internal sealed class OgcCoveragesHandler
             return "resolution and scale-factor require coverage extent or pixel size metadata.";
         }
 
-        var outputWidth = Math.Ceiling(scaleExtentSize.Value.Width / pixelSize.Width);
-        var outputHeight = Math.Ceiling(scaleExtentSize.Value.Height / pixelSize.Height);
+        var outputWidth = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Width / pixelSize.Width));
+        var outputHeight = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Height / pixelSize.Height));
         if (!IsFinitePositive(outputWidth) ||
             !IsFinitePositive(outputHeight) ||
             outputWidth > MaxScaleSize ||
@@ -1837,20 +1837,21 @@ internal sealed class OgcCoveragesHandler
     {
         if (result.Extent is { } extent)
         {
+            var northEast = outputCrs?.AxisOrder == AxisOrder.NorthEast;
             context.Response.Headers.Append(
                 "Content-Bbox",
                 string.Join(
                     ",",
-                    FormatDouble(extent.XMin),
-                    FormatDouble(extent.YMin),
-                    FormatDouble(extent.XMax),
-                    FormatDouble(extent.YMax)));
+                    FormatDouble(northEast ? extent.YMin : extent.XMin),
+                    FormatDouble(northEast ? extent.XMin : extent.YMin),
+                    FormatDouble(northEast ? extent.YMax : extent.XMax),
+                    FormatDouble(northEast ? extent.XMax : extent.YMax)));
         }
 
-        var resultSrid = outputCrs?.Srid ?? result.Srid;
-        if (resultSrid.HasValue && resultSrid.Value != SpatialReference.WGS84.Wkid)
+        var contentCrs = FormatContentCrsHeader(outputCrs, result.Srid);
+        if (contentCrs is not null)
         {
-            context.Response.Headers.Append("Content-Crs", FormatContentCrsHeader(resultSrid.Value));
+            context.Response.Headers.Append("Content-Crs", contentCrs);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -1899,8 +1900,22 @@ internal sealed class OgcCoveragesHandler
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
 
-    private static string FormatContentCrsHeader(int srid)
-        => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");
+    internal static string? FormatContentCrsHeader(CrsDefinition? outputCrs, int? resultSrid)
+    {
+        if (outputCrs is { Uri.Length: > 0 } requestedCrs)
+        {
+            return $"<{requestedCrs.Uri}>";
+        }
+
+        if (resultSrid is not { } srid || srid <= 0)
+        {
+            return null;
+        }
+
+        return srid == SpatialReference.WGS84.Wkid
+            ? $"<{SpatialReferenceHelpers.Crs84Uri}>"
+            : $"<{CreateEpsgUri(srid)}>";
+    }
 
     private static int ResolveStorageSrid(MetadataV2Object resource, RasterInfo raster)
         => raster.Extent?.Srid ?? raster.Srid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;

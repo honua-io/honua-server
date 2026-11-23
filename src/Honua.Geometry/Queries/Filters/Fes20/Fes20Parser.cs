@@ -251,15 +251,31 @@ public static class Fes20Parser
         var left = ParseExpression(children[0], defaultSrid);
         var right = ParseExpression(children[1], defaultSrid);
 
+        if (IsCaseInsensitive(element) && IsPropertyComparedWithText(left, right))
+        {
+            // CASEI is dropped again during normalization when the property is not a string field.
+            left = new FunctionCall("CASEI", [left]);
+            right = new FunctionCall("CASEI", [right]);
+        }
+
         return new BinaryExpression(left, op, right);
     }
+
+    private static bool IsCaseInsensitive(XElement element)
+        => string.Equals(element.Attribute("matchCase")?.Value, "false", StringComparison.OrdinalIgnoreCase);
+
+    // Property-to-property comparisons stay case-sensitive: their field types are not known here,
+    // and LOWER() on a non-string column fails in SQL.
+    private static bool IsPropertyComparedWithText(FilterExpression left, FilterExpression right)
+        => (left, right) is (PropertyReference, Literal { Type: LiteralType.Text })
+            or (Literal { Type: LiteralType.Text }, PropertyReference);
 
     private static BinaryExpression ParseLike(XElement element, int defaultSrid)
     {
         var wildCard = element.Attribute("wildCard")?.Value ?? "%";
         var singleChar = element.Attribute("singleChar")?.Value ?? "_";
         var escapeChar = element.Attribute("escapeChar")?.Value ?? "\\";
-        var matchCase = !string.Equals(element.Attribute("matchCase")?.Value, "false", StringComparison.OrdinalIgnoreCase);
+        var matchCase = !IsCaseInsensitive(element);
 
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -927,7 +943,7 @@ public static class Fes20Parser
 
     private static AxisOrder ResolveAxisOrder(string srsName, int srid)
     {
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84SrsName(srsName))
         {
             return AxisOrder.EastNorth;
         }
@@ -935,6 +951,23 @@ public static class Fes20Parser
         return SpatialReference.Create(srid).IsGeographic
             ? AxisOrder.NorthEast
             : AxisOrder.EastNorth;
+    }
+
+    private static bool IsCrs84SrsName(string srsName)
+    {
+        if (string.IsNullOrWhiteSpace(srsName))
+        {
+            return false;
+        }
+
+        var trimmed = srsName.Trim();
+        return trimmed.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("CRS:84", StringComparison.OrdinalIgnoreCase) ||
+               ((trimmed.StartsWith("urn:ogc:def:crs:OGC:", StringComparison.OrdinalIgnoreCase) ||
+                 trimmed.StartsWith("urn:x-ogc:def:crs:OGC:", StringComparison.OrdinalIgnoreCase)) &&
+                trimmed.EndsWith(":84", StringComparison.OrdinalIgnoreCase)) ||
+               (trimmed.Contains("://www.opengis.net/def/crs/OGC/", StringComparison.OrdinalIgnoreCase) &&
+                trimmed.EndsWith("/84", StringComparison.OrdinalIgnoreCase));
     }
 
     private static Literal InferLiteralType(string value, string? typeHint)
@@ -1165,7 +1198,7 @@ public static class Fes20Parser
 
         // CRS84 (bare token or OGC URI/URN form) is WGS 84 in lon,lat axis order. The axis order
         // is applied separately in ResolveAxisOrder; here it resolves to EPSG:4326.
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84SrsName(srsName))
         {
             srid = 4326;
             return true;

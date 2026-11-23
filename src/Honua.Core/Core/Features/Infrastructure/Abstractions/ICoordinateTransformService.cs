@@ -64,4 +64,35 @@ public interface ICoordinateTransformService
 
         return true;
     }
+
+    async ValueTask<bool> TransformPointsAsync(
+        double[] xs,
+        double[] ys,
+        int fromSrid,
+        int toSrid,
+        DatumTransformationSelection? selection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(xs);
+        ArgumentNullException.ThrowIfNull(ys);
+        if (xs.Length != ys.Length)
+        {
+            throw new ArgumentException("Coordinate arrays must have the same length.", nameof(ys));
+        }
+
+        for (var index = 0; index < xs.Length; index++)
+        {
+            var transformed = await TransformPointAsync(xs[index], ys[index], fromSrid, toSrid, selection, cancellationToken)
+                .ConfigureAwait(false);
+            if (!transformed.HasValue)
+            {
+                return false;
+            }
+
+            xs[index] = transformed.Value.X;
+            ys[index] = transformed.Value.Y;
+        }
+
+        return true;
+    }
 }

@@ -11,7 +11,7 @@ JOB_LIMIT = 40
 # Conservative bound: every side job, including all four foundation families,
 # both MCP transports and all three Postgres versions. The fixture checks this
 # against ci.yml so additions cannot silently expand admitted fanout.
-SIDE_JOB_BUDGET = 33
+SIDE_JOB_BUDGET = 34
 # A transient router or history failure is retried by the next push instead of
 # being recorded as a range owed to scheduled full CI.
 UNAVAILABLE = "Selection is unavailable."

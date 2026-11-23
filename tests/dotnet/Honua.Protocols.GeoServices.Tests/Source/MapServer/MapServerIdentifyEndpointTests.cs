@@ -625,4 +625,17 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Find)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_WithInvalidLayerDefs_ReturnsBadRequest()
+    {
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&layers=0&layerDefs=0:NONEXISTENT_FIELD=1&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid layerDefs parameter.");
+    }
 }

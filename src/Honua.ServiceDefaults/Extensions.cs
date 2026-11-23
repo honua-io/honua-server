@@ -120,7 +120,7 @@ public static partial class Extensions
 
             if (useOtlp)
             {
-                logging.AddOtlpExporter(options => ConfigureOtlpExporter(options, otlpEndpoint, otlpHeaders));
+                logging.AddOtlpExporter(options => ConfigureOtlpLogExporter(options, otlpEndpoint, otlpHeaders));
             }
         });
 
@@ -372,6 +372,17 @@ public static partial class Extensions
         {
             options.Headers = headers;
         }
+    }
+
+    // Serilog (writeToProviders) builds this exporter while ILoggerFactory itself is being built.
+    // Resolving IHttpClientFactory there for http/protobuf needs ILoggerFactory again and the host
+    // fails with a circular dependency. The SDK uses IHttpClientFactory only while its own default
+    // factory is installed, so wrap that factory: it keeps the timeout and OTLP certificate settings.
+    private static void ConfigureOtlpLogExporter(OtlpExporterOptions options, string? endpoint, string? headers)
+    {
+        ConfigureOtlpExporter(options, endpoint, headers);
+        var sdkFactory = options.HttpClientFactory;
+        options.HttpClientFactory = () => sdkFactory();
     }
 
     private static void ApplyExporterSpanEventLimit(IConfigurationManager configuration, TracingOptions tracingOptions)

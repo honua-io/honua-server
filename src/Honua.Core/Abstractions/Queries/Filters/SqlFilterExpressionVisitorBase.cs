@@ -32,7 +32,11 @@ public abstract class SqlFilterExpressionVisitorBase
         // The scoped translator can translate more than one independent fragment in a
         // request (for example enforced and caller filters). Snapshot the parameters so
         // resetting this visitor for the next translation cannot mutate an earlier result.
-        return new SqlFragment(sql, _parameters.ToArray());
+        return new SqlFragment(sql, _parameters.ToArray())
+        {
+            Dialect = Dialect.Name,
+            SourceExpression = filter
+        };
     }
 
     protected string TranslateExpression(FilterExpression filter, FilterTranslationContext context)
@@ -110,8 +114,16 @@ public abstract class SqlFilterExpressionVisitorBase
     protected virtual string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
         => throw UnsupportedExpression(array);
 
+    // LOWER is standard SQL, so every provider can evaluate case-insensitive comparisons
+    // (CQL2 CASEI, FES matchCase="false") without its own function translation.
     protected virtual string TranslateFunction(FunctionCall function, FilterTranslationContext context)
-        => throw UnsupportedExpression(function);
+        => function is { Arguments: [var operand] } && IsCaseFoldingFunction(function.FunctionName)
+            ? $"LOWER({TranslateExpression(operand, context)})"
+            : throw UnsupportedExpression(function);
+
+    private static bool IsCaseFoldingFunction(string name)
+        => name.Equals("LOWER", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("CASEI", StringComparison.OrdinalIgnoreCase);
 
     protected virtual string TranslateIntervalLiteral(IntervalLiteral interval)
         => throw UnsupportedExpression(interval);

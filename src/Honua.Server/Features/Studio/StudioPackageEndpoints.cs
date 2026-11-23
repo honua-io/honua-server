@@ -818,7 +818,11 @@ internal static partial class StudioPackageEndpoints
 
     private static StudioDraftMutationContext BuildMutationContext(HttpContext context, string? actorId) => new()
     {
-        PrincipalId = actorId,
+        // Owner IDs remain stable; the gateway needs the canonical credential identity
+        // to reject bootstrap proposals and revalidate persisted keys at approval.
+        PrincipalId = CanonicalSecurityActor.Resolve(context.User) is { ApiKeyId: not null } actor
+            ? actor.ActorId
+            : actorId,
         TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
         SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
         CorrelationId = context.TraceIdentifier,

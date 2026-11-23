@@ -11,11 +11,18 @@ internal static class SceneContentTypes
 
     public const string OpenUsdStageContentType = "model/vnd.usda";
 
+    public const string CopcContentType = "application/vnd.laszip+copc";
+
     public static string Resolve(string path)
     {
         if (string.IsNullOrEmpty(path))
         {
             return DefaultContentType;
+        }
+
+        if (path.EndsWith(".copc.laz", StringComparison.OrdinalIgnoreCase))
+        {
+            return CopcContentType;
         }
 
         var extension = Path.GetExtension(path.AsSpan());

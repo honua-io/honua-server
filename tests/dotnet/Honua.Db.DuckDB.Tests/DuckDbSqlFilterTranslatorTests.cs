@@ -59,6 +59,50 @@ public sealed class DuckDbSqlFilterTranslatorTests
         Assert.Contains("<= ", result.Sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(2227, 1200d / 3937d)]
+    [InlineData(2229, 1200d / 3937d)]
+    [InlineData(2223, 0.3048d)]
+    public void Translate_DWithin_DistanceInMetersOnFootProjectedSrid_ScalesDistanceToLayerLinearUnits(int srid, double metersPerUnit)
+    {
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral(CreatePointWkb(6000000, 2000000), srid, "POINT"),
+            new Literal(100.0, LiteralType.Number))
+        {
+            DistanceInMeters = true,
+        };
+
+        var result = new DuckDbSqlFilterTranslator().Translate(filter, CreateProjectedResource(srid));
+
+        Assert.Equal("ST_DWithin(\"geometry\", ST_GeomFromWKB($1), $2)", result.Sql);
+        var boundDistance = Assert.IsType<double>(result.Parameters[1]);
+        Assert.Equal(100.0 / metersPerUnit, boundDistance, precision: 9);
+    }
+
+    private static MetadataV2Object CreateProjectedResource(int srid)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-proj", Name = "state-plane-parcels" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference
+                {
+                    Srid = srid,
+                    Crs = $"EPSG:{srid}",
+                    IsGeographic = false,
+                },
+                GeometryType = MetadataV2GeometryType.Polygon,
+                PrimaryGeometryField = "geometry",
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry },
+            ],
+        };
+
     private static MetadataV2Object CreateNad27PointResource()
         => new()
         {

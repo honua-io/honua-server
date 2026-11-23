@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Forms.Packages;
 
-public sealed class FormPackageValidator
+public sealed partial class FormPackageValidator
 {
     private static readonly HashSet<string> _supportedVisibilityOperators = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -775,6 +775,10 @@ public sealed class FormPackageValidator
             {
                 AddError(issues, "fieldValueOutsideDomain", $"Submitted value for '{field.FieldId}' is outside the form domain.", field.FieldId);
             }
+        }
+        else if (string.Equals(field.Domain.Type, "range", StringComparison.OrdinalIgnoreCase) && IsOutsideRange(field.Domain, value))
+        {
+            AddError(issues, "fieldValueOutsideDomain", $"Submitted value for '{field.FieldId}' is outside the form domain.", field.FieldId);
         }
     }
 

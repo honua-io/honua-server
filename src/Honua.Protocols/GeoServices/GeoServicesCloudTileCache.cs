@@ -168,7 +168,7 @@ internal static class GeoServicesCloudTileCache
     internal static string BuildObjectKey(CloudStorageOptions? storageOptions, params string[] segments)
     {
         var normalized = new List<string>(segments.Length + 2);
-        var prefix = ResolveProviderPrefix(storageOptions);
+        var prefix = storageOptions?.ProviderKeyPrefix();
         if (!string.IsNullOrWhiteSpace(prefix))
         {
             foreach (var segment in SplitPath(prefix))
@@ -201,14 +201,6 @@ internal static class GeoServicesCloudTileCache
             ? ttl.Value
             : TimeSpan.FromHours(24);
     }
-
-    private static string? ResolveProviderPrefix(CloudStorageOptions? storageOptions)
-        => storageOptions?.Provider switch
-        {
-            CloudStorageProvider.AwsS3 => storageOptions.AwsS3?.KeyPrefix,
-            CloudStorageProvider.AzureBlob => storageOptions.AzureBlob?.BlobPrefix,
-            _ => null
-        };
 
     private static string[] SplitPath(string? value)
         => string.IsNullOrWhiteSpace(value)

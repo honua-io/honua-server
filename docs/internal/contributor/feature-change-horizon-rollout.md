@@ -35,8 +35,8 @@ before releasing the first. Record a real cursor between their commits, then com
 the first and resume without losing either change. Repeat with rollback, same-layer
 writes, branch-overlay writes, and COPY/import alongside an edit. Use bounded
 cancellation and database state to establish ordering. Compare blocking and commit
-latency on the build host. Run the N-1 reader check with the actual supported baseline;
-the presence of this migration alone does not prove that older binaries use it.
+latency on the build host. Test the forward-only migration and its idempotency on an installed stack;
+the presence of this migration alone does not prove installed behavior.
 
 ## Inactive publisher stage
 

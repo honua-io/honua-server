@@ -239,7 +239,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests
 }
 
 [Protocol(TestProtocols.TestQuality)]
-public sealed class McpPlatformOpsReaderTests
+public sealed partial class McpPlatformOpsReaderTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]

@@ -51,13 +51,11 @@ internal sealed partial class FeatureQueryBuilder
                     ? $"ST_Transform(ST_SetSRID(ST_GeomFromWKB({polyfillGeomParam}), {polyfillSrid}), 4326)"
                     : $"ST_SetSRID(ST_GeomFromWKB({polyfillGeomParam}), 4326)";
 
-                // NOTE: ::polygon cast converts PostGIS geometry to native PostgreSQL polygon.
-                // This only works for simple Polygon geometries — MultiPolygon or
-                // GeometryCollection inputs will fail at runtime. Validate geometry type
-                // before calling when this path is wired to an endpoint.
+                // Dump polygonal parts and pass exterior + interior rings explicitly so
+                // MultiPolygon and holed Polygon inputs never fail the PostgreSQL ::polygon cast.
                 sql.Append("WITH polyfill_cells AS (");
                 sql.Append(CultureInfo.InvariantCulture,
-                    $"SELECT h3_polygon_to_cells({polyfillGeom}::polygon, {resolutionParam}) AS cell");
+                    $"SELECT h3_polygon_to_cells(ST_MakePolygon(ST_ExteriorRing(poly.geom))::polygon, ARRAY(SELECT ST_MakePolygon(ST_InteriorRingN(poly.geom, ring_index))::polygon FROM generate_series(1, ST_NumInteriorRings(poly.geom)) AS ring_index), {resolutionParam}) AS cell FROM ST_Dump({polyfillGeom}) AS poly WHERE ST_Dimension(poly.geom) = 2");
                 sql.Append(')');
                 polyfillCteLength = sql.Length;
                 sql.Append(' ');

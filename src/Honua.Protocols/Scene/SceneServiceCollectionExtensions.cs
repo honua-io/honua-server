@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Infrastructure.Scene;
 using Honua.Scene.Assets;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -16,7 +17,10 @@ internal static class SceneServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.Configure<SceneDatasetOptions>(configuration.GetSection(SceneDatasetOptions.SectionName));
+        services.Configure<SceneObjectOriginOptions>(configuration.GetSection(SceneObjectOriginOptions.SectionName));
         services.TryAddSingleton<ISceneDatasetRegistry, ConfigurationSceneDatasetRegistry>();
+        services.TryAddSingleton<ISceneObjectOriginReader, SceneObjectOriginReader>();
+        services.TryAddScoped<ISceneCatalogReader, SceneCatalogReader>();
 
         // Bind scene access signing options without ValidateOnStart() and
         // without ValidateDataAnnotations(): deployments that serve only

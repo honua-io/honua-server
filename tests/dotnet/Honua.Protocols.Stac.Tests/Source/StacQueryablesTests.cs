@@ -21,6 +21,28 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
 
     public StacQueryablesTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("/stac/collections/{0}")]
+    [InlineData("/stac/queryables")]
+    [InlineData("/stac/collections/{0}/queryables")]
+    [InlineData("/stac/collections/{0}/items/{1}")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    [Endpoint("GET /stac/queryables")]
+    [Endpoint("GET /stac/collections/{collectionId}/queryables")]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    public async Task MetadataAndItem_UnknownQueryParameter_ReturnsBadRequest(string pathTemplate)
+    {
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Query validation item");
+        var path = string.Format(CultureInfo.InvariantCulture, pathTemplate, WebAppFixture.TestLayerId, featureId);
+
+        using var validResponse = await _fixture.Client.GetAsync(path + "?f=json");
+        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var invalidResponse = await _fixture.Client.GetAsync(path + "?unsupported=value");
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /stac/queryables")]
@@ -101,6 +123,20 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync("/stac/collections/99999/queryables");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTheory]
+    [InlineData("/stac/collections/0?unknown=1")]
+    [InlineData("/stac/queryables?unknown=1")]
+    [InlineData("/stac/collections/0/queryables?unknown=1")]
+    [InlineData("/stac/collections/0/items/1?unknown=1")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /stac/collections/{collectionId}/queryables")]
+    public async Task StacRoutes_WithUnknownQueryParameter_ReturnBadRequest(string path)
+    {
+        var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
 

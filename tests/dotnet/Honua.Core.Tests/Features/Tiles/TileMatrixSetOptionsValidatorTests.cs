@@ -146,6 +146,37 @@ public class TileMatrixSetOptionsValidatorTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(4301, 6377397.155)] // Bessel 1841
+    [InlineData(4267, 6378206.4)]   // Clarke 1866
+    [InlineData(4230, 6378388.0)]   // International 1924
+    public void Validate_ScaleDenominatorAndCellSize_AcceptGeographicGridOnNonWgs84Ellipsoids(
+        int srid,
+        double semiMajorAxisMeters)
+    {
+        var metersPerDegree = (Math.PI * semiMajorAxisMeters) / 180.0;
+        const double cellSize0 = 0.703125;
+        const double cellSize1 = 0.3515625;
+        var scale0 = cellSize0 * metersPerDegree / 0.00028;
+        var scale1 = cellSize1 * metersPerDegree / 0.00028;
+
+        var custom = new CustomTileMatrixSet
+        {
+            Id = $"CustomGeo{srid}",
+            Crs = $"http://www.opengis.net/def/crs/EPSG/0/{srid}",
+            Srid = srid,
+            TopLeftCorner = [-180, 90],
+            Levels =
+            [
+                new TileMatrixLevel { Id = 0, ScaleDenominator = scale0, CellSize = cellSize0, MatrixWidth = 2, MatrixHeight = 1 },
+                new TileMatrixLevel { Id = 1, ScaleDenominator = scale1, CellSize = cellSize1, MatrixWidth = 4, MatrixHeight = 2 }
+            ]
+        };
+
+        Validate(custom).Succeeded.Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NonPositiveMatrixDimensions_Fails()
     {

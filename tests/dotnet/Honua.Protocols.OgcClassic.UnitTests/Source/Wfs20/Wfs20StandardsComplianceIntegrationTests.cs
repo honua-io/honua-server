@@ -40,7 +40,7 @@ public class Wfs20StandardsComplianceIntegrationTests
         capabilities.FilterCapabilities!.TemporalCapabilities.Should().NotBeNull();
         capabilities.FilterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
             .Select(op => op.Name)
-            .Should().BeEquivalentTo("After", "Before", "During");
+            .Should().BeEquivalentTo("After", "Before", "During", "TEquals");
     }
 
     [Fact]

@@ -10,6 +10,12 @@ Honua exposes Snowflake native `GEOGRAPHY` and `GEOMETRY` tables as read-only fe
 through the shared `IFeatureDataProvider` seam. Snowflake is a widely deployed cloud data
 warehouse and a common connect-in-place target for analytical spatial data.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 This page describes the **read/query slice**. Edits, native MVT, native
 FlatGeobuf/Geobuf/GML, top features, bins, and H3 aggregation are
 deliberately out of scope. Aggregate statistics (`outStatistics`) are supported.

@@ -191,7 +191,7 @@ class PullRequestLoadTests(unittest.TestCase):
 
     def test_gate_heavy_jobs_refuse_drafts(self):
         jobs = workflow("pr-gate.yml")["jobs"]
-        heavy = ["pr-gate", "fast-tests", "fast-server-tests", "ci-router-validation", "n1-reader-compatibility"]
+        heavy = ["pr-gate", "fast-tests", "fast-server-tests", "ci-router-validation"]
         if "server-test-producer" in jobs:
             heavy.append("server-test-producer")
         draft = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}

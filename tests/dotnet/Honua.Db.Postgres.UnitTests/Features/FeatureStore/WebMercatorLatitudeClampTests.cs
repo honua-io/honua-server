@@ -109,6 +109,62 @@ public sealed class WebMercatorLatitudeClampTests
         sql.Should().NotContain("ST_ClipByBox2D");
     }
 
+    [UnitTest]
+    public void MvtTile_CustomGeographicGridset_ClampsBufferedEnvelopeToGeographicBounds()
+    {
+        var customGeographicGridset = new Honua.Core.Features.Tiles.GridGeometry
+        {
+            Id = "custom-crs84",
+            Srid = 4326,
+            IsGeographic = true,
+            TopLeftX = -180.0,
+            TopLeftY = 90.0,
+            TileWidth = 256,
+            TileHeight = 256,
+            Levels = [new Honua.Core.Features.Tiles.GridLevel(0, 279541132.0143589, 0.703125, 2, 1)],
+        };
+
+        var sql = BuildMvtTile(new FeatureQuery { SpatialReferenceSrid = 3857 }, customGeographicGridset);
+
+        sql.Should().Contain("ST_Intersection(ST_Expand(ST_MakeEnvelope(-180, -90, 0, 90, 4326), $2), ST_MakeEnvelope(-180, -90, 180, 90, 4326))");
+    }
+
+    [UnitTest]
+    public void Select_PointLayerWithCrossSridEnvelopeOnlyFilter_RetainsStIntersects()
+    {
+        var sameSridSql = Build("select", new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            GeometryType = MetadataV2GeometryType.Point,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [1, 2, 3],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.Intersects,
+                IsSimpleEnvelope = true,
+                AllowEnvelopeOnly = true
+            }
+        });
+        sameSridSql.Should().Contain("geometry &&");
+        sameSridSql.Should().NotContain("ST_Intersects");
+
+        var crossSridSql = Build("select", new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            GeometryType = MetadataV2GeometryType.Point,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [1, 2, 3],
+                Srid = 25833,
+                SpatialRelationship = SpatialRelationship.Intersects,
+                IsSimpleEnvelope = true,
+                AllowEnvelopeOnly = true
+            }
+        });
+        crossSridSql.Should().Contain("geometry &&");
+        crossSridSql.Should().Contain("AND ST_Intersects(geometry, ST_Transform(");
+    }
+
     private static readonly Honua.Core.Features.Tiles.GridGeometry WebMercatorGridset = new()
     {
         Id = "custom-web-mercator",

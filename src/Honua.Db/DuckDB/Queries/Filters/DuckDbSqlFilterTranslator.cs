@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -146,9 +148,10 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
     {
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
-        var distance = TranslateExpression(spatial.Distance, context);
+        var isGeographic = context.Wkid == DuckDbGeodesicSql.Nad27Srid || DistanceConversions.IsGeographicSrid(context.Wkid);
+        var distance = TranslateDistanceExpression(spatial, context, isGeographic);
 
-        if (context.Wkid == DuckDbGeodesicSql.Nad27Srid || DistanceConversions.IsGeographicSrid(context.Wkid))
+        if (isGeographic)
         {
             if (context.GeometryType is not GeometryType.Point)
             {
@@ -187,6 +190,30 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
             SpatialOperator.Beyond => $"NOT ST_DWithin({left}, {right}, {distance})",
             _ => throw Unsupported($"Spatial distance operator '{spatial.Operator}'")
         };
+    }
+
+    private string TranslateDistanceExpression(
+        SpatialDistancePredicate spatial,
+        FilterTranslationContext context,
+        bool isGeographic)
+    {
+        if (!isGeographic && spatial.DistanceInMeters)
+        {
+            var metersPerUnit = CrsLinearUnitFactor.LinearUnitToMeters(context.Wkid);
+            if (Math.Abs(metersPerUnit - 1d) > 1e-12)
+            {
+                if (spatial.Distance is Literal { Type: LiteralType.Number, Value: not null } literal)
+                {
+                    var meters = Convert.ToDouble(literal.Value, CultureInfo.InvariantCulture);
+                    return AddParameter(meters / metersPerUnit);
+                }
+
+                var translated = TranslateExpression(spatial.Distance, context);
+                return $"({translated} / {metersPerUnit.ToString("R", CultureInfo.InvariantCulture)})";
+            }
+        }
+
+        return TranslateExpression(spatial.Distance, context);
     }
 
     private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)

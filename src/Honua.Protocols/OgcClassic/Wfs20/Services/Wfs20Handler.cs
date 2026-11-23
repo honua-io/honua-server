@@ -203,7 +203,10 @@ internal sealed partial class Wfs20Handler
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
                 srsName,
-                reader));
+                reader)
+            {
+                IncludeGeometry = ShouldProjectGeometry(featureType.Resource, propertyName)
+            });
 
             remainingCount -= layerLimit;
         }
@@ -397,6 +400,26 @@ internal sealed partial class Wfs20Handler
         normalizedFilter = null;
         resourceIds = string.Join(',', values);
         return true;
+    }
+
+    private static bool ShouldProjectGeometry(MetadataV2Object resource, string? propertyName)
+    {
+        var requested = ParseQualifiedList(propertyName);
+        if (requested.Length == 0 || requested.Any(static name => name is "*"))
+        {
+            return true;
+        }
+
+        var geometryField = resource.FindPrimaryGeometryField();
+        var geometryProperty = ResolveGeometryPropertyName(resource);
+        return requested.Any(name =>
+        {
+            var resolved = WfsPropertyNameResolver.Resolve(resource, name, allowGeometryAlias: true);
+            return geometryField is not null
+                ? string.Equals(resolved, geometryField.Name, StringComparison.OrdinalIgnoreCase)
+                : resolved is null && geometryProperty is not null &&
+                  WfsPropertyNameResolver.MatchesGeometryProperty(name, geometryProperty);
+        });
     }
 
     private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Object resource, string? propertyName)
@@ -678,16 +701,9 @@ internal sealed partial class Wfs20Handler
             return SpatialReference.WGS84.Wkid;
         }
 
-        if (srsName.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(srsName[5..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg))
+        if (SpatialReferenceHelpers.TryParseSrid(srsName) is { } parsedSrid)
         {
-            return epsg;
-        }
-
-        if (srsName.StartsWith("urn:ogc:def:crs:EPSG::", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(srsName["urn:ogc:def:crs:EPSG::".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var urn))
-        {
-            return urn;
+            return parsedSrid;
         }
 
         var lastSlash = srsName.LastIndexOf('/');
@@ -723,7 +739,8 @@ internal sealed partial class Wfs20Handler
                 Wfs20Utilities.ParameterNames.SrsName);
         }
 
-        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false);
+        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false)
+            ?? await _crsRegistry.ResolveBySridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false);
         if (resolvedDefinition.HasValue)
         {
             return resolvedDefinition.Value.Srid;
@@ -761,10 +778,11 @@ internal sealed partial class Wfs20Handler
             : AxisOrder.EastNorth;
     }
 
-    private static bool IsCrs84Request(string? srsName)
-        => SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
-           definition.Srid == SpatialReference.WGS84.Wkid &&
-           definition.AxisOrder == AxisOrder.EastNorth;
+    internal static bool IsCrs84Request(string? srsName)
+        => CrsIdentifier.IsCrs84(srsName) ||
+           (SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
+            definition.Srid == SpatialReference.WGS84.Wkid &&
+            definition.AxisOrder == AxisOrder.EastNorth);
 
     private static Parameter CreateParameter(string name, bool allowAnyValue)
     {
@@ -1301,7 +1319,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
-        if (geometryPropertyName is not null &&
+        if (plan.IncludeGeometry && geometryPropertyName is not null &&
             !string.IsNullOrWhiteSpace(feature.GeometryGml))
         {
             writer.WriteStartElement(
@@ -1980,7 +1998,10 @@ internal sealed partial class Wfs20Handler
         FeatureQuery Query,
         long MatchedCount,
         string? RequestedSrsName = null,
-        IFeatureReader? Reader = null);
+        IFeatureReader? Reader = null)
+    {
+        public bool IncludeGeometry { get; init; } = true;
+    }
 
     private IFeatureReader ReaderFor(LayerQueryPlan plan) => plan.Reader ?? _featureReader;
 

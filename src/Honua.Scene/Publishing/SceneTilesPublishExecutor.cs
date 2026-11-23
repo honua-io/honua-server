@@ -412,8 +412,9 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
         // Intentionally generic: this is the top-level scene-generation job boundary.
         // ValidationException and cancellation are already handled above; any other
-        // failure is logged here. Local output failures retain their operator-facing
-        // classification; remaining failures become ServiceUnavailableException.
+        // failure is logged here. Unwritable local output and object-store permission
+        // refusals keep their operator-facing classification; remaining failures become
+        // ServiceUnavailableException.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
@@ -944,7 +945,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // Reserve room for the "-{suffix}" tail so the auto-generated id
         // satisfies the registry's MaxSceneIdLength budget.
         var slugBudget = SceneDatasetValidator.MaxSceneIdLength - 1 - suffix.Length;
-        var slug = SlugifyName(resource.Metadata.Name, Math.Max(1, slugBudget));
+        var slug = ScenePublishHelper.Slugify(resource.Metadata.Name, Math.Max(1, slugBudget));
         var candidate = $"{slug}-{suffix}".ToLowerInvariant();
         if (!SceneDatasetValidator.TryValidateSceneId(candidate, out var autoError))
         {
@@ -1044,6 +1045,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
+            ServingFormat = SceneServingFormat.ThreeDTiles,
+            ContentKind = SceneContentKind.Vector3D,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
             Crs = "EPSG:4979",
             CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
@@ -1130,39 +1133,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // GeodesicError supplies the partitioner's root LOD budget. Its positive floor
         // ensures that root and root-leaf tiles declare a non-zero geometric error.
         => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
-
-    private static string SlugifyName(string name, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(name) || maxLength <= 0)
-        {
-            return "scene";
-        }
-        var span = name.AsSpan();
-        var capacity = Math.Min(span.Length, maxLength);
-        var buffer = new char[capacity];
-        var written = 0;
-        var lastDash = false;
-        for (var i = 0; i < span.Length && written < capacity; i++)
-        {
-            var c = span[i];
-            // Restrict to ASCII alphanumerics so the resulting slug always
-            // satisfies SceneDatasetValidator's pattern. Non-ASCII letters are
-            // mapped to the dash separator.
-            if (char.IsAsciiLetterOrDigit(c))
-            {
-                buffer[written++] = char.ToLowerInvariant(c);
-                lastDash = false;
-            }
-            else if (!lastDash && written > 0)
-            {
-                buffer[written++] = '-';
-                lastDash = true;
-            }
-        }
-        if (written == 0) return "scene";
-        if (lastDash) written--;
-        return new string(buffer, 0, written);
-    }
 
     private sealed class CollectedFeatures
     {

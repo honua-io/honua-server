@@ -61,6 +61,10 @@ public sealed class TileNode
     [JsonPropertyName("refine")]
     public string Refine { get; set; } = "ADD";
 
+    [JsonPropertyName("transform")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Transform { get; set; }
+
     [JsonPropertyName("content")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileContent? Content { get; set; }

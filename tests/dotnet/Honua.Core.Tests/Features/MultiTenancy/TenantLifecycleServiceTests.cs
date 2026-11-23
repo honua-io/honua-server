@@ -96,13 +96,55 @@ public sealed class TenantLifecycleServiceTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task Create_InvalidTenantId_ReturnsInvalid()
+    [Theory]
+    [InlineData("acme")]
+    [InlineData("Acme_01")]
+    [InlineData("tenant-123_abc")]
+    [InlineData("0tenant")]
+    public async Task Create_ValidTenantId_Succeeds(string tenantId)
     {
         var service = new TenantLifecycleService(new InMemoryCatalog(), new CapturingAuditLog());
 
-        (await service.CreateAsync("   ", "blank", null, Actor)).Outcome
-            .Should().Be(TenantLifecycleOutcome.Invalid);
+        var result = await service.CreateAsync(tenantId, "Valid", null, Actor);
+
+        result.Outcome.Should().Be(TenantLifecycleOutcome.Created);
+        result.Tenant!.TenantId.Should().Be(tenantId);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("../etc/passwd")]
+    [InlineData("tenant/sub")]
+    [InlineData("tenant\\sub")]
+    [InlineData("<script>alert(1)</script>")]
+    [InlineData("t1'; DROP TABLE honua.layers;--")]
+    [InlineData("eval3-t\r\nX-Injected: 1")]
+    [InlineData("tenant with space")]
+    [InlineData("-leading-hyphen")]
+    [InlineData("_leading-underscore")]
+    public async Task Create_InvalidTenantId_ReturnsInvalidWithoutMutatingCatalogOrAuditing(string tenantId)
+    {
+        var catalog = new InMemoryCatalog();
+        var audit = new CapturingAuditLog();
+        var service = new TenantLifecycleService(catalog, audit);
+
+        var result = await service.CreateAsync(tenantId, "bad", null, Actor);
+
+        result.Outcome.Should().Be(TenantLifecycleOutcome.Invalid);
+        (await catalog.ListAsync()).Should().BeEmpty();
+        audit.Events.Should().BeEmpty();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Create_OverLengthTenantId_ReturnsInvalid()
+    {
+        var service = new TenantLifecycleService(new InMemoryCatalog(), new CapturingAuditLog());
+
+        (await service.CreateAsync(new string('a', TenantLifecycleService.MaxTenantIdLength + 1), "too-long", null, Actor))
+            .Outcome.Should().Be(TenantLifecycleOutcome.Invalid);
     }
 
     private sealed class InMemoryCatalog : ITenantCatalog

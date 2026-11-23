@@ -72,17 +72,21 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
 
     private static string Normalize(string crsIdentifier)
     {
-        var trimmed = crsIdentifier.Trim();
-        if (trimmed.Length > 1 && trimmed[0] == '<' && trimmed[^1] == '>')
-        {
-            trimmed = trimmed[1..^1];
-        }
+        var trimmed = CrsIdentifier.Unwrap(crsIdentifier);
 
-        if (string.Equals(trimmed, "CRS84", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, "OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, Crs84Uri, StringComparison.OrdinalIgnoreCase))
+        if (CrsIdentifier.IsCrs84(trimmed))
         {
             return Crs84Uri;
+        }
+
+        if (trimmed.StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["SRID=".Length..];
+        }
+
+        if (CrsIdentifier.TryParseEpsgCode(trimmed, out var srid))
+        {
+            return FormattableString.Invariant($"{EpsgUriPrefix}{srid}");
         }
 
         if (trimmed.StartsWith(EpsgUrnPrefix, StringComparison.OrdinalIgnoreCase))

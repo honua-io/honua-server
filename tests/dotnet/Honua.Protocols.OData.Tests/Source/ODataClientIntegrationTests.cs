@@ -3,32 +3,23 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
-using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.OData.Client;
-using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataClientIntegrationTests : IAsyncLifetime
+public sealed class ODataClientIntegrationTests(ODataProHost host)
+    : IClassFixture<ODataProHost>, IDisposable
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly HttpClient _client = host.Fixture.CreateClient();
     private const int TestLayerId = 0;
     private const int TotalTestFeatures = 15;
 
-    public async Task InitializeAsync()
-    {
-        // All segments are relative literal path fragments (not user input), so none can be
-        // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-        await _fixture.InitializeAsync();
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public void Dispose() => _client.Dispose();
 
     #region Service Document Tests
 
@@ -38,7 +29,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task ServiceDocument_ParsesCorrectly_WithODataClient()
     {
         // Arrange
-        var context = CreateODataContext(_fixture.Client);
+        var context = CreateODataContext(_client);
 
         // Act - The service document is automatically fetched when accessing entity sets
         var query = context.CreateQuery<ODataLayer>("Layers");
@@ -55,7 +46,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task ServiceDocument_ContainsExpectedEntitySets()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata");
+        var response = await _client.GetAsync("/odata");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -78,7 +69,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task Metadata_IsAccessible_AndContainsEntityTypes()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata/$metadata");
+        var response = await _client.GetAsync("/odata/$metadata");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -95,7 +86,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task Metadata_DefinesCorrectKeyProperties()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata/$metadata");
+        var response = await _client.GetAsync("/odata/$metadata");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert - Verify key definitions
@@ -113,7 +104,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task LayersQuery_ReturnsExpectedLayer_ViaODataClient()
     {
         // Arrange
-        var context = CreateODataContext(_fixture.Client);
+        var context = CreateODataContext(_client);
 
         // Act
         var query = context.CreateQuery<ODataLayer>("Layers");
@@ -132,7 +123,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task LayersQuery_WithFilter_ByName_ReturnsSingleMatch()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=Name%20eq%20'US%20Cities'");
+        var response = await _client.GetAsync("/odata/Layers?$filter=Name%20eq%20'US%20Cities'");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
@@ -150,7 +141,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task LayersQuery_WithFilter_StartsWith_ReturnsExpectedMatches()
     {
         // Act
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$filter=startswith(Name,'US')");
+        var response = await _client.GetAsync("/odata/Layers?$filter=startswith(Name,'US')");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
@@ -170,7 +161,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_ReturnsAllFeatures_ViaODataClient()
     {
         // Arrange
-        var context = CreateODataContext(_fixture.Client);
+        var context = CreateODataContext(_client);
 
         // Act
         var response = await context.ExecuteAsync<ODataFeature>(
@@ -192,7 +183,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithTop_ReturnsLimitedResults()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -211,7 +202,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithSkip_ReturnsOffsetResults()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=10");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=10");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -226,7 +217,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithTopAndSkip_ReturnsPaginatedResults()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=3&$skip=5");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=3&$skip=5");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -245,7 +236,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithSkipNearEnd_ReturnsRemainingResults()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=13&$top=10");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=13&$top=10");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -264,7 +255,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithCount_ReturnsTotalCount()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$count=true");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$count=true");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -279,7 +270,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithTopAndCount_ReturnsTotalCountWithLimitedResults()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5&$count=true");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=5&$count=true");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -301,7 +292,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithOrderByObjectIdDesc_ReturnsDescendingOrder()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=ObjectId desc&$top=3");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=ObjectId desc&$top=3");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -321,7 +312,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithOrderByPopulationDesc_ReturnsHighestPopulationFirst()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=population desc&$top=1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=population desc&$top=1");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -338,7 +329,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=state asc,population desc")]
     public async Task FeaturesQuery_WithOrderByMultipleFields_ReturnsDeterministicResults()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$orderby=state asc,population desc&$top=2");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -362,7 +353,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithSelect_ReturnsOnlySelectedFields()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$select=ObjectId&$top=1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$select=ObjectId&$top=1");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -385,7 +376,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithMultipleSelect_ReturnsSelectedFields()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$select=ObjectId,LayerId&$top=1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$select=ObjectId,LayerId&$top=1");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -408,7 +399,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId eq 1";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -427,7 +418,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId ne 1";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -446,7 +437,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId gt 10";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -465,7 +456,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId lt 5";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -484,7 +475,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId ge 14";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -502,7 +493,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId le 3";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -522,7 +513,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     {
         var filter = "is_capital eq true";
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -541,7 +532,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     {
         var filter = "notes eq null";
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -560,7 +551,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     {
         var filter = "population gt 1000000";
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -585,7 +576,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "contains(name, 'San')";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -604,7 +595,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "startswith(name, 'S')";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -623,7 +614,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "endswith(name, 'City')";
 
         // Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -646,7 +637,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId gt 5";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}&$top=3&$count=true");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -668,7 +659,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId gt 5";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}&$skip=2&$top=3");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -693,7 +684,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task LayersQuery_WithCount_ReturnsTotalLayerCount()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$count=true");
+        var response = await _client.GetAsync("/odata/Layers?$count=true");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -708,7 +699,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task LayersQuery_WithSelect_ReturnsOnlySelectedFields()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata/Layers?$select=Name");
+        var response = await _client.GetAsync("/odata/Layers?$select=Name");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -728,7 +719,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithInvalidTop_ReturnsBadRequest()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
@@ -740,7 +731,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithInvalidSkip_ReturnsBadRequest()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
@@ -752,7 +743,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesQuery_WithNonexistentLayer_ReturnsNotFound()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata/Features(999)");
+        var response = await _client.GetAsync("/odata/Features(999)");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
@@ -771,7 +762,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId gt 5 and ObjectId lt 10";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -793,7 +784,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "ObjectId eq 1 or ObjectId eq 15";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -816,7 +807,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task ServiceDocument_HasAbsoluteContextUrl()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync("/odata");
+        var response = await _client.GetAsync("/odata");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -837,7 +828,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     public async Task FeaturesResponse_HasAbsoluteContextUrl()
     {
         // Arrange & Act
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})");
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
@@ -872,7 +863,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "geo.intersects(Geometry, geography'POLYGON((-123 37, -122 37, -122 38, -123 38, -123 37))')";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         // Assert - When spatial filtering is implemented:
@@ -910,7 +901,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var filter = "geo.distance(Geometry, geography'POINT(-122.4194 37.7749)') lt 50000";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         // Assert - When spatial filtering is implemented:

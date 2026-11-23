@@ -36,11 +36,12 @@ internal static class MetadataReleaseControlEndpoints
     }
 
     private static async Task<IResult> HandleCreateMetadataReleaseOperation(
-        [FromBody] CreateMetadataReleaseOperationRequest request,
+        [FromBody] CreateMetadataReleaseOperationRequest? request,
         [FromServices] MetadataReleaseControlService controlService,
         HttpContext context)
     {
-        if (string.IsNullOrWhiteSpace(request.PackageId) ||
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.PackageId) ||
             string.IsNullOrWhiteSpace(request.TargetEnvironment) ||
             string.IsNullOrWhiteSpace(request.ResourceSemanticId) ||
             string.IsNullOrWhiteSpace(request.NewFieldName))

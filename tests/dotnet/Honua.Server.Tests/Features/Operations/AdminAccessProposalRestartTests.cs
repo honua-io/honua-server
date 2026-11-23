@@ -8,11 +8,15 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Admin.Services;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Npgsql;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.TestKit.Extensions;
 using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
@@ -59,14 +63,21 @@ public sealed class AdminAccessProposalRestartTests
                 // and proposal records the first host wrote.
                 services.RemoveAll<IOperationInstanceStore>();
                 services.AddSingleton<IOperationInstanceStore>(sp => sp.GetRequiredService<PostgresOperationInstanceStore>());
+                // The proposer identity must survive the same restart as its proposal.
+                services.RemoveAll<IAdminApiKeyStore>();
+                services.AddSingleton<IAdminApiKeyStore>(sp => new PostgresAdminApiKeyStore(
+                    sp.GetRequiredService<NpgsqlDataSource>(), sp.GetService<TimeProvider>(),
+                    sp.GetRequiredService<IConfiguration>()["Database:Schema"]));
             });
         await fixture.InitializeAsync();
         try
         {
             var roleId = Guid.NewGuid().ToString();
             var idempotencyKey = $"lane-c-restart-{Guid.NewGuid():N}";
+            var key = await fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+                "restart-proposer", ["admin:*"], DateTimeOffset.UtcNow.AddMinutes(30), "test", CancellationToken.None);
             JsonElement accepted;
-            using (var client = AdminClient(fixture))
+            using (var client = AdminClient(fixture, key.Key))
             {
                 accepted = await SubmitAsync(client, roleId, idempotencyKey);
             }
@@ -90,7 +101,7 @@ public sealed class AdminAccessProposalRestartTests
             proposal.Plan.ExecutionPayload.Should().Contain(roleId);
 
             await fixture.RestartHostAsync();
-            using var restarted = AdminClient(fixture);
+            using var restarted = AdminClient(fixture, key.Key);
 
             using (var status = await restarted.GetAsync($"/api/v1/operations/handles/{operationInstanceId}"))
             {
@@ -139,8 +150,8 @@ public sealed class AdminAccessProposalRestartTests
         }
     }
 
-    private static HttpClient AdminClient(WebAppFixture fixture)
-        => fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", BootstrapKey));
+    private static HttpClient AdminClient(WebAppFixture fixture, string key)
+        => fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
 
     private static async Task<JsonElement> SubmitAsync(HttpClient client, string roleId, string idempotencyKey)
     {

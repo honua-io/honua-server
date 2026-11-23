@@ -112,7 +112,7 @@ public sealed class PostgresSessionLockConnectionsIntegrationTests(PostgresFixtu
                     intent_id text NOT NULL, fingerprint text NOT NULL, phase text NOT NULL,
                     schema_name text NOT NULL, table_name text NOT NULL, physical_table text,
                     feature_count integer, source_srid integer, target_srid integer,
-                    content_sha256 text, crs_state text,
+                    content_sha256 text, crs_state text, discarded_at timestamptz,
                     created_at timestamptz NOT NULL DEFAULT now(),
                     updated_at timestamptz NOT NULL DEFAULT now())
                 """);

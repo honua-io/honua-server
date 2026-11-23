@@ -86,7 +86,7 @@ public sealed class WorkTaskStateMachineTests
     [UnitTest]
     public void PermittedActions_ReflectsStateAndRole()
     {
-        WorkTaskStateMachine.PermittedActions(Task(WorkTaskStatus.InProgress), Crew).Should().BeEmpty();
+        WorkTaskStateMachine.PermittedActions(Task(WorkTaskStatus.InProgress), Crew).Should().Equal(WorkTaskAction.Complete);
         WorkTaskStateMachine.PermittedActions(Task(WorkTaskStatus.Assigned), Crew).Should().Equal(WorkTaskAction.Start);
         WorkTaskStateMachine.PermittedActions(Task(WorkTaskStatus.Assigned), Planner)
             .Should().Equal(WorkTaskAction.Unassign, WorkTaskAction.Start, WorkTaskAction.Reassign, WorkTaskAction.Cancel);
