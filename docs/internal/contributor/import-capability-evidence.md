@@ -202,7 +202,7 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
   --filter "FullyQualifiedName~OgcServiceMigrationScannerTests|FullyQualifiedName~MigrationManifestTranslatorTests|FullyQualifiedName~MigrationParityEvidenceGeneratorTests"
 
-dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"
 
 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
