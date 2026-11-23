@@ -2,7 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Mobile.FieldCollection;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
@@ -20,6 +22,9 @@ internal static class FieldCollectionSyncEndpoints
     internal const string ClientIdHeader = "X-Honua-Client-Id";
     private const string ProtocolTag = "fieldcollection-mobile-sync";
     private const int MaxClientIdLength = 128;
+    // changeId and featureId are primary-key columns; bounding them keeps every
+    // value well under the PostgreSQL B-tree row limit so oversize input is a 400.
+    private const int MaxIdentifierLength = 256;
     private const string DefaultClientId = "default";
     private const int DefaultPullLimit = 200;
     private const int MaxPullLimit = 1_000;
@@ -109,7 +114,11 @@ internal static class FieldCollectionSyncEndpoints
             return entitlementGate;
         }
 
-        var clientId = ResolveClientId(context);
+        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        {
+            return clientIdError;
+        }
+
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         var cursor = await store.GetSyncCursorAsync(clientId, context.RequestAborted).ConfigureAwait(false);
         activity?.SetTag("honua.fieldcollection.last_sync_generation", cursor.LastSyncGeneration);
@@ -158,7 +167,11 @@ internal static class FieldCollectionSyncEndpoints
                 "Field 'lastSyncGeneration' must be greater than or equal to 0.");
         }
 
-        var clientId = ResolveClientId(context);
+        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        {
+            return clientIdError;
+        }
+
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.last_sync_generation", lastSyncGeneration);
 
@@ -226,7 +239,11 @@ internal static class FieldCollectionSyncEndpoints
                 $"Query parameter 'limit' must be between 1 and {MaxPullLimit}.");
         }
 
-        var clientId = ResolveClientId(context);
+        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        {
+            return clientIdError;
+        }
+
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.since_generation", since);
         activity?.SetTag("honua.fieldcollection.limit", effectiveLimit);
@@ -344,7 +361,31 @@ internal static class FieldCollectionSyncEndpoints
                 "Field 'feature' must be null for delete operations.");
         }
 
-        var clientId = ResolveClientId(context);
+        if (ValidateIdentifier(context, "changeId", body.ChangeId) is { } changeIdError)
+        {
+            return changeIdError;
+        }
+
+        if (ValidateIdentifier(context, "featureId", body.FeatureId) is { } featureIdError)
+        {
+            return featureIdError;
+        }
+
+        // PostgreSQL text and jsonb cannot store U+0000; reject it here instead of
+        // letting the insert fail with a 500.
+        if (body.Feature is not null && FeaturePayloadContainsNul(body.Feature))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Field 'feature' must not contain NUL (U+0000) characters.");
+        }
+
+        if (!TryResolveClientId(context, out var clientId, out var clientIdError))
+        {
+            return clientIdError;
+        }
+
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId.Value);
         activity?.SetTag("honua.fieldcollection.change_operation", OperationToWire(operation));
@@ -427,8 +468,14 @@ internal static class FieldCollectionSyncEndpoints
     }
 
     // API-key fallback principals share the admin name, so device-specific cursors require X-Honua-Client-Id.
-    private static string ResolveClientId(HttpContext context)
+    // An over-long header is rejected rather than truncated: truncation would let two devices whose
+    // ids share a prefix share one cursor and one idempotency scope.
+    private static bool TryResolveClientId(
+        HttpContext context,
+        out string clientId,
+        [NotNullWhen(false)] out IResult? error)
     {
+        error = null;
         if (context.Request.Headers.TryGetValue(ClientIdHeader, out var headerValues))
         {
             for (var i = 0; i < headerValues.Count; i++)
@@ -442,15 +489,87 @@ internal static class FieldCollectionSyncEndpoints
                 var trimmed = raw.Trim();
                 if (trimmed.Length > MaxClientIdLength)
                 {
-                    trimmed = trimmed[..MaxClientIdLength];
+                    clientId = string.Empty;
+                    error = ProblemDetailsHelpers.CreateAdminProblem(
+                        context,
+                        StatusCodes.Status400BadRequest,
+                        $"Header '{ClientIdHeader}' must be at most {MaxClientIdLength} characters.");
+                    return false;
                 }
 
-                return trimmed;
+                clientId = trimmed;
+                return true;
             }
         }
 
         var name = context.User?.Identity?.Name;
-        return string.IsNullOrWhiteSpace(name) ? DefaultClientId : name.Trim();
+        clientId = string.IsNullOrWhiteSpace(name) ? DefaultClientId : name.Trim();
+        return true;
+    }
+
+    private static IResult? ValidateIdentifier(HttpContext context, string field, string? value)
+    {
+        var trimmed = value!.Trim();
+        if (trimmed.Length > MaxIdentifierLength)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Field '{field}' must be at most {MaxIdentifierLength} characters.");
+        }
+
+        if (trimmed.Contains('\0', StringComparison.Ordinal))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Field '{field}' must not contain NUL (U+0000) characters.");
+        }
+
+        return null;
+    }
+
+    private static bool FeaturePayloadContainsNul(string featureJson)
+    {
+        // The raw payload keeps JSON escapes, so a NUL can only appear as the escape "\u0000".
+        if (!featureJson.Contains("\\u0000", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(featureJson);
+        return ContainsNul(document.RootElement);
+    }
+
+    private static bool ContainsNul(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return element.GetString()!.Contains('\0', StringComparison.Ordinal);
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (ContainsNul(item))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Name.Contains('\0', StringComparison.Ordinal) || ContainsNul(property.Value))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            default:
+                return false;
+        }
     }
 
     private static bool TryParseOperation(string? raw, out FieldCollectionChangeOperation operation)

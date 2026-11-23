@@ -38,7 +38,8 @@ X-Honua-Client-Id: <stable-device-id>
 
 Recommended values are durable per-install identifiers (for example, the
 mobile SDK's persisted device GUID). Maximum length is 128 characters;
-longer values are truncated. When the header is absent, the server falls
+a longer value is rejected with `400 Bad Request` on every sync call (it is
+not truncated, so two devices never share a cursor). When the header is absent, the server falls
 back to the authenticated principal name — which means callers without
 the header collapse onto one shared cursor by design.
 
@@ -207,8 +208,8 @@ re-applying.
 
 | Field         | Type    | Required | Notes |
 |---------------|---------|----------|-------|
-| `changeId`    | string  | yes      | Mobile-assigned UUID; the server uses `(clientId, changeId)` as the idempotency key, where `clientId` is the resolved `X-Honua-Client-Id` (or principal name). |
-| `featureId`   | string  | yes      | Mobile-assigned feature identifier. |
+| `changeId`    | string  | yes      | Mobile-assigned UUID, at most 256 characters; the server uses `(clientId, changeId)` as the idempotency key, where `clientId` is the resolved `X-Honua-Client-Id` (or principal name). |
+| `featureId`   | string  | yes      | Mobile-assigned feature identifier, at most 256 characters. |
 | `layerId`     | integer | yes      | Layer the feature belongs to. |
 | `operation`   | string  | yes      | `insert`, `update`, or `delete`. |
 | `baseVersion` | integer | for update/delete | Server version the device last knew. Required for conflict detection. |
@@ -265,8 +266,11 @@ correcting the request.
 **Error responses**
 
 - `400 Bad Request` with problem-details when the request body is missing
-  required fields, has an unsupported operation, or sets `feature` to a
-  non-null value while `operation` is `delete`.
+  required fields, has an unsupported operation, sets `feature` to a
+  non-null value while `operation` is `delete`, has a `changeId` or
+  `featureId` longer than 256 characters, has a NUL (U+0000) character in
+  `changeId`, `featureId` or any `feature` string or property name, or sends
+  an `X-Honua-Client-Id` longer than 128 characters.
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
 - `403 Forbidden` when the caller is not an administrator or holds
   read-only administrator access.
