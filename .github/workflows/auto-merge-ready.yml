@@ -23,6 +23,10 @@ jobs:
       && github.event.pull_request.user.login != 'dependabot[bot]'
       && (github.event.pull_request.base.ref == 'trunk' || github.event.action == 'edited')
       && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
+      && (github.event.action != 'edited' || github.event.changes.base != null)
+      && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+        || github.event.label.name == 'hold' || github.event.label.name == 'train:hold'
+        || github.event.label.name == 'train:escalated')
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-24.04' }}
     environment: bot-app
     timeout-minutes: 5

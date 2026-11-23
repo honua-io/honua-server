@@ -157,3 +157,11 @@ test('merged or closed pull request with stale admission is left alone', async (
       { draft: false, labels: [{ name: 'hold' }] }), []);
   }
 });
+
+test('label and edit events start a job only when they can change admission', () => {
+  assert.match(workflow, /&& \(github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null\)\n/);
+  assert.match(workflow, /\(\(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\)\n/);
+  for (const name of ['hold', 'train:hold', 'train:escalated']) {
+    assert.match(workflow, new RegExp(`github\\.event\\.label\\.name == '${name}'`));
+  }
+});
