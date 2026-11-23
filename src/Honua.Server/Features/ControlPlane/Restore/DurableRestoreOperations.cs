@@ -362,20 +362,7 @@ internal sealed partial class DurableRestoreWorker(
         }
         if (workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
-            // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself,
-            // with the refused scripts and nonce as the phase a new proposal copies.
-            if (workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired })
-            {
-                await WriteFinishAsync(record with
-                {
-                    Status = WorkflowOperationStatus.Failed,
-                    CurrentPhase = workflow.ErrorMessage ?? AttentionPhase,
-                    ErrorMessage = ComposeExecutorCodes.ContractApprovalRequired
-                }, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            await FailLocalDeployAsync(record, workflow, cancellationToken).ConfigureAwait(false);
             return;
         }
         if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
@@ -506,6 +493,18 @@ internal sealed partial class DurableRestoreWorker(
         await FinishAsync(record, code is null ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed,
             code, cancellationToken).ConfigureAwait(false);
     }
+
+    // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself,
+    // with the refused scripts and nonce as the phase a new proposal copies.
+    private Task FailLocalDeployAsync(WorkflowOperationRecord record, WorkflowOperationRecord workflow, CancellationToken cancellationToken)
+        => workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired }
+            ? WriteFinishAsync(record with
+            {
+                Status = WorkflowOperationStatus.Failed,
+                CurrentPhase = workflow.ErrorMessage ?? AttentionPhase,
+                ErrorMessage = ComposeExecutorCodes.ContractApprovalRequired
+            }, cancellationToken)
+            : FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken);
 
     private Task FailAsync(WorkflowOperationRecord record, string code, CancellationToken cancellationToken)
         => FinishAsync(record, WorkflowOperationStatus.Failed, code, cancellationToken);
