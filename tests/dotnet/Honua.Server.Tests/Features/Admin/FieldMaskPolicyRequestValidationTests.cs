@@ -24,6 +24,11 @@ public sealed class FieldMaskPolicyRequestValidationTests
         new CreateFieldMaskPolicyRequest { Role = "honua:viewer", Service = "my_service.v1", Layer = "parcels.v2", Attribute = "contact.email" },
         new CreateFieldMaskPolicyRequest { Role = "org.role_1", Service = "default", Layer = "layer-1", Attribute = "_internal_field" },
         new CreateFieldMaskPolicyRequest { Role = " viewer ", Service = " default ", Layer = " parcels ", Attribute = " field-1 " },
+        new CreateFieldMaskPolicyRequest { Role = "viewer", Service = "City Services", Layer = "Branch test", Attribute = "owner" },
+        new CreateFieldMaskPolicyRequest { Role = "viewer", Service = "Hawaiʻi County", Layer = "Kailua-Kona parcels (2026)", Attribute = "owner" },
+        new CreateFieldMaskPolicyRequest { Role = "viewer", Service = "default", Layer = "Mānoa O'ahu", Attribute = "owner" },
+        new CreateFieldMaskPolicyRequest { Role = "GIS Editors", Service = "*", Layer = "*", Attribute = "Owner Name" },
+        new CreateFieldMaskPolicyRequest { Role = "editor@example.org", Service = "*", Layer = "*", Attribute = "2020_pop" },
     ];
 
     public static TheoryData<CreateFieldMaskPolicyRequest> InvalidEndpointRequests() =>
@@ -56,12 +61,10 @@ public sealed class FieldMaskPolicyRequestValidationTests
     [InlineData("../admin")]
     [InlineData("org/admin")]
     [InlineData("org\\admin")]
-    [InlineData("my role")]
     [InlineData("viewer';--")]
     [InlineData("{\"role\":\"admin\"}")]
-    [InlineData(".viewer")]
-    [InlineData("-viewer")]
     [InlineData("org..viewer")]
+    [InlineData("viewer*")]
     public void TryValidateObject_InvalidRole_Fails(string invalidRole)
     {
         var request = new CreateFieldMaskPolicyRequest
@@ -86,10 +89,10 @@ public sealed class FieldMaskPolicyRequestValidationTests
     [InlineData("svc\r\n")]
     [InlineData("   ")]
     [InlineData("svc..v2")]
-    [InlineData("svc name")]
     [InlineData("svc;drop")]
     [InlineData("{\"service\":\"x\"}")]
-    [InlineData(".hidden")]
+    [InlineData("svc<b>")]
+    [InlineData("svc`x`")]
     public void TryValidateObject_InvalidService_Fails(string invalidService)
     {
         var request = new CreateFieldMaskPolicyRequest
@@ -114,8 +117,9 @@ public sealed class FieldMaskPolicyRequestValidationTests
     [InlineData("layer\n0")]
     [InlineData("   ")]
     [InlineData("layer..1")]
-    [InlineData("layer 0")]
     [InlineData("layer<script>")]
+    [InlineData("layer; drop")]
+    [InlineData("layer\\0")]
     public void TryValidateObject_InvalidLayer_Fails(string invalidLayer)
     {
         var request = new CreateFieldMaskPolicyRequest
@@ -142,8 +146,8 @@ public sealed class FieldMaskPolicyRequestValidationTests
     [InlineData("../attr")]
     [InlineData("a/b")]
     [InlineData("attr..name")]
-    [InlineData("1field")]
-    [InlineData("attr name")]
+    [InlineData("attr<b>")]
+    [InlineData("attr*")]
     public void TryValidateObject_InvalidAttribute_Fails(string invalidAttribute)
     {
         var request = new CreateFieldMaskPolicyRequest

@@ -27,36 +27,30 @@ public sealed class FieldMaskPolicyResponse
 
 public sealed partial class CreateFieldMaskPolicyRequest : IValidatableObject
 {
-    private readonly record struct IdentifierRule(string FieldName, Regex Pattern, string AllowedDescription);
+    private readonly record struct IdentifierRule(string FieldName, string AllowedDescription);
 
-    [GeneratedRegex(@"\A[A-Za-z0-9_][A-Za-z0-9._:-]*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex RoleIdentifierRegex();
+    private const string DisallowedCharacters = "'/', '\\', '<', '>', '{', '}', '\"', '`', ';', or '*'";
 
-    [GeneratedRegex(@"\A[A-Za-z0-9_][A-Za-z0-9._-]*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex ScopeIdentifierRegex();
-
-    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_.-]*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex AttributeIdentifierRegex();
+    // Policies match IdP role claims, resource metadata names and source field names, all of which
+    // may contain spaces and non-ASCII characters, so only separators and markup delimiters are refused.
+    [GeneratedRegex(@"\A[^/\\<>{}""`;*]+\z", RegexOptions.CultureInvariant)]
+    private static partial Regex PolicyNameRegex();
 
     private static readonly IdentifierRule RoleRule = new(
         nameof(Role),
-        RoleIdentifierRegex(),
-        "'*' or a role identifier using letters, digits, '.', '_', '-', or ':'");
+        $"'*' or a role name without {DisallowedCharacters}");
 
     private static readonly IdentifierRule ServiceRule = new(
         nameof(Service),
-        ScopeIdentifierRegex(),
-        "'*' or a service identifier using letters, digits, '.', '_', or '-'");
+        $"'*' or a service name without {DisallowedCharacters}");
 
     private static readonly IdentifierRule LayerRule = new(
         nameof(Layer),
-        ScopeIdentifierRegex(),
-        "'*' or a layer identifier using letters, digits, '.', '_', or '-'");
+        $"'*' or a layer name without {DisallowedCharacters}");
 
     private static readonly IdentifierRule AttributeRule = new(
         nameof(Attribute),
-        AttributeIdentifierRegex(),
-        "an attribute identifier starting with a letter or '_' and using letters, digits, '.', '_', or '-'");
+        $"an attribute name without {DisallowedCharacters}");
 
     [Required]
     [StringLength(128, MinimumLength = 1)]
@@ -139,7 +133,7 @@ public sealed partial class CreateFieldMaskPolicyRequest : IValidatableObject
                 [rule.FieldName]);
         }
 
-        if (!rule.Pattern.IsMatch(trimmed))
+        if (!PolicyNameRegex().IsMatch(trimmed))
         {
             return new ValidationResult(
                 $"{rule.FieldName} must be {rule.AllowedDescription}.",
