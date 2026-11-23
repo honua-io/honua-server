@@ -2818,7 +2818,7 @@
       "implementedSurface": [
         "POST /sharing/rest/generateToken (form-encoded)",
         "GET /sharing/rest/generateToken (query-string)",
-        "opaque token storage via IDistributedCache (Redis or in-memory)",
+        "opaque token storage via ISecurityTokenStore (PostgreSQL shared or in-memory local)",
         "referer or client-IP binding with mismatch rejection",
         "configurable default and maximum token lifetime (caller-requested expiration clamped)",
         "HTTPS-only issuance (Authentication:PortalToken:RequireHttps, default true)",
