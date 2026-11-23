@@ -84,7 +84,7 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         var migrate = await RunServerProcessAsync(connectionString);
         migrate.ExitCode.Should().Be(0, migrate.Describe());
 
-        // The rollback image (N) ships every script except the newest k, and starts with
+        // The rollback image (N) ships only the scripts below the newest k, and starts with
         // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs.
         var full = ServerCoreSchemaMigrations.Manifest;
         // A default Database:Schema install never discovers the configured-schema adoption
