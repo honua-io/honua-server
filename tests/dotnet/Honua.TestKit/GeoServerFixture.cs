@@ -22,7 +22,10 @@ public sealed class GeoServerFixture : IAsyncLifetime
     private static readonly GeoServerSharedState SharedState = new();
     private static readonly TimeSpan IdleReleaseDelay = TimeSpan.FromMinutes(2);
     private static readonly IdleReleaseScheduler IdleRelease = new(
-        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync, "Shared GeoServer container");
+        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync)
+    {
+        ResourceName = "Shared GeoServer container",
+    };
 
     private sealed class GeoServerSharedState
     {

@@ -18,7 +18,10 @@ internal static class WebAppFixtureSharedBootstrapMixin
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly IdleReleaseScheduler IdleRelease = new(
-        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync, "Shared test host");
+        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync)
+    {
+        ResourceName = "Shared test host",
+    };
     private static WebApplicationFactory<Program>? _sharedFactory;
     private static PostgresFixture? _sharedPostgres;
     private static int _sharedRefCount;

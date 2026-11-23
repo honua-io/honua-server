@@ -10,12 +10,14 @@ namespace Honua.TestKit.Infrastructure;
 internal sealed class IdleReleaseScheduler(
     SemaphoreSlim gate,
     Func<TimeSpan> idleDelay,
-    Func<Task> releaseIfIdle,
-    string resourceName)
+    Func<Task> releaseIfIdle)
 {
     private static readonly TimeSpan ProcessExitDisposalLimit = TimeSpan.FromSeconds(10);
     private CancellationTokenSource? _pending;
     private int _processExitHooked;
+
+    // Names the resource in the error written when an unattended idle release fails.
+    public required string ResourceName { get; init; }
 
     // Callers hold the gate.
     public void Schedule()
@@ -91,7 +93,7 @@ internal sealed class IdleReleaseScheduler(
         catch (Exception exception)
         {
             // No test awaits this release; report a disposal failure instead of dropping it.
-            await Console.Error.WriteLineAsync($"{resourceName} idle release failed: {exception}").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"{ResourceName} idle release failed: {exception}").ConfigureAwait(false);
         }
         finally
         {
