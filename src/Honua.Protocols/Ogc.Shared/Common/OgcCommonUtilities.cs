@@ -58,9 +58,13 @@ internal static class OgcCommonUtilities
         new FormatOption("json", MediaTypes.Json, "JSON"),
         new FormatOption("html", MediaTypes.Html, "HTML"));
 
+    private static readonly ICommonQueryValidator DefaultQueryValidator =
+        new Honua.Core.Features.Validation.CommonQueryValidator(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Configuration.LimitsOptions()));
+
     public static BadRequest<string>? ValidateQueryParameters(HttpRequest request, IReadOnlySet<string> allowedParameters)
     {
-        var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        var validator = request.HttpContext.RequestServices?.GetService<ICommonQueryValidator>() ?? DefaultQueryValidator;
         var error = QueryParameterValidationHelpers.GetValidationError(
             validator,
             request.Query.Keys.ToArray(),

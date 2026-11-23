@@ -85,6 +85,24 @@ Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify t
 migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
 database backup.
 
+### Registry tables with a configured database schema
+
+For a non-default `Database:Schema`, migration
+`227_AdoptConfiguredRegistrySchema.sql` moves `services`, `layers`,
+`service_layers`, and `layer_fields` from `honua` into the configured schema.
+It preserves rows, table identities, foreign keys, and owned sequences. Conflicting
+tables in the target schema stop the migration without overwriting either registry.
+The default `honua` schema skips this migration. With a custom schema, readiness
+requires this migration even when startup migrations are disabled. Optional raster
+provisioning uses the registry location when enabled after the move.
+
+For an existing database, back up the database and stop all older server and worker
+instances before running migrate-only. Review the migration plan and apply its
+one-shot contract approval nonce, then start the new instances with identical
+`Database:Schema` settings. Older instances still use the previous table locations;
+application-only rollback across this move is unsupported. Restore the backup and
+matching configuration and image together if rollback is required.
+
 ### Compose database image in rc.2
 
 The Compose installs' database moves to Honua's image: PostgreSQL 17 with the same
@@ -580,7 +598,7 @@ The functional query is not inferred. Configure it on the deploy operation's par
 
 An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
 
-Restore the database only when a destructive migration already ran or data was corrupted: roll the app back first to stop writes, restore the last known-good snapshot, validate schema/version alignment, then readmit traffic — see [Back up and restore](backup-and-restore.md).
+Before recovery to an older image, stop all database writers and restore its matching verified backup unless that exact image has been qualified against the installed schema. If restoring, complete the restore before starting the selected image. Validate schema/version alignment and retained data, then readmit traffic — see [Back up and restore](backup-and-restore.md).
 
 ### Catalog activations
 

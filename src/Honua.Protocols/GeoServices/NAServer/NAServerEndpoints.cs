@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer;
@@ -643,7 +644,14 @@ internal static class NAServerEndpoints
             }
 
             var result = await routing.SolveLocationAllocationAsync(request, ct);
-            var response = NAServerResultMapping.MapLocationAllocation(result);
+            var outputRequest = await NAServerLocationAllocationProjection.ProjectOutputAsync(
+                request, context.RequestServices.GetRequiredService<ICoordinateTransformService>(), ct);
+            if (outputRequest is null)
+            {
+                return CreateInvalidSpatialReferenceResult(context, "location-allocation");
+            }
+
+            var response = NAServerResultMapping.MapLocationAllocation(result, outputRequest, request.OutSrid);
 
             return WriteResponse(
                 context,

@@ -6,6 +6,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Scene;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -43,6 +44,8 @@ internal static partial class SceneGenerationEndpoints
             .WithSummary("Generate a 3D Tiles tileset from a feature layer.")
             .Accepts<GenerateSceneRequest>("application/json")
             .Produces<GenerateSceneResponse>(StatusCodes.Status201Created)
+            .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -72,6 +75,42 @@ internal static partial class SceneGenerationEndpoints
         }
 
         var intent = BuildIntent(request, context);
+        if (SceneIngestRequestHelpers.IsAsyncRequested(context, bodyAsync: request.Async))
+        {
+            if (!SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))
+            {
+                return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
+            }
+
+            var coordinator = context.RequestServices.GetService<SceneJobCoordinator>();
+            if (coordinator is not null)
+            {
+                using var admission = coordinator.TryReserve();
+                if (admission is null)
+                {
+                    return SceneIngestRequestHelpers.CreateBusyJobResult(context);
+                }
+
+                var asyncBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+                var job = admission.Submit(
+                    sourceKind: "feature_layer",
+                    requestedSceneId: request.SceneId,
+                    displayName: request.DisplayName,
+                    baseUrl: asyncBaseUrl,
+                    work: async (services, ct) =>
+                    {
+                        var scopedExecutor = services.GetRequiredService<SceneTilesPublishExecutor>();
+                        var asyncOutcome = await scopedExecutor.RunDirectAsync(intent, ct).ConfigureAwait(false);
+                        return new SceneJobExecutionResult(
+                            asyncOutcome.Result.SceneId,
+                            TileCount: asyncOutcome.Result.Summary.TileCount,
+                            FileCount: null,
+                            ByteSize: null,
+                            Warnings: asyncOutcome.Result.Warnings);
+                    });
+                return SceneIngestRequestHelpers.CreateAcceptedJobResult(context, job);
+            }
+        }
 
         try
         {

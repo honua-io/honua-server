@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Snowflake.Features.FeatureStore.Services;
@@ -17,6 +18,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -103,6 +105,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         var effective = query ?? new FeatureQuery();
         GuardUnsupportedTemporalFilter(effective);
+        GuardUnsupportedOutputSrid(mapping, effective);
         AppendWhereClause(sb, effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
@@ -471,6 +474,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
+    private static void GuardUnsupportedOutputSrid(SnowflakeLayerMapping mapping, FeatureQuery query)
+    {
+        if (query.OutputSrid is > 0 && mapping.Srid is > 0 && query.OutputSrid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Output SRID transforms are not supported by the Snowflake provider " +
+                $"(layer SRID is {mapping.Srid.Value}, requested {query.OutputSrid.Value}). " +
+                "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
+        }
+    }
+
     private static string BuildGeometryWkbExpression(SnowflakeLayerMapping mapping)
     {
         if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
@@ -641,9 +655,14 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 $"Pre-project the filter geometry to SRID {mapping.Srid.Value} before submitting the request.");
         }
 
-        parameters.Add(filter.Geometry);
+        parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 
-        // TO_GEOGRAPHY/TO_GEOMETRY parse a WKB byte string when the second argument is true.
+        if (mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geometry && mapping.Srid is > 0)
+        {
+            return $"TO_GEOMETRY(?, {mapping.Srid.Value.ToString(CultureInfo.InvariantCulture)}, TRUE)";
+        }
+
+        // TO_GEOGRAPHY/TO_GEOMETRY parse a WKB byte string when the trailing argument is true.
         return $"{mapping.SpatialConstructor}(?, TRUE)";
     }
 

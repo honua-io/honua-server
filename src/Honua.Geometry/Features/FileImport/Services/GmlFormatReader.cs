@@ -22,25 +22,47 @@ internal static class GmlFormatReader
 
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
 
-    private readonly record struct GmlSrs(int? Srid, bool SwapAxes)
+    private readonly record struct GmlSrs(int? Srid, bool SwapAxes, int? SrsDimension = null)
     {
-        public static readonly GmlSrs None = new(null, false);
+        public static readonly GmlSrs None = new(null, false, null);
     }
 
+    private static GmlSrs ResolveElementSrs(XmlReader reader, GmlSrs inherited)
+        => ResolveElementSrs(
+            reader.GetAttribute("srsName"),
+            reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension"),
+            inherited);
+
     private static GmlSrs ResolveElementSrs(string? srsName, GmlSrs inherited)
+        => ResolveElementSrs(srsName, null, inherited);
+
+    private static GmlSrs ResolveElementSrs(string? srsName, string? srsDimensionText, GmlSrs inherited)
     {
+        var dimension = ParseSrsDimension(srsDimensionText) ?? inherited.SrsDimension;
         if (string.IsNullOrWhiteSpace(srsName))
         {
-            return inherited;
+            return inherited with { SrsDimension = dimension };
         }
 
         var srid = ParseSrsNameToSrid(srsName);
         if (srid is null)
         {
-            return inherited;
+            return inherited with { SrsDimension = dimension };
         }
 
-        return new GmlSrs(srid, RequiresAxisSwap(srsName, srid.Value));
+        return new GmlSrs(srid, RequiresAxisSwap(srsName, srid.Value), dimension);
+    }
+
+    private static int? ParseSrsDimension(string? srsDimensionText)
+    {
+        if (!string.IsNullOrWhiteSpace(srsDimensionText) &&
+            int.TryParse(srsDimensionText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var dim) &&
+            dim is 2 or 3)
+        {
+            return dim;
+        }
+
+        return null;
     }
 
     private static bool RequiresAxisSwap(string srsName, int srid)
@@ -132,9 +154,10 @@ internal static class GmlFormatReader
             if (!collectionSrsResolved && (localName is "FeatureCollection" or "SimpleFeatureCollection"))
             {
                 var srsName = reader.GetAttribute("srsName");
-                if (!string.IsNullOrWhiteSpace(srsName))
+                var srsDimension = reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension");
+                if (!string.IsNullOrWhiteSpace(srsName) || !string.IsNullOrWhiteSpace(srsDimension))
                 {
-                    collectionSrs = ResolveElementSrs(srsName, GmlSrs.None);
+                    collectionSrs = ResolveElementSrs(srsName, srsDimension, collectionSrs);
                     // Match the original guard: keep looking until a usable EPSG code is found, so a
                     // first collection element carrying an unparseable srsName does not lock in None.
                     collectionSrsResolved = collectionSrs.Srid is not null;
@@ -339,7 +362,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
@@ -360,8 +383,9 @@ internal static class GmlFormatReader
 
             if (reader.LocalName is "pos" or "coordinates")
             {
+                var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
                 var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinate = ParsePos(coords);
+                var coordinate = ParsePos(coords, posDimension);
                 if (coordinate != null)
                 {
                     if (srs.SwapAxes)
@@ -391,7 +415,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
@@ -412,8 +436,9 @@ internal static class GmlFormatReader
 
             if (reader.LocalName is "posList" or "coordinates")
             {
+                var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
                 var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinates = ParsePosList(coords);
+                var coordinates = ParsePosList(coords, posDimension);
                 if (coordinates.Length >= 2)
                 {
                     if (srs.SwapAxes)
@@ -443,7 +468,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
@@ -464,22 +489,27 @@ internal static class GmlFormatReader
 
             if (reader.LocalName is "posList" or "coordinates")
             {
+                var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
                 var coords = await reader.ReadElementContentAsStringAsync();
-                var coordinates = ParsePosList(coords);
-                if (coordinates.Length >= 4)
+                var coordinates = ParsePosList(coords, posDimension);
+                if (coordinates.Length >= 3)
                 {
                     if (srs.SwapAxes)
                     {
                         SwapXy(coordinates);
                     }
 
-                    var ring = factory.CreateLinearRing(coordinates);
-                    if (srid.HasValue)
+                    coordinates = EnsureClosedRing(coordinates);
+                    if (coordinates.Length >= 4)
                     {
-                        ring.SRID = srid.Value;
-                    }
+                        var ring = factory.CreateLinearRing(coordinates);
+                        if (srid.HasValue)
+                        {
+                            ring.SRID = srid.Value;
+                        }
 
-                    return ring;
+                        return ring;
+                    }
                 }
             }
         }
@@ -495,7 +525,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
         LinearRing? outerRing = null;
         var innerRings = new List<LinearRing>();
@@ -567,6 +597,7 @@ internal static class GmlFormatReader
     {
         var memberLocalName = reader.LocalName;
         var depth = reader.Depth;
+        var srs = ResolveElementSrs(reader, inheritedSrs);
 
         while (await reader.ReadAsync())
         {
@@ -581,7 +612,7 @@ internal static class GmlFormatReader
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "LinearRing")
             {
-                return await ParseLinearRingAsync(reader, factory, inheritedSrs, cancellationToken);
+                return await ParseLinearRingAsync(reader, factory, srs, cancellationToken);
             }
         }
 
@@ -596,7 +627,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
         var points = new List<Point>();
 
@@ -643,7 +674,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
         var lines = new List<LineString>();
 
@@ -697,7 +728,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
         var polygons = new List<Polygon>();
 
@@ -751,7 +782,7 @@ internal static class GmlFormatReader
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        var srs = ResolveElementSrs(reader, inheritedSrs);
         int? srid = srs.Srid;
         var geometries = new List<NtsGeometry>();
 
@@ -804,7 +835,7 @@ internal static class GmlFormatReader
     // Coordinate parsers
     // -----------------------------------------------------------------------
 
-    private static Coordinate? ParsePos(string posText)
+    private static Coordinate? ParsePos(string posText, int? srsDimension = null)
     {
         var parts = posText.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2)
@@ -818,7 +849,8 @@ internal static class GmlFormatReader
             return null;
         }
 
-        if (parts.Length >= 3 &&
+        if (srsDimension != 2 &&
+            parts.Length >= 3 &&
             double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
         {
             return new CoordinateZ(x, y, z);
@@ -827,7 +859,7 @@ internal static class GmlFormatReader
         return new Coordinate(x, y);
     }
 
-    private static Coordinate[] ParsePosList(string text)
+    private static Coordinate[] ParsePosList(string text, int? srsDimension = null)
     {
         var trimmed = text.Trim();
         if (string.IsNullOrEmpty(trimmed))
@@ -842,7 +874,20 @@ internal static class GmlFormatReader
         }
 
         // GML 3 posList: flat space-separated ordinates
-        return ParseGml3PosList(trimmed);
+        return ParseGml3PosList(trimmed, srsDimension);
+    }
+
+    private static Coordinate[] EnsureClosedRing(Coordinate[] coordinates)
+    {
+        if (coordinates.Length >= 3 && !coordinates[0].Equals2D(coordinates[^1]))
+        {
+            var closed = new Coordinate[coordinates.Length + 1];
+            Array.Copy(coordinates, closed, coordinates.Length);
+            closed[^1] = coordinates[0].Copy();
+            return closed;
+        }
+
+        return coordinates;
     }
 
     private static Coordinate[] ParseGml2Coordinates(string text)
@@ -879,19 +924,19 @@ internal static class GmlFormatReader
         return new Coordinate(x, y);
     }
 
-    private static Coordinate[] ParseGml3PosList(string text)
+    private static Coordinate[] ParseGml3PosList(string text, int? srsDimension = null)
     {
         var parts = text.Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 4)
-        {
-            // Not enough ordinates for even a 2D pair; treat as 2D regardless
-        }
-
         var coords = new List<Coordinate>();
 
-        // Determine if likely 3D: if the total count is divisible by 3 but not by 2,
-        // treat as 3D. Otherwise treat as 2D (most common).
-        var is3D = parts.Length >= 3 && parts.Length % 3 == 0 && parts.Length % 2 != 0;
+        // Explicit srsDimension ("2" or "3") takes precedence; when absent, fall back
+        // to the odd-multiple-of-3 heuristic.
+        var is3D = srsDimension switch
+        {
+            3 => parts.Length >= 3,
+            2 => false,
+            _ => parts.Length >= 3 && parts.Length % 3 == 0 && parts.Length % 2 != 0
+        };
 
         if (is3D)
         {

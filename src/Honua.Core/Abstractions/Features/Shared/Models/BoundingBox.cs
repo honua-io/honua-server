@@ -177,6 +177,7 @@ public readonly record struct BoundingBox
     public readonly bool IsValid => MinY <= MaxY && (MinX <= MaxX || IsAntimeridianCrossing);
 
     public readonly bool IsAntimeridianCrossing =>
+        (SpatialReferenceId is null or <= 0 || IsGeographicSrid(SpatialReferenceId)) &&
         MinX > MaxX &&
         MinX >= MinLongitude &&
         MinX <= MaxLongitude &&

@@ -55,7 +55,18 @@ internal static class ODataCrsUtilities
             return (false, null, "CRS name is required.");
         }
 
-        var definition = await crsRegistry.ResolveAsync(crsName, cancellationToken).ConfigureAwait(false);
+        var normalizedCrsName = NormalizeCrsIdentifier(crsName);
+        var definition = await crsRegistry.ResolveAsync(normalizedCrsName, cancellationToken).ConfigureAwait(false);
+        if (!definition.HasValue && !string.Equals(normalizedCrsName, crsName, StringComparison.Ordinal))
+        {
+            definition = await crsRegistry.ResolveAsync(crsName, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!definition.HasValue && CrsIdentifier.TryParseEpsgCode(CrsIdentifier.Unwrap(crsName), out var parsedSrid))
+        {
+            definition = await crsRegistry.ResolveBySridAsync(parsedSrid, cancellationToken).ConfigureAwait(false);
+        }
+
         if (!definition.HasValue)
         {
             return (false, null, $"Unsupported geometry CRS '{crsName}'.");
@@ -72,5 +83,26 @@ internal static class ODataCrsUtilities
         };
 
         return (true, normalizedDefinition, null);
+    }
+
+    internal static string NormalizeCrsIdentifier(string crsName)
+    {
+        var unwrapped = CrsIdentifier.Unwrap(crsName);
+        if (CrsIdentifier.IsCrs84(unwrapped))
+        {
+            return "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
+        }
+
+        if (unwrapped.StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
+        {
+            unwrapped = unwrapped["SRID=".Length..];
+        }
+
+        if (CrsIdentifier.TryParseEpsgCode(unwrapped, out var srid))
+        {
+            return $"EPSG:{srid}";
+        }
+
+        return unwrapped;
     }
 }

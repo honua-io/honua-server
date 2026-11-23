@@ -267,6 +267,8 @@ public sealed class I3sHeightModelInfo
 
 public sealed class I3sSpatialReference
 {
+    private int? _latestVcsWkid;
+
     [JsonPropertyName("wkid")]
     public int Wkid { get; set; }
 
@@ -275,6 +277,13 @@ public sealed class I3sSpatialReference
 
     [JsonPropertyName("vcsWkid")]
     public int? VcsWkid { get; set; }
+
+    [JsonPropertyName("latestVcsWkid")]
+    public int? LatestVcsWkid
+    {
+        get => _latestVcsWkid ?? VcsWkid;
+        set => _latestVcsWkid = value;
+    }
 }
 
 public sealed class I3sFullExtent

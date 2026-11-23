@@ -35,7 +35,9 @@ POST /api/v{version:apiVersion}/admin/rls-policies/ | Its own agent rule decides
 POST /api/v{version:apiVersion}/admin/roles/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/scenes/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/scenes/generate/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/ingest/archive | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/scenes/ingest/citygml | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/scenes/ingest/model | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/scenes/ingest/pointcloud | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/security/client-certificates/validate | Changes nothing.
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/estimate | Changes nothing.

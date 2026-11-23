@@ -15,7 +15,13 @@ public sealed record SceneDataset
 
     public required string AssetRoot { get; init; }
 
+    public string? AssetStoragePrefix { get; init; }
+
     public string TilesetFileName { get; init; } = "tileset.json";
+
+    public SceneServingFormat? ServingFormat { get; init; }
+
+    public SceneContentKind? ContentKind { get; init; }
 
     public AccessPolicy? AccessPolicy { get; init; }
 

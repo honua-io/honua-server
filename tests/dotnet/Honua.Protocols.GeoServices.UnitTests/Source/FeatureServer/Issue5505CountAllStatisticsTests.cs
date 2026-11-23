@@ -124,4 +124,80 @@ public sealed class Issue5505CountAllStatisticsTests
             FieldType = MetadataV2FieldType.Integer
         });
     }
+
+    [UnitTest]
+    public void CustomObjectIdLayer_WithoutCanonicalObjectId_AcceptsCustomOidAndRejectsHardcodedObjectId()
+    {
+        var layer = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "parcel_key",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ]
+        };
+
+        FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            """[{"statisticType":"count","onStatisticField":"parcel_key","outStatisticFieldName":"n"}]""",
+            layer,
+            out var defs,
+            out var statsError).Should().BeTrue(statsError);
+        defs.Should().ContainSingle().Which.OnStatisticField.Should().Be("parcel_key");
+
+        FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"n"}]""",
+            layer,
+            out _,
+            out var badStatsError).Should().BeFalse();
+        badStatsError.Should().Contain("objectid");
+
+        FeatureServerQueryHandler.TryParseGroupByFields(
+            "parcel_key",
+            layer,
+            out var groupBy,
+            out var groupError).Should().BeTrue(groupError);
+        groupBy.Should().Equal("parcel_key");
+
+        FeatureServerQueryHandler.TryParseGroupByFields(
+            "objectid",
+            layer,
+            out _,
+            out var badGroupError).Should().BeFalse();
+        badGroupError.Should().Contain("objectid");
+
+        FeatureServerQueryHandler.TryParseHavingConditions(
+            "COUNT(parcel_key) > 1",
+            defs,
+            layer,
+            out var having,
+            out var havingError).Should().BeTrue(havingError);
+        having.Should().ContainSingle().Which.OnStatisticField.Should().Be("parcel_key");
+    }
+
+    [UnitTheory]
+    [InlineData(null, 1000, 1000)]
+    [InlineData(5, 1000, 5)]
+    [InlineData(5000, 1000, 1000)]
+    [InlineData(0, 1000, 1000)]
+    public void StatisticsPageSize_HonorsClientResultRecordCountCappedByMaxRecordCount(
+        int? requestedRecordCount,
+        int maxRecordCount,
+        int expectedLimit)
+    {
+        var limits = new Honua.Core.Configuration.QueryLimits
+        {
+            DefaultRecordCount = 100,
+            MaxRecordCount = maxRecordCount
+        };
+
+        FeatureServerQueryHandler.StatisticsPageSize(requestedRecordCount, limits)
+            .Should().Be(expectedLimit);
+    }
 }
