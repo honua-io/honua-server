@@ -241,7 +241,7 @@ public sealed partial class GeoParquetQueryFormatterTests
         var (stream, _) = await GeoParquetFeatureWriter.FormatAsGeoParquetStreamAsync(Source(), CreateResource(),
             new GeoParquetStreamEncodingOptions
             {
-                ReturnGeometry = true, OutputSrid = 4326,
+                ObjectIdFieldName = "objectid", ReturnGeometry = true, OutputSrid = 4326,
                 EncodingLimits = new GeoParquetLimits
                 {
                     OrderByBboxHilbert = true, MaxRowsPerBatch = 4,
