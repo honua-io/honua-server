@@ -36,8 +36,14 @@ public static class CsvFieldFormatter
         {
             '=' or '@' => true,
             // Signed plain numbers stay numbers.
-            '+' or '-' => !double.TryParse(field[start..], NumberStyles.Float, CultureInfo.InvariantCulture, out _),
+            '+' or '-' => !IsSignedNumber(field[start..]),
             _ => false,
         };
     }
+
+    // double.TryParse also accepts words such as Infinity and NaN, which a spreadsheet reads as names.
+    private static bool IsSignedNumber(ReadOnlySpan<char> field) =>
+        field.Length > 1
+        && (char.IsAsciiDigit(field[1]) || field[1] == '.')
+        && double.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
 }

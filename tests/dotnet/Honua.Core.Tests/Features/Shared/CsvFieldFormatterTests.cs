@@ -17,6 +17,10 @@ public sealed class CsvFieldFormatterTests
     [InlineData("  =A1", "'  =A1")]
     [InlineData("=HYPERLINK(\"https://example.invalid\",\"open\")", "\"'=HYPERLINK(\"\"https://example.invalid\"\",\"\"open\"\")\"")]
     [InlineData("=A1,B1", "\"'=A1,B1\"")]
+    [InlineData("-Infinity", "'-Infinity")]
+    [InlineData("+NaN", "'+NaN")]
+    [InlineData("-nan", "'-nan")]
+    [InlineData("-", "'-")]
     public void Escape_FormulaField_PrefixesSingleQuote(string value, string expected)
     {
         CsvFieldFormatter.Escape(value).Should().Be(expected);
@@ -28,6 +32,7 @@ public sealed class CsvFieldFormatterTests
     [InlineData("1e-3", "1e-3")]
     [InlineData("-3.4028235E+38", "-3.4028235E+38")]
     [InlineData("-1E+30", "-1E+30")]
+    [InlineData("-.5", "-.5")]
     [InlineData("plain", "plain")]
     [InlineData("a,b", "\"a,b\"")]
     [InlineData("say \"hi\"", "\"say \"\"hi\"\"\"")]
