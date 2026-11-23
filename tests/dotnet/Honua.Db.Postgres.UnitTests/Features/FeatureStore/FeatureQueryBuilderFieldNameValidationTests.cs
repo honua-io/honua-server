@@ -90,6 +90,18 @@ public sealed class FeatureQueryBuilderFieldNameValidationTests
         FeatureQueryBuilder.IsValidJsonAttributeKey(new string('a', 64)).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("件数")]
+    [InlineData("count_all")]
+    public void IsValidOutputAlias_WithUnicodeIdentifier_ReturnsTrue(string alias)
+        => FeatureQueryBuilder.IsValidOutputAlias(alias).Should().BeTrue();
+
+    [Theory]
+    [InlineData("件 数")]
+    [InlineData("count\"; --")]
+    public void IsValidOutputAlias_WithQuoteOrSpace_ReturnsFalse(string alias)
+        => FeatureQueryBuilder.IsValidOutputAlias(alias).Should().BeFalse();
+
     [Fact]
     public void IsValidEncodedColumnAlias_AcceptsSupplementaryPlaneLetters()
     {

@@ -556,6 +556,6 @@ internal sealed partial class PostgresAnomalyAnalyzer(
         return SqlIdentifier.QuoteIdentifier(identifier);
     }
 
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex ValidIdentifierRegex();
 }

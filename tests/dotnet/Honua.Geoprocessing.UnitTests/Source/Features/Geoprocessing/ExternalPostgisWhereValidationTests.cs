@@ -40,7 +40,15 @@ public sealed class ExternalPostgisWhereValidationTests
         violations.Should().BeEmpty();
     }
 
-    private static AnalysisPlan Plan(string where) => new()
+    [UnitTest]
+    public void Validate_TableEndingInLineFeed_IsRejected()
+    {
+        var (violations, _) = ProcessPlanValidator.Validate(Plan("active = true", "features\n"), new BuiltInProcessCatalog());
+
+        violations.Should().Contain(violation => violation.FieldPath == "steps[src].inputs.table");
+    }
+
+    private static AnalysisPlan Plan(string where, string table = "features") => new()
     {
         PlanId = "plan-postgis",
         IntentId = "intent-postgis",
@@ -54,7 +62,7 @@ public sealed class ExternalPostgisWhereValidationTests
                 Inputs = new Dictionary<string, string>
                 {
                     ["connectionName"] = "warehouse",
-                    ["table"] = "features",
+                    ["table"] = table,
                     ["where"] = where
                 }
             }
