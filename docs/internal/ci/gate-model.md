@@ -1279,6 +1279,14 @@ Remove a child's estimate once measured; the estimate-sum conservation rule
 applies only while every child is estimated. The one remaining estimate is the
 packed GeoServices GPServer SOAP job (5.0, `soap-packing-contract.json`), which
 has no passing full-run sample at its new definition yet.
+Live drift (#9545, #9546, #9547): `shard-rank-drift.yml` runs after each completed
+"CI full" trunk run and compares every rank with the median passing job minutes
+of the latest three full runs (`scripts/ci/shard-rank-drift.py`). It keeps one
+`area/ci` tracking issue (owner s-ci-shards) open while the total rank/measured
+ratio is outside 0.77-1.30, a shard's median is at least 1.5x and 3 minutes over
+its rank, or a shard absent from the measured record has two or more samples; it
+closes the issue when none remain. Under 80% of shards measured, it changes
+nothing. It is report-only and never gates a PR or trunk.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
