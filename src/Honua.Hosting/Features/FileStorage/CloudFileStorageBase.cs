@@ -43,7 +43,10 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected async Task<UploadProgress> InitializeUploadProgressAsync(FileUploadRequest request, long totalBytes, CancellationToken cancellationToken)
     {
         var initial = UploadProgress.CreateInitial(request.UploadId, request.FileName, totalBytes, request.ContentType)
-            with { TenantId = request.TenantId };
+            with
+        {
+            TenantId = request.TenantId
+        };
         await TrySetUploadProgressAsync(request.UploadId, initial, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, request.UploadId, initial);
         return initial;

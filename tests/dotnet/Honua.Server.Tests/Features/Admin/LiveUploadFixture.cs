@@ -31,12 +31,17 @@ internal sealed class LiveUploadFixture : IAsyncDisposable
             .Returns(call => Task.FromResult(Stored.GetValueOrDefault(call.ArgAt<string>(0))));
         Storage = new LocalFileStorage(Options.Create(new LocalStorageOptions
         {
-            BasePath = DirectoryPath, CreateDirectoryIfNotExists = true
+            BasePath = DirectoryPath,
+            CreateDirectoryIfNotExists = true
         }), NullLogger<LocalFileStorage>.Instance, Store);
         _upload = Storage.UploadAsync(new FileUploadRequest
         {
-            UploadId = "upload-a", TenantId = "tenant-a", Content = _content,
-            FileName = "owner.txt", ContentType = "text/plain", SizeBytes = _content.Length
+            UploadId = "upload-a",
+            TenantId = "tenant-a",
+            Content = _content,
+            FileName = "owner.txt",
+            ContentType = "text/plain",
+            SizeBytes = _content.Length
         });
     }
 

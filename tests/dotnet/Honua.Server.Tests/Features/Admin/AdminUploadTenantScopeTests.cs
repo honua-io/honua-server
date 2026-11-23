@@ -121,7 +121,8 @@ public sealed class AdminUploadTenantScopeTests
         context.Response.Body = new MemoryStream();
         var execution = InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
         {
-            UploadId = "upload-a", TableName = "parcels",
+            UploadId = "upload-a",
+            TableName = "parcels",
             File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = stagedSize }
         }, cancellation.Token);
         if (outcome == "cancelled")
