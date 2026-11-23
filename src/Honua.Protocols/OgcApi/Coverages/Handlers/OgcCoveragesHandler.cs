@@ -1837,14 +1837,15 @@ internal sealed class OgcCoveragesHandler
     {
         if (result.Extent is { } extent)
         {
+            var northEast = outputCrs?.AxisOrder == AxisOrder.NorthEast;
             context.Response.Headers.Append(
                 "Content-Bbox",
                 string.Join(
                     ",",
-                    FormatDouble(extent.XMin),
-                    FormatDouble(extent.YMin),
-                    FormatDouble(extent.XMax),
-                    FormatDouble(extent.YMax)));
+                    FormatDouble(northEast ? extent.YMin : extent.XMin),
+                    FormatDouble(northEast ? extent.XMin : extent.YMin),
+                    FormatDouble(northEast ? extent.YMax : extent.XMax),
+                    FormatDouble(northEast ? extent.XMax : extent.YMax)));
         }
 
         var contentCrs = FormatContentCrsHeader(outputCrs, result.Srid);

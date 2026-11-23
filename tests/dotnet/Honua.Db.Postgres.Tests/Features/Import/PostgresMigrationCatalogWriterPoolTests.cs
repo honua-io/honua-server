@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -99,6 +100,31 @@ public sealed class PostgresMigrationCatalogWriterPoolTests(PostgresFixture fixt
         var result = await writer.EnsureCatalogServiceAsync(settings.ConnectionString, NewRequest(), cancellation.Token);
 
         result.Should().Be(MigrationCatalogWriteOutcome.Created);
+    }
+
+    [IntegrationTest]
+    public async Task EnsureCatalogServiceAsync_WithConfiguredSchema_WritesOnlyConfiguredRegistry()
+    {
+        await using (var move = _dataSource.CreateCommand("""
+            CREATE SCHEMA custom_registry;
+            ALTER TABLE honua.services SET SCHEMA custom_registry;
+            """))
+        {
+            await move.ExecuteNonQueryAsync();
+        }
+        var writer = new PostgresMigrationCatalogWriter(
+            NullLogger<PostgresMigrationCatalogWriter>.Instance,
+            new PostgresSchemaConfiguration("custom_registry", "honua_data", ["honua_data"]), _dataSource);
+        var request = NewRequest();
+
+        (await writer.EnsureCatalogServiceAsync(_dataSource.ConnectionString, request))
+            .Should().Be(MigrationCatalogWriteOutcome.Created);
+        (await writer.EnsureCatalogServiceAsync(_dataSource.ConnectionString, request))
+            .Should().Be(MigrationCatalogWriteOutcome.AlreadyExists);
+        await using var query = _dataSource.CreateCommand(
+            "SELECT service_name FROM custom_registry.services WHERE service_name = @name");
+        query.Parameters.AddWithValue("name", request.ServiceName);
+        (await query.ExecuteScalarAsync()).Should().Be(request.ServiceName);
     }
 
     private async Task<long> CountSessionsAsync()

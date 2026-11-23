@@ -408,7 +408,7 @@ public class OgcMapsRenderingHandlerTests
     }
 
     [UnitTest]
-    public async Task CollectionMap_ContentCrsHeader_UsesHttpSchemeAndDistinguishesCrs84FromEpsg4326()
+    public async Task CollectionMap_SpatialHeaders_DistinguishCrs84FromEpsg4326WithoutQueryString()
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource", "roads", MetadataV2ObjectType.FeatureDataset)
@@ -433,6 +433,8 @@ public class OgcMapsRenderingHandlerTests
         defaultContext.Response.Headers["Content-Crs"].ToString()
             .Should().Be("<http://www.opengis.net/def/crs/OGC/1.3/CRS84>");
 
+        defaultContext.Response.Headers["Content-Bbox"].ToString().Should().Be("-158,20,-156,22");
+
         var epsg4326Context = CreateGrantContext();
         await handler.RenderCollectionMapAsync(
             1,
@@ -440,6 +442,7 @@ public class OgcMapsRenderingHandlerTests
             epsg4326Context);
         epsg4326Context.Response.Headers["Content-Crs"].ToString()
             .Should().Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
+        epsg4326Context.Response.Headers["Content-Bbox"].ToString().Should().Be("20,-158,22,-156");
     }
 
     [UnitTest]

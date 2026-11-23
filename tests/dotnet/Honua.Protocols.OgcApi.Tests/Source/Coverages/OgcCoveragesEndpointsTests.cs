@@ -183,6 +183,93 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             "a narrower bbox must not produce the same payload as the full footprint");
     }
 
+    [IntegrationTheory]
+    [InlineData("Lon(170:-170),Lat(-10:10)")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_SpatialSubsetContract(string subset)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?subset={Uri.EscapeDataString(subset)}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        var clip = _exportQueries.Single().ClipRegion;
+        clip.Should().NotBeNull();
+        clip!.Value.Srid.Should().Be(4326);
+        var geometry = new WKBReader().Read(clip.Value.Geometry);
+        geometry.GeometryType.Should().Be("MultiPolygon");
+        geometry.NumGeometries.Should().Be(2);
+        geometry.GetGeometryN(0).EnvelopeInternal.MinX.Should().Be(170);
+        geometry.GetGeometryN(1).EnvelopeInternal.MaxX.Should().Be(-170);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_PointSlice_ClipsOneRealPostgisPixelRow()
+    {
+        // This ordinate lies between pixel centers, so a degenerate ST_Clip loses all data.
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?subset=Lat(37.8007)");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var clip = _exportQueries.Single().ClipRegion!.Value;
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH clipped AS (
+                SELECT ST_Clip(ST_AddBand(ST_MakeEmptyRaster(64, 64, -122.5, 37.9,
+                    0.003125, -0.003125, 0, 0, 4326), '32BF'::text, 7, -9999),
+                    ST_GeomFromWKB(@clip, 4326), TRUE) AS rast
+            )
+            SELECT ST_Width(rast), ST_Height(rast), ST_Count(rast) FROM clipped
+            """;
+        command.Parameters.AddWithValue("clip", clip.Geometry);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(64);
+        reader.GetInt32(1).Should().Be(1);
+        reader.GetInt64(2).Should().Be(64);
+    }
+
+
+    [IntegrationTheory]
+    [InlineData("EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326", "37.7,-122.5,37.9,-122.3")]
+    [InlineData("CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84", "-122.5,37.7,-122.3,37.9")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_ContentBboxMatchesCrsAxes(string crs, string identifier, string bbox)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs={crs}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Crs").Single().Should()
+            .Be($"<{identifier}>");
+        var reported = response.Headers.GetValues("Content-Bbox").Single()
+            .Split(',')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        var expected = bbox.Split(',')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        reported.Should().HaveCount(expected.Length);
+        for (var index = 0; index < expected.Length; index++)
+        {
+            reported[index].Should().BeApproximately(expected[index], 1e-9);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_ContentCrsUsesCanonicalIdentifier()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs=EPSG:3857");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Crs").Single().Should()
+            .Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]

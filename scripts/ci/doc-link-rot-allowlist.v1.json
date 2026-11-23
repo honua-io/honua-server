@@ -13,23 +13,18 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 5,
+    "entries": 3,
     "datedNames": 6,
     "missingFiles": 0,
-    "brokenAnchors": 5,
+    "brokenAnchors": 3,
     "byArea": {
-      "docs/internal": 5,
+      "docs/internal": 3,
       "docs/developer": 0,
       "docs/gis": 0,
       "docs/guides": 0
     }
   },
   "entries": [
-    {
-      "source": "docs/internal/admin-api/analysis-content.md",
-      "target": "../../reference/admin-api/overview.md#analysis-report-endpoints",
-      "reason": "Console-pending contract; the overview never grew the named section."
-    },
     {
       "source": "docs/internal/admin-api/scene-dataset-registry.md",
       "target": "../../guides/publish/publish-3d-scenes.md#browser-safe-access-via-signed-envelope",
@@ -44,11 +39,6 @@
       "source": "docs/internal/developer/GROUNDING.md",
       "target": "../../guides/connect/ai-agents-mcp.md#payload-notes",
       "reason": "Heading dropped in the MCP guide rewrite. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
-    },
-    {
-      "source": "docs/internal/features/README.md",
-      "target": "../../guides/secure/authentication.md#authentication",
-      "reason": "Points at the page's H1-derived slug, which GitHub does not emit for the title heading of that page."
     }
   ]
 }
