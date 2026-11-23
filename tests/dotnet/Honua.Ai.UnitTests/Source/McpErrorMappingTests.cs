@@ -142,6 +142,51 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
+    public void AdmissionException_PartitionCapFull_MapsToRetryableUnavailableWithRetryAfter()
+    {
+        var error = McpErrorMapper.Map(PartitionCapDenial());
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeTrue();
+        error.Data.RetryAfterSeconds.Should().Be(30);
+        error.Data.PolicyRef.Should().Be("concurrency:geoprocessing:per-partition");
+        error.Message.Should().Contain("Partition active job limit reached (10/10)").And.Contain("Queued and running jobs");
+    }
+
+    [UnitTest]
+    public void AdmissionException_RateWindow_DoesNotBlameActiveJobs()
+    {
+        var error = McpErrorMapper.Map(new GeoprocessingAdmissionException(
+            Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Throttled,
+            Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension.Rate,
+            "rate:geoprocessing:per-principal",
+            "Submission rate exceeded.",
+            retryAfterSeconds: 5));
+
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Message.Should().Be("Submission rate exceeded. Retry after 5 seconds.");
+    }
+
+    [UnitTest]
+    public void AdmissionException_ToolResultEnvelope_CarriesRetryAfterInsteadOfInternal()
+    {
+        var structured = Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ErrorResult(PartitionCapDenial()).StructuredContent!.Value;
+
+        structured.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.Unavailable);
+        structured.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        structured.GetProperty("retryAfterSeconds").GetInt32().Should().Be(30);
+        structured.GetProperty("policyRef").GetString().Should().Be("concurrency:geoprocessing:per-partition");
+    }
+
+    private static GeoprocessingAdmissionException PartitionCapDenial() => new(
+        Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Denied,
+        Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension.Concurrency,
+        "concurrency:geoprocessing:per-partition",
+        "Partition active job limit reached (10/10).",
+        retryAfterSeconds: 30);
+
+    [UnitTest]
     public void StoreUnavailableException_IncompleteSubstrate_NamesTheMissingQueue()
     {
         // Store without queue: submissions would persist and never drain, so the refusal names the
