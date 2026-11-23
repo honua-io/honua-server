@@ -205,66 +205,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         return Task.WhenAll(EvictTagsAsync(tags, cancellationToken), InvalidateCdnForAdministrativeChangeAsync(cancellationToken));
     }
 
-    public async Task InvalidateServiceCatalogAsync(
-        string? serviceId,
-        IEnumerable<int>? layerIds,
-        CancellationToken cancellationToken)
-    {
-        var normalizedServiceId = string.IsNullOrWhiteSpace(serviceId)
-            ? null
-            : serviceId.Trim().ToLowerInvariant();
-        var layerIdList = layerIds?
-            .Distinct()
-            .ToArray() ?? [];
-
-        var tags = new List<string>
-        {
-            "service-directory",
-            "service-metadata",
-            "tiles",
-            "layer-metadata",
-            "layer-styles",
-            "metadata",
-            "ogc-metadata",
-            "ogc-tiles",
-            "ogc-maps",
-            "stac-metadata",
-            "mvt-tiles",
-            "terrain"
-        };
-
-        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
-        {
-            tags.Add($"service:{normalizedServiceId}");
-        }
-
-        var responsePatterns = new List<string>();
-        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
-        {
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
-        }
-
-        foreach (var layerId in layerIdList)
-        {
-            await InvalidateStorageLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-            await InvalidateLayerAsync(normalizedServiceId, layerId, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (string.IsNullOrWhiteSpace(normalizedServiceId) && layerIdList.Length == 0)
-        {
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerPattern());
-            responsePatterns.Add(ResponseCacheUtilities.BuildOgcPattern());
-            responsePatterns.Add(ResponseCacheUtilities.BuildODataPattern());
-        }
-
-        await Task.WhenAll(
-            EvictTagsAsync(tags, cancellationToken),
-            EvictResponseCacheAsync(responsePatterns, cancellationToken),
-            EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
-        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
-    }
-
     private async Task NotifyPublicExportAccessChangeAsync(
         string? serviceId,
         IReadOnlyCollection<int>? layerIds,
