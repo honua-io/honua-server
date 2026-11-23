@@ -21,7 +21,7 @@ internal sealed class QualificationFaultMiddleware(RequestDelegate next, Qualifi
         var status = await gate.GetActiveAsync().ConfigureAwait(false) switch
         {
             QualificationFaultKind.Wedged => StatusCodes.Status503ServiceUnavailable,
-            QualificationFaultKind.ServeErrors when !path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase)
+            QualificationFaultKind.ServeErrors when !path.StartsWithSegments("/healthz/deep", StringComparison.OrdinalIgnoreCase)
                 => StatusCodes.Status500InternalServerError,
             _ => 0
         };
@@ -48,9 +48,12 @@ internal static class QualificationFaultExtensions
     public static IServiceCollection AddQualificationFault(this IServiceCollection services, IConfiguration configuration)
     {
         var fault = QualificationFault.Parse(configuration[QualificationFault.ConfigurationKey]);
+        // Only the wedge needs the shared database, so installs without it never resolve the store.
         services.AddSingleton(provider => new QualificationFaultGate(
             fault,
-            provider.GetService<JobStoreDatabase>() is { } database ? new QualificationWedgeMarker(database) : null,
+            fault.Kind == QualificationFaultKind.Wedged && provider.GetService<JobStoreDatabase>() is { } database
+                ? new QualificationWedgeMarker(database)
+                : null,
             provider.GetRequiredService<ILogger<QualificationFaultGate>>()));
         return services;
     }

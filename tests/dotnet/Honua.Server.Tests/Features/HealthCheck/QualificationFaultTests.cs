@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Server.Features.HealthCheck;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -80,6 +82,52 @@ public sealed class QualificationFaultTests
     public async Task GetActiveAsync_ServeErrors_NeedsNoMarker()
         => (await Gate(QualificationFault.Parse("ServeErrors"), marker: null).GetActiveAsync())
             .Should().Be(QualificationFaultKind.ServeErrors);
+
+    [UnitTest]
+    public async Task AddQualificationFault_ServeErrorsInConfiguration_ActivatesWithoutTheSharedDatabase()
+    {
+        using var provider = Register("ServeErrors").BuildServiceProvider();
+
+        var gate = provider.GetRequiredService<QualificationFaultGate>();
+
+        gate.IsConfigured.Should().BeTrue();
+        (await gate.GetActiveAsync()).Should().Be(QualificationFaultKind.ServeErrors);
+    }
+
+    [UnitTest]
+    public async Task AddQualificationFault_WedgedWithoutSharedDatabase_ServesNormally()
+    {
+        using var provider = Register("Wedged:" + Token).BuildServiceProvider();
+
+        (await provider.GetRequiredService<QualificationFaultGate>().GetActiveAsync()).Should().Be(QualificationFaultKind.None);
+    }
+
+    [UnitTest]
+    public void AddQualificationFault_SettingAbsent_IsInert()
+    {
+        using var provider = Register(value: null).BuildServiceProvider();
+
+        provider.GetRequiredService<QualificationFaultGate>().IsConfigured.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void AddQualificationFault_InvalidValue_FailsRegistration()
+    {
+        var register = () => Register("Wedged:short");
+
+        register.Should().Throw<InvalidOperationException>().WithMessage($"*{QualificationFault.ConfigurationKey}*");
+    }
+
+    private static ServiceCollection Register(string? value)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [QualificationFault.ConfigurationKey] = value })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddQualificationFault(configuration);
+        return services;
+    }
 
     internal static QualificationFaultGate Gate(QualificationFault fault, IQualificationWedgeMarker? marker)
         => new(fault, marker, NullLogger<QualificationFaultGate>.Instance);

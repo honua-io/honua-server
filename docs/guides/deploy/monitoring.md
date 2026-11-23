@@ -66,7 +66,9 @@ rolling back removes the setting. `Wedged` is one-shot. The token (8 to 64 lette
 digits or hyphens, new for each gate run) is recorded in the shared database by the
 first task that checks it as it starts. Tasks that check within 150 seconds,
 the rest of the same rollout, wedge too. Tasks started by the watchdog's rolling
-restart check later and serve normally, so the restart cannot loop. Without a
+restart check later and serve normally, so the restart cannot loop. The window assumes every task of the
+faulted rollout starts within 150 seconds of the first; a rollout that starts tasks in
+later batches leaves the stack partly wedged, and the gate row then fails rather than passes. Without a
 database, or if the record cannot be read, the process serves normally.
 
 ## Which replica answered (`Honua-Instance`)

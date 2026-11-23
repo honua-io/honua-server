@@ -35,9 +35,11 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
         using var deep = await client.GetAsync("/healthz/deep");
         using var ready = await client.GetAsync("/healthz/ready");
         using var query = await client.GetAsync(PublicQueryRoute);
+        using var metrics = await client.GetAsync("/healthz/metrics");
 
         live.StatusCode.Should().Be(HttpStatusCode.OK);
         deep.StatusCode.Should().Be(HttpStatusCode.OK, "the watchdog must not see this fault; only deployment alarms may");
+        metrics.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "only the three probes are spared");
         ready.Headers.Contains(QualificationFaultMiddleware.FaultHeader).Should().BeFalse();
         query.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         query.Headers.GetValues(QualificationFaultMiddleware.FaultHeader).Should().Equal("ServeErrors");
