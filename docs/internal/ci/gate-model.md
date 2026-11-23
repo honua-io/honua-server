@@ -369,7 +369,17 @@ assigns `IsTestProject=true` projects to `tests` and every other project to
 `source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
 and omits test-only compilation roots; imports are respected, incomplete evaluation
 fails closed, and multi-targeted projects conservatively remain included. Each
-partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled.
+Until this change the source partition ignored the affected filter and analyzed all
+51 source roots on every PR; on nine green PR Gates (22-23 November) it was the
+last job in five, at 16.8-18.8 minutes (build 15.6-17.5 minutes on hosted runners;
+the same 51 roots took 9.1 minutes on faster hosts). An unaffected project's
+analyzer inputs are unchanged, and every global analyzer input forces a full scope:
+root `Directory.Build.*`, `scripts/ci/` (baseline, banned symbols, globalconfig),
+`src/Honua.Analyzers/` and the root `.editorconfig`, which `compute-affected-projects.sh`
+added to its force-full list with this change (it maps to no project, so the test
+partitions skipped `.editorconfig` edits before). The scheduled and `full_ci` runs
+keep the whole-solution analyzer build. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
 name is retained for the source partition. Analyzer builds disable persistent
 MSBuild servers and node reuse so process teardown does not depend on a shared

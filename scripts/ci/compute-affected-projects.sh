@@ -14,7 +14,7 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 #   HEAD_REF — git ref for the new state (default: HEAD).
 #   FORCE_FULL_BUILD_PATHS — newline-separated path prefixes that, when changed,
 #     force a full-graph build (sln/props/CI files). Defaults to a baked-in
-#     list covering Directory.Packages.props, Directory.Build.props, Honua.sln,
+#     list covering .editorconfig, Directory.Packages.props, Directory.Build.props, Honua.sln,
 #     global.json, NuGet.config, .github/, and scripts/ci/.
 #
 # Outputs to stdout:
@@ -59,7 +59,10 @@ head_ref="${HEAD_REF:-HEAD}"
 # repo compiles under. Without this entry a warnings-as-errors build scoped to
 # the affected closure would silently skip most projects a new rule could fire
 # in. Analyzer edits are rare, so force-fulling them costs effectively nothing.
-default_force_full='Directory.Packages.props
+# .editorconfig is the same case: it sets analyzer severities for every project
+# but sits outside any .csproj, so the walk would map it to no project at all.
+default_force_full='.editorconfig
+Directory.Packages.props
 Directory.Build.props
 Directory.Build.targets
 Honua.sln

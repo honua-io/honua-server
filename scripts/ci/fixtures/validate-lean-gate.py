@@ -68,6 +68,20 @@ for condition in re.findall(r"^\s+if: (.*steps\.test-roots\.outputs\.count.*)$",
         )
 if len(re.findall(r"steps\.test-roots\.outcome == 'skipped' \|\|", FORMAT_TEXT)) != 2:
     raise AssertionError("format-check restore and build steps must both handle a skipped test-roots step")
+# The source analyzer pass narrows to the affected closure, which is only sound
+# while every global analyzer input forces a full scope.
+if 'source_args+=(--filter "${target}")' not in FORMAT_TEXT:
+    raise AssertionError("format-check source analyzer pass must narrow to the affected build filter")
+with tempfile.TemporaryDirectory(prefix="honua-force-full-") as _directory:
+    _changed = Path(_directory) / "changed.txt"
+    _changed.write_text(".editorconfig\n", encoding="utf-8")
+    _affected = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "ci" / "compute-affected-projects.sh")],
+        env={**os.environ, "HONUA_CHANGED_FILES_FILE": str(_changed), "BASE_REF": "HEAD"},
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split()
+    if _affected != ["ALL"]:
+        raise AssertionError(f".editorconfig must force a full analyzer scope, got {_affected}")
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",
