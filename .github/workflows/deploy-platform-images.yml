@@ -778,8 +778,6 @@ jobs:
             type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
             type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
-          labels: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Publish target tags
         shell: bash

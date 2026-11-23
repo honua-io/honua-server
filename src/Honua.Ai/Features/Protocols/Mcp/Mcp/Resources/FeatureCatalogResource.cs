@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Reflection;
+using Honua.Ai.Catalog;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -12,8 +12,6 @@ namespace Honua.Ai.Protocols.Mcp.Resources;
 internal sealed class FeatureCatalogResource : IMcpResource
 {
     public const string Uri = McpResourceUris.CatalogFeatures;
-
-    private const string EmbeddedResourceName = "Honua.Ai.Catalog.feature-catalog.json";
 
     private static readonly string CatalogJson = LoadEmbeddedCatalog();
 
@@ -73,18 +71,9 @@ internal sealed class FeatureCatalogResource : IMcpResource
         };
     }
 
-    // The single embedded copy; Honua.Server's deployment capability route catalog reads it too.
-    internal static Stream OpenEmbeddedCatalog()
-    {
-        var assembly = typeof(FeatureCatalogResource).Assembly;
-        return assembly.GetManifestResourceStream(EmbeddedResourceName)
-            ?? throw new InvalidOperationException(
-                $"Embedded feature catalog '{EmbeddedResourceName}' was not found in {assembly.GetName().Name}.");
-    }
-
     private static string LoadEmbeddedCatalog()
     {
-        using var stream = OpenEmbeddedCatalog();
+        using var stream = EmbeddedFeatureCatalog.Open();
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }

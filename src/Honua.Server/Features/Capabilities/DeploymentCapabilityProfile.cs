@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
-using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Catalog;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Routing.Template;
@@ -108,7 +108,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
 
     public DeploymentCapabilityRouteCatalog()
     {
-        using var stream = FeatureCatalogResource.OpenEmbeddedCatalog();
+        using var stream = EmbeddedFeatureCatalog.Open();
         using var document = JsonDocument.Parse(stream);
         var routes = new List<RouteCapability>();
         var routed = new HashSet<string>(StringComparer.Ordinal);
