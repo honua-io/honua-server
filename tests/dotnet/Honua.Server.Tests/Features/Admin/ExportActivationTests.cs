@@ -45,13 +45,13 @@ public sealed class ExportActivationTests
     }
 
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ClearUnpublished_ConcurrentReplacement_PreservesNewMarker(bool replaced)
+    [InlineData("original-unpublish", null)]
+    [InlineData("new-unpublish", "new-unpublish")]
+    public async Task ClearUnpublished_ConcurrentReplacement_PreservesNewMarker(string storedETag, string? remainingETag)
     {
         var storage = Substitute.For<ICloudFileStorage>();
         var store = ExportStore.Create(storage, new CloudStorageOptions(), "test");
-        string? currentETag = replaced ? "new-unpublish" : "original-unpublish";
+        string? currentETag = storedETag;
         storage.GetMetadataAsync(store.UnpublishedKey, Arg.Any<CancellationToken>())
             .Returns(new CloudFile
             {
@@ -80,7 +80,7 @@ public sealed class ExportActivationTests
 
         await ExportUnpublishGuard.TryClearUnpublishedIfUnchangedAsync(store, "original-unpublish");
 
-        currentETag.Should().Be(replaced ? "new-unpublish" : null);
+        currentETag.Should().Be(remainingETag);
         await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
