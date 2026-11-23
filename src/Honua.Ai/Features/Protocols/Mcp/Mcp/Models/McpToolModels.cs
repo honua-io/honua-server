@@ -1078,4 +1078,7 @@ internal sealed class McpToolErrorOutput
 
     [JsonPropertyName("error")]
     public McpGeoprocessingError? Error { get; set; }
+
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; set; }
 }

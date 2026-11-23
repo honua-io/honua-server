@@ -2,6 +2,7 @@
 import ipaddress
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -23,6 +24,8 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             mounts = {volume['target']: volume for volume in console['volumes']}
             self.assertEqual(str(path / 'console'), mounts['/srv/console']['source'])
             self.assertEqual(str(path / 'console.config.json'), mounts['/etc/honua-console/config.json']['source'])
+            self.assertEqual(str(path / 'console.version.json'), mounts['/etc/honua-console/version.json']['source'])
+            self.assertEqual(0o644, stat.S_IMODE((path / 'console.version.json').stat().st_mode))
             self.assertTrue(all(volume.get('read_only') for volume in console['volumes']))
             self.assertEqual({'console_tls_certificate', 'console_tls_key'},
                              {secret['source'] for secret in console['secrets']})
@@ -288,6 +291,20 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
     def test_console_without_packaged_bundle_fails_before_changing_install(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
+            saved = (path / '.env').read_bytes()
+
+            with self.assertRaisesRegex(ValueError, 'released Console bundle'):
+                initialize(path, ('console',))
+
+            self.assertEqual(saved, (path / '.env').read_bytes())
+            self.assertFalse((path / 'console.config.json').exists())
+
+    def test_console_without_packaged_version_file_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install'
+            self.package_console(path, self.console_bundle(Path(directory)))
+            initialize(path)
+            (path / 'console.version.json').unlink()
             saved = (path / '.env').read_bytes()
 
             with self.assertRaisesRegex(ValueError, 'released Console bundle'):

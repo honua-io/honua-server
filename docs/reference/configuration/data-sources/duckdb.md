@@ -9,6 +9,12 @@ Honua supports DuckDB as a read-only embedded feature provider. This is designed
 reference workloads where data is prepared offline (e.g. GeoParquet, CSV, or Shapefile imports into
 DuckDB) and served as a static dataset.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 ## When to Use DuckDB
 
 - **Reference layers** — static datasets (parcels, boundaries, zoning) that change infrequently

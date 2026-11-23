@@ -113,9 +113,8 @@ unchanged. Equal-time conflicting values become correction/review candidates.
 Migrations choose the next number at implementation time, after checking open
 PRs. Add tables, nullable columns and safe indexes only; no drops, renames,
 narrowing, destructive backfills or edits to journaled migrations. New code
-handles absent profile data, old readers keep working, and new task data
-survives a binary rollback. Prove N-1 reader compatibility under #7276 before
-landing schema work. Starter schema installation is retry-safe and does not
+handles absent profile data. Migrations are forward-only; prove idempotency and
+operation on an installed stack before marking schema work verified. Starter schema installation is retry-safe and does not
 modify a customer layer without a preview and approval.
 
 ## State machine and concurrency
@@ -342,7 +341,7 @@ Metric policy needs approval below before freezing fixtures.
 | X1 | REST/OpenAPI snapshots match runtime; FeatureServer desktop client and OGC API Features read same IDs/state/relationships; cross-scope queries and edits denied |
 | X2 | MCP read scopes match REST; a proposal changes nothing before human approval; stale approval cannot overwrite concurrent work |
 | D1 | Seed on-time, late, cancelled, undated, reassigned and poor-condition assets; dashboard totals equal direct authorized queries at a fixed instant |
-| M1 | Expand-only migration passes N-1 reader gate; roll forward/back binary versions without losing new records; journals unchanged |
+| M1 | Forward-only migration is idempotent and passes installed-stack checks without losing records; journals unchanged |
 | U1 | Test all three clickable flows with design partners before UI build; record success/time/errors and changes, then repeat against demo; WCAG 2.2 AA and field-condition review pass |
 | E1 | County signs/trees/trails fixture: set condition tracking, recurring inspections and public problem reporter on the demo stack; customer-arc eval verifies backend state, not just narrative |
 

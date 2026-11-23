@@ -470,7 +470,8 @@ class InstallationTests(unittest.TestCase):
                     installation.publish.side_effect = lambda _: (work / "quickstart.py").write_text("overwritten")
                 response = io.BytesIO(b"{}")
                 response.status = 200
-                with patch.object(proof, "wait_ready"):
+                with patch.object(proof, "wait_ready"), patch.object(proof, "check_console_version",
+                                                                     return_value=["console"]):
                     if defect == "none":
                         result = proof.exercise(installation, {})
                         self.assertTrue(result["reinitializePreservesCredentials"])
@@ -478,6 +479,35 @@ class InstallationTests(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError):
                             proof.exercise(installation, {})
+
+    def console_install(self, work, *, running=("console", "console-manager"), served=None):
+        lock = {"version": "2026.1.0", "consoleBundle": {"sha256": "a" * 64, "files": 3}}
+        (work / "images.json").write_text(json.dumps(lock))
+        expected = {"name": "honua-console", "bundleSha256": "a" * 64, "platformVersion": "2026.1.0"}
+        installation = Mock()
+        installation.directory = work
+        installation.running_services.return_value = set(running)
+        installation.console_version.side_effect = lambda origin: served or (200, "no-store", expected)
+        return installation
+
+    def test_every_running_console_edge_serves_the_packaged_platform_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installation = self.console_install(Path(directory))
+            self.assertEqual(["console", "console-manager"], proof.check_console_version(installation))
+            origins = [call.args[0] for call in installation.console_version.call_args_list]
+            self.assertEqual(["https://localhost:18083", "https://127.0.0.1:18084"], origins)
+            installation = self.console_install(Path(directory), running=("console", "honua"))
+            self.assertEqual(["console"], proof.check_console_version(installation))
+
+    def test_console_version_refuses_a_stale_cached_or_missing_edge(self):
+        stale = {"name": "honua-console", "bundleSha256": "a" * 64, "platformVersion": "nightly-abcdef0"}
+        cases = {"stale": dict(served=(200, "no-store", stale)),
+                 "cached": dict(served=(200, "max-age=60", stale | {"platformVersion": "2026.1.0"})),
+                 "missing": dict(running=("honua",))}
+        for name, options in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(ValueError):
+                    proof.check_console_version(self.console_install(Path(directory), **options))
 
     def test_shared_publish_reader_validates_real_output_shape(self):
         blocks = {"seed": "seed", "clients": "clients", "publish": "example", "query": "python publish.py"}

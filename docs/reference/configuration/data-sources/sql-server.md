@@ -9,6 +9,12 @@ Honua exposes SQL Server (`geometry` and `geography`) tables as read-only featur
 through the shared `IFeatureDataProvider` seam. SQL Server is the Tier 1 enterprise backend
 for organizations standardized on Microsoft data platforms.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 This page describes the **read/query slice**. Edits, native MVT, native
 FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately
 out of scope.
