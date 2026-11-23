@@ -50,4 +50,63 @@ public sealed class FeatureServerCalculateExpressionTests
         error.Should().BeNull();
         value.Should().Be("Ada_ok");
     }
+
+    [UnitTheory]
+    [InlineData("UPPER(name)")]
+    [InlineData("LOWER(name)")]
+    [InlineData("TRIM(name)")]
+    [InlineData("LENGTH(name)")]
+    [InlineData("pop + 1")]
+    [InlineData("pop - 1")]
+    [InlineData("pop * 2")]
+    [InlineData("pop / 2")]
+    [InlineData("10 / pop")]
+    [InlineData("pop % 2")]
+    [InlineData("-pop")]
+    public void TryEvaluateCalcExpression_NullOperand_YieldsNull(string expression)
+    {
+        var attributes = new Dictionary<string, object?> { ["name"] = null, ["pop"] = null };
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression,
+            attributes,
+            out var value,
+            out var error);
+
+        parsed.Should().BeTrue(error);
+        error.Should().BeNull();
+        value.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryEvaluateCalcExpression_NullOperandWithCoalesce_UsesFallback()
+    {
+        var attributes = new Dictionary<string, object?> { ["pop"] = null };
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            "COALESCE(pop, 0) + 1",
+            attributes,
+            out var value,
+            out var error);
+
+        parsed.Should().BeTrue(error);
+        value.Should().Be(1m);
+    }
+
+    [UnitTheory]
+    [InlineData("name * 2")]
+    [InlineData("-name")]
+    public void TryEvaluateCalcExpression_NonNumericOperand_StillFails(string expression)
+    {
+        var attributes = new Dictionary<string, object?> { ["name"] = "abc" };
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression,
+            attributes,
+            out _,
+            out var error);
+
+        parsed.Should().BeFalse();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
 }

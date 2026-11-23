@@ -1352,14 +1352,21 @@ internal static partial class FeatureServerEndpoints
             if (_current.Kind == TokenKind.Minus)
             {
                 Advance();
-                if (!TryParseUnary(out var inner, out error) || !TryGetDecimal(inner, out var number))
+                if (!TryParseUnary(out var inner, out error))
                 {
-                    if (_validationOnly && inner is null)
-                    {
-                        value = null;
-                        error = null;
-                        return true;
-                    }
+                    value = null;
+                    return false;
+                }
+
+                // SQL semantics: negating NULL yields NULL rather than failing the row.
+                if (inner is null)
+                {
+                    value = null;
+                    return true;
+                }
+
+                if (!TryGetDecimal(inner, out var number))
+                {
                     value = null;
                     error ??= "Unary minus requires a numeric value.";
                     return false;
@@ -1450,8 +1457,9 @@ internal static partial class FeatureServerEndpoints
                                      name.Equals("NVL", StringComparison.OrdinalIgnoreCase);
             var isConcatFunction = name.Equals("CONCAT", StringComparison.OrdinalIgnoreCase);
 
-            if (_validationOnly &&
-                (isTextFunction || isLengthFunction) &&
+            // SQL semantics: UPPER/LOWER/TRIM/LENGTH of NULL is NULL, so a partially populated
+            // source field leaves those rows NULL instead of failing the whole calculate.
+            if ((isTextFunction || isLengthFunction) &&
                 arguments.Count == 1 && arguments[0] is null)
             {
                 return true;
@@ -1514,6 +1522,12 @@ internal static partial class FeatureServerEndpoints
             if (_validationOnly)
             {
                 value = null;
+                return true;
+            }
+
+            // SQL semantics: any arithmetic with a NULL operand yields NULL.
+            if (left is null || right is null)
+            {
                 return true;
             }
 

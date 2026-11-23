@@ -423,6 +423,45 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_NullSourceField_LeavesNullRowAndUpdatesOthers()
+    {
+        var fixture = await StartMutableFixtureAsync();
+        var populatedId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Ada");
+        var blankId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "to-be-null");
+        var schema = fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using (var connection = await fixture.Postgres.GetConnectionAsync(schema))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE features
+                SET attributes = jsonb_set(attributes, '{name}', 'null'::jsonb)
+                WHERE layer_id = @layerId AND objectid = @objectId
+                """;
+            command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            command.Parameters.AddWithValue("objectId", blankId);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "UPPER(name)" }
+        });
+
+        var response = await PostCalculateAsync(
+            fixture, calcExpression, $"objectid IN ({populatedId}, {blankId})");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+        (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, populatedId))
+            .Should().Be("ADA");
+        (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, blankId))
+            .Should().BeNull("UPPER of a NULL source value is NULL, as in SQL");
+    }
+
     private static async Task<HttpResponseMessage> PostCalculateAsync(WebAppFixture fixture, string calcExpression, string? where = null)
     {
         var fields = new List<KeyValuePair<string, string>>
