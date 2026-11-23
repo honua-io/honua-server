@@ -21,6 +21,25 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> BatchIndex { get; } = new();
     protected ConcurrentDictionary<string, CancellationTokenSource> UploadCancellationTokens { get; } = new();
 
+    protected static void ValidateUploadRequest(FileUploadRequest request, bool conditional, string? expectedETag)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (conditional && expectedETag is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        }
+    }
+
+    protected async Task<(CancellationTokenSource Cancellation, long TotalBytes, UploadProgress Progress)> BeginUploadAsync(
+        FileUploadRequest request, CancellationToken cancellationToken)
+    {
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
+        UploadCancellationTokens[request.UploadId] = cancellation;
+        var progress = await InitializeUploadProgressAsync(request, totalBytes, cancellationToken);
+        return (cancellation, totalBytes, progress);
+    }
+
     protected async Task<UploadProgress> InitializeUploadProgressAsync(FileUploadRequest request, long totalBytes, CancellationToken cancellationToken)
     {
         var initial = UploadProgress.CreateInitial(request.UploadId, request.FileName, totalBytes, request.ContentType)

@@ -66,20 +66,10 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         string? expectedETag,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (conditional && expectedETag is not null)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
-        }
-
+        ValidateUploadRequest(request, conditional, expectedETag);
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
-        var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
-
-        UploadCancellationTokens[uploadId] = linkedCancellationSource;
-
-        var initialProgress = await InitializeUploadProgressAsync(request, totalBytes, cancellationToken);
+        var (linkedCancellationSource, totalBytes, initialProgress) = await BeginUploadAsync(request, cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
         try
