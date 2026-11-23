@@ -57,7 +57,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         var snapshot = await ReadStorageInvalidationSnapshotAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
-            await InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+            await EvictQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
         var publications = PublicationsEditedWithStorageLayer(snapshot, storageLayerId).ToArray();
@@ -175,6 +175,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     public async Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
     {
+        await EvictQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EvictQueryResponsesAsync(CancellationToken cancellationToken)
+    {
         InvalidateMetadataDocumentCache();
         await EvictResponseCacheAsync(
             [
@@ -183,7 +189,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
                 ResponseCacheUtilities.BuildODataPattern(),
             ],
             cancellationToken).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)

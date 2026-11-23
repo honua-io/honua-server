@@ -191,38 +191,6 @@ public sealed class CdnInvalidationTests
         exports.Calls.Should().Be(1);
     }
 
-    private OutputCacheInvalidationService Invalidation(IPublicExportAccessChangeListener? exports = null)
-    {
-        var services = new ServiceCollection();
-        if (exports is not null)
-        {
-            services.AddSingleton(exports);
-        }
-
-        return new(
-            null,
-            null,
-            null,
-            services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-            null,
-            NullLogger<OutputCacheInvalidationService>.Instance,
-            Service());
-    }
-
-    private sealed class CountingExportAccessListener : IPublicExportAccessChangeListener
-    {
-        public int Calls { get; private set; }
-
-        public Task OnAdministrativeAccessChangeAsync(
-            string? serviceId,
-            IReadOnlyCollection<int>? layerIds,
-            CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.CompletedTask;
-        }
-    }
-
     [UnitTest]
     public async Task InvalidateNowAsync_AdminRequest_RecordsThePurgeWithTheRequestCorrelationId()
     {
@@ -257,6 +225,38 @@ public sealed class CdnInvalidationTests
         await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
 
         logger.Messages.Should().BeEmpty();
+    }
+
+    private OutputCacheInvalidationService Invalidation(IPublicExportAccessChangeListener? exports = null)
+    {
+        var services = new ServiceCollection();
+        if (exports is not null)
+        {
+            services.AddSingleton(exports);
+        }
+
+        return new(
+            null,
+            null,
+            null,
+            services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            null,
+            NullLogger<OutputCacheInvalidationService>.Instance,
+            Service());
+    }
+
+    private sealed class CountingExportAccessListener : IPublicExportAccessChangeListener
+    {
+        public int Calls { get; private set; }
+
+        public Task OnAdministrativeAccessChangeAsync(
+            string? serviceId,
+            IReadOnlyCollection<int>? layerIds,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.CompletedTask;
+        }
     }
 
     private CdnInvalidationService Service(IHttpContextAccessor? accessor = null)

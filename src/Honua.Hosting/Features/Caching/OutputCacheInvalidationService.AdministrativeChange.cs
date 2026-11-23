@@ -33,19 +33,27 @@ internal sealed partial class OutputCacheInvalidationService
             : serviceId.Trim().ToLowerInvariant();
         int[] layerIdList = [.. layerIds?.Distinct() ?? []];
 
-        await EvictServiceCatalogAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+        await PurgeCdnAfterAsync(EvictServiceCatalogAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
         await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateEverythingAsync(CancellationToken cancellationToken)
     {
-        await Task.WhenAll(
-            EvictLayerAsync(serviceId: null, serviceLayerIndex: null, cancellationToken),
-            EvictServiceCatalogAsync(normalizedServiceId: null, [], cancellationToken),
-            EvictOgcMetadataAsync(cancellationToken)).ConfigureAwait(false);
-        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+        await PurgeCdnAfterAsync(EvictServiceCatalogAsync(normalizedServiceId: null, [], cancellationToken)).ConfigureAwait(false);
         await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    // The change is committed before eviction starts, so a request that ends early still has to reach the CDN.
+    private async Task PurgeCdnAfterAsync(Task eviction)
+    {
+        try
+        {
+            await eviction.ConfigureAwait(false);
+        }
+        finally
+        {
+            await InvalidateCdnForAdministrativeChangeAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task EvictServiceCatalogAsync(
