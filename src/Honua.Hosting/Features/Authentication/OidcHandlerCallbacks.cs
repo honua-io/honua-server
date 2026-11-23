@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 
@@ -24,11 +25,12 @@ internal static class OidcHandlerCallbacks
 
     // Sign-in callback (CallbackPath, /signin-oidc*) without a valid response. Left to the
     // default, the handler throws and the caller gets a 500; the request is the caller's fault.
+    // The failure message can quote the caller's error parameters, so it is sanitised before logging.
     internal static Task RefuseRemoteFailureAsync(RemoteFailureContext context)
     {
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
         OidcAuthenticationLog.OidcRemoteCallbackRefused(
-            logger, context.Scheme.Name, context.Failure?.Message ?? "unknown failure");
+            logger, context.Scheme.Name, LogValueRedactor.SanitizeForLog(context.Failure?.Message ?? "unknown failure"));
         WriteUncachedStatus(context.Response, StatusCodes.Status400BadRequest);
         context.HandleResponse();
         return Task.CompletedTask;
