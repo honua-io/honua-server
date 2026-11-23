@@ -7,6 +7,11 @@ namespace Honua.Server.Features.WorkflowPackages;
 internal static class WorkflowPackageRequestLimits
 {
     internal const int MaxIdentifierLength = 128;
+    internal const int MaxNameLength = 200;
+    internal const int MaxDescriptionLength = 4_000;
+    internal const int MaxNodes = 500;
+    internal const int MaxEdges = 2_000;
+    internal const int MaxMetadataEntries = 64;
 
     // Client-chosen package and publication ids become route segments, a Location header and
     // part of the schedule definition id "workflow-package:{packageId}:v{n}:{publicationId}".
@@ -19,4 +24,32 @@ internal static class WorkflowPackageRequestLimits
 
     internal static string IdentifierRule(string field)
         => $"{field} must be 1-{MaxIdentifierLength} characters of letters, digits, '.', '_' or '-', starting with a letter or digit.";
+
+    // Every version, validation, dry-run and publish walks the whole saved graph, so the draft
+    // is bounded when it is saved. Returns the first exceeded bound, or null when within limits.
+    internal static string? FindExceededLimit(SaveWorkflowPackageRequest request)
+    {
+        var graph = request.Graph;
+        return FirstOver(
+            ("name", request.Name.Trim().Length, MaxNameLength),
+            ("namespace", request.Namespace?.Trim().Length ?? 0, MaxNameLength),
+            ("description", request.Description?.Trim().Length ?? 0, MaxDescriptionLength),
+            ("graph.nodes", graph.Nodes?.Count ?? 0, MaxNodes),
+            ("graph.edges", graph.Edges.Count, MaxEdges),
+            ("metadata", request.Metadata?.Count ?? 0, MaxMetadataEntries),
+            ("graph.editorMetadata", graph.EditorMetadata.Count, MaxMetadataEntries));
+    }
+
+    private static string? FirstOver(params ReadOnlySpan<(string Field, int Actual, int Limit)> checks)
+    {
+        foreach (var (field, actual, limit) in checks)
+        {
+            if (actual > limit)
+            {
+                return $"{field} exceeds the limit of {limit} (got {actual}).";
+            }
+        }
+
+        return null;
+    }
 }

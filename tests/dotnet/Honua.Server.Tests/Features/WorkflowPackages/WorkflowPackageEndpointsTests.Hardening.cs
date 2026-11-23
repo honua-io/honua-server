@@ -76,6 +76,62 @@ public sealed partial class WorkflowPackageEndpointsTests
             .Should().BeNull();
     }
 
+    [IntegrationTheory]
+    [InlineData("name")]
+    [InlineData("namespace")]
+    [InlineData("description")]
+    [InlineData("nodes")]
+    [InlineData("edges")]
+    [InlineData("metadata")]
+    [Endpoint("POST /api/v1/console/workflow-packages")]
+    public async Task SavePackage_OverASizeLimit_IsRefusedAndNotStored(string oversized)
+    {
+        var packageId = $"oversized-{oversized}-{Guid.NewGuid():N}";
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-packages",
+            OversizedPackageRequest(packageId, oversized),
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("exceeds the limit");
+        (await GetStoredPackageAsync(packageId)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages")]
+    public async Task SavePackage_AtTheNodeLimit_IsStored()
+    {
+        var packageId = $"at-limit-{Guid.NewGuid():N}";
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-packages",
+            CreatePackageRequest("at-limit", AreaNodesGraph(500, 0), packageId),
+            JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await GetStoredPackageAsync(packageId))!.Graph.Nodes.Should().HaveCount(500);
+    }
+
+    private static object OversizedPackageRequest(string packageId, string oversized) => new
+    {
+        packageId,
+        name = oversized == "name" ? new string('n', 201) : "oversized",
+        @namespace = oversized == "namespace" ? new string('s', 201) : null,
+        description = oversized == "description" ? new string('d', 4_001) : null,
+        graph = AreaNodesGraph(oversized == "nodes" ? 501 : 1, oversized == "edges" ? 2_001 : 0),
+        metadata = Enumerable.Range(0, oversized == "metadata" ? 65 : 1)
+            .ToDictionary(i => $"key{i}", _ => "value"),
+    };
+
+    private static object AreaNodesGraph(int nodeCount, int edgeCount) => new
+    {
+        nodes = Enumerable.Range(0, nodeCount)
+            .Select(i => new { nodeId = $"area-{i}", nodeTypeId = "process:geometry.area" })
+            .ToArray(),
+        edges = Enumerable.Range(0, edgeCount)
+            .Select(_ => new { sourceNodeId = "area-0", targetNodeId = "area-0" })
+            .ToArray(),
+    };
+
     private async Task<WorkflowPackage?> GetStoredPackageAsync(string packageId)
     {
         using var scope = _fixture.Services.CreateScope();

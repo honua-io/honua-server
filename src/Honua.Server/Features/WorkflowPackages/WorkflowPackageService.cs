@@ -55,27 +55,9 @@ internal sealed class WorkflowPackageService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new ArgumentException("Workflow package name is required.", nameof(request));
-        }
-
-        if (request.Graph is null)
-        {
-            throw new ArgumentException("Workflow package graph is required.", nameof(request));
-        }
-
+        EnsureSaveRequestIsValid(request);
         var now = clock.GetUtcNow();
-        var packageId = string.IsNullOrWhiteSpace(request.PackageId)
-            ? CreatePackageId(request.Name)
-            : request.PackageId.Trim();
-        if (!WorkflowPackageRequestLimits.IsValidIdentifier(packageId))
-        {
-            throw new ArgumentException(WorkflowPackageRequestLimits.IdentifierRule("packageId"), nameof(request));
-        }
-
+        var packageId = ResolvePackageId(request);
         var existing = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
 
         var package = new WorkflowPackage
@@ -1240,6 +1222,36 @@ internal sealed class WorkflowPackageService(
 
     private static string ComputePackageHash(WorkflowGraph graph)
         => WorkflowPackageGraphHasher.Compute(graph);
+
+    private static void EnsureSaveRequestIsValid(SaveWorkflowPackageRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw new ArgumentException("Workflow package name is required.", nameof(request));
+        }
+
+        if (request.Graph is null)
+        {
+            throw new ArgumentException("Workflow package graph is required.", nameof(request));
+        }
+
+        if (WorkflowPackageRequestLimits.FindExceededLimit(request) is { } exceeded)
+        {
+            throw new ArgumentException(exceeded, nameof(request));
+        }
+    }
+
+    private static string ResolvePackageId(SaveWorkflowPackageRequest request)
+    {
+        var packageId = string.IsNullOrWhiteSpace(request.PackageId)
+            ? CreatePackageId(request.Name)
+            : request.PackageId.Trim();
+        return WorkflowPackageRequestLimits.IsValidIdentifier(packageId)
+            ? packageId
+            : throw new ArgumentException(WorkflowPackageRequestLimits.IdentifierRule("packageId"), nameof(request));
+    }
 
     private static string CreatePackageId(string name)
     {
