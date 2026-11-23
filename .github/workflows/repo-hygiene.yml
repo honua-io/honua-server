@@ -192,7 +192,7 @@ jobs:
           python3 scripts/ci/check-surface-vocabulary.test.py
           python3 scripts/ci/check-surface-vocabulary.py --base "$BASE_SHA"
   shared-hygiene:
-    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@ac1810ad6ef51b72204898a44c0cbeee90e57914 # standing-rule single/two-ticket bundle exceptions
+    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@ad47af2702c4064695f6a1fd35aac5298b5b65fa # three-ticket bundle rule
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
