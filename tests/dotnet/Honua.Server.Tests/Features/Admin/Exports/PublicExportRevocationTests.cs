@@ -193,6 +193,28 @@ public sealed class PublicExportRevocationTests
     }
 
     [UnitTest]
+    public async Task HostedService_WhenOneExportUnpublishCheckFails_WaitsForNextScheduledSweep()
+    {
+        var storage = new Mock<ICloudFileStorage>();
+        storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("unreadable pointer"));
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            PrivateStorage = storage.Object
+        });
+        using var hosted = harness.CreateHostedService();
+
+        (await hosted.RunCycleAsync(CancellationToken.None)).Should().BeTrue();
+        var readsAfterFirstSweep = storage.Invocations.Count;
+        (await hosted.RunCycleAsync(CancellationToken.None)).Should().BeTrue();
+
+        readsAfterFirstSweep.Should().BeGreaterThan(0);
+        storage.Invocations.Count.Should().Be(readsAfterFirstSweep, "the next tick must not repeat the whole sweep");
+        harness.StateStore.Promoted.Keys.Should().BeEquivalentTo(["parcels", "roads"]);
+    }
+
+    [UnitTest]
     public async Task CloudStorageStateStore_WhenListingReachesPageLimit_FailsClosed()
     {
         var fullPage = Enumerable.Range(0, CloudStoragePublicExportStateStore.MaxStateRecords)

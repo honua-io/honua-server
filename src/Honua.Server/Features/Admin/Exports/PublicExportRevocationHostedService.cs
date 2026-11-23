@@ -96,7 +96,9 @@ internal sealed partial class PublicExportRevocationHostedService(
 
         try
         {
-            await revocation.OnAdministrativeAccessChangeAsync(null, null, stoppingToken).ConfigureAwait(false);
+            // An export whose unpublish check failed was logged by the service and waits for the
+            // next scheduled sweep; only a failure of the whole sweep retries on the next tick.
+            _ = await revocation.SweepEligibilityAsync(stoppingToken).ConfigureAwait(false);
             _lastEligibilitySweepAt = _timeProvider.GetUtcNow();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
