@@ -1274,7 +1274,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     // The calculate evaluator accepts only value-producing SQL, so the operation cannot become a general SQL execution surface.
-    private sealed class CalcSqlExpressionParser
+    private sealed partial class CalcSqlExpressionParser
     {
         internal const int MaxNestingDepth = 64;
 
@@ -1569,27 +1569,6 @@ internal static partial class FeatureServerEndpoints
 
             value = result.Value;
             return true;
-        }
-
-        // Decimal arithmetic always throws on overflow; report it as an expression error instead of a 500.
-        private static decimal? ComputeWithinRange(TokenKind operation, decimal left, decimal right)
-        {
-            try
-            {
-                return operation switch
-                {
-                    TokenKind.Plus => left + right,
-                    TokenKind.Minus => left - right,
-                    TokenKind.Star => left * right,
-                    TokenKind.Slash => left / right,
-                    TokenKind.Percent => left % right,
-                    _ => throw new ArgumentOutOfRangeException(nameof(operation))
-                };
-            }
-            catch (OverflowException)
-            {
-                return null;
-            }
         }
 
         private static bool TryGetDecimal(object? value, out decimal number)
