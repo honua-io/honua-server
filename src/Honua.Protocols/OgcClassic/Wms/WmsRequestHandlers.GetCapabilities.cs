@@ -479,9 +479,12 @@ internal static partial class WmsRequestHandlers
         {
             var layer = prepared.Layer;
             var layerName = GetWmsLayerDisplayName(layer);
-            var layerMetadata = layer.Resource.Metadata;
-            var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
-            var layerAbstract = string.IsNullOrWhiteSpace(layerMetadata.Description) ? null : layerMetadata.Description;
+            // The authored service, not its capabilities projection, is the governance parent.
+            var authoredService = layer.Snapshot.Index.ServicesById.GetValueOrDefault(service.Metadata.Id) ?? service;
+            var descriptive = DescriptiveMetadataResolver.ForDataset(
+                layer.Snapshot.Graph, new(layer.Resource, authoredService, layer.Publication));
+            var resourceTitle = string.IsNullOrWhiteSpace(descriptive.Title) ? layerName : descriptive.Title;
+            var layerAbstract = string.IsNullOrWhiteSpace(descriptive.Description) ? null : descriptive.Description;
 
             var queryable = OgcClassicRasterSupport.IsRasterResource(layer.Resource) ? "0" : "1";
             sb.Append("      <Layer queryable=\"").Append(queryable).AppendLine("\">");
@@ -489,7 +492,7 @@ internal static partial class WmsRequestHandlers
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             if (layerAbstract is not null)
                 sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
+            AppendWmsKeywords(sb, descriptive.Keywords.Prepend(layerName), "        ");
             var crsNames = GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, version);
             foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
                 sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
@@ -506,7 +509,7 @@ internal static partial class WmsRequestHandlers
             if (isWms111)
                 AppendWms111DeclaredExtents(sb, layer, "        ");
 
-            var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, service);
+            var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, authoredService);
             var metadataLink = governance.Links.FirstOrDefault(link =>
                 string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
             if (metadataLink is not null)

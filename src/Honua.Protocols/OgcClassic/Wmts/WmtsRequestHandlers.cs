@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
@@ -1317,6 +1318,7 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var authoredService = service;
         service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
@@ -1498,10 +1500,16 @@ internal static class WmtsRequestHandlers
                 var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetServiceLayerIdentifier(layer.Publication) ?? string.Empty)}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
-                var layerTitle = layer.Resource.Metadata.Title
-                    ?? layer.Resource.Metadata.Name
-                    ?? layerId;
+                var descriptive = DescriptiveMetadataResolver.ForDataset(graph, new(layer.Resource, authoredService, layer.Publication));
+                var layerTitle = string.IsNullOrWhiteSpace(descriptive.Title) ? layerId : descriptive.Title;
                 sb.Append("      <ows:Title>").Append(EscapeXml(layerTitle)).AppendLine("</ows:Title>");
+                if (!string.IsNullOrWhiteSpace(descriptive.Description))
+                {
+                    sb.Append("      <ows:Abstract>").Append(EscapeXml(descriptive.Description)).AppendLine("</ows:Abstract>");
+                }
+
+                foreach (var keywords in CatalogCapabilitiesXml.PrefixedKeywords(descriptive.Keywords, "http://www.opengis.net/ows/1.1"))
+                    sb.AppendLine(keywords.ToString());
                 sb.Append("      <ows:Identifier>").Append(EscapeXml(layerId)).AppendLine("</ows:Identifier>");
                 await AppendWmtsWgs84BoundingBoxAsync(sb, layer, request.HttpContext, cancellationToken)
                     .ConfigureAwait(false);

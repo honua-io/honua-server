@@ -77,6 +77,31 @@ public sealed partial class GrpcMaskedFieldPredicateTests
 
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
+    public async Task DescribeService_PublicationText_DescribesTheLayerLikeEveryProtocol()
+    {
+        var original = ServiceMetadataSnapshot(1).Graph;
+        var feature = original.Publications[0] with
+        {
+            Metadata = original.Publications[0].Metadata with
+            {
+                Title = "Published layer title",
+                Description = "Published layer description",
+            },
+            TitleOverride = null,
+        };
+        ConfigureDiscoveryGraph(original with { Publications = [feature] });
+        using var context = CreateCallContext();
+
+        var response = await _sut.DescribeService(new() { ServiceId = "test" }, context);
+
+        var layer = response.Layers.Should().ContainSingle().Subject;
+        layer.Name.Should().Be("Published layer title");
+        layer.Description.Should().Be("Published layer description");
+        AssertNoRead();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
     public async Task DescribeService_StacOnlyPublication_RemainsDiscoverable()
     {
         var original = ServiceMetadataSnapshot(1).Graph;

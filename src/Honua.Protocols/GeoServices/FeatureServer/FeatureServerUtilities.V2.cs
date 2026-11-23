@@ -6,7 +6,9 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -56,17 +58,18 @@ internal static partial class FeatureServerEndpoints
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
         var serviceExtent = ResolveServiceExtentV2(publications, srid ?? SpatialReference.WGS84.Wkid);
         var relationships = BuildServiceRelationshipResponseV2(publications, snapshot);
+        var described = PublishedMetadataProjection.ForServiceResource(snapshot.Graph, service);
 
         return new FeatureServerResponse
         {
             ServiceName = service.EffectivePublicName,
-            ServiceDescription = service.Metadata.Description ?? string.Empty,
-            CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
-                ? service.Metadata.License
-                : service.Metadata.Attribution,
-            License = service.Metadata.License,
-            Publisher = service.Metadata.Publisher,
-            Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
+            ServiceDescription = described.Description ?? string.Empty,
+            CopyrightText = string.IsNullOrWhiteSpace(described.Attribution)
+                ? described.License
+                : described.Attribution,
+            License = described.License,
+            Publisher = described.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(described),
             Layers = [.. publications.Where(pair => pair.Resource.Type != MetadataV2ObjectType.Table)
                 .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ObjectType.Table)
@@ -159,13 +162,14 @@ internal static partial class FeatureServerEndpoints
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
         var extent = ResolveLayerExtentV2(resource, srid ?? SpatialReference.WGS84.Wkid);
-        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
+        var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resource, service);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
 
         return new LayerResponse
         {
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
-            Description = resource.Metadata.Description,
+            Description = descriptive.Description,
             CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
                 ? governance.License
                 : governance.Attribution,

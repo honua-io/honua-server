@@ -389,6 +389,37 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
         AssertDenied(result);
     }
 
+    [UnitTheory]
+    [InlineData("1.0.0")]
+    [InlineData("2.0.1")]
+    public async Task GetCapabilities_CoverageText_ComesFromTheMetadataCrosswalk(string version)
+    {
+        var original = Graph();
+        var graph = original with
+        {
+            Resources = original.Resources.Select(resource => resource with
+            {
+                Metadata = resource.Metadata with
+                {
+                    Title = "Dataset title",
+                    Description = "Dataset description",
+                    Keywords = ["terrain", " Terrain ", "dem"],
+                },
+            }).ToArray(),
+            Publications = original.Publications.Select(publication => publication with { TitleOverride = "Published title" }).ToArray(),
+        };
+
+        var capabilities = await ExecuteAsync(version, "GetCapabilities", User("reader"), graph: graph);
+
+        capabilities.Status.Should().Be(200, capabilities.Text);
+        capabilities.Text.Should().Contain("Published title").And.Contain("Dataset description").And.NotContain("Dataset title");
+        if (version == "2.0.1")
+        {
+            capabilities.Text.Should().Contain("<ows:Keyword>terrain</ows:Keyword>").And.Contain("<ows:Keyword>dem</ows:Keyword>")
+                .And.NotContain("<ows:Keyword> Terrain </ows:Keyword>");
+        }
+    }
+
     private static void AssertDenied(Response result)
     {
         result.Status.Should().BeOneOf(401, 403, 404);
