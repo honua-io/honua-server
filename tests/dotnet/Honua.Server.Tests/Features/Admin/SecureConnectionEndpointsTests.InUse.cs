@@ -43,9 +43,9 @@ public partial class SecureConnectionEndpointsTests
                 services.RemoveAll<ISecureConnectionRegistry>();
                 services.AddSingleton(registry);
             });
-        await localFixture.InitializeAsync();
         try
         {
+            await localFixture.InitializeAsync();
             using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
             using var response = await client.DeleteAsync($"/api/v1/admin/connections/{connectionId}");

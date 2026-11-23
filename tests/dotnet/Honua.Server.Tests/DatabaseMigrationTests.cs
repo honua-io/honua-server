@@ -451,19 +451,7 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
     public async Task DbUpMigrations_OnFreshDatabase_CreatesSchemaAndTables()
     {
         // Arrange
-        // Configure connection string with the isolated schema in search_path
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build();
+        var upgrader = BuildCanonicalUpgrader();
 
         // Act
         var result = upgrader.PerformUpgrade();
@@ -1032,19 +1020,7 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
     public async Task DbUpMigrations_OnExistingDatabase_IsIdempotent()
     {
         // Arrange
-        // Configure connection string with the isolated schema in search_path
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build();
+        var upgrader = BuildCanonicalUpgrader();
 
         // Act - Run migrations twice
         var firstResult = upgrader.PerformUpgrade();
@@ -1261,18 +1237,7 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
     public async Task DbUpMigrations_MobileOfflineDemoSeed_AppliesToCanonicalSchema()
     {
         // Arrange
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build();
+        var upgrader = BuildCanonicalUpgrader();
 
         var migrationResult = upgrader.PerformUpgrade();
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
@@ -1382,18 +1347,7 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
         // is provisioned outside the Server set, so on a fresh schema it is a no-op until the raster
         // schema exists. After provisioning raster_data we re-run the embedded 060 script (it is
         // idempotent / IF NOT EXISTS) and assert the companion table + FK cascade.
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build();
+        var upgrader = BuildCanonicalUpgrader();
 
         var migrationResult = upgrader.PerformUpgrade();
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");

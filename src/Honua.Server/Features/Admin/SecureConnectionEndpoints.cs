@@ -958,7 +958,7 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
-        // Migration 008's ON DELETE RESTRICT key raises restrict_violation; a NO ACTION key raises foreign_key_violation.
+        // Migration 008's RESTRICT key raises restrict_violation on PostgreSQL 18 and foreign_key_violation before it.
         catch (Npgsql.PostgresException ex) when (ex.SqlState is Npgsql.PostgresErrorCodes.RestrictViolation or Npgsql.PostgresErrorCodes.ForeignKeyViolation)
         {
             SecureConnectionLog.SecureConnectionInUse(logger, id, ex);

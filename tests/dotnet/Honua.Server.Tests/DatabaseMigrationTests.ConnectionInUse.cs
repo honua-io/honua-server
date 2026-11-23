@@ -5,17 +5,19 @@ using System.Reflection;
 using DbUp;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
 public sealed partial class DatabaseMigrationTests
 {
     // The connection delete route answers 409 only because migration 008's RESTRICT foreign key
-    // refuses the registry's DELETE with restrict_violation (23001); the seeded test schema does not carry that key.
+    // refuses the registry's DELETE; the seeded test schema does not carry that key.
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task DbUpMigrations_ConnectionReferencedByService_RefusesRegistryDelete()
     {
-        var migration = ApplyAllMigrations();
+        var migration = BuildCanonicalUpgrader().PerformUpgrade();
         migration.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migration.Error}");
 
         await using var connection = await OpenSchemaConnectionAsync();
@@ -37,14 +39,16 @@ public sealed partial class DatabaseMigrationTests
         delete.Parameters.AddWithValue("id", connectionId);
         var refusal = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => delete.ExecuteScalarAsync());
 
-        refusal.SqlState.Should().Be(Npgsql.PostgresErrorCodes.RestrictViolation, "the key is ON DELETE RESTRICT");
+        // PostgreSQL 18 reports a RESTRICT key as restrict_violation; earlier servers as foreign_key_violation.
+        refusal.SqlState.Should().BeOneOf(Npgsql.PostgresErrorCodes.RestrictViolation, Npgsql.PostgresErrorCodes.ForeignKeyViolation);
         await using var remaining = connection.CreateCommand();
         remaining.CommandText = "SELECT count(*) FROM honua.data_connections WHERE connection_id = @id";
         remaining.Parameters.AddWithValue("id", connectionId);
         ((long)(await remaining.ExecuteScalarAsync())!).Should().Be(1, "the referenced connection is kept");
     }
 
-    private DbUp.Engine.DatabaseUpgradeResult ApplyAllMigrations()
+    // Every canonical-schema test here migrates its private schema the same way.
+    private DbUp.Engine.UpgradeEngine BuildCanonicalUpgrader()
     {
         var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
         {
@@ -56,7 +60,6 @@ public sealed partial class DatabaseMigrationTests
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
             .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
-            .Build()
-            .PerformUpgrade();
+            .Build();
     }
 }
