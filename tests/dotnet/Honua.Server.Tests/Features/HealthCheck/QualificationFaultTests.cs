@@ -84,14 +84,17 @@ public sealed class QualificationFaultTests
     internal static QualificationFaultGate Gate(QualificationFault fault, IQualificationWedgeMarker? marker)
         => new(fault, marker, NullLogger<QualificationFaultGate>.Instance);
 
-    internal static IQualificationWedgeMarker UnconsumedMarker() => MarkerAnswering(wedge: true);
-
-    internal static IQualificationWedgeMarker ConsumedMarker() => MarkerAnswering(wedge: false);
-
-    private static IQualificationWedgeMarker MarkerAnswering(bool wedge)
+    internal static IQualificationWedgeMarker UnconsumedMarker()
     {
         var marker = Substitute.For<IQualificationWedgeMarker>();
-        marker.ShouldWedgeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(wedge);
+        marker.ShouldWedgeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        return marker;
+    }
+
+    internal static IQualificationWedgeMarker ConsumedMarker()
+    {
+        var marker = Substitute.For<IQualificationWedgeMarker>();
+        marker.ShouldWedgeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
         return marker;
     }
 }
