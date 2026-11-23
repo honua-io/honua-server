@@ -112,10 +112,12 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.DeleteConnection_WithPublishedLayerAndNoServiceLink_IsRefusedAndKept",
         "Honua.Server.Tests.Features.Admin.AgentRouteAdmissionTests.AgentAdministrator_ChangingAnAdminRouteDirectly_IsRefusedWithApprovalGuidance",
         "Honua.Server.Tests.Features.Admin.ObjectStorageConnectionEndpointsTests.Update_KeepsTheExternalIdAndDeleteRemovesTheConnection",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.ConnectionLifecycle_EmitsCreateAndDeleteAuditEvents",
-        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.DeleteConnection_ExistingConnection_ReturnsOk"
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.DeleteConnection_ExistingConnection_ReturnsOk",
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.DeleteConnection_ReferencedByService_ReturnsConflict"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2591,6 +2593,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetIdentityProviders_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.IdentityProviderAdmin_WithNonAdminKey_IsForbidden",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.GlobalAdministration_TenantAdmin_RequiresPlatformAuthority",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetIdentityProviders_ReturnsProviderList",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
@@ -2608,6 +2611,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.TestIdentityProvider_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.IdentityProviderAdmin_WithNonAdminKey_IsForbidden",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.TestIdentityProvider_UnknownProvider_ReturnsUnreachable"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -4205,7 +4209,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_AfterDisable_ReenablesTheProvider"
+        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_AfterDisable_ReenablesTheProvider",
+        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUpdate_ParallelWriters_EachAcceptedWriteLeavesOneRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4559,6 +4564,8 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadButRequiresHumanApprovalAndCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_FindingMetadata_ReturnsStableLinkAndRedactedExecutionPayload",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_LegacyEvidence_PreservesHistoryAndNamesFreshProposalRequirement",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_PublishFailedForAnotherReason_DoesNotAskForFreshProposal",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_PublishFailedOnMovedCatalog_RequiresFreshProposal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_TerminalExecution_AgreesWithMcpResource",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenFound_ReturnsPlanDetail",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenMissing_ReturnsNotFound",
@@ -4837,6 +4844,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithProEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.GlobalAdministration_TenantAdmin_RequiresPlatformAuthority",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificateAdmin_WhenMtlsDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalEnabled_IsNotExperimentalGated",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
@@ -6434,6 +6442,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncAuthorizationTests.SyncCursor_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.SyncCursor_BeforeAnyPull_ReturnsZeroForCurrentClient",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.SyncCursor_ClientIdAtLimit_IsEchoedUnchanged",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.SyncCursor_OversizedClientId_Returns400InsteadOfSharingATruncatedCursor",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
@@ -15173,7 +15183,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers"
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.CreateGroup_WithMembers_MapsRoleToMembers",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.List_WithUnsupportedFilter_ReturnsInvalidFilterWithoutResources"
       ],
       "proof_ledger_surface": "scim-provisioning",
       "maturity": "implemented",
@@ -15278,7 +15289,9 @@
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.ScimUsers_WithProEntitlement_StillReturns402",
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.ScimUsers_WithoutEntitlement_Returns402EvenWithValidBearer",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_ValidBearer_DoesNotPermitStorage",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_WithEqFilterVariants_ReturnsOnlyTheMatch",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_WithUserNameFilter_ReturnsMatch",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.List_WithUnsupportedFilter_ReturnsInvalidFilterWithoutResources",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithWrongBearerToken_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithoutBearerToken_ReturnsUnauthorized"
       ],
@@ -18362,6 +18375,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_WhenResolverThrowsResourceNotFound_ReturnsNotFound",
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_WhenResolverThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.BackgroundImport_CompletionReceipt_PublishesWithoutDiscoveringPhysicalIdentifiers",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.DeleteConnection_WithPublishedLayerAndNoServiceLink_IsRefusedAndKept",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.HonuaServer5407_ApplyEditsAttributeOnlyUpdateOnManagedLayerPreservesGeometry",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable",
@@ -20365,7 +20379,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_AfterDisable_ReenablesTheProvider",
         "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_AgentAdministrator_IsForbidden",
-        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_OfDelete_DoesNotRecreateTheProvider"
+        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_OfDelete_DoesNotRecreateTheProvider",
+        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUndo_StaleOrMissingExpectedRevision_IsRefused"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20687,7 +20702,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ReservedName_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_SameNameInParallel_CreatesOneAndAnswersConflict",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ValidRequest_ReturnsCreated",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_WithControlCharacters_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -20880,7 +20897,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithBlankCertificate_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithMappedCertificate_ReturnsValidResult"
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithMappedCertificate_ReturnsValidResult",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificateAdmin_WhenMtlsDisabled_Returns404ExperimentalDisabled"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
@@ -21054,8 +21072,10 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_AtTheExtentLimits_IsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenInvalidateRequest_ReturnsAccepted",
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400"
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400",
+        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithOutOfRangeExtent_Returns400NamingTheRule"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -21557,6 +21577,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.CreateVersion_WithMissingRequiredParameter_ReturnsValidationFailure",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SavePackage_AtTheNodeLimit_IsStored",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SavePackage_OverASizeLimit_IsRefusedAndNotStored",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SavePackage_WithDottedPackageId_IsCreatedAtItsOwnRoute",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SavePackage_WithNonAsciiNameAndNoId_GetsAValidGeneratedId",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SavePackage_WithUnsafePackageId_IsRefusedAndNotStored",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowExecutionFields_HttpSaveReloadAndPublish_PreserveRuntimeContract",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
       ],
@@ -21607,7 +21632,9 @@
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.AgentAdministrator_CannotPublishWorkflow",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DataWiredWorkflow_ValidatesAndPublishesToScheduleButRejectsSingleJobTargets",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_EmitsWorkflowMetadataReleaseArtifact",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithColonPublicationId_DoesNotWriteAPublicationOrSchedule",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithDuplicatePublicationId_ReturnsConflict",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithUndefinedNumericTarget_DoesNotWriteAPublication",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowExecutionFields_HttpSaveReloadAndPublish_PreserveRuntimeContract",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackagePublishDegradedTests.PublishVersion_NonScheduleTargetsWithoutDurableWorkflowStore_StillPublish",
@@ -21655,7 +21682,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.AgentAdministrator_CannotReactivateWorkflowSchedule",
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DeletingOrDisablingSchedulePublication_RemovesOrDisablesOwningWorkflowDefinition"
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DeletingOrDisablingSchedulePublication_RemovesOrDisablesOwningWorkflowDefinition",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.SetPublicationStatus_WithUndefinedNumericStatus_LeavesTheScheduleArmed"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -21702,6 +21730,13 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SameChangeId_ReturnsIdempotentOutcome",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SecondDeleteFromSameBaseVersion_ReturnsDeleteDeleteConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_UpdateMissingBaseVersion_ReturnsRejected",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_FeaturePayloadWithEscapedBackslashText_IsApplied",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_FeaturePayloadWithNulCharacter_Returns400",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_IdentifierWithNulCharacter_Returns400",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_IdentifierWithUnpairedSurrogateEscape_Returns400",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_IdentifiersAtLimit_AreApplied",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_OversizedClientId_Returns400",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncInputLimitsTests.Push_OversizedIdentifier_Returns400",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
@@ -22710,8 +22745,11 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_ConfiguredFixtureTokensInProduction_ReturnsUnavailable",
+        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_MultipartWithoutBoundary_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_TruncatedMultipartBody_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithDevelopmentRefreshToken_ReturnsBearerRefreshPayload",
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithInvalidRefreshToken_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.TokenRefresh_WithMalformedRequest_ReturnsBadRequestWithoutTokens",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
@@ -28207,7 +28245,8 @@
         "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.AgentAdministrator_CannotChangeIdentityProviders",
         "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.CreateAndUpdateProvider_WithControlCharactersInNameOrInvalidAuthority_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.UpdateProvider_ValidRequest_ReturnsUpdated",
-        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.UpdateProvider_WithQueryOrFragmentInAuthority_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.UpdateProvider_WithQueryOrFragmentInAuthority_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.SettingsRevisionEndpointsTests.OidcUpdate_ParallelWriters_EachAcceptedWriteLeavesOneRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -28251,6 +28290,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_InvalidDescription_ReturnsBadRequestAndKeepsRole",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember"
       ],
