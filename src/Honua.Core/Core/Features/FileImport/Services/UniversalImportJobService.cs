@@ -131,6 +131,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             auditId: request.AuditId,
             proposalId: request.ProposalId) with
         {
+            TenantId = request.TenantId,
             // This service is the in-process runner for long-lived hosts.
             Runner = ImportJobRunners.InProcess,
             InstanceId = _instanceId

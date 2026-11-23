@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -68,6 +69,26 @@ internal static class OperationTenantAuthorization
         return CanAccess(context, owner);
     }
 
+    // The durable job's owner wins; when there is no job, or the job records no owner, the tenant the
+    // progress recorded is used.
+    public static async Task<bool> CanAccessOperationAsync(
+        HttpContext context,
+        IOperationProgress progress,
+        CancellationToken cancellationToken)
+    {
+        var owner = await FindJobOwnerTenantAsync(context.RequestServices, progress.OperationId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? (progress as ITenantOwnedProgress)?.TenantId;
+        return CanAccess(context, owner);
+    }
+
     private static string? FirstNonBlank(string? first, string? second)
-        => !string.IsNullOrWhiteSpace(first) ? first : string.IsNullOrWhiteSpace(second) ? null : second;
+    {
+        if (!string.IsNullOrWhiteSpace(first))
+        {
+            return first;
+        }
+
+        return string.IsNullOrWhiteSpace(second) ? null : second;
+    }
 }

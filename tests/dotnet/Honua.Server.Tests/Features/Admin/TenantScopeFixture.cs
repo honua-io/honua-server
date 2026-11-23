@@ -38,6 +38,8 @@ internal sealed class TenantScopeFixture(
 
     public ITileCacheJobService? TileJobs { get; set; }
 
+    public Action<IServiceCollection>? Configure { get; set; }
+
     public async Task AddUploadAsync(string operationId, OperationAuditInfo audit)
     {
         var progress = UploadProgress.CreateInitial(operationId, "data.geojson", 10) with { Status = OperationStatus.Processing };
@@ -86,6 +88,8 @@ internal sealed class TenantScopeFixture(
         {
             services.AddSingleton(TileJobs);
         }
+
+        Configure?.Invoke(services);
 
         return services
             .AddSingleton(tenant)

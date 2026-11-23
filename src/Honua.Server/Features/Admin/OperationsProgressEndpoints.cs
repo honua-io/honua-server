@@ -23,6 +23,7 @@ using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
@@ -358,7 +359,7 @@ internal static partial class OperationsProgressEndpoints
         var progressReader = new ExecutionJobProgressReader(progressStore, jobStore);
         var progress = await progressReader.ReadAsync(operationId, cancellationToken);
 
-        if (progress == null || !await CanAccessOperationAsync(httpContext, progress, cancellationToken).ConfigureAwait(false))
+        if (progress == null || !await OperationTenantAuthorization.CanAccessOperationAsync(httpContext, progress, cancellationToken).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,

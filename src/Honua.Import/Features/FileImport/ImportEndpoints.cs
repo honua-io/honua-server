@@ -12,9 +12,11 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
@@ -697,6 +699,7 @@ internal static partial class ImportEndpoints
             var importRequest = new ImportRequest
             {
                 OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 CorrelationId = context.TraceIdentifier,
                 AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
                 ProposalId = ReadLineageHeader(context, "X-Honua-Proposal-Id"),
@@ -1552,7 +1555,7 @@ internal static partial class ImportEndpoints
         try
         {
             CancellationToken cancellationToken = context.RequestAborted;
-            var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
+            var jobs = await VisibleImportJobsAsync(context, await jobService.GetActiveJobsAsync(cancellationToken), cancellationToken);
 
             var response = new ActiveImportJobsResponse { Jobs = jobs.ToArray() };
             IResult result = Results.Json(response, ImportJsonContext.Default.ActiveImportJobsResponse);
@@ -1566,6 +1569,30 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, "jobs", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    private static async Task<List<ImportProgress>> VisibleImportJobsAsync(
+        HttpContext context,
+        IReadOnlyList<ImportProgress> jobs,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<ImportProgress>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            if (await OperationTenantAuthorization.CanAccessOperationAsync(context, job, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(job);
+            }
+        }
+
+        return visible;
+    }
+
+    private static async Task<bool> CanAccessImportJobAsync(HttpContext context, IImportJobService jobService, string jobId)
+    {
+        var progress = await jobService.GetProgressAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        return progress is not null
+            && await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, context.RequestAborted).ConfigureAwait(false);
     }
 
     private static async Task HandleGetImportJobStatus(HttpContext context)
@@ -1595,7 +1622,7 @@ internal static partial class ImportEndpoints
             CancellationToken cancellationToken = context.RequestAborted;
             var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
 
-            if (progress == null)
+            if (progress == null || !await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, cancellationToken))
             {
                 await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
                 return;
@@ -1645,7 +1672,8 @@ internal static partial class ImportEndpoints
         try
         {
             CancellationToken cancellationToken = context.RequestAborted;
-            var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
+            var cancelled = await CanAccessImportJobAsync(context, jobService, jobId)
+                && await jobService.CancelJobAsync(jobId, cancellationToken);
 
             if (!cancelled)
             {

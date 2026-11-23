@@ -93,7 +93,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 operationInstanceId: request.OperationInstanceId,
                 correlationId: request.CorrelationId,
                 auditId: request.AuditId,
-                proposalId: request.ProposalId);
+                proposalId: request.ProposalId) with { TenantId = request.TenantId };
             state = new ImportJobState
             {
                 Progress = progress,
