@@ -26,7 +26,11 @@ public sealed partial class StudioPackageLifecycleService
 
         var body = JsonNode.Parse(storedBody.GetRawText())!.AsObject();
         RenameVersionIdentity(body, "mapPackageId", "mapId");
-        RenameVersionIdentity(body, "appPackageId", "appId");
+        if (envelope.Family == StudioPackageFamily.App)
+        {
+            RenameVersionIdentity(body, "appPackageId", "appId");
+        }
+
         if (body["format"] is JsonValue format && format.TryGetValue<string>(out var bodyFormat))
         {
             body["format"] = CanonicalVersionFormat(bodyFormat);

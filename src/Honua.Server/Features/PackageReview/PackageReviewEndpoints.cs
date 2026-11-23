@@ -260,7 +260,6 @@ internal static partial class PackageReviewEndpoints
     internal sealed record MapPublishRequest
     {
         public required Map Map { get; init; }
-        public string? MapId { get; init; }
         public string? WorkspaceId { get; init; }
         public string? Message { get; init; }
         public string? WarningAcknowledgement { get; init; }

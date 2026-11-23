@@ -5192,10 +5192,24 @@
                 "properties": {
                   "map": {
                     "type": "object",
+                    "required": [
+                      "mapId",
+                      "format"
+                    ],
+                    "properties": {
+                      "mapId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "honua_map.v1"
+                        ]
+                      }
+                    },
                     "additionalProperties": true
-                  },
-                  "mapId": {
-                    "type": "string"
                   },
                   "workspaceId": {
                     "type": "string"
@@ -5222,7 +5236,73 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "mapId",
+                    "itemId",
+                    "versionId",
+                    "contentHash",
+                    "map",
+                    "publicationStatus",
+                    "proposalId",
+                    "operationInstanceId",
+                    "correlationId"
+                  ],
+                  "properties": {
+                    "mapId": {
+                      "type": "string"
+                    },
+                    "itemId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "map": {
+                      "type": "object",
+                      "required": [
+                        "mapId",
+                        "format"
+                      ],
+                      "properties": {
+                        "mapId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "format": {
+                          "type": "string",
+                          "enum": [
+                            "honua_map.v1"
+                          ]
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "publicationStatus": {
+                      "type": "string",
+                      "enum": [
+                        "AwaitingApproval"
+                      ]
+                    },
+                    "proposalId": {
+                      "type": "string"
+                    },
+                    "operationInstanceId": {
+                      "type": "string"
+                    },
+                    "auditId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "correlationId": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }

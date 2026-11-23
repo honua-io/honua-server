@@ -23,6 +23,11 @@ public sealed class MapAppStudioDraftVocabularyMigrationTests(PostgresFixture fi
             await ApplyMigrationAsync(schema);
             (await ScalarAsync(schema, HistoryFingerprint)).Should().Be(history);
             (await ScalarAsync(schema, """
+                SELECT count(*)::text FROM "{schema}".studio_package_drafts
+                WHERE validation ->> 'status' = 'not-validated'
+                    AND validation = envelope -> 'validation'
+                """)).Should().Be("2");
+            (await ScalarAsync(schema, """
                 SELECT string_agg(family || ':' || generation::text || ':' ||
                     (envelope #>> '{body,format}') || ':' || (envelope #>> '{body,mapId}') || ':' ||
                     coalesce(envelope #>> '{body,appId}', ''), ',' ORDER BY family)
@@ -68,9 +73,9 @@ public sealed class MapAppStudioDraftVocabularyMigrationTests(PostgresFixture fi
     [InlineData("{}", "7:{}")]
     [InlineData("{\"body\": null}", "7:{\"body\": null}")]
     [InlineData("{\"body\": []}", "7:{\"body\": []}")]
-    [InlineData("{\"body\": null, \"format\": \"honua_map_package.v1\"}", "8:{\"body\": null, \"format\": \"honua_map.v1\"}")]
+    [InlineData("{\"body\": null, \"format\": \"honua_map_package.v1\"}", "8:{\"body\": null, \"format\": \"honua_map.v1\", \"validation\": {\"status\": \"not-validated\"}}")]
     [Trait("Category", "Integration")]
-    public async Task Migration_IncompleteDraftBody_KeepsDraftAndRenamesOnlyEnvelopeFormat(string envelope, string expected)
+    public async Task Migration_IncompleteDraftBody_KeepsDraftAndRenamesEnvelopeFormat(string envelope, string expected)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("StudioDraftIncompleteBody");
         try
@@ -118,9 +123,10 @@ public sealed class MapAppStudioDraftVocabularyMigrationTests(PostgresFixture fi
         """;
 
     private const string SeedContent = """
-        CREATE TABLE "{schema}".studio_package_drafts (draft_id text PRIMARY KEY, family text, generation bigint, envelope jsonb);
+        CREATE TABLE "{schema}".studio_package_drafts (draft_id text PRIMARY KEY, family text, generation bigint,
+            envelope jsonb, validation jsonb NOT NULL DEFAULT '{"status":"invalid"}');
         CREATE TABLE "{schema}".studio_content_versions (content_hash text, content_hash_input bytea, envelope jsonb);
-        INSERT INTO "{schema}".studio_package_drafts VALUES
+        INSERT INTO "{schema}".studio_package_drafts (draft_id, family, generation, envelope) VALUES
             ('map-draft', 'map', 7, '{"family":"map","format":"honua_map_package.v1","body":{"mapPackageId":"map-stable","format":"honua_map_package.v1","mapSpec":{"mapPackageId":"opaque-user-value"}}}'),
             ('app-draft', 'app', 7, '{"family":"app","format":"honua_app_package.v1","body":{"appPackageId":"app-stable","mapPackageId":"map-stable","format":"honua_app_package.v1"}}');
         INSERT INTO "{schema}".studio_content_versions VALUES
