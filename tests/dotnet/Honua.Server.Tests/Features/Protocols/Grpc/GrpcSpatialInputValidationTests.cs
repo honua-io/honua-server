@@ -160,7 +160,7 @@ public sealed class GrpcSpatialInputValidationTests
 
         var batch = GrpcConversionHelpers.ToFeatureEditBatch(request);
 
-        var geometry = new WKBReader().Read(batch.Adds[0].Geometry);
+        var geometry = new WKBReader().Read(batch.Creates[0].Geometry!);
         geometry.NumPoints.Should().Be(2);
         geometry.Coordinates[1].Should().Be(new Coordinate(11, 21));
     }
