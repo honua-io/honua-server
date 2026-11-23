@@ -284,7 +284,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
         try
         {
-            var progress = WorkflowProgress.CreateForPendingRun(runId, definition.WorkflowId, stepStates.Length, now);
+            var progress = WorkflowProgress.CreateForPendingRun(runId, definition.WorkflowId, stepStates.Length, now) with { TenantId = runSecurityContext.TenantId };
             await _progressStore.SetProgressAsync(runId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1290,6 +1290,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             var progress = new WorkflowProgress
             {
                 OperationId = run.RunId,
+                TenantId = run.Audit.SubmitterSecurityContext?.TenantId,
                 WorkflowId = run.WorkflowId,
                 RunStatus = cancelCleanupInProgress ? WorkflowRunStatus.Running : run.Status,
                 StepsCompleted = completed,

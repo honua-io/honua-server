@@ -823,18 +823,18 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
 
             using (var info = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}?f=json"))
             {
-                info.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+                info.RootElement.GetProperty("name").GetString().Should().Be("Aliased image");
             }
 
             // The numeric route addresses storage layers, so it binds the same way.
             using (var numericInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{TestLayerId}/ImageServer?f=json"))
             {
-                numericInfo.RootElement.GetProperty("name").GetString().Should().Be("aliased-image-publication");
+                numericInfo.RootElement.GetProperty("name").GetString().Should().Be("Aliased image");
             }
 
             using (var collidingInfo = await GetGeoServicesJsonAsync(fixture, $"/rest/services/{collidingServiceId}/ImageServer?f=json"))
             {
-                collidingInfo.RootElement.GetProperty("name").GetString().Should().Be("colliding-image-publication");
+                collidingInfo.RootElement.GetProperty("name").GetString().Should().Be("Colliding image");
             }
 
             using (var identify = await GetGeoServicesJsonAsync(
@@ -861,7 +861,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             using (var legend = await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/legend?f=json"))
             {
                 legend.RootElement.GetProperty("layers")[0].GetProperty("layerName").GetString()
-                    .Should().Be("aliased-image-publication");
+                    .Should().Be("Aliased image");
             }
 
             using (await GetGeoServicesJsonAsync(fixture, $"{serviceBase}/keyProperties?f=json"))
@@ -2556,9 +2556,11 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             response.Should().NotBeNull();
             response!.Results.Should().HaveCount(1);
             var result = response.Results[0];
-            result.Cut.Should().BeApproximately(400d, 1e-6);
-            result.Fill.Should().BeApproximately(-400d, 1e-6);
-            result.Area.Should().BeApproximately(400d, 1e-6);
+            // Web Mercator pixel area is scaled to ground area at the DEM centre latitude,
+            // a few parts per billion below the nominal 100 unit² near the equator.
+            result.Cut.Should().BeApproximately(400d, 1e-4);
+            result.Fill.Should().BeApproximately(-400d, 1e-4);
+            result.Area.Should().BeApproximately(400d, 1e-4);
             result.MinZ.Should().BeApproximately(8d, 1e-6);
             result.MaxZ.Should().BeApproximately(12d, 1e-6);
             result.MeanZ.Should().BeApproximately(10d, 1e-6);

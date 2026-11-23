@@ -96,7 +96,9 @@ internal sealed partial class PublicExportRevocationHostedService(
 
         try
         {
-            await revocation.OnAdministrativeAccessChangeAsync(null, null, stoppingToken).ConfigureAwait(false);
+            // An export whose unpublish check failed was logged by the service and waits for the
+            // next scheduled sweep; only a failure of the whole sweep retries on the next tick.
+            _ = await revocation.SweepEligibilityAsync(stoppingToken).ConfigureAwait(false);
             _lastEligibilitySweepAt = _timeProvider.GetUtcNow();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -105,7 +107,7 @@ internal sealed partial class PublicExportRevocationHostedService(
         }
     }
 
-    [LoggerMessage(EventId = 10341, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 10344, Level = LogLevel.Warning,
         Message = "Public export revocation recovery sweep failed; pending revocations will retry on the next tick.")]
     private static partial void LogRevocationSweepFailed(ILogger logger, Exception exception);
 

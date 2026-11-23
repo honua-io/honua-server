@@ -10,6 +10,7 @@ using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -65,7 +66,7 @@ internal sealed partial class HonuaFeatureService
             ServiceId = request.ServiceId,
             LayerId = request.LayerId,
             Name = LayerName(layer),
-            Description = resource.Metadata.Description ?? string.Empty,
+            Description = LayerDescription(layer),
             GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType),
             SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(layer.SpatialReference),
             ObjectIdField = GrpcMetadataProjector.Visible(layer.ObjectIdFieldName, visible),
@@ -133,7 +134,7 @@ internal sealed partial class HonuaFeatureService
             {
                 LayerId = layer.Publication.LayerIndex!.Value,
                 Name = LayerName(layer),
-                Description = layer.Resource.Metadata.Description ?? string.Empty,
+                Description = LayerDescription(layer),
                 GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType)
             });
         }
@@ -193,7 +194,10 @@ internal sealed partial class HonuaFeatureService
     }
 
     private static string LayerName(GrpcLayerContext layer)
-        => layer.Publication.TitleOverride ?? layer.Resource.Metadata.Title ?? layer.Resource.Metadata.Name;
+        => DescriptiveMetadataResolver.DatasetTitle(layer.Resource, layer.Publication) ?? layer.Resource.Metadata.Name;
+
+    private static string LayerDescription(GrpcLayerContext layer)
+        => DescriptiveMetadataResolver.DatasetDescription(layer.Resource, layer.Publication) ?? string.Empty;
 
     private static async Task<MetadataV2Field[]> VisibleMetadataFieldsAsync(GrpcLayerContext layer, ServerCallContext context)
     {

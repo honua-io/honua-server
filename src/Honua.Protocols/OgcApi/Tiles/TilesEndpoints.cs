@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -1699,7 +1700,7 @@ internal static partial class TilesEndpoints
 
         var publicLayerId = publication.LayerIndex ?? storageLayerId.Value;
         var collectionId = ResolveCollectionId(publication, resource);
-        var displayName = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name;
+        var displayName = DescriptiveMetadataResolver.DatasetTitle(resource, publication);
         if (string.IsNullOrWhiteSpace(displayName))
         {
             displayName = $"Layer {publicLayerId}";
@@ -1710,7 +1711,7 @@ internal static partial class TilesEndpoints
             publicLayerId,
             storageLayerId.Value,
             displayName,
-            resource.Metadata.Description,
+            DescriptiveMetadataResolver.DatasetDescription(resource, publication),
             resource,
             publication,
             service,

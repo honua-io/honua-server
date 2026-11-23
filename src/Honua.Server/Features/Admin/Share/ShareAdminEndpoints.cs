@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
 using Honua.Infrastructure.Authentication;
@@ -929,6 +930,7 @@ internal static class ShareAdminEndpoints
             Audit = new OperationAuditInfo
             {
                 RequestedBy = context.User.Identity?.Name,
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 CorrelationId = context.TraceIdentifier,
                 IdempotencyKey = run.RunId
             },

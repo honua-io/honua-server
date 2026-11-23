@@ -22,30 +22,29 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
 
     internal const string AuthorizationEnded = "authorization-ended";
 
-    // Coordinate revalidation failure with normal endpoint completion.
-    private const int StreamRunning = 0;
-    private const int StreamEnded = 1;
-    private const int StreamCompleted = 2;
-
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
-        if (context.User.Identity?.IsAuthenticated != true)
+        var anonymous = context.User.Identity?.IsAuthenticated != true;
+        if (anonymous && context.GetEndpoint()?.Metadata.GetMetadata<AllowAnonymousLiveStreamMetadata>() is null)
         {
             return Results.Unauthorized();
         }
 
         // Authorization can synthesize a ticket named "context.User" for a
-        // principal hydrated by credential middleware. The framework-owned actor
-        // stamp retains the actual handler name in that case.
+        // principal hydrated by credential middleware. Preserve its admission
+        // handler separately from the canonical actor scheme.
         var stampedScheme = CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim);
-        var admittedScheme = stampedScheme
-            ?? context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
-            ?? context.User.Identity.AuthenticationType;
+        var ticketScheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme;
         var schemes = context.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
         // Canonical actor bindings normalize names, whereas the handler registry is
         // case-sensitive. Resolve the registered name and reject ambiguous matches.
         var registered = (await schemes.GetAllSchemesAsync().ConfigureAwait(false)).ToArray();
+        // A portal ticket may contain an API-key actor. Replay the transport handler
+        // that admitted it; the actor stamp is only a fallback for synthetic tickets.
+        var admittedScheme = context.Features.Get<LiveStreamAdmissionFeature>()?.AuthenticationScheme
+            ?? (registered.Any(candidate => string.Equals(candidate.Name, ticketScheme, StringComparison.OrdinalIgnoreCase))
+            ? ticketScheme : stampedScheme ?? context.User.Identity?.AuthenticationType);
         var matches = registered
             .Where(candidate => string.Equals(candidate.Name, admittedScheme, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (matches.Length == 0 && stampedScheme is null)
@@ -53,61 +52,69 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             // Tenantless principals may not receive a request-binding stamp. The
             // identity's handler type remains available behind a synthetic ticket.
             matches = registered.Where(candidate => string.Equals(candidate.Name,
-                context.User.Identity.AuthenticationType, StringComparison.OrdinalIgnoreCase)).ToArray();
+                context.User.Identity?.AuthenticationType, StringComparison.OrdinalIgnoreCase)).ToArray();
         }
-        if (matches.Length != 1)
+        if (!anonymous && matches.Length != 1)
         {
             return Results.Unauthorized();
         }
-        var scheme = matches[0].Name;
+        var scheme = anonymous ? null : matches[0].Name;
 
         var originalAbort = context.RequestAborted;
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(originalAbort);
-        using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(originalAbort);
         var socketFeature = context.Features.Get<IHttpWebSocketFeature>();
         var guardedFeature = socketFeature is null ? null : new RetainedWebSocketFeature(socketFeature);
+        using var session = new LiveStreamAuthorizationSession(context, scheme) { GuardedFeature = guardedFeature };
         if (guardedFeature is not null)
         {
             context.Features.Set<IHttpWebSocketFeature>(guardedFeature);
         }
 
-        context.RequestAborted = lifetime.Token;
-        var outcome = StreamRunning;
-        var monitor = MonitorAsync();
+        context.RequestAborted = session.Lifetime.Token;
+        var previousPolicies = context.Features.Get<LiveStreamPolicyRefreshFeature>();
+        context.Features.Set(session.Policies);
+        await using var registration = session.Register(context.RequestServices.GetService<LiveStreamSecurityRegistry>());
+        var monitor = session.MonitorAsync();
         try
         {
+            await session.AdmitAsync(registration).ConfigureAwait(false);
+            if (session.Ended)
+            {
+                return Results.Unauthorized();
+            }
             var completed = await next(invocation).ConfigureAwait(false);
-            // Record completion before stopping the monitor, so a late failed
-            // check cannot change an endpoint outcome that already completed.
-            Interlocked.CompareExchange(ref outcome, StreamCompleted, StreamRunning);
+            session.MarkCompleted();
             // SSE handlers can swallow cancellation during the first write and
             // return an empty result. Preserve typed endpoint denials, but turn
             // that empty completion into an HTTP denial if streaming never began.
-            if (completed is EmptyHttpResult && Volatile.Read(ref outcome) == StreamEnded
-                && !context.Response.HasStarted)
+            if (completed is EmptyHttpResult && session.Ended && !context.Response.HasStarted)
             {
                 return Results.Unauthorized();
             }
             return completed;
         }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (session.Lifetime.IsCancellationRequested)
         {
             // A stream that lost authorization before emitting anything carries the
             // outcome in its status code; an unstarted body has no frame to carry it.
-            return Volatile.Read(ref outcome) == StreamEnded && !context.Response.HasStarted
+            return session.Ended && !context.Response.HasStarted
                 ? Results.Unauthorized()
                 : Results.Empty;
         }
         finally
         {
-            await monitorStop.CancelAsync().ConfigureAwait(false);
+            await session.MonitorStop.CancelAsync().ConfigureAwait(false);
             await monitor.ConfigureAwait(false);
+            if (registration is not null)
+            {
+                await registration.DisposeAsync().ConfigureAwait(false);
+            }
+            context.Features.Set(previousPolicies);
             context.RequestAborted = originalAbort;
             context.Features.Set(socketFeature);
             // An unstarted response still belongs to the endpoint's typed result.
             // Writing a frame there would open a 200 stream body underneath a pending
             // denial, so only a response already streaming receives the terminal frame.
-            if (Volatile.Read(ref outcome) == StreamEnded && !originalAbort.IsCancellationRequested
+            if (session.Ended && !originalAbort.IsCancellationRequested
                 && guardedFeature?.Socket is null && context.Response.HasStarted)
             {
                 // The endpoint has stopped writing, so the terminal frame cannot split
@@ -127,57 +134,6 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             }
 
             guardedFeature?.Socket?.Release();
-        }
-
-        async Task MonitorAsync()
-        {
-            try
-            {
-                // A resource check reads storage, so it extends the deadline; stopping the stream still cancels it.
-                var checkBudget = context.GetEndpoint()?.Metadata.GetMetadata<ILiveStreamResourceAuthorization>() is null
-                    ? RevalidationInterval
-                    : RevalidationInterval + ResourceRevalidationBudget;
-                using var timer = new PeriodicTimer(RevalidationInterval);
-                while (await timer.WaitForNextTickAsync(monitorStop.Token).ConfigureAwait(false))
-                {
-                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(monitorStop.Token);
-                    deadline.CancelAfter(checkBudget);
-                    var authorized = await RevalidateAsync(context, scheme, deadline.Token).ConfigureAwait(false);
-                    // Endpoint completion cancels an in-flight check too. That is
-                    // normal shutdown, not a reason to append an SSE frame to a
-                    // pending typed HTTP denial before its IResult executes.
-                    monitorStop.Token.ThrowIfCancellationRequested();
-                    if (authorized)
-                    {
-                        continue;
-                    }
-
-                    if (Interlocked.CompareExchange(ref outcome, StreamEnded, StreamRunning) != StreamRunning)
-                    {
-                        // The endpoint completed while this check was in flight. A
-                        // revalidation deadline that expires in that window fails
-                        // closed, which must not retract a result already produced.
-                        return;
-                    }
-
-                    if (guardedFeature?.Socket is { } socket)
-                    {
-                        await socket.EndAuthorizationAsync().ConfigureAwait(false);
-                        // Cancelling a receive that is still pending aborts the managed socket, and
-                        // Kestrel's teardown can then drop the close frame before it leaves: the
-                        // client saw 1006 instead of 1008. Let the endpoint
-                        // observe the client's close reply first, bounded by one interval.
-                        await socket.WaitForCloseReplyAsync(monitorStop.Token).ConfigureAwait(false);
-                    }
-
-                    await lifetime.CancelAsync().ConfigureAwait(false);
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (monitorStop.IsCancellationRequested)
-            {
-                // Endpoint completion or client disconnect.
-            }
         }
     }
 
@@ -256,7 +212,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             .Where(claim => !CanonicalSecurityActor.IsRequestBindingProjection(claim))
             .Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
 
-    private sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
+    internal sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
     {
         public bool IsWebSocketRequest => inner.IsWebSocketRequest;
         internal RetainedWebSocket? Socket { get; private set; }

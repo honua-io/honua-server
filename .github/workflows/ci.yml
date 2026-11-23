@@ -540,9 +540,9 @@ jobs:
               echo "postgres_matrix=${POSTGRES_BASELINE}" >> "$GITHUB_OUTPUT"
             fi
             echo "full_ci=${FULL_CI}" >> "$GITHUB_OUTPUT"
-            # The Core package proof packs src and checks it against the server.
-            # Docs, workflows, CI scripts and tests cannot change that package.
-            # Unknown paths still run the job. Full runs always run it.
+            # The Core package proof runs only when a changed file is a Core pack
+            # input (trailing_selection.py CORE_PACKAGE_INPUTS). An empty path
+            # list and full runs always run it.
             if [ "${FULL_CI}" = "true" ]; then
               CORE_PACKAGE=true
             else

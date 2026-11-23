@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Authentication;
@@ -235,7 +236,8 @@ internal static partial class RasterImportEndpoints
             if (progressStore != null)
             {
                 var progressLogger = context.RequestServices.GetRequiredService<ILogger<RasterImportEndpointsLog>>();
-                progressReporter = new Progress<RasterImportProgress>(p => _ = ReportProgressAsync(p));
+                var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+                progressReporter = new Progress<RasterImportProgress>(p => _ = ReportProgressAsync(p with { TenantId = tenantId }));
 
                 async Task ReportProgressAsync(RasterImportProgress p)
                 {

@@ -21,6 +21,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 {
     private readonly string _testBasePath;
     private readonly LocalFileStorage _storage;
+    private readonly IUploadProgressStore _progressStore;
     private bool _disposed;
 
     public LocalFileStorageTests()
@@ -33,8 +34,8 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             BasePath = _testBasePath,
             CreateDirectoryIfNotExists = true
         });
-        var progressStore = Substitute.For<IUploadProgressStore>();
-        _storage = new LocalFileStorage(options, NullLogger<LocalFileStorage>.Instance, progressStore);
+        _progressStore = Substitute.For<IUploadProgressStore>();
+        _storage = new LocalFileStorage(options, NullLogger<LocalFileStorage>.Instance, _progressStore);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -77,6 +78,33 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         result.File.SizeBytes.Should().Be(content.Length);
         result.File.ContentHash.Should().NotBeNullOrEmpty();
         result.File.Provider.Should().Be(CloudStorageProvider.Local);
+    }
+
+    [UnitTest]
+    public async Task UploadAsync_WithTenant_PreservesOwnerInStoredProgress()
+    {
+        var recorded = new System.Collections.Concurrent.ConcurrentQueue<UploadProgress>();
+        _progressStore.SetProgressAsync(Arg.Any<string>(), Arg.Any<UploadProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                recorded.Enqueue(call.ArgAt<UploadProgress>(1));
+                return Task.CompletedTask;
+            });
+        using var content = new MemoryStream("tenant upload"u8.ToArray());
+        var result = await _storage.UploadAsync(new FileUploadRequest
+        {
+            TenantId = "tenant-a",
+            Content = content,
+            FileName = "tenant.txt",
+            ContentType = "text/plain",
+            SizeBytes = content.Length,
+            Progress = Substitute.For<IProgress<UploadProgress>>()
+        });
+
+        result.Success.Should().BeTrue();
+        recorded.Should().NotBeEmpty();
+        recorded.Should().Contain(progress => progress.Status == OperationStatus.Completed);
+        recorded.Should().OnlyContain(progress => progress.TenantId == "tenant-a");
     }
 
     [UnitTest]
