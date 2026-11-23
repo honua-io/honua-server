@@ -217,6 +217,9 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     private async Task<long> WriteReplayPageAsync(
         IReadOnlyList<RealtimeEvent> page, long position, CancellationToken cancellationToken)
     {
+        // Recovery reads can race a policy change just as live dispatch can.
+        // Refresh after fetching the page and before publishing any of its events.
+        await _dispatcher.RefreshReplaySecurityAsync(cancellationToken).ConfigureAwait(false);
         foreach (var realtimeEvent in page)
         {
             if (Matches(realtimeEvent))
