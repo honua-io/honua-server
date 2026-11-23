@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Protocols.GeoServices.Sharing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -286,6 +287,39 @@ public sealed class SharingRestReadTests : IClassFixture<SharingRestReadTests.Re
     {
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync("/sharing/rest/search?f=json&q=type:Feature");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadSearchAsync(response);
+        payload.Results.Should().NotBeEmpty();
+        payload.Results.Should().OnlyContain(r => r.Type == "Feature Service");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/search")]
+    public async Task Search_FormQueryNestedPastLimit_IsRefused()
+    {
+        var depth = PortalSearchQueryLimits.MaxDepth + 1;
+        using var client = _fixture.CreateClient();
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["q"] = new string('(', depth) + "type:Feature" + new string(')', depth),
+        });
+        using var response = await client.PostAsync("/sharing/rest/search", form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/search")]
+    public async Task Search_QueryAtNestingLimit_StillFilters()
+    {
+        var depth = PortalSearchQueryLimits.MaxDepth;
+        var query = Uri.EscapeDataString(new string('(', depth) + "type:Feature" + new string(')', depth));
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync("/sharing/rest/search?f=json&q=" + query);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadSearchAsync(response);

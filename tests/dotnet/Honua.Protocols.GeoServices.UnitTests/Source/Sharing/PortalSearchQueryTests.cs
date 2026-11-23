@@ -79,6 +79,46 @@ public sealed class PortalSearchQueryTests
         matched.Select(item => item.Id).Should().Equal("roads");
     }
 
+    [UnitTest]
+    public void IsAdmissibleSearchQuery_BoundsLengthAndParenthesisDepth()
+    {
+        var limit = PortalSearchQueryLimits.MaxDepth;
+
+        PortalSearchQueryLimits.IsAdmissible(Nested(limit)).Should().BeTrue();
+        PortalSearchQueryLimits.IsAdmissible(Nested(limit + 1)).Should().BeFalse();
+        PortalSearchQueryLimits.IsAdmissible(new string('(', limit + 1)).Should().BeFalse();
+        PortalSearchQueryLimits.IsAdmissible(new string('a', PortalSearchQueryLimits.MaxLength)).Should().BeTrue();
+        PortalSearchQueryLimits.IsAdmissible(new string('a', PortalSearchQueryLimits.MaxLength + 1)).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsAdmissibleSearchQuery_IgnoresParenthesesInsideQuotes()
+    {
+        var quoted = "title:\"" + new string('(', PortalSearchQueryLimits.MaxDepth + 1) + "\"";
+
+        PortalSearchQueryLimits.IsAdmissible(quoted).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ApplyQuery_NestingPastLimit_IsRefusedBeforeEvaluation()
+    {
+        var apply = () => SharingRestEndpoints.ApplyQuery(Items, Nested(1000), []);
+
+        apply.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [UnitTest]
+    public void ApplyQuery_NestingAtLimit_StillMatches()
+    {
+        var matched = SharingRestEndpoints.ApplyQuery(
+            Items, Nested(PortalSearchQueryLimits.MaxDepth, "type:\"Map Service\""), []);
+
+        matched.Select(item => item.Id).Should().Equal("parcels");
+    }
+
+    private static string Nested(int depth, string leaf = "roads")
+        => new string('(', depth) + leaf + new string(')', depth);
+
     private static PortalItem Item(string id, string type, string title) => new()
     {
         Id = id,
