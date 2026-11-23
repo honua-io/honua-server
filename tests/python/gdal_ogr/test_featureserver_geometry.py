@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from .conftest import EvidenceCollector
@@ -25,6 +27,11 @@ class TestFeatureServerGeometry:
         assert set(by_name) == set(SEEDED_POINTS)
         max_delta = 0.0
         for name, expected in SEEDED_POINTS.items():
-            assert by_name[name] == pytest.approx(expected, rel=0, abs=1e-6), name
-            max_delta = max(max_delta, *(abs(actual - target) for actual, target in zip(by_name[name], expected)))
-        evidence_collector.record_geometry_delta("test_seeded_coordinates_round_trip", "featureserver", max_delta)
+            coordinates = by_name[name]
+            assert len(coordinates) == len(expected) and all(map(math.isfinite, coordinates)), name
+            max_delta = max(max_delta, *(abs(actual - target) for actual, target in zip(coordinates, expected, strict=True)))
+
+        test_name = "test_seeded_coordinates_round_trip"
+        evidence_collector.record_geometry_delta(test_name, "featureserver", max_delta)
+        assert max_delta <= 1e-6, f"Maximum absolute coordinate deviation: {max_delta}"
+        evidence_collector.record(test_name, "featureserver", "geometry", "pass")

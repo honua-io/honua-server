@@ -75,8 +75,11 @@ def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
 
     collector = EvidenceCollector()
     collector.record_geometry_delta("round_trip", "featureserver", 2e-8)
-    collector.record_geometry_delta("round_trip_second", "featureserver", 4e-8)
+    collector.record("round_trip", "featureserver", "geometry", "pass")
+    collector.record_geometry_delta("round_trip_second", "featureserver", 2e-6)
+    collector.record("round_trip_second", "featureserver", "geometry", "fail")
     collector.record_geometry_delta("other_protocol", "wfs", 1.0)
+    collector.record("other_protocol", "wfs", "geometry", "pass")
     report = tmp_path / "report.json"
     collector.write_report(report)
     output = tmp_path / "envelopes"
@@ -86,4 +89,5 @@ def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
     assert convert.main() == 0
     envelope = json.loads((output / "measurement-cli-gdal-featureserver.cert.json").read_text())
     geometry = next(row for row in envelope["results"] if row["test_case_id"] == "CERT-GEOM-01")
-    assert geometry["measured_delta"] == 4e-8
+    assert geometry["status"] == "fail"
+    assert geometry["measured_delta"] == 2e-6

@@ -67,7 +67,6 @@ class _EvidenceRecord:
     category: str
     status: str
     detail: str = ""
-    measured_delta: float | None = None
 
 
 class EvidenceCollector:
@@ -76,6 +75,7 @@ class EvidenceCollector:
     def __init__(self) -> None:
         self.gdal_version: str = ""
         self._records: list[_EvidenceRecord] = []
+        self._geometry_deltas: dict[tuple[str, str], float] = {}
 
     def record(
         self,
@@ -96,7 +96,7 @@ class EvidenceCollector:
         )
 
     def record_geometry_delta(self, test_name: str, protocol: str, delta: float) -> None:
-        self._records.append(_EvidenceRecord(test_name, protocol, "geometry", "pass", measured_delta=delta))
+        self._geometry_deltas[(test_name, protocol)] = delta
 
     def write_report(self, path: Path) -> None:
         protocols: dict[str, dict[str, str]] = {}
@@ -121,7 +121,7 @@ class EvidenceCollector:
                     "category": r.category,
                     "status": r.status,
                     "detail": r.detail,
-                    "measured_delta": r.measured_delta,
+                    "measured_delta": self._geometry_deltas.get((r.test_name, r.protocol)) if r.category == "geometry" else None,
                 }
                 for r in self._records
             ],
