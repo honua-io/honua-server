@@ -234,7 +234,7 @@ internal static partial class SceneWorkflowEndpoints
         {
             SceneWorkflowLog.RequestFailed(logger, "archive", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
-                SceneOutputUnwritableException.OperatorMessage);
+                ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -372,7 +372,7 @@ internal static partial class SceneWorkflowEndpoints
         {
             SceneWorkflowLog.RequestFailed(logger, "model", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
-                SceneOutputUnwritableException.OperatorMessage);
+                ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
