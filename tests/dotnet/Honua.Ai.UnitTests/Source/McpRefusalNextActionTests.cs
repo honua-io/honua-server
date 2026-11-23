@@ -42,6 +42,17 @@ public sealed class McpRefusalNextActionTests
     }
 
     [UnitTest]
+    public void ErrorResult_ToolCallFailure_CarriesNextActionInStructuredContent()
+    {
+        var result = Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ErrorResult(
+            new GeoprocessingApprovalRequiredException("policy/publish", proposalId: "prop-9"));
+
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("nextAction").GetString()
+            .Should().Contain("prop-9", "a tools/call refusal must carry the same next step as the JSON-RPC error");
+    }
+
+    [UnitTest]
     public void Map_ApprovalWithProposal_NamesTheProposalAndItsResource()
     {
         var data = new McpErrorData
