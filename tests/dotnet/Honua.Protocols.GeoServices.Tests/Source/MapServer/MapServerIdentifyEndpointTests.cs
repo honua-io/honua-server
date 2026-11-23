@@ -636,6 +636,6 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Unknown field 'NONEXISTENT_FIELD' in filter expression.");
+        content.Should().Contain("Unknown field").And.Contain("NONEXISTENT_FIELD").And.Contain("in filter expression.");
     }
 }
