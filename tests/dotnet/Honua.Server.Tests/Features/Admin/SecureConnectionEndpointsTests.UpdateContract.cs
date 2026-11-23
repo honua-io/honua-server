@@ -49,6 +49,47 @@ public partial class SecureConnectionEndpointsTests
         }
     }
 
+    [Theory]
+    [Trait("Tier", "Integration")]
+    [Trait("Category", "Integration")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}")]
+    [InlineData("name", "renamed")]
+    [InlineData("bucket", "other-bucket")]
+    [InlineData("prefix", "other/")]
+    [InlineData("prefix", "")]
+    [InlineData("roleArn", " ")]
+    [InlineData("region", "us-west-2")]
+    [InlineData("roleArn", "arn:aws:iam::123456789012:role/other")]
+    [InlineData("externalId", "other-external-id")]
+    public async Task UpdateDatabaseConnection_UnchangeableField_ReturnsBadRequest(string field, string value)
+    {
+        await InitializeDefaultApplicationAsync();
+        var created = await _registry.CreateConnectionAsync(SecretReferenceConnection($"immutable-{Guid.NewGuid():N}"));
+
+        using var response = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/connections/{created.ConnectionId}", new Dictionary<string, string> { [field] = value });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains($"{field} cannot change on a database connection", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var stored = await _registry.GetConnectionAsync(created.ConnectionId);
+        Assert.Equal(created.Name, stored!.Name);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/connections/{id}")]
+    public async Task UpdateDatabaseConnection_UnchangedName_Succeeds()
+    {
+        await InitializeDefaultApplicationAsync();
+        var created = await _registry.CreateConnectionAsync(SecretReferenceConnection($"same-name-{Guid.NewGuid():N}"));
+
+        using var response = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/connections/{created.ConnectionId}", new { name = created.Name, description = "kept name" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await _registry.GetConnectionAsync(created.ConnectionId);
+        Assert.Equal("kept name", stored!.Description);
+    }
+
     private static DataConnection SecretReferenceConnection(string name) => DataConnection.CreateWithSecretReference(
         name: name,
         host: "localhost",

@@ -744,6 +744,11 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
             }
 
+            if (FindUnchangeableDatabaseField(request, existing) is { } unchangeable)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"{unchangeable} cannot change on a database connection."));
+            }
+
             var host = request.Host ?? existing.Host;
             var port = request.Port ?? existing.Port;
             var databaseName = request.DatabaseName ?? existing.DatabaseName;
@@ -925,6 +930,22 @@ internal static partial class SecureConnectionEndpoints
                 detail: "An internal error occurred while updating the secure connection.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    // The update request also carries object-storage fields; a database connection cannot take them or a new name.
+    private static string? FindUnchangeableDatabaseField(UpdateSecureConnectionRequest request, DataConnection existing)
+    {
+        if (request.Name is not null && !string.Equals(request.Name, existing.Name, StringComparison.Ordinal))
+        {
+            return "name";
+        }
+
+        (string Field, string? Value)[] objectStorageFields =
+        [
+            ("bucket", request.Bucket), ("prefix", request.Prefix), ("region", request.Region),
+            ("roleArn", request.RoleArn), ("externalId", request.ExternalId),
+        ];
+        return objectStorageFields.FirstOrDefault(field => field.Value is not null).Field;
     }
 
     // Published layers name their connection in the metadata storage bindings; services.connection_id
