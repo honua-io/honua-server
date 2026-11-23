@@ -16,7 +16,7 @@ public sealed class PortalOAuthClientBindingTests
     private const string OtherAllowedRedirect = "https://app.example.com/oauth/other";
 
     [UnitTest]
-    public async Task UnregisteredLabel_KeepsTheDeploymentAllowList()
+    public async Task CheckAsync_UnregisteredLabel_KeepsTheDeploymentAllowList()
     {
         var store = new InMemoryOAuthClientStore();
 
@@ -26,7 +26,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task RegisteredClient_IsHeldToItsOwnRedirectUris()
+    public async Task CheckAsync_RegisteredClient_IsHeldToItsOwnRedirectUris()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: ["authorization_code"]);
@@ -38,7 +38,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task RegisteredClient_WithoutTheCodeGrant_IsRefused()
+    public async Task CheckAsync_RegisteredClientWithoutTheCodeGrant_IsRefused()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: ["client_credentials"]);
@@ -49,7 +49,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task GrantRefusal_IsOnlyReportedForTheClientsOwnRedirect()
+    public async Task CheckAsync_GrantRefusal_IsOnlyReportedForTheClientsOwnRedirect()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: ["client_credentials"]);
@@ -61,7 +61,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task RefreshOnlyClient_CanRefreshButNotStartTheCodeFlow()
+    public async Task CheckAsync_RefreshOnlyClient_CanRefreshButNotStartTheCodeFlow()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: ["refresh_token"]);
@@ -77,7 +77,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task DeletedClient_DoesNotFallBackToALabel()
+    public async Task CheckAsync_DeletedClient_DoesNotFallBackToALabel()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: []);
@@ -89,7 +89,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public async Task ExpiredClient_IsRefused()
+    public async Task CheckAsync_ExpiredClient_IsRefused()
     {
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: [], expiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
@@ -101,7 +101,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
-    public void RegistryShape_MatchesMintedIdsOnly()
+    public void HasRegistryShape_CandidateIds_MatchesMintedIdsOnly()
     {
         Assert.True(OAuthClientIdentifiers.HasRegistryShape("client_" + new string('A', 24)));
         Assert.False(OAuthClientIdentifiers.HasRegistryShape("client_short"));

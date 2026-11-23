@@ -116,7 +116,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
     }
 
     [UnitTest]
-    public async Task Refresh_RefusesADeletedRegisteredClientWithoutConsumingTheToken()
+    public async Task Refresh_DeletedRegisteredClient_IsRefusedWithoutConsumingTheToken()
     {
         var clients = new InMemoryOAuthClientStore();
         var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["authorization_code"]);
@@ -135,7 +135,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
     }
 
     [UnitTest]
-    public async Task CodeExchange_RefusesARegisteredClientNotAllowedTheCodeGrant()
+    public async Task CodeExchange_RegisteredClientWithoutTheCodeGrant_IsRefused()
     {
         var clients = new InMemoryOAuthClientStore();
         var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["client_credentials"]);

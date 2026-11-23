@@ -14,7 +14,7 @@ public sealed class AttachmentContentDispositionTests
     [InlineData("Café_Zürich.gpkg")]
     [InlineData("東京_道路.zip")]
     [InlineData("name with spaces; and \\ backslash.json")]
-    public void Create_IsAsciiAndCarriesTheOriginalName(string fileName)
+    public void Create_AnyName_IsAsciiAndCarriesTheOriginalName(string fileName)
     {
         var header = AttachmentContentDisposition.Create(fileName);
 
@@ -27,6 +27,6 @@ public sealed class AttachmentContentDispositionTests
     }
 
     [UnitTest]
-    public void Create_RefusesAnEmptyName()
+    public void Create_EmptyName_IsRefused()
         => Assert.Throws<ArgumentException>(() => AttachmentContentDisposition.Create(" "));
 }
