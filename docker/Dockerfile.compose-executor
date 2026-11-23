@@ -15,16 +15,28 @@ ARG TARGETARCH
 ARG COMPOSE_VERSION=v5.7.1
 ARG COMPOSE_COMMIT=fb1fd129f86828359335477f82821525201d4a8c
 ARG X_NET_VERSION=v0.62.0
+ARG X_CRYPTO_VERSION=v0.59.0
+ARG OTEL_VERSION=v1.47.0
 RUN apk add --no-cache git
 WORKDIR /src
 RUN git init -q . && git remote add origin https://github.com/docker/compose.git && \
     git fetch -q --depth 1 origin "${COMPOSE_COMMIT}" && git checkout -q FETCH_HEAD && \
     test "$(git rev-parse HEAD)" = "${COMPOSE_COMMIT}" && \
-    go get "golang.org/x/net@${X_NET_VERSION}" && go mod tidy && \
+    go get "golang.org/x/net@${X_NET_VERSION}" "golang.org/x/crypto@${X_CRYPTO_VERSION}" \
+        "go.opentelemetry.io/otel@${OTEL_VERSION}" \
+        "go.opentelemetry.io/otel/sdk@${OTEL_VERSION}" \
+        "go.opentelemetry.io/otel/trace@${OTEL_VERSION}" && go mod tidy && \
     CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build -trimpath \
       -ldflags "-s -w -X github.com/docker/compose/v5/internal.Version=${COMPOSE_VERSION}" \
       -o /out/docker-compose ./cmd && \
-    go version -m /out/docker-compose | grep -E "^[[:space:]]+dep[[:space:]]+golang.org/x/net[[:space:]]+${X_NET_VERSION}[[:space:]]"
+    go version -m /out/docker-compose > /out/modules.txt && \
+    awk -v net="${X_NET_VERSION}" -v crypto="${X_CRYPTO_VERSION}" -v otel="${OTEL_VERSION}" \
+        '$1 == "dep" { versions[$2] = $3 } END { \
+            if (versions["golang.org/x/net"] != net || \
+                versions["golang.org/x/crypto"] != crypto || \
+                versions["go.opentelemetry.io/otel/sdk"] != otel || \
+                versions["go.opentelemetry.io/otel/trace"] != otel) exit 1 \
+        }' /out/modules.txt
 FROM ${HONUA_SERVER_IMAGE} AS executor
 # This image is an operations process, not an HTTP serving artifact.
 LABEL honua.runtime.profile="compose-executor"
