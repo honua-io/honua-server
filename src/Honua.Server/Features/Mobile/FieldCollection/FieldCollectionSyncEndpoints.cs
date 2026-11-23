@@ -340,15 +340,17 @@ internal static class FieldCollectionSyncEndpoints
 
         var clientId = clientResolution.ClientId;
 
+        // ValidateRequiredPushFields has rejected a missing layer id.
+        var layerId = body.LayerId.GetValueOrDefault();
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
-        activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId!.Value);
+        activity?.SetTag("honua.fieldcollection.layer_id", layerId);
         activity?.SetTag("honua.fieldcollection.change_operation", OperationToWire(operation));
 
         var pushRequest = new FieldCollectionPushRequest
         {
             ChangeId = body.ChangeId!.Trim(),
             FeatureId = body.FeatureId!.Trim(),
-            LayerId = body.LayerId.Value,
+            LayerId = layerId,
             Operation = operation,
             BaseVersion = body.BaseVersion,
             Timestamp = body.Timestamp,
