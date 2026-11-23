@@ -54,6 +54,7 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         if (exists && !_exactNames.Contains(name))
         {
             _columns[name] = Kind.Reject;
+            NoteCaseCollision(name);
             return;
         }
 

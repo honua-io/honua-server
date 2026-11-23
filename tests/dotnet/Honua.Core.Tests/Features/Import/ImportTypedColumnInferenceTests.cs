@@ -254,4 +254,45 @@ public sealed class ImportTypedColumnInferenceTests
         inference.SkippedNameWarnings().Should().ContainSingle()
             .Which.Should().Contain("column names use ASCII letters");
     }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_CaseCollision_ReportsEveryVariantOnce()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("Name", "a");
+        inference.Observe("name", "b");
+        inference.Observe("NAME", "c");
+        inference.Observe("name", "d");
+
+        inference.SkippedNameWarnings().Should().ContainSingle()
+            .Which.Should().StartWith("Source properties 'Name' and 'name' and 'NAME' differ only in letter case");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_NestedValue_ReportsTheKey()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("notes", "plain");
+        inference.Observe("notes", JsonElement.Parse("{\"kind\":\"park\"}"));
+        inference.Observe("name", "Alpha");
+
+        inference.SkippedNameWarnings().Should().ContainSingle()
+            .Which.Should().StartWith("Source property 'notes' holds values that cannot be stored in a single typed column");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void SkippedNameWarnings_ManyCaseVariants_ListsAFewSpellings()
+    {
+        var inference = new ImportTypedColumnInference();
+        foreach (var spelling in new[] { "abc", "Abc", "aBc", "abC", "ABc", "AbC", "aBC", "ABC" })
+        {
+            inference.Observe(spelling, "v");
+        }
+
+        inference.SkippedNameWarnings().Should().ContainSingle()
+            .Which.Should().StartWith("Source properties 'abc' and 'Abc' and 'aBc' and 'abC' and 'ABc' and other spellings differ");
+    }
 }

@@ -8,6 +8,7 @@ namespace Honua.Core.Features.FileImport.Services;
 // Source keys that cannot become typed columns stay in the properties document, so
 // published features and exports do not show them. Report each one instead of
 // hiding it silently. The importer reports 'id' and 'geometry' itself, with rename advice.
+// Rejected columns are keys whose values fit no single column type, or that clash with another key by case.
 internal sealed partial class ImportTypedColumnInference
 {
     internal const int MaxReportedNames = 20;
@@ -23,6 +24,7 @@ internal sealed partial class ImportTypedColumnInference
     private readonly HashSet<string> _reservedSeen = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _overflowNames = [];
     private readonly HashSet<string> _overflowSeen = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CaseVariants> _caseVariants = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<string> SkippedNameWarnings()
     {
@@ -46,6 +48,8 @@ internal sealed partial class ImportTypedColumnInference
             $"Source property '{name}' conflicts with an importer-owned or system column name. "
             + "Its values are kept in the stored properties document but are hidden in published features and exports. "
             + "Rename the property to an unused name and re-import to publish its values."));
+
+        warnings.AddRange(RejectedColumnWarnings());
 
         if (_overflowNames.Count > 0)
         {
@@ -74,6 +78,37 @@ internal sealed partial class ImportTypedColumnInference
         }
     }
 
+    private IEnumerable<string> RejectedColumnWarnings()
+    {
+        var rejected = _columns.Where(column => column.Value == Kind.Reject).Select(column => column.Key).ToList();
+        var warnings = rejected.Take(MaxReportedNames).Select(name =>
+            _caseVariants.TryGetValue(name, out var variants)
+                ? $"Source properties {variants.Describe()} differ only in letter case, "
+                    + "so none of them was published as a column. Their values are kept in the stored properties document "
+                    + "but are hidden in published features and exports. Give each property a distinct name and re-import to publish them."
+                : $"Source property '{name}' holds values that cannot be stored in a single typed column, such as nested objects, lists, "
+                    + "binary data or out-of-range numbers, so it was not published as a column. "
+                    + "Its values are kept in the stored properties document but are hidden in published features and exports.");
+        return rejected.Count <= MaxReportedNames
+            ? warnings
+            : warnings.Append(string.Format(
+                CultureInfo.InvariantCulture,
+                "More source properties not published as columns: {0}. They are hidden in published features and exports.",
+                rejected.Count - MaxReportedNames));
+    }
+
+    private void NoteCaseCollision(string name)
+    {
+        if (!_caseVariants.TryGetValue(name, out var variants))
+        {
+            variants = new CaseVariants();
+            variants.Add(_exactNames.First(exact => exact.Equals(name, StringComparison.OrdinalIgnoreCase)));
+            _caseVariants[name] = variants;
+        }
+
+        variants.Add(name);
+    }
+
     private void NoteOverflowName(string name) => Track(name, _overflowSeen, _overflowNames);
 
     private static void Track(string name, HashSet<string> seen, List<string> quoted)
@@ -93,5 +128,32 @@ internal sealed partial class ImportTypedColumnInference
 
         var length = char.IsHighSurrogate(name[MaxQuotedNameLength - 1]) ? MaxQuotedNameLength - 1 : MaxQuotedNameLength;
         return string.Concat(name.AsSpan(0, length), "…");
+    }
+
+    private sealed class CaseVariants
+    {
+        private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+        private readonly List<string> _examples = [];
+        private bool _more;
+
+        public void Add(string name)
+        {
+            if (_seen.Contains(name) || _more)
+            {
+                return;
+            }
+
+            if (_seen.Count >= MaxOverflowExamples)
+            {
+                _more = true;
+                return;
+            }
+
+            _seen.Add(name);
+            _examples.Add(name);
+        }
+
+        public string Describe()
+            => string.Join(" and ", _examples.Select(name => $"'{name}'")) + (_more ? " and other spellings" : string.Empty);
     }
 }
