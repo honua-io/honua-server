@@ -588,8 +588,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_DeactivatedScene_ReturnsNull"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "delete-api-v1-admin-security-client-certificates-profiles-profileid",
@@ -4734,8 +4734,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.List_WithIncludeInactive_ReturnsAll"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "get-api-v1-admin-scenes-assets",
@@ -4749,7 +4749,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "get-api-v1-admin-scenes-assets-sceneid",
@@ -4763,7 +4763,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "get-api-v1-admin-scenes-jobs",
@@ -4778,7 +4778,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "get-api-v1-admin-scenes-jobs-jobid",
@@ -4793,7 +4793,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "get-api-v1-admin-scenes-id",
@@ -4807,8 +4807,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Get_UnknownDatasetId_Returns404Problem"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "get-api-v1-admin-scenes-id-resolve",
@@ -4822,8 +4822,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Resolve_KnownActiveId_ReturnsSnippetsAndUrl"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "get-api-v1-admin-security-client-certificates-profiles",
@@ -12219,7 +12219,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GenerateRenderer_WithUniqueValueDef_ReturnsUniqueValueRenderer",
         "Honua.Server.Tests.FeatureServerEndpointTests.GenerateRenderer_WithUnsupportedClassificationType_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAnalyticsHiddenFieldTests.GenerateRenderer_HiddenUniqueValueField_Returns400",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAnalyticsHiddenFieldTests.GenerateRenderer_VisibleUniqueValueField_StillClassifies"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAnalyticsHiddenFieldTests.GenerateRenderer_VisibleUniqueValueField_StillClassifies",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerWrongKindJsonParameterTests.GenerateRenderer_NonObjectClassificationDef_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -12437,6 +12438,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_TimeRelation_ExplicitIntersects_AppliesCorrectTemporalLogic",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_TimeRelation_IntersectsDefault_AppliesCorrectTemporalLogic",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalTests.GeoServicesQuery_TimeRelation_OverlapsStartWithinEnd_IsAccepted",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerWrongKindJsonParameterTests.Query_WronglyTypedOutStatisticsEntry_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithMalformedGeometryJson_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithNoMatchingFeatures_ReturnsEmptyResultSet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithValidEnvelopeGeometry_Succeeds",
@@ -12584,7 +12586,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_InvalidBinJson_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_MissingBin_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_WronglyTypedBinMember_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_WronglyTypedBinMember_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryBinsTests.QueryBins_WronglyTypedOutStatisticsMember_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -12606,6 +12609,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryDateBinsTests.QueryDateBins_MissingBin_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryDateBinsTests.QueryDateBins_MonthCalendarBin_ReturnsExactBucketCounts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryDateBinsTests.QueryDateBins_WronglyTypedBinMember_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryDateBinsTests.QueryDateBins_WronglyTypedOutStatisticsMember_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryDateBinsTests.QueryDateBins_YearCalendarBin_ReturnsExactBucketCounts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryDateBins_SourceBackedLayer_UsesBindingScopedFeatureReader"
       ],
@@ -12712,6 +12716,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnIdsOnly_ReturnsObjectIdsNotFeatures",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WronglyTypedOutSrMember_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WronglyTypedTopFilterMember_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerStatisticsFieldsTests.TopFeatures_ListsNeitherHiddenNorMaskedFields",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnCalendarDateAndEpochTimestamp"
@@ -16198,7 +16203,10 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_EachHasRequiredStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_ReturnsCollectionsList",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_ReturnsStrongETagAndSupportsConditionalRequest"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_ReturnsStrongETagAndSupportsConditionalRequest",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.CollectionsListing_AfterMissingTableIsRestored_ListsCollectionWithoutMetadataChange",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.CollectionsListing_LeavesOutCollectionWhoseTableIsMissing",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.CollectionsListing_WhenEveryTableIsMissing_StillFails"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -16236,6 +16244,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithUnknownStandaloneLicense_UsesVariousLicenseToken",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithUrlOnlyContact_DerivesProviderNameWithoutRole",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.NamedCollection_WhoseTableIsMissing_StillFails",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.MetadataAndItem_UnknownQueryParameter_ReturnsBadRequest",
         "Honua.Server.Tests.Seed.DemoStacSeedMigratedDatabaseTests.DemoStacSeed_OnServerMigratedDatabase_ServesCollection90810ItemsAndSearch"
@@ -16772,6 +16781,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_NotValueReferenceFilter_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_NullAttribute_EmitsXsiNilNotEmptyString",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_OgcFilterEncoding_MatchesEquivalentFesFilter",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_PropertyProjection_ControlsOptionalGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_RejectsSrsNameThatOnlyContainsCrs84",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_ResultTypeHits_ReturnsCountWithoutFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_UnknownStoredQuery_ReturnsInvalidParameterValueException",
@@ -18357,6 +18367,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_WithStandaloneSpdxLicense_ReturnsDerivedLicenseUrl",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedCopy_FromUploadedData_WritesAndReadsTheSameRows",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedCopy_WithDifferentFeatureStoreSearchPath_IsRejected",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedEditableLayer_WithAttachments_SetsCanModifyTrueAndPassesFormValidation",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishMixedGeometry_ChosenFamily_ServesOnlyThatFamily",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishNamespace_ForeignConnectionMetadataRejectsAndRollsBackLayer",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishNamespace_InvalidIdentifierRejectsBeforeLayerWrites",
@@ -18369,6 +18380,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishOrdinaryTable_DefaultFields_PreservesUserPropertiesAndCreatedAt",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishProjectedPoints_AdvertisedCrs84Extent_ContainsEveryFeature",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_AdvertisesTableAndQueriesRowsWithoutSpatialMetadata",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_PreservesGlobalIdAndAttachmentMetadataWithoutEnablingEdits",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_WithSourceMetadata_PreservesDimensionsDomainsSubtypesAndRules",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughBuiltInConnection_ServesQueryAndVectorTile",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_RejectsUnpublishedOrNonTemporalColumn",
@@ -18800,6 +18812,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedEditableLayer_WithAttachments_SetsCanModifyTrueAndPassesFormValidation",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.CreateDraft_SafeOrAbsentFormId_IsAccepted",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.CreateDraft_UnsafeFormId_ReturnsProblemAndPersistsNothing",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works",
@@ -18864,6 +18877,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedEditableLayer_WithAttachments_SetsCanModifyTrueAndPassesFormValidation",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageValidation_WithMissingDomainChoiceCode_ReturnsValidationIssueWithoutDraftSaveFailure"
       ],
@@ -20669,8 +20683,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Register_ValidPayload_Returns201WithDetail"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "post-api-v1-admin-scenes-generate",
@@ -20680,6 +20694,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SceneGenerationAssetStoreDeniedTests.Generate_AssetStoreRefusesWrites_Returns500NamingStoragePermissions",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_LayerIdMissingOrZero_Returns400",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_NegativeCacheMaxAgeSeconds_Returns400",
@@ -20692,7 +20707,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "post-api-v1-admin-scenes-ingest-archive",
@@ -20708,7 +20723,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "post-api-v1-admin-scenes-ingest-citygml",
@@ -20743,7 +20758,7 @@
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
-      "capability": "admin.control-plane"
+      "capability": "serve.3d-tiles-scene"
     },
     {
       "id": "post-api-v1-admin-scenes-ingest-pointcloud",
@@ -24342,6 +24357,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_WithoutReplicaId_ReturnIdsOnly_OmitsFeaturePayload",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_WithoutReplicaId_ServerGenFlow_ReturnsChanges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ReplicaDownload_PointZMFeature_KeepsZMAndLayerSpatialReference",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerWrongKindJsonParameterTests.ExtractChanges_NonNumericLayerServerGensMember_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.ExtractChanges_ForAnotherPrincipalsReplica_IsDeniedAndStillWorksForTheOwner",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.ExtractChanges_BaselineReplicaLargerThanQueryRecordLimit_DeliversEveryFeature",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.ExtractChanges_GenerationIncrementsMonotonically",
@@ -27393,6 +27409,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_MultiQueryPagingNextLinkCanBeFollowed",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_XmlStoredQueryParameterIsApplied",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_PostGetFeature_PropertyProjection_ControlsOptionalGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_XmlBody_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetFeature_AfterTimePeriodWithUtcZ_ReturnsLaterFeatures",
@@ -28235,8 +28252,8 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Update_ChangesFieldsAndBumpsRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "deferred",
+      "capability": "scene.catalog"
     },
     {
       "id": "put-api-v1-admin-security-client-certificates-profiles-profileid",

@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "b6ef85da6c57b7e2a798b35fa1634c87fd95229b",
-  "generatedAt": "2026-11-22T16:43:45Z",
+  "serverSha": "56f2a23eeda62f79513329573c76714f8c8b2be5",
+  "generatedAt": "2026-11-23T06:53:39Z",
   "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -44,6 +44,9 @@
     "honua_query_features",
     "honua_render_map",
     "honua_resolve_entity",
+    "honua_scene_get",
+    "honua_scene_list",
+    "honua_scene_resolve",
     "honua_solve_route",
     "honua_studio_add_control",
     "honua_studio_add_layer",
