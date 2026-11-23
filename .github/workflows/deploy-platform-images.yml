@@ -204,7 +204,7 @@ jobs:
 
       - name: Log in to Amazon ECR
         if: ${{ env.PUBLISH_IMAGES == 'true' && steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2
 
       - name: Validate Azure credentials for ACR
         if: ${{ env.PUBLISH_IMAGES == 'true' && env.ACR_LOGIN_SERVER != '' }}
@@ -691,7 +691,7 @@ jobs:
 
       - name: Log in to Amazon ECR
         if: ${{ steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2
 
       - name: Validate Azure credentials for ACR
         if: ${{ env.ACR_LOGIN_SERVER != '' }}
