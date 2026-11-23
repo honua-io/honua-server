@@ -108,8 +108,9 @@ public sealed class QualificationFaultTests
             markerToken = call.Arg<CancellationToken>();
             return new TaskCompletionSource<bool>().Task;
         });
-        var gate = new QualificationFaultGate(QualificationFault.Parse("Wedged:" + Token), marker,
-            NullLogger<QualificationFaultGate>.Instance, stopping.Token);
+        var gate = new QualificationFaultGate(
+            new QualificationWedgeDecision(QualificationFault.Parse("Wedged:" + Token), marker, stopping.Token),
+            NullLogger<QualificationFaultGate>.Instance);
 
         var decision = gate.GetActiveAsync();
         stopping.Cancel();
@@ -183,7 +184,7 @@ public sealed class QualificationFaultTests
     }
 
     internal static QualificationFaultGate Gate(QualificationFault fault, IQualificationWedgeMarker? marker)
-        => new(fault, marker, NullLogger<QualificationFaultGate>.Instance);
+        => new(new QualificationWedgeDecision(fault, marker), NullLogger<QualificationFaultGate>.Instance);
 
     internal static IQualificationWedgeMarker UnconsumedMarker()
     {

@@ -57,12 +57,11 @@ internal static class QualificationFaultExtensions
         var fault = QualificationFault.Parse(configuration[QualificationFault.ConfigurationKey]);
         // Only the wedge needs the shared database, so installs without it never resolve the store.
         services.AddSingleton(provider => new QualificationFaultGate(
-            fault,
-            fault.Kind == QualificationFaultKind.Wedged
-                ? ResolveMarker(provider)
-                : null,
-            provider.GetRequiredService<ILogger<QualificationFaultGate>>(),
-            provider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None));
+            new QualificationWedgeDecision(
+                fault,
+                fault.Kind == QualificationFaultKind.Wedged ? ResolveMarker(provider) : null,
+                provider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None),
+            provider.GetRequiredService<ILogger<QualificationFaultGate>>()));
         return services;
     }
 

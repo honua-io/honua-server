@@ -16,15 +16,13 @@ internal sealed partial class QualificationFaultGate
     private readonly Lazy<Task<QualificationFaultKind>> _active;
 
     public QualificationFaultGate(
-        QualificationFault fault,
-        IQualificationWedgeMarker? marker,
-        ILogger<QualificationFaultGate> logger,
-        CancellationToken applicationStopping = default)
+        QualificationWedgeDecision decision,
+        ILogger<QualificationFaultGate> logger)
     {
-        _fault = fault;
-        _marker = marker;
+        _fault = decision.Fault;
+        _marker = decision.Marker;
         _logger = logger;
-        _applicationStopping = applicationStopping;
+        _applicationStopping = decision.ApplicationStopping;
         _active = new Lazy<Task<QualificationFaultKind>>(ResolveAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -41,6 +39,11 @@ internal sealed partial class QualificationFaultGate
             return _fault.Kind;
         }
 
+        return await ResolveWedgeAsync().ConfigureAwait(false);
+    }
+
+    private async Task<QualificationFaultKind> ResolveWedgeAsync()
+    {
         if (_marker is null)
         {
             WedgeNeedsDatabase(_logger);
@@ -87,3 +90,8 @@ internal sealed partial class QualificationFaultGate
     [LoggerMessage(Level = LogLevel.Error, Message = "Qualification wedge marker could not be read; serving normally")]
     private static partial void WedgeMarkerUnavailable(ILogger logger, Exception exception);
 }
+
+internal sealed record QualificationWedgeDecision(
+    QualificationFault Fault,
+    IQualificationWedgeMarker? Marker,
+    CancellationToken ApplicationStopping = default);
