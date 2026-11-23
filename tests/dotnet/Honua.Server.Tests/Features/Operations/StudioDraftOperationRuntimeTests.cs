@@ -63,12 +63,55 @@ public sealed partial class StudioDraftOperationRuntimeTests
             },
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
 
-        var act = () => executor.ValidateAsync(Request(StudioDraftOperations.CreatePublicationRequest, payload));
+        var validation = await executor.ValidateAsync(Request(StudioDraftOperations.CreatePublicationRequest, payload));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*content hash*");
+        validation.IsValid.Should().BeFalse();
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle().Which.Should().Contain("content hash");
         await lifecycle.DidNotReceiveWithAnyArgs().CreatePublicationRequestAsync(
             default, default, default, default, default, default, default);
+    }
+
+    // A pre-policy throw becomes an unclassified 500; publishing an older saved version must be
+    // refused as a conflict that carries the reason and the next step.
+    [UnitTest]
+    public async Task PublicationRequestValidation_NonCurrentVersion_RefusesAsConflictWithReason()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var first = await SaveFirstVersionAsync(lifecycle);
+        var second = await SaveSecondVersionAsync(lifecycle, first);
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(first)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("conflict");
+        validation.ApprovalPlan.Should().BeNull();
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Be(StudioCreatePublicationRequestExecutor.NonCurrentVersionMessage);
+        (await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, PublicationPayload(second)))).IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestValidation_UnknownVersion_RefusesAsNotFound()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(default, default, default).ReturnsForAnyArgs((StudioContentVersion?)null);
+        var executor = PublicationExecutor(lifecycle);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload { ItemId = Guid.NewGuid(), VersionId = Guid.NewGuid(), ContentHash = "h" },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var validation = await executor.ValidateAsync(Request(StudioDraftOperations.CreatePublicationRequest, payload));
+
+        validation.IsValid.Should().BeFalse();
+        validation.ErrorKind.Should().Be("not-found");
+        validation.Messages.Should().ContainSingle().Which.Should().EndWith("was not found.");
     }
 
     [UnitTest]
