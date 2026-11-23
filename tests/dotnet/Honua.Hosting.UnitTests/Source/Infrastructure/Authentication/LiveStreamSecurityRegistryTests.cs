@@ -11,7 +11,7 @@ namespace Honua.Hosting.UnitTests.Source.Infrastructure.Authentication;
 public sealed class LiveStreamSecurityRegistryTests
 {
     [UnitTest]
-    public async Task PrincipalAndCredentialInvalidationsOnlyRefreshAffectedSubscribers()
+    public async Task RefreshAsync_PrincipalOrCredentialInvalidated_RefreshesOnlyAffectedSubscribers()
     {
         using var registry = new LiveStreamSecurityRegistry();
         var alice = 0;
@@ -36,7 +36,7 @@ public sealed class LiveStreamSecurityRegistryTests
     }
 
     [UnitTest]
-    public async Task BackingCredentialRevocationClosesDerivedTokenOnly()
+    public async Task RefreshAsync_BackingCredentialRevoked_ClosesOnlyDerivedTokenStream()
     {
         using var registry = new LiveStreamSecurityRegistry();
         var revoked = 0;
@@ -51,7 +51,7 @@ public sealed class LiveStreamSecurityRegistryTests
     }
 
     [UnitTest]
-    public async Task RefreshBarrierWaitsForPolicyReplacementAndSerializesBackstop()
+    public async Task RefreshAsync_PolicyReplacementPending_WaitsAndSerializesBackstop()
     {
         using var registry = new LiveStreamSecurityRegistry();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -76,7 +76,7 @@ public sealed class LiveStreamSecurityRegistryTests
     }
 
     [UnitTest]
-    public async Task DisposedSubscriberIsNotRefreshedAndAnonymousSubscriberReceivesPolicyChanges()
+    public async Task RefreshAsync_DisposedAndAnonymousSubscribers_SkipsDisposedAndRefreshesAnonymous()
     {
         using var registry = new LiveStreamSecurityRegistry();
         var count = 0;
@@ -93,7 +93,7 @@ public sealed class LiveStreamSecurityRegistryTests
     }
 
     [UnitTest]
-    public async Task SessionBoundOperatorBearer_SignOutRevocationEndsTheStream()
+    public async Task RefreshAsync_OperatorBearerSessionSignedOut_EndsTheStream()
     {
         using var registry = new LiveStreamSecurityRegistry();
         var credential = OperatorBearerAuthenticationHandler.StreamCredential(

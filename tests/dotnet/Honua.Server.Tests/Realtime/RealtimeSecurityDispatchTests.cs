@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Realtime;
 public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
-    public async Task EveryTaskConsumesSecurityWithoutPublicSubscribersAndRefreshesCatalog()
+    public async Task DispatchOnceAsync_NoPublicSubscribers_ConsumesSecurityAndRefreshesCatalog()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var firstRegistry = new LiveStreamSecurityRegistry();
@@ -55,7 +55,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task RecoveryReplayWaitsForCurrentSecurityBeforePublishing()
+    public async Task DispatchOnceAsync_RecoveryReplay_WaitsForCurrentSecurityBeforePublishing()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
@@ -88,7 +88,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task RecoveryReplayCancelledByItsClient_DoesNotCancelOtherStreamsRefresh()
+    public async Task DispatchOnceAsync_RecoveryReplayCancelledByClient_KeepsOtherStreamsRefreshing()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
@@ -121,7 +121,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task RecoveryReplayWithNoPendingSecurity_PublishesWithoutRefresh()
+    public async Task DispatchOnceAsync_RecoveryReplayWithNoPendingSecurity_PublishesWithoutRefresh()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
@@ -145,7 +145,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task PublicDispatchWaitsForEarlierSecurityPolicyReplacement()
+    public async Task DispatchOnceAsync_EarlierPolicyReplacementPending_WaitsBeforePublicDispatch()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
@@ -183,7 +183,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task RevokedCredentialClosesDirectlyWithoutWaitingForCredentialStoreVisibility()
+    public async Task DispatchOnceAsync_CredentialRevoked_ClosesWithoutWaitingForStoreVisibility()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
@@ -203,7 +203,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
-    public async Task Dispatch_SourceHeadCommitsRevocation_RefreshesBeforeData()
+    public async Task DispatchOnceAsync_SourceHeadCommitsRevocation_RefreshesBeforeData()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();

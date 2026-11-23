@@ -30,26 +30,9 @@ internal sealed partial class FeatureStreamSessionManager
     {
         try
         {
-            if (subscription.Retired.IsCompleted)
-            {
-                return true;
-            }
-
-            using var refreshStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var refresh = subscription.Security.RefreshAsync(refreshStop.Token);
-            var completed = await Task.WhenAny(refresh, subscription.Retired).WaitAsync(cancellationToken).ConfigureAwait(false);
-            if (completed == subscription.Retired)
-            {
-                await refreshStop.CancelAsync().ConfigureAwait(false);
-                // A store may ignore cancellation. Observe its eventual failure without
-                // making a retired generation consume the remaining session deadline.
-                _ = refresh.ContinueWith(static task => { _ = task.Exception; }, CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-                return true;
-            }
-
-            var outcome = await refresh.ConfigureAwait(false);
-            return outcome != StreamSubscriberSecurityRefreshOutcome.Revoked || !entry.IsCurrentSubscription(subscription);
+            var authorized = await subscription.Security
+                .RefreshUntilRetiredAsync(subscription.Retired, cancellationToken).ConfigureAwait(false);
+            return authorized || !entry.IsCurrentSubscription(subscription);
         }
         catch (Exception error) when (error is not OutOfMemoryException && !entry.IsCurrentSubscription(subscription))
         {

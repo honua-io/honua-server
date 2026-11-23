@@ -36,9 +36,13 @@ internal sealed class StreamSubscriberSecurity
 
     internal void BindLifetime(Task retired) => Volatile.Write(ref _retired, retired);
 
-    internal async Task<bool> RefreshActivePolicyAsync(CancellationToken cancellationToken)
+    internal Task<bool> RefreshActivePolicyAsync(CancellationToken cancellationToken)
+        => RefreshUntilRetiredAsync(Volatile.Read(ref _retired), cancellationToken);
+
+    // Races the refresh against the generation's retirement: a retired generation never waits on,
+    // or fails because of, a refresh it no longer needs.
+    internal async Task<bool> RefreshUntilRetiredAsync(Task? retired, CancellationToken cancellationToken)
     {
-        var retired = Volatile.Read(ref _retired);
         if (retired?.IsCompleted == true)
         {
             return true;
