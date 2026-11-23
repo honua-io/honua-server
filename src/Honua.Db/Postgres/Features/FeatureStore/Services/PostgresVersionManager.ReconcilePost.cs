@@ -492,7 +492,10 @@ internal sealed partial class PostgresVersionManager
                    ve.attributes::text        AS version_attrs,
                    ST_AsText(ve.base_geometry) AS base_geom,
                    ST_AsText(f.geometry)       AS default_geom,
-                   ST_AsText(ve.geometry)      AS version_geom
+                   ST_AsText(ve.geometry)      AS version_geom,
+                   -- The post drift guard's predicate, so reconcile and post agree on "unchanged".
+                   (f.geometry IS NOT DISTINCT FROM ve.base_geometry
+                    AND f.attributes IS NOT DISTINCT FROM ve.base_attributes) AS default_matches_base
             FROM honua.version_edits ve
             JOIN default_changes dc ON dc.layer_id = ve.layer_id AND dc.objectid = ve.objectid
             LEFT JOIN {featuresTable} f ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid

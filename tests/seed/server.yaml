@@ -2079,7 +2079,9 @@ sql:
               END IF;
           END IF;
 
-          PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
+          -- Migration 228: hold the generation lock in SHARED mode before nextval.
+          PERFORM pg_current_xact_id();
+          PERFORM pg_advisory_xact_lock_shared(144047712, 0); -- 0x0894FE60
           gen := nextval('honua.sync_generation');
 
           ver := current_setting('honua.gdb_version', true);
@@ -2118,14 +2120,17 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
-  # Committed change-feed horizon from migration 213_CreateFeatureChangeReadHorizon.sql.
+  # Committed change-feed horizon as migration 228 defines it. PL/pgSQL so it can be created before
+  # the prefix table (embedded migration 214); re-seeding a schema keeps the activated semantics.
   - |
       CREATE OR REPLACE FUNCTION honua.feature_change_read_horizon()
       RETURNS BIGINT
-      LANGUAGE sql
+      LANGUAGE plpgsql
       STABLE
       AS $$
-          SELECT COALESCE(MAX(generation), 0)::BIGINT FROM honua.feature_changes
+      BEGIN
+          RETURN (SELECT published FROM honua.feature_change_prefix WHERE singleton);
+      END;
       $$;
   # Branch-versioning overlay (#1272 Track B, ADR-0051 / migration 049_CreateVersionEdits.sql):
   # branch row values overlaid onto DEFAULT; inert for the DEFAULT path.
@@ -2158,6 +2163,8 @@ sql:
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;
+          PERFORM pg_current_xact_id();
+          PERFORM pg_advisory_xact_lock_shared(144047712, 0); -- 0x0894FE60
           gen := nextval('honua.sync_generation');
           public_oid := honua.resolve_feature_public_objectid(
               NEW.layer_id,

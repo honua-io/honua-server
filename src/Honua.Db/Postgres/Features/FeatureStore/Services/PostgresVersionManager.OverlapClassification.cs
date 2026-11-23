@@ -34,8 +34,7 @@ internal sealed partial class PostgresVersionManager
     {
         // A live DEFAULT row that still equals the base the overlay was built on (a version-wins rebase,
         // or a branch that captured it) has nothing to resolve, whatever either side did with it.
-        var defaultChanged = ChangedFields(ParseAttributes(row.BaseAttrs), ParseAttributes(row.DefaultAttrs));
-        if (row.DefaultOp != 3 && DefaultMatchesBase(defaultChanged, row.BaseGeom, row.DefaultGeom))
+        if (row.DefaultOp != 3 && row.DefaultMatchesBase)
         {
             return (null, null);
         }
@@ -98,10 +97,6 @@ internal sealed partial class PostgresVersionManager
         return (row.ToConflict(conflictType, fieldDiffs), null);
     }
 
-    // DEFAULT still matches the base the overlay was built on (a rebase took it in): nothing to resolve.
-    private static bool DefaultMatchesBase(HashSet<string> defaultChangedFields, string? baseGeom, string? defaultGeom)
-        => defaultChangedFields.Count == 0 && string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal);
-
     // One overlay row joined to DEFAULT's net change since the ancestor and its live row.
     private sealed class OverlapRow
     {
@@ -115,6 +110,7 @@ internal sealed partial class PostgresVersionManager
         public string? BaseGeom { get; init; }
         public string? DefaultGeom { get; init; }
         public string? VersionGeom { get; init; }
+        public required bool DefaultMatchesBase { get; init; }
 
         public static OverlapRow Read(NpgsqlDataReader reader) => new()
         {
@@ -128,6 +124,7 @@ internal sealed partial class PostgresVersionManager
             BaseGeom = reader.IsDBNull(7) ? null : reader.GetString(7),
             DefaultGeom = reader.IsDBNull(8) ? null : reader.GetString(8),
             VersionGeom = reader.IsDBNull(9) ? null : reader.GetString(9),
+            DefaultMatchesBase = !reader.IsDBNull(10) && reader.GetBoolean(10),
         };
 
         public OverlapConflict ToConflict(ReplicaConflictType type, ImmutableArray<VersionConflictFieldDiff> diffs)
