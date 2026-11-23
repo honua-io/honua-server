@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -374,44 +375,12 @@ internal static class OgcCommonUtilities
         }
     }
 
-    internal const int MaxCollectionProjectionConcurrency = 8;
+    internal const int MaxCollectionProjectionConcurrency = RequestFanOut.MaxConcurrency;
 
     public static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
         IReadOnlyList<TSource> source,
         Func<TSource, CancellationToken, Task<TProjection>> projector,
         CancellationToken cancellationToken)
         where TProjection : class
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(projector);
-
-        if (source.Count == 0)
-        {
-            return [];
-        }
-
-        var results = new TProjection?[source.Count];
-        var workerCount = Math.Min(MaxCollectionProjectionConcurrency, source.Count);
-        var nextIndex = -1;
-
-        async Task RunWorkerAsync()
-        {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var index = Interlocked.Increment(ref nextIndex);
-                if (index >= source.Count)
-                {
-                    return;
-                }
-
-                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
-        await Task.WhenAll(workers).ConfigureAwait(false);
-        return results.Select(static result => result!).ToImmutableArray();
-    }
+        => [.. await RequestFanOut.SelectAsync(source, projector, cancellationToken).ConfigureAwait(false)];
 }

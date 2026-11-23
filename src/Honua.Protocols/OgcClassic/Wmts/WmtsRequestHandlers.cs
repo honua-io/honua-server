@@ -1462,8 +1462,10 @@ internal static class WmtsRequestHandlers
             {
                 var styleSources = new RasterStyleSources(
                     styleCatalog, request.HttpContext.RequestServices.GetService<IGeoServicesStyleConverter>());
-                var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
-                    ResolveWmtsLegendSupportAsync(styleSources, layer, logger, cancellationToken))).ConfigureAwait(false);
+                var supportedLegends = await RequestFanOut.SelectAsync(
+                    visibleLayers,
+                    (layer, layerCancellation) => ResolveWmtsLegendSupportAsync(styleSources, layer, logger, layerCancellation),
+                    cancellationToken).ConfigureAwait(false);
                 for (var index = 0; index < visibleLayers.Count; index++)
                 {
                     if (supportedLegends[index])
@@ -1714,10 +1716,10 @@ internal static class WmtsRequestHandlers
 
         // A single layer whose temporal column cannot be aggregated must not 500 the
         // whole GetCapabilities document — skip its TIME dimension and keep the rest.
-        var tasks = temporalLayers.Select(layer =>
-            ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var results = await RequestFanOut.SelectAsync(
+            temporalLayers,
+            (layer, layerCancellation) => ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
         for (var i = 0; i < temporalLayers.Length; i++)

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
@@ -162,14 +163,15 @@ internal static partial class WmsRequestHandlers
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger(LoggerCategory);
 
-        // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
+        // Fan out DB aggregate queries, a bounded number at a time; each is a MIN/MAX scan on one table.
         // Resolve each layer defensively: a single layer whose temporal column cannot be
         // aggregated (e.g. data stored in an encoding the cast cannot parse) must not 500
         // the whole GetCapabilities document — skip its TIME dimension and keep the rest.
-        var tasks = temporalLayers.Select(layer =>
-            ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, cancellationToken));
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var results = await RequestFanOut.SelectAsync(
+            temporalLayers,
+            (layer, layerCancellation) =>
+                ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
         for (var i = 0; i < temporalLayers.Length; i++)
@@ -207,9 +209,11 @@ internal static partial class WmsRequestHandlers
 
         var styleSources = new RasterStyleSources(
             styleCatalog, context.RequestServices.GetService<IGeoServicesStyleConverter>());
-        var plans = await Task.WhenAll(candidates.Select(layer =>
-            GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)))
-            .ConfigureAwait(false);
+        var plans = await RequestFanOut.SelectAsync(
+            candidates,
+            (layer, layerCancellation) =>
+                GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dimensions = new Dictionary<int, (int Width, int Height)>();
         for (var i = 0; i < candidates.Length; i++)
@@ -359,11 +363,14 @@ internal static partial class WmsRequestHandlers
         var serviceAbstract = string.IsNullOrWhiteSpace(service.Metadata.Description) ? null : service.Metadata.Description;
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger(LoggerCategory);
-        var preparedLayers = (await Task.WhenAll(accessibleLayers.Select(layer =>
-            CapabilitiesLayerBuilder.TryBuildAsync(
+        var preparedLayers = (await RequestFanOut.SelectAsync(
+            accessibleLayers,
+            (layer, _) => CapabilitiesLayerBuilder.TryBuildAsync(
                 () => PrepareWmsCapabilitiesLayerAsync(context, layer),
                 layer.Publication.Metadata.Id,
-                logger))).ConfigureAwait(false)).OfType<PreparedWmsCapabilitiesLayer>().ToArray();
+                logger),
+            TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)).ConfigureAwait(false))
+            .OfType<PreparedWmsCapabilitiesLayer>().ToArray();
 
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         if (isWms111)
