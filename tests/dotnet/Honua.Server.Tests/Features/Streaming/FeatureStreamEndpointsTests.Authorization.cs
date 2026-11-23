@@ -247,7 +247,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_RealPortalCredentialExpiresOrIsRevoked_TerminatesAndReplacementResumes(bool webSocket, bool expire)
     {
-        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        await using var fixture = new WebAppFixture().WithPostgresStreamCredentials().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -358,7 +358,7 @@ public sealed partial class FeatureStreamEndpointsTests
         // TestServer keeps the close frame even when the endpoint's pending receive is
         // cancelled; Kestrel tears the socket down and the client saw 1006 instead of the
         // typed close. Only a real Kestrel host proves this outcome.
-        await using var fixture = new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        await using var fixture = new WebAppFixture().WithPostgresStreamCredentials().UseKestrel().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
