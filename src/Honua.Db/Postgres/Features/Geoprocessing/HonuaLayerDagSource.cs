@@ -222,7 +222,7 @@ internal sealed partial class HonuaLayerDagSource : IDagFeatureSource
     private static bool HasWatermark(DagSourceRequest request)
         => !string.IsNullOrWhiteSpace(request.Since) && !string.IsNullOrWhiteSpace(request.WatermarkField);
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z", RegexOptions.CultureInvariant)]
     private static partial Regex WatermarkFieldPattern();
 
     private static SpatialFilter? BuildSpatialFilter(DagSourceRequest request)

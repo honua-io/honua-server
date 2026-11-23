@@ -5,9 +5,12 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -55,6 +58,14 @@ internal static class FeatureChangeLogSeeder
         return await fixture.GetService<PostgresFeatureChangeLog>().ReadByEventIdAsync(eventId, cancellationToken)
             ?? throw new InvalidOperationException($"The change {eventId} was written but cannot be read back.");
     }
+
+    // The security tail reads PostgreSQL events, so credential changes must use the same store.
+    public static WebAppFixture WithPostgresStreamCredentials(this WebAppFixture fixture)
+        => fixture.ConfigureServices(services =>
+        {
+            services.RemoveAll<ISecurityTokenStore>();
+            services.AddSingleton<ISecurityTokenStore>(provider => provider.GetRequiredService<PostgresSecurityTokenStore>());
+        });
 
     // Without the relay, a change reaches sessions only through the durable-store poll.
     public static WebAppFixture WithoutRealtimeRelay(this WebAppFixture fixture)

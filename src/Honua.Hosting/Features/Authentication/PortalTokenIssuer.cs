@@ -86,7 +86,11 @@ internal sealed partial class PortalTokenIssuer(
         }
 
         var principal = ProjectPrincipal(record, ResolveRoles(record));
-        return new PortalTokenValidation(principal, record.ExpiresAt);
+        return new PortalTokenValidation(principal, record.ExpiresAt)
+        {
+            SourceApiKeyId = record.Source is { Kind: PortalCredentialSourceKind.ManagedApiKey } source
+                && Guid.TryParse(source.Reference, out var keyId) ? keyId : null
+        };
     }
 
     public async Task<PortalTokenExchange?> ExchangeAsync(

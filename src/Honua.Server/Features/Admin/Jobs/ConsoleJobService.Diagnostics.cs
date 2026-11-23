@@ -167,21 +167,7 @@ internal sealed partial class ConsoleJobService
         CancellationToken cancellationToken)
     {
         var job = await RequireJobStore().GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            return null;
-        }
-
-        var decision = await approvalGate.CheckAuthorizationAsync(
-            user,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Job,
-                Operation = OperatorOperation.Read,
-                ResourceId = job.OperationId
-            },
-            cancellationToken).ConfigureAwait(false);
-        return decision.IsAllowed ? job : null;
+        return job != null && await CanReadAsync(user, job, cancellationToken).ConfigureAwait(false) ? job : null;
     }
 
     private static ConsoleJobDiagnosticRelease BuildRelease(ExecutionJobRecord job, List<string> missing, bool operatorView)

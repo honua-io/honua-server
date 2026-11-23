@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Caching;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Startup;
 
@@ -15,6 +16,7 @@ internal sealed class HttpMetadataGraphFreshnessRequirement(IHttpContextAccessor
 
     public bool RequireCurrentRevision
         => httpContextAccessor.HttpContext is not { } context
+            || context.Features.Get<LiveStreamPolicyRefreshFeature>() is not null
             || !(IsReadMethod(context.Request.Method) || IsReadOnlyPost(context))
             || IsAdminPath(context.Request.Path);
 

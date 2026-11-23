@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -74,6 +75,7 @@ class EvidenceCollector:
     def __init__(self) -> None:
         self.gdal_version: str = ""
         self._records: list[_EvidenceRecord] = []
+        self._geometry_deltas: dict[tuple[str, str], float] = {}
 
     def record(
         self,
@@ -92,6 +94,9 @@ class EvidenceCollector:
                 detail=detail,
             )
         )
+
+    def record_geometry_delta(self, test_name: str, protocol: str, delta: float) -> None:
+        self._geometry_deltas[(test_name, protocol)] = delta
 
     def write_report(self, path: Path) -> None:
         protocols: dict[str, dict[str, str]] = {}
@@ -116,6 +121,7 @@ class EvidenceCollector:
                     "category": r.category,
                     "status": r.status,
                     "detail": r.detail,
+                    "measured_delta": self._geometry_deltas.get((r.test_name, r.protocol)) if r.category == "geometry" else None,
                 }
                 for r in self._records
             ],
@@ -327,8 +333,8 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     outcome = yield
     report: TestReport = outcome.get_result()
 
-    # Only act on the call phase (or setup for skips)
-    if report.when == "call" and report.failed:
+    # A fixture that cannot reach the server fails in setup; that is a failed case, not a skip.
+    if report.when in ("setup", "call") and report.failed:
         protocol, category = _derive_protocol_category(item)
         _evidence.record(
             item.name, protocol, category, "fail",
@@ -401,3 +407,58 @@ def wfs_layer_name(wfs_dsn: str) -> str:
         f"WFS layer discovery failed:\n{result.stderr}"
     )
     return extract_first_layer_name(result.stdout)
+
+
+# ============================================================================
+# GeoServices REST (FeatureServer / MapServer) fixtures
+# ============================================================================
+
+
+@pytest.fixture(scope="session")
+def geoservices_service() -> str:
+    """Seeded GeoServices service for the FeatureServer and MapServer cases.
+
+    The docker/client-compat lane sets ``HONUA_GDAL_GEOSERVICES_SERVICE`` to the
+    ``browser_compat`` seed (tests/seed/browser-compat.yaml). The in-process
+    chain has no such seed, so these cases skip there.
+    """
+    service = os.getenv("HONUA_GDAL_GEOSERVICES_SERVICE")
+    if not service:
+        pytest.skip("HONUA_GDAL_GEOSERVICES_SERVICE is not set (docker/client-compat lane only)")
+    return service
+
+
+@pytest.fixture(scope="session")
+def featureserver_layer_url(base_url: str, geoservices_service: str) -> str:
+    """The seeded point layer (three features) as a FeatureServer layer URL."""
+    layer = os.getenv("HONUA_GDAL_GEOSERVICES_LAYER", "2000")
+    return f"{base_url}/rest/services/{geoservices_service}/FeatureServer/{layer}"
+
+
+@pytest.fixture(scope="session")
+def mapserver_url(base_url: str, geoservices_service: str) -> str:
+    """The seeded service as a MapServer URL for GDAL's AGS minidriver."""
+    return f"{base_url}/rest/services/{geoservices_service}/MapServer"
+
+
+def esrijson_dsn(layer_url: str, **params: str) -> str:
+    """An ESRIJSON driver DSN for a FeatureServer layer query.
+
+    The ESRIJSON driver is GDAL's ArcGIS FeatureServer client: it reads the
+    query response and pages with resultOffset while the server reports
+    exceededTransferLimit.
+    """
+    query = {"where": "1=1", "outFields": "*", "f": "json", **params}
+    return f"ESRIJSON:{layer_url}/query?{urllib.parse.urlencode(query)}"
+
+
+@pytest.fixture
+def mapserver_export(mapserver_url: str, ogr_run, tmp_path: Path) -> Callable[[tuple[float, float, float, float]], dict]:
+    """Fetch a MapServer export window through GDAL's AGS minidriver; returns gdalinfo statistics."""
+    from .geoservices_helpers import ags_service_xml, export_image
+
+    def _export(window: tuple[float, float, float, float]) -> dict:
+        target = tmp_path / f"export-{abs(hash(window))}.png"
+        return export_image(ogr_run, ags_service_xml(mapserver_url, window), target)
+
+    return _export

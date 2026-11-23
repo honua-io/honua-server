@@ -856,7 +856,8 @@ internal static partial class FeatureStreamEndpoints
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
-        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: pauseForReplay);
+        var livePolicy = context.Features.Get<LiveStreamPolicyRefreshFeature>();
+        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: pauseForReplay || livePolicy is not null);
         switch (addOutcome.Result)
         {
             case AddSubscriptionResult.Added:
@@ -894,11 +895,17 @@ internal static partial class FeatureStreamEndpoints
                 preAddCursor);
         }
 
+        await RevalidateAdmissionAsync(context, livePolicy, cancellationToken).ConfigureAwait(false);
         if (requested.Kind == FeatureStreamCursorKind.Epoch)
         {
             await SendWebSocketResetAsync(
                 new(webSocket, session.WriteLock, RealtimeResetReasons.CursorEpoch, preAddCursor),
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!pauseForReplay && livePolicy is not null)
+        {
+            deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
         }
 
         // Emit the baseline while paused, then resume delta delivery from the baseline
@@ -1233,8 +1240,7 @@ internal static partial class FeatureStreamEndpoints
                     authService = layer.Service;
                 }
 
-                var accessError = RequireStreamLayerAccess(context, layer.Resource, authService);
-                if (accessError is not null)
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, authService))
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
                 }
@@ -1257,8 +1263,7 @@ internal static partial class FeatureStreamEndpoints
 
             foreach (var layer in serviceLayers)
             {
-                var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
-                if (accessError is not null)
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 {
                     return (null, "Access to the requested stream service is forbidden.");
                 }

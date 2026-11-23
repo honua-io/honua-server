@@ -291,6 +291,6 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         return value;
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
     private static partial Regex IdentifierRegex();
 }

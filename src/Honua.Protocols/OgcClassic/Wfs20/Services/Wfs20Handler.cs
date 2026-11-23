@@ -127,13 +127,13 @@ internal sealed partial class Wfs20Handler
     {
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
 
-        // The per-feature-type query build + count has no cross-type dependency, so run
-        // every feature type's build+count pair concurrently instead of one at a time.
+        // The per-feature-type query build + count has no cross-type dependency, so the
+        // build+count pairs run concurrently, a bounded number at a time.
         // The offset/limit distribution below IS sequential (each type's share depends
         // on how much of the offset/count budget prior types in request order
         // consumed), so that accounting still runs as a second, I/O-free pass over the
         // precomputed results in the original order.
-        var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
+        var perTypeResults = await RequestFanOut.SelectAsync(featureTypes, async (featureType, typeCancellation) =>
         {
             var query = await BuildFeatureQueryAsync(
                 featureType,
@@ -149,13 +149,13 @@ internal sealed partial class Wfs20Handler
                 // request because the prefix does not match that plan.
                 enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
-                cancellationToken: cancellationToken,
+                cancellationToken: typeCancellation,
                 wfsVersion: wfsVersion);
 
-            var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
-            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+            var reader = await ResolveQueryReaderAsync(featureType, typeCancellation).ConfigureAwait(false);
+            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, typeCancellation).ConfigureAwait(false);
             return (featureType, query, layerMatched, reader);
-        })).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
 
         // Known limitation (BH2-006): the per-type COUNT results above are snapshots taken at
         // slightly different points in time.  A concurrent INSERT or DELETE on any feature type

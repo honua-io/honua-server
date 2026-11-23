@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers;
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Shared.Services;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
@@ -189,7 +189,7 @@ internal sealed class OgcCsvRowBuilder : IDisposable
             _row.Append('"');
         }
 
-        if (IsPotentialSpreadsheetFormula(field))
+        if (CsvFieldFormatter.IsPotentialSpreadsheetFormula(field))
         {
             _row.Append('\'');
         }
@@ -226,27 +226,5 @@ internal sealed class OgcCsvRowBuilder : IDisposable
 
         ArrayPool<char>.Shared.Return(_chars);
         _chars = ArrayPool<char>.Shared.Rent(minimumLength);
-    }
-
-    private static bool IsPotentialSpreadsheetFormula(ReadOnlySpan<char> field)
-    {
-        var start = 0;
-        while (start < field.Length && char.IsWhiteSpace(field[start]))
-        {
-            start++;
-        }
-
-        if (start >= field.Length)
-        {
-            return false;
-        }
-
-        return field[start] switch
-        {
-            '=' or '@' => true,
-            // Preserve plain signed numeric values as numbers in CSV exports.
-            '+' or '-' => !decimal.TryParse(field[start..], NumberStyles.Float, CultureInfo.InvariantCulture, out _),
-            _ => false,
-        };
     }
 }

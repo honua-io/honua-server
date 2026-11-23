@@ -330,7 +330,7 @@ internal sealed partial class FeatureQueryBuilder
                     throw new ArgumentException($"Invalid statistic field name: {stat.OnStatisticField}");
                 }
 
-                if (!IsValidFieldName(stat.OutStatisticFieldName))
+                if (!IsValidOutputAlias(stat.OutStatisticFieldName))
                 {
                     throw new ArgumentException($"Invalid output statistic field name: {stat.OutStatisticFieldName}");
                 }

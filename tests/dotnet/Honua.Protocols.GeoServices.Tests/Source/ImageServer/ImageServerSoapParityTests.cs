@@ -864,6 +864,29 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetImageTile")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task TileCacheSoap_GetImageTileAboveAdvertisedMaxLevel_ReturnsBadRequestFault()
+    {
+        var fixture = await CreateFixtureAsync(enableTileCache: true);
+        try
+        {
+            // The fixture advertises levels 0..2 through GetCacheTileInfo and the REST tileInfo.
+            var aboveScheme = await PostSoapAsync(fixture, ImageTileRequest(level: 3));
+            aboveScheme.Status.Should().Be(HttpStatusCode.BadRequest, aboveScheme.Body);
+            aboveScheme.Body.Should().Contain("outside the cache tiling scheme (0-2)");
+
+            var topLevel = await PostSoapAsync(fixture, ImageTileRequest(level: 2));
+            topLevel.Status.Should().Be(HttpStatusCode.OK, topLevel.Body);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static void AssertTileCache(XElement cache, JsonElement tileInfo)
     {
         Child(cache, "TileCols").Value.Should().Be(tileInfo.GetProperty("cols").GetInt32().ToString(CultureInfo.InvariantCulture));
@@ -1111,10 +1134,10 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             """;
     }
 
-    private static string ImageTileRequest()
+    private static string ImageTileRequest(int level = 0)
         => $"""
             <GetImageTile xmlns="{GeoServicesNamespace}">
-              <Level>0</Level>
+              <Level>{level.ToString(CultureInfo.InvariantCulture)}</Level>
               <Row>0</Row>
               <Column>0</Column>
             </GetImageTile>

@@ -51,6 +51,11 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
         Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
+        Honua.Server.Features.Protocols.Tiles.TileJsonContext.Default,
+        Honua.Server.Features.Protocols.Terrain.TerrainJsonContext.Default,
+#if !HONUA_EXCLUDE_SCENE
+        Honua.Server.Features.Protocols.Terrain.QuantizedMesh.QuantizedMeshJsonContext.Default,
+#endif
         Honua.Server.Features.Admin.Exports.ExportAdminJsonContext.Default,
         Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,

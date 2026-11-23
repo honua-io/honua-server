@@ -206,6 +206,14 @@ Notes:
   `geospatial.v1` defines no aggregate result shape, so the server refuses the
   request rather than returning ordinary features. Use the GeoServices FeatureServer
   `query` parameters `outStatistics` and `groupByFieldsForStatistics` for aggregates.
+- A `spatial_filter` must carry a geometry. A filter without one, an unknown
+  `spatial_relationship` or `distance_unit`, a negative or non-finite `distance` or
+  `nearest_count`, and non-finite coordinates return `INVALID_ARGUMENT`.
+  `DISTANCE_UNIT_SURVEY_FEET` and `DISTANCE_UNIT_NAUTICAL_MILES` are converted to meters.
+- Request geometries (spatial filters and edits) accept per-vertex `coords` or packed
+  `ordinates` with `stride`, `has_z` and `has_m`. `delta_coords` needs a
+  `CoordinateTransform`, which requests do not carry, so it returns `INVALID_ARGUMENT`.
+  Responses use per-vertex `coords` and the `attributes` map.
 - Metadata-fallback contract: if a client is pinned to an older `Geospatial.Grpc`
   package whose `geospatial.v1` messages predate one of these fields, that field
   is absent (proto3 implicit default) and the client should fall back to the

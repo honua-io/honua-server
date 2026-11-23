@@ -17,6 +17,8 @@
     "operation-human-approval": "v1",
     "coordinated-release-human-approval": "v1",
     "normalization-envelope": "v3",
-    "export-collection": "1.0.0"
+    "export-collection": "1.0.0",
+    "capability-matrix": "1.3.0",
+    "nightly-capability-evidence": "1.0.0"
   }
 }

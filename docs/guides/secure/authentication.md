@@ -391,7 +391,9 @@ creation of the authorization URL and authorization-code exchange; request bodie
 cannot choose a redirect. Without the setting, the existing `Public:BaseUrl` plus
 `/admin/auth/callback` behavior is retained, including an existing public path prefix.
 This setting does not alter API links, ASP.NET OIDC middleware callback paths, or
-post-logout URLs. State, pending-session cookies and PKCE remain required.
+the emitted post-logout URL. The `/admin` post-logout landing does use it: it sends the
+browser to the sign-in page on the callback's origin. State, pending-session cookies and
+PKCE remain required.
 
 The authorization URL request accepts an optional `returnTo` field. The exact
 allowed paths are `/console/` (the default) and `/console/operate/connections`.
@@ -433,10 +435,19 @@ require an audience. See the [Cognito access-token format](https://docs.aws.amaz
 The broker logout URL uses `client_id` and `logout_uri` in Cognito mode, including
 when discovery omits `end_session_endpoint`. Register the public `/admin` URL
 (in this example, `https://api.example.com/honua/admin`) as an allowed sign-out
-URL on the Cognito app client. `LogoutEndpoint` must be an absolute HTTPS URL
+URL on the Cognito app client. After sign-out the provider returns the browser to
+that URL, and `GET /admin` redirects it to the Console sign-in page,
+`/console/auth/signin`. With `Oidc__AdminAuthCallbackUri` set, the redirect goes to
+the sign-in page on that callback's origin. `LogoutEndpoint` must be an absolute HTTPS URL
 without user information, query or fragment. Without Cognito mode, logout retains
 standard `post_logout_redirect_uri` and optional `id_token_hint` parameters.
 See [Cognito logout](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html).
+
+The OIDC middleware's own paths take no part in browser sign-in. A request to
+`/signout-oidc` (provider front-channel logout) gets an empty `200`, since there is
+no middleware session to end. A request to `/signin-oidc*` without a valid
+authorization response gets `400` and a logged warning, for example from a stale
+bookmark or a replayed callback.
 
 The browser must navigate the generated logout URL to clear the Cognito session.
 Clearing Console's local/operator sessions and upstream cookie jar alone does

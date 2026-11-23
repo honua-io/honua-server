@@ -266,7 +266,7 @@ jobs:
           PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
           DURATION="${{ github.event.inputs.duration || '' }}"
           export HONUA_PROCESS_PID=$(cat artifacts/load-soak/server.pid)
-          ARGS=(--base-url "$BASE_URL" --profile "$PROFILE" --report-dir artifacts/load-test-reports)
+          ARGS=(--base-url "$BASE_URL" --profile "$PROFILE" --report-dir artifacts/load-test-reports --stats-out artifacts/load-test-reports/load-stats.json)
           if [[ -n "$DURATION" ]]; then
             ARGS+=(--duration "$DURATION")
           fi

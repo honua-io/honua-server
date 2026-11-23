@@ -7,6 +7,8 @@ namespace Honua.Core.Features.Infrastructure.Domain;
 
 public sealed record FileUploadRequest
 {
+    public string? TenantId { get; init; }
+
     public required Stream Content { get; init; }
 
     public required string FileName { get; init; }

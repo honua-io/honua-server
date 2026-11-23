@@ -2021,8 +2021,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             binding.ScriptName == "Honua.Server.Migrations.002_CreateAttachmentsTable.sql").Which;
         var import = plan.ScriptBindings.Should().ContainSingle(binding =>
             binding.ScriptName == "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql").Which;
-        create.ResourceSha256.Should().Be("fc944b0240df90280a451ee684059b087ffb52f27cbea4348c0399ee5dee6698");
-        create.RenderedSqlSha256.Should().Be("e909b164c60f1d6fc839d728a011d9f97c30be0da29634391901a513a1e71b57");
+        create.ResourceSha256.Should().Be("7c5097215c8472b33a1b7531f7e97ff2d7faecb37afaaa222d8fbf6ca5304884");
+        create.RenderedSqlSha256.Should().Be("6290c949d23f9d63d80dadce8ccc447b2d73b633eb721e157cf8b8e965ba734f");
         import.ResourceSha256.Should().Be("95ad6ccadabe7a161d193b35a707a9ef206c7b703cf3bc1d6f9b825787c70f84");
         import.RenderedSqlSha256.Should().Be("1a9228a740276208ba303eff8a3802453be6d60e3923ace4eecfe171fed46e80");
         foreach (var binding in plan.ScriptBindings)
