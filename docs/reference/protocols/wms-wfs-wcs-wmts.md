@@ -17,7 +17,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | --- | --- | --- |
 | WMS | 1.3.0, 1.1.1 | Version negotiated per request; 1.3.0 is default. |
 | WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. Legacy versions serve GML rather than the 2.0 encodings: **1.1.0 → GML 3.1.1**, **1.0.0 → GML 2.1.2**. |
-| WCS | 2.0.1 | KVP only. |
+| WCS | 2.0.1, 1.0.0 | KVP only; 2.0.1 is the default. Request 1.0.0 for clients such as stock QGIS. |
 | WMTS | 1.0.0 | KVP and RESTful tile paths. |
 
 ## Base endpoints
@@ -29,9 +29,10 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/rest/services/{serviceId}/MapServer/WMS` | WMS alias on the GeoServices route. |
 | GET | `/ogc/services/{serviceId}/wmts` | WMTS KVP. |
 | GET | `/rest/services/{serviceId}/MapServer/WMTS`, `.../WMTS/{**restPath}` | WMTS KVP + RESTful tile paths. |
-| GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
-| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in desktop GIS clients. |
-| GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
+| GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1/1.0.0, scoped to one service. |
+| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS without a `services` segment. Use this form in desktop GIS clients. |
+| GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1/1.0.0, scoped to the named service. |
+| GET | `/rest/services/{id:int}/ImageServer/WCS` | WCS 2.0.1/1.0.0, scoped to one layer. An integer path selects this route rather than a service with the same name. |
 
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
 
@@ -176,7 +177,29 @@ All WFS versions share `GET/POST /wfs`. WFS 2.0 operations:
 
 > Open `https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=roads&COUNT=10` in a browser.
 
-## WCS 2.0.1 operations
+## WCS versions
+
+The same WCS routes serve 2.0.1 and 1.0.0. Set `VERSION=1.0.0` for the
+legacy response format. Without an explicit version, `ACCEPTVERSIONS=1.0.0`
+selects 1.0.0; offering both supported versions selects 2.0.1. With neither
+parameter, the default is 2.0.1. WCS 1.1.x is not served.
+
+### WCS 1.0.0 operations
+
+| Operation | Key parameters |
+| --- | --- |
+| `GetCapabilities` | `SERVICE=WCS`, `VERSION=1.0.0`. Read coverage names from `CoverageOfferingBrief/name`. |
+| `DescribeCoverage` | Optional `COVERAGE` with one or more advertised names (for example, `coverage_0`); omit it to describe all visible coverages in the route's scope. |
+| `GetCoverage` | Required `COVERAGE` naming one coverage, optional `FORMAT` (`GeoTIFF` by default, also `PNG` and `JPEG`), `BBOX`, `CRS`, `RESPONSE_CRS`, `WIDTH`/`HEIGHT` or `RESX`/`RESY`, and `BANDS` (one-based indexes). |
+
+Use the advertised coverage name and the 1.0.0 parameter `COVERAGE`, rather
+than the 2.0.1 parameter `COVERAGEID`. WCS 1.0.0 bounding boxes use x,y order
+(longitude,latitude for EPSG:4326). Omitted `BBOX` uses the native extent;
+an explicit `BBOX` is required when `CRS` differs from the native CRS.
+The 1.0.0 response describes nearest-neighbor interpolation and returns
+legacy `ServiceExceptionReport` XML for errors.
+
+### WCS 2.0.1 operations
 
 | Operation | Key parameters |
 | --- | --- |
