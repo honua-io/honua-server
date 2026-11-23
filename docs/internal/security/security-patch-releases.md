@@ -191,3 +191,21 @@ to the remediation deadlines above; reassess them against each supported image w
 ships. For current chiseled images, update the affected base digest or staged addition and
 verify the final scan as described under triage. The .NET 10.0.14 to 10.0.15 update recorded
 at that time is historical; current serving images use .NET 11.
+
+## Triage record, 2026-11-23
+
+Open Trivy code-scanning alerts on `trunk`: 14 medium, **no high or critical**. Source: the
+2026-11-22 trunk image scans, both serving categories. The image refresh that rebuilds the
+runtime layers from current Ubuntu packages should remove the six libc6 findings, because Ubuntu has
+fixed versions. The eight krb5 findings have no Ubuntu fix. They are two advisories, each
+reported against four client library packages at 1.22.1-2ubuntu4.1, and both are now VEX
+decisions:
+
+| Advisory | Package (image) | Decision |
+| --- | --- | --- |
+| CVE-2026-97399, CVE-2026-95818, CVE-2026-86805, CVE-2026-8674, CVE-2026-84243, CVE-2026-18374 | libc6 2.43-2ubuntu2.4 | Fixed by the runtime layer refresh (#9322); the pre-merge scan of the rebuilt images reported no fixable finding. Confirm on the first nightly image scan after the merge. |
+| CVE-2026-107708 | libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0 | Not affected (VEX): `vulnerable_code_not_present`. The flaw is in the KDC (`krb5kdc`). The images ship only the client shared libraries that `docker/runtime/stage-runtime.sh` copies; there is no KDC binary, plugin or database module. |
+| CVE-2026-107778 | the same four packages | Not affected (VEX): `vulnerable_code_not_in_execute_path`. The flaw is in KRB-CRED parsing on the GSS-API acceptor path. Honua registers no Negotiate or Kerberos inbound scheme, so it never accepts a GSS-API context. Its only GSS-API use is outbound (an operator-configured Kerberos database connection or Kafka SASL/GSSAPI), which only initiates, and an initiator does not parse a peer's KRB-CRED. This replaces the 2026-11-11 "open" row. |
+
+The entries pin version 1.22.1-2ubuntu4.1. When Ubuntu ships a new krb5 build, the findings
+come back for review. Fix them then by refreshing the image, not by moving the pin.

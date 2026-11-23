@@ -59,25 +59,24 @@ internal static class GdalVsiPath
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
-        string root;
-        if (!string.IsNullOrWhiteSpace(localStorageRoot))
+        // Without a configured root the read would resolve against the worker's
+        // working directory, outside any containment check.
+        if (string.IsNullOrWhiteSpace(localStorageRoot))
         {
-            var safeRoot = Path.GetFullPath(localStorageRoot);
-            var safeRootTrimmed = safeRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var safeRootPrefix = safeRootTrimmed + Path.DirectorySeparatorChar;
-            root = Path.IsPathRooted(directory)
-                ? Path.GetFullPath(directory)
-                : Path.GetFullPath(Path.Join(safeRoot, directory));
-            var rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (!string.Equals(rootTrimmed, safeRootTrimmed, comparison)
-                && !root.StartsWith(safeRootPrefix, comparison))
-            {
-                throw new InvalidOperationException("Local bucket directory must resolve under the configured local storage root.");
-            }
+            throw new InvalidOperationException("Local storage reads need a configured local storage root.");
         }
-        else
+
+        var safeRoot = Path.GetFullPath(localStorageRoot);
+        var safeRootTrimmed = safeRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var safeRootPrefix = safeRootTrimmed + Path.DirectorySeparatorChar;
+        var root = Path.IsPathRooted(directory)
+            ? Path.GetFullPath(directory)
+            : Path.GetFullPath(Path.Join(safeRoot, directory));
+        var rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (!string.Equals(rootTrimmed, safeRootTrimmed, comparison)
+            && !root.StartsWith(safeRootPrefix, comparison))
         {
-            root = Path.GetFullPath(directory);
+            throw new InvalidOperationException("Local bucket directory must resolve under the configured local storage root.");
         }
 
         var normalizedKey = key.Replace('/', Path.DirectorySeparatorChar);

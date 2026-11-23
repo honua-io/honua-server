@@ -1,5 +1,7 @@
 # CI Workflow Inventory
 
+The prior-reader compatibility job was removed on 22 November 2026. Migrations are forward-only, idempotent and tested on an installed stack; CI does not certify rolling rollback to an older reader. Required check names and the remaining PR Gate dependencies are unchanged.
+
 Shared OGC capabilities XML tests live in the Wms namespace and run in Maps Supporting. The WMS class/complement partition and its legacy budgets stay unchanged; Supporting also retains catalog metadata and cross-protocol XML source triggers.
 
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
@@ -223,7 +225,7 @@ Markdown sources and doctor-only tooling have been removed.
 | `heavy-shutdown-retry.yml` | Heavy Runner Shutdown Retry | `workflow_run` (completed CI) | One bounded retry of proven full-trunk heavy runner shutdowns; no PR jobs. |
 | `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The four Fast and architecture check names stay alongside it: `fast-tests` runs `architecture` and `unit-fast`, and `fast-server-tests` runs `server-fast` and `server-governance`, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. `architecture` and `unit-fast` compile only their own test roots. `fast-server-tests` restores the producer Server.Tests output for `server-fast` and `server-governance` and compiles that project only when the restore is empty. The groups are: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI, followed by the default PostGIS profile and connection-write policy checks. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Shard artifacts are named per run attempt. The aggregate downloads only the newest artifact id for each selected shard (`scripts/ci/download-affected-receipts.py`), keeps an earlier attempt when a failed-jobs rerun did not repeat that shard, and does not fall back from a missing or expired newest receipt. Full CI still downloads every attempt directory without merging them. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` reserves the gate label for `pr-gate` and `server-test-producer` and plans `start_heavy`: half of the idle heavy runners beyond a three-runner reserve (shards, advisory), at most two per gate, take both producers when the gate pool is busy, then `analyzers-server`, `architecture`, `server-fast` and `analyzers-other` through the fork-guarded `HONUA_HEAVY_RUNNER` selector; PR Gate's runner select, Format and source Analyzers, shard selection, the shard aggregate, CI router validation and the required aggregate stay on `ubuntu-latest`. `HONUA_LIGHT_RUNNER` does not place them, so a busy light pool cannot hold the selector while `honua-build` runners sit idle. Unplanned test-analyzer rows and Fast/architecture groups stay on `ubuntu-latest`, as do drafts, forks and draft Format. Manual dispatch accepts a default-false `qualify_light` boolean: only `workflow_dispatch` on `refs/heads/trunk` may pin runner select, Format and source Analyzers, CI router validation and the required aggregate to the `honua-light` group and label. Shard selection and the aggregate run only on pull requests, and both test-analyzer rows stay hosted. PR/fork routing, producer admission and aggregate dependencies remain unchanged. No early light job inherits the two producer slots; existing even-index affected-shard routing is unchanged ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Queues superseded events by resolved PR number and skips drafts, posts no red status on a pull request that merged or closed during attestation, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt. |
-| `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Validates unique shard names and per-project filters against the PR merge tree in a five-minute job required by the existing aggregate; disjoint grouped projects may share a filter. Runs the execution-evidence checker and its tests from the trusted base commit against the explicit PR head, including older heads without those scripts. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
+| `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`, `labeled`, `unlabeled`) | Required additions-only context `repo-hygiene / Repository hygiene`. Label changes rerun every job, so the shared bundle policy judges the current `bundle-exception` label rather than the label set at open. Validates unique shard names and per-project filters against the PR merge tree in a five-minute job required by the existing aggregate; disjoint grouped projects may share a filter. Runs the execution-evidence checker and its tests from the trusted base commit against the explicit PR head, including older heads without those scripts. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only; queues superseded events per PR and skips drafts. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
 
 The analyzer jobs enforce the [review prevention rules](analyzer-baseline.md) as
@@ -317,6 +319,7 @@ adding a compiled consumer of any of these files restores runtime validation.
 | `ci.yml` | CI | `schedule` (07:23 and 13:23 UTC), `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context validates scheduled or manually dispatched integration runs. Runtime proofs and import/export fidelity require the managed producer; native GDAL/PDAL and raster receipts run in the existing Worker job. Managed build producer, independent required full-solution format job, test and both architecture suites, CI-router validation, JS typecheck, and Postgres compatibility. Foundation families and selected server shards need the producer, restore verified outputs with MVC and static-asset runtime content roots relocated to the consumer checkout, and compile only their missing project union. Source architecture runs after projection regeneration; the full collector remains in the foundation server family. See the [artifact contract](server-test-binary-artifacts.md). Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. On a managed-artifact miss, the existing legacy cache path remains available: `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The shared quarantine filter runner records `HONUA_QUARANTINE_FILTER` in retained test logs with the effective filter, excluded methods, owning issues and expiry times. `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 | `trunk-affected.yml` | Trunk affected run | `push` (trunk, no path filter), `workflow_dispatch` | Stage 3 of the [gate model](gate-model.md#verification-stages). Resolves the head of the most recently completed `CI` run on trunk (success only, excluding failures and cancellations; newest 100 runs ordered by completion update time) that is an ancestor of the pushed head and dispatches `ci.yml` with `selective_base` set to it, titled `CI affected <base>..<head>`, so only the shards and lanes the new merges touch run. Runs queue in one concurrency group without cancellation; a run whose push is no longer the trunk tip exits, because the newer push's run covers it. Writes the separate culprit range since the last full green ancestor (successful affected runs cannot clear earlier failures) (commits and pull requests) to its summary; passes that ancestor separately as `investigation_base` so the dispatched run's `changes` job writes the same culprit range to its log and summary for the lane investigating the failure. Missing green history is reported as unknown. Affected runs never certify a sha for the nightly image (`select-certified-nightly-sha.py` ignores their title). Not a required check. Needs only `actions: write` and `contents: read`. Admission and execution recheck a conservative 40-job total bound (33 side jobs plus selected shards); full routing or unknown history defer coverage to scheduled full CI without a successful CI baseline; the `Record coverage deferred to scheduled full CI` step marks that head, and later pushes start from the newest marked ancestor so a deferred range does not hold back later merges. Affected server-shard concurrency is two. An active PR Gate neither defers nor cancels an affected run. |
 | `trunk-signal-watchdog.yml` | Trunk signal watchdog | Half-hourly `schedule`, `workflow_run` (`CI`, `Full CI dispatch` on `trunk`), `workflow_dispatch` | Opens or updates a `trunk-signal` issue and fails when a running run has not produced a result within 4 h of its first job starting on a runner, the last result is older than 22 h, a run or child job queued over 45 min, at least 6 of the last 10 runs created in the last 6 h were cancelled, or no scheduled full CI run started in 20 h. Queries scheduled runs separately so selective traffic cannot hide missed delivery; a queued workflow counts as started only when job runner assignment proves execution, and child queues remain monitored; closes the issue only when all signals recover. |
+| `scheduled-failure-issues.yml` | Scheduled failure issues | Hourly `schedule`, `workflow_run` (scheduled or dispatched runs of the server nightlies and `CI`), `workflow_dispatch` | Sweeps every non-archived honua-io repository with an organisation bot App token (`actions: read`, `issues: write`). Each failed scheduled run, plus the bot dispatches named in `scripts/ci/scheduled-failure-owners.json` (`CI full` runs of `ci.yml`, candidate-tag runs of the nightly container build), opens or comments on one `bug` + area + `scheduled-failure` issue per workflow and failing job, with the owner lane from that file, a 24-hour due time and a `claimed:` comment; gate and summary jobs count only when nothing else failed, and a run already recorded on a closed issue is not filed again. A later successful run closes the workflow's issues (for the container build, only a run whose manifest publish succeeded). A success between failures closes the issues it fixed. A failure followed by a success before any sweep is not filed, and a nightly container build that publishes nothing (its candidate already imaged) neither closes nor files. Logs and the summary never name private repositories. Plain REST; no model. Tests: `scripts/ci/scheduled-failure-issues.test.js` in `validate-ci-router.sh`. |
 | `full-ci-dispatch.yml` | Full CI dispatch | `push` (trunk), hourly `schedule` 05:41-10:41 UTC, `workflow_dispatch` | Dispatches one full `ci.yml` run on trunk between 22:00 and 03:00 Pacific (PST or PDT) when none is queued or running, trunk head has no full result and the night has had fewer than two full runs that were not cancelled. GitHub delivers this repository's cron events hours late, so the `ci.yml` crons alone often land in the daytime window. A night with no trunk push before 03:00 Pacific relies on those crons. `HONUA_FULL_CI_DISPATCH=off` disables it. |
 | `native-tools-publish.yml` | Publish trusted native tools | `push` (native inputs on `trunk`), weekly `schedule`, `workflow_dispatch` | Trusted trunk-only production `native-tools` image publisher; dedicated image/cache, exact input identity and immutable digest attestation. Consumers verify provenance and retain the bounded production build on any miss. No merge authority; existing native/AOT execution proofs remain required. See [native tools reuse](native-tools-reuse.md). |
 | `gp-devkit-publish.yml` | Publish GP Devkit | `workflow_dispatch` only | Packs `Honua.Geoprocessing.Cli` at the repository version and pushes it to GitHub Packages only for an explicit canonical-trunk dispatch. The publication identity is retained for honua-release#615. Pull requests and installed-authoring candidates do not publish. |
@@ -545,6 +548,7 @@ which is why both the run count and exact observed span are recorded.
 | `standing-aws-cert-plan.yml` | Standing AWS certification plan only | `workflow_dispatch` on `trunk`; PR offline controls | Protected `cert` OIDC job on an ephemeral GitHub-hosted runner. Checks out public IaC at exact current `trunk`, admits the protected request, candidate, reviewed modules and deployed bootstrap ZIP, and exports only age ciphertext plus a bound public-safe receipt. The workflow does not provision the existing backend, roles, protected inputs or local decryption custody; it does not apply a plan. |
 | `lambda-preview-certification.yml` | Lambda Preview Certification | `workflow_dispatch` | Deploys an exact GHCR Lambda AOT image to the certified AWS account, invokes and verifies it, guarantees teardown, and emits a fingerprint-only receipt containing the true ECR artifact digest for the release manifest handoff. |
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; uploads the TRX and gap report as workflow artifacts under the ignored artifacts/ output root. |
+| `client-roster-certification.yml` | Client Roster Certification | `workflow_dispatch` | Runs the bounded external-client roster (`certification/bounded-roster/run-roster.sh`) on a GitHub runner against a candidate image digest and cut time; release-mode and contract verdicts decide the job, and receipts, verdicts and lane logs upload as a release-tier evidence artifact. Producer authority for the roster rows in `certification/client-protocol-requirements.v1.json`. |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). Protected-style probes resolve the seeded publication ID and independently verify that numeric-layer vector tiles reject anonymous and invalid-key requests. |
 | `multidim-raster-fixture.yml` | Real Multidimensional Raster Fixture | daily `schedule` (08:15 UTC), `workflow_dispatch` | Composes the pinned LocalStack/S3 object store, real NetCDF seed, native GDAL worker, and server; verifies production metadata scan, derived Zarr objects, and distinct selected-time ImageServer PNG slices. Uploads the verifier log and failure-only composition logs as nightly evidence. |
 | `client-compat-smoke-nightly.yml` | Generic Client Compatibility Smoke | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
@@ -2192,6 +2196,30 @@ Shard filters are unchanged, so every case runs in the same shards on selected P
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
 
+### Measured SOAP shard packing
+
+The SOAP and SOAP Progress shards now share one GeoServices GPServer SOAP
+runner. Their exact filter union, affected-path union, project, tier selection,
+CPU setting, report flags and 22-minute test / 32-minute job budgets are
+preserved. The method ownership guard covers the combined shard; a frozen
+packing contract checks both former filters and execution settings. MVT keeps
+its separate coverage partition.
+
+Ordinary full runs [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+[44921455496](https://github.com/honua-io/honua-server/actions/runs/44921455496)
+and [45000554030](https://github.com/honua-io/honua-server/actions/runs/45000554030)
+passed all 81 SOAP cases with no skips. Their two shard process-wall sums were
+35, 26 and 17 seconds; even the sum of the individual maxima is 35 seconds,
+2.7% of the unchanged 1,320-second budget. The last full run failed elsewhere;
+its two SOAP shards passed. The combined dispatch rank of 5.0 minutes is an
+explicit packing estimate (the sum of the former ranks), pending a qualifying
+combined-filter job measurement. This reduces the full matrix from 203 to 202 jobs,
+and a GPServer-affected selection loses one runner. In the last run the two
+jobs occupied 203 runner-seconds (3.38 minutes), including 19 seconds in test
+steps. Combined-job runner-minute savings remain unmeasured until a live run;
+these figures do not claim a PR critical-path improvement. The old 132-to-123
+proposal requires fresh qualification for its other groups.
+
 ### OData client integration host lifetime
 
 `ODataClientIntegrationTests` initializes its Pro-licensed, `odata.yaml`-seeded
@@ -2262,6 +2290,154 @@ seconds (0.116 runner minutes), with one runner before and after. Individual
 baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
+
+### Streaming projected-bbox handshake host lifetime
+
+`FeatureStreamEndpointsTests.Stream_WithProjectedBboxLayer_AllowsSseHandshake`
+uses the existing class-owned Pro streaming application and a fresh admin client.
+It previously started a second private Pro application for the same handshake.
+The shared host resets sessions between cases, and the projected layer is seeded
+before requests. The request URL, Accept header, five-second cancellation, status
+and content-type assertions are unchanged. All 193 assertion lines and 134
+selection/endpoint metadata lines in the changed file are retained. Cases with
+specialized configuration, real credential expiry or mutable services retain
+their existing hosts and timing bounds.
+
+Four interleaved baseline/candidate runs of the complete unchanged Server
+Features Streaming Endpoints 2 shard passed the same 23 cases, with zero skips.
+Summed class seconds were 30.821524 / 27.345450 and 27.160965 / 26.675210
+(baseline / candidate); the median was 28.991244 -> 27.010330 seconds.
+Fixture-inclusive TRX shard intervals were 47.529324 / 43.602161 and
+43.948600 / 43.279365 seconds. Their median was 45.738962 -> 43.440763 seconds,
+a measured saving of 2.298199 seconds (0.038303 runner-minutes), with one runner
+before and after. Both pairs improved, with different magnitudes; this small
+sample does not establish PR critical-path savings. Compilation/process time is
+excluded from the shard saving. This removes one redundant application boot
+without splitting the suite or reducing its assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### Streaming baseline-capability seed lifetime
+
+The eight baseline-capability cases in `FeatureStreamEndpointsTests` borrow the
+feature schema of the already initialized class fixture. Each case retains its
+private application, mock feature reader, metadata provider, license configuration
+and disposal. These GET requests read capabilities through the case-local mock
+reader; they do not mutate the shared feature data. The Database collection still
+serializes the cases, and the class fixture owns schema cleanup after every
+borrower is disposed. The one-second lookup budget, cancellation behavior, all
+assertions and endpoint metadata remain unchanged.
+
+Every case remains in its existing selected PR shard and full trunk runs. No
+workflow, shard filter, required check name, runner count or required aggregate
+`needs` contract changes.
+
+Two interleaved base/head Release runs of the complete unchanged Streaming
+Endpoints 4 shard passed the same 28 cases in every run (zero skipped), on one
+runner before and after. Summed `FeatureStreamEndpointsTests` TRX case seconds
+were 33.220638 / 31.768553 at base and 28.079612 / 25.437050 at head: median
+32.494596 to 26.758331 seconds. Fixture-inclusive TRX session seconds were
+49.478414 / 47.762028 at base and 45.713160 / 40.702234 at head: median
+48.620221 to 43.207697 seconds, saving 5.412524 seconds (0.090209 runner-minutes).
+Both pairs improved, by 3.765254 and 7.059794 seconds. Compilation is excluded;
+this is a measured shard saving, not evidence of an end-to-end CI critical-path
+improvement.
+
+### Streaming unsupported-owner seed lifetime
+
+The nine `Capabilities_UnsupportedOwner_OmitsLayer` theory rows keep private Pro
+application hosts and independently patched metadata providers while borrowing the
+already initialized class fixture's feature schema. These requests reject the
+unsupported metadata owner before reading features; they do not write features or
+read the stream event log. Each borrower is disposed within its case, before the
+class fixture drops its owned schema. The SSE and WebSocket rejection cases keep
+their existing private fixtures and all assertions and test attributes are intact.
+
+The shard filter, selected cases, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case continues to run in its selected PR
+shard and full trunk runs. No test or gate coverage moves to another schedule.
+
+Two interleaved base/head Release runs of the complete Streaming Endpoints 2 shard
+passed the same 23 cases in each run, with zero failures or skips. Summed class
+case medians fell from 26.418 to 22.098 seconds. Fixture-inclusive TRX session
+seconds were 42.367 / 40.345 at base and 37.157 / 37.190 at head: median
+41.356 to 37.173 seconds, saving 4.183 seconds (0.070 runner-minutes), with one
+runner before and after. Both pairs improved, by 5.210 and 3.155 seconds.
+Compilation is excluded; this small shared-host measurement does not establish
+a reduction in the parallel PR Gate's critical path.
+
+### WPS canonical rejection host lifetime
+
+The four `Wps20EndpointsTests.CanonicalExecute_UnsupportedContract_IsRejectedBeforeSubmission`
+theory cases share a lazy class-owned application with the same canonical process
+catalog and job-service substitute. Every case creates a fresh client and clears
+received job-service calls before sending its request. Other configured hosts
+retain their isolation. All 125 assertion lines and 154 selection/endpoint
+metadata lines are unchanged, including the bad-request response and assertion
+that rejected contracts never submit a job.
+
+Four interleaved baseline/candidate runs of the complete unchanged WFS 6 owning
+shard passed the same 12 cases, with zero skips; 11 belong to the WPS class.
+Summed class seconds were 8.783987 / 4.083868 and 7.195504 / 3.723192
+(baseline / candidate); the median was 7.989745 -> 3.903530 seconds.
+Fixture-inclusive TRX shard intervals were 27.592498 / 22.787546 and
+25.240013 / 27.248837 seconds. Their median was 26.416256 -> 25.018192 seconds,
+a measured saving of 1.398064 seconds (0.023301 runner-minutes), with one runner
+before and after. Both class pairs improved, but the second full-shard pair was
+slower; this variable small sample does not establish PR critical-path savings.
+Compilation/process time is excluded. This removes three redundant configured
+application boots without splitting cases or reducing assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### WPS invalid-contract reference host lifetime
+
+Four `Wps20EndpointsTests.ConformanceEcho_InvalidContract_DoesNotResolveReference`
+theory rows share a lazy class-owned application with the unchanged reference
+allowlist. Every row creates and disposes a fresh client; the Database collection
+remains serial. Each request must still fail contract validation before reference
+resolution, report the expected locator, and omit the DNS-resolution failure text.
+The separate unresolvable-reference case retains its private application. All
+124 assertion lines and 154 endpoint, operation and test metadata lines are unchanged.
+
+Every case remains in the same selected PR shard and full trunk runs. No workflow,
+shard filter, required check name or aggregate dependency changes.
+
+Two interleaved base/head Release runs of the unchanged complete WFS1 shard each
+passed the same 11 cases, with zero skipped and identical test identities/outcomes.
+Summed class seconds were 8.860 / 8.573 at base and 5.586 / 5.779 at head (median
+8.716712 to 5.682745 seconds). Fixture-inclusive TRX shard seconds were 21.303095 /
+21.066283 at base and 18.091381 / 18.253105 at head (median 21.184689 to 18.172243).
+This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before and
+after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
+these small local shard measurements do not establish parallel PR Gate critical-path
+savings. The other WPS shard selections and their private hosts remain unchanged.
+
+### WFS configured metadata seed ownership
+
+Five read-only `Wfs20EndpointsTests` Pro applications borrow the existing class
+schema while preserving their individual metadata providers, licenses, services,
+clients and disposal. Mutation cases retain private schemas. All 440 assertion
+lines and 400 metadata lines remain; the WFS Endpoints owning shard runs every
+case on selected PRs and twice-daily full trunk runs. See
+[WFS 2.0 endpoint fixture lifetime](gate-model.md#wfs-20-endpoint-fixture-lifetime).
+No workflow, shard filter, runner count, required check name or aggregate `needs`
+dependency changes.
+
+Two interleaved base/head runs of the full 99-case WFS Endpoints shard passed
+identical cases with zero skips. Class sums were 32.012600 / 31.165176 seconds
+at base and 31.582156 / 29.329947 at head: median 31.588888 to 30.456051 seconds.
+Fixture-inclusive TRX session pairs were 44.316083 / 44.266786 and
+43.926958 / 42.751009 seconds: median 44.121521 to 43.508898 seconds, saving
+0.612623 seconds (0.010210 runner-minutes), one runner before and after.
+Both pairs improved, but the first by only 0.049297 seconds; this is a modest
+observed saving with shared-host variability, not a demonstrated PR critical-path
+improvement. Compilation is excluded. Process times were 426.106 / 56.836 seconds
+at base and 57.608 / 60.113 at head; the first baseline included a cold build.
 
 ### Capability plugin discovery schema lifetime
 

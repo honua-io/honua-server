@@ -113,7 +113,8 @@ def console_web_image(directory, lock):
     image = lock.get('consoleWeb', '')
     bundle = lock.get('consoleBundle')
     if (not isinstance(image, str) or not IMMUTABLE.fullmatch(image) or not isinstance(bundle, dict)
-            or not (directory / 'console/index.html').is_file() or not (directory / 'console.nginx.conf').is_file()):
+            or not all((directory / name).is_file()
+                       for name in ('console/index.html', 'console.nginx.conf', 'console.version.json'))):
         raise ValueError('The package must include the released Console bundle and an immutable Console web image')
     return image
 
@@ -167,7 +168,8 @@ def write_console_files(directory, values, openssl):
     recreates the edge and removes it, so a failed start keeps the restart pending."""
     # The web server (uid 101) reads these through bind mounts; none holds a credential.
     # Extraction applies the customer's umask, so set the bundle's modes here.
-    (directory / 'console.nginx.conf').chmod(0o644)
+    for name in ('console.nginx.conf', 'console.version.json'):
+        (directory / name).chmod(0o644)
     bundle = directory / 'console'
     for path in [bundle, *bundle.rglob('*')]:
         if not path.is_symlink():

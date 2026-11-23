@@ -11,6 +11,12 @@ SQL Warehouse. It plugs in alongside the primary backend (PostGIS, DuckDB, or My
 through the shared feature-provider router: any layer whose backing `DataConnection`
 resolves to the `databricks` provider is read through this implementation.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 > **Status: best-effort, read-only.** Databricks has no first-class .NET ADO.NET
 > driver, so this provider is an HTTP read-through adapter over the Databricks **SQL
 > Statement Execution REST API**, closer in shape to the GeoServices REST provider than to

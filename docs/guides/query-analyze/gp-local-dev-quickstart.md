@@ -119,6 +119,12 @@ the compiled registrations in the serving image, and native helper scripts load
 from the image. A source edit reaches a worker only after that image is rebuilt
 and the container is recreated. Section 4 has the commands.
 
+The GDAL worker reads Local-provider raster and coverage inputs only under
+`GdalWorker__LocalCoverageRoot`. The profile sets it to the shared
+`/var/lib/honua/gp-artifacts` volume. Without that setting, typed raster inputs
+from Local object storage are refused rather than read relative to the worker's
+working directory; S3 and Azure inputs are unaffected.
+
 `honua-gp-devkit doctor` reports the prerequisite for this profile: Docker
 Compose v2, with host ports 5432, 8080, and 8081 free. It also reports
 whether `docker`, `kind`, `kubectl`, and `helm` are on PATH, each as `found` or

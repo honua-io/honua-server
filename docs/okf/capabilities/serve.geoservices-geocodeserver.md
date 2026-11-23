@@ -16,6 +16,7 @@ Discover GeocodeServer service and layer metadata. Batch geocode execution is ga
 | Capability key | `serve.geoservices-geocodeserver` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
 | Proving tests | 18 |

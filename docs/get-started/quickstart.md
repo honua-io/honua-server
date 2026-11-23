@@ -178,6 +178,10 @@ on each run (a change restarts the Console edge); it never contains a credential
 the earlier Console presentation. The overlay also enables the server's Studio
 end-user authorization; embedded Studio ships inside the bundle.
 
+`https://localhost:18083/console/version.json` names the Console bundle by its
+SHA-256 and reports the platform version of the package, the same version the
+server reports at `/api/v1/admin/capabilities` before its `+<commit>` build suffix.
+
 ### Install operating skills
 
 From the trusted, extracted quickstart directory, install the same canonical
