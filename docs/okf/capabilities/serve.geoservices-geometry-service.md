@@ -16,6 +16,7 @@ Server-side geometry operations (project, buffer, simplify, union, and related u
 | Capability key | `serve.geoservices-geometry-service` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 48 implemented |
 | Registry entries | 48 |
 | Proving tests | 164 |

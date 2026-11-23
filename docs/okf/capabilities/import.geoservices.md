@@ -16,6 +16,7 @@ Import layers from ArcGIS REST services.
 | Capability key | `import.geoservices` |
 | Category | Import |
 | Edition | Enterprise |
+| Status | ga |
 | Surface maturity | 10 implemented |
 | Registry entries | 10 |
 | Proving tests | 53 |

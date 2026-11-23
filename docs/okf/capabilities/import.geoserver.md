@@ -16,6 +16,7 @@ Import layers from GeoServer REST API.
 | Capability key | `import.geoserver` |
 | Category | Import |
 | Edition | Enterprise |
+| Status | ga |
 | Surface maturity | 5 implemented |
 | Registry entries | 5 |
 | Proving tests | 18 |
