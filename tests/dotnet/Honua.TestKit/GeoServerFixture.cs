@@ -13,8 +13,14 @@ namespace Honua.TestKit;
 public sealed class GeoServerFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.
+    // The container outlives its last reference for IdleReleaseDelay. The GeoServer classes sit in
+    // different serial collections, so without the grace the count reached zero between them and
+    // each class booted its own container. ProcessExit disposes a container still in its grace.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly GeoServerSharedState SharedState = new();
+    private static readonly TimeSpan IdleReleaseDelay = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan ProcessExitDisposalLimit = TimeSpan.FromSeconds(10);
+    private static int _processExitHooked;
 
     private sealed class GeoServerSharedState
     {
@@ -24,6 +30,7 @@ public sealed class GeoServerFixture : IAsyncLifetime
         public int SharedRefCount { get; set; }
         public bool SharedCuratedResourcesSeeded { get; set; }
         public bool SharedInitialized { get; set; }
+        public CancellationTokenSource? PendingRelease { get; set; }
     }
 
     private const string GeoServerImage = "docker.osgeo.org/geoserver:2.28.0";
@@ -60,10 +67,12 @@ public sealed class GeoServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
+            CancelPendingRelease();
             if (!SharedState.SharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
                 SharedState.SharedInitialized = true;
+                HookProcessExit();
             }
 
             if (_seedCuratedData && !SharedState.SharedCuratedResourcesSeeded)
@@ -93,21 +102,102 @@ public sealed class GeoServerFixture : IAsyncLifetime
 
             if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
-                if (SharedState.SharedContainer is not null)
-                {
-                    await SharedState.SharedContainer.DisposeAsync().ConfigureAwait(false);
-                }
-
-                SharedState.SharedContainer = null;
-                SharedState.SharedBaseUrl = null;
-                SharedState.SharedRestUrl = null;
-                SharedState.SharedCuratedResourcesSeeded = false;
-                SharedState.SharedInitialized = false;
+                CancelPendingRelease();
+                var pending = new CancellationTokenSource();
+                SharedState.PendingRelease = pending;
+                _ = ReleaseWhenIdleAsync(pending);
             }
         }
         finally
         {
             _sharedLock.Release();
+        }
+    }
+
+    private static async Task ReleaseWhenIdleAsync(CancellationTokenSource pending)
+    {
+        try
+        {
+            await Task.Delay(IdleReleaseDelay, pending.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await _sharedLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (ReferenceEquals(SharedState.PendingRelease, pending))
+            {
+                await DisposeIfIdleAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception)
+        {
+            // No test awaits this release; report a disposal failure instead of dropping it.
+            await Console.Error.WriteLineAsync($"Shared GeoServer container idle release failed: {exception}").ConfigureAwait(false);
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    private static async Task ReleaseIdleNowAsync()
+    {
+        await _sharedLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await DisposeIfIdleAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    // Callers hold _sharedLock.
+    private static async Task DisposeIfIdleAsync()
+    {
+        CancelPendingRelease();
+        if (SharedState.SharedRefCount != 0 || !SharedState.SharedInitialized)
+        {
+            return;
+        }
+
+        var container = SharedState.SharedContainer;
+        SharedState.SharedContainer = null;
+        SharedState.SharedBaseUrl = null;
+        SharedState.SharedRestUrl = null;
+        SharedState.SharedCuratedResourcesSeeded = false;
+        SharedState.SharedInitialized = false;
+        if (container is not null)
+        {
+            await container.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    // Callers hold _sharedLock.
+    private static void CancelPendingRelease()
+    {
+        var pending = SharedState.PendingRelease;
+        SharedState.PendingRelease = null;
+        if (pending is null)
+        {
+            return;
+        }
+
+        pending.Cancel();
+        pending.Dispose();
+    }
+
+    private static void HookProcessExit()
+    {
+        if (Interlocked.Exchange(ref _processExitHooked, 1) == 0)
+        {
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+                ReleaseIdleNowAsync().Wait(ProcessExitDisposalLimit);
         }
     }
 
