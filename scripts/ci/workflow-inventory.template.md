@@ -2271,11 +2271,9 @@ and fresh clients. Each application borrows the initialized class fixture's seed
 schema rather than creating and seeding another schema. The fixture owner outlives
 all serial class cases; borrowers never drop its schema. Requests only read the
 capability manifest. Per-host metadata and plugin registries remain separate.
-The schema-reuse change preserves every assertion. The same suite also repairs
-a stale manifest contract after trunk added the implemented GeoParquet writer:
-the exact writer list includes GeoParquet and the two total-format counts are
-17. Both measured variants include that correction; their only difference is
-the six plugin hosts borrowing the initialized schema.
+The schema-reuse change preserves every assertion. Both measured variants
+include the GeoParquet manifest assertion correction that trunk now carries;
+their only difference is the six plugin hosts borrowing the initialized schema.
 
 Four interleaved base/head Release runs of the complete Server Features
 Capabilities shard passed the identical 103 cases with no skips on one runner
