@@ -114,7 +114,79 @@ public sealed class McpGetJobResultsToolTests
         structured.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
     }
 
-    private static AnalysisResultPackage CompletedPackage()
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_InlineGeoJsonJoin_ReturnsCountsAndRowsInsteadOfTheDataUri()
+    {
+        var uri = JoinResultUri(joinCounts: [1, 0, 2, 0], padding: 1200);
+        _jobService.GetJobResultsAsync("gp-join", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var result = (await Dispatch(ToolCall("results-join", """{"jobId":"gp-join","rowLimit":2}""")))!.Result!.Value;
+
+        var artifact = result.GetProperty("structuredContent").GetProperty("artifacts")[0];
+        artifact.TryGetProperty("uri", out _).Should().BeFalse("an MCP-only client cannot read a base64 data URI");
+        artifact.GetProperty("uriOmitted").GetBoolean().Should().BeTrue();
+        artifact.GetProperty("uriLength").GetInt32().Should().Be(uri.Length);
+        artifact.GetProperty("referenceSha256").GetString().Should().HaveLength(64, "ingest by reference still works");
+        var summary = artifact.GetProperty("featureSummary");
+        summary.GetProperty("featureCount").GetInt32().Should().Be(4);
+        summary.GetProperty("matchedFeatureCount").GetInt32().Should().Be(2);
+        summary.GetProperty("fields").EnumerateArray().Select(f => f.GetString()).Should().Equal("id", "note", "JOIN_COUNT");
+        summary.GetProperty("geometryTypes").EnumerateArray().Select(t => t.GetString()).Should().Equal("Point");
+        summary.GetProperty("rows").EnumerateArray().Select(r => r.GetProperty("id").GetInt32()).Should().Equal(1, 2);
+        summary.GetProperty("nextRowOffset").GetInt32().Should().Be(2);
+        result.GetProperty("content")[0].GetProperty("text").GetString().Should().Contain("4 features, 2 matched");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_IncludeUriAndLastPage_KeepsTheUriAndEndsPaging()
+    {
+        var uri = JoinResultUri(joinCounts: [1, 0, 2], padding: 1200);
+        _jobService.GetJobResultsAsync("gp-join", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var structured = (await Dispatch(ToolCall(
+                "results-page", """{"jobId":"gp-join","includeUri":true,"rowOffset":2,"rowLimit":5}""")))!
+            .Result!.Value.GetProperty("structuredContent");
+
+        var artifact = structured.GetProperty("artifacts")[0];
+        artifact.GetProperty("uri").GetString().Should().Be(uri);
+        artifact.TryGetProperty("uriOmitted", out _).Should().BeFalse();
+        var summary = artifact.GetProperty("featureSummary");
+        summary.GetProperty("rows").EnumerateArray().Select(r => r.GetProperty("id").GetInt32()).Should().Equal(3);
+        summary.TryGetProperty("nextRowOffset", out _).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("""{"jobId":"gp-join","rowLimit":51}""")]
+    [InlineData("""{"jobId":"gp-join","rowOffset":-1}""")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RowWindowOutOfRange_IsRefusedBeforeReading(string arguments)
+    {
+        var response = await Dispatch(ToolCall("results-window", arguments));
+
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        ServiceCalls().Should().BeEmpty();
+    }
+
+    private static string JoinResultUri(int[] joinCounts, int padding)
+    {
+        var note = new string('n', padding);
+        var features = joinCounts.Select((count, index) =>
+            $$"""{"type":"Feature","geometry":{"type":"Point","coordinates":[{{index}},{{index}}]},"properties":{"id":{{index + 1}},"note":"{{note}}","JOIN_COUNT":{{count}}}}""");
+        var json = $$"""{"type":"FeatureCollection","features":[{{string.Join(",", features)}}]}""";
+        return "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+    }
+
+    private static AnalysisResultPackage CompletedPackage(string uri = "honua://artifacts/artifact-1")
         => AnalysisResultPackage.CreateCompleted(
             "pkg-123",
             new ResultSummary
@@ -128,7 +200,7 @@ public sealed class McpGetJobResultsToolTests
                     ArtifactId = "artifact-1",
                     Kind = ArtifactKind.FeatureLayer,
                     Label = "Buffered output",
-                    Uri = "honua://artifacts/artifact-1",
+                    Uri = uri,
                     ContentType = "application/geo+json"
                 }
             ],

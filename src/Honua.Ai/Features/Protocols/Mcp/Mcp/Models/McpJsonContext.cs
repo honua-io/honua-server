@@ -103,6 +103,7 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpJobResultsResource))]
 [JsonSerializable(typeof(McpResultSummary))]
 [JsonSerializable(typeof(McpArtifactRef))]
+[JsonSerializable(typeof(McpArtifactFeatureSummary))]
 [JsonSerializable(typeof(McpWorkspaceRef))]
 [JsonSerializable(typeof(McpProvenance))]
 [JsonSerializable(typeof(McpProvenanceSource))]

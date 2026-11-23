@@ -115,7 +115,12 @@ bounded wait; on timeout inspect the job or request cancellation with
 supplement polling when supported by the client session.
 
 On success, inspect the `artifacts` from `honua_get_job_results` (or the result resource)
-and retain their actual identifiers and references. Check the geometry: this
+and retain their actual identifiers and references. An inline GeoJSON artifact comes
+back as a `featureSummary`: `featureCount`, the field names, `matchedFeatureCount` for a
+spatial join (features with `JOIN_COUNT > 0`) and a page of attribute rows (`rowOffset`,
+`rowLimit` up to 50, `nextRowOffset`). The tool leaves out a data URI longer than 2,048
+characters unless you pass `includeUri: true`; the result resource always carries it.
+Check the geometry: this
 example should have bounds `[-500, -500, 500, 500]` in EPSG:3857 and area within
 1% of `π × 500²` square metres. A job ID or a successful tool call alone does not
 prove the requested analysis completed correctly.

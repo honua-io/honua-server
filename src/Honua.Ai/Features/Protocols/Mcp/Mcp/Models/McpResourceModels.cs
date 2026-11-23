@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
@@ -181,6 +182,39 @@ internal sealed class McpArtifactRef
 
     [JsonPropertyName("metadata")]
     public IReadOnlyDictionary<string, string> Metadata { get; set; } = new Dictionary<string, string>();
+
+    [JsonPropertyName("uriOmitted")]
+    public bool? UriOmitted { get; set; }
+
+    [JsonPropertyName("uriLength")]
+    public int? UriLength { get; set; }
+
+    [JsonPropertyName("featureSummary")]
+    public McpArtifactFeatureSummary? FeatureSummary { get; set; }
+}
+
+internal sealed class McpArtifactFeatureSummary
+{
+    [JsonPropertyName("featureCount")]
+    public int FeatureCount { get; set; }
+
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<string> Fields { get; set; } = [];
+
+    [JsonPropertyName("geometryTypes")]
+    public IReadOnlyList<string> GeometryTypes { get; set; } = [];
+
+    [JsonPropertyName("matchedFeatureCount")]
+    public int? MatchedFeatureCount { get; set; }
+
+    [JsonPropertyName("rowOffset")]
+    public int RowOffset { get; set; }
+
+    [JsonPropertyName("rows")]
+    public IReadOnlyList<JsonElement> Rows { get; set; } = [];
+
+    [JsonPropertyName("nextRowOffset")]
+    public int? NextRowOffset { get; set; }
 }
 
 internal sealed class McpWorkspaceRef
