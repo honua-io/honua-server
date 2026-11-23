@@ -23,7 +23,7 @@ internal sealed partial class OutputCacheInvalidationService
         "terrain",
     ];
 
-    public async Task InvalidateServiceCatalogAsync(
+    public Task InvalidateServiceCatalogAsync(
         string? serviceId,
         IEnumerable<int>? layerIds,
         CancellationToken cancellationToken)
@@ -31,29 +31,20 @@ internal sealed partial class OutputCacheInvalidationService
         var normalizedServiceId = string.IsNullOrWhiteSpace(serviceId)
             ? null
             : serviceId.Trim().ToLowerInvariant();
-        int[] layerIdList = [.. layerIds?.Distinct() ?? []];
-
-        await PurgeCdnAfterAsync(EvictServiceCatalogAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
+        return FinishCommittedChangeAsync(normalizedServiceId, [.. layerIds?.Distinct() ?? []], cancellationToken);
     }
 
-    public async Task InvalidateEverythingAsync(CancellationToken cancellationToken)
-    {
-        await PurgeCdnAfterAsync(EvictServiceCatalogAsync(normalizedServiceId: null, [], cancellationToken)).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
-    }
+    public Task InvalidateEverythingAsync(CancellationToken cancellationToken)
+        => FinishCommittedChangeAsync(normalizedServiceId: null, [], cancellationToken);
 
-    // The change is committed before eviction starts, so a request that ends early still has to reach the CDN.
-    private async Task PurgeCdnAfterAsync(Task eviction)
+    // The change is committed before this runs, so a request that ends early must not leave origin copies, the CDN or
+    // promoted exports behind it; the caller still learns that its request ended.
+    private async Task FinishCommittedChangeAsync(string? normalizedServiceId, int[] layerIdList, CancellationToken requestAborted)
     {
-        try
-        {
-            await eviction.ConfigureAwait(false);
-        }
-        finally
-        {
-            await InvalidateCdnForAdministrativeChangeAsync(CancellationToken.None).ConfigureAwait(false);
-        }
+        await EvictServiceCatalogAsync(normalizedServiceId, layerIdList, CancellationToken.None).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(CancellationToken.None).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, CancellationToken.None).ConfigureAwait(false);
+        requestAborted.ThrowIfCancellationRequested();
     }
 
     private async Task EvictServiceCatalogAsync(

@@ -181,6 +181,20 @@ public sealed class CdnInvalidationTests
     }
 
     [UnitTest]
+    public async Task InvalidateServiceCatalogAsync_RequestEndedBeforeEviction_StillPurgesAndChecksExportsOnce()
+    {
+        var exports = new CountingExportAccessListener();
+        using var ended = new CancellationTokenSource();
+        await ended.CancelAsync();
+
+        var change = () => Invalidation(exports).InvalidateServiceCatalogAsync("Parcels", [3, 4], ended.Token);
+
+        await change.Should().ThrowAsync<OperationCanceledException>();
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+        exports.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
     public async Task InvalidateEverythingAsync_OperatorPurge_InvalidatesEverythingOnceAndChecksPublicExportsOnce()
     {
         var exports = new CountingExportAccessListener();
