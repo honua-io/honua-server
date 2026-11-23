@@ -9,6 +9,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerMensurationMath
 {
     internal const double MeanEarthRadiusMeters = 6371008.8;
+    internal const double AuthalicEarthRadiusMeters = 6371007.1809;
 
     internal enum MeasureSpace
     {
@@ -110,11 +111,171 @@ internal static class ImageServerMensurationMath
                 var distance = Wgs84Vincenty.DistanceMeters(originLon, originLat, point.Item1, point.Item2);
                 var azimuth = DegreesToRadians(
                     Wgs84Vincenty.InitialBearingDegrees(originLon, originLat, point.Item1, point.Item2));
-                densified.Add((distance * Math.Sin(azimuth), distance * Math.Cos(azimuth)));
+                var halfAngle = Math.Min(distance / (2d * AuthalicEarthRadiusMeters), Math.PI / 2d);
+                var rho = 2d * AuthalicEarthRadiusMeters * Math.Sin(halfAngle);
+                densified.Add((rho * Math.Sin(azimuth), rho * Math.Cos(azimuth)));
             }
         }
 
         return PlanarRingAreaSquareMeters(densified);
+    }
+
+    internal static double GeodesicPolygonAreaSquareMeters(
+        IReadOnlyList<IReadOnlyList<(double Lon, double Lat)>> rings)
+    {
+        if (rings.Count == 0)
+        {
+            return 0d;
+        }
+
+        var exteriorRing = rings[0];
+        var total = GeodesicRingAreaSquareMeters(exteriorRing);
+        for (var i = 1; i < rings.Count; i++)
+        {
+            var ring = rings[i];
+            var ringArea = GeodesicRingAreaSquareMeters(ring);
+            if (IsInteriorHoleRing(ring, exteriorRing, unwrapLongitudes: true))
+            {
+                total -= ringArea;
+            }
+            else
+            {
+                total += ringArea;
+            }
+        }
+
+        return Math.Max(0d, total);
+    }
+
+    internal static double PlanarPolygonAreaSquareMeters(
+        IReadOnlyList<IReadOnlyList<(double X, double Y)>> rings)
+    {
+        if (rings.Count == 0)
+        {
+            return 0d;
+        }
+
+        var exteriorRing = rings[0];
+        var total = PlanarRingAreaSquareMeters(exteriorRing);
+        for (var i = 1; i < rings.Count; i++)
+        {
+            var ring = rings[i];
+            var ringArea = PlanarRingAreaSquareMeters(ring);
+            if (IsInteriorHoleRing(ring, exteriorRing, unwrapLongitudes: false))
+            {
+                total -= ringArea;
+            }
+            else
+            {
+                total += ringArea;
+            }
+        }
+
+        return Math.Max(0d, total);
+    }
+
+    internal static bool IsInteriorHoleRing(
+        IReadOnlyList<(double X, double Y)> candidateRing,
+        IReadOnlyList<(double X, double Y)> exteriorRing,
+        bool unwrapLongitudes)
+    {
+        if (candidateRing.Count < 3 || exteriorRing.Count < 3)
+        {
+            return true;
+        }
+
+        var exteriorSigned = SignedRingArea(exteriorRing, unwrapLongitudes);
+        var candidateSigned = SignedRingArea(candidateRing, unwrapLongitudes);
+        if (Math.Abs(exteriorSigned) > 1e-12 &&
+            Math.Abs(candidateSigned) > 1e-12 &&
+            Math.Sign(exteriorSigned) != Math.Sign(candidateSigned))
+        {
+            return true;
+        }
+
+        var testPoint = SignedAreaCentroid(candidateRing, unwrapLongitudes);
+        return IsPointInRing(testPoint.X, testPoint.Y, exteriorRing);
+    }
+
+    private static double SignedRingArea(IReadOnlyList<(double X, double Y)> ring, bool unwrapLongitudes)
+    {
+        if (ring.Count < 3)
+        {
+            return 0d;
+        }
+
+        var xs = new double[ring.Count];
+        var ys = new double[ring.Count];
+        for (var i = 0; i < ring.Count; i++)
+        {
+            xs[i] = ring[i].X;
+            ys[i] = ring[i].Y;
+        }
+
+        if (unwrapLongitudes)
+        {
+            UnwrapLongitudesInPlace(xs);
+        }
+
+        var area = 0d;
+        for (var i = 0; i < ring.Count; i++)
+        {
+            var j = (i + 1) % ring.Count;
+            area += (xs[i] * ys[j]) - (xs[j] * ys[i]);
+        }
+
+        return area / 2d;
+    }
+
+    private static bool IsPointInRing(double x, double y, IReadOnlyList<(double X, double Y)> ring)
+    {
+        var inside = false;
+        for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+        {
+            var xi = ring[i].X;
+            var yi = ring[i].Y;
+            var xj = ring[j].X;
+            var yj = ring[j].Y;
+
+            var intersects = ((yi > y) != (yj > y)) &&
+                (x < ((xj - xi) * (y - yi) / (yj - yi)) + xi);
+            if (intersects)
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    internal static double ComputeGroundPixelAreaSquareMeters(
+        double nativePixelArea,
+        double centerY,
+        int? srid,
+        bool isGeographic,
+        double linearMetersPerUnit)
+    {
+        if (srid is int wkid)
+        {
+            if (isGeographic)
+            {
+                var centerLatRad = DegreesToRadians(Math.Clamp(centerY, -89.999999d, 89.999999d));
+                var metersPerDegree = MeanEarthRadiusMeters * Math.PI / 180d;
+                return nativePixelArea * metersPerDegree * metersPerDegree * Math.Cos(centerLatRad);
+            }
+
+            if (SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid) == 3857)
+            {
+                var (_, centerLat) = WebMercatorMath.WebMercatorToLonLat(0d, centerY);
+                var cosLat = Math.Cos(DegreesToRadians(centerLat));
+                return nativePixelArea * cosLat * cosLat;
+            }
+        }
+
+        var factor = linearMetersPerUnit > 0d && double.IsFinite(linearMetersPerUnit)
+            ? linearMetersPerUnit
+            : 1d;
+        return nativePixelArea * factor * factor;
     }
 
     internal static double PlanarRingAreaSquareMeters(IReadOnlyList<(double X, double Y)> ring)

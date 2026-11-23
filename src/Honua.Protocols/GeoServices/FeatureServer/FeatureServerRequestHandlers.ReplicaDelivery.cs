@@ -750,8 +750,10 @@ internal static partial class FeatureServerEndpoints
             {
                 if (entry.ValueKind != JsonValueKind.Object ||
                     !TryGetPropertyIgnoreCase(entry, "id", out var idElement) ||
+                    idElement.ValueKind != JsonValueKind.Number ||
                     !idElement.TryGetInt32(out var layerId) ||
                     !TryGetPropertyIgnoreCase(entry, "serverGen", out var generationElement) ||
+                    generationElement.ValueKind != JsonValueKind.Number ||
                     !generationElement.TryGetInt64(out var generation))
                 {
                     error = shapeError;

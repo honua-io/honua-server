@@ -362,6 +362,13 @@ internal sealed partial class Wfs20Handler
         string? typeNames,
         string? outputFormat,
         string? count,
+        string? startIndex = null,
+        string? sortBy = null,
+        string? bbox = null,
+        string? resourceId = null,
+        string? propertyName = null,
+        string? srsName = null,
+        string? resultType = null,
         CancellationToken cancellationToken = default)
     {
         if (!IsGetFeatureByIdStoredQuery(storedQueryId))
@@ -374,6 +381,13 @@ internal sealed partial class Wfs20Handler
                     typeNames,
                     outputFormat,
                     count,
+                    startIndex,
+                    sortBy,
+                    bbox,
+                    resourceId,
+                    propertyName,
+                    srsName,
+                    resultType,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -458,6 +472,13 @@ internal sealed partial class Wfs20Handler
         string? typeNames,
         string? outputFormat,
         string? count,
+        string? startIndex,
+        string? sortBy,
+        string? bbox,
+        string? resourceId,
+        string? propertyName,
+        string? srsName,
+        string? resultType,
         CancellationToken cancellationToken)
     {
         var resolvedTypeNames = ResolveManagedStoredQueryTypeNames(definition, typeNames);
@@ -476,14 +497,14 @@ internal sealed partial class Wfs20Handler
             resolvedTypeNames,
             outputFormat,
             count,
-            startIndex: null,
-            sortBy: null,
-            bbox: null,
+            startIndex: startIndex,
+            sortBy: sortBy,
+            bbox: bbox,
             filter: resolvedFilter,
-            resourceId: null,
-            propertyName: null,
-            srsName: null,
-            resultType: null,
+            resourceId: resourceId,
+            propertyName: propertyName,
+            srsName: srsName,
+            resultType: resultType,
             cancellationToken).ConfigureAwait(false);
     }
 

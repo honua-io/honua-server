@@ -233,9 +233,12 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
 - **OGC API Maps claims the styled-map conformance class**, while temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
   coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.
-- **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
-  selection, scaling/interpolation extensions, XML POST, NetCDF, and
-  temporal/multidimensional slicing are not implemented.
+- **WCS serves a bounded raster subset through KVP requests.** Versions 2.0.1
+  and 1.0.0 share the service routes. The 2.0.1 adapter supports band selection,
+  scaling, interpolation and temporal filtering, with a bounded registered-Zarr
+  slice path. XML POST and NetCDF output are not supported. See the
+  [WCS reference](../protocols/wms-wfs-wcs-wmts.md#wcs-versions) for parameters
+  and the limits of each version.
 - **ImageServer metadata retains native mosaic resolution.** `pixelSizeX` and
   `pixelSizeY` advertise the finest finite positive source geotransform scale
   on each axis. Aggregate extent rounding or offsets between source rasters
@@ -243,9 +246,13 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
   metadata retains the aggregate-extent/primary-dimension fallback. This
   contract is covered by HTTP regressions and does not establish native
   QGIS or desktop GeoServices REST client raster certification.
-- **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
-  parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
-  delivery are not implemented. Collection discovery emits each accessible
+- **OGC API Coverages is Preview in 2026.1.** Single-raster collections serve
+  GeoTIFF/PNG with bbox/CRS, band selection, spatial `subset` and bounded scaling.
+  Zarr collections default to CoverageJSON and support bounded GeoTIFF slices;
+  `datetime` requires a supported time axis and is rejected for single rasters.
+  NetCDF and tiled coverage delivery are not implemented. See the
+  [coverage reference](../protocols/ogc-apis.md#ogc-api-coverages) for format-specific
+  subset semantics and limits. Collection discovery emits each accessible
   storage-layer identifier once even when feature and raster resources share
   that storage binding. Access filtering precedes deduplication, with a primary
   publication preferred among accessible aliases. Numeric collection detail URLs

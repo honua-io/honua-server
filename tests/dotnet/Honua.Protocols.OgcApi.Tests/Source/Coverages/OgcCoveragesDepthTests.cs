@@ -197,18 +197,23 @@ public sealed class OgcCoveragesDepthTests : IClassFixture<OgcCoveragesDepthTest
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
-    public async Task Coverage_Wgs84Output_OmitsContentCrsHeader()
+    public async Task Coverage_Wgs84Output_EmitsCanonicalContentCrsHeader()
     {
-        // Content-Crs is only emitted for non-default CRS output; the CRS84/WGS84
-        // default carries Content-Bbox and self/alternate links but no Content-Crs.
         var response = await Client.GetAsync($"{CoveragePath}?bbox=-122.5,37.7,-122.3,37.9");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.Contains("Content-Crs").Should().BeFalse();
+        response.Headers.TryGetValues("Content-Crs", out var defaultCrs).Should().BeTrue();
+        defaultCrs!.Single().Should().Be("<http://www.opengis.net/def/crs/OGC/1.3/CRS84>");
         response.Headers.TryGetValues("Content-Bbox", out _).Should().BeTrue();
         response.Headers.TryGetValues("Link", out var links).Should().BeTrue();
         links!.Single().Should().Contain("rel=\"self\"");
         links!.Single().Should().Contain("rel=\"alternate\"");
+
+        var epsg4326Response = await Client.GetAsync(
+            $"{CoveragePath}?crs={Uri.EscapeDataString("http://www.opengis.net/def/crs/EPSG/0/4326")}");
+        epsg4326Response.StatusCode.Should().Be(HttpStatusCode.OK);
+        epsg4326Response.Headers.TryGetValues("Content-Crs", out var epsg4326Crs).Should().BeTrue();
+        epsg4326Crs!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
     }
 
     [IntegrationTest]

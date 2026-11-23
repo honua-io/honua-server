@@ -55,6 +55,34 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         extent.Should().Be((-101 + dx, 39 + dy, -99 + dx, 41 + dy));
     }
 
+    [IntegrationTest]
+    public async Task TransformPointAndExtentAsync_WithProjectedEndpointsAndGeographicDatumSelection_ComposesPipeline()
+    {
+        var noopSelection = new DatumTransformationSelection
+        {
+            Wkid = 108001,
+            Name = "NAD_1983_To_WGS_1984_1",
+            FromSrid = 4269,
+            ToSrid = 4326,
+            EpsgOperationCode = 1188,
+            ProjPipeline = "+proj=noop",
+            TransformForward = true
+        };
+
+        // 26910 (NAD83 / UTM zone 10N) -> 32610 (WGS 84 / UTM zone 10N) via geographic noop 4269 -> 4326.
+        var point = await _service!.TransformPointAsync(500_000.0, 5_000_000.0, 26910, 32610, noopSelection);
+        point.Should().NotBeNull();
+        point!.Value.X.Should().BeApproximately(500_000.0, 0.05);
+        point.Value.Y.Should().BeApproximately(5_000_000.0, 0.05);
+
+        var xs = new[] { 500_000.0 };
+        var ys = new[] { 5_000_000.0 };
+        var batchOk = await _service.TransformPointsAsync(xs, ys, 26910, 32610, noopSelection);
+        batchOk.Should().BeTrue();
+        xs[0].Should().BeApproximately(500_000.0, 0.05);
+        ys[0].Should().BeApproximately(5_000_000.0, 0.05);
+    }
+
     // --- Identity / in-memory fast path tests ---
 
     [IntegrationTest]

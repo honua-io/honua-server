@@ -17,7 +17,10 @@ retry frame using the session's randomized 1000–5000 ms retry value; a WebSock
 sends service-restart close code 1012. Remaining sessions are aborted at the deadline.
 The log tail and dedicated listener stop after this drain. Handlers use the shared
 15-second heartbeat interval, and SSE responses disable proxy buffering and transformation
-with `X-Accel-Buffering: no` and `Cache-Control: no-store, no-transform`.
+with `X-Accel-Buffering: no` and the `no-transform` cache directive. Feature streams,
+layer and job notifications, and SensorThings observations send
+`Cache-Control: no-store, no-transform`; admin live sends
+`Cache-Control: no-cache, no-transform`.
 
 Transport integration is required: registering the shared service alone does not add
 heartbeats, terminal frames, or authorization checks to a handler, and a transport that does not

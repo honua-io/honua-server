@@ -492,6 +492,78 @@ public sealed class GmlFormatReaderTests
         polygon.Coordinates.Should().OnlyContain(c => c.X <= -121.0 && c.X >= -122.0 && c.Y >= 37.0 && c.Y <= 38.0);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_Gml3PolygonWithSrsDimension3EvenVertices_PreservesZOrdinates()
+    {
+        // A closed 4-vertex 3D triangle has 4 * 3 = 12 ordinates (divisible by both 2 and 3).
+        // srsDimension="3" must force 3D parsing so Z is preserved instead of reading 6 2D vertices.
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf">
+              <gml:featureMember>
+                <sf:Roof>
+                  <sf:geometry>
+                    <gml:Polygon srsName="EPSG:4326" srsDimension="3">
+                      <gml:exterior>
+                        <gml:LinearRing>
+                          <gml:posList>0 0 10 10 0 20 0 10 30 0 0 10</gml:posList>
+                        </gml:LinearRing>
+                      </gml:exterior>
+                    </gml:Polygon>
+                  </sf:geometry>
+                </sf:Roof>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var polygon = (Polygon)features.Should().ContainSingle().Subject.Geometry!;
+        polygon.ExteriorRing.NumPoints.Should().Be(4);
+        polygon.ExteriorRing.GetCoordinateN(0).Z.Should().Be(10);
+        polygon.ExteriorRing.GetCoordinateN(1).Z.Should().Be(20);
+        polygon.ExteriorRing.GetCoordinateN(2).Z.Should().Be(30);
+        polygon.ExteriorRing.GetCoordinateN(3).Z.Should().Be(10);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_Gml3UnclosedLinearRing_ClosesRingAutomatically()
+    {
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf">
+              <gml:featureMember>
+                <sf:Triangle>
+                  <sf:geometry>
+                    <gml:Polygon srsName="EPSG:4326">
+                      <gml:exterior>
+                        <gml:LinearRing>
+                          <gml:posList srsDimension="3">0 0 5 10 0 6 0 10 7</gml:posList>
+                        </gml:LinearRing>
+                      </gml:exterior>
+                    </gml:Polygon>
+                  </sf:geometry>
+                </sf:Triangle>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var polygon = (Polygon)features.Should().ContainSingle().Subject.Geometry!;
+        polygon.ExteriorRing.NumPoints.Should().Be(4);
+        polygon.ExteriorRing.IsClosed.Should().BeTrue();
+        polygon.ExteriorRing.GetCoordinateN(3).Z.Should().Be(5);
+    }
+
     private static async Task<List<NetTopologySuite.Features.IFeature>> CollectAsync(string gml)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(gml));

@@ -22,13 +22,13 @@ internal static class SpatialReferenceHelpers
         @"^urn:(?:x-)?ogc:def:crs:EPSG:(?:\d+(?:\.\d+)*)?:(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex _epsgUriPattern = new(
-        @"^https?://www\.opengis\.net/def/crs/EPSG/0/(?<code>[1-9]\d*)$",
+        @"^https?://www\.opengis\.net/def/crs/EPSG/\d+(?:\.\d+)*/(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex _crs84UriPattern = new(
-        @"^https?://www\.opengis\.net/def/crs/OGC/1\.3/CRS84$",
+        @"^https?://www\.opengis\.net/def/crs/OGC/\d+(?:\.\d+)*/CRS84$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex _crs84UrnPattern = new(
-        @"^urn:ogc:def:crs:OGC:(?:1\.3:|:)?CRS84$",
+        @"^urn:(?:x-)?ogc:def:crs:OGC:(?:(?:(?:\d+(?:\.\d+)*)?:)?CRS84|2:84)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public static int? TryParseSrid(string? crs)

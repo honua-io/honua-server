@@ -331,4 +331,48 @@ public class ImageServerSensorModelTests
             ExteriorOrientationJson = "{not-json",
         }).Should().BeEmpty();
     }
+
+    [UnitTest]
+    public void TryReadRpc_With20TermPolynomialCoefficients_EvaluatesAndInvertsCubicRpc00B()
+    {
+        // North-up RPC00B model with non-linear quadratic/cubic terms and negative line scale
+        // (+dLat -> -line, c[2] = -1.0 in lineNumCoeff) plus height sensitivity.
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            RpcJson = """
+            {
+                "sampleOffset": 1000, "lineOffset": 800,
+                "longOffset": -120.0, "latOffset": 35.0,
+                "heightOffset": 100.0,
+                "sampleScale": 1000, "lineScale": 800,
+                "longScale": 0.05, "latScale": 0.04,
+                "heightScale": 500.0,
+                "sampNumCoeff": [0.01, 1.0, 0.02, 0.005, 0.01, 0, 0, 0.004, 0.002, 0, 0, 0.001, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sampDenCoeff": [1.0, 0.002, 0.001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "lineNumCoeff": [-0.005, -0.015, -1.0, 0.008, 0.006, 0, 0, 0.002, -0.003, 0, 0, 0, 0, 0, 0, -0.001, 0, 0, 0, 0],
+                "lineDenCoeff": [1.0, -0.001, 0.002, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            }
+            """,
+        };
+
+        var rpc = ImageServerSensorModel.TryReadRpc(metadata);
+        rpc.Should().NotBeNull();
+        var model = rpc!.Value;
+        model.HasPolynomialCoefficients.Should().BeTrue();
+
+        const double testLon = -119.985;
+        const double testLat = 35.012;
+        const double testHeight = 250.0;
+
+        var (sample, line) = model.GroundToImage(testLon, testLat, testHeight);
+        // Because latitude is north of latOffset (+0.012) and lineNumCoeff[2] = -1.0,
+        // line must be less than lineOffset (800).
+        line.Should().BeLessThan(800d);
+        sample.Should().BeGreaterThan(1000d);
+
+        var (recoveredLon, recoveredLat) = model.ImageToGround(sample, line, testHeight);
+        recoveredLon.Should().BeApproximately(testLon, 1e-9);
+        recoveredLat.Should().BeApproximately(testLat, 1e-9);
+    }
 }

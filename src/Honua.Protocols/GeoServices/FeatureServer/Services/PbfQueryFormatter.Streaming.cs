@@ -86,6 +86,7 @@ internal sealed partial class PbfQueryFormatter
         {
             Resource = headerOptions.Resource,
             Srid = headerOptions.Srid,
+            RequestedOutputSrid = headerOptions.RequestedOutputSrid,
             HasMoreResults = source.HasMoreResults(),
             Encoding = encoding
         });
@@ -133,7 +134,7 @@ internal sealed partial class PbfQueryFormatter
 
         double scale = ComputeScale(options.GeometryLimits, options.QuantizationTransform);
         return new FeatureEncoding(queryFields, fieldIndex, options.ObjectIdFieldName, options.ReturnGeometry,
-            ReturnZ: false, ReturnM: false, options.GeometryLimits, scale, options.QuantizationTransform);
+            ReturnZ: false, ReturnM: false, options.GeometryLimits, scale, options.QuantizationTransform, options.Srid);
     }
 
     private static byte[] BuildStreamingHeaderBytes(StreamingHeaderInput input)
@@ -150,7 +151,7 @@ internal sealed partial class PbfQueryFormatter
             {
                 writer.WriteEnum(7, MapPbfGeometryType(geometryType));
                 var sr = new ProtobufWriter(32);
-                sr.WriteUInt32(1, (uint)input.Srid);
+                sr.WriteUInt32(1, (uint)(input.RequestedOutputSrid ?? input.Srid));
                 sr.WriteUInt32(2, (uint)input.Srid);
                 writer.WriteMessage(8, ref sr);
                 sr.Dispose();
@@ -181,6 +182,7 @@ internal sealed partial class PbfQueryFormatter
     {
         public required MetadataV2Object Resource { get; init; }
         public int Srid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public bool HasMoreResults { get; init; }
         public required FeatureEncoding Encoding { get; init; }
     }
@@ -270,7 +272,7 @@ internal sealed partial class PbfQueryFormatter
         {
             WriteFeature(ref writer, feature, encoding.Fields, encoding.FieldIndex, encoding.ObjectId,
                 encoding.ReturnGeometry, encoding.ReturnZ, encoding.ReturnM, encoding.Limits,
-                encoding.Scale, encoding.Transform);
+                encoding.Scale, encoding.Transform, encoding.Srid);
             return writer.DetachBuffer();
         }
         finally
@@ -306,7 +308,7 @@ internal sealed partial class PbfQueryFormatter
 
     private sealed record FeatureEncoding(GeoServicesFieldInfo[] Fields, Dictionary<string, int> FieldIndex,
         string ObjectId, bool ReturnGeometry, bool ReturnZ, bool ReturnM, GeometryLimits Limits,
-        double Scale, QuantizationTransform? Transform);
+        double Scale, QuantizationTransform? Transform, int Srid = 0);
 
     private readonly record struct SpooledPbfPayload(byte[] Header, PbfFeatureSpool Spool, int FeatureResultLength);
 

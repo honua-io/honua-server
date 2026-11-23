@@ -246,24 +246,46 @@ public static class GeometryTileBuilder
         switch (kind)
         {
             case SceneGeometryKind.Point:
-                if (vertices.Count == 0)
+                for (var i = 0; i < vertices.Count; i++)
                 {
-                    return;
+                    AppendVertex(vertices[i], heightOverride: null, positions, featureIds, featureIndex);
                 }
-
-                AppendVertex(vertices[0], heightOverride: null, positions, featureIds, featureIndex);
                 break;
 
             case SceneGeometryKind.LineString:
-                for (var i = 0; i < vertices.Count - 1; i++)
+                if (feature.Geometry.Parts is { Count: > 0 } lineParts)
                 {
-                    AppendVertex(vertices[i], heightOverride: null, positions, featureIds, featureIndex);
-                    AppendVertex(vertices[i + 1], heightOverride: null, positions, featureIds, featureIndex);
+                    foreach (var part in lineParts)
+                    {
+                        for (var i = 0; i < part.Count - 1; i++)
+                        {
+                            AppendVertex(part[i], heightOverride: null, positions, featureIds, featureIndex);
+                            AppendVertex(part[i + 1], heightOverride: null, positions, featureIds, featureIndex);
+                        }
+                    }
+                }
+                else
+                {
+                    for (var i = 0; i < vertices.Count - 1; i++)
+                    {
+                        AppendVertex(vertices[i], heightOverride: null, positions, featureIds, featureIndex);
+                        AppendVertex(vertices[i + 1], heightOverride: null, positions, featureIds, featureIndex);
+                    }
                 }
                 break;
 
             case SceneGeometryKind.Polygon:
-                AppendPolygonTriangles(feature, featureIndex, extrusion, positions, featureIds);
+                if (feature.Geometry.Parts is { Count: > 0 } polygonParts)
+                {
+                    foreach (var ring in polygonParts)
+                    {
+                        AppendPolygonRingTriangles(feature, ring, featureIndex, extrusion, positions, featureIds);
+                    }
+                }
+                else
+                {
+                    AppendPolygonRingTriangles(feature, vertices, featureIndex, extrusion, positions, featureIds);
+                }
                 break;
         }
     }
@@ -276,21 +298,27 @@ public static class GeometryTileBuilder
         float featureIndex)
     {
         var height = heightOverride ?? vertex.Height ?? 0.0;
-        var (x, y, z) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, height);
-        positions.Add(x);
-        positions.Add(y);
-        positions.Add(z);
+        var (xEcef, yEcef, zEcef) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, height);
+        // glTF 2.0 defines +Y as up, +Z as forward, and +X as right, whereas
+        // 3D Tiles 1.1 / WGS-84 ECEF is Z-up. Emit glTF Y-up coordinates
+        // (X_gltf, Y_gltf, Z_gltf) = (X_ecef, Z_ecef, -Y_ecef) so standard
+        // glTF 2.0 / 3D Tiles Y-up-to-Z-up transforms place vertices and the
+        // node RTC translation at the exact ECEF coordinates.
+        var (xGltf, yGltf, zGltf) = EcefCoordinateTransform.ToGltfYUp(xEcef, yEcef, zEcef);
+        positions.Add(xGltf);
+        positions.Add(yGltf);
+        positions.Add(zGltf);
         featureIds.Add(featureIndex);
     }
 
-    private static void AppendPolygonTriangles(
+    private static void AppendPolygonRingTriangles(
         SceneFeature feature,
+        IReadOnlyList<SceneVertex> ring,
         float featureIndex,
         MetadataV2ExtrusionInfo? extrusion,
         List<double> positions,
         List<float> featureIds)
     {
-        var ring = feature.Geometry.Vertices;
         if (ring.Count < 3)
         {
             return;
@@ -443,6 +471,9 @@ public static class GeometryTileBuilder
             writer.WritePropertyName("asset");
             writer.WriteStartObject();
             writer.WriteString("version", "2.0");
+            writer.WriteStartObject("extras");
+            writer.WriteString("honuaUpAxis", "Y");
+            writer.WriteEndObject();
             if (!string.IsNullOrEmpty(generatorTag))
             {
                 writer.WriteString("generator", generatorTag);

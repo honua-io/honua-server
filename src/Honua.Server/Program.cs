@@ -95,7 +95,6 @@ using Microsoft.Extensions.Primitives;
 using Npgsql;
 using Scalar.AspNetCore;
 using Serilog;
-using Serilog.Enrichers.Span;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
@@ -113,6 +112,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.ConfigureStructuredLogging();
 
 // Owner decision 6 (2026-10-10): HONUA_SETTINGS_DOCUMENT=aws:secretsmanager:<name-or-arn> loads one
 // JSON settings document so a Lambda function can keep most settings out of its 4 KB environment.
@@ -347,52 +347,6 @@ if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DurableJobSubstrateStartup
 {
     return;
 }
-
-// Configure Serilog for structured logging with AOT compatibility
-builder.Host.UseSerilog((context, services, config) =>
-{
-    var isDevelopment = context.HostingEnvironment.IsDevelopment();
-    var benchmarkQuietLogs = context.Configuration.GetValue<bool>("HONUA_BENCHMARK_QUIET_LOGS");
-
-    config
-        .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-        .Enrich.FromLogContext()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithMachineName()
-        .Enrich.WithThreadId()
-        .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
-        .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
-        .ConfigureHonuaRequestDiagnostics();
-
-    if (benchmarkQuietLogs)
-    {
-        config
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Serilog.AspNetCore.RequestLoggingMiddleware", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Honua.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
-            .MinimumLevel.Override("Honua.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
-            .MinimumLevel.Override("Honua.Protocols.Ogc.Api.Features.OgcFeaturesQueryHandler", Serilog.Events.LogEventLevel.Warning);
-    }
-
-    if (isDevelopment)
-    {
-        // Development: Human-readable console output
-        config.WriteTo.Console(
-            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
-            formatProvider: System.Globalization.CultureInfo.InvariantCulture);
-    }
-    else
-    {
-        // Production: Compact JSON for log aggregation
-        config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
-    }
-}, preserveStaticLogger: false, writeToProviders: true);
 
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure

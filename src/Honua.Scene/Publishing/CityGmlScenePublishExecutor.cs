@@ -262,7 +262,7 @@ internal sealed partial class CityGmlScenePublishExecutor
         var seed = model.Buildings.Count > 0
             ? (model.Buildings[0].Name ?? model.Buildings[0].Id)
             : "citygml";
-        var slug = Slugify(seed, Math.Max(1, slugBudget));
+        var slug = ScenePublishHelper.Slugify(seed, Math.Max(1, slugBudget), "citygml");
         var candidate = $"{slug}-{suffix}".ToLowerInvariant();
         if (!SceneDatasetValidator.TryValidateSceneId(candidate, out var autoError))
         {
@@ -366,6 +366,8 @@ internal sealed partial class CityGmlScenePublishExecutor
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
+            ServingFormat = SceneServingFormat.ThreeDTiles,
+            ContentKind = SceneContentKind.Buildings,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
             // BSL coordinates are placed on the WGS-84 ellipsoid with ellipsoidal
             // height in meters, so the registered CRS is the 3D geographic 4979.
@@ -414,36 +416,6 @@ internal sealed partial class CityGmlScenePublishExecutor
         {
             CityGmlIngestLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
         }
-    }
-
-    private static string Slugify(string name, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(name) || maxLength <= 0)
-        {
-            return "citygml";
-        }
-        var span = name.AsSpan();
-        var capacity = Math.Min(span.Length, maxLength);
-        var buffer = new char[capacity];
-        var written = 0;
-        var lastDash = false;
-        for (var i = 0; i < span.Length && written < capacity; i++)
-        {
-            var c = span[i];
-            if (char.IsAsciiLetterOrDigit(c))
-            {
-                buffer[written++] = char.ToLowerInvariant(c);
-                lastDash = false;
-            }
-            else if (!lastDash && written > 0)
-            {
-                buffer[written++] = '-';
-                lastDash = true;
-            }
-        }
-        if (written == 0) return "citygml";
-        if (lastDash) written--;
-        return new string(buffer, 0, written);
     }
 
     internal static partial class CityGmlIngestLog

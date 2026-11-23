@@ -14,6 +14,7 @@ public static class SceneAssetHydrationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddSingleton<ISceneAssetHydrator, SceneAssetHydrator>();
+        services.TryAddSingleton<ISceneObjectOriginReader, SceneObjectOriginReader>();
         return services;
     }
 }

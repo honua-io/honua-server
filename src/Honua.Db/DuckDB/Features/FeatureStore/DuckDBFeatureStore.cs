@@ -8,8 +8,12 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore;
 
@@ -27,7 +31,10 @@ internal sealed class DuckDBFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
+    private readonly DuckDBManagedDataAccessFactory? _managedDataAccess;
+    private readonly DuckDBLayerRegistry? _registry;
     private readonly FeatureProviderBinding? _binding;
+    private readonly bool _enableH3;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
@@ -35,8 +42,12 @@ internal sealed class DuckDBFeatureStore :
         IFeatureCacheManager cacheManager,
         LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null)
-        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, binding: null)
+        IFilterExpressionService? filterExpressionService = null,
+        bool enableH3 = false,
+        DuckDBManagedDataAccessFactory? managedDataAccess = null,
+        DuckDBLayerRegistry? registry = null)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, enableH3,
+            managedDataAccess, registry, binding: null)
     {
     }
 
@@ -47,6 +58,9 @@ internal sealed class DuckDBFeatureStore :
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
         LayerReadSecurityResolver readSecurity,
+        bool enableH3,
+        DuckDBManagedDataAccessFactory? managedDataAccess,
+        DuckDBLayerRegistry? registry,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -55,19 +69,71 @@ internal sealed class DuckDBFeatureStore :
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
+        _managedDataAccess = managedDataAccess;
+        _registry = registry;
         _binding = binding;
+        _enableH3 = enableH3;
     }
 
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
+        return (binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId) ||
+                binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageKey) ||
+                binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ExternalSourcePath))
+            ? CreateManagedReader(binding)
+            : CreateBoundReader(binding, _queryBuilder, _dataAccess, _cacheManager);
+    }
+
+    private DuckDBFeatureStore CreateManagedReader(FeatureProviderBinding binding)
+    {
+        if (_managedDataAccess is null)
+        {
+            throw new InvalidOperationException("Managed DuckDB object storage is unavailable.");
+        }
+
+        if (binding.StorageMapping.LayerDiscriminatorColumn is not null)
+        {
+            throw new InvalidOperationException("Managed DuckDB GeoParquet requires one object per publication without a layer discriminator.");
+        }
+
+        var attributes = binding.Resource.SchemaFields
+            .Select(field => field.Name)
+            .Where(name => FeatureFieldNameSyntax.IsValid(name) &&
+                !name.Equals(binding.StorageMapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals(binding.StorageMapping.GeometryColumn, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var mapping = DuckDBLayerMapping.FromStorage(binding.StorageLayerId, binding.StorageMapping, attributes);
+        if (!mapping.ObjectStorageConnectionId.HasValue || mapping.ObjectStorageKey is null ||
+            !mapping.ExternalSourcePaths.IsDefaultOrEmpty)
+        {
+            throw new InvalidOperationException("DuckDB publication sources require a managed object storage connection and key.");
+        }
+
+        var registry = new DuckDBLayerRegistry([mapping]);
+        return CreateBoundReader(
+            binding,
+            new DuckDBFeatureQueryBuilder(registry),
+            _managedDataAccess.Create(mapping, registry),
+            new DuckDBFeatureCacheManager(registry));
+    }
+
+    private DuckDBFeatureStore CreateBoundReader(
+        FeatureProviderBinding binding,
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager)
+    {
         return new DuckDBFeatureStore(
-            _queryBuilder,
-            _dataAccess,
-            _cacheManager,
+            queryBuilder,
+            dataAccess,
+            cacheManager,
             _v2Provider,
             _filterExpressionService,
             _readSecurity,
+            _enableH3,
+            _managedDataAccess,
+            _registry,
             binding);
     }
 
@@ -202,7 +268,15 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("DuckDB provider does not support H3 hexagonal aggregation.");
+        if (!_enableH3)
+        {
+            throw new NotSupportedException("DuckDB H3 queries require DuckDB:EnableH3.");
+        }
+
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
@@ -312,6 +386,7 @@ internal sealed class DuckDBFeatureStore :
         CancellationToken cancellationToken)
     {
         await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+        query = PrepareBoundQuery(layerId, query);
 
         if (query.EnforcedSqlFilter != null)
         {
@@ -330,6 +405,49 @@ internal sealed class DuckDBFeatureStore :
         }
 
         return query;
+    }
+
+    private FeatureQuery PrepareBoundQuery(int layerId, FeatureQuery query)
+    {
+        if (_binding is not null && _binding.StorageLayerId != layerId)
+        {
+            throw new InvalidOperationException("DuckDB bound reader received a different storage layer.");
+        }
+
+        if (_registry?.GetMapping(layerId)?.ObjectStorageConnectionId is not null &&
+            (_binding is null || !_binding.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId)))
+        {
+            throw new InvalidOperationException("DuckDB managed object storage requires a publication binding.");
+        }
+
+        if (_binding?.StorageMapping.ProviderOptions.ContainsKey(DuckDBProviderOptions.ObjectStorageConnectionId) == true)
+        {
+            query = query with
+            {
+                SqlFilter = TranslateManagedFilter(query.SqlFilter, _binding.Resource),
+                EnforcedSqlFilter = TranslateManagedFilter(query.EnforcedSqlFilter, _binding.Resource)
+            };
+        }
+
+        return query;
+    }
+
+    private SqlFragment? TranslateManagedFilter(SqlFragment? fragment, MetadataV2Object resource)
+    {
+        if (fragment is null || fragment.Dialect == DuckDbSqlDialect.Instance.Name)
+        {
+            return fragment;
+        }
+
+        if (fragment.SourceExpression is not { } expression || _filterExpressionService is null)
+        {
+            throw new NotSupportedException("Managed DuckDB can only query filters with a provider-neutral expression.");
+        }
+
+        var translated = _filterExpressionService.Translate(expression, resource);
+        return translated.IsSuccess && translated.SqlFilter is { } sql
+            ? sql
+            : throw new NotSupportedException("The filter cannot be represented in DuckDB.");
     }
 
     private async Task<QueryResult<T>> ExecuteFormatQueryAsync<T>(

@@ -98,6 +98,7 @@
     <Compile Include="../Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs" Link="Shared/InMemoryCloudFileStorage.cs" />
     <Compile Include="../Shared/SceneUnitSupport/PointCloudSceneFixtures.cs" Link="Shared/PointCloudSceneFixtures.cs" />
     <Compile Include="../Shared/SceneUnitSupport/SceneExecutorTestStubs.cs" Link="Shared/SceneExecutorTestStubs.cs" />
+    <Compile Include="../Shared/SceneUnitSupport/QuantizedMeshTileReader.cs" Link="Shared/QuantizedMeshTileReader.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/AlertUnitSupport/AlertEventTestFactories.cs" Link="Shared/AlertEventTestFactories.cs" />

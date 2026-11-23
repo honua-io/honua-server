@@ -21,6 +21,14 @@ public readonly record struct H3AggregationQuery
 
     public int? MaxCells { get; init; }
 
+    public void RejectSummaryDefinitions()
+    {
+        if (SummaryDefinitions is { IsDefaultOrEmpty: false })
+        {
+            throw new NotSupportedException("The configured feature provider does not support H3 summary definitions.");
+        }
+    }
+
     public const int MinResolution = 0;
 
     public const int MaxResolution = 15;

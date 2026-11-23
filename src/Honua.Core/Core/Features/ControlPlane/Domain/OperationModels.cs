@@ -667,6 +667,9 @@ public sealed record DeploySubmissionResult
     public string? ObservedRevision { get; init; }
 
     public string? Message { get; init; }
+
+    // Operator-facing detail for a failed submission, kept as the workflow's error message.
+    public string? Detail { get; init; }
 }
 
 public sealed record DeployObservation

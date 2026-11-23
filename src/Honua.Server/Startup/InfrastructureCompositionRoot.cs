@@ -13,6 +13,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Warehouse;
+using Honua.Core.Features.Warehouse.Services;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
@@ -167,6 +169,20 @@ internal static class InfrastructureCompositionRoot
 
 #endif
 
+        var duckDbEnabled = provider == DataProviderNames.DuckDb;
+#if !HONUA_POSTGIS_ONLY
+        if (!duckDbEnabled && configuration.GetValue("DuckDB:Enabled", false))
+        {
+            Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBManagedFeatureProvider(
+                services,
+                configuration,
+                static () => new Honua.Core.Queries.Filters.FilterExpressionService(
+                    new Honua.Core.Queries.Filters.FilterExpressionTranslator(
+                        new Honua.Db.DuckDB.Queries.Filters.DuckDbSqlFilterTranslator())));
+            duckDbEnabled = true;
+        }
+#endif
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
@@ -174,6 +190,9 @@ internal static class InfrastructureCompositionRoot
                 serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
                 provider));
+
+        services.TryAddSingleton(BuildWarehouseRuntimeAvailability(warehouseProviders, duckDbEnabled));
+        services.AddWarehouseAnalyticsServices();
 
         // Add centralized configuration management and secret services
         services.AddConfigurationManagement(configuration);
@@ -228,6 +247,27 @@ internal static class InfrastructureCompositionRoot
         // no raster coverage fall back to the shared Skia styled-vector pipeline.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
             .AddVectorAwareRasterMapRendering(services);
+    }
+
+    private static WarehouseRuntimeAvailabilityState BuildWarehouseRuntimeAvailability(
+        WarehouseProviderDecisions decisions,
+        bool duckDbEnabled)
+    {
+        var states = new List<KeyValuePair<string, (bool Enabled, string? Reason)>>(decisions.All.Count + 1);
+        foreach (var decision in decisions.All)
+        {
+            var reason = decision.Enabled
+                ? null
+                : decision.Supported
+                    ? $"Provider '{decision.ProviderName}' is disabled by runtime configuration."
+                    : $"Provider '{decision.ProviderName}' is excluded from this build profile.";
+            states.Add(new KeyValuePair<string, (bool, string?)>(decision.ProviderName, (decision.Enabled, reason)));
+        }
+
+        states.Add(new KeyValuePair<string, (bool, string?)>(
+            DataProviderNames.DuckDb,
+            (duckDbEnabled, duckDbEnabled ? null : "DuckDB is disabled by runtime configuration or excluded from this build profile.")));
+        return new WarehouseRuntimeAvailabilityState(states);
     }
 
     public static void ConfigureLimits(IServiceCollection services, IConfiguration configuration)

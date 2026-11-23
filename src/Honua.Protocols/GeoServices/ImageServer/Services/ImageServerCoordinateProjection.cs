@@ -28,6 +28,9 @@ internal sealed class ImageServerCoordinateProjection
     public Task<int?> ResolveSridAsync(string? srValue, CancellationToken cancellationToken)
         => _spatialReferenceResolver.ResolveSridAsync(srValue, null, cancellationToken);
 
+    public Task<int> ResolveGeodeticBaseSridAsync(int srid, CancellationToken cancellationToken)
+        => _spatialReferenceResolver.ResolveGeodeticBaseSridAsync(srid, cancellationToken);
+
     public bool TryResolveDatumTransformation(
         string? datumTransformationValue,
         int fromSrid,

@@ -21,7 +21,7 @@ internal static class SpatialFilterHelpers
     public static SpatialFilter CreateBboxSpatialFilter(
         double minX, double minY, double maxX, double maxY, int srid)
     {
-        var wkb = CreateEnvelopeWkb(minX, minY, maxX, maxY);
+        var wkb = CreateEnvelopeWkb(minX, minY, maxX, maxY, srid);
         return SpatialFilter.Create(
             wkb,
             SpatialRelationship.Intersects,
@@ -34,15 +34,15 @@ internal static class SpatialFilterHelpers
             envelopeMaxY: minX <= maxX ? maxY : null);
     }
 
-    public static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
+    public static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY, int? srid = null)
     {
-        var geometry = CreateEnvelopeGeometry(minX, minY, maxX, maxY);
+        var geometry = CreateEnvelopeGeometry(minX, minY, maxX, maxY, srid);
         return GetWkbWriter().Write(geometry);
     }
 
-    private static Geometry CreateEnvelopeGeometry(double minX, double minY, double maxX, double maxY)
+    private static Geometry CreateEnvelopeGeometry(double minX, double minY, double maxX, double maxY, int? srid = null)
     {
-        if (BoundingBox.Create(minX, minY, maxX, maxY).IsAntimeridianCrossing)
+        if (BoundingBox.Create(minX, minY, maxX, maxY, srid).IsAntimeridianCrossing)
         {
             var eastHemisphere = CreateEnvelopePolygon(minX, minY, 180.0, maxY);
             var westHemisphere = CreateEnvelopePolygon(-180.0, minY, maxX, maxY);

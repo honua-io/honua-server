@@ -68,19 +68,12 @@ internal sealed partial class ComposeProjectController : IDisposable
                 return ComposeExecutorProtocol.Refuse(request.RequestId, invalid.Code, invalid.Message);
             }
 
-            var response = request.Op switch
-            {
-                "observe" => await ObserveServicesAsync(request, cancellationToken).ConfigureAwait(false),
-                "status" => await StatusAsync(request, cancellationToken).ConfigureAwait(false),
-                "converge" => await ConvergeAsync(request, cancellationToken).ConfigureAwait(false),
-                "rollback" => await RollbackCoreAsync(request, cancellationToken).ConfigureAwait(false),
-                "plan-rollback" => await RollbackCoreAsync(request, cancellationToken, preview: true).ConfigureAwait(false),
-                "restart" => await RestartAsync(request, cancellationToken).ConfigureAwait(false),
-                _ => ComposeExecutorProtocol.Refuse(
+            var response = request.ContractApproval is { } approval && (request.Op != "converge" || !approval.IsWellFormed())
+                ? ComposeExecutorProtocol.Refuse(
                     request.RequestId,
                     ComposeExecutorCodes.ConfigUnsupported,
-                    "The executor op is not allowlisted.")
-            };
+                    "A contract approval is accepted only on converge and must name its scripts and nonce.")
+                : await DispatchAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (request.Op is not ("status" or "observe" or "plan-rollback"))
             {
@@ -141,6 +134,23 @@ internal sealed partial class ComposeProjectController : IDisposable
             CustomerBody = complete ? live.CustomerBody : null
         };
     }
+
+    private async Task<ComposeExecutorResponse> DispatchAsync(
+        ComposeExecutorRequest request,
+        CancellationToken cancellationToken)
+        => request.Op switch
+        {
+            "observe" => await ObserveServicesAsync(request, cancellationToken).ConfigureAwait(false),
+            "status" => await StatusAsync(request, cancellationToken).ConfigureAwait(false),
+            "converge" => await ConvergeAsync(request, cancellationToken).ConfigureAwait(false),
+            "rollback" => await RollbackCoreAsync(request, cancellationToken).ConfigureAwait(false),
+            "plan-rollback" => await RollbackCoreAsync(request, cancellationToken, preview: true).ConfigureAwait(false),
+            "restart" => await RestartAsync(request, cancellationToken).ConfigureAwait(false),
+            _ => ComposeExecutorProtocol.Refuse(
+                request.RequestId,
+                ComposeExecutorCodes.ConfigUnsupported,
+                "The executor op is not allowlisted.")
+        };
 
     private async Task<ComposeExecutorResponse> ConvergeAsync(
         ComposeExecutorRequest request,
@@ -205,7 +215,7 @@ internal sealed partial class ComposeProjectController : IDisposable
             return backup.Failure with { RequestId = request.RequestId };
         }
 
-        var prepared = await PrepareCandidateAsync(request.Image!, cancellationToken).ConfigureAwait(false);
+        var prepared = await PrepareCandidateAsync(request.Image!, request.ContractApproval, cancellationToken).ConfigureAwait(false);
         if (prepared != null)
         {
             return prepared with { RequestId = request.RequestId, BackupId = backup.BackupId };

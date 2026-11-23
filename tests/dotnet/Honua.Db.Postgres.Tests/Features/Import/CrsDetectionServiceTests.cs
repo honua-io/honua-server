@@ -598,4 +598,45 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         (await _service!.DetectFromShapefilePrjAsync("")).Should().BeNull();
         (await _service!.DetectFromShapefilePrjAsync("   ")).Should().BeNull();
     }
+
+    [IntegrationTest]
+    public async Task DetectFromWktAsync_WithWkt2ProjectedCrsAndBaseGeodCrs_ReturnsOuterProjectedSrid()
+    {
+        var wkt2 = """
+            PROJECTEDCRS["ETRS89 / UTM zone 32N",
+                BASEGEODCRS["ETRS89",
+                    DATUM["European Terrestrial Reference System 1989",
+                        ELLIPSOID["GRS 1980",6378137,298.257222101,LENGTHUNIT["metre",1]]],
+                    ID["EPSG",4258]],
+                CONVERSION["UTM zone 32N",
+                    METHOD["Transverse Mercator",ID["EPSG",9807]],
+                    PARAMETER["Latitude of natural origin",0],
+                    PARAMETER["Longitude of natural origin",9]],
+                CS[Cartesian,2],
+                    AXIS["(E)",east],
+                    AXIS["(N)",north],
+                    LENGTHUNIT["metre",1],
+                ID["EPSG",25832]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(wkt2);
+
+        result.Should().Be(25832);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromWktAsync_WithNumericSubstringInCustomWkt_DoesNotFalseMatch3857Or4326()
+    {
+        var customWkt = """
+            GEOGCS["Custom_Local_Grid",
+                DATUM["Custom_Datum",
+                    SPHEROID["Custom_Ellipsoid",6378137.4326,298.3857]],
+                PRIMEM["Greenwich",0],
+                UNIT["degree",0.0174532925199433]]
+            """;
+
+        var result = await _service!.DetectFromWktAsync(customWkt);
+
+        result.Should().BeNull();
+    }
 }

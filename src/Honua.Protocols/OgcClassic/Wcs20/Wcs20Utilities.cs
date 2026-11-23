@@ -182,6 +182,9 @@ internal static class Wcs20Utilities
         internal const string InvalidParameterValue = "InvalidParameterValue";
         internal const string InvalidAxisLabel = "InvalidAxisLabel";
         internal const string InvalidSubsetting = "InvalidSubsetting";
+        internal const string InvalidScaleFactor = "InvalidScaleFactor";
+        internal const string InvalidExtent = "InvalidExtent";
+        internal const string NoSuchField = "NoSuchField";
         internal const string VersionNegotiationFailed = "VersionNegotiationFailed";
         internal const string OperationNotSupported = "OperationNotSupported";
         internal const string NoSuchCoverage = "NoSuchCoverage";

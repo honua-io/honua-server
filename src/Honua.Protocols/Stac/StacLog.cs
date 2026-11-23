@@ -49,7 +49,7 @@ internal static partial class StacLog
         Message = "STAC item {ItemId} not found in collection {CollectionId}")]
     public static partial void ItemNotFound(ILogger logger, string collectionId, string itemId);
 
-    // 5970–5971: Search
+    // 5970–5973: Search, and catalog-wide skips of missing storage
 
     [LoggerMessage(EventId = 5970, Level = LogLevel.Information,
         Message = "STAC search requested (collections={CollectionCount}, limit={Limit})")]
@@ -62,6 +62,10 @@ internal static partial class StacLog
     [LoggerMessage(EventId = 5972, Level = LogLevel.Warning,
         Message = "STAC search skipped collection {CollectionId}: its storage table or schema is missing")]
     public static partial void SearchCollectionSkipped(ILogger logger, string collectionId, Exception exception);
+
+    [LoggerMessage(EventId = 5973, Level = LogLevel.Warning,
+        Message = "STAC collections listing could not read collection {CollectionId}: its storage table or schema is missing")]
+    public static partial void CollectionsListingSkipped(ILogger logger, string collectionId, Exception exception);
 
     // 5980: Errors
 

@@ -1,10 +1,11 @@
 ---
 type: reference
 title: "Terrain and elevation"
-description: "Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox raster-dem rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries."
+description: "Honua serves registered raster/DEM datasets as Terrain-RGB PNG tiles, quantized-mesh terrain tiles, and JSON elevation queries."
 resource: "honua://capability/serve.elevation"
 resources:
   - "honua://capability/raster.terrain-rgb"
+  - "honua://capability/serve.terrain-quantized-mesh"
   - "honua://capability/analytics.line-of-sight"
   - "honua://capability/analytics.viewshed"
   - "honua://capability/analytics.sun-shadow"
@@ -12,7 +13,7 @@ resources:
 ---
 # Terrain and elevation
 
-Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox `raster-dem` rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries. Both surfaces share the same raster catalog and mosaic pipeline.
+Honua serves registered raster/DEM datasets as Terrain-RGB PNG tiles for MapLibre/Mapbox `raster-dem` rendering, quantized-mesh terrain tiles for Cesium clients, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries. These surfaces share the same raster catalog and mosaic pipeline.
 
 ## Base endpoints
 
@@ -20,6 +21,8 @@ Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for 
 | --- | --- | --- |
 | GET | `/terrain/{datasetId}/tile.json` | TileJSON 3.0 metadata with Honua terrain extensions. |
 | GET | `/terrain/{datasetId}/{z}/{x}/{y}.png` | 256x256 Terrain-RGB elevation tile (Mapbox encoding). |
+| GET | `/terrain/{datasetId}/layer.json` | Quantized-mesh metadata with geographic TMS availability and cross-format links. |
+| GET | `/terrain/{datasetId}/{z}/{x}/{y}.terrain` | Gzipped quantized-mesh-1.0 elevation tile. |
 | GET | `/elevation/{datasetId}/value` | Numeric elevation at one coordinate. |
 | GET | `/elevation/{datasetId}/profile` | Elevation samples along a WKT LineString. |
 | POST | `/elevation/{datasetId}/line-of-sight` | Point-to-point visibility over the elevation surface (Pro tier; `402` when entitlement inactive). |
@@ -29,7 +32,15 @@ Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for 
 
 `{datasetId}` accepts a numeric layer id or a layer collection name. The Terrain protocol must be enabled for the tile routes and the Elevation protocol for the query routes (both are part of the default protocol set when `EnabledProtocols` is omitted). Tile coordinates are validated against the configured `Limits:Tiles` zoom range.
 
-Terrain tiles are 8-bit RGBA PNGs. Finite elevation samples have alpha `255` and retain the Terrain-RGB formula `meters = -10000 + (R * 65536 + G * 256 + B) * 0.1`. Source NoData, non-finite samples and uncovered pixels have RGBA `[0, 0, 0, 0]`. Honor alpha when interpreting missing data: a valid elevation of `-10000 m` has the same RGB bytes but alpha `255`. A fully uncovered valid tile returns a transparent PNG with `200`, not `404`.
+Terrain-RGB tiles are 8-bit RGBA PNGs. Finite elevation samples have alpha `255` and retain the Terrain-RGB formula `meters = -10000 + (R * 65536 + G * 256 + B) * 0.1`. Source NoData, non-finite samples and uncovered pixels have RGBA `[0, 0, 0, 0]`. Honor alpha when interpreting missing data: a valid elevation of `-10000 m` has the same RGB bytes but alpha `255`. A fully uncovered valid tile returns a transparent PNG with `200`, not `404`.
+
+## Quantized-mesh terrain
+
+`layer.json` declares `format: "quantized-mesh-1.0"`, `scheme: "tms"`, and `projection: "EPSG:4326"`, with `bounds`, `minzoom`, `maxzoom`, tile URL templates, and per-level `available` ranges. Honua adds `coverage`, `capabilities`, `links`, `source`, `supported`, and `unsupportedReasons`. Check `supported` before requesting tiles; an unsupported source can still return metadata with `200` and empty availability.
+
+Mesh tiles use a geographic TMS grid: level `z` has `2 × 2^z` columns and `2^z` rows, with row zero at the south edge. Use the manifest's tile template and availability rather than reusing Terrain-RGB Web Mercator coordinates.
+
+Tile responses use `Content-Type: application/vnd.quantized-mesh` and `Content-Encoding: gzip`. Request the advertised vertex-normal extension with `extensions=octvertexnormals` or an `Accept: application/vnd.quantized-mesh; extensions=octvertexnormals` header. Responses with normals include that extension parameter in their content type; tile responses include `Vary: Accept`.
 
 ## Point query parameters — `/elevation/{datasetId}/value`
 

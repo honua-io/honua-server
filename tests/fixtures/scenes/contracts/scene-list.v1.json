@@ -1,0 +1,45 @@
+{
+  "scenes": [
+    {
+      "id": "downtown-buildings",
+      "name": "Downtown Buildings",
+      "description": "CityGML building footprints.",
+      "servingFormat": "3d-tiles",
+      "contentKind": "buildings",
+      "tilesetUrl": "https://maps.example.test/scenes/downtown-buildings/tileset.json",
+      "bounds": {
+        "west": -157.87,
+        "south": 21.29,
+        "east": -157.84,
+        "north": 21.32
+      },
+      "capabilities": [
+        "3d-tiles"
+      ],
+      "attribution": [],
+      "auth": {
+        "requiresAuthentication": false,
+        "schemes": []
+      },
+      "updatedAt": "2026-08-22T00:00:00+00:00"
+    },
+    {
+      "id": "lidar-harbor",
+      "name": "Harbor LiDAR",
+      "servingFormat": "copc",
+      "contentKind": "point-cloud",
+      "capabilities": [
+        "copc"
+      ],
+      "attribution": [],
+      "auth": {
+        "requiresAuthentication": true,
+        "schemes": [
+          "Bearer",
+          "ApiKey"
+        ]
+      },
+      "updatedAt": "2026-08-22T00:00:00+00:00"
+    }
+  ]
+}
