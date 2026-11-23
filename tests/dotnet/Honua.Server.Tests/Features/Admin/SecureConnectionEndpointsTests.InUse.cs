@@ -26,10 +26,10 @@ public partial class SecureConnectionEndpointsTests
         var registry = Substitute.For<ISecureConnectionRegistry>();
         registry.DeleteConnectionAsync(connectionId, Arg.Any<CancellationToken>())
             .ThrowsAsync(new PostgresException(
-                "update or delete on table \"data_connections\" violates foreign key constraint",
+                "update or delete on table \"data_connections\" violates RESTRICT setting of foreign key constraint",
                 "ERROR",
                 "ERROR",
-                PostgresErrorCodes.ForeignKeyViolation));
+                PostgresErrorCodes.RestrictViolation));
         var localFixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>

@@ -958,7 +958,8 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
-        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
+        // Migration 008's ON DELETE RESTRICT key raises restrict_violation; a NO ACTION key raises foreign_key_violation.
+        catch (Npgsql.PostgresException ex) when (ex.SqlState is Npgsql.PostgresErrorCodes.RestrictViolation or Npgsql.PostgresErrorCodes.ForeignKeyViolation)
         {
             SecureConnectionLog.SecureConnectionInUse(logger, id, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));

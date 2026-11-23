@@ -11,7 +11,7 @@ namespace Honua.Server.Tests;
 public sealed partial class DatabaseMigrationTests
 {
     // The connection delete route answers 409 only because migration 008's RESTRICT foreign key
-    // refuses the registry's DELETE; the seeded test schema does not carry that key.
+    // refuses the registry's DELETE with restrict_violation (23001); the seeded test schema does not carry that key.
     [IntegrationTest]
     public async Task DbUpMigrations_ConnectionReferencedByService_RefusesRegistryDelete()
     {
@@ -37,7 +37,7 @@ public sealed partial class DatabaseMigrationTests
         delete.Parameters.AddWithValue("id", connectionId);
         var refusal = await Assert.ThrowsAsync<Npgsql.PostgresException>(() => delete.ExecuteScalarAsync());
 
-        refusal.SqlState.Should().Be(Npgsql.PostgresErrorCodes.ForeignKeyViolation);
+        refusal.SqlState.Should().Be(Npgsql.PostgresErrorCodes.RestrictViolation, "the key is ON DELETE RESTRICT");
         await using var remaining = connection.CreateCommand();
         remaining.CommandText = "SELECT count(*) FROM honua.data_connections WHERE connection_id = @id";
         remaining.Parameters.AddWithValue("id", connectionId);
