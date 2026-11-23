@@ -1388,9 +1388,12 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
+        // The default-schema baseline never discovers 227, so the configured upgrade also plans
+        // the registry adoption that moves services/layers out of honua.
         plan.ContractScriptNames.Should().Equal(
             PostgresCoreSchemaGuard.RasterTablesMigration,
-            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
+            ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration);
         AssertLegacyAttachmentPlanBindings(plan, schema);
 
         var beforeBlockedRun = await CaptureAttachmentAuthorityStateAsync(connectionString);
@@ -1421,6 +1424,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         result.Successful.Should().BeTrue(
             $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration);
         await approvedGuard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
         (await CaptureLegacyAttachmentAsync(connectionString)).Should().Be(legacyAttachment,
             "the configured upgrade must preserve the physical attachment OID and all legacy row bytes");
