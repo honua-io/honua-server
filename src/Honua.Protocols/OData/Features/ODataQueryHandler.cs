@@ -149,7 +149,7 @@ internal sealed partial class ODataQueryHandler(
             // collection paginates in memory; without this continuation a client that
             // requests /odata/Layers?$top=N over >N layers concludes there are no more.
             // $top=0 (Limit == 0) yields an empty page and no continuation.
-            var probeLimit = pagination.Limit < int.MaxValue ? pagination.Limit + 1 : pagination.Limit;
+            var probeLimit = pagination.Limit is > 0 and < int.MaxValue ? pagination.Limit + 1 : pagination.Limit;
             var layerData = layerQuery.Take(probeLimit).ToArray();
 
             var hasMoreLayers = pagination.Limit >= 0 && layerData.Length > pagination.Limit;

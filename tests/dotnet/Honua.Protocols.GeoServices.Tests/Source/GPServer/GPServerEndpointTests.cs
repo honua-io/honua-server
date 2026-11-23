@@ -30,12 +30,12 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 // PostgresFixture keeps the reference-counted PostgreSQL infrastructure alive between cases.
-// Default-host cases share one isolated host. Cases that replace other services
-// build their own host.
+// Default-host cases and successful synchronous execution cases each share an isolated host.
+// Cases with other service configurations build their own host.
 // The shared job store is emptied at the start of each default-host case so listings stay exact.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IClassFixture<GPServerEndpointTests.DefaultHost>, IAsyncLifetime
+public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IClassFixture<GPServerEndpointTests.DefaultHost>, IClassFixture<GPServerEndpointTests.SyncExecuteHost>, IAsyncLifetime
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -47,13 +47,15 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
     private readonly DefaultHost _host;
+    private readonly SyncExecuteHost _syncExecuteHost;
     private WebAppFixture _fixture => _host.Fixture;
     private HttpClient _client = null!;
     private bool _defaultApplicationStarted;
 
-    public GPServerEndpointTests(DefaultHost host)
+    public GPServerEndpointTests(DefaultHost host, SyncExecuteHost syncExecuteHost)
     {
         _host = host;
+        _syncExecuteHost = syncExecuteHost;
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -96,6 +98,36 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         public Task InitializeAsync() => Fixture.InitializeAsync();
 
         public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    // xUnit serializes this collection. Each case clears the recording and owns its client.
+    // Lazy startup avoids booting a second host when only default-host cases are selected.
+    public sealed class SyncExecuteHost : IAsyncLifetime
+    {
+        private readonly SyncExecuteGeoprocessingJobService _jobs = new();
+        private Task? _initialization;
+
+        public WebAppFixture Fixture { get; }
+        public AnalysisPlan? LastSubmittedPlan => _jobs.LastSubmittedPlan;
+
+        public SyncExecuteHost()
+        {
+            Fixture = new WebAppFixture().ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(_jobs);
+            });
+        }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task StartCaseAsync()
+        {
+            await (_initialization ??= Fixture.InitializeAsync());
+            _jobs.ClearSubmittedPlan();
+        }
+
+        public Task DisposeAsync() => _initialization is null ? Task.CompletedTask : Fixture.DisposeAsync();
     }
 
     [IntegrationTheory]
@@ -458,41 +490,27 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_SyncEligibleTask_ReturnsInlineResults()
     {
-        var executeFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
-            });
-
-        await executeFixture.InitializeAsync();
-        try
+        await _syncExecuteHost.StartCaseAsync();
+        using var client = _syncExecuteHost.Fixture.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = executeFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "10"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = doc.RootElement;
-            root.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
-            var results = root.GetProperty("results").EnumerateArray().ToArray();
-            results.Should().NotBeEmpty();
-            results[0].GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
-            results[0].GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-        }
-        finally
-        {
-            await executeFixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+        var results = root.GetProperty("results").EnumerateArray().ToArray();
+        results.Should().NotBeEmpty();
+        results[0].GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
+        results[0].GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
     }
 
     [IntegrationTest]
@@ -500,45 +518,30 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_WithEsriResultOptions_TreatsOptionsAsProtocolControls()
     {
-        var jobService = new SyncExecuteGeoprocessingJobService();
-        var executeFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(jobService);
-            });
-
-        await executeFixture.InitializeAsync();
-        try
+        await _syncExecuteHost.StartCaseAsync();
+        using var client = _syncExecuteHost.Fixture.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = executeFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "10",
-                ["returnZ"] = "true",
-                ["returnM"] = "true",
-                ["returnFeatureCollection"] = "true",
-                ["returnColumnName"] = "true",
-                ["returnTrueCurves"] = "true"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+            ["returnZ"] = "true",
+            ["returnM"] = "true",
+            ["returnFeatureCollection"] = "true",
+            ["returnColumnName"] = "true",
+            ["returnTrueCurves"] = "true"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            jobService.LastSubmittedPlan.Should().NotBeNull();
-            var inputs = jobService.LastSubmittedPlan!.Steps.Single().Inputs;
-            inputs.Keys.Should().NotContain(
-                key => key.StartsWith("return", StringComparison.OrdinalIgnoreCase),
-                "Esri execute result options belong to the protocol adapter, not the canonical process inputs");
-        }
-        finally
-        {
-            await executeFixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _syncExecuteHost.LastSubmittedPlan.Should().NotBeNull();
+        var inputs = _syncExecuteHost.LastSubmittedPlan!.Steps.Single().Inputs;
+        inputs.Keys.Should().NotContain(
+            key => key.StartsWith("return", StringComparison.OrdinalIgnoreCase),
+            "Esri execute result options belong to the protocol adapter, not the canonical process inputs");
     }
 
     [IntegrationTest]
@@ -546,29 +549,15 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecuteGet_SyncEligibleTask_ReturnsInlineResults()
     {
-        var executeFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
-            });
+        await _syncExecuteHost.StartCaseAsync();
+        using var client = _syncExecuteHost.Fixture.CreateAdminClient();
 
-        await executeFixture.InitializeAsync();
-        try
-        {
-            using var client = executeFixture.CreateAdminClient();
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10");
 
-            var response = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
-        }
-        finally
-        {
-            await executeFixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
     }
 
     [IntegrationTest]
@@ -604,36 +593,22 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_WithEnvOutSR_HonorsControl()
     {
-        var executeFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
-            });
-
-        await executeFixture.InitializeAsync();
-        try
+        await _syncExecuteHost.StartCaseAsync();
+        using var client = _syncExecuteHost.Fixture.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = executeFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "10",
-                ["env:outSR"] = "3857"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+            ["env:outSR"] = "3857"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK,
-                "env:outSR is accepted on the synchronous execute route (and, as of #1228 follow-up, on submitJob too)");
-        }
-        finally
-        {
-            await executeFixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "env:outSR is accepted on the synchronous execute route (and, as of #1228 follow-up, on submitJob too)");
     }
 
     [IntegrationTest]
@@ -2513,6 +2488,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string artifactUri = "https://example.test/artifacts/sync-execute.geojson") : IGeoprocessingJobService
     {
         public AnalysisPlan? LastSubmittedPlan { get; private set; }
+
+        public void ClearSubmittedPlan() => LastSubmittedPlan = null;
 
         public Task<GeoprocessingJobListPage> ListJobsAsync(
             GeoprocessingJobListFilter filter,

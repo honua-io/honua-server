@@ -22,7 +22,6 @@ internal sealed class OgcMapsConformanceHandler
         var conformance = new OgcMapsConformance
         {
             ConformsTo = [
-                // OGC API - Common Part 1: Core
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landing-page",
                 "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json",

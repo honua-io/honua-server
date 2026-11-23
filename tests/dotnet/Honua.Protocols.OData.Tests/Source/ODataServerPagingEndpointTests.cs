@@ -36,6 +36,41 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData("/odata/Features(0)")]
+    [InlineData("/odata/Layers(0)/Features")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Features_WithExpansion_ContextIdentifiesNavigationProperty(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path + "?$select=ObjectId&$expand=Landmarks&$top=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("value").EnumerateArray().Should().NotBeEmpty();
+        document.RootElement.GetProperty("@odata.context").GetString()
+            .Should().EndWith("/odata/$metadata#Features(ObjectId,Landmarks())");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers")]
+    public async Task Layers_WithZeroTop_ReturnsEmptyPageAndUnpagedCount()
+    {
+        using var response = await _fixture.Client.GetAsync("/odata/Layers?$top=0&$count=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+
+        root.GetProperty("@odata.count").GetInt64().Should().BeGreaterThan(0,
+            "the seed contains visible layers and $top does not change their total count");
+        root.GetProperty("value").EnumerateArray().Should().BeEmpty();
+        root.TryGetProperty("@odata.nextLink", out _).Should().BeFalse(
+            "a zero $top budget has no remaining page");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=5000")]

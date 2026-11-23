@@ -90,25 +90,11 @@ internal sealed class OgcMapsRenderingHandler
             }
             var (resource, service) = collection!;
 
-            // Create map render request
-            var (renderRequest, validationError, notAcceptable) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (renderRequest is null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return notAcceptable
-                    ? CreateNotAcceptableResult(context, validationError!)
-                    : CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -147,7 +133,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.CollectionMapRenderCompleted(_logger, layerId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, renderRequest.Value, request.Crs);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -336,7 +322,12 @@ internal sealed class OgcMapsRenderingHandler
                 datasetExtent = combinedExtent;
             }
 
-            var (renderRequest, validationError, notAcceptable) = CreateMapRenderRequest(
+            if (ValidateAcceptFormat(request, context) is { } formatError)
+            {
+                return formatError;
+            }
+
+            var (renderRequest, validationError) = CreateMapRenderRequest(
                 request,
                 defaultExtentResource,
                 defaultExtentLayerId,
@@ -345,9 +336,7 @@ internal sealed class OgcMapsRenderingHandler
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, 0, validationError!);
-                return notAcceptable
-                    ? CreateNotAcceptableResult(context, validationError!)
-                    : CreateBadRequestResult(context, validationError!);
+                return CreateBadRequestResult(context, validationError!);
             }
 
             var parsedRenderRequest = renderRequest.Value;
@@ -396,7 +385,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.DatasetMapRenderCompleted(_logger, resolvedLayerCount, result.Data.Length);
             scope.SetSuccess(resolvedLayerCount);
 
-            return CreateMapFileResult(context, result, renderRequest.Value, request.Crs);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -460,25 +449,11 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
             }
 
-            // Create map render request
-            var (renderRequest, validationError, notAcceptable) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (renderRequest is null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return notAcceptable
-                    ? CreateNotAcceptableResult(context, validationError!)
-                    : CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -514,8 +489,7 @@ internal sealed class OgcMapsRenderingHandler
                     resource,
                     service,
                     stylesheet.Content,
-                    styledRequest,
-                    request.Crs,
+                    (styledRequest, request.Crs),
                     context,
                     scope,
                     cancellationToken).ConfigureAwait(false);
@@ -537,7 +511,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, styledRequest, request.Crs);
+            return CreateMapFileResult(context, result, (styledRequest, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -568,12 +542,12 @@ internal sealed class OgcMapsRenderingHandler
         MetadataV2Object resource,
         MetadataV2Service? service,
         string mapLibreStyleJson,
-        MapRenderRequest renderRequest,
-        string? requestedCrs,
+        (MapRenderRequest Request, string? Crs) rendering,
         HttpContext? context,
         HonuaTelemetryScope scope,
         CancellationToken cancellationToken)
     {
+        var renderRequest = rendering.Request;
         // The Skia pipeline resolves request-scoped services (feature reader, capacity
         // limiter, coordinate transform) from the HTTP context, so styled vector rendering
         // requires a live request. Without one we surface the same honest 501 as raster.
@@ -653,7 +627,7 @@ internal sealed class OgcMapsRenderingHandler
             }
         };
 
-        return CreateMapFileResult(context, result, renderRequest, requestedCrs);
+        return CreateMapFileResult(context, result, rendering);
     }
 
     private static bool ResourceHasGeometry(MetadataV2Object resource)
@@ -678,15 +652,23 @@ internal sealed class OgcMapsRenderingHandler
             styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
 
+    private static IResult? ValidateAcceptFormat(OgcMapRequest request, HttpContext? context)
+    {
+        if (!string.IsNullOrWhiteSpace(request.F) || ResolveOutputFormat(request.F, context) is not null)
+        {
+            return null;
+        }
+
+        const string message = "No supported image format matches the Accept header. Supported formats: png, jpeg, tiff.";
+        return context is not null
+            ? StandardErrorHelpers.CreateNotAcceptable(context, message)
+            : Results.Problem(message, statusCode: StatusCodes.Status406NotAcceptable);
+    }
+
     private static IResult CreateBadRequestResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
             : Results.BadRequest(message);
-
-    private static IResult CreateNotAcceptableResult(HttpContext? context, string message)
-        => context is not null
-            ? StandardErrorHelpers.CreateNotAcceptable(context, message)
-            : Results.StatusCode(StatusCodes.Status406NotAcceptable);
 
     private static async Task<(MapRenderRequest? Request, string? Error)> NormalizeBoundingBoxForOutputCrsAsync(
         MapRenderRequest request,
@@ -800,11 +782,9 @@ internal sealed class OgcMapsRenderingHandler
             : Results.Problem(message, statusCode: 500);
 
     private static IResult CreateMapFileResult(
-        HttpContext? context,
-        RasterResult result,
-        MapRenderRequest renderRequest,
-        string? requestedCrs = null)
+        HttpContext? context, RasterResult result, (MapRenderRequest Request, string? Crs) rendering)
     {
+        var renderRequest = rendering.Request;
         if (context is not null)
         {
             string? contentBboxHeader = null;
@@ -820,12 +800,13 @@ internal sealed class OgcMapsRenderingHandler
                 bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
             }
 
+            var spatialHeaders = ResolveSpatialHeaders(rendering.Crs, bboxSrid, contentBboxHeader);
+            contentBboxHeader = spatialHeaders.Bbox;
+            var contentCrsHeader = spatialHeaders.Crs;
             if (contentBboxHeader is not null)
             {
                 context.Response.Headers["Content-Bbox"] = contentBboxHeader;
             }
-
-            var contentCrsHeader = FormatContentCrsHeader(bboxSrid, requestedCrs);
             if (contentCrsHeader != null)
             {
                 context.Response.Headers["Content-Crs"] = contentCrsHeader;
@@ -836,6 +817,22 @@ internal sealed class OgcMapsRenderingHandler
         }
 
         return EncodedRasterResults.File(result.Data, result.ContentType);
+    }
+
+    private static (string? Crs, string? Bbox) ResolveSpatialHeaders(string? requestedCrs, int? bboxSrid, string? bbox)
+    {
+        var crs = FormatContentCrsHeader(bboxSrid);
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(requestedCrs, out var outputCrs) &&
+            (bboxSrid is null or <= 0 || outputCrs.Srid == bboxSrid))
+        {
+            crs = $"<{outputCrs.Uri}>";
+            if (bbox is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)
+            {
+                var coordinates = bbox.Split(',');
+                bbox = $"{coordinates[1]},{coordinates[0]},{coordinates[3]},{coordinates[2]}";
+            }
+        }
+        return (crs, bbox);
     }
 
     private static void AppendLinkHeaders(HttpContext context, string currentContentType)
@@ -879,15 +876,8 @@ internal sealed class OgcMapsRenderingHandler
         return $"{context.Request.Path}?{string.Join("&", parts)}";
     }
 
-    private static string? FormatContentCrsHeader(int? srid, string? requestedCrs = null)
+    private static string? FormatContentCrsHeader(int? srid)
     {
-        if (!string.IsNullOrWhiteSpace(requestedCrs) &&
-            SpatialReferenceHelpers.TryParseCrsDefinition(requestedCrs, out var requestedDefinition) &&
-            (srid is null or <= 0 || srid.Value == requestedDefinition.Srid))
-        {
-            return $"<{requestedDefinition.Uri}>";
-        }
-
         if (srid is null or <= 0)
         {
             return null;
@@ -951,7 +941,34 @@ internal sealed class OgcMapsRenderingHandler
         return RasterFormat.PNG;
     }
 
-    private (MapRenderRequest? Request, string? Error, bool NotAcceptable) CreateMapRenderRequest(
+    private async Task<(MapRenderRequest? Request, IResult? Error)> PrepareCollectionRenderRequestAsync(
+        (OgcMapRequest Request, MetadataV2Object Resource, int LayerId) parameters,
+        HttpContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (ValidateAcceptFormat(parameters.Request, context) is { } formatError)
+        {
+            return (null, formatError);
+        }
+
+        var (renderRequest, validationError) = CreateMapRenderRequest(
+            parameters.Request, parameters.Resource, parameters.LayerId, context);
+        if (renderRequest is { } initialRequest)
+        {
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                initialRequest, context, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (renderRequest is not null)
+        {
+            return (renderRequest, null);
+        }
+
+        OgcMapsLog.InvalidMapParameters(_logger, parameters.LayerId, validationError!);
+        return (null, CreateBadRequestResult(context, validationError!));
+    }
+
+    private (MapRenderRequest?, string?) CreateMapRenderRequest(
         OgcMapRequest request,
         MetadataV2Object resource,
         int layerId,
@@ -965,14 +982,14 @@ internal sealed class OgcMapsRenderingHandler
             if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
             {
                 OgcMapsLog.UnsupportedCrs(_logger, request.Crs);
-                return (null, $"Unsupported CRS: '{request.Crs}'. Use EPSG codes or OGC URI format.", false);
+                return (null, $"Unsupported CRS: '{request.Crs}'. Use EPSG codes or OGC URI format.");
             }
 
             var hasRequestedBboxCrs = SpatialReferenceHelpers.TryParseCrsDefinition(request.BboxCrs, out var requestedBboxCrsDefinition);
             if (!string.IsNullOrEmpty(request.BboxCrs) && !hasRequestedBboxCrs)
             {
                 OgcMapsLog.UnsupportedCrs(_logger, request.BboxCrs);
-                return (null, $"Unsupported bbox-crs: '{request.BboxCrs}'. Use EPSG codes or OGC URI format.", false);
+                return (null, $"Unsupported bbox-crs: '{request.BboxCrs}'. Use EPSG codes or OGC URI format.");
             }
 
             // Parse bounding box
@@ -994,7 +1011,7 @@ internal sealed class OgcMapsRenderingHandler
                         out var maxX,
                         out var maxY))
                 {
-                    return (null, "Invalid bbox format or coordinate values. Expected minX,minY,maxX,maxY values consistent with bbox-crs.", false);
+                    return (null, "Invalid bbox format or coordinate values. Expected minX,minY,maxX,maxY values consistent with bbox-crs.");
                 }
 
                 bbox = [minX, minY, maxX, maxY];
@@ -1022,7 +1039,7 @@ internal sealed class OgcMapsRenderingHandler
 
                 if (!defaultExtent.HasValue)
                 {
-                    return (null, "No bbox provided and the collection has no default extent.", false);
+                    return (null, "No bbox provided and the collection has no default extent.");
                 }
                 var extent = defaultExtent.Value;
                 bbox = [extent.MinX, extent.MinY, extent.MaxX, extent.MaxY];
@@ -1034,8 +1051,7 @@ internal sealed class OgcMapsRenderingHandler
             var format = ResolveOutputFormat(request.F, context);
             if (format == null)
             {
-                var isAcceptFailure = string.IsNullOrWhiteSpace(request.F);
-                return (null, $"Unsupported format: '{request.F ?? "(from Accept header)"}'. Supported formats: png, jpeg, tiff.", isAcceptFailure);
+                return (null, $"Unsupported format: '{request.F ?? "(from Accept header)"}'. Supported formats: png, jpeg, tiff.");
             }
 
             // Parse and validate dimensions (prevent DoS via oversized images)
@@ -1044,17 +1060,17 @@ internal sealed class OgcMapsRenderingHandler
             if (width < 1 || width > MaxImageDimension || height < 1 || height > MaxImageDimension)
             {
                 OgcMapsLog.MapDimensionsExceeded(_logger, width, height, MaxImageDimension, MaxImageDimension);
-                return (null, $"Map dimensions must be between 1 and {MaxImageDimension} pixels. Received: {width}x{height}.", false);
+                return (null, $"Map dimensions must be between 1 and {MaxImageDimension} pixels. Received: {width}x{height}.");
             }
 
             if (request.Quality is < 1 or > 100)
             {
-                return (null, "Quality must be between 1 and 100.", false);
+                return (null, "Quality must be between 1 and 100.");
             }
 
             if (!string.IsNullOrEmpty(request.BackgroundColor) && !_backgroundColorPattern.IsMatch(request.BackgroundColor))
             {
-                return (null, $"Invalid background color: '{request.BackgroundColor}'. Expected 0xRRGGBB hex format.", false);
+                return (null, $"Invalid background color: '{request.BackgroundColor}'. Expected 0xRRGGBB hex format.");
             }
 
             // Parse datetime as an OGC API instant or interval (RFC 3339).
@@ -1065,7 +1081,7 @@ internal sealed class OgcMapsRenderingHandler
                 var isDatetimeInterval = request.Datetime.Contains('/', StringComparison.Ordinal);
                 if (!OgcTemporalFilterParser.TryParseRange(request.Datetime, out datetimeFrom, out datetimeTo, out var datetimeError))
                 {
-                    return (null, $"Invalid datetime format: '{request.Datetime}'. {datetimeError ?? "Use an RFC 3339 instant or interval (start/end, ../end, start/..)."}", false);
+                    return (null, $"Invalid datetime format: '{request.Datetime}'. {datetimeError ?? "Use an RFC 3339 instant or interval (start/end, ../end, start/..)."}");
                 }
 
                 if (!isDatetimeInterval)
@@ -1087,19 +1103,19 @@ internal sealed class OgcMapsRenderingHandler
                 DateTime = datetimeTo,
                 DateTimeFrom = datetimeFrom,
                 Quality = request.Quality
-            }, null, false);
+            }, null);
         }
         catch (FormatException)
         {
-            return (null, "Invalid numeric format in request parameters.", false);
+            return (null, "Invalid numeric format in request parameters.");
         }
         catch (OverflowException)
         {
-            return (null, "Numeric parameter value is out of range.", false);
+            return (null, "Numeric parameter value is out of range.");
         }
         catch (ArgumentException)
         {
-            return (null, "Invalid map request parameters.", false);
+            return (null, "Invalid map request parameters.");
         }
     }
 

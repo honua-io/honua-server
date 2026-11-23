@@ -59,9 +59,8 @@ public sealed class OgcRecordsItemsLinkTests
         OgcRecordsEndpoints.TryParseDatetime("01/15/2020", out _, out _).Should().BeFalse();
         OgcRecordsEndpoints.TryParseDatetime("2020-01-01T12:00:00", out _, out _).Should().BeFalse();
         OgcRecordsEndpoints.TryParseDatetime("/2020-01-01T00:00:00Z", out _, out _).Should().BeFalse();
+        OgcRecordsEndpoints.TryParseDatetime("2020-01-01", out _, out _).Should().BeFalse();
 
-        OgcRecordsEndpoints.TryParseDatetime("2020-01-01", out var dateFilter, out _).Should().BeTrue();
-        dateFilter.Should().NotBeNull();
         OgcRecordsEndpoints.TryParseDatetime("../2020-01-01T00:00:00Z", out var openStart, out _).Should().BeTrue();
         openStart!.Start.Should().BeNull();
         openStart.End.Should().NotBeNull();
@@ -83,20 +82,19 @@ public sealed class OgcRecordsItemsLinkTests
     }
 
     [UnitTest]
-    public void TryGetGeoJsonOutputFormat_UnsupportedAcceptWithoutQueryFormat_ReturnsNotAcceptable()
+    public void PrepareItemsFormat_UnsupportedAcceptWithoutQueryFormat_ReturnsNotAcceptable()
     {
         var context = new DefaultHttpContext();
         context.Request.Headers.Accept = "application/xml";
 
-        var ok = OgcRecordsEndpoints.TryGetGeoJsonOutputFormat(context, f: null, out var errorResult);
+        var (errorResult, _) = OgcRecordsEndpoints.PrepareItemsFormat(context, f: null);
 
-        ok.Should().BeFalse();
         errorResult.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status406NotAcceptable);
     }
 
     [UnitTest]
-    public void OgcCoverageSpatialSubset_SupportsPointSliceEqualBoundsAndAntimeridianWrap()
+    public void OgcCoverageSpatialSubset_SelectsNativeCellForPointSliceAndSupportsAntimeridianWrap()
     {
         var raster = new RasterInfo
         {
@@ -114,9 +112,9 @@ public sealed class OgcRecordsItemsLinkTests
         OgcCoverageSpatialSubset.TryParse(new StringValues("Lon(10),Lat(20)"), raster, 4326, out var pointBounds, out _)
             .Should().BeTrue();
         pointBounds.MinX.Should().Be(10);
-        pointBounds.MaxX.Should().Be(10);
+        pointBounds.MaxX.Should().Be(11);
         pointBounds.MinY.Should().Be(20);
-        pointBounds.MaxY.Should().Be(20);
+        pointBounds.MaxY.Should().Be(21);
 
         OgcCoverageSpatialSubset.TryParse(new StringValues("Lon(170:-170),Lat(-10:10)"), raster, 4326, out var wrappedBounds, out _)
             .Should().BeTrue();

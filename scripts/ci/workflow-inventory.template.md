@@ -1243,7 +1243,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
@@ -1254,6 +1256,16 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+A subsequent synchronous-host optimization was measured with four interleaved
+Release runs of the complete owning GPServer Endpoints shard. All four passed
+the same 71 cases without skips. Class-body totals were 34.012 / 32.569 seconds
+before and 27.791 / 31.771 seconds after (medians 33.291 to 29.781 seconds).
+Fixture-inclusive TRX intervals were 46.941 / 53.211 seconds before and
+41.400 / 45.258 seconds after (medians 50.076 to 43.329 seconds). This saves
+6.747 seconds, or 0.112 test-run runner-minutes, with one runner unchanged.
+Compilation, admission and full CI-job time are excluded. The earlier timings
+above describe the separate default-host optimization, not this comparison.
 
 ### Admin authentication default application lifetime
 
@@ -2226,3 +2238,27 @@ end-to-end CI critical-path improvement.
 The shard filter, test selection, workflows, required check names and aggregate
 `needs` contract are unchanged. Every case still runs in its existing selected PR
 shard and full trunk runs; no assertions or gate coverage move to another schedule.
+
+### OIDC bearer authentication host lifetime
+
+`OidcAuthenticationTests` reuses a lazy class host for seven bearer-token read
+cases with identical OIDC settings. Each case still creates and disposes its own
+HTTP client and sets its own request headers and token. The existing database
+collection serializes the cases. xUnit disposes the shared factory after the
+class finishes. Replay, certificate, production-mode, tenant-specific and
+mutating admin scenarios retain their private factories and configuration.
+
+All 27 OIDC cases, 125 assertion calls and endpoint metadata remain unchanged.
+Every case stays in the existing Admin & Infrastructure 1 shard on selected PR
+runs and twice-daily full trunk runs. Runner count, shard filters, required check
+names and the aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Four interleaved build-host runs of the complete 39-case owning shard passed
+without failures or skips and with identical case outcomes. Median summed OIDC
+class duration fell from 26.39 to 22.24 seconds; both pairs improved. Median
+fixture-inclusive shard wall time fell from 48.45 to 41.50 seconds, saving 6.95
+seconds (0.116 runner minutes), with one runner before and after. Individual
+baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
+pair was slightly slower, so the shard saving is variable. Build time is excluded;
+these results do not establish a reduction in the parallel PR Gate critical path.
