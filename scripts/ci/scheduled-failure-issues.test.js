@@ -1,0 +1,164 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { sweep, keyOf } = require('./scheduled-failure-issues.js');
+const realConfig = require('./scheduled-failure-owners.json');
+
+const NOW = new Date('2026-11-23T08:00:00Z');
+const config = {
+  lookbackHours: 72, maxIssuesPerRun: 2, downstreamJobPattern: '^(CI Gate|.*Summary)$',
+  defaultOwner: { lane: 's-ci-doctors', area: 'area/ci' },
+  ignore: { app: ['watchdog.yml'] },
+  botDispatchWorkflows: { app: ['ci.yml'] },
+  repos: { app: { default: { lane: 's-app' }, workflows: { 'nightly.yml': { lane: 's-night', area: 'area/x' } } } },
+};
+
+function run(id, file, conclusion, extra = {}) {
+  return {
+    id, workflow_id: file, name: `${file} run ${id}`, path: `.github/workflows/${file}`, status: 'completed', conclusion,
+    event: 'schedule', head_branch: 'trunk', head_sha: `${id}`.padEnd(40, 'a'),
+    created_at: new Date(Date.parse('2026-11-23T00:00:00Z') + id * 60000).toISOString(),
+    html_url: `https://github.com/honua-io/app/actions/runs/${id}`, ...extra,
+  };
+}
+const job = (name, conclusion, minute) => ({
+  name, conclusion, started_at: `2026-11-23T01:${String(minute).padStart(2, '0')}:00Z`, html_url: `https://job/${name}`,
+});
+
+function fakeGithub({ runs = [], dispatchRuns = [], jobs = {}, issues = [], comments = {}, labels = ['bug'] }) {
+  const calls = [];
+  let nextIssue = 100;
+  const github = {
+    calls, issues, comments,
+    async paginate(route, params) {
+      calls.push(['paginate', route, params]);
+      if (route === 'GET /installation/repositories') {
+        return [{ name: 'app', owner: { login: 'honua-io' }, default_branch: 'trunk' },
+          { name: 'old', owner: { login: 'honua-io' }, archived: true, default_branch: 'main' }];
+      }
+      if (route === 'GET /repos/{owner}/{repo}/actions/runs') return params.event === 'schedule' ? [...runs] : [];
+      if (route.endsWith('/workflows/{workflow_id}/runs')) return [...dispatchRuns];
+      if (route.endsWith('/jobs')) return jobs[params.run_id] || [];
+      if (route === 'GET /repos/{owner}/{repo}/issues') return issues.filter(issue => issue.state === 'open');
+      if (route.endsWith('/comments')) return comments[params.issue_number] || [];
+      throw new Error(`unexpected ${route}`);
+    },
+    async request(route, params) {
+      calls.push(['request', route, params]);
+      if (route === 'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}') {
+        return { data: { name: params.workflow_id.replace('.yml', '') } };
+      }
+      if (route === 'GET /repos/{owner}/{repo}/labels/{name}') {
+        if (labels.includes(params.name)) return { data: {} };
+        throw Object.assign(new Error('Not Found'), { status: 404 });
+      }
+      if (route === 'POST /repos/{owner}/{repo}/labels') { labels.push(params.name); return { data: {} }; }
+      if (route === 'POST /repos/{owner}/{repo}/issues') {
+        const issue = { number: nextIssue++, state: 'open', title: params.title, body: params.body, labels: params.labels };
+        issues.push(issue);
+        return { data: issue };
+      }
+      if (route.endsWith('/comments')) {
+        (comments[params.issue_number] ||= []).push({ body: params.body });
+        return { data: {} };
+      }
+      if (route === 'PATCH /repos/{owner}/{repo}/issues/{issue_number}') {
+        Object.assign(issues.find(issue => issue.number === params.issue_number), { state: params.state });
+        return { data: {} };
+      }
+      throw new Error(`unexpected ${route}`);
+    },
+  };
+  return github;
+}
+const core = { info() {}, warning() {} };
+const go = github => sweep({ github, core, config, owner: 'honua-io', now: NOW });
+
+test('a failed scheduled run opens one issue per failing job with owner, labels, due time and claim', async () => {
+  const github = fakeGithub({
+    runs: [run(1, 'nightly.yml', 'failure')],
+    jobs: { 1: [job('Gate', 'failure', 9), job('Build', 'failure', 1), job('Lint', 'success', 0), job('Test', 'timed_out', 5),
+      job('CI Gate', 'failure', 20), job('Test Suite Summary', 'failure', 19)] },
+  });
+  const report = await go(github);
+  assert.deepEqual(report.opened, ['app#100', 'app#101']);
+  const [first, second] = github.issues;
+  assert.equal(first.title, 'Scheduled run failing: nightly / Build');
+  assert.equal(second.title, 'Scheduled run failing: nightly / Test');
+  assert.deepEqual(first.labels, ['bug', 'area/x', 'scheduled-failure']);
+  assert.equal(keyOf(first.body), '.github/workflows/nightly.yml::Build');
+  assert.match(first.body, /Owner lane: `s-night`/);
+  assert.match(first.body, /Due: 2026-11-24T08:00:00Z/);
+  assert.match(first.body, /Other failed jobs in this run: `Test`, `Gate`/);
+  assert.match(github.comments[100][0].body, /^claimed: s-night 2026-11-23T08:00:00Z - auto-assigned owner of nightly.yml/);
+  const created = github.calls.filter(([, route]) => route === 'POST /repos/{owner}/{repo}/labels').map(([, , p]) => p.name);
+  assert.deepEqual(created, ['area/x', 'scheduled-failure']);
+});
+
+test('a repeat failure comments once per run on the existing issue instead of opening another', async () => {
+  const key = '.github/workflows/nightly.yml::Build';
+  const issues = [{ number: 7, state: 'open', body: `first run https://github.com/honua-io/app/actions/runs/1\n<!-- scheduled-failure key=${key} -->` }];
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')], jobs: { 2: [job('Build', 'failure', 1)] }, issues });
+  assert.deepEqual((await go(github)).updated, ['app#7']);
+  assert.match(github.comments[7][0].body, /Failed again: .*runs\/2/);
+  const again = await go(github);
+  assert.deepEqual([again.opened, again.updated], [[], []]);
+  assert.equal(github.issues.length, 1);
+});
+
+test('the latest scheduled success closes every open issue of that workflow only', async () => {
+  const issues = [
+    { number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::Build -->' },
+    { number: 8, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::Test -->' },
+    { number: 9, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/other.yml::Build -->' },
+  ];
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(3, 'nightly.yml', 'success'), run(2, 'nightly.yml', 'cancelled')], issues });
+  const report = await go(github);
+  assert.deepEqual(report.closed, ['app#7', 'app#8']);
+  assert.deepEqual(issues.map(issue => issue.state), ['closed', 'closed', 'open']);
+  assert.match(github.comments[7][0].body, /runs\/3 succeeded/);
+});
+
+test('cancelled, ignored, push-dispatched and human-dispatched runs are not swept; bot dispatches of listed workflows are', async () => {
+  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' } };
+  const github = fakeGithub({
+    runs: [run(1, 'later.yml', 'cancelled'), run(2, 'watchdog.yml', 'failure')],
+    dispatchRuns: [run(3, 'ci.yml', 'failure', bot),
+      run(4, 'ci.yml', 'failure', { ...bot, triggering_actor: { login: 'founder' } }),
+      run(5, 'ci.yml', 'failure', { ...bot, head_branch: 'feature' })],
+    jobs: { 3: [] },
+  });
+  const report = await go(github);
+  assert.deepEqual(report.opened, ['app#100']);
+  assert.equal(github.issues[0].title, 'Scheduled run failing: ci / (no job ran)');
+  assert.match(github.issues[0].body, /Owner lane: `s-app`/);
+  assert.deepEqual(github.issues[0].labels, ['bug', 'area/ci', 'scheduled-failure']);
+  const repos = github.calls.filter(([, route]) => route === 'GET /repos/{owner}/{repo}/actions/runs').map(([, , p]) => p.repo);
+  assert.deepEqual(repos, ['app']);
+});
+
+test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {
+  const github = fakeGithub({});
+  github.paginate = async route => {
+    if (route === 'GET /installation/repositories') return [{ name: 'app', owner: { login: 'honua-io' } }];
+    throw Object.assign(new Error('Resource not accessible'), { status: 403 });
+  };
+  await assert.rejects(go(github), /every repository sweep failed/);
+});
+
+test('summary and gate jobs get an issue only when they are the only failure', async () => {
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs: { 1: [job('CI Gate', 'failure', 9)] } });
+  await go(github);
+  assert.deepEqual(github.issues.map(issue => issue.title), ['Scheduled run failing: nightly / CI Gate']);
+});
+
+test('the owner map names real workflow files for honua-server and lanes for every entry', () => {
+  const fs = require('node:fs');
+  for (const file of Object.keys(realConfig.repos['honua-server'].workflows)) {
+    assert.ok(fs.existsSync(`.github/workflows/${file}`), `${file} is not a honua-server workflow`);
+  }
+  for (const [repo, entry] of Object.entries(realConfig.repos)) {
+    for (const owner of [entry.default, ...Object.values(entry.workflows || {})]) {
+      assert.match(owner.lane, /^s-[a-z0-9-]+$/, `${repo} owner lane`);
+    }
+  }
+});

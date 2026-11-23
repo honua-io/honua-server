@@ -1,0 +1,67 @@
+{
+  "lookbackHours": 72,
+  "maxIssuesPerRun": 5,
+  "defaultOwner": { "lane": "s-ci-doctors", "area": "area/ci" },
+  "skipRepos": [],
+  "downstreamJobPattern": "^(CI Gate|Test Suite Summary|.*[Ss]ummary|Open, update or close .*)$",
+  "ignore": {
+    "honua-server": ["trunk-signal-watchdog.yml"],
+    "honua-iac": ["bootstrap-drift-plan.yml"],
+    "honua-demo-infra": ["drift-plan.yml"]
+  },
+  "botDispatchWorkflows": {
+    "honua-server": ["ci.yml"]
+  },
+  "repos": {
+    "honua-server": {
+      "default": { "lane": "s-trunk-green", "area": "area/ci" },
+      "workflows": {
+        "nightly-container-build.yml": { "lane": "s-net11", "area": "area/infrastructure" },
+        "load-soak-nightly.yml": { "lane": "s-perf-wkb", "area": "area/server" },
+        "release-migration-performance.yml": { "lane": "s-perf-wkb", "area": "area/migration" },
+        "cloud-integration-harness.yml": { "lane": "s-aws-marketplace", "area": "area/infrastructure" },
+        "cloud-post-apply-validation-nightly.yml": { "lane": "s-aws-marketplace", "area": "area/infrastructure" },
+        "shipped-quickstart.yml": { "lane": "s-aws-marketplace", "area": "area/infrastructure" },
+        "docs-quickstart-nightly.yml": { "lane": "s-aws-marketplace", "area": "area/infrastructure" },
+        "client-interop-nightly.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
+        "pyqgis-client-compat-nightly.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
+        "client-compat-smoke-nightly.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
+        "cross-server-consume-nightly.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
+        "protocol-harness-certification.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
+        "mcp-client-contract.yml": { "lane": "s-mcp-tools", "area": "area/mcp" },
+        "security-nightly.yml": { "lane": "s-sec-server", "area": "area/server" },
+        "codeql.yml": { "lane": "s-sec-server", "area": "area/server" },
+        "gdal-driver-e2e.yml": { "lane": "s-image-trim", "area": "area/server" },
+        "multidim-raster-fixture.yml": { "lane": "s-image-trim", "area": "area/server" },
+        "gp-buffer-canary.yml": { "lane": "s-image-trim", "area": "area/server" },
+        "nightly-migration-evidence.yml": { "lane": "s-metadata", "area": "area/migration" }
+      }
+    },
+    "honua-console": {
+      "default": { "lane": "s-console-ops" },
+      "workflows": {
+        "console-live-journey.yml": { "lane": "s-console-shell" },
+        "console-aws-browser.yml": { "lane": "s-console-shell" },
+        "console-live-llm-nightly.yml": { "lane": "s-console-shell" }
+      }
+    },
+    "honua-sdk-js": {
+      "default": { "lane": "s-backlog-clients" },
+      "workflows": { "realtime-live-conformance.yml": { "lane": "s-realtime" } }
+    },
+    "honua-sdk-dotnet": { "default": { "lane": "s-backlog-clients" } },
+    "honua-sdk-python": { "default": { "lane": "s-backlog-clients" } },
+    "honua-mobile": { "default": { "lane": "s-mobile-sdk" } },
+    "honua-studio": { "default": { "lane": "s-rc2-studio" } },
+    "honua-samples": { "default": { "lane": "s-site-release" } },
+    "honua-docs": { "default": { "lane": "s-site-release" } },
+    "honua-release": { "default": { "lane": "s-release-rc2" } },
+    "honua-evidence": { "default": { "lane": "s-rc2-ci" } },
+    "honua-iac": { "default": { "lane": "s-aws-marketplace" } },
+    "honua-helm": { "default": { "lane": "s-aws-marketplace" } },
+    "honua-demo-infra": { "default": { "lane": "s-demos-2" } },
+    "geospatial-mcp": { "default": { "lane": "s-mcp-upgrade" } },
+    "geospatial-grpc": { "default": { "lane": "s-grpc-edit" } },
+    "geobench": { "default": { "lane": "s-perf-wkb" } }
+  }
+}
