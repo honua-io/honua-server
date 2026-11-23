@@ -228,6 +228,7 @@ public sealed partial class CapabilityManifestEndpointTests
         }).ToArray();
         await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
             edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ShareSchemaWith(_fixture)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFeatureOutputFormatRegistry>();

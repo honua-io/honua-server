@@ -24,14 +24,16 @@ internal static class AgentAuthorityPolicy
         if (string.IsNullOrWhiteSpace(context.PrincipalId))
             return AgentAuthorityVerdict.Denied;
         // Without a stored ceiling (never set, or deleted) an agent's change becomes a proposal for one
-        // human approval; read-only operations follow normal policy. A disabled ceiling revokes
-        // everything. A store that cannot be read throws, so the operation fails closed.
+        // human approval; read-only operations and draft authoring follow normal policy, which
+        // decides draft ownership. A disabled ceiling revokes everything. A store that cannot be
+        // read throws, so the operation fails closed.
         var ceiling = store is null
             ? null
             : await store.GetAsync(context.TenantId, context.PrincipalId, cancellationToken).ConfigureAwait(false);
         if (ceiling is null)
         {
             return descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly
+                || AgentApprovalRule.IsAgentDraftAuthoring(descriptor.OperationId)
                 ? AgentAuthorityVerdict.Unrestricted
                 : AgentAuthorityVerdict.ApprovalRequired;
         }

@@ -2181,6 +2181,7 @@ fi
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/test-quarantine-sweep.py "${PYTHON_BIN}" scripts/ci/test-quarantine-sweep.py
   run_fixture scripts/ci/test-flake-quarantine.py "${PYTHON_BIN}" scripts/ci/test-flake-quarantine.py
+  run_fixture scripts/ci/test-shard-rank-drift.py "${PYTHON_BIN}" scripts/ci/test-shard-rank-drift.py
   run_fixture scripts/ci/test-runner-cancellation.py "${PYTHON_BIN}" scripts/ci/test-runner-cancellation.py
 fi
 
