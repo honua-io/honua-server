@@ -50,10 +50,6 @@ function fakeLookups(state, route, params) {
   if (route === 'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}') {
     return { data: { name: params.workflow_id.replace('.yml', '') } };
   }
-  if (route === 'GET /repos/{owner}/{repo}/labels/{name}') {
-    if (state.labels.includes(params.name)) return { data: {} };
-    throw Object.assign(new Error('Not Found'), { status: 404 });
-  }
   return null;
 }
 
@@ -62,7 +58,11 @@ function fakeWrites(state) {
     state.calls.push(['request', route, params]);
     const lookup = fakeLookups(state, route, params);
     if (lookup) return lookup;
-    if (route === 'POST /repos/{owner}/{repo}/labels') { state.labels.push(params.name); return { data: {} }; }
+    if (route === 'POST /repos/{owner}/{repo}/labels') {
+      if (state.labels.includes(params.name)) throw Object.assign(new Error('already_exists'), { status: 422 });
+      state.labels.push(params.name);
+      return { data: {} };
+    }
     if (route === 'POST /repos/{owner}/{repo}/issues') {
       const issue = { number: state.nextIssue++, state: 'open', title: params.title, body: params.body, labels: params.labels };
       state.issues.push(issue);
@@ -104,8 +104,9 @@ test('a failed scheduled run opens one issue per failing job with owner, labels,
   assert.match(first.body, /Due: 2026-11-24T08:00:00Z/);
   assert.match(first.body, /Other failed jobs in this run: `Test`, `Gate`/);
   assert.match(github.comments[100][0].body, /^claimed: s-night 2026-11-23T08:00:00Z - auto-assigned owner of nightly.yml/);
-  const created = github.calls.filter(([, route]) => route === 'POST /repos/{owner}/{repo}/labels').map(([, , p]) => p.name);
-  assert.deepEqual(created, ['area/x', 'scheduled-failure']);
+  const posted = github.calls.filter(([, route]) => route === 'POST /repos/{owner}/{repo}/labels').map(([, , p]) => p.name);
+  assert.deepEqual(posted, ['bug', 'area/x', 'scheduled-failure']);
+  assert.ok(!github.calls.some(([, route]) => route.startsWith('GET /repos/{owner}/{repo}/labels')));
 });
 
 test('a repeat failure comments once per run on the existing issue instead of opening another', async () => {
@@ -233,8 +234,11 @@ test('logs and the report never name a private repository or its issue numbers',
     repos: [{ name: 'secret-repo', private: true, owner: { login: 'honua-io' }, default_branch: 'trunk' }],
     runs: [run(1, 'nightly.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] },
   });
+  github.log = { error: text => warnings.push(text) };
   const report = await sweep({ github, core: { info: text => warnings.push(text), warning: text => warnings.push(text) },
     config, owner: 'honua-io', now: NOW });
+  github.log.error('GET /repos/honua-io/secret-repo/labels/bug - 404');
+  assert.match(warnings.at(-1), /honua-io\/a private repository\/labels/);
   assert.deepEqual(report.opened, ['a private repository#']);
   assert.doesNotMatch(JSON.stringify([report, warnings]), /secret-repo|#100/);
 });
@@ -272,6 +276,13 @@ test('runs recorded on a closed issue are not replayed onto its open successor',
   const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')], jobs, issues,
     comments: { 20: [{ body: 'claimed: s-night x' }] } });
   assert.deepEqual((await go(github)).updated, []);
+});
+
+test('a job cancelled by its own timeout names the issue when no job concluded failed', async () => {
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')],
+    jobs: { 1: [job('Soak', 'cancelled', 1), job('Prep', 'success', 0)] } });
+  await go(github);
+  assert.deepEqual(github.issues.map(issue => issue.title), ['Scheduled run failing: nightly / Soak']);
 });
 
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {

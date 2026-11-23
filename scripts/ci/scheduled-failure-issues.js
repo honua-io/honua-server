@@ -10,7 +10,7 @@ const FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
 const SETTLED = new Set(['success', ...FAILED]);
 const NO_JOB = '(no job ran)';
 const HOUR = 3600 * 1000;
-const NOT_FOUND = 404;
+const ALREADY_EXISTS = 422;
 const DUE_HOURS = 24;
 const DEFAULT_ISSUES_PER_RUN = 5;
 const DEFAULT_RUNS_PER_WORKFLOW = 6;
@@ -86,30 +86,45 @@ async function withoutHandoffs(ctx, path, runs) {
   return kept;
 }
 
+// Create-and-ignore-422 instead of probing: a failed request's path lands in the public log.
 async function ensureLabel(ctx, name) {
   const { github, owner, repo, labelCache } = ctx;
   const id = `${repo}/${name}`;
   if (labelCache.has(id)) return;
   try {
-    await github.request('GET /repos/{owner}/{repo}/labels/{name}', { owner, repo, name });
-  } catch (error) {
-    if (error.status !== NOT_FOUND) throw error;
     await github.request('POST /repos/{owner}/{repo}/labels', {
       owner, repo, name, color: name === LABEL ? 'b60205' : 'ededed',
     });
+  } catch (error) {
+    if (error.status !== ALREADY_EXISTS) throw error;
   }
   labelCache.add(id);
 }
 
-// Gate and summary jobs fail because a job they need failed; they get an issue only when nothing else failed.
+// Octokit's request log prints the path of every failed request; private names are replaced.
+function redactLogs(github, privateNames) {
+  if (!github.log || !privateNames.length) return;
+  const pattern = new RegExp(privateNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+  const redact = value => (typeof value === 'string' ? value.replace(pattern, PRIVATE_LABEL) : value);
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    const original = github.log[level];
+    if (typeof original === 'function') github.log[level] = (...args) => original(...args.map(redact));
+  }
+}
+
+// Gate and summary jobs fail because a job they need failed; they get an issue only when nothing else
+// failed. A job cancelled by its own timeout stands in when no job concluded failed.
 async function failedJobs(ctx, run) {
-  const failed = (await jobsOf(ctx, run))
+  const jobs = await jobsOf(ctx, run);
+  const failed = jobs
     .filter(job => FAILED.has(job.conclusion))
     .sort((a, b) => Date.parse(a.started_at || 0) - Date.parse(b.started_at || 0));
   const downstream = new RegExp(ctx.config.downstreamJobPattern || '^$');
   const causes = failed.filter(job => !downstream.test(job.name));
   if (causes.length) return causes;
-  return failed.length ? failed : [{ name: NO_JOB, html_url: run.html_url }];
+  if (failed.length) return failed;
+  const cancelled = jobs.filter(job => job.conclusion === 'cancelled');
+  return cancelled.length ? cancelled : [{ name: NO_JOB, html_url: run.html_url }];
 }
 
 function issueBody({ run, job, jobs, lane, key, due, workflowName }) {
@@ -302,6 +317,7 @@ async function sweep({ github, core, config, owner, now = new Date() }) {
     .filter(repo => repo.owner?.login === owner && !repo.archived && !repo.disabled)
     .filter(repo => !(config.skipRepos || []).includes(repo.name))
     .sort((a, b) => a.name.localeCompare(b.name));
+  redactLogs(github, repos.filter(repo => repo.private).map(repo => repo.name));
   const report = { opened: [], updated: [], closed: [], errors: [] };
   const shared = { github, owner, config, now, report, labelCache: new Set() };
   for (const repo of repos) {
