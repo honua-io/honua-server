@@ -23,8 +23,37 @@ ARG DOTNET_RUNTIME_DEPS_FULL_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-
 
 ARG HONUA_STORE_PROFILE=postgis
 
-FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base-postgis
-FROM ${DOTNET_RUNTIME_DEPS_FULL_IMAGE} AS chiseled-base-full
+FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-publisher-postgis
+FROM ${DOTNET_RUNTIME_DEPS_FULL_IMAGE} AS chiseled-publisher-full
+
+# Recut the publisher's Ubuntu slices from the security archive (as the JIT Dockerfile does),
+# so libc and the package manifest track Ubuntu security fixes between publisher rebuilds.
+# The postgis profile keeps the plain slice set; full adds ICU and time zone data.
+FROM ${DOTNET_SDK_IMAGE} AS chiseled-rootfs
+ARG HONUA_STORE_PROFILE
+WORKDIR /src
+COPY docker/runtime/cut-rootfs.sh docker/runtime/
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates file && \
+    if [ "${HONUA_STORE_PROFILE:-postgis}" = postgis ]; then slices=runtime-deps; else slices=runtime-deps-extra; fi && \
+    sh docker/runtime/cut-rootfs.sh /rootfs "$slices" && rm -rf /var/lib/apt/lists/*
+
+FROM scratch AS chiseled-base-postgis
+COPY --from=chiseled-rootfs /rootfs/ /
+COPY --from=chiseled-publisher-postgis /etc/passwd /etc/passwd
+COPY --from=chiseled-publisher-postgis /etc/group /etc/group
+COPY --from=chiseled-publisher-postgis --chown=1654:1654 /home/app/ /home/app/
+ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
+USER 1654
+
+FROM scratch AS chiseled-base-full
+COPY --from=chiseled-rootfs /rootfs/ /
+COPY --from=chiseled-publisher-full /etc/passwd /etc/passwd
+COPY --from=chiseled-publisher-full /etc/group /etc/group
+COPY --from=chiseled-publisher-full --chown=1654:1654 /home/app/ /home/app/
+ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true
+USER 1654
+
 FROM chiseled-base-${HONUA_STORE_PROFILE:-postgis} AS chiseled-base
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
