@@ -178,6 +178,56 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         CredentialDenials.Should().Contain(response.StatusCode);
     }
 
+    // The Console re-issues its bearer only when a route refuses it. A forged or unsigned bearer
+    // must therefore be refused visibly on every route the Console calls with it, never served
+    // as an anonymous caller: Studio routes answer 401, GeoServices routes the Esri token error.
+    [IntegrationTheory]
+    [InlineData("/api/v1/studio/session", "tampered")]
+    [InlineData("/api/v1/studio/session", "unsigned")]
+    [InlineData("/api/v1/studio/package-families", "tampered")]
+    [InlineData("/api/v1/studio/ai/capabilities", "unsigned")]
+    [InlineData("/rest/services?f=json", "tampered")]
+    [InlineData("/rest/services?f=json", "unsigned")]
+    [InlineData("/rest/services/console-missing/FeatureServer/0/query?where=1%3D1&returnGeometry=false&f=json", "tampered")]
+    [Endpoint("GET /api/v1/studio/session")]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ConsoleRoute_ForgedOperatorBearer_IsRefusedNotServedAnonymously(string route, string forgery)
+    {
+        var token = await IssueOperatorBearerAsync();
+        using var client = CreateCrossOriginClient(forgery == "unsigned" ? Unsigned(token) : Tampered(token));
+
+        using var response = await client.GetAsync(route);
+
+        if (route.StartsWith("/rest/", StringComparison.Ordinal))
+        {
+            (await ReadsAsEsriTokenDenialAsync(response)).Should().BeTrue("a forged bearer must not read as anonymous");
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    // Changes one signature character away from the base64url padding bits, so the bytes change.
+    private static string Tampered(string jwt)
+    {
+        var signatureStart = jwt.LastIndexOf('.') + 1;
+        var index = signatureStart + ((jwt.Length - signatureStart) / 2);
+        var replacement = jwt[index] == 'A' ? 'B' : 'A';
+        return string.Concat(jwt.AsSpan(0, index), replacement.ToString(), jwt.AsSpan(index + 1));
+    }
+
+    // Keeps the genuine claims under an alg:none header with no signature.
+    private static string Unsigned(string jwt)
+    {
+        var header = Convert.ToBase64String("{\"alg\":\"none\",\"typ\":\"JWT\"}"u8.ToArray())
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return $"{header}.{jwt.Split('.')[1]}.";
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/session")]
     public async Task StudioSession_CookieAndCrossOriginBearer_ReturnServerOwnedBootstrap()
@@ -235,7 +285,9 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         return client;
     }
 
-    private async Task<HttpClient> SignInCrossOriginAsync()
+    private async Task<HttpClient> SignInCrossOriginAsync() => CreateCrossOriginClient(await IssueOperatorBearerAsync());
+
+    private async Task<string> IssueOperatorBearerAsync()
     {
         using var browser = _fixture.CreateClient();
         browser.BaseAddress = new Uri("https://localhost");
@@ -243,11 +295,15 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         using var issued = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = AdminPassword });
         issued.StatusCode.Should().Be(HttpStatusCode.OK);
         var token = await issued.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+        return token!.AccessToken;
+    }
 
+    private HttpClient CreateCrossOriginClient(string accessToken)
+    {
         var client = _fixture.CreateClient();
         client.BaseAddress = new Uri("https://localhost");
         client.DefaultRequestHeaders.Add("Origin", ConsoleOrigin);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return client;
     }
 
