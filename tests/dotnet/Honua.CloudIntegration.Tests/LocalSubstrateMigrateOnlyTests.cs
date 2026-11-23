@@ -74,6 +74,113 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
     }
 
     [SkippableFact]
+    public async Task ServerProcess_StoppedDuringMigration_RestartsWithAnEmptyJournal()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migrate-only lane.");
+        var connectionString = await _postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var childConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            ApplicationName = "honua_migrate_only_interrupted"
+        }.ConnectionString;
+
+        await using var observer = new NpgsqlConnection(connectionString);
+        await observer.OpenAsync();
+        await InstallMigrationBarrierAsync(observer);
+        await StopBlockedMigrationAsync(observer, childConnectionString);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var unlock = new NpgsqlCommand("SELECT pg_advisory_unlock(720618, 1)", observer);
+        await unlock.ExecuteNonQueryAsync(timeout.Token);
+        await WaitForMigrationSessionAsync(observer, activityExists: false, timeout.Token);
+        var servicesTableExists = await LocalSubstrateMigrationDatabase.ScalarAsync(
+            connectionString, "SELECT to_regclass('honua.services') IS NOT NULL");
+        servicesTableExists.Should().Be(false, "the interrupted CREATE TABLE rolled back");
+
+        await using var removeBarrier = new NpgsqlCommand("DROP EVENT TRIGGER stop_migration_after_ddl", observer);
+        await removeBarrier.ExecuteNonQueryAsync(timeout.Token);
+
+        var restarted = await RunServerProcessAsync(connectionString);
+        restarted.ExitCode.Should().Be(0, restarted.Describe());
+        restarted.Summary.GetProperty("journalWasEmpty").GetBoolean().Should().BeTrue();
+        restarted.Summary.GetProperty("schemaVerified").GetBoolean().Should().BeTrue();
+        var applied = restarted.Summary.GetProperty("appliedScripts").EnumerateArray()
+            .Select(script => script.GetString()!).ToArray();
+        applied.Should().NotBeEmpty();
+        (await ReadJournalAsync(connectionString)).Should().BeEquivalentTo(applied);
+    }
+
+    private static async Task InstallMigrationBarrierAsync(NpgsqlConnection observer)
+    {
+        const string sql =
+            """
+            SELECT pg_advisory_lock(720618, 1);
+            CREATE FUNCTION hold_migration_after_ddl() RETURNS event_trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_event_trigger_ddl_commands()
+                    WHERE object_identity = 'honua.services'
+                ) THEN
+                    PERFORM pg_advisory_xact_lock(720618, 1);
+                END IF;
+            END;
+            $$;
+            CREATE EVENT TRIGGER stop_migration_after_ddl ON ddl_command_end
+                WHEN TAG IN ('CREATE TABLE') EXECUTE FUNCTION hold_migration_after_ddl();
+            """;
+        await using var command = new NpgsqlCommand(sql, observer);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task StopBlockedMigrationAsync(NpgsqlConnection observer, string connectionString)
+    {
+        using var process = StartServerProcess(connectionString);
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        try
+        {
+            await WaitForMigrationSessionAsync(observer, activityExists: true, timeout.Token);
+            process.HasExited.Should().BeFalse("the migration is blocked inside a CREATE TABLE");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            using var cleanupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await process.WaitForExitAsync(cleanupTimeout.Token);
+            await Task.WhenAll(stdout, stderr).WaitAsync(cleanupTimeout.Token);
+        }
+    }
+
+    private static async Task WaitForMigrationSessionAsync(
+        NpgsqlConnection observer, bool activityExists, CancellationToken cancellationToken)
+    {
+        const string sql =
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.application_name = 'honua_migrate_only_interrupted'
+                  AND (NOT @blocked_only OR EXISTS (
+                      SELECT 1 FROM pg_locks AS held_lock
+                      WHERE held_lock.pid = activity.pid AND held_lock.locktype = 'advisory'
+                        AND held_lock.classid = 720618 AND held_lock.objid = 1
+                        AND held_lock.objsubid = 2 AND NOT held_lock.granted
+                  ))
+            )
+            """;
+        await using var command = new NpgsqlCommand(sql, observer);
+        command.Parameters.AddWithValue("blocked_only", activityExists);
+        while ((bool)(await command.ExecuteScalarAsync(cancellationToken))! != activityExists)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        }
+    }
+
+    [SkippableFact]
     public async Task MigrateOnlyAtNPlusK_ThenSkipMigrationsReaderAtN_StartsOnVerifiedExpandAndRefusesOthers()
     {
         Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migrate-only lane.");
@@ -286,7 +393,7 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         return (exitCode, document.RootElement.Clone());
     }
 
-    private static async Task<ServerRun> RunServerProcessAsync(string connectionString)
+    private static Process StartServerProcess(string connectionString)
     {
         var serverDirectory = AppContext.BaseDirectory;
         var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
@@ -314,8 +421,12 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         start.Environment[MigrateOnlyMode.SwitchKey] = "true";
         start.Environment["ConnectionStrings__DefaultConnection"] = connectionString;
 
-        using var process = new Process { StartInfo = start };
-        process.Start().Should().BeTrue();
+        return Process.Start(start) ?? throw new InvalidOperationException("Could not start the migrate-only process.");
+    }
+
+    private static async Task<ServerRun> RunServerProcessAsync(string connectionString)
+    {
+        using var process = StartServerProcess(connectionString);
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8));
