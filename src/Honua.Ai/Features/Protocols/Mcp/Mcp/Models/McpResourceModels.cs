@@ -213,6 +213,9 @@ internal sealed class McpArtifactFeatureSummary
     [JsonPropertyName("rows")]
     public IReadOnlyList<JsonElement> Rows { get; set; } = [];
 
+    [JsonPropertyName("omittedRowOffsets")]
+    public IReadOnlyList<int>? OmittedRowOffsets { get; set; }
+
     [JsonPropertyName("nextRowOffset")]
     public int? NextRowOffset { get; set; }
 }

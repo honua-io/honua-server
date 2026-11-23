@@ -214,6 +214,24 @@ public sealed class McpGetJobResultsToolTests
         summary.TryGetProperty("nextRowOffset", out _).Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_OversizedRow_ReportsItsOffsetAndAdvancesThePage()
+    {
+        _jobService.GetJobResultsAsync("gp-join", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(JoinResultUri([1, 0], 5000)));
+
+        var summary = (await Dispatch(ToolCall("results-large-row", """{"jobId":"gp-join","rowLimit":1}""")))!
+            .Result!.Value.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("featureCount").GetInt32().Should().Be(2);
+        summary.GetProperty("rows").GetArrayLength().Should().Be(0);
+        summary.GetProperty("omittedRowOffsets")[0].GetInt32().Should().Be(0);
+        summary.GetProperty("nextRowOffset").GetInt32().Should().Be(1);
+    }
+
     private static string JoinResultUri(int[] joinCounts, int padding)
     {
         var note = new string('n', padding);

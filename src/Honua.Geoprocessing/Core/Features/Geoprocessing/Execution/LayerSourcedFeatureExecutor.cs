@@ -559,6 +559,11 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
             || resource.SchemaFields.Count == 0)
         {
+            if (references.Any(reference => reference.Parameter == "carryFields"))
+            {
+                throw new TransformInputException($"'carryFields' requires a known schema for layer {layerId}.");
+            }
+
             return;
         }
 

@@ -16,14 +16,19 @@ internal static class JobResultFeatureSummary
     internal const int DefaultRowLimit = 10;
     internal const int MaxRowLimit = 50;
     internal const int MaxFields = 100;
+    internal const int ResponsePreviewBytes = 8192;
+    private const int OmittedOffsetBytes = 11;
+    internal const int MaxEncodedPreviewLength = 24 * 1024 * 1024;
 
     internal readonly record struct RowWindow(int Offset, int Limit);
 
-    internal static void AttachSummary(McpArtifactRef artifact, RowWindow window)
+    internal static void AttachSummary(
+        McpArtifactRef artifact, RowWindow window, int previewBytes, int encodedLengthLimit, CancellationToken cancellationToken)
     {
         if (artifact.Uri is { } uri && uri.StartsWith(GeoJsonDataUriPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            artifact.FeatureSummary = TrySummarize(uri.AsSpan(GeoJsonDataUriPrefix.Length), window);
+            artifact.FeatureSummary = TrySummarize(
+                uri.AsSpan(GeoJsonDataUriPrefix.Length), window, previewBytes, encodedLengthLimit, cancellationToken);
         }
     }
 
@@ -37,9 +42,16 @@ internal static class JobResultFeatureSummary
         }
     }
 
-    private static McpArtifactFeatureSummary? TrySummarize(ReadOnlySpan<char> base64, RowWindow window)
+    private static McpArtifactFeatureSummary? TrySummarize(
+        ReadOnlySpan<char> base64, RowWindow window, int previewBytes, int encodedLengthLimit, CancellationToken cancellationToken)
     {
-        var buffer = new byte[(base64.Length * 3 / 4) + 3];
+        cancellationToken.ThrowIfCancellationRequested();
+        if (base64.Length > encodedLengthLimit || previewBytes / 2 < OmittedOffsetBytes)
+        {
+            return null;
+        }
+
+        var buffer = new byte[(base64.Length / 4 * 3) + 3];
         if (!Convert.TryFromBase64Chars(base64, buffer, out var written))
         {
             return null;
@@ -55,9 +67,10 @@ internal static class JobResultFeatureSummary
                 return null;
             }
 
-            var accumulator = new SummaryAccumulator(window);
+            var accumulator = new SummaryAccumulator(window, previewBytes);
             foreach (var feature in features.EnumerateArray())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 accumulator.Add(feature);
             }
 
@@ -69,14 +82,20 @@ internal static class JobResultFeatureSummary
         }
     }
 
-    private sealed class SummaryAccumulator(RowWindow window)
+    private sealed class SummaryAccumulator(RowWindow window, int previewBytes)
     {
         private const string JoinCountField = "JOIN_COUNT";
+        private static readonly JsonElement EmptyRow = CreateEmptyRow();
 
         private readonly List<string> _fields = [];
         private readonly HashSet<string> _seenFields = new(StringComparer.Ordinal);
         private readonly SortedSet<string> _geometryTypes = new(StringComparer.Ordinal);
         private readonly List<JsonElement> _rows = [];
+        private readonly List<int> _omittedRowOffsets = [];
+        private int _remainingRowBytes = previewBytes / 2;
+        private int _remainingMetadataBytes = previewBytes - (previewBytes / 2);
+        private int _pageEnd = window.Offset;
+        private bool _pageFull;
         private int _count;
         private int _matched;
         private bool _hasJoinCount;
@@ -97,12 +116,16 @@ internal static class JobResultFeatureSummary
                 && feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind == JsonValueKind.Object
                 && geometry.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String)
             {
-                _geometryTypes.Add(type.GetString()!);
+                var name = type.GetString()!;
+                if (!_geometryTypes.Contains(name) && TryReserveMetadata(name))
+                {
+                    _geometryTypes.Add(name);
+                }
             }
 
-            if (_count >= window.Offset && _rows.Count < window.Limit)
+            if (!_pageFull && _count >= window.Offset && _count - window.Offset < window.Limit)
             {
-                _rows.Add(properties.ValueKind == JsonValueKind.Object ? properties.Clone() : EmptyObject());
+                AddPageRow(properties);
             }
 
             _count++;
@@ -110,7 +133,6 @@ internal static class JobResultFeatureSummary
 
         public McpArtifactFeatureSummary Build()
         {
-            var next = window.Offset + _rows.Count;
             return new McpArtifactFeatureSummary
             {
                 FeatureCount = _count,
@@ -119,7 +141,8 @@ internal static class JobResultFeatureSummary
                 MatchedFeatureCount = _hasJoinCount ? _matched : null,
                 RowOffset = window.Offset,
                 Rows = _rows,
-                NextRowOffset = window.Limit > 0 && next < _count ? next : null,
+                OmittedRowOffsets = _omittedRowOffsets.Count > 0 ? _omittedRowOffsets : null,
+                NextRowOffset = window.Limit > 0 && _pageEnd < _count ? _pageEnd : null,
             };
         }
 
@@ -127,9 +150,16 @@ internal static class JobResultFeatureSummary
         {
             foreach (var property in properties.EnumerateObject())
             {
-                if (_fields.Count < MaxFields && _seenFields.Add(property.Name))
+                if (_fields.Count >= MaxFields || _remainingMetadataBytes == 0)
                 {
-                    _fields.Add(property.Name);
+                    break;
+                }
+
+                var name = property.Name;
+                if (!_seenFields.Contains(name) && TryReserveMetadata(name))
+                {
+                    _seenFields.Add(name);
+                    _fields.Add(name);
                 }
             }
 
@@ -140,10 +170,46 @@ internal static class JobResultFeatureSummary
             }
         }
 
-        private static JsonElement EmptyObject()
+        private bool TryReserveMetadata(string value)
+        {
+            // A UTF-16 code unit can expand to six JSON bytes. Reserve space for delimiters too.
+            if (_remainingMetadataBytes < 3 || value.Length > (_remainingMetadataBytes - 3) / 6)
+            {
+                return false;
+            }
+
+            _remainingMetadataBytes -= (value.Length * 6) + 3;
+            return true;
+        }
+
+        private static JsonElement CreateEmptyRow()
         {
             using var document = JsonDocument.Parse("{}");
             return document.RootElement.Clone();
+        }
+
+        private void AddPageRow(JsonElement properties)
+        {
+            var row = properties.ValueKind == JsonValueKind.Object ? properties : EmptyRow;
+            var rowBytes = JsonSerializer.SerializeToUtf8Bytes(row, McpJsonContext.Default.JsonElement).Length + 1;
+            var omitRow = rowBytes > previewBytes / 2;
+            var requiredBytes = omitRow ? OmittedOffsetBytes : rowBytes;
+            if (requiredBytes > _remainingRowBytes)
+            {
+                _pageFull = true;
+                return;
+            }
+            if (omitRow)
+            {
+                _omittedRowOffsets.Add(_count);
+            }
+            else
+            {
+                _rows.Add(row.Clone());
+            }
+
+            _remainingRowBytes -= requiredBytes;
+            _pageEnd = _count + 1;
         }
     }
 }

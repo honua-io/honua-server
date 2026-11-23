@@ -56,7 +56,7 @@ internal sealed class GetJobResultsTool : IMcpTool
             "resultPackageId": { "type": "string" },
             "status": { "type": "string" },
             "summary": { "type": "object", "required": ["title"], "properties": { "title": { "type": "string" }, "description": { "type": ["string", "null"] } } },
-            "artifacts": { "type": "array", "items": { "type": "object", "required": ["artifactId", "kind", "label"], "properties": { "artifactId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "uri": { "type": ["string", "null"] }, "referenceSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Lowercase hex SHA-256 of the exact UTF-8 uri. Pass it to staged import; it does not prove importability." }, "contentType": { "type": ["string", "null"] }, "uriOmitted": { "type": "boolean" }, "uriLength": { "type": "integer" }, "featureSummary": { "type": "object", "required": ["featureCount", "fields", "geometryTypes", "rowOffset", "rows"], "properties": { "featureCount": { "type": "integer" }, "fields": { "type": "array", "items": { "type": "string" } }, "geometryTypes": { "type": "array", "items": { "type": "string" } }, "matchedFeatureCount": { "type": "integer" }, "rowOffset": { "type": "integer" }, "rows": { "type": "array", "items": { "type": "object" } }, "nextRowOffset": { "type": "integer" } } } } } },
+            "artifacts": { "type": "array", "items": { "type": "object", "required": ["artifactId", "kind", "label"], "properties": { "artifactId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "uri": { "type": ["string", "null"] }, "referenceSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Lowercase hex SHA-256 of the exact UTF-8 uri. Pass it to staged import; it does not prove importability." }, "contentType": { "type": ["string", "null"] }, "uriOmitted": { "type": "boolean" }, "uriLength": { "type": "integer" }, "featureSummary": { "type": "object", "required": ["featureCount", "fields", "geometryTypes", "rowOffset", "rows"], "properties": { "featureCount": { "type": "integer" }, "fields": { "type": "array", "items": { "type": "string" } }, "geometryTypes": { "type": "array", "items": { "type": "string" } }, "matchedFeatureCount": { "type": "integer" }, "rowOffset": { "type": "integer" }, "rows": { "type": "array", "items": { "type": "object" } }, "omittedRowOffsets": { "type": "array", "items": { "type": "integer" } }, "nextRowOffset": { "type": "integer" } } } } } },
             "totalArtifactCount": { "type": "integer" },
             "artifactsTruncated": { "type": "boolean" },
             "workspaceRefs": { "type": "array", "items": { "type": "object", "required": ["workspaceId", "kind", "label"], "properties": { "workspaceId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "resourceUri": { "type": ["string", "null"] } } } },
@@ -92,6 +92,7 @@ internal sealed class GetJobResultsTool : IMcpTool
         Description = "Read one terminal job's result package. "
             + "jobId comes from honua_execute_plan or honua_list_jobs, which still reports status. "
             + "GeoJSON artifacts come back as featureSummary: featureCount, fields, matchedFeatureCount (joins), a page of attribute rows. "
+            + "Large rows may be skipped and reported in omittedRowOffsets. The results resource has the full artifacts. "
             + "Missing and other owners' jobs are not_found; a non-terminal job is failed_precondition. "
             + "honua://jobs/{jobId}/results stays available.",
         InputSchema = InputSchema,
@@ -120,9 +121,12 @@ internal sealed class GetJobResultsTool : IMcpTool
             .ConfigureAwait(false);
 
         var output = JobResultsResource.ToResource(argument.JobId, package);
+        var artifactCount = Math.Max(1, output.Artifacts.Count);
+        var previewBytes = JobResultFeatureSummary.ResponsePreviewBytes / artifactCount;
+        var encodedLengthLimit = JobResultFeatureSummary.MaxEncodedPreviewLength / artifactCount;
         foreach (var artifact in output.Artifacts)
         {
-            JobResultFeatureSummary.AttachSummary(artifact, window);
+            JobResultFeatureSummary.AttachSummary(artifact, window, previewBytes, encodedLengthLimit, cancellationToken);
             if (argument.IncludeUri != true)
             {
                 JobResultFeatureSummary.OmitLargeInlineUri(artifact);
