@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Mobile.FieldCollection;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
@@ -529,43 +530,12 @@ internal static class FieldCollectionSyncEndpoints
         using var document = JsonDocument.Parse(featureJson);
         try
         {
-            return ContainsNul(document.RootElement);
+            return JsonTextValidation.ContainsNul(document.RootElement);
         }
         catch (InvalidOperationException)
         {
             // Unescaping an unpaired surrogate (for example "\ud800") fails; jsonb rejects it too.
             return true;
-        }
-    }
-
-    private static bool ContainsNul(JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.String:
-                return element.GetString()!.Contains('\0', StringComparison.Ordinal);
-            case JsonValueKind.Array:
-                foreach (var item in element.EnumerateArray())
-                {
-                    if (ContainsNul(item))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            case JsonValueKind.Object:
-                foreach (var property in element.EnumerateObject())
-                {
-                    if (property.Name.Contains('\0', StringComparison.Ordinal) || ContainsNul(property.Value))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            default:
-                return false;
         }
     }
 
