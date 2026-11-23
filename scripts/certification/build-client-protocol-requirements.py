@@ -293,8 +293,10 @@ def _pins_client_release(requirement: dict, pins: str) -> bool:
     """True when ``pins`` pins every package release the row's client_version names.
 
     ``pystac=1.15.2;pystac-client=0.9.0`` names its packages; otherwise the package
-    is the canonical client's, and each version must follow that package name in
-    the same pin (``OWSLib==0.36.0``, ``gdal:ubuntu-small-3.8.4``, ``maplibre-5.7``).
+    is the canonical client's. Each version must follow that package name in the
+    same pin, either directly after ``=``/``==`` (``OWSLib==0.36.0``) or through a
+    tag or alias with no ``=`` (``gdal:ubuntu-small-3.8.4``, ``maplibre-5.7``), so a
+    longer package such as ``pystac-client`` never lends its pin to ``pystac``.
     """
     named = [part.split("=", 1) for part in requirement["client_version"].split(";") if "=" in part]
     if not named:
@@ -303,7 +305,7 @@ def _pins_client_release(requirement: dict, pins: str) -> bool:
     releases = [(package, version) for package, value in named
                 for version in VERSION_TOKEN_RE.findall(value)]
     return bool(releases) and all(
-        re.search(rf"(?<![\w-]){re.escape(package)}(?:[\w./:@=-]*?[-:@=]|==|=){re.escape(version)}(?![\d.]*\d)",
+        re.search(rf"(?<![\w-]){re.escape(package)}(?:==?|[\w./:@-]*?[-:@]){re.escape(version)}(?![\d.]*\d)",
                   pins, re.IGNORECASE)
         for package, version in releases)
 

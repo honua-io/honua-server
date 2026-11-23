@@ -377,6 +377,14 @@ class ClassificationTests(unittest.TestCase):
             {"CERT-DISC-01": ["OWSLib==0.36.0\nrequests==2.34.2\n"]})
         self.assertEqual("surface-not-emitted", result["reasonCode"])
 
+    def test_a_package_name_prefix_does_not_borrow_a_longer_package_pin(self):
+        result = module.classify_producer(
+            self.row(surface="stac", canonical_client="PySTAC-Client",
+                     client_version="pystac=0.9.0;pystac-client=0.9.0"),
+            self.pairs(("py-owslib", "ogc-features", "0.36.0")),
+            {"CERT-DISC-01": ["pystac==1.15.2\npystac-client==0.9.0\n"]})
+        self.assertEqual("surface-not-emitted", result["reasonCode"])
+
     def test_every_named_package_version_must_be_pinned(self):
         pins = {"CERT-DISC-01": ["pystac==1.15.2\npystac-client==0.9.0\n"]}
         result = module.classify_producer(
