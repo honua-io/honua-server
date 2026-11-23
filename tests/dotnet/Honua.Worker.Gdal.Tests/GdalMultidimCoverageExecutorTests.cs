@@ -453,7 +453,7 @@ public sealed class GdalMultidimCoverageExecutorTests
     public void VsiPath_LocalProvider_KeyUnderRoot_StaysUnderBucket()
     {
         var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
-        GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/dir/file.nc")
+        GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/dir/file.nc", root)
             .Should().Be(Path.GetFullPath(Path.Join(root, "sub", "dir", "file.nc")));
     }
 
@@ -461,7 +461,7 @@ public sealed class GdalMultidimCoverageExecutorTests
     public void VsiPath_LocalProvider_ParentTraversal_IsRejected()
     {
         var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
-        var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "../../etc/passwd");
+        var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "../../etc/passwd", root);
         act.Should().Throw<InvalidOperationException>();
     }
 
@@ -469,7 +469,14 @@ public sealed class GdalMultidimCoverageExecutorTests
     public void VsiPath_LocalProvider_EmbeddedTraversal_IsRejected()
     {
         var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
-        var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/../../escape.nc");
+        var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/../../escape.nc", root);
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public void VsiPath_LocalProvider_WithoutAConfiguredRoot_IsRejected()
+    {
+        var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, "gp-inputs", "dem.tif");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*configured local storage root*");
     }
 }

@@ -11,11 +11,12 @@ internal static class GdalJobInputReader
     public static bool TryGetRasterInput(
         IReadOnlyDictionary<string, string> parameters,
         string name,
-        long maxInlineBytes,
+        GdalWorkerOptions options,
         out GdalRasterInput input,
         out string error)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         input = default;
@@ -32,7 +33,7 @@ internal static class GdalJobInputReader
 
         if (!hasTyped)
         {
-            if (!TryGetBase64Input(parameters, name, maxInlineBytes, out var bytes, out error))
+            if (!TryGetBase64Input(parameters, name, options.MaxArtifactBytes, out var bytes, out error))
             {
                 return false;
             }
@@ -56,7 +57,7 @@ internal static class GdalJobInputReader
             descriptor,
             new RasterSourceValidationOptions
             {
-                MaxInlineBytes = (int)Math.Min(maxInlineBytes, int.MaxValue),
+                MaxInlineBytes = (int)Math.Min(options.MaxArtifactBytes, int.MaxValue),
             });
         if (!validation.IsValid)
         {
@@ -86,7 +87,7 @@ internal static class GdalJobInputReader
                 try
                 {
                     input = GdalRasterInput.Referenced(
-                        GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey),
+                        GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey, options.LocalCoverageRoot),
                         cog.Content.ETag,
                         cog.DeclaredDimensions,
                         cog.DeclaredPixelScale);

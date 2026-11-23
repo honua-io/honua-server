@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public sealed class PortalOAuthRefreshRevalidationTests
 {
     private const string ClientId = "arcgis-client";
+    private const string PkceVerifier = "registered-client-pkce-verifier-0123456789-abcdefghij";
 
     [UnitTest]
     public async Task Rotation_DoesNotExtendTheOriginalRefreshLifetime()
@@ -114,12 +115,58 @@ public sealed class PortalOAuthRefreshRevalidationTests
         Assert.True(accepted.Succeeded, accepted.ErrorDescription);
     }
 
-    private static PortalOAuthTokenRequest Refresh(string refreshToken) => new(
+    [UnitTest]
+    public async Task Refresh_DeletedRegisteredClient_IsRefusedWithoutConsumingTheToken()
+    {
+        var clients = new InMemoryOAuthClientStore();
+        var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["authorization_code"]);
+        var harness = CreateHarness(clients: clients);
+        var refresh = await SeedRefreshForClientAsync(harness.Store, client.ClientId);
+
+        var allowed = await harness.Service.ExchangeAsync(Refresh(refresh, client.ClientId), "binding", CancellationToken.None);
+        Assert.True(allowed.Succeeded, allowed.ErrorDescription);
+
+        await clients.DeleteAsync(client.Id, CancellationToken.None);
+        var refused = await harness.Service.ExchangeAsync(Refresh(allowed.RefreshToken!, client.ClientId), "binding", CancellationToken.None);
+
+        Assert.False(refused.Succeeded);
+        Assert.Equal("invalid_grant", refused.Error);
+        Assert.NotNull(await harness.Store.GetRefreshTokenAsync(allowed.RefreshToken!, CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task CodeExchange_RegisteredClientWithoutTheCodeGrant_IsRefused()
+    {
+        var clients = new InMemoryOAuthClientStore();
+        var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["client_credentials"]);
+        var harness = CreateHarness(clients: clients);
+        var code = await harness.Store.CreateAuthorizationCodeAsync(
+            new PortalOAuthAuthorizationCode
+            {
+                ClientId = client.ClientId,
+                RedirectUri = client.RedirectUris[0],
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+                CodeChallenge = PkceVerifier,
+                CodeChallengeMethod = "plain",
+                Principal = Principal(["viewer"], sourceExpiresAt: null),
+            },
+            CancellationToken.None);
+
+        var result = await harness.Service.ExchangeAsync(
+            new PortalOAuthTokenRequest("authorization_code", code, PkceVerifier, client.RedirectUris[0], client.ClientId, null, false),
+            "binding",
+            CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("unauthorized_client", result.Error);
+    }
+
+    private static PortalOAuthTokenRequest Refresh(string refreshToken, string clientId = ClientId) => new(
         GrantType: "refresh_token",
         Code: null,
         CodeVerifier: null,
         RedirectUri: null,
-        ClientId: ClientId,
+        ClientId: clientId,
         RefreshToken: refreshToken,
         IncludeRefreshToken: true);
 
@@ -138,23 +185,40 @@ public sealed class PortalOAuthRefreshRevalidationTests
                 BindingValue = string.Empty,
                 IssuedAt = issuedAt ?? DateTimeOffset.UtcNow,
                 ExpiresAt = expiresAt,
-                Principal = new PortalOAuthPrincipal
-                {
-                    PrincipalId = "user@example.com",
-                    DisplayName = "Test User",
-                    Roles = roles,
-                    RolesRequireClaimsMappingEntitlement = false,
-                    RolesWithoutClaimsMapping = roles,
-                    Source = new PortalCredentialSource(
-                        PortalCredentialSourceKind.FederatedToken,
-                        Reference: "https://idp.example|subject-1",
-                        ExpiresAt: sourceExpiresAt),
-                },
+                Principal = Principal(roles, sourceExpiresAt),
             },
             CancellationToken.None);
     }
 
-    private static Harness CreateHarness(IPrincipalMembershipSource? membership = null)
+    private static Task<string> SeedRefreshForClientAsync(PortalOAuthStore store, string clientId)
+        => store.CreateRefreshTokenAsync(
+            new PortalOAuthRefreshToken
+            {
+                ClientId = clientId,
+                ClientType = PortalTokenClientType.Bearer,
+                BindingValue = string.Empty,
+                IssuedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(2),
+                Principal = Principal(["viewer"], sourceExpiresAt: null),
+            },
+            CancellationToken.None);
+
+    private static PortalOAuthPrincipal Principal(string[] roles, DateTimeOffset? sourceExpiresAt) => new()
+    {
+        PrincipalId = "user@example.com",
+        DisplayName = "Test User",
+        Roles = roles,
+        RolesRequireClaimsMappingEntitlement = false,
+        RolesWithoutClaimsMapping = roles,
+        Source = new PortalCredentialSource(
+            PortalCredentialSourceKind.FederatedToken,
+            Reference: "https://idp.example|subject-1",
+            ExpiresAt: sourceExpiresAt),
+    };
+
+    private static Harness CreateHarness(
+        IPrincipalMembershipSource? membership = null,
+        IOAuthClientStore? clients = null)
     {
         var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
         var options = Options.Create(new PortalTokenAuthenticationOptions
@@ -171,7 +235,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
             issuer,
             store,
             new InMemoryAdminApiKeyStore(),
-            new InMemoryOAuthClientStore(),
+            clients ?? new InMemoryOAuthClientStore(),
             new InMemoryOAuthScopeCatalogue(),
             new PortalJwtAccessTokenService(issuer, options),
             new ClientCredentialsFederationService(new NullHttpClientFactory(), options),

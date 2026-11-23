@@ -79,7 +79,7 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
             return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {noDataError}");
         }
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.InvalidInput($"Invalid reclassify inputs: {sourceError}");
