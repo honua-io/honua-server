@@ -6,11 +6,9 @@ using Honua.Server.Tests.Infrastructure;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// The feature store reads layer SRIDs from the layers catalog in its own configured schema, as
-/// production does. A test that builds the store over an isolated schema therefore needs catalog
-/// rows in that schema; rows only in the shared honua.layers table leave geometries at SRID 0.
-/// </summary>
+// The feature store reads layer SRIDs from the layers catalog in its own configured schema, as
+// production does. A test that builds the store over an isolated schema therefore needs catalog
+// rows in that schema; rows only in the shared honua.layers table leave geometries at SRID 0.
 internal static class IsolatedSchemaLayerCatalog
 {
     public static Task SeedIsolatedLayerCatalogAsync(
