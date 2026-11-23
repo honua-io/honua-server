@@ -29,8 +29,9 @@ public sealed partial class AdminOperationRequestContractTests
     public async Task SubmitAsync_QueuedLayerPublish_ReportsQueuedHandleWithJobId()
     {
         var jobs = Substitute.For<ILayerPublishJobs>();
-        var (executor, client) = CreateLayerPublishApi(jobs);
-        using var _ = client;
+        using var capture = new CaptureHandler(AcceptedLayerPublishBody(), HttpStatusCode.Accepted);
+        using var client = new HttpClient(capture);
+        var executor = CreateLayerPublishApi(client, jobs);
 
         var handle = await SubmitLayerPublishAsync(executor);
 
@@ -48,7 +49,8 @@ public sealed partial class AdminOperationRequestContractTests
     [InlineData("{\"success\":true,\"data\":{\"storageLayerId\":42,\"serviceName\":\"roads\"}}")]
     public async Task SubmitAsync_AcceptedLayerPublishWithoutJob_ReportsIndeterminateNotCompleted(string payload)
     {
-        using var client = new HttpClient(new CaptureHandler(payload, HttpStatusCode.Accepted));
+        using var capture = new CaptureHandler(payload, HttpStatusCode.Accepted);
+        using var client = new HttpClient(capture);
         var executor = CreateApi("admin.layer.publish", client);
 
         var handle = await SubmitLayerPublishAsync(executor);
@@ -68,8 +70,9 @@ public sealed partial class AdminOperationRequestContractTests
         {
             ErrorMessage = "Layer publish exceeded its 1-second budget.",
         });
-        var (executor, client) = CreateLayerPublishApi(jobs);
-        using var _ = client;
+        using var capture = new CaptureHandler(AcceptedLayerPublishBody(), HttpStatusCode.Accepted);
+        using var client = new HttpClient(capture);
+        var executor = CreateLayerPublishApi(client, jobs);
 
         var status = await executor.GetStatusAsync(await SubmitLayerPublishAsync(executor));
 
@@ -85,8 +88,9 @@ public sealed partial class AdminOperationRequestContractTests
         var jobs = Substitute.For<ILayerPublishJobs>();
         jobs.GetAsync(QueuedJobId, Arg.Any<CancellationToken>())
             .Returns(Progress(InfrastructureStatus.Completed) with { LayerId = 42 });
-        var (executor, client) = CreateLayerPublishApi(jobs);
-        using var _ = client;
+        using var capture = new CaptureHandler(AcceptedLayerPublishBody(), HttpStatusCode.Accepted);
+        using var client = new HttpClient(capture);
+        var executor = CreateLayerPublishApi(client, jobs);
 
         var status = await executor.GetStatusAsync(await SubmitLayerPublishAsync(executor));
 
@@ -100,8 +104,9 @@ public sealed partial class AdminOperationRequestContractTests
     {
         var jobs = Substitute.For<ILayerPublishJobs>();
         jobs.GetAsync(QueuedJobId, Arg.Any<CancellationToken>()).Returns((LayerPublishJobProgress?)null);
-        var (executor, client) = CreateLayerPublishApi(jobs);
-        using var _ = client;
+        using var capture = new CaptureHandler(AcceptedLayerPublishBody(), HttpStatusCode.Accepted);
+        using var client = new HttpClient(capture);
+        var executor = CreateLayerPublishApi(client, jobs);
 
         var status = await executor.GetStatusAsync(await SubmitLayerPublishAsync(executor));
 
@@ -116,28 +121,27 @@ public sealed partial class AdminOperationRequestContractTests
             ServiceName = "requested-service",
         }, new OperationPolicyContext());
 
-    private static (AdminApiOperationExecutor Executor, HttpClient Client) CreateLayerPublishApi(ILayerPublishJobs jobs)
+    private static string AcceptedLayerPublishBody() => JsonSerializer.Serialize(
+        ApiResponse<LayerPublishAcceptedResponse>.CreateSuccess(new LayerPublishAcceptedResponse
+        {
+            JobId = QueuedJobId,
+            StatusUrl = $"/api/v1/admin/jobs/{QueuedJobId}",
+            RowsTotal = 2_000_000,
+            Status = "Queued",
+        }),
+        LayerPublishingJsonContext.Default.ApiResponseLayerPublishAcceptedResponse);
+
+    private static AdminApiOperationExecutor CreateLayerPublishApi(HttpClient client, ILayerPublishJobs jobs)
     {
-        var accepted = JsonSerializer.Serialize(
-            ApiResponse<LayerPublishAcceptedResponse>.CreateSuccess(new LayerPublishAcceptedResponse
-            {
-                JobId = QueuedJobId,
-                StatusUrl = $"/api/v1/admin/jobs/{QueuedJobId}",
-                RowsTotal = 2_000_000,
-                Status = "Queued",
-            }),
-            LayerPublishingJsonContext.Default.ApiResponseLayerPublishAcceptedResponse);
-        var client = new HttpClient(new CaptureHandler(accepted, HttpStatusCode.Accepted));
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(client);
-        var executor = new AdminApiOperationExecutor(
+        return new AdminApiOperationExecutor(
             AdminApiOperationCatalog.Definitions.Single(definition => definition.OperationId == "admin.layer.publish"),
             factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System))
         {
             LayerPublishJobs = jobs,
         };
-        return (executor, client);
     }
 
     private static LayerPublishJobProgress Progress(InfrastructureStatus status) => new()
