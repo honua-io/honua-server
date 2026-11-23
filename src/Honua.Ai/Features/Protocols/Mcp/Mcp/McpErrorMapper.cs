@@ -188,6 +188,8 @@ internal static class McpErrorMapper
             }
         },
 
+        GeoprocessingAdmissionException admissionEx => MapAdmission(admissionEx),
+
         GroundingException groundingEx => MapGrounding(groundingEx),
 
         RasterRenderingUnavailableException renderEx => new McpJsonRpcError
@@ -218,6 +220,22 @@ internal static class McpErrorMapper
             {
                 Code = Codes.Internal
             }
+        }
+    };
+
+    private static McpJsonRpcError MapAdmission(GeoprocessingAdmissionException exception) => new()
+    {
+        Code = JsonRpcServerError,
+        Message = exception.DenyingDimension == Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension.Concurrency
+            ? $"{exception.Message} Queued and running jobs, including your own, count toward this limit; "
+                + $"retry after {exception.RetryAfterSeconds} seconds."
+            : $"{exception.Message} Retry after {exception.RetryAfterSeconds} seconds.",
+        Data = new McpErrorData
+        {
+            Code = Codes.Unavailable,
+            Retryable = exception.RetryAfterSeconds > 0,
+            RetryAfterSeconds = exception.RetryAfterSeconds,
+            PolicyRef = exception.PolicyRef
         }
     };
 

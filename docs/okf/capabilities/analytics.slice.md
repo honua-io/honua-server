@@ -16,6 +16,7 @@ Intersect a vertical slice plane with the elevation surface and return cross-sec
 | Capability key | `analytics.slice` |
 | Category | Analytics |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 5 |

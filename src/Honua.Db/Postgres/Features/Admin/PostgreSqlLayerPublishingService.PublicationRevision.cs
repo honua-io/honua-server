@@ -14,9 +14,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             (graph.Revision != expected || string.IsNullOrEmpty(request.ExpectedMetadataEtag) ||
              !string.Equals(etag, request.ExpectedMetadataEtag, StringComparison.Ordinal)))
         {
-            throw new LayerPublishingException(
-                LayerPublishingErrorKind.Conflict,
-                "Publication metadata changed after preview. Create a new preview before publishing.");
+            throw LayerPublicationBaseChanged.Create();
         }
     }
 }

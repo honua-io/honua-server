@@ -16,6 +16,7 @@ Background worker for evaluating geofence rules against feature changes.
 | Capability key | `alerts.evaluation` |
 | Category | Alerts |
 | Edition | Pro |
+| Status | preview |
 | Surface maturity | 18 preview |
 | Registry entries | 18 |
 | Proving tests | 110 |
@@ -24,7 +25,10 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Preview
 
-This capability is Preview. It is off by default, it needs an explicit opt-in to enable, and it is not covered by the compatibility promise for the release - so it has no customer-facing page in this bundle, and that is deliberate rather than an omission. The counts above are real routes and real tests; what they are not is a commitment.
+This capability is **preview**. It is not covered by the compatibility promise for the release - so it has no customer-facing page in this bundle, and that is deliberate rather than an omission. The counts above are real routes and real tests; what they are not is a commitment.
+
+Status is **preview**.
+This capability has no runtime manifest ID in the published crosswalk. Do not infer a per-capability experimental switch from its licensing key.
 
 - [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here
 - [All capabilities](README.md)

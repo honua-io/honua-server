@@ -16,6 +16,7 @@ Export print jobs as PDF files.
 | Capability key | `printing.pdf-output` |
 | Category | Printing |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 13 implemented |
 | Registry entries | 13 |
 | Proving tests | 29 |

@@ -9,6 +9,12 @@ Honua supports MySQL 8.0.12+ and MariaDB 10.6+ as a **read-only** spatial featur
 provider. This is a thin slice intended for serving spatial data that already
 lives in MySQL/MariaDB tables.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 Use the [PostGIS provider](README.md) for full read/write,
 edits, statistics, MVT, and analytics. Use the
 [DuckDB provider](duckdb.md) for analytical Parquet workflows.

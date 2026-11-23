@@ -1941,8 +1941,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return SqlIdentifier.QuoteIdentifier(sanitized);
     }
 
+    // Column names may use any script (a table column `名前` is as legitimate as `name`);
+    // the predicate still rejects quotes, whitespace and control characters and enforces
+    // the 63-byte limit before the name reaches QuoteIdentifier.
     private static bool IsSafeIdentifier(string identifier)
-        => SchemaSearchPath.IsValidIdentifier(identifier);
+        => SqlIdentifier.IsUnicodeIdentifier(identifier);
 
     private string BuildDistanceSelectExpression(FeatureQuery query, SqlBuilder sql)
     {
@@ -2071,8 +2074,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return !IsIdentifierChar(previous) && !IsIdentifierChar(next);
     }
 
+    // Matches the field grammar: combining marks and surrogate halves belong to the
+    // identifier, so "AND" inside a name such as AND\u0301 is not a conjunction.
     private static bool IsIdentifierChar(char value)
-        => char.IsLetterOrDigit(value) || value == '_';
+        => char.IsLetterOrDigit(value)
+            || value == '_'
+            || char.IsSurrogate(value)
+            || CharUnicodeInfo.GetUnicodeCategory(value) is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark;
 
     [GeneratedRegex(
         @"@p(?<index>\d+)",
