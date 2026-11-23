@@ -34,13 +34,8 @@ sed --in-place \
     -e 's|dir="$CHISEL_CACHE_DIR/chisel/sha256"|dir="$CHISEL_CACHE_DIR/chisel"|' \
     -e 's|for f in "$dir"/\*; do|for f in "$dir"/sha*/*; do|' \
     /usr/local/bin/chisel-wrapper
-mkdir -p "$root/var/lib/dpkg"
 # shellcheck disable=SC2086 # extra_slices is a word list
-chisel-wrapper --generate-dpkg-status "$root/var/lib/dpkg/status" -- \
-    --release ubuntu-26.04 --ignore=unstable --root "$root" \
-    base-files_base base-files_chisel base-files_release-info ca-certificates_data \
-    libc6_libs libgcc-s1_libs libssl3t64_libs libstdc++6_libs $extra_slices
-test -s "$root/var/lib/dpkg/status"
+sh "$(dirname "$0")/cut-rootfs-retry.sh" "$root" $extra_slices
 if [ "$variant" = aspnet-extra ]; then
     # Preserve the publisher's launcher layout; Docker COPY dereferences symlinks.
     mkdir -p "$root/usr/bin"

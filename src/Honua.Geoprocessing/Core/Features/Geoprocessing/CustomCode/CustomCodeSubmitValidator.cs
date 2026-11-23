@@ -9,13 +9,13 @@ namespace Honua.Geoprocessing.CustomCode;
 
 internal static partial class CustomCodeSubmitValidator
 {
-    [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[0-9a-f]{40}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex FullShaRegex();
 
     // PYTHON entrypoint: module.path:function — dotted module path, a single ':'
     // separator, then a python identifier. Deliberately strict so a
     // shell-injection-shaped entrypoint is rejected at the door.
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex PythonEntrypointRegex();
 
     // .NET entrypoint: Assembly::Namespace.Type — an assembly simple name, a '::'
@@ -24,7 +24,7 @@ internal static partial class CustomCodeSubmitValidator
     // strictness keeps a shell-injection-shaped entrypoint out just like the python
     // form. The harness resolves "MyAsm::My.Namespace.MyTool" to a built assembly +
     // type implementing IGeoprocessingTool.
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\z", RegexOptions.CultureInvariant)]
     private static partial Regex DotnetEntrypointRegex();
 
     public static bool IsCustomCodeSubmission(IReadOnlyDictionary<string, string>? parameters)

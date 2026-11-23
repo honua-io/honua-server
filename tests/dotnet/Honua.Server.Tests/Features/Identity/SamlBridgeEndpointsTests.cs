@@ -312,6 +312,36 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_RelayPage_CarriesItsOwnPolicyAndEncodesRelayState()
+    {
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "relay-user@example.com");
+        using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["SAMLRequest"] = samlRequest,
+            ["RelayState"] = "\"><b>relay</b>&x",
+        });
+
+        using var response = await _client.PostAsync("/saml/slo", sloContent);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var policy = Assert.Single(response.Headers.GetValues("Content-Security-Policy"));
+        Assert.Contains("form-action https://idp.example.com;", policy, StringComparison.Ordinal);
+        Assert.Contains("default-src 'none'", policy, StringComparison.Ordinal);
+        const string noncePrefix = "script-src 'nonce-";
+        var nonceStart = policy.IndexOf(noncePrefix, StringComparison.Ordinal) + noncePrefix.Length;
+        Assert.True(nonceStart >= noncePrefix.Length, policy);
+        var nonce = policy[nonceStart..policy.IndexOf('\'', nonceStart)];
+        Assert.NotEmpty(nonce);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains($"<script nonce=\"{nonce}\">", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("onload=", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>relay", body, StringComparison.Ordinal);
+        Assert.Contains("&quot;&gt;&lt;b&gt;relay&lt;/b&gt;&amp;x", body, StringComparison.Ordinal);
+    }
+
     private async Task<HttpResponseMessage> PostAcsAsync(string base64SamlResponse)
     {
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>

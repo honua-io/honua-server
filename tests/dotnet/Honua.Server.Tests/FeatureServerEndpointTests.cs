@@ -3115,7 +3115,6 @@ public sealed partial class FeatureServerEndpointTests
         bool onQueryString,
         string expectedError)
     {
-        await UseIsolatedApplicationAsync();
         var name = $"rejected-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);

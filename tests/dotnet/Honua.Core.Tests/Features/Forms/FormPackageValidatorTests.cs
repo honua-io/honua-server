@@ -624,8 +624,12 @@ public sealed partial class FormPackageValidatorTests
             LayerIndex = 0
         };
         var resource = targetResource ?? CreateResource(spatialReference ?? MetadataV2SpatialReference.Wgs84);
-        return new FormPackageValidator(
-            new StaticFormTargetMetadataResolver(new FormTargetMetadataResolution(service, publication, resource, 0)),
+        return CreateValidator(new FormTargetMetadataResolution(service, publication, resource, 0));
+    }
+
+    private static FormPackageValidator CreateValidator(FormTargetMetadataResolution target)
+        => new(
+            new StaticFormTargetMetadataResolver(target),
             Options.Create(new LimitsOptions
             {
                 Attachments = new AttachmentLimits
@@ -636,7 +640,6 @@ public sealed partial class FormPackageValidatorTests
                     AllowedMimeTypes = "image/*,application/pdf"
                 }
             }));
-    }
 
     private static MetadataV2Object CreateResource(MetadataV2SpatialReference spatialReference)
         => new()

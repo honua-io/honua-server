@@ -536,7 +536,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         using var contractBytes = new MemoryStream();
         contractStream.CopyTo(contractBytes);
         var rawContract = contractBytes.ToArray();
-        const string expectedContractDigest = "c5babe10e8028c1dcf9648f2ff4de80505ec9fb28176c9fcd4800d29108f01b3";
+        const string expectedContractDigest = "1695edc30a7aac84af47adb03b3d9a4028cdf811d57af9b91c6778ad0195f102";
         Convert.ToHexString(SHA256.HashData(rawContract)).ToLowerInvariant().Should().Be(expectedContractDigest);
         AttachmentSchemaScriptProvider.ValidatePreambleBytes(rawContract, Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!).Should().Be(expectedContractDigest);
         var changedContract = (byte[])rawContract.Clone();
@@ -1388,9 +1388,12 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
+        // The default-schema baseline never discovers 227, so the configured upgrade also plans
+        // the registry adoption that moves services/layers out of honua.
         plan.ContractScriptNames.Should().Equal(
             PostgresCoreSchemaGuard.RasterTablesMigration,
-            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
+            ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration);
         AssertLegacyAttachmentPlanBindings(plan, schema);
 
         var beforeBlockedRun = await CaptureAttachmentAuthorityStateAsync(connectionString);
@@ -1421,6 +1424,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         result.Successful.Should().BeTrue(
             $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredRegistryAdoptionMigration);
         await approvedGuard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
         (await CaptureLegacyAttachmentAsync(connectionString)).Should().Be(legacyAttachment,
             "the configured upgrade must preserve the physical attachment OID and all legacy row bytes");
@@ -2017,8 +2021,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             binding.ScriptName == "Honua.Server.Migrations.002_CreateAttachmentsTable.sql").Which;
         var import = plan.ScriptBindings.Should().ContainSingle(binding =>
             binding.ScriptName == "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql").Which;
-        create.ResourceSha256.Should().Be("fc944b0240df90280a451ee684059b087ffb52f27cbea4348c0399ee5dee6698");
-        create.RenderedSqlSha256.Should().Be("e909b164c60f1d6fc839d728a011d9f97c30be0da29634391901a513a1e71b57");
+        create.ResourceSha256.Should().Be("7c5097215c8472b33a1b7531f7e97ff2d7faecb37afaaa222d8fbf6ca5304884");
+        create.RenderedSqlSha256.Should().Be("6290c949d23f9d63d80dadce8ccc447b2d73b633eb721e157cf8b8e965ba734f");
         import.ResourceSha256.Should().Be("95ad6ccadabe7a161d193b35a707a9ef206c7b703cf3bc1d6f9b825787c70f84");
         import.RenderedSqlSha256.Should().Be("1a9228a740276208ba303eff8a3802453be6d60e3923ace4eecfe171fed46e80");
         foreach (var binding in plan.ScriptBindings)

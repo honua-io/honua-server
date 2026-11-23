@@ -122,10 +122,10 @@ internal sealed partial class Wcs20Handler
     private static XElement BuildWcs10CoverageOfferingBrief(WcsCoverage coverage)
     {
         var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
-        var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
-        var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
+        var label = string.IsNullOrWhiteSpace(coverage.Descriptive.Title) ? coverageId : coverage.Descriptive.Title;
+        var description = string.IsNullOrWhiteSpace(coverage.Descriptive.Description)
             ? label
-            : coverage.Resource.Metadata.Description;
+            : coverage.Descriptive.Description;
 
         var children = new List<object>
         {
@@ -259,10 +259,10 @@ internal sealed partial class Wcs20Handler
         }
 
         var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
-        var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
-        var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
+        var label = string.IsNullOrWhiteSpace(coverage.Descriptive.Title) ? coverageId : coverage.Descriptive.Title;
+        var description = string.IsNullOrWhiteSpace(coverage.Descriptive.Description)
             ? label
-            : coverage.Resource.Metadata.Description;
+            : coverage.Descriptive.Description;
         var srsName = CreateWcs10CrsName(srid.Value);
 
         var children = new List<object>

@@ -336,6 +336,6 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         return value;
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
     private static partial Regex IdentifierRegex();
 }

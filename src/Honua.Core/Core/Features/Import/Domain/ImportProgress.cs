@@ -19,9 +19,11 @@ public enum ImportStatus
     Cancelled
 }
 
-public sealed record ImportProgress : IOperationProgress, ICancellableOperationProgress
+public sealed record ImportProgress : IOperationProgress, ICancellableOperationProgress, ITenantOwnedProgress
 {
     public required string JobId { get; init; }
+
+    public string? TenantId { get; init; }
 
     public string? OperationInstanceId { get; init; }
 

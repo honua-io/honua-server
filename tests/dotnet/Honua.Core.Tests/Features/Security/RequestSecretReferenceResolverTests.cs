@@ -188,6 +188,18 @@ public sealed class RequestSecretReferenceResolverTests
     }
 
     [UnitTest]
+    public void Validate_EnvironmentNameEndingInLineFeed_IsReported()
+    {
+        var options = new RequestSecretReferenceOptions
+        {
+            AllowedEnvironmentVariables = ["IMPORT_TOKEN\n"],
+            AllowedEnvironmentVariablePrefixes = ["IMPORT_\n"]
+        };
+
+        options.Validate().Should().HaveCount(2);
+    }
+
+    [UnitTest]
     public void BindOptions_ReadsListsFromTheSecuritySection()
     {
         var configuration = new ConfigurationBuilder()

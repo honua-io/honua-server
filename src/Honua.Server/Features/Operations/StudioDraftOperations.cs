@@ -844,6 +844,7 @@ internal sealed class StudioDraftMutationRuntime(
         var request = new OperationRequest
         {
             VerifiedStudioDraftOwnerId = storedDraft?.OwnerId,
+            VerifiedStudioDraftWithinActor = await IsWithinActorAsync(payload, storedDraft, cancellationToken).ConfigureAwait(false),
             OperationId = operationId,
             Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -903,12 +904,46 @@ internal sealed class StudioDraftMutationRuntime(
             StudioDraftUpdatePayload update => update.DraftId,
             StudioDraftRestoreRevisionPayload restore => restore.DraftId,
             StudioDraftDeletePayload delete => delete.DraftId,
+            StudioDraftActorPayload actor => actor.DraftId,
+            StudioSaveVersionPayload save => save.DraftId,
             _ => null,
         };
         return draftStore is not null && draftId.HasValue
             ? await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false)
             : null;
     }
+
+    private static string? PayloadActorId<TPayload>(TPayload payload) => payload switch
+    {
+        StudioDraftCreatePayload create => create.Command.ActorId,
+        StudioDraftUpdatePayload update => update.Command.ActorId,
+        StudioDraftRestoreRevisionPayload restore => restore.Command.ActorId,
+        StudioDraftActorPayload actor => actor.ActorId,
+        StudioSaveVersionPayload save => save.ActorId,
+        _ => null,
+    };
+
+    // True only when every owner the call touches is the actor bound into its payload: the declared owner
+    // and any existing item for a create; otherwise the stored draft, a requested owner and the parent item.
+    private async Task<bool> IsWithinActorAsync<TPayload>(TPayload payload, StudioPackageDraft? storedDraft, CancellationToken cancellationToken)
+    {
+        var actor = PayloadActorId(payload);
+        if (string.IsNullOrWhiteSpace(actor)) return false;
+        if (payload is StudioDraftCreatePayload { Command: var create })
+        {
+            return IsActor(create.OwnerId ?? create.ActorId, actor)
+                && (!create.ExpectedExistingItemPresent || IsActor(create.ExpectedExistingItemOwnerId, actor));
+        }
+
+        if (storedDraft is null || !IsActor(storedDraft.OwnerId, actor)) return false;
+        if (payload is StudioDraftUpdatePayload { Command.OwnerId: { } requestedOwner } && !IsActor(requestedOwner, actor)) return false;
+        var item = draftStore is null
+            ? null
+            : await draftStore.GetPointersAsync(storedDraft.ItemId, cancellationToken).ConfigureAwait(false);
+        return item is null || IsActor(item.OwnerId, actor);
+    }
+
+    private static bool IsActor(string? ownerId, string actor) => string.Equals(ownerId, actor, StringComparison.Ordinal);
 
     private static TPayload BindDraftGeneration<TPayload>(TPayload payload, long generation)
     {

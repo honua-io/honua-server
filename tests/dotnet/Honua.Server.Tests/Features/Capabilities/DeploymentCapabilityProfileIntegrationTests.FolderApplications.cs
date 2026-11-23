@@ -16,6 +16,7 @@ public sealed partial class DeploymentCapabilityProfileIntegrationTests
     public sealed class FolderApplications : IAsyncLifetime
     {
         private readonly Dictionary<string, WebAppFixture> _applications = new(StringComparer.Ordinal);
+        private WebAppFixture? _schemaOwner;
 
         public async Task<WebAppFixture> GetAsync(string capability)
         {
@@ -25,6 +26,11 @@ public sealed partial class DeploymentCapabilityProfileIntegrationTests
             }
 
             var fixture = CreateFixture([capability]);
+            if (_schemaOwner is not null)
+            {
+                fixture.ShareSchemaWith(_schemaOwner);
+            }
+
             try
             {
                 await fixture.InitializeAsync();
@@ -37,6 +43,7 @@ public sealed partial class DeploymentCapabilityProfileIntegrationTests
             }
 
             _applications.Add(capability, fixture);
+            _schemaOwner ??= fixture;
             return fixture;
         }
 
@@ -44,12 +51,14 @@ public sealed partial class DeploymentCapabilityProfileIntegrationTests
 
         public async Task DisposeAsync()
         {
-            foreach (var fixture in _applications.Values)
+            // Stop schema borrowers before disposing the first application, which owns it.
+            foreach (var fixture in _applications.Values.Reverse())
             {
                 await fixture.DisposeAsync();
             }
 
             _applications.Clear();
+            _schemaOwner = null;
         }
 
         private static void MoveTestServiceIntoPublicFolder(WebAppFixture fixture)

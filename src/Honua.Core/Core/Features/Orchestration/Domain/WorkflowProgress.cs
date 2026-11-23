@@ -5,9 +5,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-public sealed record WorkflowProgress : IOperationProgress, ICancellableOperationProgress
+public sealed record WorkflowProgress : IOperationProgress, ICancellableOperationProgress, ITenantOwnedProgress
 {
     public required string OperationId { get; init; }
+
+    public string? TenantId { get; init; }
 
     public required string WorkflowId { get; init; }
 
