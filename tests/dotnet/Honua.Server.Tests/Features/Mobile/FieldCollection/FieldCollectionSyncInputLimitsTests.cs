@@ -102,8 +102,8 @@ public sealed class FieldCollectionSyncInputLimitsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_IdentifierWithUnpairedSurrogateEscape_Returns400()
     {
-        var body = $$"""
-            {"changeId":"change\ud800id","featureId":"feat-{{Guid.NewGuid():N}}","layerId":180,"operation":"insert","feature":{"type":"Feature","geometry":null,"properties":{}}}
+        var body = $$$"""
+            {"changeId":"change\ud800id","featureId":"feat-{{{Guid.NewGuid():N}}}","layerId":180,"operation":"insert","feature":{"type":"Feature","geometry":null,"properties":{}}}
             """;
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
