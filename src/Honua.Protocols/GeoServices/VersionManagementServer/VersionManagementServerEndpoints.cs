@@ -332,7 +332,7 @@ public static class VersionManagementServerEndpoints
 
         // BH3-002: A Private version is only visible to its owner and service admins.
         // Return 404 (not 403) so a non-owner cannot confirm the version's existence.
-        if (await FindVisibleVersionAsync(versionManager, versionId, context, cancellationToken)
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
                 .ConfigureAwait(false) is not { } match)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
@@ -709,7 +709,7 @@ public static class VersionManagementServerEndpoints
         // with authorization to view raw conflict diffs for Protected versions — BH6-001 corrects
         // the conditional so Protected versions are now gated on CanManageVersion, matching the
         // sibling HandleResolveConflicts which checks unconditionally via AuthorizeReadAndResolveVersionAsync.
-        if (await FindVisibleVersionAsync(versionManager, versionId, context, cancellationToken)
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
                 .ConfigureAwait(false) is not { } conflictVersion)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
@@ -863,7 +863,7 @@ public static class VersionManagementServerEndpoints
         // service's reconcile/post jobs by GUID.
         if (!string.Equals(job.Service, serviceId, StringComparison.OrdinalIgnoreCase) ||
             job.VersionId != versionId ||
-            await FindVisibleVersionAsync(versionManager, versionId, context, cancellationToken)
+            await FindVisibleVersionAsync(versionManager, versionId, context)
                 .ConfigureAwait(false) is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
@@ -879,10 +879,9 @@ public static class VersionManagementServerEndpoints
     private static async Task<GdbVersion?> FindVisibleVersionAsync(
         IVersionManager versionManager,
         Guid versionId,
-        HttpContext context,
-        CancellationToken cancellationToken)
+        HttpContext context)
     {
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListAsync(context.RequestAborted).ConfigureAwait(false);
         var version = versions.FirstOrDefault(v => v.VersionId == versionId);
         var visible = version.VersionId == versionId &&
             VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
@@ -971,7 +970,7 @@ public static class VersionManagementServerEndpoints
             return Moment(true);
         }
 
-        if (await FindVisibleVersionAsync(versionManager, versionId, context, cancellationToken)
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
                 .ConfigureAwait(false) is not { } version)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
@@ -1130,7 +1129,7 @@ public static class VersionManagementServerEndpoints
     {
         // A private version the caller cannot see answers exactly like an unknown GUID, so a
         // refusal never confirms that someone else's private version exists.
-        if (await FindVisibleVersionAsync(versionManager, versionId, context, cancellationToken)
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
                 .ConfigureAwait(false) is not { } version)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
