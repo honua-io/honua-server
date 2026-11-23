@@ -1057,18 +1057,28 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
             LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
-            CROSS JOIN LATERAL (
-                SELECT CASE WHEN a.attname = 'objectid'
-                    THEN pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid')::regclass
-                END AS owned_sequence
-            ) object_id
             WHERE n.nspname = @schema AND c.relname = 'features' AND c.relkind = 'r'
               AND a.attnum > 0 AND NOT a.attisdropped
               AND CASE a.attname
                 WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype AND a.attnotnull
-                    AND object_id.owned_sequence IS NOT NULL
-                    AND (a.attidentity <> '' OR pg_catalog.pg_get_expr(d.adbin, d.adrelid)
-                        = format('nextval(%L::regclass)', object_id.owned_sequence))
+                    AND EXISTS (
+                        SELECT 1
+                        FROM pg_catalog.pg_depend ownership
+                        JOIN pg_catalog.pg_class seq ON seq.oid = ownership.objid AND seq.relkind = 'S'
+                        WHERE ownership.classid = 'pg_catalog.pg_class'::regclass AND ownership.objsubid = 0
+                          AND ownership.refclassid = 'pg_catalog.pg_class'::regclass
+                          AND ownership.refobjid = c.oid AND ownership.refobjsubid = a.attnum
+                          AND ((a.attidentity <> '' AND ownership.deptype = 'i')
+                            OR (ownership.deptype = 'a'
+                              AND pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+                                  ~ '^(pg_catalog[.])?nextval[(]''([^'']|'''')+''::regclass[)]$'
+                              AND EXISTS (
+                                  SELECT 1 FROM pg_catalog.pg_depend default_reference
+                                  WHERE default_reference.classid = 'pg_catalog.pg_attrdef'::regclass
+                                    AND default_reference.objid = d.oid AND default_reference.objsubid = 0
+                                    AND default_reference.refclassid = 'pg_catalog.pg_class'::regclass
+                                    AND default_reference.refobjid = seq.oid AND default_reference.refobjsubid = 0
+                                    AND default_reference.deptype = 'n'))))
                     AND EXISTS (
                         SELECT 1 FROM pg_catalog.pg_index i
                         WHERE i.indrelid = c.oid AND i.indisprimary AND i.indisvalid
