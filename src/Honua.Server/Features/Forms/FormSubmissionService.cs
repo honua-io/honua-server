@@ -518,15 +518,7 @@ internal sealed class FormSubmissionService
         {
             if (context.Request.HasFormContentType)
             {
-                var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-                var submissionJson = form["submission"].ToString();
-                if (string.IsNullOrWhiteSpace(submissionJson))
-                {
-                    return new SubmissionParseResult(null, "Multipart submissions must include a 'submission' JSON part.", string.Empty, new FormFileCollection());
-                }
-
-                var request = JsonSerializer.Deserialize(submissionJson, FormPackageJsonContext.Default.FormSubmissionRequest);
-                return new SubmissionParseResult(request, null, submissionJson, form.Files);
+                return await ReadMultipartSubmissionAsync(context).ConfigureAwait(false);
             }
 
             if (context.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true)
@@ -552,6 +544,19 @@ internal sealed class FormSubmissionService
         {
             return new SubmissionParseResult(null, "Multipart submission could not be read.", string.Empty, new FormFileCollection());
         }
+    }
+
+    private static async Task<SubmissionParseResult> ReadMultipartSubmissionAsync(HttpContext context)
+    {
+        var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        var submissionJson = form["submission"].ToString();
+        if (string.IsNullOrWhiteSpace(submissionJson))
+        {
+            return new SubmissionParseResult(null, "Multipart submissions must include a 'submission' JSON part.", string.Empty, new FormFileCollection());
+        }
+
+        var request = JsonSerializer.Deserialize(submissionJson, FormPackageJsonContext.Default.FormSubmissionRequest);
+        return new SubmissionParseResult(request, null, submissionJson, form.Files);
     }
 
     private static FormSubmissionRequest ApplyHeaderClientId(FormSubmissionRequest request, HttpContext context)
