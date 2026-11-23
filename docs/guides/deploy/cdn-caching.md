@@ -17,7 +17,7 @@ A response is public only when the route is a read of public content, the reques
 | --- | --- | --- | --- |
 | Tile of a public layer | 60 s | 300 s | May be served stale for 60 s while it is refreshed, and for a day if the service is unreachable |
 | Feature query on a public layer | 0 s (revalidates) | 30 s | May be served stale for 30 s while it is refreshed, and for a day if the service is unreachable |
-| Capabilities and metadata documents, TileJSON, publication styles (`/api/styles/{publicationId}.json`) | 30 s | 60 s | OGC API Styles (`/ogc/styles/*`) are not shared |
+| Capabilities and metadata documents, TileJSON, publication styles (`/api/styles/{publicationId}.json`), VectorTileServer style, sprites, glyphs and tilemap | 30 s | 60 s | OGC API Styles (`/ogc/styles/*`) are not shared |
 | Scene assets of a public scene | 60 s | 300 s | The scene's own cache setting replaces these values |
 | Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store` |
 | Errors | never | never | `private, no-store` |

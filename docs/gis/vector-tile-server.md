@@ -11,7 +11,8 @@ public service. For a private service, the descriptor, tile and style routes ret
 error `499` (authentication required) to anonymous callers and `403` to signed-in callers without
 access. The sprite,
 glyph and tilemap resources hold no layer data (the tilemap is computed from the tile grid) and
-answer without credentials. Clients read service
+answer without credentials, so a CDN may keep them for any service; the descriptor and style are
+kept only for a public service. Clients read service
 metadata with `GET` or with `POST {"f":"json"}` (Esri clients use the latter).
 
 Errors use the GeoServices error envelope: the HTTP status is 200 and the body is
