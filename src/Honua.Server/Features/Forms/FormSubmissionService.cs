@@ -85,6 +85,11 @@ internal sealed class FormSubmissionService
         }
 
         var request = ApplyHeaderClientId(parseResult.Request, context);
+        if (FormSubmissionInputLimits.FindIdentifierError(request) is { } identifierError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, identifierError);
+        }
+
         var packageVersion = await ResolvePackageVersionAsync(formId, request, context.RequestAborted).ConfigureAwait(false);
         if (packageVersion is null)
         {
@@ -537,6 +542,15 @@ internal sealed class FormSubmissionService
         catch (JsonException)
         {
             return new SubmissionParseResult(null, "Submission JSON was invalid.", string.Empty, new FormFileCollection());
+        }
+        // A missing multipart boundary (InvalidDataException) or a body that ends before its
+        // closing boundary (IOException) is a client fault. Form size limits and request-body
+        // limits (BadHttpRequestException) still reach the shared exception mapper for 413.
+        catch (Exception ex) when (
+            (ex is InvalidDataException && !ex.Message.Contains("limit", StringComparison.OrdinalIgnoreCase))
+            || (ex is IOException && ex is not BadHttpRequestException))
+        {
+            return new SubmissionParseResult(null, "Multipart submission could not be read.", string.Empty, new FormFileCollection());
         }
     }
 
