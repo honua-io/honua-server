@@ -126,9 +126,19 @@ SharedCache__MetadataDocument__SharedMaxAgeSeconds=60
 
 3. Give one layer its own lifetime. Layers are named `{serviceId}/{layerId}`, as in `/rest/services/{serviceId}/FeatureServer/{layerId}`; the name applies to that layer on every surface, including `/tiles` and OGC API Tiles. A layer bound to a table that is edited outside Honua should have a lifetime no longer than the staleness you accept.
 
-```bash
-SharedCache__Layers__parcels/3__MaxAgeSeconds=0
-SharedCache__Layers__parcels/3__SharedMaxAgeSeconds=15
+Merge this fragment into the service's appsettings configuration. Keep the slash in `parcels/3`; a key containing `/` cannot be used as a Bash assignment name. Environment variables configured by the deployment take precedence over appsettings values.
+
+```json
+{
+  "SharedCache": {
+    "Layers": {
+      "parcels/3": {
+        "MaxAgeSeconds": 0,
+        "SharedMaxAgeSeconds": 15
+      }
+    }
+  }
+}
 ```
 
 4. In an emergency, shorten every public layer to 15 seconds at the CDN and 0 in the browser in one step. Stored per-layer lifetimes are not changed, and unsetting the value restores them.
