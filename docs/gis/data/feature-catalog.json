@@ -2386,7 +2386,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.List_WithReviewStatusFilter_ReturnsOnlyMatching",
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits"
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.List_InvalidFilter_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.List_KnownSyncStatus_Returns200"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -12494,6 +12496,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.FeatureServerQuery_BearerWithoutTenant_IsRejectedBeforeDefaultSchema",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_DeniedPrincipal_ReceivesZeroRecordsOverMcpAndRest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_GeometryFilter_MatchesRestGeometryIntersectsIdForId",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_SamePrincipalOverRestAndMcp_ReturnsTheSameRecordSetAndNoDeniedLayerRows",
         "Honua.Server.Tests.Features.Protocols.PrefixedSchemaFieldProjectionTests.QueryFeatures_WithPrefixedSchemaFieldInOutFields_IncludesFieldInAttributes",
         "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.AdminApiKeyInTokenQueryParameter_IsRefusedAsInvalidToken",
@@ -18833,7 +18836,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_Csv_ReturnsCsvWithHeaderAndFilteredRows",
         "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_GeoJson_ReturnsPackageRecordsAuditsAndListsHistory",
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_InvalidFormat_Returns400"
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldExportEndpointsTests.CreateExport_InvalidFormat_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.Export_InvalidFilter_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.Export_InvertedDateRange_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -18847,7 +18852,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits"
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_AtLimit_PassesValidation",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_OverLimit_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_UnstorableText_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -18861,7 +18869,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits"
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.Comment_WithLineBreaksAndTab_PassesValidation",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_AtLimit_PassesValidation",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_OverLimit_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_UnstorableText_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -18876,7 +18888,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.Decide_WithInvalidStatus_Returns400",
-        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits"
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldReviewEndpointsTests.ReviewWorkflow_ListAssignCommentApprove_TransitionsAndAudits",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_AtLimit_PassesValidation",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_OverLimit_Returns400",
+        "Honua.Server.Tests.Features.FieldWorkflows.FieldWorkflowInputLimitsTests.ReviewWrite_UnstorableText_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
