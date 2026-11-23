@@ -712,13 +712,14 @@ internal sealed partial class ODataSearchService
         var requestedIds = objectIds.ToHashSet();
         var remainingRows = _maxExpandedRows;
 
+        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
+        var relationshipOptions = ParseExpandRelationshipOptions(expand);
+        EnsureExpandTargetsExist(relationshipOptions, resource);
         if (objectIds.Length == 0)
         {
             return result;
         }
 
-        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
-        var relationshipOptions = ParseExpandRelationshipOptions(expand);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // Find matching relationships
@@ -862,6 +863,26 @@ internal sealed partial class ODataSearchService
 
     private sealed record ExpandRelationshipOptions(string Name, HashSet<string>? SelectFields);
 
+    // Skipping an unknown name would leave @odata.context claiming an expansion that is absent.
+    private static void EnsureExpandTargetsExist(
+        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
+        MetadataV2Object resource)
+    {
+        var known = resource.Relationships
+            .SelectMany(relationship => new[]
+            {
+                relationship.Name,
+                ODataUtilityService.SanitizeIdentifier(relationship.Name),
+                ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id),
+            })
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknown = optionsByName.Keys.FirstOrDefault(name => !known.Contains(name));
+        if (unknown != null)
+        {
+            throw new ArgumentException($"Unknown navigation property '{unknown}' in $expand.");
+        }
+    }
+
     private static Dictionary<string, ExpandRelationshipOptions> ParseExpandRelationshipOptions(string expand)
     {
         var optionsByName = new Dictionary<string, ExpandRelationshipOptions>(StringComparer.OrdinalIgnoreCase);
@@ -920,6 +941,11 @@ internal sealed partial class ODataSearchService
             }
 
             var key = option[..separator].Trim();
+            if (key.Equals("$expand", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Nested $expand paths are not supported.");
+            }
+
             if (!key.Equals("$select", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
