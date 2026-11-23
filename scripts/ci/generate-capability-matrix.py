@@ -357,6 +357,13 @@ def main() -> int:
         no_surface,
         interop_evidence=load_interop_evidence(ENVELOPE_ROOT),
     )
+    nightly_path = REPO_ROOT / "docs/gis/data/nightly-capability-evidence.v1.json"
+    if nightly_path.exists():
+        spec = importlib.util.spec_from_file_location(
+            "nightly_capability_evidence", Path(__file__).with_name("nightly-capability-evidence.py"))
+        nightly = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(nightly)
+        matrix = nightly.apply(matrix, load_json(nightly_path), CAPABILITY_IMPACT)
     rendered = json.dumps(matrix, indent=2) + "\n"
 
     if args.check:
