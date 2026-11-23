@@ -66,12 +66,10 @@ internal static class ItemEndpoints
             collectionId);
         StacLog.ItemsRequested(logger, collectionId, limit);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Items);
-        if (validationError is not null)
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Items) is { } queryError)
         {
             StacTelemetry.SetFailed(activity, "invalid_query_parameters");
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return queryError;
         }
 
         try
@@ -172,13 +170,25 @@ internal static class ItemEndpoints
                 ? null
                 : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken)
                     .ConfigureAwait(false);
-            var items = result.Items
-                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
-                    layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
-                .ToImmutableArray();
+            var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+            {
+                Resource = resource,
+                Publication = publication,
+                LayerIndex = layerId,
+                BaseUrl = baseUrl,
+                GeometrySrid = Wgs84Srid,
+                CogArtifact = cogArtifact
+            });
+            var itemBuilder = ImmutableArray.CreateBuilder<StacItem>(result.Items.Length);
+            foreach (var f in result.Items)
+            {
+                itemBuilder.Add(StacMappingService.MapFeatureToItem(f, mappingContext));
+            }
+            var items = itemBuilder.MoveToImmutable();
 
             var stacBase = $"{baseUrl}/stac";
-            var itemsPath = $"{stacBase}/collections/{collectionId}/items";
+            var collectionSegment = Uri.EscapeDataString(collectionId);
+            var itemsPath = $"{stacBase}/collections/{collectionSegment}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
             var collectionTitle = StacMappingService.ResolveDisplayName(publication, resource, layerId);
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
@@ -188,7 +198,7 @@ internal static class ItemEndpoints
                 type: MediaTypes.GeoJson,
                 title: "Items"));
             linksBuilder.Add(Link.Create(
-                href: $"{stacBase}/collections/{collectionId}",
+                href: $"{stacBase}/collections/{collectionSegment}",
                 rel: RelationTypes.Collection,
                 type: MediaTypes.Json,
                 title: collectionTitle));
@@ -242,6 +252,12 @@ internal static class ItemEndpoints
         }
     }
 
+    private static IResult? ValidateItemQuery(HttpContext context, IReadOnlySet<string> allowedParameters)
+    {
+        var error = OgcCommonUtilities.ValidateQueryParameters(context.Request, allowedParameters);
+        return error is null ? null : StandardErrorHelpers.CreateBadRequest(context, error.Value ?? "Invalid query parameters.");
+    }
+
     private static async Task<IResult> HandleGetItem(
         string collectionId,
         string itemId,
@@ -257,6 +273,12 @@ internal static class ItemEndpoints
             collectionId,
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
+
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Catalog) is { } queryError)
+        {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
+            return queryError;
+        }
 
         try
         {

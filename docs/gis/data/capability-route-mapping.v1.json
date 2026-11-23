@@ -244,6 +244,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/tasks",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/forms",
       "capability": "fieldops.forms"
     },
@@ -510,6 +515,14 @@
     {
       "family": "Temporal",
       "capability": "temporal.filtering"
+    },
+    {
+      "family": "Terrain-RGB",
+      "routeContains": [
+        "layer.json",
+        ".terrain"
+      ],
+      "capability": "serve.terrain-quantized-mesh"
     },
     {
       "family": "Terrain-RGB",

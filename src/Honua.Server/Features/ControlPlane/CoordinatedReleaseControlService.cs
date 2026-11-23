@@ -33,6 +33,8 @@ internal sealed partial class CoordinatedReleaseControlService(
     {
         ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(metadataPlan);
+        MetadataReleaseControlService.ValidatePlan(metadataPlan);
+        MetadataReleaseControlService.ValidateAuditFields(reason, idempotencyKey, correlationId);
         EnsureDurableStoreConfigured();
 
         var now = DateTimeOffset.UtcNow;

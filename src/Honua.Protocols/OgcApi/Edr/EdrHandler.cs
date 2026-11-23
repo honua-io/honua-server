@@ -23,8 +23,45 @@ internal sealed partial class EdrHandler
     private const string CoveragesProtocol = "OGC-API-Coverages";
     private const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     private const string CoverageJsonMediaType = "application/prs.coveragejson+json";
+    private const string AlternateCoverageJsonMediaType = "application/prs.coverage+json";
     private const string CoverageJsonFormat = "CoverageJSON";
     private const string Crs84Code = "CRS84";
+
+    private static readonly ImmutableHashSet<string> MetadataQueryParameters =
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "token");
+
+    private static readonly ImmutableHashSet<string> PositionQueryParameters =
+        ImmutableHashSet.Create(
+            StringComparer.OrdinalIgnoreCase,
+            "coords",
+            "datetime",
+            "parameter-name",
+            "crs",
+            "f",
+            "token");
+
+    private static readonly ImmutableHashSet<string> CubeQueryParameters =
+        ImmutableHashSet.Create(
+            StringComparer.OrdinalIgnoreCase,
+            "bbox",
+            "datetime",
+            "parameter-name",
+            "resolution-x",
+            "crs",
+            "f",
+            "token");
+
+    private static readonly string[] MetadataSupportedMediaTypes =
+    [
+        MediaTypes.Json
+    ];
+
+    private static readonly string[] CoverageSupportedMediaTypes =
+    [
+        CoverageJsonMediaType,
+        AlternateCoverageJsonMediaType,
+        MediaTypes.Json
+    ];
 
     // Every output format and CRS a collection advertises (output_formats / crs). The position
     // and cube queries bind `f` and `crs` to these lists, so an unadvertised value is a 400
@@ -51,6 +88,11 @@ internal sealed partial class EdrHandler
 
     public static IResult GetLandingPage(HttpContext context)
     {
+        if (ValidateMetadataRequest(context) is { } validationError)
+        {
+            return validationError;
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/edr";
         var links = ImmutableArray.Create(
@@ -60,8 +102,13 @@ internal sealed partial class EdrHandler
         return Results.Json(new EdrLandingPage { Links = links }, EdrJsonContext.Default.EdrLandingPage);
     }
 
-    public static IResult GetConformance()
+    public static IResult GetConformance(HttpContext context)
     {
+        if (ValidateMetadataRequest(context) is { } validationError)
+        {
+            return validationError;
+        }
+
         var conformsTo = ImmutableArray.Create(
             "http://www.opengis.net/spec/ogcapi-edr-1/1.1/conf/core",
             "http://www.opengis.net/spec/ogcapi-edr-1/1.1/conf/position",
@@ -73,6 +120,11 @@ internal sealed partial class EdrHandler
 
     public async Task<IResult> GetCollectionsAsync(HttpContext context, CancellationToken cancellationToken)
     {
+        if (ValidateMetadataRequest(context) is { } validationError)
+        {
+            return validationError;
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
@@ -104,6 +156,11 @@ internal sealed partial class EdrHandler
 
     public async Task<IResult> GetCollectionAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
+        if (ValidateMetadataRequest(context) is { } validationError)
+        {
+            return validationError;
+        }
+
         var resolution = await ResolveAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
@@ -118,6 +175,11 @@ internal sealed partial class EdrHandler
 
     public async Task<IResult> GetPositionAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
+        if (OgcCommonUtilities.ValidateQueryParameters(context.Request, PositionQueryParameters) is { } parameterError)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, parameterError.Value ?? "Invalid query parameters.");
+        }
+
         var resolution = await ResolveAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
@@ -155,10 +217,10 @@ internal sealed partial class EdrHandler
             return datetimeError;
         }
 
-        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
-        if (parameterError is not null)
+        var requestedParameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (requestedParameterError is not null)
         {
-            return parameterError;
+            return requestedParameterError;
         }
 
         if (!temporallyIntersects)
@@ -241,6 +303,11 @@ internal sealed partial class EdrHandler
 
     public async Task<IResult> GetCubeAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
+        if (OgcCommonUtilities.ValidateQueryParameters(context.Request, CubeQueryParameters) is { } cubeParamError)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, cubeParamError.Value ?? "Invalid query parameters.");
+        }
+
         var resolution = await ResolveAsync(context, collectionId, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
@@ -259,7 +326,10 @@ internal sealed partial class EdrHandler
                 context, "Query parameter 'bbox' must be 'minLon,minLat,maxLon,maxLat'.");
         }
 
-        var resolutionCount = ResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString());
+        if (!TryResolveCubeSampleCount(context, out var resolutionCount, out var resolutionError))
+        {
+            return resolutionError!;
+        }
         var raster = resolution.Raster;
         var datetimeError = ValidateDatetime(context, raster, out var temporallyIntersects);
         if (datetimeError is not null)
@@ -267,10 +337,10 @@ internal sealed partial class EdrHandler
             return datetimeError;
         }
 
-        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
-        if (parameterError is not null)
+        var requestedParameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (requestedParameterError is not null)
         {
-            return parameterError;
+            return requestedParameterError;
         }
 
         if (!temporallyIntersects)
@@ -546,6 +616,29 @@ internal sealed partial class EdrHandler
             [$"Available parameter names: {string.Join(", ", available)}."]);
     }
 
+    private static IResult? ValidateMetadataRequest(HttpContext context)
+    {
+        if (OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters) is { } parameterError)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, parameterError.Value ?? "Invalid query parameters.");
+        }
+
+        var format = context.Request.Query["f"].ToString();
+        if (!string.IsNullOrWhiteSpace(format) && !IsJsonFormat(format.Trim()))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Query parameter 'f' requests an unsupported metadata format: {format}.");
+        }
+
+        if (!IsAcceptable(context, MetadataSupportedMediaTypes))
+        {
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
+        }
+
+        return null;
+    }
+
     private static IResult? ValidateOutputFormatAndCrs(HttpContext context)
     {
         var format = context.Request.Query["f"].ToString();
@@ -555,6 +648,11 @@ internal sealed partial class EdrHandler
                 context,
                 $"Query parameter 'f' requests an output format this collection does not offer: {format}.",
                 [$"Available output formats: {string.Join(", ", OutputFormats)}."]);
+        }
+
+        if (!IsAcceptable(context, CoverageSupportedMediaTypes))
+        {
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
         }
 
         var crs = context.Request.Query["crs"].ToString();
@@ -569,10 +667,32 @@ internal sealed partial class EdrHandler
         return null;
     }
 
+    private static bool IsAcceptable(HttpContext context, IReadOnlyList<string> supportedMediaTypes)
+    {
+        var accept = context.Request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
+        {
+            return true;
+        }
+
+        var ranges = ContentNegotiationHelpers.ParseAcceptHeader(accept);
+        if (ranges.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        return ContentNegotiationHelpers.GetBestQuality(supportedMediaTypes, accept) > 0;
+    }
+
+    private static bool IsJsonFormat(string format) =>
+        string.Equals(format, "json", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(format, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
+
     private static bool IsCoverageJsonFormat(string format) =>
         string.Equals(format, CoverageJsonFormat, StringComparison.OrdinalIgnoreCase)
         || string.Equals(format, "covjson", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(format, CoverageJsonMediaType, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(format, CoverageJsonMediaType, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(format, AlternateCoverageJsonMediaType, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsCrs84(string crs) =>
         string.Equals(crs, Crs84Code, StringComparison.OrdinalIgnoreCase)
@@ -622,19 +742,49 @@ internal sealed partial class EdrHandler
         }
 
         isMultiPoint = true;
-        var body = trimmed["MULTIPOINT".Length..].Trim();
+        var open = trimmed.IndexOf('(');
+        if (open < "MULTIPOINT".Length || trimmed[^1] != ')')
+        {
+            return false;
+        }
+
+        var qualifier = trimmed["MULTIPOINT".Length..open].Trim();
+        if (qualifier.Length > 0 && !string.Equals(qualifier, "Z", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var body = trimmed[open..];
         if (body.Length < 2 || body[0] != '(' || body[^1] != ')')
         {
             return false;
         }
 
-        var members = body[1..^1]
-            .Split(',', StringSplitOptions.TrimEntries)
-            .Select(static member => member.StartsWith('(') && member.EndsWith(')') ? member[1..^1].Trim() : member);
+        var rawMembers = body[1..^1].Split(',', StringSplitOptions.TrimEntries);
         var parsed = new List<(double Lon, double Lat)>();
-        foreach (var inner in members)
+        foreach (var rawMember in rawMembers)
         {
-            if (inner.Contains('(') || inner.Contains(')')
+            if (string.IsNullOrWhiteSpace(rawMember))
+            {
+                return false;
+            }
+
+            string inner;
+            if (rawMember.StartsWith('(') || rawMember.EndsWith(')'))
+            {
+                if (!rawMember.StartsWith('(') || !rawMember.EndsWith(')') || rawMember.Length < 2)
+                {
+                    return false;
+                }
+
+                inner = rawMember[1..^1].Trim();
+            }
+            else
+            {
+                inner = rawMember;
+            }
+
+            if (inner.Contains('(') || inner.Contains(')') || inner.Contains(',')
                 || !TryParseOrdinates(inner.Split(' ', StringSplitOptions.RemoveEmptyEntries), out var lon, out var lat))
             {
                 return false;
@@ -659,14 +809,28 @@ internal sealed partial class EdrHandler
         var trimmed = coords.Trim();
         var open = trimmed.IndexOf('(');
         var close = trimmed.IndexOf(')');
-        if (!trimmed.StartsWith("POINT", StringComparison.OrdinalIgnoreCase) || open < 0 || close <= open)
+        if (!trimmed.StartsWith("POINT", StringComparison.OrdinalIgnoreCase)
+            || open < "POINT".Length
+            || close <= open
+            || close != trimmed.Length - 1)
+        {
+            return false;
+        }
+
+        var qualifier = trimmed["POINT".Length..open].Trim();
+        if (qualifier.Length > 0 && !string.Equals(qualifier, "Z", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         var inner = trimmed[(open + 1)..close];
+        if (inner.Contains('(') || inner.Contains(')') || inner.Contains(','))
+        {
+            return false;
+        }
+
         return TryParseOrdinates(
-            inner.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            inner.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             out lon,
             out lat);
     }
@@ -677,16 +841,24 @@ internal sealed partial class EdrHandler
         lat = 0;
         return ordinates.Length is 2 or 3
             && double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out lon)
+            && double.IsFinite(lon)
             && double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out lat)
+            && double.IsFinite(lat)
             && (ordinates.Length == 2
-                || double.TryParse(ordinates[2], NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+                || (double.TryParse(ordinates[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z)
+                    && double.IsFinite(z)));
     }
 
     private static bool TryParseBbox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
     {
         minX = minY = maxX = maxY = 0;
         var parsed = BoundingBoxOrdinates.Parse(bbox);
-        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
+        if (!parsed.Succeeded || !parsed.Ordinates.All(double.IsFinite))
+        {
+            return false;
+        }
+
+        if (parsed.Ordinates.Length == 6 && parsed.Ordinates[2] > parsed.Ordinates[5])
         {
             return false;
         }
@@ -742,14 +914,28 @@ internal sealed partial class EdrHandler
     private static DateTimeOffset ResolveRasterInstant(RasterInfo raster)
         => raster.AcquisitionDate ?? raster.CreatedAt;
 
-    private static int ResolveCubeSampleCount(string resolutionX)
+    private static bool TryResolveCubeSampleCount(HttpContext context, out int sampleCount, out IResult? error)
     {
-        if (int.TryParse(resolutionX, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count > 0)
+        if (!context.Request.Query.TryGetValue("resolution-x", out var resolutionValues))
         {
-            return Math.Min(count, MaxCubeAxisSamples);
+            sampleCount = DefaultCubeAxisSamples;
+            error = null;
+            return true;
         }
 
-        return DefaultCubeAxisSamples;
+        var raw = resolutionValues.ToString().Trim();
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || count <= 0)
+        {
+            sampleCount = 0;
+            error = StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Query parameter 'resolution-x' must be a positive integer.");
+            return false;
+        }
+
+        sampleCount = Math.Min(count, MaxCubeAxisSamples);
+        error = null;
+        return true;
     }
 
     private static double[] AxisValues(double min, double max, int count)

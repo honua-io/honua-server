@@ -29,7 +29,7 @@ public sealed class RedisOffGovernedControlPlaneTests
     [UnitTest]
     public void AdminApiCatalog_IsTheTwentyToolsTheRedisOffCellLost()
     {
-        AdminApiOperationCatalog.Definitions.Should().HaveCount(29);
+        AdminApiOperationCatalog.Definitions.Should().HaveCount(31);
     }
 
     [UnitTest]

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -14,12 +15,14 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
@@ -179,11 +182,14 @@ internal static class WmtsRequestHandlers
                 .ToArray();
 
             // Gate the request the same way the v1 path did: 401/403 when nothing on the
-            // service is readable for this caller.
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
-                context,
-                layers.Select(l => l.Resource),
-                svcDef);
+            // service is readable for this caller, including zero-layer secured services.
+            var accessError = layers.Length == 0
+                ? await AccessPolicyHelpers.RequireServiceAccessAsync(
+                    context, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false)
+                : AccessPolicyHelpers.RequireAnyResourceAccess(
+                    context,
+                    layers.Select(l => l.Resource),
+                    svcDef);
             if (accessError != null)
             {
                 return accessError;
@@ -209,9 +215,10 @@ internal static class WmtsRequestHandlers
             if (!string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
                 return CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
+                    "OperationNotSupported",
                     "request",
-                    $"Unsupported REQUEST value '{requestType}'.");
+                    $"Unsupported REQUEST value '{requestType}'.",
+                    StatusCodes.Status501NotImplemented);
             }
 
             if (!IsWmtsCapabilitiesAcceptable(context.Request.Headers.Accept.ToString()))
@@ -335,27 +342,35 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => OgcClassicRasterSupport.IsRenderableResource(l.Resource))
                 .ToArray();
-            var capabilities = PooledTextBuilder.Rent();
-            try
+            var cacheKey = ShouldDisableWmtsCaching(context)
+                ? null
+                : CapabilitiesDocumentCacheHelper.BuildWmtsKey(
+                    new WmtsCapabilitiesCacheRequest
+                    {
+                        Context = context,
+                        SnapshotEtag = snapshot.Etag,
+                        ServiceId = svcDef.Metadata.Id,
+                        ResponseMimeType = responseMimeType,
+                        SectionsMask = (int)sections,
+                        MaxZoom = wmtsMaxZoom
+                    },
+                    Array.ConvertAll(visibleLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)));
+            return await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>
             {
-                await BuildWmtsCapabilitiesAsync(
-                    capabilities,
-                    context.Request,
-                    svcDef,
-                    visibleLayers,
-                    snapshot.Graph,
-                    sections,
-                    wmtsMaxZoom,
-                    capabilitiesFeatureReader,
-                    tileMatrixSetRegistry,
-                    logger,
-                    cancellationToken).ConfigureAwait(false);
-                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
-            }
-            finally
-            {
-                PooledTextBuilder.Return(capabilities);
-            }
+                var capabilities = PooledTextBuilder.Rent();
+                try
+                {
+                    await BuildWmtsCapabilitiesAsync(
+                        capabilities, context.Request, svcDef, visibleLayers, snapshot.Graph,
+                        sections, wmtsMaxZoom, capabilitiesFeatureReader, tileMatrixSetRegistry, logger, cancellationToken)
+                        .ConfigureAwait(false);
+                    return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+                }
+                finally
+                {
+                    PooledTextBuilder.Return(capabilities);
+                }
+            }).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -509,6 +524,43 @@ internal static class WmtsRequestHandlers
         return await HandleWmts(context);
     }
 
+    private static (WmtsLayer Layer, IResult? Error) ValidateWmtsVersionAndLayer(
+        HttpContext context,
+        MetadataV2Service service,
+        IReadOnlyList<WmtsLayer> accessibleLayers)
+    {
+        var query = context.Request.Query;
+        var version = GetQueryValue(query, "VERSION");
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return (default, CreateWmtsExceptionReport(context,
+                "MissingParameterValue",
+                "version",
+                "VERSION parameter is required."));
+        }
+
+        if (!string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return (default, CreateWmtsExceptionReport(context,
+                "InvalidParameterValue",
+                "version",
+                $"VERSION must be {WmtsVersion}."));
+        }
+
+        if (!TryGetRequiredQueryValue(query, "LAYER", out var layerValue))
+        {
+            return (default, CreateWmtsExceptionReport(context, "MissingParameterValue", "layer", "LAYER parameter is required."));
+        }
+
+        if (!TryResolveWmtsLayer(accessibleLayers, layerValue, out var layer))
+        {
+            return (default, CreateWmtsExceptionReport(context, "InvalidParameterValue", "layer", "Invalid LAYER parameter."));
+        }
+
+        SharedCacheResponse.UsePublication(context, service, layer.Publication);
+        return (layer, null);
+    }
+
     private static async Task<IResult> HandleWmtsGetTile(
         HttpContext context,
         MetadataV2Service service,
@@ -517,34 +569,14 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         int wmtsMaxZoom)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.Tile);
         OgcClassicLog.WmtsRequested(logger, serviceId, "GetTile");
 
         var query = context.Request.Query;
-        var version = GetQueryValue(query, "VERSION");
-        if (string.IsNullOrWhiteSpace(version))
+        var (layer, layerError) = ValidateWmtsVersionAndLayer(context, service, accessibleLayers);
+        if (layerError is not null)
         {
-            return CreateWmtsExceptionReport(context,
-                "MissingParameterValue",
-                "version",
-                "VERSION parameter is required.");
-        }
-
-        if (!string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateWmtsExceptionReport(context,
-                "InvalidParameterValue",
-                "version",
-                $"VERSION must be {WmtsVersion}.");
-        }
-
-        if (!TryGetRequiredQueryValue(query, "LAYER", out var layerValue))
-        {
-            return CreateWmtsExceptionReport(context, "MissingParameterValue", "layer", "LAYER parameter is required.");
-        }
-
-        if (!TryResolveWmtsLayer(accessibleLayers, layerValue, out var layer))
-        {
-            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "layer", "Invalid LAYER parameter.");
+            return layerError;
         }
 
         // The layer set passed in is already filtered to publications the caller is
@@ -721,6 +753,7 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         int wmtsMaxZoom)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.FeatureQuery);
         OgcClassicLog.WmtsRequested(logger, serviceId, "GetFeatureInfo");
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -730,31 +763,10 @@ internal static class WmtsRequestHandlers
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "wmts-getfeatureinfo");
 
         var query = context.Request.Query;
-        var version = GetQueryValue(query, "VERSION");
-        if (string.IsNullOrWhiteSpace(version))
+        var (layer, layerError) = ValidateWmtsVersionAndLayer(context, service, accessibleLayers);
+        if (layerError is not null)
         {
-            return CreateWmtsExceptionReport(context,
-                "MissingParameterValue",
-                "version",
-                "VERSION parameter is required.");
-        }
-
-        if (!string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateWmtsExceptionReport(context,
-                "InvalidParameterValue",
-                "version",
-                $"VERSION must be {WmtsVersion}.");
-        }
-
-        if (!TryGetRequiredQueryValue(query, "LAYER", out var layerValue))
-        {
-            return CreateWmtsExceptionReport(context, "MissingParameterValue", "layer", "LAYER parameter is required.");
-        }
-
-        if (!TryResolveWmtsLayer(accessibleLayers, layerValue, out var layer))
-        {
-            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "layer", "Invalid LAYER parameter.");
+            return layerError;
         }
 
         if (!TryGetRequiredQueryValue(query, "STYLE", out var styleValue))
@@ -885,7 +897,7 @@ internal static class WmtsRequestHandlers
 
         if (pixelI >= gridGeometry.TileWidth)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "I", $"I must be less than {gridGeometry.TileWidth}.");
+            return CreateWmtsExceptionReport(context, "PointIJOutOfRange", "I", $"I must be less than {gridGeometry.TileWidth}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "J", out var jValue))
@@ -900,7 +912,7 @@ internal static class WmtsRequestHandlers
 
         if (pixelJ >= gridGeometry.TileHeight)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "J", $"J must be less than {gridGeometry.TileHeight}.");
+            return CreateWmtsExceptionReport(context, "PointIJOutOfRange", "J", $"J must be less than {gridGeometry.TileHeight}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "INFOFORMAT", out var infoFormatValue))
@@ -908,7 +920,9 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "InfoFormat", "INFOFORMAT parameter is required.");
         }
 
-        if (!TryNormalizeFeatureInfoFormat(infoFormatValue, out var infoFormat))
+        if (!TryNormalizeFeatureInfoFormat(infoFormatValue, out var infoFormat) ||
+            (!string.Equals(infoFormat, PlainTextMimeType, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase)))
         {
             return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
@@ -1661,6 +1675,7 @@ internal static class WmtsRequestHandlers
             // Legend metadata is optional; an unavailable style must not remove the
             // layer or prevent clients from discovering otherwise usable map tiles.
             OgcClassicLog.LegendSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return false;
         }
     }
@@ -1729,6 +1744,7 @@ internal static class WmtsRequestHandlers
             // Intentionally generic: a per-layer temporal resolution failure must degrade to no
             // TIME dimension rather than fail the whole capabilities document (see doc comment above).
             OgcClassicLog.TemporalExtentSkipped(logger, layer.StorageLayerId, layer.Identifier, ex);
+            CapabilitiesBuildDegradation.Mark();
             return null;
         }
     }

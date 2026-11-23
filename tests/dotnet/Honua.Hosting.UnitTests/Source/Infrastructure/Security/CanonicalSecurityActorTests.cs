@@ -78,6 +78,45 @@ public sealed class CanonicalSecurityActorTests
         Assert.NotEqual(fingerprint, CanonicalSecurityActor.ResolveAuthorityFingerprint(principal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Security)]
+    public void StampRequestBinding_RepeatedWithSameValues_PreservesStampedClaimsWithoutDuplicates()
+    {
+        var identity = new ClaimsIdentity([new Claim("sub", "user-1")], "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        CanonicalSecurityActor.StampRequestBinding(principal, "tenant-a");
+        var firstActorClaim = Assert.Single(identity.FindAll(CanonicalSecurityActor.CanonicalActorClaim));
+
+        CanonicalSecurityActor.StampRequestBinding(principal, "tenant-a");
+        var secondActorClaim = Assert.Single(identity.FindAll(CanonicalSecurityActor.CanonicalActorClaim));
+
+        Assert.Same(firstActorClaim, secondActorClaim);
+        Assert.Equal("tenant-a", CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim));
+
+        CanonicalSecurityActor.StampRequestBinding(principal, "tenant-b");
+        Assert.Single(identity.FindAll(CanonicalSecurityActor.EffectiveTenantClaim));
+        Assert.Equal("tenant-b", CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    public void RemoveUnstampedAuthorityClaims_DistinguishesStampedAndUnstamped()
+    {
+        var stamped = CanonicalSecurityActor.CreateStampedClaim("permission", "admin:*");
+        var unstamped = new Claim("permission", "admin:*");
+        var identity = new ClaimsIdentity([stamped, unstamped], "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        Assert.True(CanonicalSecurityActor.HasUnstampedAuthorityClaim(identity));
+        Assert.True(CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal));
+        Assert.False(CanonicalSecurityActor.HasUnstampedAuthorityClaim(identity));
+        var remaining = Assert.Single(identity.FindAll("permission"));
+        Assert.True(CanonicalSecurityActor.IsFrameworkOwnedClaim(remaining));
+        Assert.Equal("admin:*", remaining.Value);
+        Assert.False(CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal));
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(params Claim[] claims) =>
         new(new ClaimsIdentity(claims, AuthenticationExtensions.ApiKeyScheme));
 }

@@ -28,6 +28,8 @@ public static class AgentApprovalRule
     private static readonly HashSet<string> GatedOperationIds = new(StringComparer.Ordinal)
     {
         "admin.services.access-policy.set",
+        "admin.metadata.layer-discovery.set",
+        "admin.metadata.service-discovery.set",
         "admin.layer.publish",
         "admin.connections.create",
         "admin.connections.update",
@@ -37,6 +39,7 @@ public static class AgentApprovalRule
         "admin.import.upload-object",
         "service.publish",
         "dataset.stage.import",
+        "dataset.stage.discard",
         StudioDraftMutationContext.PublicationOperationId,
         "studio.content.rollback",
     };

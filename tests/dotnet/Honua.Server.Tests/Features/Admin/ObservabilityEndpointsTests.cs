@@ -43,7 +43,10 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
             });
     }
 
-    public async Task InitializeAsync()
+    // Telemetry cases initialize their own configured fixture and do not need this host.
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task InitializeDefaultFixtureAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
@@ -55,6 +58,8 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_ReturnsInstanceScopedLifecycleAndPlan()
     {
+        await InitializeDefaultFixtureAsync();
+
         _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
             pendingScripts:
             [
@@ -84,6 +89,8 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WhenBackupHookMatchesPendingSet_ReturnsOutcome()
     {
+        await InitializeDefaultFixtureAsync();
+
         const string ContractScript = "002_drop_legacy_annotated.sql";
         _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
             pendingScripts: [ContractScript],
@@ -135,6 +142,8 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WhenPlanFails_ReturnsPlanErrorWithoutThrowing()
     {
+        await InitializeDefaultFixtureAsync();
+
         _migrationRunner.Plan = DatabaseMigrationPlan.Failed(new InvalidOperationException("Unable to inspect migrations."));
 
         _fixture.Services.GetRequiredService<MigrationState>()
@@ -157,6 +166,8 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WhenPlanThrows_ReturnsProblemDetails()
     {
+        await InitializeDefaultFixtureAsync();
+
         _migrationRunner.PlanException = new InvalidOperationException("Migration planner exploded.");
 
         _fixture.Services.GetRequiredService<MigrationState>()
@@ -177,6 +188,8 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/errors")]
     public async Task GetRecentErrors_WhenEmpty_ReturnsEmptyList()
     {
+        await InitializeDefaultFixtureAsync();
+
         var response = await _client.GetAsync("/api/v1/admin/observability/errors");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);

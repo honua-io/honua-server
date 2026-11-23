@@ -126,7 +126,7 @@ internal static class Wfs20DispatcherEndpoint
         return operation is not null && HeadRejectedKvpOperations.Contains(operation);
     }
 
-    private static async Task<IResult> HandleWfsRequest(
+    internal static async Task<IResult> HandleWfsRequest(
         HttpContext context,
         Wfs20Handler handler,
         ILogger<Wfs20Endpoints.Wfs20EndpointsLog> logger)
@@ -429,15 +429,8 @@ internal static class Wfs20DispatcherEndpoint
                 "updateSequence");
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var capabilities = await handler.HandleGetCapabilitiesAsync(
-            context, acceptVersions, requestedSections, baseUrl, cancellationToken);
-
-        // Render the typed capabilities model by hand instead of via XmlSerializer:
-        // XmlSerializer requires runtime code generation, which is unavailable under
-        // PublishAot=true and throws at runtime (HTTP 500) for WfsCapabilities. The
-        // hand-written writer mirrors the exact XmlSerializer output shape.
-        return BuildCapabilitiesResult(capabilities);
+        return await handler.HandleGetCapabilitiesResultAsync(
+            context, requestedSections, baseUrl).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleDescribeFeatureType(
@@ -572,6 +565,13 @@ internal static class Wfs20DispatcherEndpoint
                     storedQueryTypeName,
                     outputFormat,
                     count,
+                    startIndex,
+                    sortBy,
+                    bbox,
+                    resourceId,
+                    propertyName,
+                    srsName,
+                    resultType,
                     cancellationToken);
             }
 
@@ -645,11 +645,13 @@ internal static class Wfs20DispatcherEndpoint
             var srsName = parameters.Get(
                 Wfs20Utilities.ParameterNames.SrsName,
                 Wfs20Utilities.ParameterNames.Srs);
+            var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
+            var resultType = parameters.Get(Wfs20Utilities.ParameterNames.ResultType);
 
             // Handle the request
             return await handler.HandleGetPropertyValueAsync(
                 context, typeNames, valueReference, valueReferenceSpecified, outputFormat, count, startIndex, bbox, filter, resourceId, srsName,
-                cancellationToken);
+                sortBy, resultType, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -960,9 +962,10 @@ internal static class Wfs20DispatcherEndpoint
         if (!string.IsNullOrWhiteSpace(requestedVersion) &&
             !string.Equals(requestedVersion, version, StringComparison.OrdinalIgnoreCase))
         {
+            var isGetCapabilities = string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase);
             return new WfsValidationError(
-                "VersionNegotiationFailed",
-                null,
+                isGetCapabilities ? "VersionNegotiationFailed" : "InvalidParameterValue",
+                isGetCapabilities ? null : "version",
                 $"Unsupported version. Expected '{version}', got '{requestedVersion}'.");
         }
 
@@ -1062,8 +1065,8 @@ internal static class Wfs20DispatcherEndpoint
         if (!string.Equals(version, Wfs20Utilities.Version, StringComparison.OrdinalIgnoreCase))
         {
             return new WfsValidationError(
-                "VersionNegotiationFailed",
-                null,
+                "InvalidParameterValue",
+                "version",
                 $"Unsupported version. Expected '{Wfs20Utilities.Version}', got '{version}'.");
         }
 
@@ -1162,6 +1165,19 @@ internal static class Wfs20DispatcherEndpoint
             return new WfsRequestParameters(values);
         }
 
+        if (context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var key in form.Keys)
+            {
+                var value = form[key].FirstOrDefault();
+                values[key] = value?.Trim() ?? string.Empty;
+            }
+
+            context.Items[RequestParameterValuesItemKey] = values;
+            return new WfsRequestParameters(values);
+        }
+
         context.Request.EnableBuffering();
         var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
             context,
@@ -1207,6 +1223,12 @@ internal static class Wfs20DispatcherEndpoint
         SetValue(values, Wfs20Utilities.ParameterNames.Request, root.Name.LocalName);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Service, "service");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Version, "version");
+        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Sections, "sections");
+        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.AcceptFormats, "acceptFormats");
+        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.AcceptVersions, "acceptVersions");
+        CopyNestedElementValues(root, values, Wfs20Utilities.ParameterNames.AcceptVersions, "AcceptVersions", "Version");
+        CopyNestedElementValues(root, values, Wfs20Utilities.ParameterNames.Sections, "Sections", "Section");
+        CopyNestedElementValues(root, values, Wfs20Utilities.ParameterNames.AcceptFormats, "AcceptFormats", "OutputFormat");
         ApplyLegacyXmlDefaults(root, values);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.OutputFormat, "outputFormat");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Count, "count", "maxFeatures");
@@ -1218,9 +1240,6 @@ internal static class Wfs20DispatcherEndpoint
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.ResolveTimeout, "resolveTimeout");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.LockId, "lockId");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.ReleaseAction, "releaseAction");
-        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Sections, "sections");
-        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.AcceptFormats, "acceptFormats");
-        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.AcceptVersions, "acceptVersions");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.UpdateSequence, "updateSequence");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.TypeNames, "typeNames");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.TypeName, "typeName");
@@ -1366,9 +1385,40 @@ internal static class Wfs20DispatcherEndpoint
             SetValue(values, Wfs20Utilities.ParameterNames.Service, Wfs20Utilities.ServiceType);
         }
 
-        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Version))
+        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Version) &&
+            !values.ContainsKey(Wfs20Utilities.ParameterNames.AcceptVersions))
         {
             SetValue(values, Wfs20Utilities.ParameterNames.Version, Wfs11Version);
+        }
+    }
+
+    private static void CopyNestedElementValues(
+        XElement root,
+        Dictionary<string, string> values,
+        string targetName,
+        string containerLocalName,
+        string itemLocalName)
+    {
+        if (values.ContainsKey(targetName))
+        {
+            return;
+        }
+
+        var container = root.Elements()
+            .FirstOrDefault(element => string.Equals(element.Name.LocalName, containerLocalName, StringComparison.OrdinalIgnoreCase));
+        if (container is null)
+        {
+            return;
+        }
+
+        var items = container.Elements()
+            .Where(element => string.Equals(element.Name.LocalName, itemLocalName, StringComparison.OrdinalIgnoreCase))
+            .Select(element => element.Value.Trim())
+            .Where(value => value.Length > 0)
+            .ToArray();
+        if (items.Length > 0)
+        {
+            SetValue(values, targetName, string.Join(",", items));
         }
     }
 

@@ -293,6 +293,7 @@ internal static class RequestTelemetryClassifier
         if (StartsWithPathSegment(path, "/terrain"))
         {
             return path.EndsWith("/tile.json", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith("/layer.json", StringComparison.OrdinalIgnoreCase)
                 ? "terrain.metadata"
                 : "terrain.tile";
         }

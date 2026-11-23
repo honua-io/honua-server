@@ -22,11 +22,11 @@ internal static class LayerNamePattern
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private const string PublishedLayerPageSql = $"""
+    private string PublishedLayerPageSql => $"""
         WITH matched AS (
             SELECT DISTINCT l.layer_id
-            FROM honua.layers l
-            INNER JOIN honua.service_layers sl
+            FROM {LayersTable} l
+            INNER JOIN {ServiceLayersTable} sl
                 ON sl.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
               AND {PublishedLayerConnectionPredicate}
@@ -47,9 +47,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             totals.total_count
         FROM totals
         LEFT JOIN page ON true
-        LEFT JOIN honua.layers l
+        LEFT JOIN {LayersTable} l
             ON l.layer_id = page.layer_id
-        LEFT JOIN honua.layer_fields f
+        LEFT JOIN {LayerFieldsTable} f
             ON f.layer_id = l.layer_id
         GROUP BY
             {PublishedLayerColumns},

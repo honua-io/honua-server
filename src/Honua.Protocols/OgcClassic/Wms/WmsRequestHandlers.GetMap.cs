@@ -10,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
@@ -30,6 +31,7 @@ internal static partial class WmsRequestHandlers
         string serviceId,
         ILogger logger)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.Tile);
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         OgcClassicLog.WmsRequested(logger, serviceId, "GetMap");
         var stopwatch = Stopwatch.StartNew();
@@ -88,18 +90,26 @@ internal static partial class WmsRequestHandlers
         // requested bbox, so the out-of-bounds margin simply paints as background.
         var bboxOutsideCrsBounds = !DoesExtentIntersectCrsBounds(requestedExtent, normalizedCrs);
 
-        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue) ||
-            !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
-            imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
+        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue))
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "WIDTH parameter is required.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue) ||
-            !int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
+        if (!int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
+            imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
+        {
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue))
+        {
+            return CreateWmsServiceException(context, "MissingParameterValue", "HEIGHT parameter is required.");
+        }
+
+        if (!int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
             imageHeight <= 0 || imageHeight > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
@@ -162,6 +172,10 @@ internal static partial class WmsRequestHandlers
         // validated above before repeated storage layers collapse to their first occurrence.
         // Each surviving layer is queried and drawn once.
         (renderLayers, var layerFilters) = DeduplicateWmsLayers(renderLayers, filterResult.Filters);
+        if (renderLayers.Length == 1)
+        {
+            SharedCacheResponse.UsePublication(context, service, renderLayers[0].Publication);
+        }
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();

@@ -42,13 +42,75 @@ public sealed class PostgresFixtureResetTests
         container.DisposeCalls.Should().Be(1);
     }
 
+    [UnitTest]
+    public async Task DisposeAsync_WithIdleReleaseDelay_KeepsPoolAliveUntilGraceOrFlush()
+    {
+        var pool = NpgsqlDataSource.Create("Host=localhost;Database=unused;Username=test");
+        var container = new CleanupResource(failCleanup: false);
+        var state = new PostgresFixture.PostgresSharedState
+        {
+            SharedDataSource = pool,
+            SharedContainer = container,
+            SharedConnectionString = pool.ConnectionString,
+            SharedInitialized = true,
+            IdleReleaseDelay = TimeSpan.FromSeconds(30),
+        };
+        var first = new PostgresFixture(boundedResources: false, state);
+        var second = new PostgresFixture(boundedResources: false, state);
+
+        await first.InitializeAsync();
+        await first.DisposeAsync();
+
+        state.SharedInitialized.Should().BeTrue();
+        state.SharedRefCount.Should().Be(0);
+        container.DisposeCalls.Should().Be(0);
+
+        await second.InitializeAsync();
+        second.DataSource.Should().BeSameAs(pool);
+        state.SharedRefCount.Should().Be(1);
+        await PostgresFixture.ReleaseIdleNowAsync(state);
+        state.SharedInitialized.Should().BeTrue();
+
+        await second.DisposeAsync();
+        await PostgresFixture.ReleaseIdleNowAsync(state);
+        state.SharedInitialized.Should().BeFalse();
+        container.DisposeCalls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task DisposeAsync_WithShortIdleReleaseDelay_DisposesAfterGrace()
+    {
+        var pool = NpgsqlDataSource.Create("Host=localhost;Database=unused;Username=test");
+        var container = new CleanupResource(failCleanup: false);
+        var state = new PostgresFixture.PostgresSharedState
+        {
+            SharedDataSource = pool,
+            SharedContainer = container,
+            SharedConnectionString = pool.ConnectionString,
+            SharedInitialized = true,
+            IdleReleaseDelay = TimeSpan.FromMilliseconds(50),
+        };
+        var fixture = new PostgresFixture(boundedResources: false, state);
+
+        await fixture.InitializeAsync();
+        await fixture.DisposeAsync();
+
+        await container.DisposalCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        state.SharedInitialized.Should().BeFalse();
+        container.DisposeCalls.Should().Be(1);
+    }
+
     private sealed class CleanupResource(bool failCleanup) : IAsyncDisposable
     {
         internal int DisposeCalls { get; private set; }
+        internal TaskCompletionSource DisposalCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ValueTask DisposeAsync()
         {
             DisposeCalls++;
+            if (!failCleanup)
+                DisposalCompleted.TrySetResult();
             return failCleanup
                 ? ValueTask.FromException(new InvalidOperationException("cleanup failed"))
                 : ValueTask.CompletedTask;

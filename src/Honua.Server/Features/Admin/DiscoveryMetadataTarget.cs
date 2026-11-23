@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -14,6 +15,10 @@ internal sealed record DiscoveryMetadataTarget(
     IReadOnlySet<string> ServiceIds,
     IReadOnlyList<DiscoveryPublicationImpact> Publications)
 {
+    public string ItemKind => ResourceIds.Count > 0 ? MetadataV2CustomFieldKinds.Dataset : MetadataV2CustomFieldKinds.Service;
+
+    public string HistoryItemKind => ResourceIds.Count > 0 ? "resources" : "services";
+
     public static ResourceValidationResult<DiscoveryMetadataTarget> ForLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
         var resolution = snapshot.ResolveStorageResource(storageLayerId);
@@ -23,8 +28,11 @@ internal sealed record DiscoveryMetadataTarget(
         if (resource is null)
             return ResourceValidationResult.NotFound<DiscoveryMetadataTarget>("Metadata target not found.");
         var resourceIds = new HashSet<string>(StringComparer.Ordinal) { resource.Metadata.Id };
-        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(resource.Metadata, resourceIds, new HashSet<string>(), Impact(snapshot,
-            snapshot.Graph.Publications.Where(publication => resourceIds.Contains(publication.ResourceId)))));
+        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(
+            resource.Metadata,
+            resourceIds,
+            new HashSet<string>(),
+            Impact(snapshot, snapshot.Graph.Publications.Where(publication => resourceIds.Contains(publication.ResourceId)))));
     }
 
     public static ResourceValidationResult<DiscoveryMetadataTarget> ForService(MetadataV2GraphSnapshot snapshot, string serviceName)
@@ -34,8 +42,11 @@ internal sealed record DiscoveryMetadataTarget(
         if (services.Length == 0)
             return ResourceValidationResult.NotFound<DiscoveryMetadataTarget>("Metadata target not found.");
         var serviceIds = services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(services[0].Metadata, new HashSet<string>(), serviceIds, Impact(snapshot,
-            snapshot.Graph.Publications.Where(publication => serviceIds.Contains(publication.ServiceId)))));
+        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(
+            services[0].Metadata,
+            new HashSet<string>(),
+            serviceIds,
+            Impact(snapshot, snapshot.Graph.Publications.Where(publication => serviceIds.Contains(publication.ServiceId)))));
     }
 
     public MetadataV2Graph Apply(MetadataV2Graph graph, DiscoveryMetadataUpdateRequest request) => graph with
@@ -52,8 +63,24 @@ internal sealed record DiscoveryMetadataTarget(
         {
             Title = request.Title,
             Description = request.Description,
-            Keywords = request.Keywords
+            Keywords = request.Keywords,
+            CustomFields = request.CustomFields is null
+                ? metadata.CustomFields
+                : CloneCustomFields(request.CustomFields),
         };
+
+    private static Dictionary<string, JsonElement>? CloneCustomFields(IReadOnlyDictionary<string, JsonElement> fields)
+    {
+        var cloned = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var (key, value) in fields)
+        {
+            if (value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+            {
+                cloned[key] = value.Clone();
+            }
+        }
+        return cloned.Count == 0 ? null : cloned;
+    }
 
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,
         IEnumerable<MetadataV2Layer> publications) => publications.Select(publication => new DiscoveryPublicationImpact(

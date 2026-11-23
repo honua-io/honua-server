@@ -11,6 +11,7 @@ using Honua.Core.Features.Realtime;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Realtime;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
@@ -41,7 +42,12 @@ internal static partial class FeatureStreamEndpoints
         var cursor = requested.Position;
         var initialLiveCursor = cursor.HasValue ? 0
             : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
+        using var webSocket = await AcceptUnlessRestartingAsync(context, session).ConfigureAwait(false);
+        if (webSocket is null)
+        {
+            return;
+        }
+
 
         // The default subscription is allocated at session creation and is never replaced
         // (control-frame subscribes always create distinct ids), so its generation is stable
@@ -397,6 +403,8 @@ internal static partial class FeatureStreamEndpoints
             pollInterval: options.CrossNodeSyncInterval,
             cancellationToken: linkedCts.Token);
 
+        var restartClose = CloseOnServiceRestartAsync(webSocket, session, linkedCts.Token);
+
         // Receive loop keeps the connection alive and detects client close.
         try
         {
@@ -458,16 +466,18 @@ internal static partial class FeatureStreamEndpoints
         // Signal writer to stop and wait for it.
         await linkedCts.CancelAsync().ConfigureAwait(false);
         await writerTask.ConfigureAwait(false);
+        await restartClose.ConfigureAwait(false);
 
         // Graceful close.
         if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
         {
             try
             {
-                await webSocket.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure,
-                    session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.",
-                    CancellationToken.None).ConfigureAwait(false);
+                var (status, description) = session.ServiceRestart
+                    ? (RealtimeStreamAdmission.ServiceRestart, RealtimeStreamAdmission.ServiceRestartDescription)
+                    : (WebSocketCloseStatus.NormalClosure,
+                        session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.");
+                await webSocket.CloseAsync(status, description, CancellationToken.None).ConfigureAwait(false);
             }
             catch (WebSocketException ex)
             {
@@ -903,6 +913,7 @@ internal static partial class FeatureStreamEndpoints
                     await SendWebSocketResetAsync(
                         new(webSocket, session.WriteLock, RealtimeResetReasons.Retention, head),
                         cancellationToken).ConfigureAwait(false);
+                    session.Lifecycle?.RecordReset(RealtimeResetReasons.Retention);
                 }
 
                 var snapshotResult = await EmitSnapshotAsync(
@@ -1544,6 +1555,7 @@ internal static partial class FeatureStreamEndpoints
                 WebSocketMessageType.Text,
                 endOfMessage: true,
                 cancellationToken).ConfigureAwait(false);
+            sessionManager?.RecordDelivery(sessionId, stamped.Timestamp);
             return true;
         }
         finally

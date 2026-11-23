@@ -14,8 +14,16 @@ namespace Honua.TestKit;
 public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
 {
     // Fixtures share process-wide state by default; _sharedLock serializes lifecycle mutations.
+    // The process-wide state outlives its last reference for IdleReleaseDelay so sequential
+    // isolated WebAppFixture tests do not re-create the pool and re-run embedded migrations on
+    // every case; per-test state keeps isolation via per-fixture schemas.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static readonly PostgresSharedState GlobalSharedState = new();
+    private static readonly TimeSpan ProcessExitDisposalLimit = TimeSpan.FromSeconds(10);
+    private static readonly PostgresSharedState GlobalSharedState = new()
+    {
+        IdleReleaseDelay = TimeSpan.FromSeconds(30),
+    };
+    private static int _processExitHooked;
     private readonly PostgresSharedState SharedState;
 
     internal sealed class PostgresSharedState
@@ -26,9 +34,25 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         public int SharedRefCount { get; set; }
         public bool SharedInitialized { get; set; }
         public bool BoundedResources { get; set; }
+        public TimeSpan IdleReleaseDelay { get; set; }
+        internal CancellationTokenSource? PendingRelease { get; set; }
+
+        internal void CancelPendingRelease()
+        {
+            var pending = PendingRelease;
+            PendingRelease = null;
+            if (pending is null)
+            {
+                return;
+            }
+
+            pending.Cancel();
+            pending.Dispose();
+        }
 
         internal async Task ResetAsync()
         {
+            CancelPendingRelease();
             var dataSource = SharedDataSource;
             var container = SharedContainer;
             SharedDataSource = null;
@@ -79,10 +103,8 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         try
         {
             if (_hasSharedReference) return;
-            if (_boundedResources && SharedState.SharedContainer is not null && !SharedState.BoundedResources)
-            {
-                throw new InvalidOperationException("A bounded fixture cannot reuse an unbounded Postgres container.");
-            }
+            SharedState.CancelPendingRelease();
+            await EnsureBoundedContainerCompatibilityAsync().ConfigureAwait(false);
             if (!SharedState.SharedInitialized)
             {
                 try
@@ -124,33 +146,14 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
                         ?? throw new InvalidOperationException("Postgres fixture has no connection string.");
                     SharedState.SharedDataSource = NpgsqlDataSource.Create(connectionString);
 
-                    await ExecuteWithInitializationRetryAsync(async () =>
-                    {
-                        await using var conn = await SharedState.SharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
-                        await using var cmd = conn.CreateCommand();
-                        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
-                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-                        // Test hosts skip application migrations. Install the same sampler
-                        // functions production migration 008 binds, so tile SQL does not inline them.
-                        cmd.CommandText = RasterSamplingSql.ReadBoundMigration();
-                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-                        // Test hosts skip application migrations. Execute the owning
-                        // production DDL once under the shared initialization lock
-                        // so registered providers have their required tables.
-                        var assembly = typeof(PostgresFixture).Assembly;
-                        // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
-                        foreach (var migration in PostgresFixtureMigrations.Discover())
-                        {
-                            await using var sql = assembly.GetManifestResourceStream(migration)!;
-                            using var reader = new StreamReader(sql);
-                            var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
-                                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
-                            cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + ddl;
-                            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-                        }
-                    }).ConfigureAwait(false);
+                    await ExecuteWithInitializationRetryAsync(
+                        () => ApplySharedBootstrapSqlAsync(SharedState.SharedDataSource)).ConfigureAwait(false);
 
                     SharedState.SharedInitialized = true;
+                    if (ReferenceEquals(SharedState, GlobalSharedState))
+                    {
+                        HookProcessExit();
+                    }
                 }
                 catch
                 {
@@ -170,6 +173,47 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         }
     }
 
+    private async Task EnsureBoundedContainerCompatibilityAsync()
+    {
+        if (!_boundedResources || SharedState.SharedContainer is null || SharedState.BoundedResources)
+        {
+            return;
+        }
+
+        if (SharedState.SharedRefCount > 0)
+        {
+            throw new InvalidOperationException("A bounded fixture cannot reuse an unbounded Postgres container.");
+        }
+
+        await ResetSharedStateAsync().ConfigureAwait(false);
+    }
+
+    private static async Task ApplySharedBootstrapSqlAsync(NpgsqlDataSource dataSource)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync().ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+        // Test hosts skip application migrations. Install the same sampler
+        // functions production migration 008 binds, so tile SQL does not inline them.
+        cmd.CommandText = RasterSamplingSql.ReadBoundMigration();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+        // Test hosts skip application migrations. Execute the owning
+        // production DDL once under the shared initialization lock
+        // so registered providers have their required tables.
+        var assembly = typeof(PostgresFixture).Assembly;
+        // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
+        foreach (var migration in PostgresFixtureMigrations.Discover())
+        {
+            await using var sql = assembly.GetManifestResourceStream(migration)!;
+            using var reader = new StreamReader(sql);
+            var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
+            cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + ddl;
+            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+    }
+
     public async Task DisposeAsync()
     {
         await _sharedLock.WaitAsync();
@@ -181,12 +225,84 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
 
             if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
-                await ResetSharedStateAsync().ConfigureAwait(false);
+                if (SharedState.IdleReleaseDelay <= TimeSpan.Zero)
+                {
+                    await ResetSharedStateAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    SharedState.CancelPendingRelease();
+                    var pending = new CancellationTokenSource();
+                    SharedState.PendingRelease = pending;
+                    _ = ReleaseWhenIdleAsync(SharedState, pending);
+                }
             }
         }
         finally
         {
             _sharedLock.Release();
+        }
+    }
+
+    internal static Task ReleaseIdleNowAsync() => ReleaseIdleNowAsync(GlobalSharedState);
+
+    internal static async Task ReleaseIdleNowAsync(PostgresSharedState state)
+    {
+        await _sharedLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            state.CancelPendingRelease();
+            if (state.SharedRefCount == 0 && state.SharedInitialized)
+            {
+                await state.ResetAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    private static async Task ReleaseWhenIdleAsync(PostgresSharedState state, CancellationTokenSource pending)
+    {
+        try
+        {
+            await Task.Delay(state.IdleReleaseDelay, pending.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await _sharedLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (ReferenceEquals(state.PendingRelease, pending))
+            {
+                state.CancelPendingRelease();
+                if (state.SharedRefCount == 0 && state.SharedInitialized)
+                {
+                    await state.ResetAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            // No test awaits this release; report a disposal failure instead of dropping it.
+            await Console.Error.WriteLineAsync($"Shared Postgres fixture idle release failed: {exception}");
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    private static void HookProcessExit()
+    {
+        if (Interlocked.Exchange(ref _processExitHooked, 1) == 0)
+        {
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+                ReleaseIdleNowAsync().Wait(ProcessExitDisposalLimit);
         }
     }
 

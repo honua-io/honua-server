@@ -229,24 +229,40 @@ internal sealed partial class Wfs20Handler
             throw new ArgumentException("Expected a WFS 1.0 or 1.1 transaction response.");
         }
 
+        return FormatWfs10TransactionResponse(canonical);
+    }
+
+    private static string FormatWfs10TransactionResponse(XElement canonical)
+    {
+        XNamespace wfs = LegacyWfsNamespace;
+        XNamespace ogc = OgcFilterNamespace;
+        XNamespace wfs20 = Wfs20Utilities.WfsNamespace;
+        XNamespace fes = Wfs20Utilities.FesNamespace;
+        XNamespace honua = FeatureNamespaceUri;
+
         var response = new XElement(wfs + "WFS_TransactionResponse",
             new XAttribute("version", "1.0.0"),
             new XAttribute(XNamespace.Xmlns + "wfs", wfs),
             new XAttribute(XNamespace.Xmlns + "ogc", ogc));
+        XElement? currentInsert = null;
+        string? currentHandle = null;
         foreach (var feature in canonical.Element(wfs20 + "InsertResults")?.Elements(wfs20 + "Feature") ?? [])
         {
-            var insert = new XElement(wfs + "InsertResult");
-            if (feature.Attribute("handle") is { } handle)
+            var rawHandle = feature.Attribute("handle")?.Value;
+            var handle = string.IsNullOrWhiteSpace(rawHandle) ? null : rawHandle;
+            if (currentInsert is null || !string.Equals(currentHandle, handle, StringComparison.Ordinal))
             {
-                insert.Add(new XAttribute("handle", handle.Value));
+                currentInsert = handle is null
+                    ? new XElement(wfs + "InsertResult")
+                    : new XElement(wfs + "InsertResult", new XAttribute("handle", handle));
+                response.Add(currentInsert);
+                currentHandle = handle;
             }
 
             foreach (var identity in feature.Elements(fes + "ResourceId"))
             {
-                insert.Add(new XElement(ogc + "FeatureId", new XAttribute("fid", identity.Attribute("rid")!.Value)));
+                currentInsert.Add(new XElement(ogc + "FeatureId", new XAttribute("fid", identity.Attribute("rid")!.Value)));
             }
-
-            response.Add(insert);
         }
 
         // A best-effort/unknown commit must never become SUCCESS during adaptation.

@@ -28,6 +28,39 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
     public OgcProcessesEndpointsTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("/ogc/processes")]
+    [InlineData("/ogc/processes/conformance")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes")]
+    [Endpoint("GET /ogc/processes/conformance")]
+    public async Task MetadataLinks_AreAbsolute(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        foreach (var link in json.RootElement.GetProperty("links").EnumerateArray())
+        {
+            Uri.TryCreate(link.GetProperty("href").GetString(), UriKind.Absolute, out var uri).Should().BeTrue();
+            uri!.Scheme.Should().BeOneOf("http", "https");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_OffsetPage_HasPreviousLink()
+    {
+        using var response = await _fixture.Client.GetAsync("/ogc/processes/processes?limit=1&offset=2");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var previous = json.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "prev");
+        previous.GetProperty("href").GetString().Should().Contain("offset=1").And.Contain("limit=1");
+        using var previousResponse = await _fixture.Client.GetAsync(previous.GetProperty("href").GetString());
+        previousResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // -----------------------------------------------------------------------
     // Landing page
     // -----------------------------------------------------------------------
@@ -45,6 +78,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
         links.Should().NotBeEmpty();
+        links.Should().OnlyContain(l => l.GetProperty("href").GetString()!.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                                        l.GetProperty("href").GetString()!.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
         links.Should().Contain(l =>
             l.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/processes");
         links.Should().Contain(l =>
@@ -146,6 +181,12 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "V1 exposes DELETE /jobs/{jobId} but does not yet claim full conf/dismiss semantics for finished-job cleanup.");
         conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
             "V1 job list is MVP-scoped and does not fully implement conf/job-list");
+
+        var conformanceLinks = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        conformanceLinks.Should().NotBeEmpty();
+        conformanceLinks.Should().OnlyContain(l =>
+            l.GetProperty("href").GetString()!.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            l.GetProperty("href").GetString()!.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
     }
 
     // -----------------------------------------------------------------------
@@ -224,6 +265,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         nextJson.RootElement.GetProperty("processes").EnumerateArray().ToArray()
             .Should().ContainSingle()
             .Which.GetProperty("id").GetString().Should().NotBe("honua-geoprocessing");
+        nextJson.RootElement.GetProperty("links").EnumerateArray()
+            .Should().Contain(link =>
+                link.GetProperty("rel").GetString() == "prev" &&
+                link.GetProperty("href").GetString()!.EndsWith("/ogc/processes/processes?limit=1", StringComparison.Ordinal));
     }
 
     [IntegrationTest]

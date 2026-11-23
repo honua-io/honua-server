@@ -185,4 +185,31 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().Contain("numBins cannot be more than 1000");
     }
+
+    [IntegrationTheory]
+    [InlineData(1, "months", "calendarBin")]
+    [InlineData(1, "fortnights", "seconds, minutes, hours, days or weeks")]
+    [InlineData(int.MaxValue, "days", "too large")]
+    [Operation(Operations.QueryBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]
+    public async Task QueryBins_DateBinFixedIntervalInvalidOrOverflow_IsRejected(int count, string unit, string expectedHint)
+    {
+        var bin = JsonSerializer.Serialize(new
+        {
+            dateBin = new
+            {
+                field = "timestamp",
+                fixedBin = new { intervalCount = count, intervalUnit = unit }
+            }
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins?bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        content.Should().Contain(expectedHint);
+    }
 }

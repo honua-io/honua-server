@@ -39,6 +39,7 @@ using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Mobile.FieldCollection.Automations;
 using Honua.Server.Features.Assets;
+using Honua.Server.Features.Tasks;
 using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
@@ -323,6 +324,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapFormPackageEndpoints();
         endpoints.MapFieldReviewEndpoints();
         endpoints.MapAssetProfileEndpoints();
+        endpoints.MapWorkTaskEndpoints();
         endpoints.MapFieldExportEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
@@ -354,11 +356,13 @@ internal static class FeatureRegistrationExtensions
         {
             endpoints.MapSceneEndpoints();
             endpoints.MapSceneGenerationEndpoints();
+            endpoints.MapSceneIngestEndpoints();
         }
         if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.i3s-scene"))
         {
             endpoints.MapI3sSceneServerEndpoints();
         }
+        endpoints.MapSceneWorkflowEndpoints();
 #else
         _ = lifecycleConfiguration;
 #endif

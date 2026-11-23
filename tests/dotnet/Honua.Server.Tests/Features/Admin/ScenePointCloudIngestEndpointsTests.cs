@@ -9,6 +9,7 @@ using System.Text;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Scene;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Tests.Features.Infrastructure.Scene;
 using Honua.TestKit;
@@ -17,6 +18,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -78,6 +80,34 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
             content.Add(new StringContent(value, Encoding.UTF8), key);
         }
         return content;
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
+    public async Task Ingest_Copc_RequiresSynchronousExecution()
+    {
+        var fixturePath = RepositoryPaths.Resolve(
+            "tests", "dotnet", "Honua.Worker.Gdal.Tests", "Fixtures", "PointCloudProof", "genuine-7.copc.laz");
+        var document = await File.ReadAllBytesAsync(fixturePath);
+        var sceneId = $"copc-ingest-{Guid.NewGuid():N}";
+
+        using var disabledUpload = BuildUpload(document, ("sceneId", sceneId), ("servingFormat", "copc"), ("async", "true"));
+        using var disabledResponse = await _client.PostAsync(IngestUrl, disabledUpload);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, disabledResponse.StatusCode);
+
+        _fixture.Services.GetRequiredService<IOptions<SceneGenerationServerOptions>>().Value.EnableExperimentalAsyncJobs = true;
+        using var enabledUpload = BuildUpload(document, ("sceneId", sceneId), ("servingFormat", "copc"), ("async", "true"));
+        using var enabledResponse = await _client.PostAsync(IngestUrl, enabledUpload);
+        Assert.Equal(HttpStatusCode.BadRequest, enabledResponse.StatusCode);
+        Assert.Contains("Direct COPC ingest requires synchronous execution.", await enabledResponse.Content.ReadAsStringAsync());
+
+        using var syncUpload = BuildUpload(document, ("sceneId", sceneId), ("servingFormat", "copc"));
+        using var syncResponse = await _client.PostAsync(IngestUrl, syncUpload);
+        Assert.Equal(HttpStatusCode.Created, syncResponse.StatusCode);
+        var scene = await syncResponse.Content.ReadFromJsonAsync<PointCloudIngestResponse>();
+        Assert.NotNull(scene);
+        Assert.Equal("copc", scene.ServingFormat);
+        Assert.Equal(sceneId, scene.SceneId);
     }
 
     [IntegrationTest]

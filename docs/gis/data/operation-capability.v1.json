@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 542,
+    "operationCount": 553,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 445,
+      "admin-api": 456,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 27
     },
     "perCapability": {
-      "admin.control-plane": 325,
+      "admin.control-plane": 336,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -2189,6 +2189,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/history",
+      "operationId": "getAdminMetadataHistory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-history"
+    },
+    {
+      "spec": "admin-api",
       "method": "PUT",
       "path": "/api/v1/admin/metadata/layers/relationships/batch",
       "operationId": "setAdminLayerRelationshipsBatch",
@@ -2296,6 +2306,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-filter"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/history",
+      "operationId": "getAdminLayerMetadataHistory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-history"
     },
     {
       "spec": "admin-api",
@@ -2486,6 +2506,26 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-metadata-releases-packageid-operation"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/schemas",
+      "operationId": "getAdminMetadataSchemas",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-schemas"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/schemas",
+      "operationId": "updateAdminMetadataSchemas",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-schemas"
     },
     {
       "spec": "admin-api",
@@ -3729,6 +3769,26 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/assets",
+      "operationId": "listSceneAssets",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-assets"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/assets/{sceneId}",
+      "operationId": "getSceneAsset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-assets-sceneid"
+    },
+    {
+      "spec": "admin-api",
       "method": "POST",
       "path": "/api/v1/admin/scenes/generate",
       "operationId": "generateScene",
@@ -3736,6 +3796,16 @@
       "family": "Admin API",
       "maturity": "experimental",
       "catalogEntryId": "post-api-v1-admin-scenes-generate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/archive",
+      "operationId": "ingestArchiveScene",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-archive"
     },
     {
       "spec": "admin-api",
@@ -3750,12 +3820,42 @@
     {
       "spec": "admin-api",
       "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/model",
+      "operationId": "ingestModelScene",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-model"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
       "path": "/api/v1/admin/scenes/ingest/pointcloud",
       "operationId": "ingestPointCloudScene",
       "capability": "scene.pointcloud-ingest",
       "family": "Admin API",
       "maturity": "experimental",
       "catalogEntryId": "post-api-v1-admin-scenes-ingest-pointcloud"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/jobs",
+      "operationId": "listSceneJobs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/jobs/{jobId}",
+      "operationId": "getSceneJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-jobs-jobid"
     },
     {
       "spec": "admin-api",
@@ -4026,6 +4126,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "put-api-v1-admin-services-servicename-folder"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/history",
+      "operationId": "getAdminServiceMetadataHistory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-history"
     },
     {
       "spec": "admin-api",

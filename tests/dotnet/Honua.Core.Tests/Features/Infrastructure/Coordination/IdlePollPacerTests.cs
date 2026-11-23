@@ -38,6 +38,19 @@ public sealed class IdlePollPacerTests
     }
 
     [UnitTest]
+    public void ResetIdleInterval_AfterIdlePasses_RestartsTheBackOffWithoutWaiting()
+    {
+        var pacer = new IdlePollPacer(new PollWakeSignal<IdlePollPacerTests>(), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
+        pacer.NextIdleDelay();
+        pacer.NextIdleDelay();
+
+        pacer.ResetIdleInterval();
+
+        pacer.NextIdleDelay().Should().Be(TimeSpan.FromSeconds(1));
+        pacer.NextIdleDelay().Should().Be(TimeSpan.FromSeconds(2));
+    }
+
+    [UnitTest]
     public void NextIdleDelay_CeilingEqualToTheBusyInterval_NeverBacksOff()
     {
         var interval = TimeSpan.FromSeconds(5);

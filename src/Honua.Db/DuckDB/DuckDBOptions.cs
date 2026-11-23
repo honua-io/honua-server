@@ -15,6 +15,8 @@ public sealed class DuckDBOptions
 
     public DuckDBAzureOptions Azure { get; set; } = new();
 
+    public bool EnableH3 { get; set; }
+
     public bool ReadOnly { get; set; } = true;
 
     public DuckDBLayerOptions[] Layers { get; set; } = [];
@@ -52,6 +54,14 @@ public sealed class DuckDBExternalSourceOptions
     public string? Path { get; set; }
 
     public string[]? Paths { get; set; }
+
+    public Guid? ObjectStorageConnectionId { get; set; }
+
+    public string? ObjectStorageKey { get; set; }
+
+    public string[]? ObjectStorageKeys { get; set; }
+
+    public string? BboxColumn { get; set; }
 
     public bool HivePartitioning { get; set; }
 

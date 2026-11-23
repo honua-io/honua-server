@@ -20,7 +20,33 @@ the PostgreSQL provider.
 
 ## Configuration
 
-The service and layer catalog is stored only in a PostgreSQL/PostGIS system database, so a host whose primary data source is DuckDB refuses to start, with a message saying so, in any environment other than Development or Test.
+### Managed S3 GeoParquet with PostGIS
+
+Keep PostGIS as the primary provider and set `DuckDB:Enabled=true` in a full server build. In the
+catalog, create a DuckDB data connection and a relational storage binding that references it.
+Set the binding's table name to the local DuckDB view name. Declare the ID and geometry columns,
+storage CRS, and published attribute fields in the resource schema and binding.
+
+Set these values in the storage binding's `options`:
+
+| Option | Value |
+|--------|-------|
+| `objectStorageConnectionId` | The ID of a managed S3 object storage connection. |
+| `objectStorageKey` | One exact object key under that connection's configured prefix. |
+| `externalSourceFormat` | `GeoParquet`, the default for managed sources. |
+| `bboxColumn` | Optional column containing the GeoParquet bounding box. |
+
+The server reads the object using the managed connection's AWS credentials and role, including its
+external ID if configured. Each request stages a private copy using the object's ETag, and DuckDB
+queries the staged snapshot from an isolated in-memory database. Each object must be at most
+128 MiB. The server allows up to eight staged objects per process at a time and releases them when
+the request finishes. Grant the role read access to the published key. Publish the layer through
+FeatureServer or OGC API Features for read queries.
+
+### Standalone development configuration
+
+A host whose primary data source is DuckDB starts in Development or Test. Production deployments
+use PostgreSQL/PostGIS for the service and layer catalog.
 
 Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `appsettings.json`:
 
@@ -77,9 +103,11 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `Enabled` | `false` | Register DuckDB alongside the primary provider in a full server build. |
 | `DatabasePath` | `:memory:` | Path to `.duckdb` file. Use absolute paths. |
 | `ReadOnly` | `true` | Open database in read-only mode (recommended). |
 | `SpatialExtensionPath` | `null` | Offline path for DuckDB extension files. When null, DuckDB downloads extensions automatically on first use. The current property name is historical; it is also used for `httpfs` and `azure`. |
+| `EnableH3` | `false` | Enable H3 aggregations and load the DuckDB community `h3` extension. Preinstall the extension for offline deployments. |
 | `HttpFs:S3` | empty | Optional S3-compatible settings applied to each DuckDB connection before external views are created. |
 | `Azure` | empty | Optional Azure Blob/ADLS settings applied to each DuckDB connection before external views are created. |
 
@@ -254,7 +282,7 @@ raster PNG tile; vector MVT is out of scope, see below).
 | **Feature editing (create, update, delete)** | **Not supported** — returns `NotSupportedException` |
 | **Replica / Extract workflows** | **Not supported** — capability stripped at startup; replica repository and change tracker are no-op stubs so any cache writes do not propagate to durable storage |
 | **MVT vector tiles** | **Not supported** — tile provider stub returns `NotSupportedException` for both `GetMvtTile` and `GetH3MvtTile` |
-| **H3 hexagonal aggregation** | **Not supported** |
+| **H3 hexagonal aggregation** | Available when `EnableH3` is set and the community extension loads. |
 | **FlatGeobuf / Geobuf export** | **Not supported** — `QueryFlatGeobufAsync` returns null so the server falls back to JSON encoding when possible |
 | **Native GML output (WFS 2.0)** | **Not supported** — `IGmlFeatureStore` stub returns `NotSupportedException`, so WFS `GetFeature` requests that need GML output will fail |
 | **Relationship queries** | **Not supported** |
@@ -320,7 +348,7 @@ layer metadata and logs do not carry access keys. For MinIO and many S3-compatib
 ### Write operations return errors
 
 This is expected. The DuckDB provider is read-only by design. Feature editing, MVT tiles,
-H3 aggregation, native GML output, replica/extract workflows, and the Pro-tier spatial
+native GML output, replica/extract workflows, and the Pro-tier spatial
 analytics endpoints (`queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity`
 and their OGC mirrors) are not supported — the analytics endpoints require PostGIS
 primitives (`ST_ClusterDBSCAN`/`ST_ClusterKMeans`, `ST_Buffer`/`ST_Union`, hex/square grid

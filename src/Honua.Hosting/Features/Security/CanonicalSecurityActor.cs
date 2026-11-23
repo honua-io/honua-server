@@ -44,22 +44,52 @@ internal static class CanonicalSecurityActor
     internal static bool IsFrameworkAuthorityClaimType(string? claimType)
         => claimType is not null && FrameworkAuthorityClaimTypes.Contains(claimType);
 
+    // True when RemoveUnstampedAuthorityClaims would remove a claim from this identity.
+    internal static bool HasUnstampedAuthorityClaim(ClaimsIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        foreach (var claim in identity.Claims)
+        {
+            if (FrameworkAuthorityClaimTypes.Contains(claim.Type) && !IsFrameworkOwnedClaim(claim))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // An authority claim that arrived in an external token is removed; a claim minted in this process and stamped with provenance is kept.
-    internal static void RemoveUnstampedAuthorityClaims(ClaimsPrincipal principal)
+    internal static bool RemoveUnstampedAuthorityClaims(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        var removedAny = false;
         foreach (var identity in principal.Identities)
         {
-            foreach (var claim in identity.Claims
-                         .Where(static claim =>
-                             FrameworkAuthorityClaimTypes.Contains(claim.Type)
-                             && !IsFrameworkOwnedClaim(claim))
-                         .ToArray())
+            List<Claim>? toRemove = null;
+            foreach (var claim in identity.Claims)
+            {
+                if (FrameworkAuthorityClaimTypes.Contains(claim.Type) && !IsFrameworkOwnedClaim(claim))
+                {
+                    (toRemove ??= []).Add(claim);
+                }
+            }
+
+            if (toRemove is null)
+            {
+                continue;
+            }
+
+            removedAny = true;
+            foreach (var claim in toRemove)
             {
                 identity.TryRemoveClaim(claim);
             }
         }
+
+        return removedAny;
     }
 
     // Stamp provenance only when the values come from a server-side credential record, never from a caller-supplied token, assertion, or header.
@@ -228,16 +258,66 @@ internal static class CanonicalSecurityActor
 
     private static void Replace(ClaimsIdentity identity, string type, string? value)
     {
-        foreach (var claim in identity.FindAll(type).ToArray())
+        var hasValue = !string.IsNullOrWhiteSpace(value);
+        if (hasValue && HoldsOnlyStampedValue(identity, type, value!))
         {
-            identity.RemoveClaim(claim);
+            return;
         }
 
-        if (!string.IsNullOrWhiteSpace(value))
+        RemoveAllOfType(identity, type);
+        if (hasValue)
         {
-            var claim = new Claim(type, value);
+            var claim = new Claim(type, value!);
             claim.Properties[FrameworkOwnedClaimProperty] = bool.TrueString;
             identity.AddClaim(claim);
+        }
+    }
+
+    // A re-stamp with the value already stamped keeps the existing claim instead of re-creating it.
+    private static bool HoldsOnlyStampedValue(ClaimsIdentity identity, string type, string value)
+    {
+        Claim? match = null;
+        foreach (var claim in identity.Claims)
+        {
+            if (!string.Equals(claim.Type, type, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                return false;
+            }
+
+            match = claim;
+        }
+
+        // Keep only the exact-case claim a re-stamp would create; any variant is re-created as before.
+        return match is not null
+            && string.Equals(match.Type, type, StringComparison.Ordinal)
+            && IsFrameworkOwnedClaim(match)
+            && string.Equals(match.Value, value, StringComparison.Ordinal);
+    }
+
+    private static void RemoveAllOfType(ClaimsIdentity identity, string type)
+    {
+        List<Claim>? matches = null;
+        foreach (var claim in identity.Claims)
+        {
+            if (string.Equals(claim.Type, type, StringComparison.OrdinalIgnoreCase))
+            {
+                (matches ??= []).Add(claim);
+            }
+        }
+
+        if (matches is null)
+        {
+            return;
+        }
+
+        foreach (var claim in matches)
+        {
+            identity.RemoveClaim(claim);
         }
     }
 

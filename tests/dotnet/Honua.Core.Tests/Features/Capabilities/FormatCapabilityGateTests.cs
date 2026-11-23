@@ -53,6 +53,8 @@ public sealed class FormatCapabilityGateTests
     public void Evaluate_IsCaseInsensitiveOnFormatName()
     {
         FormatCapabilityGate.Evaluate("GeoParquet").IsEnabled.Should().BeTrue();
+        FormatCapabilityGate.Evaluate("GeoArrow").IsEnabled.Should().BeTrue();
+        FormatCapabilityGate.Evaluate("write.geoparquet").IsEnabled.Should().BeTrue();
         FormatCapabilityGate.Evaluate("GEOSERVICESJSON").IsEnabled.Should().BeTrue();
     }
 

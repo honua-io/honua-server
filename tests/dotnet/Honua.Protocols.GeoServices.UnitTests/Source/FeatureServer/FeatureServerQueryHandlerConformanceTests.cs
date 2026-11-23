@@ -60,6 +60,38 @@ public sealed class FeatureServerQueryHandlerConformanceTests
         rejectedError.Should().Contain("objectid");
     }
 
+    [Theory]
+    [InlineData("x y")]
+    [InlineData("1count")]
+    [InlineData("count\"; --")]
+    [InlineData("a_name_that_is_exactly_sixty_four_characters_long_for_postgresql")]
+    public void TryParseStatisticsDefinitions_AliasIsNotAPortableIdentifier_RejectsAsClientError(string alias)
+    {
+        var accepted = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            $$"""[{"statisticType":"count","onStatisticField":"fid","outStatisticFieldName":{{System.Text.Json.JsonSerializer.Serialize(alias)}}}]""",
+            CreateCustomOidResource("fid"),
+            out _,
+            out var error);
+
+        accepted.Should().BeFalse();
+        error.Should().Contain("outStatisticFieldName");
+    }
+
+    [Fact]
+    public void TryParseStatisticsDefinitions_AliasAtPostgreSqlIdentifierLimit_IsAccepted()
+    {
+        var alias = "_" + new string('a', 62);
+
+        var accepted = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            $$"""[{"statisticType":"count","onStatisticField":"fid","outStatisticFieldName":"{{alias}}"}]""",
+            CreateCustomOidResource("fid"),
+            out var definitions,
+            out var error);
+
+        accepted.Should().BeTrue(error);
+        definitions[0].OutStatisticFieldName.Should().Be(alias);
+    }
+
     private static MetadataV2Object CreateCustomOidResource(string objectIdFieldName) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "custom-oid", Name = "custom-oid" },

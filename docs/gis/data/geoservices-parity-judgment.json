@@ -1711,7 +1711,7 @@
         "Mapbox GL style resource composed from the stored layer style"
       ],
       "knownGaps": [
-        "tiles carry only the service's primary tiled publication, not every layer packed per tile",
+        "tiles carry only the service's primary tiled Layer, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
         "no sprite store: sprite resources are content-free placeholders",
         "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
@@ -1748,7 +1748,7 @@
           "geoServicesPaths": [
             "/VectorTileServer/tile/{z}/{y}/{x}.pbf"
           ],
-          "notes": "Renders genuine MVT through the canonical tile provider with zoom and coordinate validation, but serves only the service's single primary tiled publication \u2014 a multi-layer service returns one layer's data per tile, where an Esri vector-tile cache packs every layer into the tile."
+          "notes": "Renders genuine MVT through the canonical tile provider with zoom and coordinate validation, but serves only the service's single primary tiled Layer \u2014 a multi-layer service returns one layer's data per tile, where a GeoServices REST vector-tile cache packs every layer into the tile."
         },
         {
           "name": "Tilemap",
@@ -2231,6 +2231,14 @@
             "/GPServer/{taskName}/jobs/{jobId}/cancel"
           ],
           "notes": "Job cancellation with route binding validation. Implemented in #723."
+        },
+        {
+          "name": "Job Messages (generic)",
+          "status": "implemented",
+          "geoServicesPaths": [
+            "/GPServer/{taskName}/jobs/{jobId}/messages"
+          ],
+          "notes": "Returns the Esri GP job messages array for a submitted job with route binding validation."
         },
         {
           "name": "Submit Job (generic)",

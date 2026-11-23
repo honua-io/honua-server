@@ -686,8 +686,8 @@ matrix, affected-shard selection, the affected-shard aggregate, CI router valida
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
 `RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
 step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
-and a fixed `/tmp` path collides across them. The existing
-even-index affected-shard split additionally requires independent version-1 heavy
+and a fixed `/tmp` path collides across them. Affected-shard heavy placement
+(below) additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
 from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
 stale, future-dated or replaced-instance proof keeps shards hosted. Producer
@@ -961,6 +961,10 @@ repository-wide artifact collection. Full creation-ordered histories preserve di
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
 inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
 run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+When more than 25 unprocessed run versions remain, five slots serve the oldest pending
+runs and twenty serve the newest. This preserves historical reconciliation while new
+evidence avoids waiting behind months of empty runs; processed versions do not spend
+either allocation again. Deferred evidence remains behind the watermark.
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
@@ -1619,6 +1623,22 @@ rank, including existing PR budget deferral, until scheduled trunk CI measures
 them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
 
+### Affected-shard heavy placement
+
+The same shard ran a median 1.83 times longer on `honua-heavy` than on a hosted
+runner (27 shards that ran on both pools, 75 green PR Gate runs, 21-22 November
+2026). The heavy pool also queued longer at the tail (p90 12.8 min against 5.9
+min hosted). The former even-index split put matrix index 0, the longest shard,
+on that pool, and a heavy shard was the last job in 26 of 47 runs with shards.
+The selector now marks an entry `heavy` only when
+`dispatch_rank * pr_heavy_placement.heavy_slowdown` fits within the longest
+shard of its producer lane. It takes the shortest shards first and at most half
+the lane, rounded up. The longest shard of each lane stays hosted.
+`affected-shard` and `affected-shard-held` read `matrix.heavy`, and the existing
+pool proof and fork guards are unchanged. Replaying those 47 runs with measured
+durations moves the median shard-run wall from 23.7 to 20.8 min, with 47 heavy
+jobs instead of 100. Fixtures: `scripts/ci/fixtures/validate-heavy-shard-placement.py`.
+
 ### Managed producer memory budget
 
 The shared lean gate bounds restore and build to four MSBuild workers and sets
@@ -2026,7 +2046,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
@@ -2037,6 +2059,16 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+A subsequent synchronous-host optimization was measured with four interleaved
+Release runs of the complete owning GPServer Endpoints shard. All four passed
+the same 71 cases without skips. Class-body totals were 34.012 / 32.569 seconds
+before and 27.791 / 31.771 seconds after (medians 33.291 to 29.781 seconds).
+Fixture-inclusive TRX intervals were 46.941 / 53.211 seconds before and
+41.400 / 45.258 seconds after (medians 50.076 to 43.329 seconds). This saves
+6.747 seconds, or 0.112 test-run runner-minutes, with one runner unchanged.
+Compilation, admission and full CI-job time are excluded. The earlier timings
+above describe the separate default-host optimization, not this comparison.
 
 ### Admin authentication default application lifetime
 
@@ -3194,3 +3226,111 @@ Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
 unchanged, so every case runs in the same shards on selected PR runs and
 twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Isolated test host boot and teardown overhead
+
+Three changes cut per-host boot and teardown cost across all isolated `WebAppFixture`
+integration suites without reducing any assertion:
+- `ResourceLeakDetector` (#9097): when `_trackedResources` is empty, `ScanForLeaksAsync`
+  returns the same empty `ResourceLeakScanResult` immediately instead of running two
+  forced blocking gen-2 collections and `GC.WaitForPendingFinalizers()` on every
+  Test/Development host stop. Scans with tracked resources are unchanged.
+- `PostgresFixture` (#9110): `GlobalSharedState` retains its shared data source and
+  migrated pool across a 30-second idle grace (`ReleaseIdleNowAsync` plus `ProcessExit`
+  hook) instead of tearing down and re-running extensions/migrations between sequential
+  isolated cases. Private `PostgresSharedState` instances keep `TimeSpan.Zero`.
+- Request Delegate Generator (#9123): enabled `EnableRequestDelegateGenerator` on
+  `Honua.Server` and the 11 endpoint Web SDK libraries so Minimal API delegates are
+  source-generated at compile time rather than JIT-compiled on each isolated host boot.
+- `McpSessionManager.StopAsync`: made idempotent under concurrent host stops exposed by
+  faster teardown.
+
+Measured on the build host (Release, 3 interleaved base/head rounds of the
+`Server Features Capabilities` shard filter, 100/100 passing on all 6 runs):
+- Shard wall time: base 524.8 / 477.5 / 370.2 s (median 477.5 s, 7.96 min) to
+  head 74.8 / 67.6 / 56.1 s (median 67.6 s, 1.13 min); median saving 6.83 min
+  (5.24 min on the lowest-load pair).
+- Per-class median TRX case time (total 1039.0 to 178.3 s):
+  `CapabilityManifestEndpointTests` (40) 411.8 to 45.2 s;
+  `ExperimentalCapabilityGatingIntegrationTests` (34) 263.8 to 35.2 s;
+  `DeploymentCapabilityProfileIntegrationTests` (11) 151.8 to 36.6 s;
+  `CapabilityManifestEndpointTests+RollbackTargets` (5) 111.9 to 31.1 s;
+  `DeploymentCapabilityProfileManifestTests` (4) 80.8 to 28.4 s;
+  `CapabilityManifestEndpointTests+ProductionJobSubstrate` (1) 9.7 to 1.0 s;
+  `CapabilityGateEndpointFilterTests` (3) 0.2 to 0.3 s;
+  `CapabilityGateOpenApiDocumentTransformerTests` (2) 0.4 to 0.3 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR runs
+and twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
+
+### OData client integration host lifetime
+
+`ODataClientIntegrationTests` initializes its Pro-licensed, `odata.yaml`-seeded
+application once per class instead of once per case. All 44 cases only read the
+seed. Each case still creates and disposes a fresh HTTP client and creates its
+own OData context; all 98 assertions and endpoint attributes are unchanged.
+The existing `Database` collection still serializes these cases. The separate
+`ODataClientCertificationTests` fixture retains its own schema, authentication
+configuration and mutable certification data.
+
+Every case remains in the OData Client Certification shard on selected PR runs
+and twice-daily full trunk runs. Runner count, shard filters, required check names
+and the required aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Two paired build-host runs of the complete 56-case owning shard passed with no
+failures or skips and identical test identities. Median summed class duration
+fell from 14.80 to 2.95 seconds. Median shard wall time, including fixture setup
+and disposal, fell from 63.57 to 21.62 seconds, saving 41.94 seconds (0.70 runner
+minutes) with one runner before and after. Individual baseline/candidate shard
+pairs were 68.24/18.56 and 58.89/24.69 seconds. These measurements exclude build
+time and do not claim a reduction in the parallel PR Gate's critical path.
+
+### Observability endpoint fixture initialization
+
+`ObservabilityEndpointsTests` starts its default private host only in the five
+migration/error cases that use it. The five telemetry cases retain their separately
+configured private hosts and no longer start an unused default host. All 10 cases,
+79 assertions, endpoint metadata and configuration isolation are retained.
+
+Two interleaved base/head Release runs of the unchanged owning Admin Observability /
+Operations shard on one build-host runner passed the same 123 cases in each run
+(zero skipped). Fixture-inclusive TRX session seconds were 92.572 / 93.402 at base
+and 86.363 / 88.605 at head: median 92.987 to 87.484 seconds, saving 5.503 seconds
+(0.092 runner-minutes). Both pairs improved, by 6.209 and 4.797 seconds.
+`ObservabilityEndpointsTests` summed TRX case seconds were 13.497 / 17.553 at base
+and 44.454 / 45.573 at head (medians 15.525 to 45.013). Those class figures are
+not directly comparable: moving initialization from `IAsyncLifetime.InitializeAsync`
+into the five consuming test bodies makes that initialization visible in case time.
+The fixture-inclusive shard measurement includes setup and teardown in both versions;
+compilation is excluded. This is a small measured shard saving, not evidence of an
+end-to-end CI critical-path improvement.
+
+The shard filter, test selection, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case still runs in its existing selected PR
+shard and full trunk runs; no assertions or gate coverage move to another schedule.
+
+### OIDC bearer authentication host lifetime
+
+`OidcAuthenticationTests` reuses a lazy class host for seven bearer-token read
+cases with identical OIDC settings. Each case still creates and disposes its own
+HTTP client and sets its own request headers and token. The existing database
+collection serializes the cases. xUnit disposes the shared factory after the
+class finishes. Replay, certificate, production-mode, tenant-specific and
+mutating admin scenarios retain their private factories and configuration.
+
+All 27 OIDC cases, 125 assertion calls and endpoint metadata remain unchanged.
+Every case stays in the existing Admin & Infrastructure 1 shard on selected PR
+runs and twice-daily full trunk runs. Runner count, shard filters, required check
+names and the aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Four interleaved build-host runs of the complete 39-case owning shard passed
+without failures or skips and with identical case outcomes. Median summed OIDC
+class duration fell from 26.39 to 22.24 seconds; both pairs improved. Median
+fixture-inclusive shard wall time fell from 48.45 to 41.50 seconds, saving 6.95
+seconds (0.116 runner minutes), with one runner before and after. Individual
+baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
+pair was slightly slower, so the shard saving is variable. Build time is excluded;
+these results do not establish a reduction in the parallel PR Gate critical path.

@@ -62,6 +62,10 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
             "1,2,3,4,5",             // five ordinates (neither 2D nor 3D)
             "a,b,c,d",               // non-numeric
             "0,10,10,5",             // minY > maxY
+            "200,80,210,85",         // outside CRS84 longitude bounds
+            "-10,-95,10,10",         // outside CRS84 latitude bounds
+            "-10,-10,10,10,10,5",    // 3D minZ > maxZ
+            "-10,-10,bad,10,10,20",  // 3D non-numeric Z
             "NaN,0,10,10",           // non-finite
             "Infinity,0,10,10"       // non-finite
         };
@@ -109,6 +113,9 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         var invalidDatetimes = new[]
         {
             "notadate",
+            "01/15/2020",                                                     // slash-formatted date
+            "2020-01-01T12:00:00",                                            // missing timezone offset
+            "..",                                                             // open bound as instant
             "2026-01-02T00:00:00Z/2026-01-01T00:00:00Z",                     // start > end
             "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z/2026-01-03T00:00:00Z", // three parts
             "../garbage",
@@ -211,6 +218,13 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         var html = await _fixture.Client.GetAsync(
             $"/ogc/records/collections/{CatalogId}/items?f=html");
         html.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using var unacceptableRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/ogc/records/collections/{CatalogId}/items");
+        unacceptableRequest.Headers.TryAddWithoutValidation("Accept", "application/xml");
+        var unacceptable = await _fixture.Client.SendAsync(unacceptableRequest);
+        unacceptable.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
 
     [IntegrationTest]

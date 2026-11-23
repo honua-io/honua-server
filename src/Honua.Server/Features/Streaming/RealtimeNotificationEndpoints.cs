@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Realtime;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -121,7 +122,15 @@ internal static partial class RealtimeNotificationEndpoints
 
     internal static async Task StreamAsync(HttpContext context, IRealtimeFanoutProvider provider, StreamRequest request)
     {
+        using var realtime = RealtimeStreamAdmission.TryOpen(context, request.Family, RealtimeStreamAdmission.SseTransport);
+        if (realtime is null)
+        {
+            RealtimeStreamAdmission.WriteDraining(context.Response);
+            return;
+        }
+
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        using var reading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, realtime.DrainingToken);
         var after = request.After ?? (await provider.GetWindowAsync(request.Family, lifetime.Token)
             .ConfigureAwait(false)).Head;
         var channel = Channel.CreateBounded<RealtimeDelivery>(256);
@@ -130,11 +139,11 @@ internal static partial class RealtimeNotificationEndpoints
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-store, no-transform";
         context.Response.Headers["X-Accel-Buffering"] = "no";
-        await context.Response.StartAsync(lifetime.Token).ConfigureAwait(false);
+        await context.Response.StartAsync(context.RequestAborted).ConfigureAwait(false);
         var heartbeat = HeartbeatAsync(channel.Writer, lifetime.Token);
         try
         {
-            await foreach (var delivery in channel.Reader.ReadAllAsync(lifetime.Token).ConfigureAwait(false))
+            await foreach (var delivery in channel.Reader.ReadAllAsync(reading.Token).ConfigureAwait(false))
             {
                 switch (delivery)
                 {
@@ -143,15 +152,11 @@ internal static partial class RealtimeNotificationEndpoints
                         {
                             return;
                         }
+                        realtime.RecordDelivery(item.Value.CreatedAt);
                         break;
                     case RealtimeDelivery.Reset reset:
-                        await WriteFrameAsync(context.Response, new StreamFrame(new RealtimePosition(request.Family, reset.Head), "reset", writer =>
-                        {
-                            writer.WriteStartObject();
-                            writer.WriteString("reason", reset.Reason);
-                            writer.WriteNumber("head", reset.Head);
-                            writer.WriteEndObject();
-                        }), lifetime.Token).ConfigureAwait(false);
+                        await WriteFrameAsync(context.Response, ResetFrame(request.Family, reset), lifetime.Token).ConfigureAwait(false);
+                        realtime.RecordReset(reset.Reason);
                         return;
                     case RealtimeDelivery.Heartbeat:
                         await context.Response.WriteAsync(": hb\n\n", lifetime.Token).ConfigureAwait(false);
@@ -160,13 +165,14 @@ internal static partial class RealtimeNotificationEndpoints
                 }
             }
         }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (reading.IsCancellationRequested)
         {
-            // Cancellation or disconnect ends the stream normally.
+            // Cancellation, disconnect or the drain signal ends the stream normally.
         }
         catch (GeoprocessingAuthorizationException)
         {
             // Authorization changed after admission: close without sending another job frame.
+            realtime.RecordRevocation();
         }
         catch (GeoprocessingNotFoundException)
         {
@@ -176,6 +182,35 @@ internal static partial class RealtimeNotificationEndpoints
         {
             await lifetime.CancelAsync().ConfigureAwait(false);
             await heartbeat.ConfigureAwait(false);
+        }
+        await WriteServiceRestartAsync(context, realtime).ConfigureAwait(false);
+    }
+
+    private static StreamFrame ResetFrame(RealtimeFamily family, RealtimeDelivery.Reset reset)
+        => new(new RealtimePosition(family, reset.Head), "reset", writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("reason", reset.Reason);
+            writer.WriteNumber("head", reset.Head);
+            writer.WriteEndObject();
+        });
+
+    // The drain signal ended the stream; tell the client when to reconnect, normally to another task.
+    private static async Task WriteServiceRestartAsync(HttpContext context, IRealtimeStreamSession realtime)
+    {
+        if (!realtime.DrainingToken.IsCancellationRequested || context.RequestAborted.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, realtime, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // The client left, or the drain deadline aborted the connection first.
         }
     }
 

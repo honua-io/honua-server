@@ -128,3 +128,8 @@ internal sealed class GPExecuteResponse
 
     public string? JobStatus { get; set; }
 }
+
+internal sealed class GPJobMessagesResponse
+{
+    public GPJobMessage[] Messages { get; set; } = [];
+}

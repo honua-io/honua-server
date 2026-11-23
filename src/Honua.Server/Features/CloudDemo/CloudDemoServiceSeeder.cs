@@ -85,12 +85,13 @@ internal sealed class CloudDemoServiceSeeder(
                 Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
                 transaction as NpgsqlTransaction ?? throw new InvalidOperationException("Demo seeding requires the active PostgreSQL transaction."),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+            var metadataSchema = string.IsNullOrWhiteSpace(configuration?["Database:Schema"])
+                ? PostgresSchemaConfiguration.DefaultMetadataSchema
+                : configuration!["Database:Schema"]!;
             var attachmentTable = SchemaSearchPath.QualifyTable("attachments", physicalAttachmentSchema);
             foreach (var statement in statements)
             {
-                var boundStatement = statement == ResetReadOnlyFeatureDataSql || statement == ResetWritableFeatureDataSql
-                    ? statement.Replace("honua.attachments", attachmentTable, StringComparison.Ordinal)
-                    : statement;
+                var boundStatement = BindDemoStatementTables(statement, metadataSchema, attachmentTable);
                 await ExecuteSqlAsync(connection, transaction, boundStatement, cancellationToken).ConfigureAwait(false);
             }
 
@@ -101,6 +102,20 @@ internal sealed class CloudDemoServiceSeeder(
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static string BindDemoStatementTables(string statement, string metadataSchema, string attachmentTable)
+    {
+        if (statement == ResetReadOnlyFeatureDataSql || statement == ResetWritableFeatureDataSql)
+        {
+            return statement.Replace("honua.attachments", attachmentTable, StringComparison.Ordinal);
+        }
+
+        return statement
+            .Replace("honua.layers", SchemaSearchPath.QualifyTable("layers", metadataSchema), StringComparison.Ordinal)
+            .Replace("honua.services", SchemaSearchPath.QualifyTable("services", metadataSchema), StringComparison.Ordinal)
+            .Replace("honua.service_layers", SchemaSearchPath.QualifyTable("service_layers", metadataSchema), StringComparison.Ordinal)
+            .Replace("honua.layer_fields", SchemaSearchPath.QualifyTable("layer_fields", metadataSchema), StringComparison.Ordinal);
     }
 
     private static async Task ExecuteSqlAsync(

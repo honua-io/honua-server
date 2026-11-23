@@ -168,11 +168,51 @@ class RunHistoryTests(unittest.TestCase):
             self.assertTrue(any(f"status={status}&" in path for path in requested), status)
 
     def test_truncated_listing_refuses_to_decide(self):
+        calls = 0
+
         def fetch(path: str) -> dict:
+            nonlocal calls
+            calls += 1
             return {"total_count": 5, "workflow_runs": []}
 
-        with self.assertRaisesRegex(MODULE.DispatchError, "truncated"):
-            MODULE.RunHistory(fetch, self.TARGET).collect(HEAD, self.SINCE)
+        with mock.patch.object(MODULE.gh_api.time, "sleep") as sleep:
+            with self.assertRaisesRegex(MODULE.DispatchError, "truncated"):
+                MODULE.RunHistory(fetch, self.TARGET, retry_delays=(1, 2)).collect(HEAD, self.SINCE)
+        self.assertEqual(calls, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+
+    def test_transient_total_count_mismatch_retries_and_succeeds(self):
+        attempts = 0
+        active = run(55, "2026-11-15T06:10:00", status="in_progress", conclusion=None)
+
+        def fetch(path: str) -> dict:
+            nonlocal attempts
+            if "status=in_progress&" in path:
+                attempts += 1
+                if attempts == 1:
+                    return {"total_count": 2, "workflow_runs": [active]}
+                return {"total_count": 1, "workflow_runs": [active]}
+            return {"total_count": 0, "workflow_runs": []}
+
+        with mock.patch.object(MODULE.gh_api.time, "sleep") as sleep:
+            rows = MODULE.RunHistory(fetch, self.TARGET, retry_delays=(1, 2)).collect(HEAD, self.SINCE)
+        self.assertEqual([row["id"] for row in rows], [55])
+        self.assertEqual(attempts, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_malformed_listing_fails_without_retry(self):
+        calls = 0
+
+        def fetch(path: str) -> dict:
+            nonlocal calls
+            calls += 1
+            return {"total_count": 1}
+
+        with mock.patch.object(MODULE.gh_api.time, "sleep") as sleep:
+            with self.assertRaisesRegex(MODULE.DispatchError, "has no workflow_runs list"):
+                MODULE.RunHistory(fetch, self.TARGET, retry_delays=(1, 2)).collect(HEAD, self.SINCE)
+        self.assertEqual(calls, 1)
+        sleep.assert_not_called()
 
 
 class GetJsonTests(unittest.TestCase):

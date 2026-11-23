@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/scene_resolve.schema.json",
+  "title": "scene_resolve inputSchema",
+  "description": "Resolve endpoint choices for a caller-readable scene in preferred format order.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sceneId"
+  ],
+  "properties": {
+    "sceneId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Scene identifier from honua_scene_list."
+    },
+    "preferredFormats": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "3d-tiles",
+          "i3s",
+          "copc",
+          "quantized-mesh",
+          "terrain-rgb"
+        ]
+      },
+      "description": "Optional ordered list of preferred endpoint formats."
+    }
+  }
+}

@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Services;
 using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -449,6 +450,7 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             ReturnGeometry = queryParams.ReturnGeometry,
             OutputSrid = request.OutputSrid,
+            RequestedOutputSrid = request.RequestedOutputSrid,
             ReturnZ = queryParams.ReturnZ,
             ReturnM = queryParams.ReturnM,
             GeometryPrecision = queryParams.GeometryPrecision,
@@ -467,6 +469,7 @@ internal sealed partial class FeatureServerQueryExecutor
         public required FeatureQuery Query { get; init; }
         public required QueryParameters QueryParams { get; init; }
         public int? OutputSrid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public QuantizationTransform? QuantizationTransform { get; init; }
         public required HttpContext Context { get; init; }
     }
@@ -639,7 +642,7 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        var ceiling = query.Limit is int limit && limit > 0 && limit < MaxNonStreamingObjectIds
+        var ceiling = query.Limit is int limit && limit >= 0 && limit < MaxNonStreamingObjectIds
             ? limit
             : MaxNonStreamingObjectIds;
         var ids = await reader

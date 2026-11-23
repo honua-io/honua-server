@@ -10,13 +10,20 @@ public interface IOperationApprovalRequestMapper
 {
     string OperationId { get; }
 
-    OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision);
+    OperationGatewayRequest Map(OperationApprovalRequestContext input);
 
     OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request);
+}
+
+public sealed record OperationApprovalRequestContext
+{
+    public required IOperationDescriptor Descriptor { get; init; }
+
+    public required OperationRequest Request { get; init; }
+
+    public required OperationPolicyContext Context { get; init; }
+
+    public required PolicyDecision Decision { get; init; }
 }
 
 // The gateway applies the reconstructed authority on replay; a protocol caller does not.

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Extensions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -58,7 +59,9 @@ public sealed class OperatorJourneyMcpIntegrationTests
         {
             PostgresJobHost.AssertPostgresJobs(fixture);
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
-            using var admin = fixture.CreateAdminClient();
+            var key = await fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+                $"roster-admin-{suffix}", ["admin:*"], DateTimeOffset.UtcNow.AddMinutes(30), "test", CancellationToken.None);
+            using var admin = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key.Key));
             var deniedName = $"denied{suffix}";
 
             using var createdKey = await admin.PostAsJsonAsync(

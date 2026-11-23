@@ -82,6 +82,9 @@ internal static class I3sPersistedResourceEncoder
         },
     }).ToArray();
 
+    internal static long UncompressedGeometrySize(long vertexCount, int featureCount) =>
+        8 + vertexCount * 44 + featureCount * 16L;
+
     public static I3sNodeResources Encode(SceneDecodedMesh mesh, I3sOrientedBoundingBox bounds,
         IReadOnlyList<I3sAttributeStorageInfo> attributes, CancellationToken cancellationToken)
     {
@@ -89,7 +92,7 @@ internal static class I3sPersistedResourceEncoder
         var triangles = groups.SelectMany(group => group).ToArray();
         var vertices = triangles.Length * 3;
         var features = groups.Select(group => mesh.Features[group.Key]).ToArray();
-        var bytes = new byte[checked(8 + vertices * 44 + features.Length * 16)];
+        var bytes = new byte[checked((int)UncompressedGeometrySize(vertices, features.Length))];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, (uint)vertices);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), (uint)features.Length);
         var positionOffset = 8;

@@ -240,7 +240,8 @@ internal static partial class FeaturesEndpoints
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var ifMatch = context.Request.Headers.IfMatch.ToString();
-        return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
+        var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+        return await transactionHandler.HandleReplaceFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken, ifNoneMatch);
     }
 
     private static async Task<IResult> HandlePatchFeature(
@@ -256,7 +257,8 @@ internal static partial class FeaturesEndpoints
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var ifMatch = context.Request.Headers.IfMatch.ToString();
-        return await transactionHandler.HandlePatchFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
+        var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+        return await transactionHandler.HandlePatchFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken, ifNoneMatch);
     }
 
     private static async Task<IResult> HandleDeleteFeature(
@@ -272,7 +274,8 @@ internal static partial class FeaturesEndpoints
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var ifMatch = context.Request.Headers.IfMatch.ToString();
-        return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken);
+        var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+        return await crudHandler.HandleDeleteFeatureAsync(collectionId, featureId, ifMatch, context, cancellationToken, ifNoneMatch);
     }
 
     private static async Task<IResult> HandleBatchOperation(

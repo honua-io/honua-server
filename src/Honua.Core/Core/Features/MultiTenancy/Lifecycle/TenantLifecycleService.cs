@@ -204,6 +204,26 @@ public sealed class TenantLifecycleService
         return _auditLog.RecordAsync(auditEvent, cancellationToken);
     }
 
-    private static bool IsValidTenantId(string tenantId)
-        => !string.IsNullOrWhiteSpace(tenantId) && tenantId.Length <= MaxTenantIdLength;
+    public static bool IsValidTenantId(string? tenantId)
+    {
+        if (string.IsNullOrEmpty(tenantId) || tenantId.Length > MaxTenantIdLength)
+        {
+            return false;
+        }
+
+        if (!char.IsAsciiLetterOrDigit(tenantId[0]))
+        {
+            return false;
+        }
+
+        foreach (var ch in tenantId)
+        {
+            if (!char.IsAsciiLetterOrDigit(ch) && ch is not ('-' or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

@@ -17,12 +17,21 @@ namespace Honua.Infrastructure.SharedCaching;
 internal static class SharedCacheResponse
 {
     private static readonly SharedCacheOptions ProductDefaults = new();
+    private static readonly object ClassKey = new();
     private static readonly object LifetimeKey = new();
     private static readonly object SubjectKey = new();
     private static readonly object AdHocSpatialKey = new();
     private static readonly object ProcessCacheKey = new();
     private static readonly object PurgesReachCdnKey = new();
     private static readonly object PurgeBackedSentKey = new();
+
+    // Multi-operation endpoints (such as OGC KVP WMS/WMTS) declare a base class on the route
+    // and select the operation-specific class here once dispatched.
+    internal static void UseClass(HttpContext context, ResponseCacheClass cacheClass)
+        => context.Items[ClassKey] = cacheClass;
+
+    internal static void DoNotShare(HttpContext context)
+        => context.Response.Headers.CacheControl = SharedCacheGuard.NotShared;
 
     internal static void UseLifetime(HttpContext context, SharedCacheLifetime lifetime)
         => context.Items[LifetimeKey] = lifetime;
@@ -138,7 +147,9 @@ internal static class SharedCacheResponse
     }
 
     internal static ResponseCacheClass? DeclaredClass(HttpContext context)
-        => context.GetEndpoint()?.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass;
+        => context.Items.TryGetValue(ClassKey, out var declared) && declared is ResponseCacheClass cacheClass
+            ? cacheClass
+            : context.GetEndpoint()?.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass;
 
     // The ETag service's own default is private, must-revalidate: that is a fallback, not a refusal.
     private static bool HandlerForbadeStorage(HttpResponse response)

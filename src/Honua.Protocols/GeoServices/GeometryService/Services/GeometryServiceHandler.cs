@@ -414,7 +414,7 @@ internal sealed class GeometryServiceHandler(
                 .ResolveGeodeticBaseSridAsync(outputSrid, ct)
                 .ConfigureAwait(false);
             DatumAreaEnvelope? projectEnvelope = null;
-            if (TryGeographicGeometryEnvelope(geomStrings, transformationInSr, out var west, out var south, out var east, out var north))
+            if (TryGeographicGeometryEnvelope(geomStrings, inputSrid, out var west, out var south, out var east, out var north))
             {
                 projectEnvelope = new DatumAreaEnvelope(west, south, east, north);
             }
@@ -1601,6 +1601,7 @@ internal sealed class GeometryServiceHandler(
             var bevelRatio = 1.1;
             if (!string.IsNullOrWhiteSpace(bevelRaw)
                 && double.TryParse(bevelRaw.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedBevel)
+                && double.IsFinite(parsedBevel)
                 && parsedBevel > 0)
             {
                 bevelRatio = parsedBevel;
@@ -2294,9 +2295,10 @@ internal sealed class GeometryServiceHandler(
                     return ([], "Each entry in 'coordinates' must be an [x, y] array with at least two numbers.");
                 }
 
-                if (!pair[0].TryGetDouble(out var x) || !pair[1].TryGetDouble(out var y))
+                if (!pair[0].TryGetDouble(out var x) || !pair[1].TryGetDouble(out var y)
+                    || !double.IsFinite(x) || !double.IsFinite(y))
                 {
-                    return ([], "Each coordinate in 'coordinates' must contain numeric x and y values.");
+                    return ([], "Each coordinate in 'coordinates' must contain finite numeric x and y values.");
                 }
 
                 result.Add([x, y]);

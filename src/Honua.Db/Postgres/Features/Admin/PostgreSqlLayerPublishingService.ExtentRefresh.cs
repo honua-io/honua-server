@@ -92,7 +92,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             targetSrid);
     }
 
-    private static async Task<(LayerExtentRefreshLayerResult Public, LayerExtentInsert? Extent)?> RefreshLayerExtentAsync(
+    private async Task<(LayerExtentRefreshLayerResult Public, LayerExtentInsert? Extent)?> RefreshLayerExtentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -120,8 +120,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 cancellationToken)
             .ConfigureAwait(false);
 
-        const string sql = """
-            UPDATE honua.layers
+        var sql = $"""
+            UPDATE {LayersTable}
             SET extent = CASE
                 WHEN @extentMinX IS NULL THEN NULL
                 ELSE ST_MakeEnvelope(@extentMinX, @extentMinY, @extentMaxX, @extentMaxY, @extentSrid)
@@ -163,17 +163,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return (publicResult, resourceExtent);
     }
 
-    private static async Task UpdateServiceExtentAsync(
+    private async Task UpdateServiceExtentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             WITH extent_box AS (
                 SELECT ST_Extent(l.extent) AS box
-                FROM honua.service_layers sl
-                INNER JOIN honua.layers l
+                FROM {ServiceLayersTable} sl
+                INNER JOIN {LayersTable} l
                     ON l.layer_id = sl.layer_id
                 WHERE sl.service_name = @serviceName
                   AND l.enabled = TRUE
@@ -192,7 +192,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     END AS extent
                 FROM extent_box
             )
-            UPDATE honua.services AS service
+            UPDATE {ServicesTable} AS service
             SET service_extent = computed_extent.extent,
                 updated_at = NOW()
             FROM computed_extent
@@ -205,13 +205,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<LayerExtentRefreshMetadata?> GetLayerExtentRefreshMetadataAsync(
+    private async Task<LayerExtentRefreshMetadata?> GetLayerExtentRefreshMetadataAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
                 layer_id,
                 layer_name,
@@ -221,7 +221,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 COALESCE(NULLIF(storage_srid, 0), NULLIF(srid, 0), @catalogSrid) AS source_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store,
                 COALESCE(NULLIF(srid, 0), @catalogSrid) AS published_srid
-            FROM honua.layers
+            FROM {LayersTable}
             WHERE layer_id = @layerId;
             """;
 

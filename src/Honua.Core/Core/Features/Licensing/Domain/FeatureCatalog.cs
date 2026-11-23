@@ -308,7 +308,7 @@ public static class FeatureCatalog
 
         // Editing — Pro (core branch versioning; organisational approval/policy remains Enterprise)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
-            HonuaEdition.Pro, "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."),
+            HonuaEdition.Pro, "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Experimental and off by default in 2026.1; enable with Capabilities:Experimental:versioning.branch:Enabled=true."),
 
         // AI operations — Pro (read/discovery/query surfaces remain Community)
         new(AiSpecApplyKey, "Spec Apply Execution", Categories.Ai,

@@ -155,13 +155,12 @@ public sealed class ManagedBufferAggregateExecutorTests
     }
 
     [UnitTest]
-    public async Task MetersOnGeographicSourceCrs_IsRejected()
+    public async Task MetersOnGeographicSourceCrs_BuffersGeodesicallyInMeters()
     {
-        // A linear buffer distance is meaningless in degree space; when the caller declares
-        // the input CRS as geographic (EPSG:4326) the executor must reject rather than emit a
-        // silently-wrong meters-as-degrees buffer.
+        // When the caller declares the input CRS as geographic (EPSG:4326), the executor
+        // buffers in meters on a local WGS-84 tangent frame and returns degree coordinates.
         var executor = new ManagedBufferAggregateExecutor(Options());
-        var (status, _) = await RunAsync(
+        var (status, uri) = await RunAsync(
             executor,
             ManagedBufferAggregateExecutor.HandledProcessId,
             ("input", BuildUri(Feature(Point(0, 0)))),
@@ -169,7 +168,10 @@ public sealed class ManagedBufferAggregateExecutorTests
             ("unit", "meters"),
             ("sourceCrs", "4326"));
 
-        status.Should().Be(ExecutionJobStatus.Failed);
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        features[0].Geometry.EnvelopeInternal.Width.Should().BeApproximately(2.0 * (1000.0 / 111319.49), 1e-3);
     }
 
     [UnitTest]

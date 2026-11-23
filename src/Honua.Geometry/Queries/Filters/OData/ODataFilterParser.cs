@@ -50,6 +50,11 @@ public sealed class ODataFilterParser
                 position: 0);
         }
 
+        if (requireBooleanPredicate)
+        {
+            EnsureBooleanOperand(expression, "$filter", position: 0);
+        }
+
         EnsureWithinGuard(() => FilterParserGuard.EnsureExpressionTree(expression), position: 0);
         return expression;
     }
@@ -78,9 +83,12 @@ public sealed class ODataFilterParser
 
         while (Match(ODataFilterTokenType.Or))
         {
+            var opPos = Previous().Position;
+            EnsureBooleanOperand(expression, "'or'", opPos);
             var count = ++operands;
-            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), opPos);
             var right = ParseAndExpression();
+            EnsureBooleanOperand(right, "'or'", opPos);
             expression = new BinaryExpression(expression, BinaryOperator.Or, right);
         }
 
@@ -94,9 +102,12 @@ public sealed class ODataFilterParser
 
         while (Match(ODataFilterTokenType.And))
         {
+            var opPos = Previous().Position;
+            EnsureBooleanOperand(expression, "'and'", opPos);
             var count = ++operands;
-            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), opPos);
             var right = ParseComparisonExpression();
+            EnsureBooleanOperand(right, "'and'", opPos);
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
 
@@ -172,6 +183,11 @@ public sealed class ODataFilterParser
                 ODataFilterTokenType.Mod => BinaryOperator.Modulo,
                 _ => throw new ODataFilterParseException("Unsupported arithmetic operator", opToken.Position)
             };
+            if (op is BinaryOperator.Divide or BinaryOperator.Modulo && FilterPredicateValidation.IsZeroNumericLiteral(right))
+            {
+                throw new ODataFilterParseException("Division or modulo by zero is not allowed.", opToken.Position);
+            }
+
             expression = new BinaryExpression(expression, op, right);
         }
 
@@ -183,7 +199,9 @@ public sealed class ODataFilterParser
         {
             if (Match(ODataFilterTokenType.Not))
             {
+                var opPos = Previous().Position;
                 var operand = ParseUnaryExpression();
+                EnsureBooleanOperand(operand, "'not'", opPos);
                 return RewriteNegatedComparison(operand);
             }
 
@@ -401,7 +419,7 @@ public sealed class ODataFilterParser
             "st_crosses" => BuildSpatialRelation(args, identifier, SpatialOperator.Crosses),
             "st_intersects" => BuildSpatialRelation(args, identifier, SpatialOperator.Intersects),
             "st_contains" => BuildSpatialRelation(args, identifier, SpatialOperator.Contains),
-            "st_relate" => BuildStaRelate(args, identifier),
+            "st_relate" or "geo.relate" => BuildStaRelate(args, identifier, Previous().Position),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
     }
@@ -412,35 +430,64 @@ public sealed class ODataFilterParser
         return new SpatialPredicate(op, args[0], args[1]);
     }
 
-    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier)
+    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier, int position)
     {
         EnsureArgumentCount(identifier, args, 3);
+        if (args[2] is not Literal { Type: LiteralType.Text, Value: string pattern } ||
+            !IsValidDe9ImPattern(pattern))
+        {
+            throw new ODataFilterParseException(
+                $"{identifier} requires a valid 9-character DE-9IM pattern string (allowed characters: 0, 1, 2, T, F, *).",
+                position);
+        }
+
         return new FunctionCall("ST_RELATE", args);
     }
 
-    private static BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    private static bool IsValidDe9ImPattern(string pattern)
+    {
+        if (pattern.Length != 9)
+        {
+            return false;
+        }
+
+        foreach (var ch in pattern)
+        {
+            if (ch is not ('0' or '1' or '2' or 'T' or 't' or 'F' or 'f' or '*'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
     {
         EnsureArgumentCount(identifier, args, 2);
         return BuildContainsExpression([args[1], args[0]], identifier);
     }
 
-    private static BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    private BinaryExpression BuildContainsExpression(IReadOnlyList<FilterExpression> args, string identifier)
     {
         EnsureArgumentCount(identifier, args, 2);
+        EnsureStringPredicateArguments(args, identifier);
         var position = new FunctionCall("POSITION", new[] { args[1], args[0] });
         return new BinaryExpression(position, BinaryOperator.GreaterThan, new Literal(0, LiteralType.Number));
     }
 
-    private static BinaryExpression BuildStartsWithExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    private BinaryExpression BuildStartsWithExpression(IReadOnlyList<FilterExpression> args, string identifier)
     {
         EnsureArgumentCount(identifier, args, 2);
+        EnsureStringPredicateArguments(args, identifier);
         var position = new FunctionCall("POSITION", new[] { args[1], args[0] });
         return new BinaryExpression(position, BinaryOperator.Equal, new Literal(1, LiteralType.Number));
     }
 
-    private static BinaryExpression BuildEndsWithExpression(IReadOnlyList<FilterExpression> args, string identifier)
+    private BinaryExpression BuildEndsWithExpression(IReadOnlyList<FilterExpression> args, string identifier)
     {
         EnsureArgumentCount(identifier, args, 2);
+        EnsureStringPredicateArguments(args, identifier);
         var lengthTarget = new FunctionCall("LENGTH", new[] { args[0] });
         var lengthSuffix = new FunctionCall("LENGTH", new[] { args[1] });
         var start = new BinaryExpression(
@@ -449,6 +496,29 @@ public sealed class ODataFilterParser
             new Literal(1, LiteralType.Number));
         var substring = new FunctionCall("SUBSTRING", new[] { args[0], start });
         return new BinaryExpression(substring, BinaryOperator.Equal, args[1]);
+    }
+
+    private void EnsureStringPredicateArguments(IReadOnlyList<FilterExpression> args, string identifier)
+    {
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i] is Literal { Type: not LiteralType.Text and not LiteralType.Null })
+            {
+                throw new ODataFilterParseException(
+                    $"Function '{identifier}' requires string arguments.",
+                    Previous().Position);
+            }
+        }
+    }
+
+    private static void EnsureBooleanOperand(FilterExpression expression, string context, int position)
+    {
+        if (!FilterPredicateValidation.IsODataBooleanOperand(expression))
+        {
+            throw new ODataFilterParseException(
+                $"Operand of {context} must be a boolean expression.",
+                position);
+        }
     }
 
     private static FunctionCall BuildSubstringExpression(IReadOnlyList<FilterExpression> args, string identifier)
@@ -670,21 +740,22 @@ public sealed class ODataFilterParser
         if (identifier.Equals("geography", StringComparison.OrdinalIgnoreCase) ||
             identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase))
         {
+            var isGeography = identifier.Equals("geography", StringComparison.OrdinalIgnoreCase);
             var token = Advance();
-            if (identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase) &&
+            if (!isGeography &&
                 !token.Value.TrimStart().StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ODataFilterParseException(
                     "Geometry literals require an explicit SRID=####; prefix", token.Position);
             }
-            literal = ParseGeographyLiteral(token.Value, token.Position);
+            literal = ParseGeographyLiteral(token.Value, token.Position, isGeography);
             return true;
         }
 
         return false;
     }
 
-    private static GeometryLiteral ParseGeographyLiteral(string value, int position)
+    private static GeometryLiteral ParseGeographyLiteral(string value, int position, bool isGeography = true)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -715,7 +786,8 @@ public sealed class ODataFilterParser
         try
         {
             var geometry = FilterParserGeometryGuard.ParseWktGeometry(wkt, "OData geometry literal", srid);
-            if (!IsGeometryValid(geometry) || !geometry.IsValid)
+            if (!IsGeometryValid(geometry) ||
+                (!geometry.IsValid && !(isGeography && Honua.Core.Geometries.AntimeridianCutter.CrossesAntimeridian(geometry))))
             {
                 throw new ODataFilterParseException($"Invalid geometry literal '{value}'", position);
             }

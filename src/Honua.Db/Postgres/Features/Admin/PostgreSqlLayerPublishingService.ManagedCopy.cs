@@ -71,7 +71,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return (reader.GetString(0), reader.GetInt64(1));
     }
 
-    private static async Task PrepareManagedCopyAsync(
+    private async Task PrepareManagedCopyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -90,7 +90,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 || jsonb_build_object(@sourceIdentity::text, attributes->@primaryKey::text, @primaryKey::text, objectid)
             WHERE layer_id = @layerId;
 
-            UPDATE honua.layers
+            UPDATE {{LayersTable}}
             SET table_schema = @schema, table_name = 'features',
                 primary_key_column = 'objectid', geometry_column = 'geometry',
                 storage_srid = @srid,

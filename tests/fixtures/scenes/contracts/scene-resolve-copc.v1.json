@@ -1,0 +1,29 @@
+{
+  "sceneId": "lidar-harbor",
+  "servingFormat": "copc",
+  "contentKind": "point-cloud",
+  "endpoints": [
+    {
+      "kind": "copc",
+      "endpointFormat": "copc",
+      "url": "https://maps.example.test/scenes/lidar-harbor/copc",
+      "mediaType": "application/vnd.laszip+copc",
+      "format": "copc",
+      "requiresAuthentication": true,
+      "accessSession": {
+        "href": "https://maps.example.test/scenes/lidar-harbor/access-envelope",
+        "method": "POST"
+      }
+    }
+  ],
+  "capabilities": [
+    "copc"
+  ],
+  "auth": {
+    "requiresAuthentication": true,
+    "schemes": [
+      "Bearer",
+      "ApiKey"
+    ]
+  }
+}

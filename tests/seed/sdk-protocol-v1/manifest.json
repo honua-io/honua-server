@@ -19,7 +19,7 @@
     },
     {
       "path": "eng/Honua.ProtocolProfiles.props",
-      "sha256": "c2236fc9135697dfc2aca10ef4c3324c7730a95c51e5689c32c39f4fbb07b73e"
+      "sha256": "54ecff4f65243e68dcc172145156941cd6b4f16d625465d9b4faeae49cf40ad3"
     },
     {
       "path": "src/Honua.Server/fixtures/scenes/downtown-honolulu/tileset.json",
