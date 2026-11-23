@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "run_id": "20261123T110436Z",
-  "run_date": "2026-11-23T11:04:36.127067+00:00",
-  "server_version": "b6ef85da6c57b7e2a798b35fa1634c87fd95229b",
+  "run_id": "20261123T201608Z",
+  "run_date": "2026-11-23T20:16:07.831211+00:00",
+  "server_version": "c056c7f0d531aea850b2d1596003915be9f1e4a7",
   "client_lane": "cli",
   "client_version": "GDAL 3.14.0dev-d10415fbe508531d4a0d7fd6157623b8e74bf9c5, released 2026/09/05",
   "protocol": "featureserver",
@@ -121,7 +121,7 @@
       "status": "pass",
       "duration_ms": null,
       "measured_count": null,
-      "measured_delta": null,
+      "measured_delta": 0.0,
       "notes": "",
       "evidence_ref": ""
     },
