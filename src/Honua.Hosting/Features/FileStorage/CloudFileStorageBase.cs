@@ -287,6 +287,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
         var failedProgress = new UploadProgress
         {
+            TenantId = request.TenantId,
             UploadId = uploadId,
             Status = OperationStatus.Failed,
             BytesUploaded = 0,
@@ -314,6 +315,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     {
         var cancelledProgress = new UploadProgress
         {
+            TenantId = request.TenantId,
             UploadId = uploadId,
             Status = OperationStatus.Cancelled,
             BytesUploaded = 0,

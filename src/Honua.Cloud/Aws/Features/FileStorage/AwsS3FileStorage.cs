@@ -106,7 +106,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
-        var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
+        var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType) with { TenantId = request.TenantId };
         await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, uploadId, initialProgress);
         SerializedUploadProgressWriter? progressWriter = null;
@@ -185,6 +185,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                         var resolvedTotalBytes = args.TotalBytes > 0 ? args.TotalBytes : totalBytes;
                         var progress = new UploadProgress
                         {
+                            TenantId = request.TenantId,
                             UploadId = uploadId,
                             Status = OperationStatus.Processing,
                             BytesUploaded = args.TransferredBytes,
@@ -234,6 +235,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
             var completedProgress = new UploadProgress
             {
+                TenantId = request.TenantId,
                 UploadId = uploadId,
                 Status = OperationStatus.Completed,
                 BytesUploaded = sizeBytes,
@@ -874,6 +876,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         var progress = new UploadProgress
         {
+            TenantId = request.TenantId,
             UploadId = uploadId,
             Status = OperationStatus.Processing,
             BytesUploaded = sent,
