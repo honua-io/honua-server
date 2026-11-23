@@ -67,6 +67,12 @@ internal sealed class McpErrorData
     [JsonPropertyName("approvalRequired")]
     public bool? ApprovalRequired { get; set; }
 
+    // What the caller can do next, in plain words: the grant to request, the proposal to wait on,
+    // the argument to correct. Set for every refusal the shared mapper produces.
+    [JsonPropertyName("nextAction")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextAction { get; set; }
+
     [JsonPropertyName("policyRef")]
     public string? PolicyRef { get; set; }
 

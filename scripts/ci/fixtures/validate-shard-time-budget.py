@@ -35,7 +35,15 @@ def select_within_budget(config: dict[str, Any], changed: list[str], descriptor:
 
 
 def check_budget_bounds_the_selection(config: dict[str, Any]) -> None:
-    """No selected shard is over the shard limit, the total fits, and every candidate is accounted for."""
+    """No selected shard is over the shard limit, the total fits, and every candidate is accounted for.
+
+    Runs on the real map and on its overflow copy, where the total budget must bind.
+    """
+    for candidate in (config, overflow_config(config)[0]):
+        check_selection_within_budget(candidate)
+
+
+def check_selection_within_budget(config: dict[str, Any]) -> None:
     budget = budget_module.load_time_budget(config)
     result = select_within_budget(config, TESTKIT_PROBE, shard_fixtures.router(config, TESTKIT_PROBE))
     over_limit = [e["name"] for e in result["selected"] if e["dispatch_rank"] > budget["max_shard_minutes"]]
@@ -48,14 +56,24 @@ def check_budget_bounds_the_selection(config: dict[str, Any]) -> None:
         raise FixtureError("selected, dropped and deferred shards must partition the candidates")
 
 
-def check_total_budget_defers_the_overflow(config: dict[str, Any]) -> None:
+def overflow_config(config: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A copy of the map whose slowest in-budget shards sit at the shard limit, past the total budget."""
     budget = budget_module.load_time_budget(config)
+    mutated = copy.deepcopy(config)
     near_limit = sorted(
-        (s for s in config["shards"] if s["dispatch_rank"] <= budget["max_shard_minutes"]),
+        (s for s in mutated["shards"] if s["dispatch_rank"] <= budget["max_shard_minutes"]),
         key=lambda shard: -shard["dispatch_rank"],
     )[: selector.DEFAULT_CAP]
+    for shard in near_limit:
+        shard["dispatch_rank"] = budget["max_shard_minutes"]
+    return mutated, near_limit
+
+
+def check_total_budget_defers_the_overflow(config: dict[str, Any]) -> None:
+    budget = budget_module.load_time_budget(config)
+    config, near_limit = overflow_config(config)
     if sum(s["dispatch_rank"] for s in near_limit) <= budget["max_total_minutes"]:
-        raise FixtureError("the slowest in-budget shards fit the total budget; refresh this fixture")
+        raise FixtureError("the cap's worth of shards at the shard limit fits the total budget; refresh this fixture")
     targeted = {"run_all": False, "reason": "targeted", "shards": [s["name"] for s in near_limit]}
     result = select_within_budget(config, [], targeted)
     if result["projected_runner_minutes"] > budget["max_total_minutes"]:

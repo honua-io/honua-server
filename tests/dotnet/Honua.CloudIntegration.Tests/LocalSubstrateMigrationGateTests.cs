@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
+using static Honua.CloudIntegration.Tests.LocalSubstrateMigrationDatabase;
 
 namespace Honua.CloudIntegration.Tests;
 
@@ -665,20 +666,6 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task<object?> ScalarAsync(string connectionString, string sql)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        return await command.ExecuteScalarAsync();
-    }
-
-    private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
-        => new(
-            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
-            ServerCoreSchemaMigrations.Manifest,
-            Options.Create(new MigrationSafetyOptions { Enforce = true }));
-
     private static string GetEmbeddedScriptName(string assemblyName, string scriptName)
         => $"{assemblyName}.{scriptName}";
 
@@ -718,16 +705,6 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         => OperatingSystem.IsWindows()
             ? $"echo {stderr} 1>&2 & exit /b 1"
             : $"printf '%s' '{stderr}' >&2; exit 1";
-
-    private static async Task<bool> TableExistsAsync(string connectionString, string table)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT to_regclass(@qualified) IS NOT NULL";
-        command.Parameters.AddWithValue("qualified", $"public.{table}");
-        return (bool)(await command.ExecuteScalarAsync())!;
-    }
 
     private static async Task<bool> ColumnExistsAsync(string connectionString, string table, string column)
     {

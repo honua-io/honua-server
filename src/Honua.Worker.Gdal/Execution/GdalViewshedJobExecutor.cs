@@ -82,7 +82,7 @@ internal sealed partial class GdalViewshedJobExecutor(
             maxDistance = parsed;
         }
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.InvalidInput($"Invalid viewshed inputs: {sourceError}");

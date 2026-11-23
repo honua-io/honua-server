@@ -22,6 +22,8 @@ internal static class OutputCachingRegistration
     {
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
+        OutputCacheTtlValidation.EnsureValid(ttl);
+        services.AddSingleton(Options.Create(ttl));
 
         // Test isolation: the integration suite drives one process-wide, schema-routed
         // server (and several isolated per-fixture hosts) where every test selects its data

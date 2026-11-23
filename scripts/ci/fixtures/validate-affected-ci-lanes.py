@@ -2,6 +2,7 @@
 """Guard expensive trailing lanes without changing selection or PR/full coverage."""
 import importlib.util
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -29,6 +30,20 @@ class AffectedLaneTests(unittest.TestCase):
                       ['tests/seed/base-schema.sql'], ['tests/seed/client-compat-v1.sql']]:
             with self.subTest(paths=paths):
                 self.assertTrue(all(MODULE.select(paths).values()))
+
+    def test_embedded_skills_select_source_lanes_and_certification_selects_none(self):
+        measured = ['certification/bounded-roster/run-roster.sh',
+                    'certification/client-protocol-requirements.v1.json',
+                    'scripts/certification/verify-client-certification-receipts.py',
+                    'docs/gis/data/operation-capability.v1.json',
+                    '.github/workflows/client-roster-certification.yml',
+                    'tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/SceneAdminCapabilityMappingTests.cs']
+        self.assertFalse(any(MODULE.select(measured).values()))
+        skills = MODULE.select(['skills/honua-ops/SKILL.md'])
+        self.assertEqual(skills, MODULE.select(['src/Honua.Ai/skills/honua-ops/SKILL.md']))
+        self.assertEqual({lane for lane, enabled in skills.items() if enabled},
+                         {'aot', 'docker', 'mcp', 'postgres', 'runtime'})
+        self.assertTrue(all(MODULE.select(['certificates/new.json']).values()))
 
     def test_shared_setup_actions_keep_their_consumers(self):
         server = MODULE.select(['.github/actions/setup-honua-server/action.yml'])
@@ -316,7 +331,7 @@ class ShardWidthTests(unittest.TestCase):
         self.assertTrue(TRAILING.affected_run_schedules_shards("targeted"))
         self.assertTrue(TRAILING.affected_run_schedules_shards("unmapped_source_change"))
 
-    def test_core_package_skips_only_docs_workflow_ci_and_tests(self):
+    def test_core_package_skips_measured_docs_workflow_ci_and_tests(self):
         measured = [
             ".github/workflows/compose-release-lifecycle.yml",
             ".github/workflows/nightly-container-build.yml",
@@ -330,7 +345,37 @@ class ShardWidthTests(unittest.TestCase):
         self.assertFalse(TRAILING.core_package_required(measured))
         self.assertTrue(TRAILING.core_package_required(measured + ["src/Honua.Core/Core/Honua.Core.csproj"]))
         self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
-        self.assertTrue(TRAILING.core_package_required([".github/ci-shards.json"]))
+
+    def test_core_package_runs_only_on_pack_inputs(self):
+        for path in ["docker/Dockerfile.aot", ".github/ci-shards.json", "skills/honua-ops/SKILL.md",
+                     "certification/client-protocol-requirements.v1.json",
+                     "scripts/certification/verify-client-certification-receipts.py",
+                     "src/Honua.Server/Features/Ogc/OgcHandlers.cs", "src/Honua.Server/Directory.Build.props",
+                     "scripts/ci/analyzer-baseline-notes/x.md", ".github/test-projects.json"]:
+            with self.subTest(path=path):
+                self.assertFalse(TRAILING.core_package_required([path]))
+        for path in ["src/Honua.Core/Abstractions/IFeatureStore.cs", "src/Honua.Analyzers/CommitRule.cs",
+                     "src/Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config",
+                     ".editorconfig", "LICENSE", "README.md", "eng/schema/reviewed-migration-hashes.v1.json",
+                     "eng/nuget-locks/Honua.Core.lock.json", "scripts/ci/analyzer-baseline/BannedSymbols.txt",
+                     ".github/actions/setup-dotnet-ci/action.yml"]:
+            with self.subTest(path=path):
+                self.assertTrue(TRAILING.core_package_required(["docs/x.md", path]))
+
+    def test_core_package_inputs_cover_every_file_the_pack_reads(self):
+        sources = {ROOT / 'src/Honua.Core/Core/Honua.Core.csproj': 'src/Honua.Core/Core',
+                   ROOT / 'src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj': 'src/Honua.Core/Abstractions',
+                   ROOT / 'Directory.Build.props': '', ROOT / 'Directory.Build.targets': ''}
+        pattern = re.compile(r'<(?:None|EmbeddedResource|Compile|Content|AdditionalFiles'
+                             r'|GlobalAnalyzerConfigFiles|ProjectReference|Import)\s[^>]*?'
+                             r'(?:Include|Project)="([^"]+)"')
+        for source, base in sources.items():
+            for include in pattern.findall(source.read_text(encoding='utf-8')):
+                path = include.replace('$(MSBuildThisFileDirectory)', '').replace('\\', '/')
+                path = re.split(r'[*$]', path)[0] or 'x'
+                resolved = os.path.normpath(os.path.join(base, path)).replace(os.sep, '/')
+                with self.subTest(source=source.name, include=include):
+                    self.assertTrue(TRAILING.core_package_required([resolved + ('/x' if (ROOT / resolved).is_dir() else '')]))
 
     def test_repository_metadata_skips_build_and_core_package(self):
         # 44254098776 built, formatted and packed Core for .github/codeql/pr-paths.txt alone.
@@ -342,10 +387,6 @@ class ShardWidthTests(unittest.TestCase):
             ".github/hygiene.json",
         ]
         self.assertFalse(TRAILING.core_package_required(metadata))
-        for path in [".github/actions/setup-dotnet-ci/action.yml", ".github/test-projects.json",
-                     ".github/codeql-extra.yml", ".github/CODEOWNERS.bak"]:
-            with self.subTest(path=path):
-                self.assertTrue(TRAILING.core_package_required([path]))
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
         run = ci['jobs']['changes']['steps']
         script = next(step['run'] for step in run if 'REPO_METADATA=' in step.get('run', ''))

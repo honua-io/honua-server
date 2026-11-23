@@ -473,6 +473,20 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(2, calls.call_count)
                 self.assertFalse(options.candidates.exists())
 
+    def test_retry_annotations_name_the_tests_and_the_verdict(self):
+        for cases, exit_code, verdict in (([('Flaky(1)', 'Passed')], 0, '::warning::HONUA_SHARD_FLAKE_CANDIDATE'),
+                                          ([('Flaky(1)', 'Failed')], 1, '::error::HONUA_SHARD_RETRY_FAILED')):
+            with self.subTest(verdict=verdict), redirect_stdout(io.StringIO()) as output:
+                self.attempt(cases, exit_code)
+            lines = output.getvalue().splitlines()
+            self.assertIn('Honua.Tests.Case.Flaky', next(line for line in lines if 'Retrying 1 failed' in line))
+            self.assertIn('Honua.Tests.Case.Flaky', next(line for line in lines if line.startswith(verdict)))
+
+    def test_retry_annotation_bounds_the_named_tests(self):
+        failed = [(f'Honua.Tests.Case.T{index}', '', 'Failed') for index in range(7)]
+        self.assertEqual('Honua.Tests.Case.T0, Honua.Tests.Case.T1, Honua.Tests.Case.T2, Honua.Tests.Case.T3, '
+                         'Honua.Tests.Case.T4 and 2 more', runner.describe(failed))
+
     def test_observation_mode_keeps_the_first_failure(self):
         code, options, calls = self.attempt([('Flaky(1)', 'Passed')], enabled='false')
         self.assertEqual(1, code)
