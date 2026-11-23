@@ -85,7 +85,15 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
         using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        if (modern)
+        {
+            response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+            body = body.Split('\n')
+                .Single(line => line.StartsWith("data: ", StringComparison.Ordinal))["data: ".Length..];
+        }
+
+        using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
         root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
