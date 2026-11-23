@@ -20,7 +20,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class QueryFormatterTests
+public sealed partial class QueryFormatterTests
 {
     private static readonly string[] IdGeoJsonProperties = ["id", "name", "distance"];
     private static readonly string[] DeclaredIdGeoJsonProperties = ["id", "objectid", "name", "distance"];

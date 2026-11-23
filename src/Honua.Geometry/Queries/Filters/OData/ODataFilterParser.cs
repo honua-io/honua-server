@@ -419,7 +419,7 @@ public sealed class ODataFilterParser
             "st_crosses" => BuildSpatialRelation(args, identifier, SpatialOperator.Crosses),
             "st_intersects" => BuildSpatialRelation(args, identifier, SpatialOperator.Intersects),
             "st_contains" => BuildSpatialRelation(args, identifier, SpatialOperator.Contains),
-            "st_relate" => BuildStaRelate(args, identifier),
+            "st_relate" or "geo.relate" => BuildStaRelate(args, identifier, Previous().Position),
             _ => throw new ODataFilterParseException($"Unsupported function '{identifier}'", Previous().Position)
         };
     }
@@ -430,10 +430,36 @@ public sealed class ODataFilterParser
         return new SpatialPredicate(op, args[0], args[1]);
     }
 
-    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier)
+    private static FunctionCall BuildStaRelate(IReadOnlyList<FilterExpression> args, string identifier, int position)
     {
         EnsureArgumentCount(identifier, args, 3);
+        if (args[2] is not Literal { Type: LiteralType.Text, Value: string pattern } ||
+            !IsValidDe9ImPattern(pattern))
+        {
+            throw new ODataFilterParseException(
+                $"{identifier} requires a valid 9-character DE-9IM pattern string (allowed characters: 0, 1, 2, T, F, *).",
+                position);
+        }
+
         return new FunctionCall("ST_RELATE", args);
+    }
+
+    private static bool IsValidDe9ImPattern(string pattern)
+    {
+        if (pattern.Length != 9)
+        {
+            return false;
+        }
+
+        foreach (var ch in pattern)
+        {
+            if (ch is not ('0' or '1' or '2' or 'T' or 't' or 'F' or 'f' or '*'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private BinaryExpression BuildSubstringOfExpression(IReadOnlyList<FilterExpression> args, string identifier)
@@ -714,21 +740,22 @@ public sealed class ODataFilterParser
         if (identifier.Equals("geography", StringComparison.OrdinalIgnoreCase) ||
             identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase))
         {
+            var isGeography = identifier.Equals("geography", StringComparison.OrdinalIgnoreCase);
             var token = Advance();
-            if (identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase) &&
+            if (!isGeography &&
                 !token.Value.TrimStart().StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ODataFilterParseException(
                     "Geometry literals require an explicit SRID=####; prefix", token.Position);
             }
-            literal = ParseGeographyLiteral(token.Value, token.Position);
+            literal = ParseGeographyLiteral(token.Value, token.Position, isGeography);
             return true;
         }
 
         return false;
     }
 
-    private static GeometryLiteral ParseGeographyLiteral(string value, int position)
+    private static GeometryLiteral ParseGeographyLiteral(string value, int position, bool isGeography = true)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -759,7 +786,8 @@ public sealed class ODataFilterParser
         try
         {
             var geometry = FilterParserGeometryGuard.ParseWktGeometry(wkt, "OData geometry literal", srid);
-            if (!IsGeometryValid(geometry) || !geometry.IsValid)
+            if (!IsGeometryValid(geometry) ||
+                (!geometry.IsValid && !(isGeography && Honua.Core.Geometries.AntimeridianCutter.CrossesAntimeridian(geometry))))
             {
                 throw new ODataFilterParseException($"Invalid geometry literal '{value}'", position);
             }

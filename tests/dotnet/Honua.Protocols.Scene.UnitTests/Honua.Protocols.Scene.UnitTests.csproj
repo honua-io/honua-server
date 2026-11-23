@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Protocols/Scene/Honua.Protocols.Scene.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <None Include="../../fixtures/scenes/contracts/*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

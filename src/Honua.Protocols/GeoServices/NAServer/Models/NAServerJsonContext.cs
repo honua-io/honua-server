@@ -43,6 +43,7 @@ namespace Honua.Protocols.GeoServices.NAServer.Models;
 [JsonSerializable(typeof(NAServerSaPolygonAttributes))]
 [JsonSerializable(typeof(NAServerPolylineGeometry))]
 [JsonSerializable(typeof(NAServerPolygonGeometry))]
+[JsonSerializable(typeof(NAServerPointGeometry))]
 [JsonSerializable(typeof(NAServerSpatialReference))]
 [JsonSerializable(typeof(NAServerMessage))]
 [JsonSerializable(typeof(NAServerMessage[]))]

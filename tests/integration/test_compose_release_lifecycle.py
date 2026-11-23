@@ -83,6 +83,28 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
     raise AssertionError(f"operation did not reach its terminal state (REST={status}, MCP={resource_status})")
 
 
+def contract_plan(refusal):
+    # The executor's contract refusal: "...applied: <script>, <script>. Nothing was migrated ... is <nonce>."
+    scripts = re.search(r"applied: (.+?)\. Nothing was migrated", refusal)
+    nonce = re.search(r"\(HONUA_APPROVE_CONTRACT_MIGRATIONS\) is ([A-Za-z0-9]+)\.$", refusal)
+    assert scripts and nonce, "the contract refusal must name its scripts and nonce"
+    return {"scripts": scripts.group(1).split(", "), "nonce": nonce.group(1)}
+
+
+def propose_listed_contract_plan(call, refusal):
+    plan = contract_plan(refusal)
+    listed = call("honua_propose_platform_release_convergence", {
+        "reason": "candidate convergence with its reviewed contract migrations", "contractApproval": plan}, 21)
+    proposal = listed["targets"][0]["proposalId"]
+    assert proposal
+    return plan, proposal
+
+
+def assert_preview_lists_plan(preview, plan):
+    assert any(plan["nonce"] in line for line in preview["diff"])
+    assert any(all(script in line for script in plan["scripts"]) for line in preview["dryRun"])
+
+
 def wait_until_ready(port, failure, timeout=120):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -95,12 +117,6 @@ def wait_until_ready(port, failure, timeout=120):
             pass
         time.sleep(2)
     raise AssertionError(failure)
-
-
-def expected_failure(reason):
-    # Imported here: the polling unit test loads this module without pytest installed.
-    import pytest
-    pytest.xfail(reason)
 
 
 def wait_for_approval(base, key, proposal, timeout=30):
@@ -253,17 +269,20 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
         human.approve(proposal)
-        # The candidate carries a reviewed contract migration and the proposal's approval does
-        # not carry its nonce, so the executor must refuse and leave the prior serving.
-        # Remove this block when that approval exists: the rest of this journey is its
-        # acceptance test, and it fails here as soon as the convergence succeeds.
+        # The candidate carries a reviewed contract migration this proposal does not list, so the
+        # executor refuses, applies nothing and leaves the prior serving.
         refused = wait_for_proposal(base, key, proposal, "failed", proposer_key, session)
         assert refused["resolutionReason"] == "contract-approval-required"
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         wait_until_ready(port, "prior did not keep serving after the contract refusal")
         assert_live_revision(prior_id, True)
-        expected_failure("an approved convergence cannot yet cross a reviewed contract migration")
+        refused_backups = set((project_dir / "backups").glob("backup-*/manifest.json"))
+        # A proposal that lists the refused scripts and nonce is approved once and applies exactly them.
+        refusal, _ = request(base, f"/api/v1/admin/deploy/operations/{refused['executionOperationId']}", key)
+        plan, proposal = propose_listed_contract_plan(call, refusal["currentPhase"])
+        assert_preview_lists_plan(wait_for_approval(base, key, proposal), plan)
+        human.approve(proposal)
         first_convergence = wait_for_proposal(base, key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert_live_revision(candidate, False)
@@ -271,7 +290,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
         sql("UPDATE public.rc2_lifecycle_marker SET value='changed-after-upgrade' WHERE id=1")
-        manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
+        manifests = [path for path in (project_dir / "backups").glob("backup-*/manifest.json") if path not in refused_backups]
         assert len(manifests) == 1
         backup = json.loads(manifests[0].read_text())
         assert backup["image"] == prior_id and backup["schemaVersion"] == 140
@@ -363,8 +382,9 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert not scope["ok"] and scope["code"] == "compose-scope-violation"
         assert image_id() == prior_id and schema() == 140
         sql("UPDATE public.rc2_lifecycle_marker SET value='after-first-rollback' WHERE id=1")
+        # The restore put the contract migrations back in the pending plan, so the proposal lists them again.
         reconvergence = call("honua_propose_platform_release_convergence", {
-            "reason": "candidate convergence after verified rollback"}, 5)
+            "reason": "candidate convergence after verified rollback", "contractApproval": plan}, 5)
         next_target = reconvergence["targets"][0]
         next_proposal = next_target.get("proposalId")
         assert next_proposal, f"re-convergence did not produce a proposal: {next_target.get('outcome')}"
@@ -416,7 +436,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert_live_revision(candidate, False)
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NOT NULL") == "t"
-        new_manifests = list((project_dir / "backups").glob("backup-*/manifest.json"))
+        new_manifests = [path for path in (project_dir / "backups").glob("backup-*/manifest.json") if path not in refused_backups]
         assert len(new_manifests) == 2
         new_backup = next(json.loads(path.read_text()) for path in new_manifests if path != manifests[0])
         assert new_backup["backupId"] != backup["backupId"]

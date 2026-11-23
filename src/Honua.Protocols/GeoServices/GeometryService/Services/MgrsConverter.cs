@@ -54,11 +54,25 @@ internal static class MgrsConverter
         var bandLetter = GetLatitudeBand(latitude);
 
         var (easting, northing) = ProjectToUtm(normalizedLongitude, latitude, zone);
+        if (latitude < 0.0 && northing >= FalseNorthing)
+        {
+            northing = Math.BitDecrement(FalseNorthing);
+        }
+
         if (rounding && precision > 0)
         {
             var resolution = Math.Pow(10, 5 - precision);
             easting = Math.Round(easting / resolution, MidpointRounding.AwayFromZero) * resolution;
+            if (easting >= 1_000_000.0)
+            {
+                easting = 1_000_000.0 - resolution;
+            }
+
             northing = Math.Round(northing / resolution, MidpointRounding.AwayFromZero) * resolution;
+            if (northing >= FalseNorthing)
+            {
+                northing = FalseNorthing - resolution;
+            }
         }
 
         var (columnLetter, rowLetter) = GetGridSquareLetters(zone, easting, northing);
@@ -402,20 +416,14 @@ internal static class MgrsConverter
         }
 
         // Southern-hemisphere bands (C..M) carry the 10,000,000m false northing.
-        // Approximate the band's lower northing from its latitude in the relevant frame.
+        // In the northern hemisphere, northing along a parallel is minimum on the
+        // central meridian (3°E in Zone 31); in the southern hemisphere, northing
+        // decreases toward the ±3° zone edge (0°E in Zone 31) by up to ~3.7 km.
+        // Taking the minimum across both guarantees the true band minimum.
         var bandSouthLatitude = -80.0 + (bandIndex * 8.0);
-        var representativeLatitude = bandSouthLatitude;
-        var isNorthern = bandLetter >= 'N';
-
-        // Project a point on the central meridian at the band's southern latitude to
-        // obtain a representative minimum northing. Using zone-independent TM at the
-        // central meridian (a == 0) reduces to the meridional arc.
-        var latRad = DegreesToRadians(representativeLatitude);
-        var northing = ScaleFactor * MeridionalArc(latRad);
-        if (!isNorthern)
-        {
-            northing += FalseNorthing;
-        }
+        var centralMeridianNorthing = ProjectToUtm(3.0, bandSouthLatitude, 31).Northing;
+        var zoneEdgeNorthing = ProjectToUtm(0.0, bandSouthLatitude, 31).Northing;
+        var northing = Math.Min(centralMeridianNorthing, zoneEdgeNorthing);
 
         return Math.Floor(northing / 100_000.0) * 100_000.0;
     }

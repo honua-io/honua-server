@@ -320,9 +320,10 @@ restore last.
 
 3. Single-node compose upgrades are not zero-downtime. The safe flow is:
    preflight, backup, pull the new image, start it with the same environment,
-   verify `/healthz/ready`, then keep the previous tag available for application
-   rollback. Restore the database only if a destructive migration or data
-   corruption makes image rollback insufficient.
+   verify `/healthz/ready`, then keep the previous tag and the verified
+   pre-upgrade backup. Returning to the previous image means restoring that
+   backup first, unless that image has been qualified against the installed
+   schema; otherwise fix forward.
 
 4. Serverless or managed deployments may run migrations out of band with
    `HONUA_SKIP_MIGRATIONS=true`; keep the same preflight and contract-gate
@@ -347,7 +348,12 @@ need:
 - custom alert routing outside Honua's built-in alert and findings surfaces;
 - capacity planning across multiple services or environments.
 
-For a local or single-node bundle:
+For a local or single-node bundle, first complete the credential setup in
+[Monitor Honua Server](../deploy/monitoring.md#steps): mint an API key with only
+the read-only `admin:read` grant, save it in a file readable only by you, and
+export `HONUA_METRICS_SCRAPE_KEY_FILE` to that file's absolute path. Export
+`HONUA_MONITORING_GRAFANA_PASSWORD` with a password you choose for Grafana.
+Both variables are required. Then, from the repository root in the same shell:
 
 ```bash
 docker compose -f docker/monitoring/compose.yml up -d

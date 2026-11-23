@@ -110,7 +110,7 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     }
 
     [Fact]
-    public void BuildBufferAggregateQuery_ProjectedFeetAndUtm_StayOnWebMercator()
+    public void BuildBufferAggregateQuery_ProjectedFeetAndUtm_PreservesNativeSridAndScalesDistance()
     {
         var queryBuilder = CreateQueryBuilder();
         var bufferQuery = new BufferAggregateQuery
@@ -127,15 +127,68 @@ public sealed class FeatureQueryBuilderAnalyticsTests
                 layerId: 1, new FeatureQuery { SpatialReferenceSrid = srid }, bufferQuery);
 
             result.Sql.Should().NotContain("+proj=aeqd");
+            result.Sql.Should().NotContain("ST_Transform(geometry, 3857)");
+            result.Sql.Should().Contain("geometry AS geom_m");
             if (srid == 3857)
             {
-                result.Sql.Should().NotContain("ST_Transform(geometry");
-                result.Sql.Should().Contain("ST_Transform(ST_Union(ST_Buffer(geom_m");
+                result.Sql.Should().Contain("ST_Transform(ST_Union(ST_Buffer(geom_m, $2)), 4326)");
             }
             else
             {
-                result.Sql.Should().Contain($"ST_Transform(geometry, 3857)");
+                result.Sql.Should().Contain($"WHERE srid = {srid} LIMIT 1), 1.0))");
+                result.Sql.Should().Contain("ST_Transform(ST_Union(ST_Buffer(geom_m, ($2 / COALESCE(");
             }
+        }
+    }
+
+    [Fact]
+    public void BuildClusterQuery_ProjectedUtmAndFeet_PreservesNativeSridAndScalesEps()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var clusterQuery = new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 250d,
+            MinPoints = 2,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 10
+        };
+
+        foreach (var srid in new[] { 2227, 32610 })
+        {
+            var result = queryBuilder.BuildClusterQuery(
+                layerId: 1, new FeatureQuery { SpatialReferenceSrid = srid }, clusterQuery);
+
+            result.Sql.Should().NotContain("+proj=aeqd");
+            result.Sql.Should().NotContain("ST_Transform(geometry, 3857)");
+            result.Sql.Should().Contain($"ST_ClusterDBSCAN(geometry, eps => ($2 / COALESCE(");
+            result.Sql.Should().Contain($"WHERE srid = {srid} LIMIT 1), 1.0))");
+        }
+    }
+
+    [Fact]
+    public void BuildDensityQuery_ProjectedUtmAndFeet_StampsNativeSridOnExtentAndScalesCellSize()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var densityQuery = new DensityQuery
+        {
+            Mode = DensityBinningMode.HexGrid,
+            CellSizeMeters = 500d,
+            MaxInputFeatures = 10,
+            MaxCells = 10
+        };
+
+        foreach (var srid in new[] { 2227, 32610 })
+        {
+            var result = queryBuilder.BuildDensityQuery(
+                layerId: 1, new FeatureQuery { SpatialReferenceSrid = srid }, densityQuery);
+
+            result.Sql.Should().NotContain("+proj=aeqd");
+            result.Sql.Should().NotContain("ST_Transform(geometry, 3857)");
+            result.Sql.Should().Contain($"ST_SetSRID(ST_Extent(pt)::geometry, {srid})");
+            result.Sql.Should().Contain($"ST_HexagonGrid(($2 / COALESCE(");
+            result.Sql.Should().Contain($"WHERE srid = {srid} LIMIT 1), 1.0)), bounds.extent::geometry)");
         }
     }
 
@@ -564,6 +617,33 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         result.Sql.Should().Contain(
             "ST_DWithin(t.geom::geography, ST_SetSRID(ST_GeomFromEWKB(j.geometry), 4326)::geography");
         result.Sql.Should().NotContain("t.geometry::geography");
+    }
+
+    [Theory]
+    [InlineData(3857, 3857, "ST_DWithin(ST_Transform(t.geom, 4326)::geography, ST_Transform(j.geometry, 4326)::geography")]
+    [InlineData(26910, 4326, "ST_DWithin(ST_Transform(t.geom, 4326)::geography, j.geometry::geography")]
+    [InlineData(4326, 26910, "ST_DWithin(t.geom::geography, ST_Transform(j.geometry, 4326)::geography")]
+    public void BuildSpatialJoinQuery_WithDWithinProjectedLayers_TransformsProjectedOperandsToWgs84Geography(
+        int targetSrid,
+        int joinSrid,
+        string expectedPredicatePrefix)
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var targetQuery = new FeatureQuery { SpatialReferenceSrid = targetSrid };
+        var joinQuery = new SpatialJoinQuery
+        {
+            JoinLayerId = 7,
+            JoinLayerSrid = joinSrid,
+            Predicate = SpatialJoinPredicate.DWithin,
+            DistanceMeters = 500d,
+            MaxInputFeatures = 1_000
+        };
+
+        var result = queryBuilder.BuildSpatialJoinQuery(
+            targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Geometry);
+
+        result.Sql.Should().Contain(expectedPredicatePrefix);
+        result.Sql.Should().NotContain("ST_Transform(ST_Transform(");
     }
 
     [Fact]

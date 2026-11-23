@@ -22,6 +22,9 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
     private readonly StudioAiProxyApiKeyResolver _apiKeyResolver;
     private readonly ILogger<OpenAiCompatibleStudioAiProxyAdapter> _logger;
 
+    // The clock behind the provider deadline; tests replace it to fire the deadline deterministically.
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     public OpenAiCompatibleStudioAiProxyAdapter(
         IHttpClientFactory httpClientFactory,
         StudioAiProxyApiKeyResolver apiKeyResolver,
@@ -96,8 +99,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             CharSet = "utf-8"
         };
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds), TimeProvider);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers

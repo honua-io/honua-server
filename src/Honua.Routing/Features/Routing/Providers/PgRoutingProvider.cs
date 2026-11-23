@@ -793,7 +793,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
-            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdgeCount);
+            // Location-allocation evaluates travel cost FROM each demand point TO each
+            // candidate facility. Because OneToManyCostAsync probes pgr_dijkstraCost
+            // from facilityVid to demandVids, we run over ReversedEdgesSql (where edge
+            // cost/reverse_cost are swapped) so directed one-way streets are traversed
+            // in the demand -> facility travel direction.
+            var edgesSql = ApplyBlockedEdgeFilter(ReversedEdgesSql(dataset, profile), blockedEdgeCount);
 
             // Build the candidate-facility × demand-point impedance matrix:
             // matrix[facility][demand] = network cost (PositiveInfinity when
@@ -948,8 +953,8 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         var sql = $"""
             SELECT id
             FROM {dataset.VertexTable}
-            ORDER BY the_geom <-> ST_Transform(
-                ST_SetSRID(ST_MakePoint(@lon, @lat), @in_srid), 4326)
+            ORDER BY the_geom::geography <-> ST_Transform(
+                ST_SetSRID(ST_MakePoint(@lon, @lat), @in_srid), 4326)::geography
             LIMIT 1;
             """;
 
@@ -1219,7 +1224,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 CROSS JOIN LATERAL (
                     SELECT w.gid
                     FROM {dataset.EdgeTable} w
-                    ORDER BY w.the_geom <-> i.geom
+                    ORDER BY w.the_geom::geography <-> i.geom::geography
                     LIMIT 1
                 ) AS nearest
                 WHERE i.kind = 0

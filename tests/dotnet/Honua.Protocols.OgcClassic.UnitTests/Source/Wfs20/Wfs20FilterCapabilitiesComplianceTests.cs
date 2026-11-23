@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Fes20;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
@@ -18,7 +20,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
         filterCapabilities.TemporalCapabilities.Should().NotBeNull();
         filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
             .Select(op => op.Name)
-            .Should().BeEquivalentTo("After", "Before", "During");
+            .Should().BeEquivalentTo("After", "Before", "During", "TEquals");
         constraintDict["ImplementsMinTemporalFilter"].Should().Be("TRUE");
         constraintDict["ImplementsTemporalFilter"].Should().Be("FALSE");
         constraintDict["ImplementsTemporalInstant"].Should().Be("TRUE");
@@ -101,5 +103,23 @@ public class Wfs20FilterCapabilitiesComplianceTests
         }
         spatialOperators.Should().NotContain("EnvelopeIntersects");
         spatialOperators.Should().NotContain("Relate");
+    }
+
+    [Fact]
+    public void FilterCapabilities_EveryAdvertisedTemporalOperator_IsEvaluatedByTheFilterParser()
+    {
+        var advertised = Wfs20FilterCapabilitiesFactory.Build().TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name);
+
+        foreach (var name in advertised)
+        {
+            var filter = Fes20Parser.ParseFilter(
+                "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\" xmlns:gml=\"http://www.opengis.net/gml/3.2\">"
+                + $"<fes:{name}><fes:ValueReference>observed_at</fes:ValueReference>"
+                + "<gml:TimeInstant gml:id=\"t1\"><gml:timePosition>2026-03-15T12:00:00Z</gml:timePosition></gml:TimeInstant>"
+                + $"</fes:{name}></fes:Filter>");
+
+            filter.Should().BeOfType<TemporalPredicate>(because: $"{name} is advertised in Temporal_Capabilities");
+        }
     }
 }

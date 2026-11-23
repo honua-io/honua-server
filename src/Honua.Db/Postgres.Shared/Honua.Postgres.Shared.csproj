@@ -54,6 +54,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
+    <InternalsVisibleTo Include="Honua.OData.TestHost" />
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres.Hosting" />
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
   </ItemGroup>
 
 </Project>

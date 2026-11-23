@@ -140,6 +140,13 @@
       "edition": "Community"
     },
     {
+      "capability": "format.geoparquet",
+      "reasonCode": "content-negotiation",
+      "reason": "GeoParquet is selected with f=parquet on FeatureServer, $format=parquet on OData, format=geoparquet on bulk export, and file upload import; it has no separate route.",
+      "category": "Format",
+      "edition": "Community"
+    },
+    {
       "capability": "geocoding.failover",
       "reasonCode": "config-flag",
       "reason": "Provider failover is a configuration behavior of the geocoding.forward/reverse routes, not a distinct route.",

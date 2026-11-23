@@ -58,6 +58,20 @@ public sealed class SceneAccessEnvelopeServiceTests
     }
 
     [UnitTest]
+    public void Issue_AssetScopeIncludesBaseUrlPath()
+    {
+        const string baseUrl = "https://example.test/tenant/";
+        var service = CreateService();
+
+        var envelope = service.Issue(SceneId, baseUrl);
+
+        var scope = envelope.AssetScopes.Should().ContainSingle().Which;
+        scope.PathPrefix.Should().Be("/tenant/scenes/fixture-scene/");
+        new Uri(Honua.Scene.SceneUrls.AbsoluteCopcUrl(baseUrl, SceneId)).AbsolutePath
+            .Should().StartWith(scope.PathPrefix);
+    }
+
+    [UnitTest]
     public void Issue_TokenStringEncodingIsRedactedInToString()
     {
         var service = CreateService();

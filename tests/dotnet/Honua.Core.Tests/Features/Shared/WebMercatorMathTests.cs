@@ -54,4 +54,25 @@ public sealed class WebMercatorMathTests
         minY.Should().BeApproximately(south, 1.0);
         maxY.Should().BeApproximately(north, 1.0);
     }
+
+    [UnitTest]
+    public void TransformSampledExtent_WebMercatorToWgs84AntimeridianCrossing_PreservesWrappedExtent()
+    {
+        var (westMeters, southMeters) = WebMercatorMath.LonLatToWebMercator(170.0, -10.0);
+        var (eastMeters, northMeters) = WebMercatorMath.LonLatToWebMercator(-170.0, 10.0);
+
+        var (minLon, minLat, maxLon, maxLat) = WebMercatorMath.TransformSampledExtent(
+            westMeters,
+            southMeters,
+            eastMeters,
+            northMeters,
+            WebMercatorMath.WebMercatorToLonLat,
+            4);
+
+        minLon.Should().BeApproximately(170.0, 1e-6);
+        maxLon.Should().BeApproximately(-170.0, 1e-6);
+        minLon.Should().BeGreaterThan(maxLon);
+        minLat.Should().BeApproximately(-10.0, 1e-6);
+        maxLat.Should().BeApproximately(10.0, 1e-6);
+    }
 }

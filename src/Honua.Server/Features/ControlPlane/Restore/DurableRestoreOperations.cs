@@ -362,10 +362,7 @@ internal sealed partial class DurableRestoreWorker(
         }
         if (workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
-            // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself.
-            var code = workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired }
-                ? ComposeExecutorCodes.ContractApprovalRequired : PreMigrationRestoreCodes.RestoreIncomplete;
-            await FailAsync(record, code, cancellationToken).ConfigureAwait(false);
+            await FailLocalDeployAsync(record, workflow, cancellationToken).ConfigureAwait(false);
             return;
         }
         if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
@@ -497,21 +494,40 @@ internal sealed partial class DurableRestoreWorker(
             code, cancellationToken).ConfigureAwait(false);
     }
 
+    // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself,
+    // with the refused scripts and nonce as the phase a new proposal copies.
+    private Task FailLocalDeployAsync(WorkflowOperationRecord record, WorkflowOperationRecord workflow, CancellationToken cancellationToken)
+        => workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired }
+            ? WriteFinishAsync(record with
+            {
+                Status = WorkflowOperationStatus.Failed,
+                CurrentPhase = workflow.ErrorMessage ?? AttentionPhase,
+                ErrorMessage = ComposeExecutorCodes.ContractApprovalRequired
+            }, cancellationToken)
+            : FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken);
+
     private Task FailAsync(WorkflowOperationRecord record, string code, CancellationToken cancellationToken)
         => FinishAsync(record, WorkflowOperationStatus.Failed, code, cancellationToken);
 
-    private async Task FinishAsync(WorkflowOperationRecord record, WorkflowOperationStatus status, string? code, CancellationToken cancellationToken)
-    {
-        var written = await store.TrySetAsync(record with
+    private const string AttentionPhase = "Restore requires operator attention.";
+
+    private Task FinishAsync(WorkflowOperationRecord record, WorkflowOperationStatus status, string? code, CancellationToken cancellationToken)
+        => WriteFinishAsync(record with
         {
             Status = status,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = status == WorkflowOperationStatus.Succeeded ? "Restore and protection window completed." : "Restore requires operator attention.",
+            CurrentPhase = status == WorkflowOperationStatus.Succeeded ? "Restore and protection window completed." : AttentionPhase,
             ErrorMessage = code
+        }, cancellationToken);
+
+    private async Task WriteFinishAsync(WorkflowOperationRecord finished, CancellationToken cancellationToken)
+    {
+        var written = await store.TrySetAsync(finished with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow
         }, OwnerRetention, cancellationToken).ConfigureAwait(false);
         if (written)
-            await ReleaseCellAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
+            await ReleaseCellAsync(finished.OperationId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ReleaseCellAsync(string id, CancellationToken cancellationToken)

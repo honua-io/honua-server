@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -16,7 +17,9 @@ internal static class ControlPlaneHttpClients
     public static IServiceCollection AddControlPlaneHttpClients(this IServiceCollection services)
     {
         services.AddResilientHttpClient(Telemetry, Telemetry, HttpResiliencePolicies.FastApiDefaults);
-        services.AddHttpClient(Probe);
+        services.AddHttpClient(Probe)
+            .ConfigurePrimaryHttpMessageHandler(provider => ControlPlaneProbeHttpHandler.Create(
+                () => provider.GetService<IOptionsMonitor<ControlPlaneOptions>>()?.CurrentValue.AllowPrivateNetworkProbes == true));
         return services;
     }
 }

@@ -73,7 +73,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         Geometry boundary;
         try
         {
-            boundary = new WKBReader().Read(boundaryWkb);
+            boundary = new WKBReader { HandleSRID = true }.Read(boundaryWkb);
         }
         catch (ParseException ex)
         {
@@ -92,7 +92,8 @@ internal sealed partial class GdalRasterClipJobExecutor(
                 $"Invalid clip inputs: boundary must be a Polygon or MultiPolygon; got '{boundary.GeometryType}'.");
         }
 
-        if (GdalJobInputReader.TryGetInput(parameters, "boundarySrid", out var boundarySridRaw)
+        if ((GdalJobInputReader.TryGetInput(parameters, "boundarySrid", out var boundarySridRaw)
+             || GdalJobInputReader.TryGetInput(parameters, "srid", out boundarySridRaw))
             && !string.IsNullOrWhiteSpace(boundarySridRaw))
         {
             if (!int.TryParse(boundarySridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) || srid <= 0)

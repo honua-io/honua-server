@@ -19,7 +19,7 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 Every scene surface on this page is off by default. On a default install,
 `/api/v1/capabilities/manifest` reports `reasonCode: experimental-disabled`,
 all 3D scene HTTP routes (`/api/scenes*`, `/scenes/{sceneId}/*`,
-`/api/v1/admin/scenes*`, `/api/v1/admin/scenes/ingest/{citygml,pointcloud}`)
+`/api/v1/admin/scenes*`, `/api/v1/admin/scenes/ingest/{archive,model,citygml,pointcloud}`)
 are not mapped and return HTTP `404` (gRPC returns `UNIMPLEMENTED`), and
 `/rest/services/{sceneId}/SceneServer` falls through to a GeoServices HTTP
 `200` `error.code=404` envelope. Turn on each experimental capability you need
@@ -27,8 +27,8 @@ with its environment variable, then restart the server:
 
 | Capability key | Environment variable | Maps |
 | --- | --- | --- |
-| `scene.catalog` | `Capabilities__Experimental__scene.catalog__Enabled=true` | [Scene discovery](#scene-discovery-public-sdk-compatible) (`/api/scenes*`), the [admin scene registry](#scene-dataset-registry-admin) (`/api/v1/admin/scenes*` except generate and ingest), gRPC `SceneService` |
-| `serve.3d-tiles-scene` | `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` | [Hosted 3D Tiles serving](#hosted-3d-tiles-serving) (`/scenes/{sceneId}/tileset.json`, assets, `access-envelope`, OpenUSD export), `POST /api/v1/admin/scenes/generate`, gRPC `TileService` |
+| `scene.catalog` | `Capabilities__Experimental__scene.catalog__Enabled=true` | [Scene discovery](#scene-discovery-public-sdk-compatible) (`/api/scenes*`), the [admin scene registry](#scene-dataset-registry-admin) (`/api/v1/admin/scenes*` except generate, ingest, jobs and assets), gRPC `SceneService` |
+| `serve.3d-tiles-scene` | `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` | [Hosted 3D Tiles serving](#hosted-3d-tiles-serving) (`/scenes/{sceneId}/tileset.json`, assets, `access-envelope`, OpenUSD export), `POST /api/v1/admin/scenes/generate`, [archive and model import](#scene-import-admin-community) (`POST /api/v1/admin/scenes/ingest/{archive,model}`), gRPC `TileService` |
 | `serve.i3s-scene` | `Capabilities__Experimental__serve.i3s-scene__Enabled=true` | I3S `SceneServer` routes under `/rest/services/{sceneId}/SceneServer` and the `/scenes/{sceneId}/SceneServer` alias |
 | `scene.bim-ingest` | `Capabilities__Experimental__scene.bim-ingest__Enabled=true` | `POST /api/v1/admin/scenes/ingest/citygml` |
 | `scene.pointcloud-ingest` | `Capabilities__Experimental__scene.pointcloud-ingest__Enabled=true` | `POST /api/v1/admin/scenes/ingest/pointcloud` |
@@ -40,7 +40,10 @@ without their entitlement. The scene switches need a build that includes the sce
 module (the default `all` protocol profile); a restricted protocol-profile
 build refuses to start when one of them, or the global switch, is set. Elevation (REST elevation, sun-shadow and slice
 routes, gRPC `ElevationService`) and Terrain-RGB tiles have no switch and are
-always on. The resolve responses return tileset URLs, so enable
+always on. The [job status and asset lifecycle](#scene-jobs-and-asset-lifecycle-admin)
+routes (`/api/v1/admin/scenes/jobs*`, `/api/v1/admin/scenes/assets*`) are mapped
+when any of `serve.3d-tiles-scene`, `scene.bim-ingest` or
+`scene.pointcloud-ingest` is on and the server uses PostgreSQL. The resolve responses return tileset URLs, so enable
 `serve.3d-tiles-scene` together with `scene.catalog` for a scene that clients
 can both discover and load.
 
@@ -64,6 +67,17 @@ can both discover and load.
 | GET | `/scenes/{sceneId}/SceneServer/layers/{layerId}` | I3S scene layer (Enterprise-gated). |
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
+
+Registered COPC scenes use `GET, HEAD /scenes/{sceneId}/copc`. GET accepts one
+byte range: explicit (`bytes=0-511`), open-ended (`bytes=100-`), or suffix
+(`bytes=-512`). The server resolves the range against the object length and
+returns `206` only when the resulting byte count fits
+`Scenes:ObjectOrigin:MaxRangeReadBytes`. Invalid, multiple, out-of-file, and
+over-ceiling ranges return `416` with `Content-Range: bytes */<object length>`;
+over-ceiling ranges are rejected before opening the body read. Open-ended and
+suffix ranges must fit the same ceiling. Requests without an effective range
+use `Scenes:ObjectOrigin:MaxCopcFullResponseBytes` and return `413` when the
+whole object exceeds that limit.
 
 The I3S adapter derives descriptors, node pages, geometry, scalar attributes,
 statistics, materials, and available PNG/JPEG textures from persisted B3DM/GLB
@@ -110,6 +124,19 @@ Key record fields: `id` (URL slug), `name` (globally unique), `assetRoot` (serve
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/scenes` with `{"id":"downtown","name":"Downtown massing model","assetRoot":"/data/scenes/downtown","isPublic":true}`.
 
+## Scene import (admin, Community)
+
+These routes import an already-built 3D asset as a hosted 3D Tiles scene, register it in the scene dataset registry, and return `201` with the scene id, tileset URL and I3S URL. They need `serve.3d-tiles-scene` on a PostgreSQL-backed server (HTTP `404` otherwise) and admin authorization; they are not edition-gated. Both accept `multipart/form-data` with a `file` field. A scene id or display name that is already registered returns `409`.
+
+| Method | Path | Source → output | Upload limit |
+| --- | --- | --- | --- |
+| POST | `/api/v1/admin/scenes/ingest/archive` | Pre-tiled 3D Tiles ZIP or 3TZ archive → hosted 3D Tiles tileset | 256 MiB |
+| POST | `/api/v1/admin/scenes/ingest/model` | Georeferenced GLB, embedded glTF or OBJ model → 3D Tiles 1.1 tileset | 128 MiB |
+
+Common form fields: `file` (required), `sceneId` (optional URL slug; derived when omitted), `displayName`, `description`, `editionGate`, `cacheMaxAgeSeconds`, `requiresAuth`. The archive route also takes `tilesetFileName` (default `tileset.json`). By default an archive is rejected with `400` above 10,000 entries, 512 MiB uncompressed, 128 MiB for one entry, path depth 32 or relative paths over 512 characters.
+
+The model route places the model with `longitude` and `latitude` (required, degrees), and optional `height` (metres, default `0`), `headingDegrees`, `pitchDegrees`, `rollDegrees` (default `0`), and `scale` or per-axis `scaleX`/`scaleY`/`scaleZ` (default `1`).
+
 ## Scene ingest (admin, Enterprise)
 
 Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. Once opted in via `Capabilities:Experimental` (`scene.bim-ingest` / `scene.pointcloud-ingest`; HTTP `404` otherwise), all routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Geographic, uncompressed LAS and CityGML conversion is managed in-process; compressed or projected point clouds use the configured out-of-process `pcloud.translate` worker. The tileset is materialised inline and promoted atomically to its asset root.
@@ -133,6 +160,32 @@ Run `POST /api/v1/admin/scenes/ingest/pointcloud` with form values `file=cloud.l
 
 The registered tileset serves through the standard [hosted serving](#hosted-3d-tiles-serving) routes and loads in CesiumJS like any other point tileset.
 
+### Experimental asynchronous scene jobs
+
+Scene generation and ingest return their results synchronously by default.
+Setting `SceneGeneration__EnableExperimentalAsyncJobs=true` on the server enables
+the experimental async preference and the admin job status routes. Request
+async with `async=true` (query string or form field) or a
+`Prefer: respond-async` header; the server returns `202` with the job id and a
+`Location` header naming its status URL. With the setting disabled, explicit
+async requests and the job status routes return HTTP 503.
+
+The experimental queue is bounded per server instance. A full queue returns
+HTTP 429 with `Retry-After: 5`. Poll the instance that accepted the job. Restarting
+that instance loses accepted jobs and their status. Durable staging, shared job
+status across replicas, and idempotent async submission remain future work.
+
+## Scene jobs and asset lifecycle (admin)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/admin/scenes/jobs` | List asynchronous generation and ingest jobs on this instance (`503` when async jobs are disabled). |
+| GET | `/api/v1/admin/scenes/jobs/{jobId}` | One job's status (`404` when this instance does not know it). |
+| GET | `/api/v1/admin/scenes/assets` | Lifecycle view of each scene, combining registry state with its latest job. |
+| GET | `/api/v1/admin/scenes/assets/{sceneId}` | One scene's lifecycle view (`404` when unknown). |
+
+A lifecycle view reports the scene id and dataset id, source kind, lifecycle and job status, latest job id, published revision, tileset and I3S URLs, byte size and file count, warnings, access flags, CRS, extent and timestamps.
+
 ## gRPC scene access
 
 `SceneService`, `TileService`, and `ElevationService` expose the same scene/tile/elevation reads over gRPC — see [gRPC](grpc.md). `SceneService` needs `scene.catalog` and `TileService` needs `serve.3d-tiles-scene` ([enable the 3D surfaces](#enable-the-3d-surfaces)); `ElevationService` is always on.
@@ -150,7 +203,7 @@ without it their routes return `404` whatever the edition.
 
 | Capability key | Edition | Route/surface | Unlicensed result |
 |---|---|---|---|
-| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated (experimental switch required) |
+| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets; archive and model import | Not edition-gated (experimental switch required) |
 | `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptors and persisted node geometry/attribute/texture/statistics resources | `402` |
 | `scene.catalog` | Community | `/api/scenes*` | Not edition-gated (experimental switch required) |
 | `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response |

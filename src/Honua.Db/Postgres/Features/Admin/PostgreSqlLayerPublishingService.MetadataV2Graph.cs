@@ -54,9 +54,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             {
                 // A bootstrap and its first persisted snapshot can share a revision number.
                 // A pinned preview must never be rebound to a different write base on retry.
-                throw new LayerPublishingException(
-                    LayerPublishingErrorKind.Conflict,
-                    "Publication metadata changed after preview. Create a new preview before publishing.");
+                throw LayerPublicationBaseChanged.Create();
             }
             catch (MetadataV2GraphConcurrencyException) when (attempt < MetadataGraphConflictAttempts)
             {
@@ -3516,11 +3514,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "GlobalIdField must reference a published UUID column.");
         }
 
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
+        var hasEditCapabilities = request.Capabilities is { Count: > 0 }
+            ? request.Capabilities.Any(static capability =>
+                !string.IsNullOrWhiteSpace(capability) &&
+                Array.Exists(_editCapabilityTokens, token => token.Equals(capability.Trim(), StringComparison.OrdinalIgnoreCase)))
+            : request.CreateEditableCopy;
+
         return new MetadataV2ObjectEditing
         {
             GlobalIdField = globalId?.Name,
             SupportsAttachments = request.SupportsAttachments,
-            CanModify = request.CreateEditableCopy,
+            CanModify = isManagedStore && hasEditCapabilities,
             SupportsRelatedRecords = false
         };
     }

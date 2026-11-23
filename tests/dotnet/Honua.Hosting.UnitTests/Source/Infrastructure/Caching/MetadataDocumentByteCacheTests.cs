@@ -283,6 +283,33 @@ public sealed class MetadataDocumentByteCacheTests
         Assert.Equal(2, buildCount);
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetOrBuildJsonAsync_WhenBuilderMarksNoStore_DoesNotRetainPartialPayload()
+    {
+        var cache = new MetadataDocumentByteCache();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(cache).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+        var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context, new JsonMetadataCacheRequest<SampleJsonDoc>
+        {
+            CacheKey = "json-key",
+            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
+            BuildAsync = () =>
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                return Task.FromResult(new SampleJsonDoc("partial", 1));
+            }
+        });
+        await result.ExecuteAsync(context);
+
+        Assert.Contains("partial", Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray()), StringComparison.Ordinal);
+        Assert.True(context.Response.GetTypedHeaders().CacheControl?.NoStore);
+        Assert.Null(cache.Get(cache.CaptureStamp(0), "json-key"));
+        var (_, recoveredBody) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("complete", 2));
+        Assert.Contains("complete", Encoding.UTF8.GetString(recoveredBody), StringComparison.Ordinal);
+    }
+
     private sealed class MutableGenerationSource(long generation) : IConfigurationGenerationSource
     {
         internal long Generation { get; set; } = generation;

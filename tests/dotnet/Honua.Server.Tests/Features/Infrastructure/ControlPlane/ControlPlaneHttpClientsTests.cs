@@ -8,12 +8,34 @@ using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class ControlPlaneHttpClientsTests
 {
+    [UnitTest]
+    public void ProbeRegistration_AppliesTheConnectionPolicy()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddControlPlaneHttpClients();
+        using var provider = services.BuildServiceProvider();
+        var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(ControlPlaneHttpClients.Probe);
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler!;
+        }
+
+        var transport = handler.Should().BeOfType<SocketsHttpHandler>().Subject;
+        transport.AllowAutoRedirect.Should().BeFalse();
+        transport.UseProxy.Should().BeFalse();
+        transport.UseCookies.Should().BeFalse();
+        transport.ConnectCallback.Should().NotBeNull();
+    }
+
     [Fact]
     public async Task FailingCandidateProbes_AreSentOncePerSample_AndCannotBlindTheTelemetryClient()
     {

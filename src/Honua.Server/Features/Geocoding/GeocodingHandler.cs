@@ -189,7 +189,8 @@ internal sealed class GeocodingHandler(
             // candidates higher on providers that support proximity weighting and is gracefully
             // ignored on providers that do not (SupportsBiasing=false). location/distance are
             // validated up front so malformed values are rejected with a clear error.
-            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            var (biasValid, biasLocation, biasDistanceMeters, biasError) = await TryParseBiasAsync(context, values).ConfigureAwait(false);
+            if (!biasValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -496,7 +497,8 @@ internal sealed class GeocodingHandler(
 
             // Forward proximity bias: location/distance bias suggestions towards a point on
             // providers that support proximity weighting, gracefully ignored elsewhere.
-            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            var (biasValid, biasLocation, biasDistanceMeters, biasError) = await TryParseBiasAsync(context, values).ConfigureAwait(false);
+            if (!biasValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -689,13 +691,18 @@ internal sealed class GeocodingHandler(
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                var resultId = ResolveClientResultId(ResolveResultId(candidate, index), recordIds!);
+                var recordIndex = ResolveResultId(candidate, index);
+                var resultId = ResolveClientResultId(recordIndex, recordIds!);
+                var isBlankInput = recordIndex >= 0 && recordIndex < queries.Count && string.IsNullOrWhiteSpace(queries[recordIndex]);
+                var effectiveCandidate = isBlankInput
+                    ? Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.CreateNoMatch(recordIndex)
+                    : candidate;
 
-                var isMatch = !double.IsNaN(candidate.X) && !double.IsNaN(candidate.Y);
+                var isMatch = !isBlankInput && !double.IsNaN(effectiveCandidate.X) && !double.IsNaN(effectiveCandidate.Y);
                 GeocodePoint? location = null;
                 if (isMatch)
                 {
-                    var projected = await TryReprojectGeocodePointAsync(context, candidate.X, candidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
+                    var projected = await TryReprojectGeocodePointAsync(context, effectiveCandidate.X, effectiveCandidate.Y, outSrid, cancellationToken).ConfigureAwait(false);
                     if (projected is null)
                     {
                         return CreateUnsupportedOutSrResult(context, outSrid);
@@ -716,11 +723,11 @@ internal sealed class GeocodingHandler(
                 reprojectedLocations.Add(new GeocodeAddressLocation
                 {
                     ResultId = resultId,
-                    Address = candidate.Address,
-                    Score = candidate.Score,
+                    Address = effectiveCandidate.Address,
+                    Score = effectiveCandidate.Score,
                     Location = location,
                     Attributes = WithResultId(
-                        ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields),
+                        ProjectAttributes(GeoServicesAddressAttributes(effectiveCandidate), outFields),
                         resultId)
                 });
             }
@@ -785,18 +792,25 @@ internal sealed class GeocodingHandler(
             // wouldn't preserve the dual-output/index-tracking behavior cleanly.
             foreach (var address in (recordsArray.EnumerateArray()).Select(record => ExtractAddressFromRecord(record)))
             {
-                if (!string.IsNullOrWhiteSpace(address))
+                if (address is not null)
                 {
-                    try
+                    if (!string.IsNullOrWhiteSpace(address))
                     {
-                        GeocodeQueryLimits.EnsureBounded(address, "records");
-                    }
-                    catch (GeocodeRequestException ex)
-                    {
-                        return new([], [], ex.Message);
-                    }
+                        try
+                        {
+                            GeocodeQueryLimits.EnsureBounded(address, "records");
+                        }
+                        catch (GeocodeRequestException ex)
+                        {
+                            return new([], [], ex.Message);
+                        }
 
-                    queries.Add(address);
+                        queries.Add(address);
+                    }
+                    else
+                    {
+                        queries.Add(string.Empty);
+                    }
                 }
                 else
                 {
@@ -815,7 +829,7 @@ internal sealed class GeocodingHandler(
                 return new([], [], error);
             }
 
-            if (queries.Count == 0)
+            if (queries.Count == 0 || queries.All(string.IsNullOrWhiteSpace))
             {
                 return new([], [], "No valid address records found in the request.");
             }
@@ -828,30 +842,56 @@ internal sealed class GeocodingHandler(
         }
     }
 
-    // Reads the GeoServices record correlation id (attributes.OBJECTID, number or numeric string).
+    // Reads the GeoServices record correlation id (attributes.ResultID or attributes.OBJECTID, number or numeric string).
     private static int? ExtractObjectIdFromRecord(JsonElement record)
     {
-        if (record.ValueKind != JsonValueKind.Object ||
-            !record.TryGetProperty("attributes", out var attributes) ||
-            attributes.ValueKind != JsonValueKind.Object ||
-            !attributes.TryGetProperty("OBJECTID", out var objectId))
+        if (record.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        return objectId.ValueKind switch
+        if (record.TryGetProperty("attributes", out var attributes) &&
+            attributes.ValueKind == JsonValueKind.Object &&
+            (TryExtractCorrelationId(attributes, "ResultID", out var attrId) ||
+             TryExtractCorrelationId(attributes, "OBJECTID", out attrId)))
         {
-            JsonValueKind.Number when objectId.TryGetInt32(out var number) => number,
-            JsonValueKind.String when int.TryParse(objectId.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => null
-        };
+            return attrId;
+        }
+
+        if (TryExtractCorrelationId(record, "ResultID", out var topId) ||
+            TryExtractCorrelationId(record, "OBJECTID", out topId))
+        {
+            return topId;
+        }
+
+        return null;
+    }
+
+    private static bool TryExtractCorrelationId(JsonElement element, string propertyName, out int? id)
+    {
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                id = prop.Value.ValueKind switch
+                {
+                    JsonValueKind.Number when prop.Value.TryGetInt32(out var number) => number,
+                    JsonValueKind.String when int.TryParse(prop.Value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+                    _ => null
+                };
+                return id.HasValue;
+            }
+        }
+
+        id = null;
+        return false;
     }
 
     private static string? ExtractAddressFromRecord(JsonElement record)
     {
         if (record.ValueKind == JsonValueKind.String)
         {
-            return record.GetString();
+            return record.GetString() ?? string.Empty;
         }
 
         if (record.ValueKind != JsonValueKind.Object)
@@ -862,23 +902,20 @@ internal sealed class GeocodingHandler(
         // Try attributes.SingleLine first
         if (record.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
         {
-            if (attributes.TryGetProperty("SingleLine", out var singleLine) && singleLine.ValueKind == JsonValueKind.String)
+            var singleLineValue = TryGetStringPropertyCaseInsensitive(attributes, "SingleLine");
+            if (!string.IsNullOrWhiteSpace(singleLineValue))
             {
-                var value = singleLine.GetString();
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    return value;
-                }
+                return singleLineValue;
             }
 
             // Concatenate structured fields
             var parts = new[]
             {
-                TryGetStringProperty(attributes, "Address"),
-                TryGetStringProperty(attributes, "City"),
-                TryGetStringProperty(attributes, "Region"),
-                TryGetStringProperty(attributes, "Postal"),
-                TryGetStringProperty(attributes, "CountryCode")
+                TryGetStringPropertyCaseInsensitive(attributes, "Address"),
+                TryGetStringPropertyCaseInsensitive(attributes, "City"),
+                TryGetStringPropertyCaseInsensitive(attributes, "Region"),
+                TryGetStringPropertyCaseInsensitive(attributes, "Postal"),
+                TryGetStringPropertyCaseInsensitive(attributes, "CountryCode")
             }
             .Where(static part => !string.IsNullOrWhiteSpace(part))
             .Select(static part => part!.Trim());
@@ -888,20 +925,64 @@ internal sealed class GeocodingHandler(
             {
                 return joined;
             }
+
+            if (HasAnyBatchAddressOrIdProperty(attributes))
+            {
+                return string.Empty;
+            }
         }
 
         // Try top-level address/singleLine as fallback
         if (record.TryGetProperty("address", out var addr) && addr.ValueKind == JsonValueKind.String)
         {
-            return addr.GetString();
+            return addr.GetString() ?? string.Empty;
         }
 
         if (record.TryGetProperty("singleLine", out var sl) && sl.ValueKind == JsonValueKind.String)
         {
-            return sl.GetString();
+            return sl.GetString() ?? string.Empty;
         }
 
         return null;
+    }
+
+    private static string? TryGetStringPropertyCaseInsensitive(JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var exact) && exact.ValueKind == JsonValueKind.String)
+        {
+            return exact.GetString();
+        }
+
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                prop.Value.ValueKind == JsonValueKind.String)
+            {
+                return prop.Value.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasAnyBatchAddressOrIdProperty(JsonElement attributes)
+    {
+        foreach (var prop in attributes.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, "SingleLine", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "Address", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "City", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "Region", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "Postal", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "CountryCode", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "OBJECTID", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(prop.Name, "ResultID", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? TryGetStringProperty(JsonElement element, string propertyName)
@@ -1220,38 +1301,70 @@ internal sealed class GeocodingHandler(
     // default spatial reference (the GeoServices bias point convention) and the distance reuses the
     // shared positive-meters validation. A blank location yields no bias (null) even if a distance
     // is present, since a radius without a centre cannot bias results. Invalid values are rejected.
-    private bool TryParseBias(
-        IReadOnlyDictionary<string, StringValues> values,
-        out Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation,
-        out double? biasDistanceMeters,
-        out string? error)
+    private async ValueTask<(bool IsValid, Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? BiasLocation, double? BiasDistanceMeters, string? Error)> TryParseBiasAsync(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values)
     {
-        biasLocation = null;
-        biasDistanceMeters = null;
-        error = null;
-
         var rawLocation = GetValue(values, "location");
         if (string.IsNullOrWhiteSpace(rawLocation))
         {
-            return true;
+            return (true, null, null, null);
         }
 
-        if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
+        if (!TryParseLocation(rawLocation, out var biasX, out var biasY, out var biasWkid))
         {
-            error = "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.";
-            return false;
+            return (false, null, null, "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
+        }
+
+        if (!double.IsFinite(biasX) || !double.IsFinite(biasY))
+        {
+            return (false, null, null, "location coordinates must be finite numbers.");
+        }
+
+        var biasLon = biasX;
+        var biasLat = biasY;
+        if (biasWkid.HasValue && biasWkid.Value != 4326 && biasWkid.Value != 0)
+        {
+            if (Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(biasWkid.Value))
+            {
+                (biasLon, biasLat) = Honua.Core.Features.Shared.Models.WebMercatorMath.WebMercatorToLonLat(biasX, biasY);
+            }
+            else
+            {
+                var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
+                var transformed = transformService is not null
+                    ? await transformService.TransformPointAsync(biasX, biasY, biasWkid.Value, 4326, context.RequestAborted).ConfigureAwait(false)
+                    : null;
+                if (transformed is null)
+                {
+                    return (false, null, null, $"location spatial reference {biasWkid.Value} is not supported for reprojection.");
+                }
+
+                (biasLon, biasLat) = transformed.Value;
+            }
+        }
+
+        if (!IsValidCoordinate(biasLon, biasLat))
+        {
+            return (false, null, null, "location coordinates are outside valid geographic bounds [-180, 180] x [-90, 90].");
         }
 
         if (!TryParseDistanceMeters(GetValue(values, "distance"), out var distanceMeters, out var distanceError))
         {
-            error = distanceError ?? "Invalid distance parameter.";
-            return false;
+            return (false, null, null, distanceError ?? "Invalid distance parameter.");
         }
 
-        biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
-        biasDistanceMeters = distanceMeters;
-        return true;
+        var biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasLon, biasLat, _options.DefaultSpatialReferenceWkid);
+        return (true, biasLocation, distanceMeters, null);
     }
+
+    private static bool IsValidCoordinate(double longitude, double latitude)
+        => double.IsFinite(longitude)
+            && double.IsFinite(latitude)
+            && longitude >= -180.0
+            && longitude <= 180.0
+            && latitude >= -90.0
+            && latitude <= 90.0;
 
     // Parses the reverseGeocode featureTypes parameter (a comma-delimited list of
     // Esri feature-type tokens, e.g. "PointAddress,StreetAddress"). Missing/blank

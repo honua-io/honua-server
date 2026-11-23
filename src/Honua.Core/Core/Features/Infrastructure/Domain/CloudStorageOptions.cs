@@ -30,6 +30,15 @@ public sealed record CloudStorageOptions
     public PMTilesPublishOptions PMTilesPublish { get; set; } = new();
 
     public PublicDataStorageOptions PublicData { get; set; } = new();
+
+    // The key prefix the selected provider puts in front of the keys it generates, exactly as configured.
+    // Callers that build their own object keys apply their own normalisation to it.
+    public string? ProviderKeyPrefix() => Provider switch
+    {
+        CloudStorageProvider.AwsS3 => AwsS3?.KeyPrefix,
+        CloudStorageProvider.AzureBlob => AzureBlob?.BlobPrefix,
+        _ => null
+    };
 }
 
 public sealed record PublicDataStorageOptions

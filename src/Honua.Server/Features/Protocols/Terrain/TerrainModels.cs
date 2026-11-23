@@ -16,6 +16,9 @@ internal sealed record TerrainMetadataResponse
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
+    [JsonPropertyName("attribution")]
+    public string? Attribution { get; init; }
+
     [JsonPropertyName("scheme")]
     public string Scheme { get; init; } = "xyz";
 
@@ -45,6 +48,15 @@ internal sealed record TerrainMetadataResponse
 
     [JsonPropertyName("noData")]
     public required TerrainNoDataMetadata NoData { get; init; }
+
+    [JsonPropertyName("coverage")]
+    public required TerrainCoverageMetadata Coverage { get; init; }
+
+    [JsonPropertyName("capabilities")]
+    public required TerrainCapabilitiesMetadata Capabilities { get; init; }
+
+    [JsonPropertyName("links")]
+    public required TerrainLinkMetadata[] Links { get; init; }
 
     [JsonPropertyName("supported")]
     public bool Supported { get; init; }
@@ -138,4 +150,70 @@ internal sealed record TerrainNoDataMetadata
 
     [JsonPropertyName("semantics")]
     public string Semantics { get; init; } = "Source no-data and uncovered pixels are encoded as opaque Terrain-RGB [0,0,0] (-10000m).";
+}
+
+internal sealed record TerrainCoverageMetadata
+{
+    [JsonPropertyName("wgs84Bounds")]
+    public double[]? Wgs84Bounds { get; init; }
+
+    [JsonPropertyName("minZoom")]
+    public int MinZoom { get; init; }
+
+    [JsonPropertyName("maxZoom")]
+    public int MaxZoom { get; init; }
+
+    [JsonPropertyName("rasterCount")]
+    public int RasterCount { get; init; }
+
+    [JsonPropertyName("hasCoverage")]
+    public bool HasCoverage { get; init; }
+}
+
+internal sealed record TerrainCapabilitiesMetadata
+{
+    [JsonPropertyName("terrainRgb")]
+    public required TerrainCapabilityStatus TerrainRgb { get; init; }
+
+    [JsonPropertyName("quantizedMesh")]
+    public required TerrainCapabilityStatus QuantizedMesh { get; init; }
+}
+
+internal sealed record TerrainCapabilityStatus
+{
+    [JsonPropertyName("capability")]
+    public required string Capability { get; init; }
+
+    [JsonPropertyName("format")]
+    public required string Format { get; init; }
+
+    [JsonPropertyName("available")]
+    public bool Available { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("href")]
+    public string? Href { get; init; }
+
+    [JsonPropertyName("reasons")]
+    public string[] Reasons { get; init; } = [];
+}
+
+internal sealed record TerrainLinkMetadata
+{
+    [JsonPropertyName("rel")]
+    public required string Rel { get; init; }
+
+    [JsonPropertyName("href")]
+    public required string Href { get; init; }
+
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    [JsonPropertyName("format")]
+    public required string Format { get; init; }
+
+    [JsonPropertyName("title")]
+    public required string Title { get; init; }
 }

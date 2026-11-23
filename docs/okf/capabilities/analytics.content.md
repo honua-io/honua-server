@@ -16,6 +16,7 @@ Store and retrieve spatial-analysis artifacts. The analytics compute operations 
 | Capability key | `analytics.content` |
 | Category | Analytics |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 13 implemented |
 | Registry entries | 13 |
 | Proving tests | 22 |

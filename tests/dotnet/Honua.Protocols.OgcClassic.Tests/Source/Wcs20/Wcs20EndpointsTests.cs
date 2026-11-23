@@ -693,8 +693,9 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&RANGESUBSET=band5");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("exceptionCode=\"NoSuchField\"");
         content.Should().Contain("locator=\"RANGESUBSET\"");
     }
 

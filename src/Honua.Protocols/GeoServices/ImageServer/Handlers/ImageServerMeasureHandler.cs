@@ -28,7 +28,8 @@ internal sealed class ImageServerMeasureHandler
     private readonly record struct MeasureGeometry(
         MeasurePoint[] Points,
         string GeometryType,
-        int? Srid);
+        int? Srid,
+        IReadOnlyList<MeasurePoint[]>? Rings = null);
 
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerMeasureHandler> _logger;
@@ -317,16 +318,19 @@ internal sealed class ImageServerMeasureHandler
                     return false;
                 }
 
+                MeasurePoint[] envelopeRing =
+                [
+                    new MeasurePoint(xmin, ymin, null, srid),
+                    new MeasurePoint(xmin, ymax, null, srid),
+                    new MeasurePoint(xmax, ymax, null, srid),
+                    new MeasurePoint(xmax, ymin, null, srid),
+                    new MeasurePoint(xmin, ymin, null, srid)
+                ];
                 geometry = new MeasureGeometry(
-                    [
-                        new MeasurePoint(xmin, ymin, null, srid),
-                        new MeasurePoint(xmin, ymax, null, srid),
-                        new MeasurePoint(xmax, ymax, null, srid),
-                        new MeasurePoint(xmax, ymin, null, srid),
-                        new MeasurePoint(xmin, ymin, null, srid)
-                    ],
+                    envelopeRing,
                     normalizedType,
-                    srid);
+                    srid,
+                    [envelopeRing]);
                 return true;
             }
 
@@ -339,6 +343,7 @@ internal sealed class ImageServerMeasureHandler
             }
 
             var points = new List<MeasurePoint>();
+            var parsedRings = new List<MeasurePoint[]>();
             foreach (var ring in rings.EnumerateArray())
             {
                 if (ring.ValueKind != JsonValueKind.Array)
@@ -346,12 +351,18 @@ internal sealed class ImageServerMeasureHandler
                     continue;
                 }
 
-                points.AddRange(ring.EnumerateArray()
+                var ringPoints = ring.EnumerateArray()
                     .Where(pair => pair.ValueKind == JsonValueKind.Array &&
                         pair.GetArrayLength() >= 2 &&
                         pair[0].ValueKind == JsonValueKind.Number &&
                         pair[1].ValueKind == JsonValueKind.Number)
-                    .Select(pair => new MeasurePoint(pair[0].GetDouble(), pair[1].GetDouble(), null, srid)));
+                    .Select(pair => new MeasurePoint(pair[0].GetDouble(), pair[1].GetDouble(), null, srid))
+                    .ToArray();
+                if (ringPoints.Length > 0)
+                {
+                    parsedRings.Add(ringPoints);
+                    points.AddRange(ringPoints);
+                }
             }
 
             if (points.Count < 4)
@@ -360,7 +371,7 @@ internal sealed class ImageServerMeasureHandler
                 return false;
             }
 
-            geometry = new MeasureGeometry([.. points], normalizedType, srid);
+            geometry = new MeasureGeometry([.. points], normalizedType, srid, parsedRings);
             return true;
         }
         catch (JsonException)
@@ -471,22 +482,28 @@ internal sealed class ImageServerMeasureHandler
         string areaUnit,
         CancellationToken cancellationToken)
     {
-        var (coordinates, space) = await NormalizeRingAsync(geometry, cancellationToken).ConfigureAwait(false);
+        var (rings, space) = await NormalizeRingsAsync(geometry, cancellationToken).ConfigureAwait(false);
 
         double areaSquareMeters;
-        double perimeterMeters;
+        double perimeterMeters = 0d;
         if (space == MeasureSpace.Geodesic)
         {
-            areaSquareMeters = ImageServerMensurationMath.GeodesicRingAreaSquareMeters(coordinates);
-            perimeterMeters = GeodesicPerimeterMeters(coordinates);
+            areaSquareMeters = ImageServerMensurationMath.GeodesicPolygonAreaSquareMeters(rings);
+            foreach (var ring in rings)
+            {
+                perimeterMeters += GeodesicPerimeterMeters(ring);
+            }
         }
         else
         {
             // Planar fallback: convert the CRS linear unit to meters (length scales by the
             // factor, area by its square).
             var metersPerUnit = await ResolveMetersPerUnitAsync(geometry.Srid, cancellationToken).ConfigureAwait(false);
-            areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates) * metersPerUnit * metersPerUnit;
-            perimeterMeters = PlanarPerimeterMeters(coordinates) * metersPerUnit;
+            areaSquareMeters = ImageServerMensurationMath.PlanarPolygonAreaSquareMeters(rings) * metersPerUnit * metersPerUnit;
+            foreach (var ring in rings)
+            {
+                perimeterMeters += PlanarPerimeterMeters(ring) * metersPerUnit;
+            }
         }
 
         var (area, responseAreaUnit) = ConvertArea(areaSquareMeters, areaUnit);
@@ -575,30 +592,81 @@ internal sealed class ImageServerMeasureHandler
 
     private static MeasurePoint CalculateCentroid(MeasureGeometry geometry, bool sridIsGeographic)
     {
-        var points = geometry.Points;
-        var ring = new (double X, double Y)[points.Length];
-        for (var i = 0; i < points.Length; i++)
+        var sourceRings = geometry.Rings is { Count: > 0 } parsedRings
+            ? parsedRings
+            : [geometry.Points];
+
+        var unwrapLongitudes = geometry.Srid is not null && sridIsGeographic;
+        if (sourceRings.Count == 1)
         {
-            ring[i] = (points[i].X, points[i].Y);
+            var points = sourceRings[0];
+            var singleRing = new (double X, double Y)[points.Length];
+            for (var i = 0; i < points.Length; i++)
+            {
+                singleRing[i] = (points[i].X, points[i].Y);
+            }
+
+            var (cx, cy) = ImageServerMensurationMath.SignedAreaCentroid(singleRing, unwrapLongitudes);
+            return new MeasurePoint(cx, cy, null, geometry.Srid);
         }
 
-        // Centroid is returned in the request's spatial reference, so it is computed directly
-        // in the input coordinate space (the signed-area / shoelace centroid, not a vertex mean).
-        // Geographic inputs unwrap longitudes so antimeridian-crossing rings do not skew the result.
-        // The geographic determination is resolved by the caller through the registry-backed
-        // IGeographicSridClassifier, falling back to the static heuristic when unavailable.
-        var unwrapLongitudes = geometry.Srid is not null && sridIsGeographic;
-        var (centroidX, centroidY) = ImageServerMensurationMath.SignedAreaCentroid(ring, unwrapLongitudes);
-        return new MeasurePoint(centroidX, centroidY, null, geometry.Srid);
+        var convertedRings = new (double X, double Y)[sourceRings.Count][];
+        for (var r = 0; r < sourceRings.Count; r++)
+        {
+            var pts = sourceRings[r];
+            var ring = new (double X, double Y)[pts.Length];
+            for (var i = 0; i < pts.Length; i++)
+            {
+                ring[i] = (pts[i].X, pts[i].Y);
+            }
+
+            convertedRings[r] = ring;
+        }
+
+        var weightedX = 0d;
+        var weightedY = 0d;
+        var totalWeight = 0d;
+        var exterior = convertedRings[0];
+        for (var r = 0; r < convertedRings.Length; r++)
+        {
+            var ring = convertedRings[r];
+            var area = ImageServerMensurationMath.PlanarRingAreaSquareMeters(ring);
+            var sign = r > 0 && ImageServerMensurationMath.IsInteriorHoleRing(ring, exterior, unwrapLongitudes)
+                ? -1d
+                : 1d;
+            var (rx, ry) = ImageServerMensurationMath.SignedAreaCentroid(ring, unwrapLongitudes);
+            weightedX += sign * area * rx;
+            weightedY += sign * area * ry;
+            totalWeight += sign * area;
+        }
+
+        if (Math.Abs(totalWeight) < 1e-12)
+        {
+            var (fallbackX, fallbackY) = ImageServerMensurationMath.SignedAreaCentroid(exterior, unwrapLongitudes);
+            return new MeasurePoint(fallbackX, fallbackY, null, geometry.Srid);
+        }
+
+        return new MeasurePoint(weightedX / totalWeight, weightedY / totalWeight, null, geometry.Srid);
     }
 
     private static double GeodesicPerimeterMeters((double X, double Y)[] ring)
     {
+        if (ring.Length < 2)
+        {
+            return 0d;
+        }
+
         var total = 0d;
         for (var i = 1; i < ring.Length; i++)
         {
             total += ImageServerMensurationMath.GeodesicDistanceMeters(
                 ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
+        }
+
+        if (Math.Abs(ring[0].X - ring[^1].X) > 1e-12 || Math.Abs(ring[0].Y - ring[^1].Y) > 1e-12)
+        {
+            total += ImageServerMensurationMath.GeodesicDistanceMeters(
+                ring[^1].X, ring[^1].Y, ring[0].X, ring[0].Y);
         }
 
         return total;
@@ -627,11 +695,22 @@ internal sealed class ImageServerMeasureHandler
 
     private static double PlanarPerimeterMeters((double X, double Y)[] ring)
     {
+        if (ring.Length < 2)
+        {
+            return 0d;
+        }
+
         var total = 0d;
         for (var i = 1; i < ring.Length; i++)
         {
             total += ImageServerMensurationMath.PlanarDistanceMeters(
                 ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
+        }
+
+        if (Math.Abs(ring[0].X - ring[^1].X) > 1e-12 || Math.Abs(ring[0].Y - ring[^1].Y) > 1e-12)
+        {
+            total += ImageServerMensurationMath.PlanarDistanceMeters(
+                ring[^1].X, ring[^1].Y, ring[0].X, ring[0].Y);
         }
 
         return total;
@@ -664,12 +743,36 @@ internal sealed class ImageServerMeasureHandler
         return (point.X, point.Y, MeasureSpace.PlanarMeters);
     }
 
-    private async ValueTask<((double X, double Y)[] Coordinates, MeasureSpace Space)> NormalizeRingAsync(
+    private async ValueTask<((double X, double Y)[][] Rings, MeasureSpace Space)> NormalizeRingsAsync(
         MeasureGeometry geometry,
         CancellationToken cancellationToken)
     {
-        var points = geometry.Points;
-        if (geometry.Srid is int srid)
+        var sourceRings = geometry.Rings is { Count: > 0 } parsedRings
+            ? parsedRings
+            : [geometry.Points];
+
+        var normalizedRings = new (double X, double Y)[sourceRings.Count][];
+        var space = MeasureSpace.PlanarMeters;
+        for (var i = 0; i < sourceRings.Count; i++)
+        {
+            var (coordinates, ringSpace) = await NormalizeSingleRingAsync(
+                sourceRings[i], geometry.Srid, cancellationToken).ConfigureAwait(false);
+            normalizedRings[i] = coordinates;
+            if (i == 0)
+            {
+                space = ringSpace;
+            }
+        }
+
+        return (normalizedRings, space);
+    }
+
+    private async ValueTask<((double X, double Y)[] Coordinates, MeasureSpace Space)> NormalizeSingleRingAsync(
+        MeasurePoint[] points,
+        int? geometrySrid,
+        CancellationToken cancellationToken)
+    {
+        if (geometrySrid is int srid)
         {
             var sridIsGeographic = await ResolveSridIsGeographicAsync(srid, cancellationToken).ConfigureAwait(false);
             if (points.Length > 0 &&

@@ -27,11 +27,13 @@ Index: `oci://ghcr.io/honua-io/honua-server@sha256:536e759ec615302c3ad3893c3784e
 
 On 2026-10-03, the changed architecture project passed all 11
 `ServingImageBoundaryTests` (zero failed, zero skipped), including the Lambda
-serving-child publication and branch-mirror isolation guard:
+serving-child publication and branch-mirror isolation guard.
+
+To rerun the focused checks with the current test-project layout:
 
 ```bash
-dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-  --configuration Release --no-restore \
+dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj \
+  --configuration Release \
   --filter FullyQualifiedName~ServingImageBoundaryTests
 ```
 

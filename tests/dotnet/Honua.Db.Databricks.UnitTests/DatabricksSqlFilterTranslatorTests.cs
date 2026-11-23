@@ -42,6 +42,58 @@ public sealed class DatabricksSqlFilterTranslatorTests
         Assert.Equal("collection_specific_field", exception.PropertyName);
     }
 
+    [Fact]
+    public void Translate_DWithinWithDistanceInMetersOnGeographicSrid_FailsClosed()
+    {
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01, 0x01, 0x00, 0x00, 0x00], 4326, "POINT"),
+            new Literal(500.0, LiteralType.Number))
+        {
+            DistanceInMeters = true,
+        };
+
+        Assert.Throws<NotSupportedException>(
+            () => new DatabricksSqlFilterTranslator().Translate(
+                filter,
+                FilterTranslationContext.FromResource(CreateSpatialResource())));
+    }
+
+    [Fact]
+    public void Translate_CrossSridGeometryLiteral_ThrowsNotSupported()
+    {
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01, 0x01, 0x00, 0x00, 0x00], 3857, "POINT"));
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => new DatabricksSqlFilterTranslator().Translate(
+                filter,
+                FilterTranslationContext.FromResource(CreateSpatialResource())));
+
+        Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static MetadataV2Object CreateSpatialResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Polygon,
+                PrimaryGeometryField = "geometry",
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry },
+            ],
+        };
+
     private static MetadataV2Object CreateResource()
         => new()
         {

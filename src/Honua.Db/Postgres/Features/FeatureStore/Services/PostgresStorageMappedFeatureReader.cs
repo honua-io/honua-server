@@ -1281,7 +1281,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             SpatialRelationship.Equals => $"ST_Equals({geometryColumn}, {filterGeometry})",
             SpatialRelationship.WithinDistance => BuildDistancePredicate(geometryColumn, filterGeometry, filter, sql, beyond: false),
             SpatialRelationship.BeyondDistance => BuildDistancePredicate(geometryColumn, filterGeometry, filter, sql, beyond: true),
-            _ => $"ST_Intersects({geometryColumn}, {filterGeometry})"
+            _ => filter.AntimeridianSplit
+                ? $"({geometryColumn} && ST_GeometryN({filterGeometry}, 1) OR {geometryColumn} && ST_GeometryN({filterGeometry}, 2)) AND ST_Intersects({geometryColumn}, {filterGeometry})"
+                : $"ST_Intersects({geometryColumn}, {filterGeometry})"
         };
     }
 
@@ -1349,10 +1351,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool beyond,
         Func<object?, string> addParameter)
     {
-        var operatorText = beyond ? ">" : "<=";
         var geographyColumn = ToWgs84Geography(geometryColumn, storageSrid);
         var geographyFilter = ToWgs84Geography(filterGeometry, storageSrid);
-        return $"ST_Distance({geographyColumn}, {geographyFilter}) {operatorText} {addParameter(distanceInMeters)}";
+        var distanceParam = addParameter(distanceInMeters);
+        if (beyond)
+        {
+            return $"ST_Distance({geographyColumn}, {geographyFilter}) > {distanceParam}";
+        }
+
+        var prefilter = FeatureQueryBuilder.BuildDistanceEnvelopePrefilter(
+            geometryColumn, filterGeometry, geographyFilter, distanceInMeters, storageSrid);
+        return $"{prefilter} AND ST_DWithin({geographyColumn}, {geographyFilter}, {distanceParam})";
     }
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit)
@@ -1932,8 +1941,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return SqlIdentifier.QuoteIdentifier(sanitized);
     }
 
+    // Column names may use any script (a table column `名前` is as legitimate as `name`);
+    // the predicate still rejects quotes, whitespace and control characters and enforces
+    // the 63-byte limit before the name reaches QuoteIdentifier.
     private static bool IsSafeIdentifier(string identifier)
-        => SchemaSearchPath.IsValidIdentifier(identifier);
+        => SqlIdentifier.IsUnicodeIdentifier(identifier);
 
     private string BuildDistanceSelectExpression(FeatureQuery query, SqlBuilder sql)
     {
@@ -2062,8 +2074,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return !IsIdentifierChar(previous) && !IsIdentifierChar(next);
     }
 
+    // Matches the field grammar: combining marks and surrogate halves belong to the
+    // identifier, so "AND" inside a name such as AND\u0301 is not a conjunction.
     private static bool IsIdentifierChar(char value)
-        => char.IsLetterOrDigit(value) || value == '_';
+        => char.IsLetterOrDigit(value)
+            || value == '_'
+            || char.IsSurrogate(value)
+            || CharUnicodeInfo.GetUnicodeCategory(value) is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark;
 
     [GeneratedRegex(
         @"@p(?<index>\d+)",

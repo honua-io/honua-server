@@ -254,7 +254,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         var intersecting = await GetRecordIdsAsync("bbox=-123,37,-122,38");
         intersecting.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
-        var outside = await GetRecordIdsAsync("bbox=200,80,210,85");
+        var outside = await GetRecordIdsAsync("bbox=100,80,110,85");
         outside.Should().BeEmpty();
     }
 

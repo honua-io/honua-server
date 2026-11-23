@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 547,
+    "operationCount": 553,
     "unresolvedCount": 0,
-    "capabilityCount": 23,
+    "capabilityCount": 25,
     "perSpec": {
-      "admin-api": 450,
+      "admin-api": 456,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 27
     },
     "perCapability": {
-      "admin.control-plane": 330,
+      "admin.control-plane": 323,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -38,7 +38,9 @@
       "raster.multidim-coverage": 11,
       "routing.solve": 13,
       "scene.bim-ingest": 1,
+      "scene.catalog": 6,
       "scene.pointcloud-ingest": 1,
+      "serve.3d-tiles-scene": 7,
       "serve.ogc-api-coverages": 8,
       "serve.ogc-api-features": 18,
       "serve.ogc-api-maps": 10,
@@ -3752,9 +3754,9 @@
       "method": "GET",
       "path": "/api/v1/admin/scenes",
       "operationId": "listSceneDatasets",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "get-api-v1-admin-scenes"
     },
     {
@@ -3762,20 +3764,50 @@
       "method": "POST",
       "path": "/api/v1/admin/scenes",
       "operationId": "registerSceneDataset",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "post-api-v1-admin-scenes"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/assets",
+      "operationId": "listSceneAssets",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-assets"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/assets/{sceneId}",
+      "operationId": "getSceneAsset",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-assets-sceneid"
     },
     {
       "spec": "admin-api",
       "method": "POST",
       "path": "/api/v1/admin/scenes/generate",
       "operationId": "generateScene",
-      "capability": "admin.control-plane",
+      "capability": "serve.3d-tiles-scene",
       "family": "Admin API",
       "maturity": "experimental",
       "catalogEntryId": "post-api-v1-admin-scenes-generate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/archive",
+      "operationId": "ingestArchiveScene",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-archive"
     },
     {
       "spec": "admin-api",
@@ -3790,6 +3822,16 @@
     {
       "spec": "admin-api",
       "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/model",
+      "operationId": "ingestModelScene",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-model"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
       "path": "/api/v1/admin/scenes/ingest/pointcloud",
       "operationId": "ingestPointCloudScene",
       "capability": "scene.pointcloud-ingest",
@@ -3799,12 +3841,32 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/jobs",
+      "operationId": "listSceneJobs",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/jobs/{jobId}",
+      "operationId": "getSceneJob",
+      "capability": "serve.3d-tiles-scene",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-scenes-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
       "method": "DELETE",
       "path": "/api/v1/admin/scenes/{id}",
       "operationId": "deactivateSceneDataset",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "delete-api-v1-admin-scenes-id"
     },
     {
@@ -3812,9 +3874,9 @@
       "method": "GET",
       "path": "/api/v1/admin/scenes/{id}",
       "operationId": "getSceneDataset",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "get-api-v1-admin-scenes-id"
     },
     {
@@ -3822,9 +3884,9 @@
       "method": "PUT",
       "path": "/api/v1/admin/scenes/{id}",
       "operationId": "updateSceneDataset",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "put-api-v1-admin-scenes-id"
     },
     {
@@ -3832,9 +3894,9 @@
       "method": "GET",
       "path": "/api/v1/admin/scenes/{id}/resolve",
       "operationId": "resolveSceneDataset",
-      "capability": "admin.control-plane",
+      "capability": "scene.catalog",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "deferred",
       "catalogEntryId": "get-api-v1-admin-scenes-id-resolve"
     },
     {

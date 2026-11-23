@@ -85,10 +85,11 @@ an existing draft and rejects a body `packageId` that differs from the route.
 Draft save validates only the presence of name and graph; graph validation runs
 when a version is created, validated, dry-run, or published.
 
-The current default `IWorkflowPackageStore` registration is in-memory. It
-establishes the contract and integration path, but draft, version, and
-publication records are not durable across process restarts until a persistent
-store is wired in a follow-on change.
+PostGIS hosts register `PostgresWorkflowPackageStore` as the
+`IWorkflowPackageStore`. Draft, version, and publication records are stored in
+PostgreSQL and persist across process restarts. Tests and non-PostGIS ephemeral
+hosts fall back to `InMemoryWorkflowPackageStore` when no store is registered;
+records in that fallback are lost on restart.
 
 ## Graph Contract
 

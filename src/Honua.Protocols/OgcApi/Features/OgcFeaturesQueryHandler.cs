@@ -500,36 +500,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
 
+            var cacheTarget = new CollectionCacheTarget(outputFormat, canCache ? cacheKey : null, cacheTtl);
+
             if (pagedRawPointResult.HasValue)
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
-                {
-                    var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
-                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
-                }
-
-                return Results.Bytes(payload, contentType);
+                var payload = CreateRawPointFeatureCollectionPayload(
+                    pagedRawPointResult.Value.Items,
+                    new RawPayloadContext(resource, links, queryTotalCount));
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
             if (pagedRawResult.HasValue)
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = CreateRawFeatureCollectionPayload(pagedRawResult.Value.Items, resource, links, queryTotalCount);
-                if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
-                {
-                    var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
-                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
-                }
-
-                return Results.Bytes(payload, contentType);
+                var payload = CreateRawFeatureCollectionPayload(
+                    pagedRawResult.Value.Items,
+                    new RawPayloadContext(resource, links, queryTotalCount));
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
             var response = OgcGeoJsonFeatureBuilder.CreateCollectionWithOwnedFeatures(features, queryTotalCount, links);
@@ -552,18 +538,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
-            if (canCache && cacheKey != null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+            if (string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase))
             {
-                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
-                    ? MediaTypes.GeoJson
-                    : MediaTypes.Json;
-                var payload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
-                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
-                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
-                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+                return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
             }
 
-            return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
+            return await CreateMaterializedCollectionResultAsync(context, response, cacheTarget);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1119,118 +1099,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         => reportedTotal < 0
             || (hasMore && reportedTotal <= numberReturned)
             || (!hasMore && offset > 0 && reportedTotal == numberReturned);
-
-    internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
-        ImmutableArray<RawGeoJsonFeature> features,
-        MetadataV2Object resource,
-        ImmutableArray<Link> links,
-        long? numberMatched)
-    {
-        var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
-        var propertyFields = resource.SchemaFields
-            .Where(field => !field.Hidden)
-            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
-            .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
-            .Select(field => field.Name)
-            .ToArray();
-        var publicIdPropertyName = ResolveRawPublicIdPropertyName(resource);
-        var buffer = new ArrayBufferWriter<byte>(EstimateRawFeatureCollectionPayloadCapacity(features, propertyFields, links));
-        using var writer = new Utf8JsonWriter(buffer);
-
-        writer.WriteStartObject();
-        writer.WriteString("type", "FeatureCollection");
-        writer.WriteStartArray("features");
-
-        foreach (var feature in features)
-        {
-            using var propertiesDocument = TryParseJsonObject(feature.PropertiesJson);
-            var propertiesElement = propertiesDocument?.RootElement;
-
-            writer.WriteStartObject();
-            writer.WriteString("type", "Feature");
-            writer.WritePropertyName("id");
-            WriteRawFeatureId(writer, feature.Id, feature.PublicIdJson, propertiesElement, publicIdPropertyName);
-            writer.WritePropertyName("geometry");
-            WriteValidatedRawGeometry(writer, feature.GeometryGeoJson);
-
-            writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields);
-
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-
-        if (numberMatched.HasValue)
-        {
-            writer.WriteNumber("numberMatched", numberMatched.Value);
-        }
-
-        writer.WriteNumber("numberReturned", features.Length);
-        writer.WritePropertyName("links");
-        JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
-        writer.WriteEndObject();
-        writer.Flush();
-
-        return buffer.WrittenMemory;
-    }
-
-    internal static ReadOnlyMemory<byte> CreateRawPointFeatureCollectionPayload(
-        ImmutableArray<RawGeoServicesFeature> features,
-        MetadataV2Object resource,
-        ImmutableArray<Link> links,
-        long? numberMatched)
-    {
-        var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
-        var propertyFields = resource.SchemaFields
-            .Where(field => !field.Hidden)
-            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
-            .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
-            .Select(field => field.Name)
-            .ToArray();
-        var publicIdPropertyName = ResolveRawPublicIdPropertyName(resource);
-        var buffer = new ArrayBufferWriter<byte>(EstimateRawPointFeatureCollectionPayloadCapacity(features, propertyFields, links));
-        using var writer = new Utf8JsonWriter(buffer);
-
-        writer.WriteStartObject();
-        writer.WriteString("type", "FeatureCollection");
-        writer.WriteStartArray("features");
-
-        foreach (var feature in features)
-        {
-            using var propertiesDocument = TryParseJsonObject(feature.AttributesJson);
-            var propertiesElement = propertiesDocument?.RootElement;
-
-            writer.WriteStartObject();
-            writer.WriteString("type", "Feature");
-            writer.WritePropertyName("id");
-            WriteRawFeatureId(writer, feature.Id, feature.PublicIdJson, propertiesElement, publicIdPropertyName);
-            writer.WritePropertyName("geometry");
-            WriteRawPointGeometry(writer, feature);
-
-            writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields);
-
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-
-        if (numberMatched.HasValue)
-        {
-            writer.WriteNumber("numberMatched", numberMatched.Value);
-        }
-
-        writer.WriteNumber("numberReturned", features.Length);
-        writer.WritePropertyName("links");
-        JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
-        writer.WriteEndObject();
-        writer.Flush();
-
-        return buffer.WrittenMemory;
-    }
 
     private static string? ResolveRawPublicIdPropertyName(MetadataV2Object resource)
     {

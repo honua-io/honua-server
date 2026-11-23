@@ -9,9 +9,9 @@ permissions:
   contents: read
   packages: read
 
-concurrency:
-  group: trunk-sanity-${{ github.ref }}
-  cancel-in-progress: true
+# Each job runs one at a time and queues only the newest push behind it.
+# Merges can arrive more often than a build finishes, and cancelling the
+# running job would then leave a burst of merges without any verdict.
 
 env:
   DOTNET_VERSION: '11.0.x'
@@ -23,6 +23,9 @@ jobs:
     name: Restore and Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: trunk-sanity-build-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -36,3 +39,41 @@ jobs:
 
       - name: Build
         run: dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+
+  # PR Gate and the build above compile only the default (all) profile. The
+  # gsr, ogc-api and ogc-api-classic profiles exclude modules with
+  # #if HONUA_EXCLUDE_* paths, so a merge can break them while everything else
+  # stays green until the next full CI run.
+  protocol-profiles:
+    name: Reduced protocol profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    concurrency:
+      group: trunk-sanity-profiles-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Select profiles changed since the last successful run
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 scripts/ci/trunk_sanity_profiles.py "${HEAD_SHA}" "${RUNNER_TEMP}/protocol-profiles.json"
+
+      - name: Setup .NET
+        if: steps.select.outputs.build == 'true'
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build selected protocol profiles
+        if: steps.select.outputs.build == 'true'
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
