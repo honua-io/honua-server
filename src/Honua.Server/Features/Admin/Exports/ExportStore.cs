@@ -129,8 +129,8 @@ internal sealed class ExportStore
     public Task WriteUnpublishedAsync(ExportUnpublishedMarker marker, CancellationToken cancellationToken)
         => PutJsonOnceAsync(UnpublishedKey, marker, ExportVersionJsonContext.Default.ExportUnpublishedMarker, cancellationToken);
 
-    public Task ClearUnpublishedAsync(CancellationToken cancellationToken)
-        => _storage.DeleteAsync(UnpublishedKey, cancellationToken);
+    public Task<bool> ClearUnpublishedIfMatchAsync(string expectedETag, CancellationToken cancellationToken)
+        => _storage.DeleteIfMatchAsync(UnpublishedKey, expectedETag, cancellationToken);
 
     public async Task<ExportVersion?> FindAnyStoredVersionAsync(CancellationToken cancellationToken)
     {
