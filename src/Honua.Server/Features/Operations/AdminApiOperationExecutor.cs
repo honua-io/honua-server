@@ -18,7 +18,7 @@ namespace Honua.Server.Features.Operations;
 internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-operation-loopback";
-    private const string LayerPublishOperationId = "admin.layer.publish";
+    internal const string LayerPublishOperationId = "admin.layer.publish";
     private readonly AdminApiOperationCatalog.Definition _definition;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -222,6 +222,11 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             {
                 Status = OperationHandleStatus.Indeterminate,
                 Reason = "Queued layer publish did not return a job id.",
+                Result = new OperationResultSummary
+                {
+                    Summary = $"{_definition.Title} was accepted without a job id.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload },
+                }
             };
         }
 

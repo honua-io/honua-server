@@ -372,7 +372,7 @@ internal sealed class ServicePublishExecutor
         }
 
         var view = LayerPublishJobStatusProjection.Describe(handle, progress);
-        var (details, resourceIds) = (view.Details, view.ResourceIds);
+        var (details, resourceIds) = view;
         // A prior poll may have advertised this identity. Re-resolve it from
         // the current persisted stores on every poll before carrying it forward.
         resourceIds.Remove("serviceName");

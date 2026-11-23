@@ -55,6 +55,7 @@ public sealed partial class AdminOperationRequestContractTests
 
         handle.Status.Should().Be(OperationHandleStatus.Indeterminate);
         handle.Reason.Should().Be("Queued layer publish did not return a job id.");
+        handle.Result!.Summary.Should().NotContain("completed");
         handle.JobId.Should().BeNull();
         handle.ResourceIds.Should().BeEmpty();
     }
