@@ -905,6 +905,11 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return filled;
     }
 
+    protected override bool IsAccessDenied(Exception exception) => IsAccessDeniedFailure(exception);
+
+    internal static bool IsAccessDeniedFailure(Exception exception)
+        => exception is AmazonS3Exception { StatusCode: HttpStatusCode.Forbidden };
+
     private static bool IsNotFound(AmazonS3Exception exception)
     {
         return exception.StatusCode == HttpStatusCode.NotFound

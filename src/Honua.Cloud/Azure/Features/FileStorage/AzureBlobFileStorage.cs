@@ -271,6 +271,11 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return DownloadCoreAsync(fileId, expectedETag, cancellationToken);
     }
 
+    protected override bool IsAccessDenied(Exception exception) => IsAccessDeniedFailure(exception);
+
+    internal static bool IsAccessDeniedFailure(Exception exception)
+        => exception is RequestFailedException { Status: 403 };
+
     private async Task<Stream?> DownloadCoreAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);

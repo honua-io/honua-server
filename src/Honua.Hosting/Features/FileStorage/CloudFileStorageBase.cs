@@ -301,8 +301,10 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         await TrySetUploadProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
         ReportProgressToCaller(request.Progress, uploadId, failedProgress);
         FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
-        return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed);
+        return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed) with { IsAccessDenied = IsAccessDenied(ex) };
     }
+
+    protected virtual bool IsAccessDenied(Exception exception) => false;
 
     protected async Task ReportCancelledUploadAsync(
         string uploadId,

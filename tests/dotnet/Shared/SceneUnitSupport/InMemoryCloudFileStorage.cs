@@ -29,9 +29,16 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
 
     public CloudStorageProvider Provider => CloudStorageProvider.Local;
 
+    // When set, every upload is refused with this result instead of being stored.
+    public UploadResult? UploadFailure { get; set; }
+
     public async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (UploadFailure is { } failure)
+        {
+            return failure;
+        }
         var key = request.ObjectKeyOverride
             ?? throw new InvalidOperationException("Scene uploads must supply an ObjectKeyOverride.");
 

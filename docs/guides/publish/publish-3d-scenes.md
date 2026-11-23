@@ -115,6 +115,12 @@ for a read-only container filesystem.
 `SceneGeneration:OutputRoot`, mount permissions and free space before trying again.
 The response omits filesystem paths and underlying exception details.
 
+`SCENE_ASSET_STORE_UNWRITABLE` (500) means the object store refused to store the scene assets
+for lack of permission. Check that the server's storage credentials (on AWS, the task role) can
+write under the configured `FileStorage` bucket and key prefix. Retrying does not help until
+access is fixed. On `/api/v1/admin/scenes/generate`, other object-store upload failures are
+reported as `503` and can be retried.
+
 ## Troubleshoot
 
 - **Bare `404` with an empty body on `/api/v1/admin/scenes`, `/api/v1/admin/scenes/generate` or `/scenes/{sceneId}/tileset.json`** — the experimental scene capabilities are off; set both variables listed above **Steps** and restart the server.
