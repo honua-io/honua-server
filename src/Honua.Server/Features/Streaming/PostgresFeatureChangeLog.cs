@@ -49,7 +49,7 @@ internal sealed class PostgresFeatureChangeLog(
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                _ = await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
+                await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand($"SELECT {ReadHorizon}", connection);
                 return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
@@ -79,7 +79,7 @@ internal sealed class PostgresFeatureChangeLog(
                 if (query.EventId is null)
                 {
                     // A cursor read stops at the horizon; publish first so commits it can see count.
-                    _ = await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
+                    await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
                 }
 
                 await using var command = new NpgsqlCommand(SelectChanges(query), connection);
