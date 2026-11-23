@@ -123,7 +123,6 @@ Honua.Protocols.OgcClassic.Tests:Honua.Server.Tests.Features.Protocols.Ogc.Class
 Honua.Protocols.Scene.Tests:Honua.Server.Tests.Features.Protocols.Scene.I3sProductionRouteRegistrationTests.ProviderFreeContainer_AdvertisesMetadataPreviewOnly`0()
 Honua.Protocols.Scene.Tests:Honua.Server.Tests.Features.Protocols.Scene.I3sProductionRouteRegistrationTests.ScopedProvider_WithScopeValidation_MapsGeometryRoutesWithoutResolvingProvider`0()
 Honua.ProviderSmoke.Tests:Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OgcFeatures_ItemsWithCql2Filter_NotSupportedForSqlServer`0()
-Honua.Server.Tests:Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_PreservesGlobalIdAndAttachmentMetadataWithoutEnablingEdits`0(System.Boolean)
 Honua.Server.Tests:Honua.Server.Tests.AdvancedSpatialQueryTests.QueryFeatures_WithSimpleUnitNames_ReturnsValidResponse`0(System.String,System.Double)
 Honua.Server.Tests:Honua.Server.Tests.CrsTransformationCorrectnessTests.Query_AntimeridianCoordinates_TransformsCorrectly`0(System.Double,System.Double)
 Honua.Server.Tests:Honua.Server.Tests.CrsTransformationCorrectnessTests.Query_Crs84VsEpsg4326_ConsistentAxisOrder`0(System.String)
