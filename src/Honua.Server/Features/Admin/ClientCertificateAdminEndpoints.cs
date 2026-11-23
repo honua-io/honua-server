@@ -503,11 +503,14 @@ internal static class ClientCertificateAdminEndpoints
         return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Client-certificate revocation removed."));
     }
 
+    // The validator exists only while the mTLS capability is enabled. Parameters bind before endpoint filters run,
+    // so it is resolved here, after the capability gate, rather than injected.
     private static async Task<IResult> HandleValidateCertificate(
         ValidateClientCertificateRequest request,
-        [FromServices] IClientCertificateValidator validator,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
+        var validator = context.RequestServices.GetRequiredService<IClientCertificateValidator>();
         if (string.IsNullOrWhiteSpace(request.Certificate))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Certificate is required."));

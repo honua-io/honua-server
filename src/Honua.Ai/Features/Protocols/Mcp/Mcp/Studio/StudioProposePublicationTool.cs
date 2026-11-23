@@ -318,7 +318,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
     private static string ProposalStatus(OperationHandleStatus status) => status switch
     {
-        OperationHandleStatus.RequiresApproval => "AwaitingApproval",
+        OperationHandleStatus.RequiresApproval => McpApprovalStatus.Canonical,
         OperationHandleStatus.Completed => "Published",
         _ => status.ToString(),
     };

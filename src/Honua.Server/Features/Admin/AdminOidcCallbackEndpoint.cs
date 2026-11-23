@@ -54,6 +54,16 @@ internal sealed partial class AdminOidcCallbackEndpoint(
             : result;
     }
 
+    // The identity provider returns the browser here after sign-out (Public:BaseUrl + /admin is the registered
+    // post-logout URL). It lands on the Console sign-in page, on the same origin a completed sign-in returns to.
+    internal IResult SignedOutLanding(HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        return oidcOptions.Value.TryGetAdminAuthCallbackUri(out var callback) && callback is not null
+            ? TypedResults.Redirect(callback.GetLeftPart(UriPartial.Authority) + SignInPath)
+            : TypedResults.LocalRedirect(SignInPath);
+    }
+
     // The provider's error code is shown only when it is a plain token; its free-text description is logged, never rendered.
     // Only an error carrying the attempt's own state ends that attempt; an error link with another state leaves it alone.
     private async Task<IResult> RejectProviderErrorAsync(HttpContext context, string? pendingId, AdminAuthPendingSession? pending)

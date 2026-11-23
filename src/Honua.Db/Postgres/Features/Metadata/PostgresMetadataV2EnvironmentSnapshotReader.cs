@@ -156,6 +156,6 @@ internal sealed class PostgresMetadataV2EnvironmentSnapshotReader : IMetadataV2E
     {
         var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)
             ?? throw new InvalidDataException("Metadata v2 graph document was empty.");
-        return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+        return new MetadataV2GraphSnapshot(MetadataV2EditingConsistency.RepairCanModify(graph), etag, DateTimeOffset.UtcNow);
     }
 }

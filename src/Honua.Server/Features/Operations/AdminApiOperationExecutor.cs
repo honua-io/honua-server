@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
@@ -17,6 +18,7 @@ namespace Honua.Server.Features.Operations;
 internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperationDryRunExecutor
 {
     public const string HttpClientName = "admin-operation-loopback";
+    internal const string LayerPublishOperationId = "admin.layer.publish";
     private readonly AdminApiOperationCatalog.Definition _definition;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -37,6 +39,9 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
     }
 
     public string OperationId => _definition.OperationId;
+
+    // Optional: hosts without background layer publishing leave it unset and a queued handle echoes.
+    public ILayerPublishJobs? LayerPublishJobs { get; init; }
 
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(AdminOperationRequestValidator.Validate(_definition, request));
@@ -145,7 +150,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
                 Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload } }
             };
         }
-        return new OperationHandle
+        var completed = new OperationHandle
         {
             OperationInstanceId = operationInstanceId,
             OperationId = OperationId,
@@ -156,6 +161,9 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             ResourceIds = BuildPublishedResourceIds(request, response.StatusCode, payload),
             Result = BuildSuccessResult(response, payload)
         };
+        // A 202 layer publish is a background job: report it Queued with the job id so the
+        // proposal follows the job's outcome, and never as Completed when the job id is missing.
+        return IsQueuedLayerPublish(request, response.StatusCode) ? AsQueuedLayerPublish(completed, payload) : completed;
     }
 
     private string GetFailureReason(OperationPolicyContext context, HttpResponseMessage response, string payload)
@@ -187,16 +195,79 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }
     }
 
-    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+    public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(OperationStatusProjection.FromHandle(handle));
+        ArgumentNullException.ThrowIfNull(handle);
+        if (LayerPublishJobs is null || OperationId != LayerPublishOperationId || string.IsNullOrWhiteSpace(handle.JobId))
+        {
+            return OperationStatusProjection.FromHandle(handle);
+        }
+
+        var progress = await LayerPublishJobs.GetAsync(handle.JobId, cancellationToken).ConfigureAwait(false);
+        var current = OperationStatusProjection.FromHandle(handle);
+        return progress is null
+            ? current
+            : LayerPublishJobStatusProjection.Apply(current, progress, LayerPublishJobStatusProjection.Describe(handle, progress));
+    }
+
+    private bool IsQueuedLayerPublish(OperationRequest request, HttpStatusCode statusCode)
+        => OperationId == LayerPublishOperationId && !request.DryRun && statusCode == HttpStatusCode.Accepted;
+
+    private OperationHandle AsQueuedLayerPublish(OperationHandle completed, string payload)
+    {
+        var accepted = ReadAcceptedLayerPublish(payload);
+        if (accepted is null)
+        {
+            return completed with
+            {
+                Status = OperationHandleStatus.Indeterminate,
+                Reason = "Queued layer publish did not return a job id.",
+                Result = new OperationResultSummary
+                {
+                    Summary = $"{_definition.Title} was accepted without a job id.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload },
+                }
+            };
+        }
+
+        return completed with
+        {
+            Status = OperationHandleStatus.Queued,
+            JobId = accepted.JobId,
+            Result = new OperationResultSummary
+            {
+                Summary = $"{_definition.Title} queued as job {accepted.JobId}.",
+                Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["jobId"] = accepted.JobId,
+                    ["statusUrl"] = accepted.StatusUrl,
+                    ["rowsTotal"] = accepted.RowsTotal.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["response"] = payload,
+                }
+            }
+        };
+    }
+
+    private static LayerPublishAcceptedResponse? ReadAcceptedLayerPublish(string payload)
+    {
+        try
+        {
+            var response = JsonSerializer.Deserialize(payload, LayerPublishingJsonContext.Default.ApiResponseLayerPublishAcceptedResponse);
+            return response is { Success: true, Data: { } accepted } && !string.IsNullOrWhiteSpace(accepted.JobId)
+                ? accepted
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private Dictionary<string, string> BuildPublishedResourceIds(
         OperationRequest request, HttpStatusCode statusCode, string payload)
     {
         var resources = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (OperationId != "admin.layer.publish" || request.DryRun || statusCode != HttpStatusCode.Created)
+        if (OperationId != LayerPublishOperationId || request.DryRun || statusCode != HttpStatusCode.Created)
         {
             return resources;
         }

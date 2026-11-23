@@ -22,6 +22,10 @@ internal sealed record ExportCatalogDependencies
     public required ITileCacheJobService Jobs { get; init; }
 
     public PublicExportRevocationService? PublicRevocation { get; init; }
+
+    // Durable promoted-export records; a revocation removes the record, so it decides whether the
+    // public copy a job once promoted is still served.
+    public IPublicExportStateStore? PublicState { get; init; }
 }
 
 // Describes Exports from what storage and the job log hold: the pointer names the current Version,
@@ -32,7 +36,10 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     private readonly IOptions<CloudStorageOptions> options = deps.Options;
     private readonly ITileCacheJobService jobs = deps.Jobs;
     private readonly PublicExportRevocationService? publicRevocation = deps.PublicRevocation;
+    private readonly IPublicExportStateStore? publicState = deps.PublicState;
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
+    internal const string PublicCopyWithdrawnReason =
+        "The public copy of this Export was withdrawn because its Layer is no longer public or the Export was unpublished.";
     internal const int DefaultListLimit = 50;
     internal const int MaxListLimit = 200;
     internal const int MaxVersionsReturned = 100;
@@ -51,6 +58,8 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         public required List<string> VersionIds { get; init; }
 
         public TileOperationProgress? Job { get; init; }
+
+        public PublicExportDeliveryStatus? PublicDelivery { get; init; }
     }
 
     public async Task<bool> HasActiveJobAsync(string exportId, CancellationToken cancellationToken)
@@ -166,17 +175,39 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
             .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .TakeLast(MaxVersionsReturned).ToList();
         var job = snapshot.ExportJobs.Where(candidate => candidate.ExportId == exportId).MaxBy(candidate => candidate.StartedAt);
-        return current is null && versionIds.Count == 0 && job is null
-            ? null
-            : new ExportState { Store = store, Current = current, VersionIds = versionIds, Job = job };
+        if (current is null && versionIds.Count == 0 && job is null)
+        {
+            return null;
+        }
+
+        var publicDelivery = await CurrentPublicDeliveryAsync(current, job, cancellationToken).ConfigureAwait(false);
+        return new ExportState { Store = store, Current = current, VersionIds = versionIds, Job = job, PublicDelivery = publicDelivery };
+    }
+
+    // The job records the public delivery at promotion time; a later revocation deletes the promoted
+    // record but leaves the job and pointer, so the job alone would keep advertising a deleted copy.
+    private async Task<PublicExportDeliveryStatus?> CurrentPublicDeliveryAsync(
+        ExportVersion? current, TileOperationProgress? job, CancellationToken cancellationToken)
+    {
+        var delivery = current is not null && job?.PublishedExportVersion?.Version == current.Version
+            ? job.PublishedExportVersion.Public
+            : null;
+        if (publicState is null || delivery?.Status is not (PublicExportDeliveryStatus.Promoted or PublicExportDeliveryStatus.PromotedUnreadable))
+        {
+            return delivery;
+        }
+
+        // A delivery is only read from a job that published the current Version, so both are set here.
+        var promoted = await publicState.GetPromotedAsync(job!.ExportId!, cancellationToken).ConfigureAwait(false);
+        return promoted is not null && promoted.Version == current!.Version
+            ? delivery
+            : new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn) { Reason = PublicCopyWithdrawnReason };
     }
 
     private static ExportResponse BuildResponse(
         string exportId, ExportState state, (string BaseUrl, IReadOnlyList<ExportVersionResponse> Versions) detail)
     {
-        var publicDelivery = state.Current is not null && state.Job?.PublishedExportVersion?.Version == state.Current.Version
-            ? state.Job.PublishedExportVersion.Public
-            : null;
+        var publicDelivery = state.PublicDelivery;
         var isPublic = publicDelivery?.Status == PublicExportDeliveryStatus.Promoted && !string.IsNullOrWhiteSpace(publicDelivery.CollectionUrl);
         return new()
         {

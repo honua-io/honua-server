@@ -101,8 +101,9 @@ internal sealed class PortalOAuthBroker(
         // proceeding. The secret lives server-side in the single-use, 15-minute
         // broker session, so the cookieless transport does not weaken the standard
         // state-parameter binding. The ArcGIS-facing code is additionally bound to
-        // the client's hard-required PKCE challenge and allow-listed exact
-        // redirect_uri/client_id, so a code minted on a victim's behalf cannot be
+        // the client's hard-required PKCE challenge and its exact redirect_uri and
+        // client_id (deployment allow-list, plus the registered client's own list
+        // when client_id is registered), so a code minted on a victim's behalf cannot be
         // redeemed by an attacker.
         var combinedState = $"{idpState}.{brokerSessionId}";
         var callbackUri = callbackUriFactory(PortalOAuthRoutes.CallbackPath);

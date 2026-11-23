@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Asp.Versioning.Builder;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
@@ -23,6 +22,7 @@ namespace Honua.Server.Features.Admin;
 internal static partial class OidcProviderEndpoints
 {
     private const string ProviderSettingsName = "OIDC providers";
+    private const string ConcurrentChangeMessage = "Another administrator changed this provider at the same time; read it again and retry.";
 
     internal sealed class OidcProviderEndpointsLog;
 
@@ -183,7 +183,7 @@ internal static partial class OidcProviderEndpoints
         CreateOidcProviderRequest request,
         CancellationToken cancellationToken)
     {
-        if (ValidateDataAnnotations(request) is { } annotationError)
+        if (AdminRequestValidation.DataAnnotationError(request) is { } annotationError)
         {
             return annotationError;
         }
@@ -200,7 +200,7 @@ internal static partial class OidcProviderEndpoints
         UpdateOidcProviderRequest request,
         CancellationToken cancellationToken)
     {
-        if (ValidateDataAnnotations(request) is { } annotationError)
+        if (AdminRequestValidation.DataAnnotationError(request) is { } annotationError)
         {
             return annotationError;
         }
@@ -213,18 +213,6 @@ internal static partial class OidcProviderEndpoints
         return request.Authority is null
             ? null
             : await ValidateAuthorityAsync(request.Authority, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string? ValidateDataAnnotations(object request)
-    {
-        var validationResults = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
-        {
-            var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-            return $"Validation failed: {errors}";
-        }
-
-        return null;
     }
 
     private static async Task<string?> ValidateAuthorityAsync(string? authority, CancellationToken cancellationToken)
@@ -330,6 +318,10 @@ internal static partial class OidcProviderEndpoints
             return TypedResults.Created($"/api/v1/admin/oidc/providers/{created.ProviderId}",
                 ApiResponse<OidcProviderResponse>.CreateSuccess(response));
         }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
+        }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider creation endpoint; the failure is logged and mapped to a
         // generic error response below.
@@ -373,7 +365,7 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    internal static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    internal static async Task<Results<Ok<ApiResponse<OidcProviderResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateProvider(
             Guid id,
             UpdateOidcProviderRequest request,
@@ -410,6 +402,10 @@ internal static partial class OidcProviderEndpoints
 
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(result!)));
         }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
+        }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider update endpoint; the failure is logged and mapped to a
         // generic error response below.
@@ -423,7 +419,7 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleDeleteProvider(
             Guid id,
             [FromServices] IOidcProviderStore store,
@@ -440,6 +436,10 @@ internal static partial class OidcProviderEndpoints
 
             OidcProviderLog.ProviderDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("OIDC provider deleted"));
+        }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
         }
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider deletion endpoint; the failure is logged and mapped to a

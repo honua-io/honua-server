@@ -435,6 +435,74 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.GroundingMutate)]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    [InlineData("mutate", "{not json")]
+    [InlineData("mutate", "[]")]
+    [InlineData("summarize", "{not json")]
+    [InlineData("summarize", "\"spec\"")]
+    public async Task MalformedOrNonObjectBody_Returns400WithoutGrounding(string endpoint, string body)
+    {
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync($"/v1/grounding/spec/{endpoint}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var text = await response.Content.ReadAsStringAsync();
+        text.Should().NotContain("next_spec");
+        text.Should().NotContain("section_summaries");
+        text.Should().NotContain("   at ", "a refused body must not leak a stack trace");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_TurnOverLengthCap_Returns400WithoutGrounding()
+    {
+        var maxTurnLength = global::Honua.Ai.Grounding.Spec.SpecGroundingEndpointExtensions.MaxTurnLength;
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement("{}"),
+            turn = "use rivers as rivers " + new string('x', maxTurnLength)
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        payload.RootElement.GetProperty("detail").GetString().Should()
+            .Be($"turn must be at most {maxTurnLength} characters.");
+        payload.RootElement.TryGetProperty("mutation", out _).Should().BeFalse();
+    }
+
+    // A turn at the length cap made of long whitespace runs between clause words must be
+    // answered within the time bound.
+    [IntegrationTheory]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    [InlineData("use", "", "!")]
+    [InlineData("a", "within 1 of b", "!")]
+    [InlineData("show", "on the", "x")]
+    public async Task Mutate_WhitespacePaddedTurnAtCap_AnswersWithinBoundedTime(
+        string head, string middle, string tail)
+    {
+        var maxTurnLength = global::Honua.Ai.Grounding.Spec.SpecGroundingEndpointExtensions.MaxTurnLength;
+        var padding = new string(' ', (maxTurnLength - head.Length - middle.Length - tail.Length) / 2);
+        var turn = head + padding + middle + padding + tail;
+        turn.Length.Should().BeLessThanOrEqualTo(maxTurnLength);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = await _client.PostAsJsonAsync(
+            "/v1/grounding/spec/mutate",
+            new { spec = SpecGroundingTestSupport.ParseJsonElement("{}"), turn },
+            timeout.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        started.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
+    }
+
     private static int CountSentences(string text)
         => text.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Length;
 }

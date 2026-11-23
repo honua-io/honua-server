@@ -315,6 +315,7 @@ internal sealed partial class Wfs20Handler
         var sqlFilter = TranslateFesFilter(descriptor.Resource, normalizedFilter);
         var orderBy = ParseSortBy(descriptor.Resource, sortBy);
         var spatialFilter = ParseBboxFilterForResource(bbox, descriptor.Resource);
+        await EnsureServableBboxCrsAsync(spatialFilter, descriptor.Resource, cancellationToken).ConfigureAwait(false);
         var resourceIds = ParseResourceIds(normalizedResourceId, descriptor.LocalName, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
             ? SqlFragmentHelpers.CombineSqlFilters(sqlFilter, FalseSqlFilter)

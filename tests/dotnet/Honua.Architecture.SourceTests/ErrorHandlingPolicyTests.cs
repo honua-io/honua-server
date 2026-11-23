@@ -60,6 +60,8 @@ public sealed class ErrorHandlingPolicyTests
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "SceneDatasetEndpoints.Requests.cs"),
         // Admission partition resolution only: no handler; the session-limit refusal is shaped in FeatureStreamEndpoints.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Streaming", "FeatureStreamEndpoints.Admission.cs"),
+        // SAML single-logout relay page rendering only: no handler; SamlEndpoints validates the logout request and shapes its errors.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Identity", "Saml", "SamlEndpoints.RelayPage.cs"),
         // Pure route wiring. FormXlsFormService shapes every import and export failure
         // (400 query and workbook diagnostics, 404 unpublished package, 422 export diagnostics) as admin problem details.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Forms", "FormXlsFormEndpoints.cs"),

@@ -154,11 +154,11 @@ public static class MetadataV2EditingConfiguration
                 CanModify = canModify
             }
         };
-        return graph with
+        return MetadataV2EditingConsistency.RepairCanModify(graph with
         {
             Resources = graph.Resources.Select(candidate => candidate.Metadata.Id == resourceId ? updatedResource : candidate).ToArray(),
             Publications = publications
-        };
+        });
     }
 
     private static bool IsEditCapability(string capability)

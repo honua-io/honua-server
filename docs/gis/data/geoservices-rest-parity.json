@@ -2639,7 +2639,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
+            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. The 0-255, 256-511, 512-767 and 8192-8447 ranges are bundled (Latin-1, Latin Extended-A and -B, General Punctuation and the euro sign); all other ranges return 404."
           },
           {
             "name": "Style sub-resource",
@@ -4255,7 +4255,7 @@
       "implementedSurface": [
         "POST /sharing/rest/generateToken (form-encoded)",
         "GET /sharing/rest/generateToken (query-string)",
-        "opaque token storage via IDistributedCache (Redis or in-memory)",
+        "opaque token storage via ISecurityTokenStore (PostgreSQL shared or in-memory local)",
         "referer or client-IP binding with mismatch rejection",
         "configurable default and maximum token lifetime (caller-requested expiration clamped)",
         "HTTPS-only issuance (Authentication:PortalToken:RequireHttps, default true)",

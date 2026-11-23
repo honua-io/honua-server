@@ -461,9 +461,9 @@ internal static class McpWorkflowViewCatalog
         Name = OperateViewName,
         Title = "Operate",
         Description =
-            "Read health, findings, events, release status, and deploy operations, then propose one finding, "
-            + "an upgrade, or a rollback.",
-        Revision = "operate.v2",
+            "Read health, findings, events, release status, and deploy operations; investigate or cancel a job; "
+            + "then propose one finding, an upgrade, or a rollback.",
+        Revision = "operate.v3",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -480,6 +480,20 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_platform_release_status"),
                     McpWorkflowViewMemberRule.Exact("honua_deploy_operations"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "investigate",
+                Title = "Investigate a job",
+                Description = "List jobs, diagnose a failure, read its evidence, and cancel a running job. "
+                    + "Cancel needs the job's owner or an admin.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
+                    McpWorkflowViewMemberRule.Exact("honua_diagnose_job"),
+                    McpWorkflowViewMemberRule.Exact("honua_job_evidence"),
+                    McpWorkflowViewMemberRule.Exact("honua_cancel_job"),
                 ],
             },
             new McpWorkflowViewStageDefinition
