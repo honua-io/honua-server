@@ -3,6 +3,7 @@
 
 using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.MapTools;
+using Honua.Ai.Protocols.Mcp.SceneTools;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Geoprocessing;
@@ -53,6 +54,9 @@ internal static class McpToolRoster
         new ApplyStylePresetTool(jobService, NullLogger<ApplyStylePresetTool>.Instance),
         new ResolveEntityTool(jobService, NullLogger<ResolveEntityTool>.Instance),
         new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance),
+        new SceneListTool(jobService, NullLogger<SceneListTool>.Instance),
+        new SceneGetTool(jobService, NullLogger<SceneGetTool>.Instance),
+        new SceneResolveTool(jobService, NullLogger<SceneResolveTool>.Instance),
         ..Studio(jobService),
     ];
 }

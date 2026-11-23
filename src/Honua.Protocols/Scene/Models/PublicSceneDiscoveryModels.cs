@@ -18,6 +18,10 @@ internal sealed class PublicSceneSummary
 
     public string? Description { get; init; }
 
+    public string? ServingFormat { get; init; }
+
+    public string? ContentKind { get; init; }
+
     public string? TilesetUrl { get; init; }
 
     public PublicSceneBounds? Bounds { get; init; }
@@ -38,6 +42,10 @@ internal sealed class PublicSceneMetadata
     public required string Name { get; init; }
 
     public string? Description { get; init; }
+
+    public string? ServingFormat { get; init; }
+
+    public string? ContentKind { get; init; }
 
     public PublicSceneEndpoint? Tileset { get; init; }
 
@@ -60,6 +68,10 @@ internal sealed class PublicSceneResolution
 {
     public required string SceneId { get; init; }
 
+    public string? ServingFormat { get; init; }
+
+    public string? ContentKind { get; init; }
+
     public string? TilesetUrl { get; init; }
 
     public PublicSceneEndpoint[] Endpoints { get; init; } = [];
@@ -73,6 +85,8 @@ internal sealed class PublicSceneEndpoint
 {
     public required string Kind { get; init; }
 
+    public string? EndpointFormat { get; init; }
+
     public required string Url { get; init; }
 
     public string? MediaType { get; init; }
@@ -80,6 +94,15 @@ internal sealed class PublicSceneEndpoint
     public string? Format { get; init; }
 
     public bool RequiresAuthentication { get; init; }
+
+    public PublicSceneAccessSessionAffordance? AccessSession { get; init; }
+}
+
+internal sealed class PublicSceneAccessSessionAffordance
+{
+    public required string Href { get; init; }
+
+    public required string Method { get; init; }
 }
 
 internal sealed class PublicSceneAuthRequirements
@@ -137,6 +160,7 @@ internal sealed class PublicSceneLink
 [JsonSerializable(typeof(PublicSceneResolution))]
 [JsonSerializable(typeof(PublicSceneEndpoint))]
 [JsonSerializable(typeof(PublicSceneEndpoint[]))]
+[JsonSerializable(typeof(PublicSceneAccessSessionAffordance))]
 [JsonSerializable(typeof(PublicSceneAuthRequirements))]
 [JsonSerializable(typeof(PublicSceneBounds))]
 [JsonSerializable(typeof(PublicSceneCoordinate))]

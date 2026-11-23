@@ -72,7 +72,8 @@ internal sealed partial class FeatureServerQueryHandler
             return StandardErrorHelpers.CreateBadRequest(context, "Layer geometry type is not supported");
         }
 
-        if (!classificationDef.TryGetProperty("type", out var typeElement)
+        if (classificationDef.ValueKind != JsonValueKind.Object
+            || !classificationDef.TryGetProperty("type", out var typeElement)
             || typeElement.ValueKind != JsonValueKind.String)
         {
             return StandardErrorHelpers.CreateBadRequest(context,

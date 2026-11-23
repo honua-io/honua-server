@@ -170,6 +170,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException($"Operator '{opValue}' requires at least two arguments");
             }
 
+            Cql2BooleanExpression.EnsurePredicateOperands(opValue, expressions);
             var binaryOperator = normalizedLower == "and" ? BinaryOperator.And : BinaryOperator.Or;
             var current = expressions[0];
             for (var i = 1; i < expressions.Count; i++)
@@ -188,6 +189,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException("Operator 'not' requires a single argument");
             }
 
+            Cql2BooleanExpression.EnsurePredicateOperands(opValue, expressions);
             return new UnaryExpression(UnaryOperator.Not, expressions[0]);
         }
 
@@ -224,6 +226,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException($"Operator '{opValue}' requires two arguments");
             }
 
+            Cql2BooleanExpression.EnsureLikeOperands(opValue, expressions[0], expressions[1]);
             var op = normalizedLower == "like" ? BinaryOperator.Like : BinaryOperator.NotLike;
             return new BinaryExpression(expressions[0], op, expressions[1]);
         }
@@ -664,9 +667,10 @@ public sealed class Cql2JsonParser
         var minY = bboxElement[1].GetDouble();
         var maxX = bboxElement[2].GetDouble();
         var maxY = bboxElement[3].GetDouble();
-        var srid = ResolveGeometrySrid(element) ?? DefaultSrid;
+        var explicitSrid = ResolveGeometrySrid(element);
+        var srid = explicitSrid ?? DefaultSrid;
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: srid);
-        var geometry = CreateBboxGeometry(geometryFactory, minX, minY, maxX, maxY, srid);
+        var geometry = CreateBboxGeometry(geometryFactory, minX, minY, maxX, maxY, srid, explicitSrid.HasValue);
         var writer = new WKBWriter();
         var wkb = writer.Write(geometry);
 
@@ -679,10 +683,11 @@ public sealed class Cql2JsonParser
         double minY,
         double maxX,
         double maxY,
-        int srid)
+        int srid,
+        bool hasExplicitCrs)
     {
         var isGeographic = SpatialReference.Create(srid).IsGeographic;
-        ValidateBbox(minX, minY, maxX, maxY, isGeographic);
+        ValidateBbox(minX, minY, maxX, maxY, isGeographic, hasExplicitCrs);
 
         if (isGeographic && minX > maxX)
         {
@@ -768,7 +773,7 @@ public sealed class Cql2JsonParser
                TryParseSrid(directNameElement.GetString(), out srid);
     }
 
-    private static void ValidateBbox(double minX, double minY, double maxX, double maxY, bool isGeographic)
+    private static void ValidateBbox(double minX, double minY, double maxX, double maxY, bool isGeographic, bool hasExplicitCrs)
     {
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
@@ -779,7 +784,7 @@ public sealed class Cql2JsonParser
             throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
         }
 
-        if (isGeographic &&
+        if (isGeographic && (hasExplicitCrs || minX > maxX) &&
             (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
              !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
         {

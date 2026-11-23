@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
@@ -208,6 +210,114 @@ public sealed class MetadataDocumentByteCacheTests
         Assert.Equal((int)HttpStatusCode.PreconditionFailed, mismatchContext.Response.StatusCode);
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetOrBuildJsonAsync_CachesSerializedBytesAndInvalidatesOnGenerationAdvance()
+    {
+        var cache = new MetadataDocumentByteCache();
+        var genSource = new MutableGenerationSource(1);
+        using var services = new ServiceCollection()
+            .AddSingleton(cache)
+            .AddSingleton<IConfigurationGenerationSource>(genSource)
+            .AddSingleton<IETagService>(new ETagService())
+            .BuildServiceProvider();
+
+        var buildCount = 0;
+        var (ct1, body1) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v1", ++buildCount));
+        var (ct2, body2) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v1", ++buildCount));
+
+        Assert.Equal(1, buildCount);
+        Assert.Equal("application/json; charset=utf-8", ct1);
+        Assert.Equal(ct1, ct2);
+        Assert.Equal(body1, body2);
+
+        genSource.Generation = 2;
+        var (_, body3) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v2", ++buildCount));
+
+        Assert.Equal(2, buildCount);
+        Assert.Contains("\"v2\"", Encoding.UTF8.GetString(body3), StringComparison.Ordinal);
+    }
+
+    private static async Task<(string? ContentType, byte[] Body)> ExecuteCachedJsonAsync(
+        IServiceProvider services,
+        string cacheKey,
+        Func<SampleJsonDoc> build)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+        var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context, new JsonMetadataCacheRequest<SampleJsonDoc>
+        {
+            CacheKey = cacheKey,
+            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
+            BuildAsync = () => Task.FromResult(build())
+        });
+        await result.ExecuteAsync(context);
+        return (context.Response.ContentType, ((MemoryStream)context.Response.Body).ToArray());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetOrBuildJsonAsync_WhenQueryTokenPresent_BypassesCache()
+    {
+        var cache = new MetadataDocumentByteCache();
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(cache)
+            .BuildServiceProvider();
+
+        var buildCount = 0;
+        for (var i = 0; i < 2; i++)
+        {
+            var context = new DefaultHttpContext { RequestServices = services };
+            context.Request.QueryString = new QueryString("?token=secret");
+            context.Response.Body = new MemoryStream();
+            var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context, new JsonMetadataCacheRequest<SampleJsonDoc>
+            {
+                CacheKey = "json-key",
+                TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
+                BuildAsync = () => Task.FromResult(new SampleJsonDoc("tok", ++buildCount))
+            });
+            await result.ExecuteAsync(context);
+        }
+
+        Assert.Equal(2, buildCount);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetOrBuildJsonAsync_WhenBuilderMarksNoStore_DoesNotRetainPartialPayload()
+    {
+        var cache = new MetadataDocumentByteCache();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(cache).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+        var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context, new JsonMetadataCacheRequest<SampleJsonDoc>
+        {
+            CacheKey = "json-key",
+            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
+            BuildAsync = () =>
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                return Task.FromResult(new SampleJsonDoc("partial", 1));
+            }
+        });
+        await result.ExecuteAsync(context);
+
+        Assert.Contains("partial", Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray()), StringComparison.Ordinal);
+        Assert.True(context.Response.GetTypedHeaders().CacheControl?.NoStore);
+        Assert.Null(cache.Get(cache.CaptureStamp(0), "json-key"));
+        var (_, recoveredBody) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("complete", 2));
+        Assert.Contains("complete", Encoding.UTF8.GetString(recoveredBody), StringComparison.Ordinal);
+    }
+
+    private sealed class MutableGenerationSource(long generation) : IConfigurationGenerationSource
+    {
+        internal long Generation { get; set; } = generation;
+
+        public Task<long> GetGenerationAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Generation);
+    }
+
     private sealed class SteppingTimeProvider : TimeProvider
     {
         private long _ticks = TimeSpan.TicksPerSecond * 1000;
@@ -219,3 +329,8 @@ public sealed class MetadataDocumentByteCacheTests
         internal void Advance(TimeSpan delta) => _ticks += delta.Ticks;
     }
 }
+
+internal sealed record SampleJsonDoc(string Label, int Sequence);
+
+[JsonSerializable(typeof(SampleJsonDoc))]
+internal sealed partial class SampleJsonDocContext : JsonSerializerContext;

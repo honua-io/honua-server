@@ -29,6 +29,8 @@ public sealed class SharedBucketCloudFileStorage(
 {
     public CloudStorageProvider Provider => provider;
 
+    public string? ObjectKeyPrefix => string.IsNullOrEmpty(keyPrefix) ? null : keyPrefix.Trim('/') + "/";
+
     public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         => ReplaceAsync(request, cancellationToken);
 

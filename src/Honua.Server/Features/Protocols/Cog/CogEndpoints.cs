@@ -59,6 +59,10 @@ internal static class CogEndpoints
         ILogger<CogEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return TypedResults.BadRequest("Request body is required.");
+        }
         if (!request.IsValid(out var error))
         {
             return TypedResults.BadRequest(error);

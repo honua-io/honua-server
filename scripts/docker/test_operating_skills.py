@@ -17,8 +17,8 @@ DOC_LINKS = importlib.util.module_from_spec(LINK_CHECK_SPEC)
 LINK_CHECK_SPEC.loader.exec_module(DOC_LINKS)
 
 
-def skill_link_errors(skill_root):
-    _, relative_errors, _ = DOC_LINKS.check_relative_links(str(skill_root), str(ROOT), set())
+def skill_link_errors(skill_root, install_root=ROOT):
+    _, relative_errors, _ = DOC_LINKS.check_relative_links(str(skill_root), str(install_root), set())
     references = []
     for path in skill_root.rglob('*.md'):
         for url in DOC_LINKS.RUNTIME_DOCS_URL_RE.findall(path.read_text()):
@@ -50,6 +50,7 @@ class OperatingSkillsTests(unittest.TestCase):
                 actual[name] = digest
                 self.assertEqual(hashlib.sha256((destination / name).read_bytes()).hexdigest(), digest)
             self.assertEqual(expected, set(actual))
+            self.assertEqual([], skill_link_errors(destination / 'skills', destination))
             result = subprocess.run(['sha256sum', '-c', 'agent-files.sha256'], cwd=destination,
                                     capture_output=True, text=True)
             self.assertEqual(0, result.returncode, result.stderr)
@@ -79,6 +80,7 @@ class OperatingSkillsTests(unittest.TestCase):
                     copies = {path.relative_to(installed): path.read_bytes()
                               for path in installed.rglob('*') if path.is_file()}
                     self.assertEqual(sources, copies)
+                    self.assertEqual([], skill_link_errors(installed, installed))
 
     def test_skill_relative_and_docs_links_resolve(self):
         self.assertEqual([], skill_link_errors(ROOT / 'skills'))

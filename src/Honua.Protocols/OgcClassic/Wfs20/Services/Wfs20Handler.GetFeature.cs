@@ -227,7 +227,7 @@ internal sealed partial class Wfs20Handler
                     0,
                     0);
                 return isHitsRequest
-                    ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous)
+                    ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation)
                     : CreateEmptyFeatureCollectionResult(normalizedFormat, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous);
             }
 
@@ -256,9 +256,7 @@ internal sealed partial class Wfs20Handler
                 }
                 return CreateHitsFeatureCollectionResult(
                     planSet.TotalMatched,
-                    hitsMetadata.SchemaLocation,
-                    hitsMetadata.PagingLinks.Next,
-                    hitsMetadata.PagingLinks.Previous);
+                    hitsMetadata.SchemaLocation);
             }
 
             var expectedReturnedCount = planSet.Plans.Sum(plan => plan.Query.Limit ?? 0);
@@ -428,7 +426,7 @@ internal sealed partial class Wfs20Handler
                 0,
                 pagingTypeNames);
             return isHitsRequest
-                ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous)
+                ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation)
                 : CreateEmptyFeatureCollectionResult(normalizedFormat, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous);
         }
 
@@ -454,9 +452,7 @@ internal sealed partial class Wfs20Handler
         {
             return CreateHitsFeatureCollectionResult(
                 planSet.TotalMatched,
-                responseMetadata.SchemaLocation,
-                responseMetadata.PagingLinks.Next,
-                responseMetadata.PagingLinks.Previous);
+                responseMetadata.SchemaLocation);
         }
 
         var (result, returnedCount) = normalizedFormat switch
@@ -573,7 +569,10 @@ internal sealed partial class Wfs20Handler
                     query with { Offset = layerOffset, Limit = layerLimit },
                     layerMatched,
                     xmlQuery.SrsName ?? fallbackSrsName,
-                    reader));
+                    reader)
+                {
+                    IncludeGeometry = ShouldProjectGeometry(featureType.Resource, xmlQuery.PropertyName)
+                });
 
                 remainingCount -= layerLimit;
             }

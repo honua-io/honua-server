@@ -57,7 +57,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         var snapshot = await ReadStorageInvalidationSnapshotAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
-            await InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+            await EvictQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
         var publications = PublicationsEditedWithStorageLayer(snapshot, storageLayerId).ToArray();
@@ -175,6 +175,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     public async Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
     {
+        await EvictQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EvictQueryResponsesAsync(CancellationToken cancellationToken)
+    {
         InvalidateMetadataDocumentCache();
         await EvictResponseCacheAsync(
             [
@@ -183,7 +189,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
                 ResponseCacheUtilities.BuildODataPattern(),
             ],
             cancellationToken).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
@@ -203,66 +208,6 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             tags.Add($"scene:{sceneId.Trim().ToLowerInvariant()}");
         }
         return Task.WhenAll(EvictTagsAsync(tags, cancellationToken), InvalidateCdnForAdministrativeChangeAsync(cancellationToken));
-    }
-
-    public async Task InvalidateServiceCatalogAsync(
-        string? serviceId,
-        IEnumerable<int>? layerIds,
-        CancellationToken cancellationToken)
-    {
-        var normalizedServiceId = string.IsNullOrWhiteSpace(serviceId)
-            ? null
-            : serviceId.Trim().ToLowerInvariant();
-        var layerIdList = layerIds?
-            .Distinct()
-            .ToArray() ?? [];
-
-        var tags = new List<string>
-        {
-            "service-directory",
-            "service-metadata",
-            "tiles",
-            "layer-metadata",
-            "layer-styles",
-            "metadata",
-            "ogc-metadata",
-            "ogc-tiles",
-            "ogc-maps",
-            "stac-metadata",
-            "mvt-tiles",
-            "terrain"
-        };
-
-        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
-        {
-            tags.Add($"service:{normalizedServiceId}");
-        }
-
-        var responsePatterns = new List<string>();
-        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
-        {
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
-        }
-
-        foreach (var layerId in layerIdList)
-        {
-            await InvalidateStorageLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-            await InvalidateLayerAsync(normalizedServiceId, layerId, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (string.IsNullOrWhiteSpace(normalizedServiceId) && layerIdList.Length == 0)
-        {
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerPattern());
-            responsePatterns.Add(ResponseCacheUtilities.BuildOgcPattern());
-            responsePatterns.Add(ResponseCacheUtilities.BuildODataPattern());
-        }
-
-        await Task.WhenAll(
-            EvictTagsAsync(tags, cancellationToken),
-            EvictResponseCacheAsync(responsePatterns, cancellationToken),
-            EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
-        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
-        await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task NotifyPublicExportAccessChangeAsync(

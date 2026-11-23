@@ -371,4 +371,59 @@ public sealed class FilterExpressionNormalizerTests
         act.Should().Throw<ArgumentException>()
             .WithMessage($"*maximum nesting depth of {FilterExpressionNormalizer.MaxExpressionDepth}*");
     }
+
+    [UnitTest]
+    public void Normalize_DecimalBetweenWithQuotedAndIntegerBounds_Succeeds()
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-decimal", Name = "Decimal Layer" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "amount", Type = MetadataV2FieldType.Decimal },
+            ],
+        };
+
+        var expression = FilterExpressionHelpers.BuildBetweenExpression(
+            new PropertyReference("amount"),
+            new Literal("0.1", LiteralType.Text),
+            new Literal(1, LiteralType.Number),
+            negate: false);
+
+        var normalized = FilterExpressionNormalizer.Normalize(expression, resource);
+
+        var andExpr = normalized.Should().BeOfType<BinaryExpression>().Subject;
+        var lower = andExpr.Left.Should().BeOfType<BinaryExpression>().Subject;
+        var upper = andExpr.Right.Should().BeOfType<BinaryExpression>().Subject;
+        lower.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(0.1m);
+        upper.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(1);
+    }
+
+    [UnitTest]
+    public void Normalize_BetweenWithIncompatiblePostCoercionBounds_ThrowsArgumentException()
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-bounds", Name = "Bounds Layer" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+            ],
+        };
+
+        var expression = FilterExpressionHelpers.BuildBetweenExpression(
+            new PropertyReference("name"),
+            new Literal("a", LiteralType.Text),
+            new FunctionCall("LENGTH", [new Literal("b", LiteralType.Text)]),
+            negate: false);
+
+        var act = () => FilterExpressionNormalizer.Normalize(expression, resource);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Incompatible literal types*");
+    }
 }

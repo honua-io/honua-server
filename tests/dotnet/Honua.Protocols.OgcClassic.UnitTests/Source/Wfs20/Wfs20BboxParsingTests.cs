@@ -41,6 +41,32 @@ public sealed class Wfs20BboxParsingTests
         new WKBReader().Read(spatialFilter.Geometry).Should().BeOfType<MultiPolygon>();
     }
 
+    [UnitTheory]
+    [InlineData("urn:ogc:def:crs:EPSG:6.9:25831", 25831)]
+    [InlineData("urn:x-ogc:def:crs:EPSG::4326", 4326)]
+    [InlineData("urn:ogc:def:crs:OGC:1.3:CRS84", 4326)]
+    [InlineData("urn:ogc:def:crs:OGC:2:84", 4326)]
+    [InlineData("CRS:84", 4326)]
+    public void ParseBboxFilter_WithVersionedUrnsAndCrs84Aliases_ResolvesExpectedSrid(string crs, int expectedSrid)
+    {
+        var resource = CreateResource();
+
+        var spatialFilter = InvokeParseBboxFilter($"0,0,10,10,{crs}", resource);
+
+        spatialFilter.Srid.Should().Be(expectedSrid);
+    }
+
+    [UnitTheory]
+    [InlineData("urn:ogc:def:crs:OGC:1.3:CRS84", true)]
+    [InlineData("urn:ogc:def:crs:OGC:2:84", true)]
+    [InlineData("CRS:84", true)]
+    [InlineData("urn:x-ogc:def:crs:EPSG::4326", false)]
+    [InlineData("urn:ogc:def:crs:EPSG:6.9:25831", false)]
+    public void IsCrs84Request_RecognizesAllCrs84VariantsAndDistinguishesEpsgUrns(string srsName, bool expected)
+    {
+        Wfs20Handler.IsCrs84Request(srsName).Should().Be(expected);
+    }
+
     private static SpatialFilter InvokeParseBboxFilter(string bbox, MetadataV2Object resource)
     {
         var method = typeof(Wfs20Handler).GetMethod(

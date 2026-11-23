@@ -15,6 +15,8 @@ internal sealed record SceneAccessTokenPayload(
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(SceneAccessEnvelope))]
+[JsonSerializable(typeof(SceneAccessCredentialTransport))]
+[JsonSerializable(typeof(SceneAccessAssetScope))]
 [JsonSerializable(typeof(SceneAccessTokenPayload))]
 internal sealed partial class SceneAccessEnvelopeJsonContext : JsonSerializerContext
 {

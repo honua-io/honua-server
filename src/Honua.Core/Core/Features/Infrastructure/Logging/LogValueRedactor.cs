@@ -85,5 +85,5 @@ public static class LogValueRedactor
         }
     }
 
-    private static bool IsControl(char c) => c < ' ' || c == '';
+    private static bool IsControl(char c) => char.IsControl(c) || c is '\u0085' or '\u2028' or '\u2029';
 }

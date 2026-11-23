@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
@@ -113,7 +114,7 @@ public sealed class ProposalTenantOwnershipTests
         }
         else
         {
-            await Assert.ThrowsAsync<KeyNotFoundException>(() => resource.ReadAsync(
+            await Assert.ThrowsAsync<GeoprocessingNotFoundException>(() => resource.ReadAsync(
                 context, "honua://proposals/proposal-a", CancellationToken.None));
         }
     }

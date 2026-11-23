@@ -3,7 +3,11 @@
 
 using FluentAssertions;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Monitoring;
+using Honua.Server.Tests.Features.Admin;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -44,6 +48,50 @@ public sealed class QueryResultCacheManagerTests
         first.Should().Be(1);
         second.Should().Be(1);
         executions.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task InvalidateAsync_WithCrLfPattern_SanitizesPatternInLog()
+    {
+        using var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        using var logCapture = new NetworkTopologyEditAdminEndpointsTests.CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(logCapture));
+        var logger = loggerFactory.CreateLogger<QueryResultCacheManager>();
+        using var manager = new QueryResultCacheManager(
+            memoryCache,
+            logger,
+            Options.Create(new QueryResultCacheOptions { Enabled = true }));
+
+        var removed = await manager.InvalidateAsync("eval3-noop\r\n[ERR] FORGED_CACHE_LINE");
+
+        removed.Should().Be(0);
+        logCapture.Messages.Should().ContainSingle();
+        logCapture.Messages[0].Should().NotContain("\r").And.NotContain("\n");
+        logCapture.Messages[0].Should().Contain("eval3-noop__[ERR] FORGED_CACHE_LINE");
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("prefix\r\n[ERR] forged")]
+    [InlineData("prefix\nforged")]
+    [InlineData("prefix\0null")]
+    public void ValidateInvalidationPattern_RejectsBlankOrControlCharacters(string? pattern)
+    {
+        EnhancedPerformanceEndpoints.ValidateInvalidationPattern(pattern)
+            .Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
+    public void ValidateInvalidationPattern_RejectsOverlongPattern_AndAcceptsNormalPattern()
+    {
+        var tooLong = new string('a', EnhancedPerformanceEndpoints.MaxCacheInvalidationPatternLength + 1);
+        EnhancedPerformanceEndpoints.ValidateInvalidationPattern(tooLong)
+            .Should().NotBeNullOrWhiteSpace();
+
+        EnhancedPerformanceEndpoints.ValidateInvalidationPattern("query:spatial:*")
+            .Should().BeNull();
     }
 
     private static QueryResultCacheManager CreateManager(IMemoryCache memoryCache, QueryResultCacheOptions options)

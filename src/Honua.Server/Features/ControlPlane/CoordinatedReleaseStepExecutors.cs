@@ -131,14 +131,26 @@ internal sealed class CoordinatedMetadataStepExecutor(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
     {
-        var metadata = await metadataControlService.CreateAsync(
-                context.MetadataPlan,
-                operation.Audit.RequestedBy,
-                $"Coordinated release {operation.OperationId} DB schema + metadata activation.",
-                idempotencyKey: $"{operation.OperationId}-metadata",
-                correlationId: operation.Audit.CorrelationId,
-                cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        WorkflowOperationRecord metadata;
+        try
+        {
+            metadata = await metadataControlService.CreateAsync(
+                    context.MetadataPlan,
+                    operation.Audit.RequestedBy,
+                    $"Coordinated release {operation.OperationId} DB schema + metadata activation.",
+                    idempotencyKey: $"{operation.OperationId}-metadata",
+                    correlationId: operation.Audit.CorrelationId,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            return new CoordinatedStepResult
+            {
+                Outcome = CoordinatedStepOutcome.Failed,
+                Detail = $"Metadata/schema validation failed: {ex.Message}"
+            };
+        }
 
         return new CoordinatedStepResult
         {

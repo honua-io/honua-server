@@ -12,7 +12,7 @@ to read 135 pages of prose and hope. This closes that: every registry entry
 becomes a concept whose `resource` is its stable capability key and which carries
 the registry's own facts.
 
-Each page is a pure function of those two JSON files, deliberately. An earlier
+Each page is a pure function of the registry, matrix and manifest crosswalk JSON files. An earlier
 draft embedded the pages that discuss each capability, computed by searching the
 bundle - which made all 117 concepts depend on the prose of every page, so an
 unrelated documentation edit restaled the lot. That view is a report now
@@ -38,6 +38,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DATA = REPO_ROOT / "docs" / "gis" / "data"
 KEYS_PATH = DATA / "capability-keys.v1.json"
 MATRIX_PATH = DATA / "capability-matrix.v1.json"
+CROSSWALK_PATH = DATA / "capability-manifest-crosswalk.v1.json"
 OUT_DIR = REPO_ROOT / "docs" / "okf" / "capabilities"
 BUNDLE_PATH = REPO_ROOT / "scripts" / "ci" / "okf-bundle.v1.json"
 
@@ -264,6 +265,8 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
             lines.append(f"- [{label}](../../{rel})")
         if status in OPT_IN_STATUS:
             lines += ["", *availability_note(key, status)]
+    elif status == "live" and (no_surface := facts.get("noSurface") or {}).get("reasonCode") == "content-negotiation":
+        lines.extend(["## How to use it", "", no_surface["reason"], "", "- [All capabilities](README.md)"])
     elif not facts.get("entryCount") and not facts.get("provingTestCount"):
         # No route in the generated feature catalog and no proving test. This is
         # a registry entry for something that is not built, and saying "no page
@@ -321,19 +324,31 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
 
 def availability_note(key: str, status: str) -> list[str]:
     """Tell a reader or agent how to find out whether a not-GA capability is on."""
-    return [
-        "## Availability",
+    manifest_ids = sorted({
+        entry["manifestId"] for entry in load(CROSSWALK_PATH)["entries"]
+        if entry.get("capability") == key
+    })
+    lines = ["## Availability", "", f"Status is **{status}**."]
+    if not manifest_ids:
+        return lines + [
+            "This capability has no runtime manifest ID in the published crosswalk. "
+            "Do not infer a per-capability experimental switch from its licensing key.",
+        ]
+    lines += [
+        "Read the following runtime IDs in `GET /api/v1/capabilities/manifest` before "
+        "calling their routes. `available: true` means the routes are served. "
+        "`available: false` with `reasonCode: experimental-disabled` means they return "
+        "404 until the corresponding switch below is `true` (or the global "
+        "`Capabilities:Experimental:Enabled`). Edition licensing still applies.",
         "",
-        f"Status is **{status}**. Not every {status} capability is on by default, so read "
-        f"`{key}` in `GET /api/v1/capabilities/manifest` before calling its routes. "
-        "`available: true` means the routes are served. `available: false` with "
-        "`reasonCode: experimental-disabled` means they return 404 until "
-        f"`Capabilities:Experimental:{key}:Enabled` is `true` (or the global "
-        "`Capabilities:Experimental:Enabled`). Set it in configuration or as the container "
-        f"environment variable `Capabilities__Experimental__{key}__Enabled`; a POSIX shell "
-        "cannot `export` a name containing `.` or `-`. Edition licensing still applies once "
-        "it is enabled.",
     ]
+    for manifest_id in manifest_ids:
+        lines.append(
+            f"- `{manifest_id}`: `Capabilities:Experimental:{manifest_id}:Enabled`, "
+            f"or container environment variable `Capabilities__Experimental__{manifest_id}__Enabled`."
+        )
+    return lines + ["", "A POSIX shell cannot `export` a name containing `.` or `-`."]
+
 
 
 def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:

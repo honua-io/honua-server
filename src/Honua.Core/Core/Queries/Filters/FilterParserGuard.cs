@@ -54,7 +54,250 @@ internal static class FilterParserGuard
     {
         FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
         EnsureAggregateInListValues(expression);
+        EnsureSemanticGuards(expression);
     }
+
+    internal static void EnsureCompatibleLiteralComparison(FilterExpression left, FilterExpression right)
+    {
+        var leftType = InferStaticExpressionType(left);
+        var rightType = InferStaticExpressionType(right);
+        if (leftType is null || rightType is null)
+        {
+            return;
+        }
+
+        var compatible = leftType == rightType
+            || (leftType is LiteralType.Date or LiteralType.DateTime
+                && rightType is LiteralType.Date or LiteralType.DateTime);
+        if (!compatible)
+        {
+            throw new ArgumentException(
+                $"Incompatible literal types in comparison: {leftType} and {rightType}.");
+        }
+    }
+
+    internal static LiteralType? InferStaticExpressionType(FilterExpression expression)
+        => expression switch
+        {
+            Literal { Type: LiteralType.Null } => null,
+            Literal literal => literal.Type,
+            BinaryExpression binary => InferBinaryArithmeticType(binary),
+            UnaryExpression { Operator: UnaryOperator.Negate } => LiteralType.Number,
+            FunctionCall function => InferStaticFunctionType(function.FunctionName),
+            _ => null
+        };
+
+    private static LiteralType? InferBinaryArithmeticType(BinaryExpression binary)
+    {
+        if (binary.Operator is BinaryOperator.Add or BinaryOperator.Subtract)
+        {
+            var leftType = InferStaticExpressionType(binary.Left);
+            var rightType = InferStaticExpressionType(binary.Right);
+            if (leftType == LiteralType.Number && rightType == LiteralType.Number)
+            {
+                return LiteralType.Number;
+            }
+
+            if (leftType is LiteralType.Date or LiteralType.DateTime && IsIntervalCall(binary.Right))
+            {
+                return LiteralType.DateTime;
+            }
+
+            if (binary.Operator == BinaryOperator.Add
+                && IsIntervalCall(binary.Left)
+                && rightType is LiteralType.Date or LiteralType.DateTime)
+            {
+                return LiteralType.DateTime;
+            }
+
+            return null;
+        }
+
+        if (binary.Operator is BinaryOperator.Multiply or BinaryOperator.Divide
+            or BinaryOperator.Modulo or BinaryOperator.Div or BinaryOperator.Power)
+        {
+            return IsIntervalCall(binary.Left) || IsIntervalCall(binary.Right)
+                ? null
+                : LiteralType.Number;
+        }
+
+        return null;
+    }
+
+    private static bool IsIntervalCall(FilterExpression expression)
+        => expression is FunctionCall function
+            && function.FunctionName.Equals("INTERVAL", StringComparison.OrdinalIgnoreCase);
+
+    private static LiteralType? InferStaticFunctionType(string functionName)
+        => functionName.ToUpperInvariant() switch
+        {
+            "UPPER" or "LOWER" or "TRIM" or "LTRIM" or "RTRIM" or "SUBSTRING" or "SUBSTR"
+                or "REPLACE" or "CONCAT" or "LEFT" or "RIGHT" or "CASEI" or "ACCENTI"
+                or "ST_GEOMETRYTYPE" => LiteralType.Text,
+            "LENGTH" or "LEN" or "CHAR_LENGTH" or "CHARACTER_LENGTH" or "POSITION"
+                or "ABS" or "CEIL" or "CEILING" or "FLOOR" or "ROUND" or "SIGN"
+                or "POWER" or "MOD" or "SQRT" or "SIN" or "COS" or "TAN" or "LOG" or "EXP"
+                or "COUNT" or "SUM" or "AVG" or "ST_AREA" or "ST_LENGTH" or "ST_PERIMETER"
+                or "ST_DISTANCE" or "ST_NUMGEOMETRIES" or "ST_SRID" or "ST_X" or "ST_Y"
+                or "GEODISTANCE" or "GEOLENGTH" or "YEAR" or "MONTH" or "DAY"
+                or "HOUR" or "MINUTE" or "SECOND" or "FRACTIONALSECONDS" or "TOTALOFFSETMINUTES"
+                or "EXTRACT_DOW" or "EXTRACT_DOY" or "EXTRACT_QUARTER" or "EXTRACT_WEEK"
+                or "EXTRACT_EPOCH" => LiteralType.Number,
+            "NOW" or "CURRENT_TIMESTAMP" or "MINDATETIME" or "MAXDATETIME" => LiteralType.DateTime,
+            "CURRENT_DATE" or "DATE" => LiteralType.Date,
+            _ => null
+        };
+
+    private static void EnsureSemanticGuards(FilterExpression expression)
+    {
+        var stack = new Stack<FilterExpression>();
+        stack.Push(expression);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            ValidateExpressionSemantics(current);
+
+            foreach (var child in FilterExpressionNormalizer.EnumerateChildren(current))
+            {
+                stack.Push(child);
+            }
+        }
+    }
+
+    private static void ValidateExpressionSemantics(FilterExpression expression)
+    {
+        if (expression is BinaryExpression binary)
+        {
+            if (binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+                or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+                or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual)
+            {
+                EnsureCompatibleLiteralComparison(binary.Left, binary.Right);
+            }
+
+            if (binary.Operator is BinaryOperator.Divide or BinaryOperator.Div or BinaryOperator.Modulo
+                && IsConstantZero(binary.Right))
+            {
+                throw new ArgumentException("Division by zero is not allowed in filter expressions.");
+            }
+        }
+        else if (expression is FunctionCall { Arguments.Count: 2 } function
+            && function.FunctionName.Equals("MOD", StringComparison.OrdinalIgnoreCase)
+            && IsConstantZero(function.Arguments[1]))
+        {
+            throw new ArgumentException("Division by zero is not allowed in filter expressions.");
+        }
+    }
+
+    private static bool IsConstantZero(FilterExpression expression)
+        => EvaluateConstantDecimal(expression) == 0m;
+
+    private static decimal? EvaluateConstantDecimal(FilterExpression expression)
+    {
+        try
+        {
+            return expression switch
+            {
+                Literal { Type: LiteralType.Number } literal => TryLiteralToExactDecimal(literal.Value),
+                UnaryExpression { Operator: UnaryOperator.Negate } unary =>
+                    EvaluateConstantDecimal(unary.Operand) is { } inner ? checked(-inner) : null,
+                BinaryExpression binary when EvaluateConstantDecimal(binary.Left) is { } left
+                    && EvaluateConstantDecimal(binary.Right) is { } right =>
+                    EvaluateConstantBinary(binary.Operator, left, right),
+                FunctionCall function => EvaluateConstantFunction(function),
+                _ => null
+            };
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
+    }
+
+    private static decimal? TryLiteralToExactDecimal(object? value)
+        => value switch
+        {
+            int i => i,
+            long l => l,
+            decimal m => m,
+            double d when d == 0d => 0m,
+            float f when f == 0f => 0m,
+            _ => null
+        };
+
+    private static decimal? EvaluateConstantFunction(FunctionCall function)
+    {
+        var name = function.FunctionName.ToUpperInvariant();
+        if (name == "COALESCE")
+        {
+            return EvaluateCoalesceDecimal(function.Arguments);
+        }
+
+        if (function.Arguments.Count == 1 && EvaluateConstantDecimal(function.Arguments[0]) is { } single)
+        {
+            return name switch
+            {
+                "ABS" => Math.Abs(single),
+                "FLOOR" => Math.Floor(single),
+                "CEIL" or "CEILING" => Math.Ceiling(single),
+                "ROUND" => Math.Round(single, MidpointRounding.AwayFromZero),
+                "SIGN" => Math.Sign(single),
+                _ => null
+            };
+        }
+
+        if (function.Arguments.Count == 2
+            && EvaluateConstantDecimal(function.Arguments[0]) is { } first
+            && EvaluateConstantDecimal(function.Arguments[1]) is { } second)
+        {
+            return name switch
+            {
+                "MOD" => second == 0m
+                    ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                    : first % second,
+                "NULLIF" => first == second ? null : first,
+                _ => null
+            };
+        }
+
+        return null;
+    }
+
+    private static decimal? EvaluateCoalesceDecimal(IReadOnlyList<FilterExpression> arguments)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[i] is Literal { Type: LiteralType.Null })
+            {
+                continue;
+            }
+
+            return EvaluateConstantDecimal(arguments[i]);
+        }
+
+        return null;
+    }
+
+    private static decimal? EvaluateConstantBinary(BinaryOperator op, decimal left, decimal right)
+        => op switch
+        {
+            BinaryOperator.Add => checked(left + right),
+            BinaryOperator.Subtract => checked(left - right),
+            BinaryOperator.Multiply => checked(left * right),
+            BinaryOperator.Divide => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : left % right == 0m
+                    ? left / right
+                    : null,
+            BinaryOperator.Div => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : Math.Truncate(left / right),
+            BinaryOperator.Modulo => right == 0m
+                ? throw new ArgumentException("Division by zero is not allowed in filter expressions.")
+                : left % right,
+            BinaryOperator.Power when left == 0m && right > 0m => 0m,
+            _ => null
+        };
 
     // Each IN/NOT IN value is its own SQL parameter. A single list is already capped;
     // several lists in one expression share that budget so the statement stays under

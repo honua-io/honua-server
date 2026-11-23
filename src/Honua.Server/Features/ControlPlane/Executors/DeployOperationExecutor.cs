@@ -77,6 +77,12 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
 
         var dryRun = new List<string>();
         if (planResult.Plan.RequiresOutOfBandMigrations) dryRun.Add("requires out-of-band migrations");
+        if (payload.ParameterOverrides is { } overrides && ComposeContractApproval.FromParameters(overrides) is { } contract)
+        {
+            dryRun.Add("Approving applies these database contract migrations once, only if they are exactly the release's pending contract scripts: "
+                + string.Join(", ", contract.Scripts ?? []) + ".");
+        }
+
         if (payload.Rollback)
         {
             dryRun.Add(string.IsNullOrWhiteSpace(payload.BackupId)

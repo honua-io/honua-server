@@ -3,4 +3,9 @@
 
 namespace Honua.Core.Queries.Filters;
 
-public record SqlFragment(string Sql, IReadOnlyList<object?> Parameters);
+public record SqlFragment(string Sql, IReadOnlyList<object?> Parameters)
+{
+    internal string? Dialect { get; init; }
+
+    internal FilterExpression? SourceExpression { get; init; }
+}

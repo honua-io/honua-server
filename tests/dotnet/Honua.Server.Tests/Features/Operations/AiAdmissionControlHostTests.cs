@@ -12,6 +12,7 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Admission;
 using Honua.Db.Postgres.Features.Security.Admission;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
@@ -94,7 +95,9 @@ public sealed class AiAdmissionControlHostTests
         var fixture = await CreateFixtureAsync("RequireApproval");
         try
         {
-            using var admin = Admin(fixture);
+            var key = await fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+                "admission-proposer", ["admin:*"], DateTimeOffset.UtcNow.AddMinutes(30), "test", CancellationToken.None);
+            using var admin = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key.Key));
             var response = await SubmitAsync(admin, "initialize", PolicyParameters());
             response.Status.Should().Be(HttpStatusCode.OK);
             response.Handle.GetProperty("status").GetString().Should().Be("RequiresApproval", "the operation response was {0}", response.Handle.GetRawText());

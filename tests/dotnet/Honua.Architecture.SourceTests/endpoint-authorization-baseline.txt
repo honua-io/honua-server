@@ -46,6 +46,7 @@ src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBas
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/execute"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/cancel"
+src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/messages"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/results/{{paramName}}"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/submitJob"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet RouteBase
@@ -287,6 +288,8 @@ src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs MapGet Templat
 src/Honua.Server/Features/Protocols/Elevation/ElevationEndpoints.cs MapGet "/elevation/{datasetId}/profile"
 src/Honua.Server/Features/Protocols/Elevation/ElevationEndpoints.cs MapGet "/elevation/{datasetId}/value"
 src/Honua.Server/Features/Protocols/Rasters/CogArtifacts/CogArtifactEndpoints.cs MapMethods "/api/v1/rasters/cog/{*artifactId}"
+src/Honua.Server/Features/Protocols/Terrain/QuantizedMesh/QuantizedMeshTerrainEndpoints.cs MapGet "/terrain/{datasetId}/layer.json"
+src/Honua.Server/Features/Protocols/Terrain/QuantizedMesh/QuantizedMeshTerrainEndpoints.cs MapGet "/terrain/{datasetId}/{z:int}/{x:int}/{y:int}.terrain"
 src/Honua.Server/Features/Protocols/Terrain/TerrainEndpoints.cs MapGet "/terrain/{datasetId}/tile.json"
 src/Honua.Server/Features/Protocols/Terrain/TerrainEndpoints.cs MapGet "/terrain/{datasetId}/{z:int}/{x:int}/{y:int}.png"
 src/Honua.Server/Features/Protocols/Tiles/PMTilesProxy/PMTilesProxyEndpoints.cs MapMethods "/api/v1/tiles/pmtiles/{*artifactId}"

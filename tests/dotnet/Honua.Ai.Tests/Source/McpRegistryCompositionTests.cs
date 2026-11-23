@@ -180,7 +180,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_ByDefault_PublishesExactlyTheAuditedAdminProjection()
     {
-        const int ExpectedManifestTools = 80;
+        const int ExpectedManifestTools = 82;
         const int ExpectedRosterAdditions = 16;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 18;
@@ -264,9 +264,9 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in publishes every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 130;
+        const int ExpectedCatalogAdminOperations = 132;
         const int ExpectedExclusionsInCatalog = 11;
-        const int ExpectedPublishedAdminTools = 119;
+        const int ExpectedPublishedAdminTools = 121;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {

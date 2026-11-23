@@ -129,10 +129,7 @@ internal static class GeoServicesSpatialFilterBuilder
         return spatialRel?.ToLowerInvariant() switch
         {
             "esrispatialrelintersects" or null => SpatialRelationship.Intersects,
-            // esriSpatialRelIndexIntersects is the index-accelerated form of
-            // esriSpatialRelIntersects; it evaluates the identical intersects
-            // predicate, so it maps to the same canonical relationship.
-            "esrispatialrelindexintersects" => SpatialRelationship.Intersects,
+            "esrispatialrelindexintersects" => SpatialRelationship.EnvelopeIntersects,
             "esrispatialrelcontains" => SpatialRelationship.Contains,
             "esrispatialrelwithin" => SpatialRelationship.Within,
             "esrispatialrelenvelopeintersects" => SpatialRelationship.EnvelopeIntersects,
@@ -170,6 +167,7 @@ internal static class GeoServicesSpatialFilterBuilder
         {
             "esrisrunit_meter" => (distance, DistanceUnit.Meters),
             "esrisrunit_foot" => (distance, DistanceUnit.Feet),
+            "esrisrunit_surveyfoot" => (distance * (1200.0 / 3937.0), DistanceUnit.Meters),
             "esrisrunit_kilometer" => (distance, DistanceUnit.Kilometers),
             "esrisrunit_statutemile" => (distance, DistanceUnit.Miles),
             "esrisrunit_nauticalmile" => (distance * MetersPerNauticalMile, DistanceUnit.Meters),

@@ -1,0 +1,33 @@
+{
+  "sceneId": "protected-campus",
+  "token": "<opaque-token>",
+  "expiresAt": "2026-08-22T00:15:00+00:00",
+  "refreshAfter": "2026-08-22T00:07:30+00:00",
+  "allowedMethods": [
+    "GET",
+    "HEAD"
+  ],
+  "contractVersion": "2026-08-v1",
+  "transports": [
+    {
+      "kind": "header",
+      "name": "X-Honua-Token",
+      "valueTemplate": "{token}",
+      "preferred": true
+    },
+    {
+      "kind": "query",
+      "name": "token",
+      "valueTemplate": "{token}",
+      "preferred": false
+    }
+  ],
+  "assetScopes": [
+    {
+      "scheme": "https",
+      "host": "maps.example.test",
+      "port": 443,
+      "pathPrefix": "/scenes/protected-campus/"
+    }
+  ]
+}

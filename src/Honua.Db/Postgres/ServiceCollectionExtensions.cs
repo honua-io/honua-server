@@ -359,6 +359,8 @@ internal static partial class ServiceCollectionExtensions
 
         // Task-first asset management: profiles, tasks and completion (ADR-0084)
         services.AddScoped<Honua.Core.Features.Assets.IAssetProfileStore, Features.Assets.PostgresAssetProfileStore>();
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskStore, Features.Assets.PostgresWorkTaskStore>();
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskCompletionStore, Features.Assets.PostgresWorkTaskCompletionStore>();
 
         // Register back-office field review store
         services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,
@@ -701,6 +703,7 @@ internal static partial class ServiceCollectionExtensions
             new CrsDetectionService(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
+        services.AddScoped<PostgresCrsRegistryCache>();
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 

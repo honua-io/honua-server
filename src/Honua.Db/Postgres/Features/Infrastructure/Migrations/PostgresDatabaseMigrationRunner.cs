@@ -106,6 +106,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var attachmentSchema = connection is null ? null : await PostgresAttachmentSchema.ResolveAsync(
                 connection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+            var registrySchema = connection is null ? null : await ResolveRegistrySchemaAsync(
+                connection, cancellationToken).ConfigureAwait(false);
             var upgrader = BuildUpgrader(
                 BuildMigrationConnectionString(connectionString),
                 migrationsAssembly,
@@ -114,7 +116,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, connection,
@@ -313,6 +315,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             var attachmentSchema = usesCanonicalMigrationRoots ? await PostgresAttachmentSchema.ResolveAsync(
                 lockConnection, _metadataSchema, _migrations.Attachments!, allowPendingCreation: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false) : null;
+            var registrySchema = usesCanonicalMigrationRoots ? await ResolveRegistrySchemaAsync(
+                lockConnection, cancellationToken).ConfigureAwait(false) : null;
             UpgradeEngine CreateUpgrader() => BuildUpgrader(
                 migrationConnectionString,
                 migrationsAssembly,
@@ -321,7 +325,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema);
             var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
@@ -547,7 +551,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string configuredSchemaAdoptionMigration,
         string? attachmentSchema = null,
         PostgresAttachmentMigrationContract? attachmentContract = null,
-        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null)
+        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null,
+        string? configuredRegistryAdoptionMigration = null,
+        string? registrySchema = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -569,16 +575,21 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
         foreach (var assembly in migrationAssemblies)
         {
-            // Migration 109 is a contract-phase move that only has meaning for a
+            // Configured-schema adoption is a contract-phase move that only has meaning for a
             // non-default Database:Schema. Omitting it at discovery time keeps an
             // existing default-schema upgrade out of the nonce gate altogether.
             var provider = new EmbeddedScriptProvider(assembly,
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
-                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
+                     (!string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal) &&
+                      !string.Equals(name, configuredRegistryAdoptionMigration, StringComparison.Ordinal))));
             IScriptProvider schemaBoundProvider = bindsResidentTablesToHonua && residentTableBindings is { Count: > 0 }
                 ? new HonuaResidentTableScriptProvider(provider, residentTableBindings)
                 : provider;
+            if (registrySchema is not null && registrySchema != PostgresSchemaConfiguration.DefaultMetadataSchema)
+            {
+                schemaBoundProvider = new RegistrySchemaScriptProvider(schemaBoundProvider, registrySchema);
+            }
             IScriptProvider selectedProvider = attachmentSchema is null ? schemaBoundProvider :
                 new AttachmentSchemaScriptProvider(schemaBoundProvider, attachmentSchema, migrationsAssembly,
                     attachmentContract ?? throw new InvalidOperationException("Canonical attachment identities were not supplied."));
@@ -588,6 +599,15 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         return builder
             .WithScriptNameComparer(_migrationScriptNameComparer)
             .Build();
+    }
+
+    private async Task<string> ResolveRegistrySchemaAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT to_regclass(@configured) IS NOT NULL AND to_regclass('honua.layers') IS NULL";
+        command.Parameters.AddWithValue("configured", SchemaSearchPath.QualifyTable("layers", _metadataSchema));
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true
+            ? _metadataSchema : PostgresSchemaConfiguration.DefaultMetadataSchema;
     }
 
     private bool UsesCanonicalMigrationRoots(Assembly migrationsAssembly)

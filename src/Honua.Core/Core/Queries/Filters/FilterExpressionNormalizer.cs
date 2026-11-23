@@ -61,14 +61,17 @@ public static class FilterExpressionNormalizer
             BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual or
             BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual)
         {
-            if (left is PropertyReference property && right is Literal literal)
-            {
-                right = CoerceLiteral(property, literal, schema);
-            }
-            else if (right is PropertyReference propertyRight && left is Literal literalLeft)
-            {
-                left = CoerceLiteral(propertyRight, literalLeft, schema);
-            }
+            (left, right) = NormalizeComparisonOperands(left, right, schema);
+        }
+
+        if (binary.Operator is BinaryOperator.And or BinaryOperator.Or)
+        {
+            ValidateBetweenBounds(binary.Operator, left, right);
+        }
+
+        if (binary.Operator is BinaryOperator.Like or BinaryOperator.NotLike)
+        {
+            ValidateLikeOperands(left, right);
         }
 
         if (binary.Operator == BinaryOperator.In && left is PropertyReference listProperty && right is ValueList values)
@@ -79,6 +82,60 @@ public static class FilterExpressionNormalizer
         }
 
         return new BinaryExpression(left, binary.Operator, right);
+    }
+
+    private static (FilterExpression Left, FilterExpression Right) NormalizeComparisonOperands(
+        FilterExpression left,
+        FilterExpression right,
+        FilterFieldSchema schema)
+    {
+        if (left is PropertyReference property && right is Literal literal)
+        {
+            return (left, CoerceLiteral(property, literal, schema));
+        }
+
+        if (right is PropertyReference propertyRight && left is Literal literalLeft)
+        {
+            return (CoerceLiteral(propertyRight, literalLeft, schema), right);
+        }
+
+        FilterParserGuard.EnsureCompatibleLiteralComparison(left, right);
+        return (left, right);
+    }
+
+    private static void ValidateBetweenBounds(BinaryOperator op, FilterExpression left, FilterExpression right)
+    {
+        if (left is not BinaryExpression { Left: PropertyReference lowerProp } lowerExpr
+            || right is not BinaryExpression { Left: PropertyReference upperProp } upperExpr
+            || !string.Equals(lowerProp.PropertyName, upperProp.PropertyName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var isBetweenPair = (op == BinaryOperator.And
+                && lowerExpr.Operator == BinaryOperator.GreaterThanOrEqual
+                && upperExpr.Operator == BinaryOperator.LessThanOrEqual)
+            || (op == BinaryOperator.Or
+                && lowerExpr.Operator == BinaryOperator.LessThan
+                && upperExpr.Operator == BinaryOperator.GreaterThan);
+
+        if (isBetweenPair)
+        {
+            FilterParserGuard.EnsureCompatibleLiteralComparison(lowerExpr.Right, upperExpr.Right);
+        }
+    }
+
+    private static void ValidateLikeOperands(FilterExpression left, FilterExpression right)
+    {
+        if (left is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+        {
+            throw new ArgumentException("LIKE requires a string operand.");
+        }
+
+        if (right is Literal { Type: not (LiteralType.Text or LiteralType.Null) })
+        {
+            throw new ArgumentException("LIKE pattern must be a string literal.");
+        }
     }
 
     private static TemporalPredicate NormalizeTemporalPredicate(TemporalPredicate temporal, FilterFieldSchema schema)

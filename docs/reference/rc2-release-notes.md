@@ -5,6 +5,16 @@ description: "Client-visible behavior clarified for the 2026.1 rc.2 release."
 ---
 # 2026.1 rc.2 release notes
 
+## Upgrade from rc.1
+
+With a custom `Database:Schema`, migration
+`227_AdoptConfiguredRegistrySchema.sql` moves the service and layer registry out
+of `honua` into the configured schema, preserving its rows and table identities.
+Stop older server and worker instances before applying the migration: they still
+use the previous registry location. Migrations are forward-only. To return to
+rc.1, restore the pre-upgrade database backup with its matching configuration
+and image. See [configured registry upgrades](../guides/deploy/upgrade-and-rollback.md#registry-tables-with-a-configured-database-schema).
+
 ## Map collaboration routes
 
 Map collaboration endpoints now use `/api/v1/maps/{mapId}/collaboration/`

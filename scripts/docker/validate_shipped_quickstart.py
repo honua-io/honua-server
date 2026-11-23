@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from http import HTTPStatus
 import json
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.request
 
 from compose_quickstart import ALL_SECRET_KEYS
 from package_quickstart import CONSOLE_WEB_IMAGE, CONSOLE_MAX_FILES, CONSOLE_MAX_BYTES, ROOT
@@ -242,6 +245,15 @@ class Installation:
         rows = compose_rows(self.compose("ps", "--all", "--format", "json", timeout=STATE_READ_TIMEOUT))
         return [safe_state(row) for row in rows[:MAX_SERVICE_STATES]]
 
+    def console_version(self, origin: str) -> tuple[int, str, dict]:
+        """GET /console/version.json through a Console edge, trusting only this install's certificate."""
+        context = ssl.create_default_context(cafile=str(self.directory / "secrets/console_tls_certificate"))
+        with urllib.request.urlopen(origin + "/console/version.json", context=context, timeout=30) as response:
+            return response.status, response.headers.get("Cache-Control", ""), json.loads(response.read())
+
+    def running_services(self) -> set[str]:
+        return {row.get("Service") for row in compose_rows(self.compose("ps", "--format", "json"))}
+
     def publish(self, blocks: dict[str, str]) -> None:
         publish_sample(self.directory, blocks, self.run)
 
@@ -272,6 +284,25 @@ def check_empty(installation: Installation, resources: tuple[str, ...]) -> None:
             raise ValueError("The dedicated Docker host contains leftover " + resource + " resources")
 
 
+CONSOLE_EDGES = {"console": "https://localhost:18083", "console-manager": "https://127.0.0.1:18084"}
+
+
+def check_console_version(installation: Installation) -> list[str]:
+    """Every running Console edge serves the package's bundle digest and platform version, uncached."""
+    lock = json.loads((installation.directory / "images.json").read_text())
+    expected = {"name": "honua-console", "bundleSha256": lock["consoleBundle"]["sha256"],
+                "platformVersion": lock["version"]}
+    running = installation.running_services()
+    if "console" not in running:
+        raise ValueError("The Console edge is not running")
+    edges = [name for name in CONSOLE_EDGES if name in running]
+    for name in edges:
+        status, cache, document = installation.console_version(CONSOLE_EDGES[name])
+        if status != HTTPStatus.OK or "no-store" not in cache or document != expected:
+            raise ValueError("A Console edge does not serve the packaged platform version")
+    return edges
+
+
 def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     original = (installation.directory / "quickstart.py").read_bytes()
     installation.run(["python3", "quickstart.py"])
@@ -281,6 +312,7 @@ def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     console_count = installation.health()
     if console_count <= default_count:
         raise ValueError("Console profile did not add a service")
+    console_edges = check_console_version(installation)
     installation.publish(blocks)
     if (installation.directory / "quickstart.py").read_bytes() != original:
         raise ValueError("Documented publication overwrote the packaged initializer")
@@ -291,7 +323,8 @@ def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     if installation.credentials() != credentials:
         raise ValueError("Reinitialization changed the installation's saved credentials")
     return {"defaultServices": default_count, "consoleServices": console_count,
-            "secretFreeConfiguration": True, "publishQuery": True, "authenticatedConsoleStudio": True, "reinitializePreservesCredentials": True}
+            "secretFreeConfiguration": True, "publishQuery": True, "authenticatedConsoleStudio": True, "reinitializePreservesCredentials": True,
+            "consoleVersionEdges": console_edges}
 
 
 def proof_inputs(path: Path, archive: Path) -> dict:

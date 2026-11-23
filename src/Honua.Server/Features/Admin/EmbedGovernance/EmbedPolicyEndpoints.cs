@@ -124,20 +124,23 @@ internal static partial class EmbedPolicyEndpoints
 
         var key = validation.Record;
         var origin = context.Request.Headers.Origin.ToString();
-        var consumed = await store.RecordRequestAsync(key.Id, key.Scope.RateLimitWindow, context.RequestAborted);
-        var decision = EmbedPolicyEvaluator.Evaluate(key, new EmbedPolicyRequest
+        var now = DateTimeOffset.UtcNow;
+        var analyticsContext = new AnalyticsRequestContext
         {
+            Analytics = analytics,
+            AuditLog = auditLog,
+            Logger = logger,
+            HttpContext = context,
+            Key = key,
             Origin = origin,
-            RequestsConsumedInWindow = consumed,
-        }, DateTimeOffset.UtcNow);
+            Now = now,
+        };
+        var consumed = await store.RecordRequestAsync(key.Id, key.Scope.RateLimitWindow, context.RequestAborted);
+        var accessRequest = new EmbedPolicyRequest { Origin = origin, RequestsConsumedInWindow = consumed };
+        var decision = EmbedPolicyEvaluator.EvaluateRequestAccess(key, accessRequest, now);
         if (!decision.Allowed)
         {
-            LogPolicyDenied(logger, key.Id, decision.Reason);
-            await IngestDenialAsync(analytics, key, new EmbedPolicyRequest { Origin = origin }, decision, context.RequestAborted);
-            await EmitDenialAuditAsync(auditLog, context, key.Id, decision);
-
-            var failure = ApiResponse<object>.Failure($"embed policy denied: {decision.Reason}");
-            return TypedResults.Json(failure, statusCode: StatusCodes.Status403Forbidden);
+            return await DenyPolicyAsync(analyticsContext, new EmbedPolicyRequest { Origin = origin }, decision);
         }
 
         if (request?.Events is null || request.Events.Count == 0)
@@ -151,35 +154,96 @@ internal static partial class EmbedPolicyEndpoints
                 $"analytics batch exceeds the maximum of {MaxAnalyticsEventsPerRequest} events"));
         }
 
-        var now = DateTimeOffset.UtcNow;
-
-        // Validate the ENTIRE batch before persisting anything. Persisting per-event while
-        // a later event can still reject with 400 double-counts the earlier events when the
-        // client retries the whole batch; the ingest must be all-or-nothing.
-        var mapped = new List<EmbedAnalyticsEvent>(request.Events.Count);
-        foreach (var dto in request.Events)
+        var (mapped, batchError) = await ValidateAnalyticsBatchAsync(request.Events, analyticsContext);
+        if (batchError is not null)
         {
-            if (!TryMapEvent(dto, key, origin, now, out var analyticsEvent, out var mapError))
-            {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(mapError));
-            }
-
-            var result = EmbedAnalyticsValidator.Validate(analyticsEvent);
-            if (!result.IsValid)
-            {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(result.Error ?? "invalid analytics event"));
-            }
-
-            mapped.Add(analyticsEvent);
+            return batchError;
         }
 
-        foreach (var analyticsEvent in mapped)
+        foreach (var analyticsEvent in mapped!)
         {
             await analytics.IngestAsync(analyticsEvent, context.RequestAborted);
         }
 
         var response = new EmbedAnalyticsIngestResponse { Accepted = mapped.Count };
         return TypedResults.Ok(ApiResponse<EmbedAnalyticsIngestResponse>.CreateSuccess(response));
+    }
+
+    private sealed class AnalyticsRequestContext
+    {
+        public required InMemoryEmbedAnalyticsStore Analytics { get; init; }
+        public required IAuditLog AuditLog { get; init; }
+        public required ILogger<EmbedPolicyEndpointsLog> Logger { get; init; }
+        public required HttpContext HttpContext { get; init; }
+        public required EmbedKeyRecord Key { get; init; }
+        public required string Origin { get; init; }
+        public required DateTimeOffset Now { get; init; }
+    }
+
+    private static async Task<(List<EmbedAnalyticsEvent>? Events, Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>? Error)>
+        ValidateAnalyticsBatchAsync(
+            IReadOnlyList<EmbedAnalyticsEventDto> events,
+            AnalyticsRequestContext ctx)
+    {
+        // Validate the ENTIRE batch before persisting anything. Persisting per-event while
+        // a later event can still reject with 400/403 double-counts the earlier events when the
+        // client retries the whole batch; the ingest must be all-or-nothing.
+        var mapped = new List<EmbedAnalyticsEvent>(events.Count);
+        foreach (var dto in events)
+        {
+            var (analyticsEvent, error) = await ValidateAnalyticsEventAsync(dto, ctx);
+            if (error is not null)
+            {
+                return (null, error);
+            }
+
+            mapped.Add(analyticsEvent!);
+        }
+
+        return (mapped, null);
+    }
+
+    private static async Task<(EmbedAnalyticsEvent? Event, Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>? Error)>
+        ValidateAnalyticsEventAsync(EmbedAnalyticsEventDto dto, AnalyticsRequestContext ctx)
+    {
+        if (!TryMapEvent(dto, ctx.Key, ctx.Origin, ctx.Now, out var analyticsEvent, out var mapError))
+        {
+            return (null, TypedResults.BadRequest(ApiResponse<object>.Failure(mapError)));
+        }
+
+        var result = EmbedAnalyticsValidator.Validate(analyticsEvent);
+        if (!result.IsValid)
+        {
+            return (null, TypedResults.BadRequest(ApiResponse<object>.Failure(result.Error ?? "invalid analytics event")));
+        }
+
+        var scopeRequest = new EmbedPolicyRequest
+        {
+            Origin = ctx.Origin,
+            ServiceId = analyticsEvent.ServiceId,
+            ContentId = analyticsEvent.LayerId,
+            TenantId = dto.TenantId,
+        };
+        var scopeDecision = EmbedPolicyEvaluator.EvaluateEventScope(ctx.Key, scopeRequest);
+        if (!scopeDecision.Allowed)
+        {
+            return (null, await DenyPolicyAsync(ctx, scopeRequest, scopeDecision));
+        }
+
+        return (analyticsEvent, null);
+    }
+
+    private static async Task<JsonHttpResult<ApiResponse<object>>> DenyPolicyAsync(
+        AnalyticsRequestContext ctx,
+        EmbedPolicyRequest request,
+        EmbedPolicyDecision decision)
+    {
+        LogPolicyDenied(ctx.Logger, ctx.Key.Id, decision.Reason);
+        await IngestDenialAsync(ctx.Analytics, ctx.Key, request, decision, ctx.HttpContext.RequestAborted);
+        await EmitDenialAuditAsync(ctx.AuditLog, ctx.HttpContext, ctx.Key.Id, decision);
+
+        var failure = ApiResponse<object>.Failure($"embed policy denied: {decision.Reason}");
+        return TypedResults.Json(failure, statusCode: StatusCodes.Status403Forbidden);
     }
 
     private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(IEmbedKeyStore store, HttpContext context)

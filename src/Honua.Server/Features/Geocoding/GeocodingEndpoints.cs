@@ -128,17 +128,39 @@ internal static class GeocodingEndpoints
             .WithName("ReverseGeocodeAlias")
             .WithTags("GeocodeServer");
 
+        endpoints.MapPost("/rest/services/GeocodeServer/reverseGeocode", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleReverseGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Reverse Geocode (Alias, POST)")
+            .WithName("ReverseGeocodeAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Suggest Addresses (Alias)")
             .WithName("SuggestAddressesAlias")
             .WithTags("GeocodeServer");
 
+        endpoints.MapPost("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Suggest Addresses (Alias, POST)")
+            .WithName("SuggestAddressesAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Batch Geocode Addresses (Alias)")
             .WithName("BatchGeocodeAddressesAlias")
             .WithTags("GeocodeServer")
+            .AddEndpointFilter(RequireBatchGeocodingEntitlement);
+
+        endpoints.MapPost("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Batch Geocode Addresses (Alias, POST)")
+            .WithName("BatchGeocodeAddressesAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous()
             .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         return endpoints;

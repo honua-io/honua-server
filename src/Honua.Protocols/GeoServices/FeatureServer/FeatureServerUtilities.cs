@@ -478,10 +478,8 @@ internal static partial class FeatureServerEndpoints
 
     // Maps a GeoServices query output wire token to its unified-registry data-format
     // name (the segment after CapabilityRegistry.DataFormatIdPrefix). Tokens without a
-    // format.* descriptor (pbf/geobuf/arrow are encoded exports with no import-format
-    // descriptor) are absent and stay ungated. Used only to consult the capability
-    // gate (T6) after the static supported-set check; it does not change which
-    // tokens are accepted while every format is still Implemented.
+    // format.* descriptor (pbf/geobuf are encoded exports with no format.* descriptor)
+    // are absent and stay ungated.
     private static readonly FrozenDictionary<string, string> RegistryFormatByWireToken =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -489,6 +487,7 @@ internal static partial class FeatureServerEndpoints
             ["pjson"] = "geoservicesjson",
             ["geojson"] = "geojson",
             ["parquet"] = "geoparquet",
+            ["arrow"] = "geoarrow",
             ["fgb"] = "flatgeobuf",
         }
         .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);

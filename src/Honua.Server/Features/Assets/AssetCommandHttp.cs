@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Assets;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Assets;
 
@@ -31,7 +33,22 @@ internal static class AssetCommandHttp
     }
 
     public static string ResolveActor(HttpContext context)
-        => ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User) ?? AuditEvent.AnonymousActor;
+        => CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? AuditEvent.AnonymousActor;
+
+    // Planners are administrators (full admin keys or configured admin roles); everyone else acts as crew on the tasks
+    // of services they can edit.
+    public static WorkTaskActor ResolveTaskActor(HttpContext context)
+        => new(ResolveActor(context))
+        {
+            IsPlanner = ServiceDataEditorAuthorization.IsAdminPrincipal(context),
+            Handles = AssigneeHandles(context.User),
+        };
+
+    private static string[] AssigneeHandles(ClaimsPrincipal user)
+    {
+        string?[] claims = [user.FindFirst(ClaimTypes.NameIdentifier)?.Value, user.FindFirst("sub")?.Value, user.Identity?.Name];
+        return [.. claims.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!.Trim()).Distinct(StringComparer.Ordinal)];
+    }
 
     // The hash covers who sent the command as well as what it asks, so reuse by another actor is a conflict, not a replay.
     public static AssetCommand CreateCommand<T>(HttpContext context, CommandSubject subject, (T Request, JsonTypeInfo<T> TypeInfo) body)
