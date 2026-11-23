@@ -63,7 +63,7 @@ export async function openStockInspector(baseUrl, apiKey, { budget, rosters } = 
       headers: { 'X-API-Key': apiKey },
     } } }), { mode: 0o600 });
     const entry = join(installed.root, 'clients/launcher/build/index.js');
-    const deadline = Date.now() + 15 * 60_000;
+    const deadline = Date.now() + 20 * 60_000;
     const pacing = budget ? inspectorRateBudget({ ...budget, rosters }) : undefined;
     const invoke = async (method, view, extra = []) => {
       await pacing?.beforeInvocation(view, deadline);
