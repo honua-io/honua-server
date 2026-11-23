@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Google.Protobuf.Collections;
 using NetTopologySuite.Geometries;
 using Proto = Geospatial.V1;
 
@@ -35,7 +36,7 @@ internal static class GrpcPackedOrdinates
             .ToArray();
     }
 
-    private static Coordinate CreateCoordinate(IReadOnlyList<double> ordinates, int offset, Layout layout)
+    private static Coordinate CreateCoordinate(RepeatedField<double> ordinates, int offset, Layout layout)
     {
         var x = ordinates[offset];
         var y = ordinates[offset + 1];
