@@ -760,7 +760,7 @@ internal sealed partial class ODataQueryHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or ValidationException)
         {
             Log.InvalidFeaturesQuery(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
@@ -800,6 +800,12 @@ internal sealed partial class ODataQueryHandler(
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
+        // Query options must be valid even when no data rows or count are requested.
+        if (await _querySearchService.FindUnsupportedFilterSridAsync(filter, cancellationToken).ConfigureAwait(false) is { } sridError)
+        {
+            return ODataUtilityService.CreateODataError(context, "InvalidQuery", sridError);
+        }
+
         // An empty page still answers with an @odata.context that names the expansion.
         if (await _querySearchService.FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
         {

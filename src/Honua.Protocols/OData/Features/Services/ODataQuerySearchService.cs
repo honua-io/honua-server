@@ -65,6 +65,9 @@ internal sealed class ODataQuerySearchService
     public Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
         => _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken);
 
+    public Task<string?> FindUnsupportedFilterSridAsync(string? filter, CancellationToken cancellationToken)
+        => _searchService.FindUnsupportedFilterSridAsync(filter, cancellationToken);
+
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,
         string filter)

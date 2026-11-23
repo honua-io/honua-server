@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.OData.Models;
 
@@ -15,7 +16,7 @@ internal sealed partial class ODataSearchService
     {
         if (await FindUnsupportedFilterSridAsync(filter, cancellationToken).ConfigureAwait(false) is { } error)
         {
-            throw new ArgumentException(error);
+            throw new ValidationException(error);
         }
     }
 

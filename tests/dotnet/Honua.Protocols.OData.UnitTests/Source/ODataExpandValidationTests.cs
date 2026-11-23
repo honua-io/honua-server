@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
+using Honua.Infrastructure.Models;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -44,7 +46,8 @@ public sealed class ODataExpandValidationTests
     {
         var act = () => CreateService().ProcessExpandAsync(expand, Parent, 13, [], CancellationToken.None);
 
-        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage(message);
+        var exception = (await act.Should().ThrowAsync<ValidationException>()).WithMessage(message).Which;
+        ExceptionMapper.Map(exception).Detail.Should().Be(exception.Message);
     }
 
     [Theory]

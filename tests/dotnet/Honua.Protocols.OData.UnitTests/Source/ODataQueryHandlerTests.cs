@@ -219,6 +219,63 @@ public sealed class ODataQueryHandlerTests
         doc.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    [InlineData(999999, false)]
+    [InlineData(999999, true)]
+    public async Task HandleGetFeaturesNonStreamingAsync_WithTopZero_RejectsUnsupportedSridBeforeReadingStorage(int srid, bool count)
+    {
+        using var provider = CreateProvider(["OData"]);
+        var graph = provider.GetRequiredService<IMetadataV2GraphProvider>();
+        using var services = new ServiceCollection().AddLogging()
+            .AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(
+                new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build())
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton(graph).BuildServiceProvider();
+        var context = CreateContext(services);
+        context.Response.Body = new MemoryStream();
+        context.Request.Scheme = "http";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Path = "/odata/Layers(1)/Features";
+
+        var reader = Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>();
+        var crs = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>();
+        crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
+        var query = new ODataQueryService(new Honua.Core.Queries.Filters.FilterExpressionService(
+            Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionTranslator>()),
+            Substitute.For<Honua.Core.Features.Query.IQueryParameterAdapter<Honua.Protocols.OData.Models.ODataQueryParameters>>(),
+            Substitute.For<Honua.Core.Features.Query.IQueryProcessor>());
+        var resolver = new ODataFeatureProviderResolver(reader,
+            Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter>(), null);
+        var search = new ODataSearchService(new ODataSearchDependencies(reader,
+            Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IRelationshipStore>(),
+            Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IStreamingFeatureStore>(),
+            Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(), crs, graph, resolver,
+            Microsoft.Extensions.Options.Options.Create(new Honua.Protocols.OData.ODataOptions())), query);
+        var validation = new ODataValidationService(new Honua.Core.Features.Validation.CommonQueryValidator(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Configuration.LimitsOptions())),
+            Microsoft.Extensions.Options.Options.Create(new Honua.Protocols.OData.ODataOptions()));
+        var handler = new Honua.Protocols.OData.ODataQueryHandler(new Honua.Protocols.OData.ODataQueryDependencies(
+            reader, Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(), crs, validation,
+            new ODataQuerySearchService(query, search),
+            Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>(),
+            Substitute.For<Honua.Infrastructure.Caching.IETagService>(),
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Caching.CacheOptions()), resolver),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Honua.Protocols.OData.ODataQueryHandler>.Instance);
+
+        var result = await handler.HandleGetFeaturesNonStreamingAsync(context, 1,
+            filter: $"geo.intersects(Geometry,geography'SRID={srid};POINT(0 0)')", top: 0, count: count);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        context.Response.Body.Position = 0;
+        using var document = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("error").GetProperty("message").GetString()
+            .Should().Contain("$filter").And.Contain($"EPSG:{srid}");
+        reader.ReceivedCalls().Should().BeEmpty();
+    }
+
     private static async Task<ServiceProvider> CreateTenantProviderAsync(string? tenantId, bool includeVisibleSibling)
     {
         using var baseline = CreateProvider(["OData"]);

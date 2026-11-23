@@ -701,7 +701,7 @@ internal sealed partial class ODataSearchService
         // Validate before the empty-page return so @odata.context never names a dropped expansion.
         if (await FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
         {
-            throw new ArgumentException(expandError);
+            throw new ValidationException(expandError);
         }
 
         var relationshipOptions = ParseExpandRelationshipOptions(expand);
