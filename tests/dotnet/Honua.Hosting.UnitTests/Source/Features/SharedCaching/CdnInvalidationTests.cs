@@ -268,6 +268,7 @@ public sealed class CdnInvalidationTests
             IReadOnlyCollection<int>? layerIds,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Calls++;
             return Task.CompletedTask;
         }

@@ -31,15 +31,15 @@ internal sealed partial class OutputCacheInvalidationService
         var normalizedServiceId = string.IsNullOrWhiteSpace(serviceId)
             ? null
             : serviceId.Trim().ToLowerInvariant();
-        return FinishCommittedChangeAsync(normalizedServiceId, [.. layerIds?.Distinct() ?? []], cancellationToken);
+        return CompleteAdministrativeInvalidationAsync(normalizedServiceId, [.. layerIds?.Distinct() ?? []], cancellationToken);
     }
 
     public Task InvalidateEverythingAsync(CancellationToken cancellationToken)
-        => FinishCommittedChangeAsync(normalizedServiceId: null, [], cancellationToken);
+        => CompleteAdministrativeInvalidationAsync(normalizedServiceId: null, [], cancellationToken);
 
-    // The change is committed before this runs, so a request that ends early must not leave origin copies, the CDN or
-    // promoted exports behind it; the caller still learns that its request ended.
-    private async Task FinishCommittedChangeAsync(string? normalizedServiceId, int[] layerIdList, CancellationToken requestAborted)
+    // Once started, an invalidation outlives its request: stopping part-way would leave origin copies, the CDN or promoted
+    // exports behind a change that may already be saved. The caller still learns that its request ended.
+    private async Task CompleteAdministrativeInvalidationAsync(string? normalizedServiceId, int[] layerIdList, CancellationToken requestAborted)
     {
         await EvictServiceCatalogAsync(normalizedServiceId, layerIdList, CancellationToken.None).ConfigureAwait(false);
         await InvalidateCdnForAdministrativeChangeAsync(CancellationToken.None).ConfigureAwait(false);
