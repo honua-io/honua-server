@@ -44,6 +44,17 @@ public sealed class ODataFilterParserValidationTests
 
     [Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("SRID=0;POINT(0 0)")]
+    [InlineData("SRID=-1;POINT(0 0)")]
+    public void Parse_NonPositiveGeometryLiteralSrid_ThrowsParseException(string literal)
+    {
+        var act = () => _parser.Parse($"geo.intersects(Geometry, geography'{literal}')");
+
+        act.Should().Throw<ODataFilterParseException>().WithMessage("*SRID*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
     [InlineData("1 div 0 eq 1")]
     [InlineData("1 div 0.0 eq 1")]
     [InlineData("1 mod 0 eq 0")]
