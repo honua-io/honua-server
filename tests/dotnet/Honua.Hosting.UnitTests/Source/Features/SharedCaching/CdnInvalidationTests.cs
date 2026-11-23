@@ -162,15 +162,48 @@ public sealed class CdnInvalidationTests
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
     }
 
-    private OutputCacheInvalidationService Invalidation()
-        => new(
-            null,
-            null,
-            null,
-            new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-            null,
-            NullLogger<OutputCacheInvalidationService>.Instance,
-            Service());
+    [UnitTest]
+    public async Task InvalidateServiceCatalogAsync_AccessChangeOnServiceWithLayers_InvalidatesEverythingOnce()
+    {
+        await Invalidation().InvalidateServiceCatalogAsync("Parcels", [3, 4], CancellationToken.None);
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+    }
+
+    [UnitTest]
+    public async Task InvalidateServiceCatalogAsync_AccessChangeOnServiceWithLayers_ChecksPublicExportsOnce()
+    {
+        var exports = new CountingExportAccessListener();
+
+        await Invalidation(exports).InvalidateServiceCatalogAsync("Parcels", [3, 4], CancellationToken.None);
+
+        exports.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task InvalidateServiceCatalogAsync_RequestEndedBeforeEviction_StillPurgesAndChecksExportsOnce()
+    {
+        var exports = new CountingExportAccessListener();
+        using var ended = new CancellationTokenSource();
+        await ended.CancelAsync();
+
+        var change = () => Invalidation(exports).InvalidateServiceCatalogAsync("Parcels", [3, 4], ended.Token);
+
+        await change.Should().ThrowAsync<OperationCanceledException>();
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+        exports.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task InvalidateEverythingAsync_OperatorPurge_InvalidatesEverythingOnceAndChecksPublicExportsOnce()
+    {
+        var exports = new CountingExportAccessListener();
+
+        await Invalidation(exports).InvalidateEverythingAsync(CancellationToken.None);
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+        exports.Calls.Should().Be(1);
+    }
 
     [UnitTest]
     public async Task InvalidateNowAsync_AdminRequest_RecordsThePurgeWithTheRequestCorrelationId()
@@ -206,6 +239,39 @@ public sealed class CdnInvalidationTests
         await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
 
         logger.Messages.Should().BeEmpty();
+    }
+
+    private OutputCacheInvalidationService Invalidation(IPublicExportAccessChangeListener? exports = null)
+    {
+        var services = new ServiceCollection();
+        if (exports is not null)
+        {
+            services.AddSingleton(exports);
+        }
+
+        return new(
+            null,
+            null,
+            null,
+            services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            null,
+            NullLogger<OutputCacheInvalidationService>.Instance,
+            Service());
+    }
+
+    private sealed class CountingExportAccessListener : IPublicExportAccessChangeListener
+    {
+        public int Calls { get; private set; }
+
+        public Task OnAdministrativeAccessChangeAsync(
+            string? serviceId,
+            IReadOnlyCollection<int>? layerIds,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            return Task.CompletedTask;
+        }
     }
 
     private CdnInvalidationService Service(IHttpContextAccessor? accessor = null)

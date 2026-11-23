@@ -20,8 +20,6 @@ internal static class OgcFeaturePayloadReader
 
     private static readonly HashSet<string> PatchContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        MediaTypes.GeoJson,
-        MediaTypes.Json,
         "application/merge-patch+json"
     };
 
@@ -95,11 +93,6 @@ internal static class OgcFeaturePayloadReader
 
     private static IResult? ValidateContentType(HttpContext context, HashSet<string> allowedContentTypes)
     {
-        if (context.Request.ContentLength is 0)
-        {
-            return null;
-        }
-
         var contentType = context.Request.ContentType;
         var mediaType = string.IsNullOrWhiteSpace(contentType)
             ? null

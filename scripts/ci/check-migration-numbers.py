@@ -8,6 +8,8 @@ import re
 import subprocess
 
 DIRECTORIES = ("src/Honua.Server/Migrations", "src/Honua.Db/Postgres/Migrations")
+# The licence notice is the second line of every migration, after the copyright line.
+NOTICE_LINE = 1
 
 
 def git_paths(*arguments):
@@ -51,9 +53,9 @@ def is_license_notice_update(trunk, head, pin):
     old = b"-- Licensed under the Elastic License 2.0. See LICENSE in the project root."
     new = b"-- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root."
     lines = before.splitlines(keepends=True)
-    if len(lines) < 2 or lines[1].rstrip(b"\r\n") != old:
+    if len(lines) < NOTICE_LINE + 1 or lines[NOTICE_LINE].rstrip(b"\r\n") != old:
         return False
-    expected = lines[0] + lines[1].replace(old, new) + b"".join(lines[2:])
+    expected = b"".join(lines[:NOTICE_LINE]) + lines[NOTICE_LINE].replace(old, new) + b"".join(lines[NOTICE_LINE + 1:])
     old_digest = hashlib.sha256(before.replace(b"\r\n", b"\n")).hexdigest().encode()
     new_digest = hashlib.sha256(after.replace(b"\r\n", b"\n")).hexdigest().encode()
     return after == expected and old_pin.strip().lower() == old_digest and new_pin.strip().lower() == new_digest

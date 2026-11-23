@@ -269,6 +269,19 @@ def same_completed_attempt(run):
             and current['updated_at'] == run['updated_at'])
 
 
+def publication_batch(runs, versions):
+    pending = [run for run in runs if versions.get(str(run['id'])) != run['updated_at']]
+    if len(pending) <= MAX_BATCH_RUNS:
+        return {run['id'] for run in pending}
+    # Keep historical reconciliation moving without delaying new evidence behind it.
+    historical_budget = max(1, MAX_BATCH_RUNS // 5)
+    recent_budget = MAX_BATCH_RUNS - historical_budget
+    selected = pending[:historical_budget]
+    if recent_budget:
+        selected += pending[-recent_budget:]
+    return {run['id'] for run in selected}
+
+
 def sweep(checkpoint):
     started = datetime.now(timezone.utc) - timedelta(minutes=5)
     cursor = load_cursor()
@@ -277,8 +290,8 @@ def sweep(checkpoint):
     seen = set(cursor['artifact_ids'])
     retained = set()
     completed = 0
-    inspected = 0
     versions = cursor.get('run_versions', {})
+    batch = publication_batch(runs, versions)
     recorded = {}
     deferred = []
     for run in runs:
@@ -286,10 +299,9 @@ def sweep(checkpoint):
         if versions.get(identity) == run['updated_at']:
             recorded[identity] = run['updated_at']
             continue
-        if inspected >= MAX_BATCH_RUNS:
+        if run['id'] not in batch:
             deferred.append(timestamp(run['updated_at']))
             continue
-        inspected += 1
         artifacts = inventory(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
         if not same_completed_attempt(run):
             deferred.append(timestamp(run['updated_at']))

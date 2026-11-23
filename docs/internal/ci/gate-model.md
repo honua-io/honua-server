@@ -369,7 +369,24 @@ assigns `IsTestProject=true` projects to `tests` and every other project to
 `source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
 and omits test-only compilation roots; imports are respected, incomplete evaluation
 fails closed, and multi-targeted projects conservatively remain included. Each
-partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled.
+Until this change the source partition ignored the affected filter and analyzed all
+51 source roots on every PR; on nine green PR Gates (22-23 November) it was the
+last job in five, at 16.8-18.8 minutes (build 15.6-17.5 minutes on hosted runners;
+the same 51 roots took 9.1 minutes on faster hosts). An unaffected project's
+analyzer inputs are unchanged. `compute-affected-projects.sh` forces a full scope for
+every shared build or analyzer input: root `Directory.Build.*`, `scripts/ci/`
+(baseline, banned symbols, globalconfig), `src/Honua.Analyzers/`, and any changed
+`*.props`, `*.targets`, `.editorconfig`, `*.globalconfig` or `*.ruleset` anywhere
+(nested `Directory.Build.*`, the `eng/*.props` imports). It also maps a file linked
+from outside a project's directory (`Compile`, `EmbeddedResource` or `AdditionalFiles`
+with a `..` path; MSBuild `**`, `*` and `?` globs are honoured) to every project that
+links it. `$(MSBuildThisFileDirectory)` and `$(MSBuildProjectDirectory)` are expanded;
+an include naming any other property cannot be resolved without MSBuild evaluation,
+so its project always counts as affected (no project uses one today). Before this change
+those inputs mapped to no project or only to their home project, so the test
+partitions and the affected build missed them. The scheduled and `full_ci` runs
+keep the whole-solution analyzer build. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
 name is retained for the source partition. Analyzer builds disable persistent
 MSBuild servers and node reuse so process teardown does not depend on a shared
@@ -400,10 +417,25 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+tripwires. Protocol-profile compilation also runs in full CI, in its own
+`Protocol profiles` job beside the producer rather than inside it. Every
+server-test shard, the foundation tests and the runtime proofs need `build`, so a
+break that only affects a reduced profile used to skip the whole trailing matrix:
+full run 45066303710 skipped it for about six hours, which hid an unrelated
+integration regression (#9351, #9371). `CI Gate` requires the job, so a profile
+break still fails the run. It runs on a standard hosted runner and builds the
+referenced projects once without analyzers. `build` analyzes them in full runs
+and PR Gate in affected runs; `Honua.Server`, the only project that reads the
+profile, compiles with analyzers for each profile. Full and scheduled
 runs select every profile with `protocol-profile-selection.py --all`. A range
 selection compares trunk with itself there and would build only `all`, which
-is what full run 44309947920 did.
+is what full run 44309947920 did. Between full runs, Trunk Sanity's
+`Reduced protocol profiles` job (`trunk_sanity_profiles.py`) compiles every
+reduced profile whenever the range since the newest successful Trunk Sanity
+run that already had the job changes anything other than `.github/` files and
+Markdown under `docs/` or at the repository root. Both Trunk Sanity jobs queue the newest push
+behind the running one instead of cancelling it, so a burst of merges still
+gets a verdict within about two build lengths.
 
 ### Import-fidelity gates: correctness and performance
 
@@ -551,9 +583,10 @@ already publishes its managed outputs from this no-analyzer build mode under
 the same build-properties label. An analyzer finding that only appears when
 several landed PRs combine is left to the scheduled full run. Selected
 protocol-profile builds keep analyzers for Honua.Server, whose profile
-constants change. Referenced projects are first resolved in the producer's
-no-analyzer mode and then reused with `BuildProjectReferences=false`; PR Gate
-analyzed them on each PR. A single `RunAnalyzers=true` profile build would
+constants change. The `Protocol profiles` job first resolves referenced projects
+without analyzers and then reuses them with `BuildProjectReferences=false`, in
+full and affected runs alike; the producer (full) or PR Gate (affected)
+analyzed them. A single `RunAnalyzers=true` profile build would
 recompile all 29 referenced projects: affected run 44379685745 spent 10.2 of
 16.3 profile minutes on that (6.4-7.0 min before the producer dropped
 analyzers).
@@ -725,6 +758,7 @@ These workflows run on schedule and can be dispatched manually:
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
 | `sdk-server-compatibility.yml` | Monday 8:35am UTC | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; manual dispatch can pin `server_current_ref` for release-candidate evidence; uses Node 22.23.3 (SDK engine minimum 22.12) with a 4 GiB V8 heap for source compilation; copies checked-out SDK refs to `$RUNNER_TEMP/sdk-compat` before smoke execution so server repo build policy does not affect SDK source builds; records SDK versions, server commit/image field, seed profile, exercised surfaces, migration automation surface status, and diagnostics; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |
 | `client-interop-nightly.yml` | Daily 7:00am UTC | Real-client interop matrix via Docker harnesses (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` plus `expected-pairs.json`, refreshes `artifacts/client-interop/gap-report.md`, and fails strict mode on baseline pass regressions, missing current envelopes, missing committed baselines, or new unbaselined failures. Non-blocking until 30 consecutive nightly passes (#806) Protected-style probes resolve the seeded publication ID and independently verify that numeric-layer vector tiles reject anonymous and invalid-key requests. |
+| `client-roster-certification.yml` | On-demand (`workflow_dispatch`) | Bounded external-client roster (QGIS, GDAL/OGR, GDAL, MapLibre GL JS, OWSLib, PySTAC-Client) against a candidate image digest; dispatched by the release coordinator at the frozen candidate |
 | `gdal-driver-e2e.yml` | Daily 7:45am UTC | GDAL `ogrinfo` + `ogr2ogr` round-trip against honua-server (ADR-0034 stand-in until `honua-gdal` plugin ships) |
 | `load-soak-nightly.yml` | Daily 11:30 UTC | Load and soak diagnostics against trunk source; release qualification is `capacity-soak-candidate.yml` |
 | `nightly-slow-tier.yml` | Daily 4am UTC | `Tier=Slow&Category=Emulator` .NET tests across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` (`[EmulatorTest]` only). LocalStack and Azurite are provisioned by `EmulatorFixture` (Testcontainers) and Postgres by a service container; the workflow asserts `HONUA_TEST_DB_URL` before dispatch. `[ScaleTest]`, `[ExternalServiceTest]`, `[CloudTest]` need dedicated fixtures and are tracked as separate workflows (ADR-0037) |
@@ -961,6 +995,10 @@ repository-wide artifact collection. Full creation-ordered histories preserve di
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
 inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
 run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+When more than 25 unprocessed run versions remain, five slots serve the oldest pending
+runs and twenty serve the newest. This preserves historical reconciliation while new
+evidence avoids waiting behind months of empty runs; processed versions do not spend
+either allocation again. Deferred evidence remains behind the watermark.
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
@@ -1523,7 +1561,8 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use
 the same completed-run selector; execution never regresses behind the dispatched
 base. `affected_admission.py` admits only a complete selection whose conservative
-job bound fits 40: 33 side jobs plus selected server shards. The side bound counts
+job bound fits 40: 34 side jobs (33 before the `Protocol profiles` job, #9371)
+plus selected server shards. The side bound counts
 all foundation families, MCP transports and Postgres versions even when lane
 conditions would skip them. Router fixtures check the bound against the workflow,
 including matrix expansion; new dynamic or reusable jobs require an explicit bound.
@@ -2042,7 +2081,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
@@ -2053,6 +2094,16 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+A subsequent synchronous-host optimization was measured with four interleaved
+Release runs of the complete owning GPServer Endpoints shard. All four passed
+the same 71 cases without skips. Class-body totals were 34.012 / 32.569 seconds
+before and 27.791 / 31.771 seconds after (medians 33.291 to 29.781 seconds).
+Fixture-inclusive TRX intervals were 46.941 / 53.211 seconds before and
+41.400 / 45.258 seconds after (medians 50.076 to 43.329 seconds). This saves
+6.747 seconds, or 0.112 test-run runner-minutes, with one runner unchanged.
+Compilation, admission and full CI-job time are excluded. The earlier timings
+above describe the separate default-host optimization, not this comparison.
 
 ### Admin authentication default application lifetime
 
@@ -3294,3 +3345,27 @@ end-to-end CI critical-path improvement.
 The shard filter, test selection, workflows, required check names and aggregate
 `needs` contract are unchanged. Every case still runs in its existing selected PR
 shard and full trunk runs; no assertions or gate coverage move to another schedule.
+
+### OIDC bearer authentication host lifetime
+
+`OidcAuthenticationTests` reuses a lazy class host for seven bearer-token read
+cases with identical OIDC settings. Each case still creates and disposes its own
+HTTP client and sets its own request headers and token. The existing database
+collection serializes the cases. xUnit disposes the shared factory after the
+class finishes. Replay, certificate, production-mode, tenant-specific and
+mutating admin scenarios retain their private factories and configuration.
+
+All 27 OIDC cases, 125 assertion calls and endpoint metadata remain unchanged.
+Every case stays in the existing Admin & Infrastructure 1 shard on selected PR
+runs and twice-daily full trunk runs. Runner count, shard filters, required check
+names and the aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Four interleaved build-host runs of the complete 39-case owning shard passed
+without failures or skips and with identical case outcomes. Median summed OIDC
+class duration fell from 26.39 to 22.24 seconds; both pairs improved. Median
+fixture-inclusive shard wall time fell from 48.45 to 41.50 seconds, saving 6.95
+seconds (0.116 runner minutes), with one runner before and after. Individual
+baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
+pair was slightly slower, so the shard saving is variable. Build time is excluded;
+these results do not establish a reduction in the parallel PR Gate critical path.

@@ -59,6 +59,32 @@ public static partial class CrsIdentifier
     public static bool IsWgs84(string? identifier)
         => TryParseEpsgCode(identifier, out var code) && code == Wgs84EpsgCode;
 
+    public static bool IsCrs84(string? identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return false;
+        }
+
+        var trimmed = Unwrap(identifier);
+        return Crs84AliasPattern().IsMatch(trimmed)
+            || Crs84UrnPattern().IsMatch(trimmed)
+            || Crs84UriPattern().IsMatch(trimmed);
+    }
+
+    public static string Unwrap(string identifier)
+    {
+        var trimmed = identifier.Trim();
+        if (trimmed.Length > 1 &&
+            ((trimmed[0] == '<' && trimmed[^1] == '>') ||
+             (trimmed[0] == '[' && trimmed[^1] == ']')))
+        {
+            trimmed = trimmed[1..^1].Trim();
+        }
+
+        return trimmed;
+    }
+
     // A bare positive code ("4326"). Leading zeros are refused so a single
     // identifier never has two spellings here.
     [GeneratedRegex(@"^(?<code>[1-9][0-9]*)$", RegexOptions.CultureInvariant)]

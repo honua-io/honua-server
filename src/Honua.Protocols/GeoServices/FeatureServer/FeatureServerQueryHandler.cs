@@ -1969,8 +1969,10 @@ internal sealed partial class FeatureServerQueryHandler(
 
     // Grouped statistics default to the full transfer limit rather than the feature page default,
     // because clients read an unpaged statistics response as the complete set of groups.
-    private static int StatisticsPageSize(int? requestedRecordCount, QueryLimits queryLimits) =>
-        Math.Min(requestedRecordCount ?? queryLimits.MaxRecordCount, queryLimits.MaxRecordCount);
+    internal static int StatisticsPageSize(int? requestedRecordCount, QueryLimits queryLimits) =>
+        requestedRecordCount is > 0 and < int.MaxValue
+            ? Math.Min(requestedRecordCount.Value, queryLimits.MaxRecordCount)
+            : queryLimits.MaxRecordCount;
 
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
         string serviceId,
@@ -2995,22 +2997,29 @@ internal sealed partial class FeatureServerQueryHandler(
                 fieldTypes[schemaField.Name] = schemaField.Type;
             }
 
+            // Also allow the layer's resolved OID field
             var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+            if (string.IsNullOrWhiteSpace(objectIdFieldName))
+            {
+                objectIdFieldName = FieldNames.ObjectId;
+            }
+
             fieldNames.Add(objectIdFieldName);
 
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (!element.TryGetProperty("statisticType", out var typeElement) ||
-                    !element.TryGetProperty("onStatisticField", out var fieldElement) ||
-                    !element.TryGetProperty("outStatisticFieldName", out var aliasElement))
+                if (element.ValueKind != JsonValueKind.Object ||
+                    !element.TryGetProperty("statisticType", out _) ||
+                    !element.TryGetProperty("onStatisticField", out _) ||
+                    !element.TryGetProperty("outStatisticFieldName", out _))
                 {
                     error = "Each statistic definition must have statisticType, onStatisticField, and outStatisticFieldName.";
                     return false;
                 }
 
-                var statisticTypeStr = typeElement.GetString();
-                var onField = fieldElement.GetString();
-                var outAlias = aliasElement.GetString();
+                var statisticTypeStr = FeatureServerJsonMembers.ReadString(element, "statisticType");
+                var onField = FeatureServerJsonMembers.ReadString(element, "onStatisticField");
+                var outAlias = FeatureServerJsonMembers.ReadString(element, "outStatisticFieldName");
 
                 if (string.IsNullOrWhiteSpace(statisticTypeStr) ||
                     string.IsNullOrWhiteSpace(onField) ||
@@ -3138,9 +3147,15 @@ internal sealed partial class FeatureServerQueryHandler(
                 return false;
             }
 
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+            if (string.IsNullOrWhiteSpace(objectIdFieldName))
+            {
+                objectIdFieldName = FieldNames.ObjectId;
+            }
+
             var field = match.Groups["field"].Value;
             if (!fieldTypes.ContainsKey(field) &&
-                !string.Equals(field, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(field, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
             {
                 error = $"Field '{field}' referenced in having does not exist on the layer.";
                 return false;
@@ -3387,11 +3402,17 @@ internal sealed partial class FeatureServerQueryHandler(
             return false;
         }
 
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        if (string.IsNullOrWhiteSpace(objectIdFieldName))
+        {
+            objectIdFieldName = FieldNames.ObjectId;
+        }
+
         var fieldNames = new HashSet<string>(
             resource.SchemaFields.Select(f => f.Name),
             StringComparer.OrdinalIgnoreCase)
         {
-            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
+            objectIdFieldName
         };
 
         var missingField = parsed.FirstOrDefault(field => !fieldNames.Contains(field));

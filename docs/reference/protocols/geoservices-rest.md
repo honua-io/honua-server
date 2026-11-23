@@ -153,7 +153,7 @@ Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 | Catalog query | `/query` (GET, POST) | |
 | Statistics | `/computeStatisticsHistograms`, `/computeHistograms`, `/computeClassStatistics`, `/statistics`, `/histograms`, `/getSamples` (GET, POST) | |
 | Metadata | `/keyProperties`, `/rasterAttributeTable`, `/rasterFunctionInfos`, `/multidimensionalInfo`, `/slices`, `/legend`, `/conf.json` | |
-| OGC pass-through | `/WCS` | WCS 2.0.1 KVP; see [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
+| OGC pass-through | `/WCS` | WCS 2.0.1 and 1.0.0 KVP; see [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
 > Open `https://server.example.com/rest/services/dem/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&size=512,512&format=tiff&f=image` in a browser.
 

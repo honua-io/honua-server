@@ -19,7 +19,9 @@ public sealed class DatabaseMigrationSafetyTests
         "142_CreateAiFinancialAccounting.sql",
         "144_RenameGeoServicesRestSourceKind.sql",
         "145_ProtectImportDependencies.sql",
-        "183_RemoveUnusedFeatureIndexes.sql"
+        "183_RemoveUnusedFeatureIndexes.sql",
+        // Forward-only schema adoption is pinned as an approved contract migration.
+        "227_AdoptConfiguredRegistrySchema.sql"
     ];
 
     [ArchitectureTest]

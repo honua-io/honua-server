@@ -77,13 +77,13 @@ Full parameter list, statistics, and pagination: [GeoServices REST reference](pr
 
 ## The same query in all three languages
 
-Find active hydrants within the same polygon:
+Find active hydrants within the same polygon. These examples use `geometry` as the geometry property. Substitute your collection, attribute predicate and polygon when querying another dataset.
 
 CQL2 text (OGC API Features):
 
 ```
 GET /ogc/features/collections/hydrants/items?filter-lang=cql2-text&filter=
-  status = 'active' AND S_INTERSECTS(geom, POLYGON((-122.5 47.5, -122.5 47.7, -122.2 47.7, -122.2 47.5, -122.5 47.5)))
+  status = 'active' AND S_INTERSECTS(geometry, POLYGON((-122.5 47.5, -122.5 47.7, -122.2 47.7, -122.2 47.5, -122.5 47.5)))
 ```
 
 CQL2 JSON (same endpoint, `filter-lang=cql2-json`):
@@ -96,7 +96,7 @@ CQL2 JSON (same endpoint, `filter-lang=cql2-json`):
     {
       "op": "s_intersects",
       "args": [
-        { "property": "geom" },
+        { "property": "geometry" },
         { "type": "Polygon", "coordinates": [[[-122.5,47.5],[-122.5,47.7],[-122.2,47.7],[-122.2,47.5],[-122.5,47.5]]] }
       ]
     }

@@ -161,8 +161,8 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
             ? $"ST_Latitude({pointExpression})"
             : $"ST_Y({pointExpression})";
         var geometryColumn = mapping.QuotedGeometryColumn;
-        var envelopeCorner1 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 1)";
-        var envelopeCorner3 = $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), 3)";
+        var envelopeCorner1 = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), 1)";
+        var envelopeCorner3 = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), 3)";
         var extentSelect = mapping.GeometryType switch
         {
             GeometryType.Point => $"""

@@ -161,10 +161,7 @@ internal static class CacheAdminEndpoints
             "service" => InvalidateServiceAsync(request.ServiceId!, invalidation),
             "collection" => invalidation.Service.InvalidateCollectionAsync(request.CollectionId!, invalidation.CancellationToken),
             "ogc-metadata" => invalidation.Service.InvalidateOgcMetadataAsync(invalidation.CancellationToken),
-            _ => Task.WhenAll(
-                invalidation.Service.InvalidateLayerAsync(null, null, invalidation.CancellationToken),
-                invalidation.Service.InvalidateServiceCatalogAsync(null, null, invalidation.CancellationToken),
-                invalidation.Service.InvalidateOgcMetadataAsync(invalidation.CancellationToken)),
+            _ => invalidation.Service.InvalidateEverythingAsync(invalidation.CancellationToken),
         };
 
     private static async Task InvalidateServiceAsync(string serviceId, InvalidationContext invalidation)

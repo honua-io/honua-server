@@ -78,7 +78,7 @@ internal static class OgcTilesUtilities
 
     public const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-    public const string WorldCrs84ScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/GoogleCRS84Quad";
+    public const string WorldCrs84ScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/WorldCRS84Quad";
 
     public const string WorldCrs84Title = "World CRS84 Quad";
 
@@ -315,6 +315,18 @@ internal static class OgcTilesUtilities
 
         var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
         return vectorQuality > 0;
+    }
+
+    public static bool AcceptsRasterTiles(HttpRequest request)
+    {
+        var accept = request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
+        {
+            return true;
+        }
+
+        var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
+        return pngQuality > 0;
     }
 
     public static bool IsRasterTileFormat(

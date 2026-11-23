@@ -399,5 +399,5 @@ Related contracts:
 
 - [Console Job Observability](console-job-observability.md) documents the
   broader `/api/v1/admin/jobs/**` operator job surface.
-- [Analysis Report Endpoints](../../reference/admin-api/overview.md#analysis-report-endpoints)
+- [Analysis Report Endpoints](../../reference/analysis-artifacts-and-reports.md#reports)
   document report retrieval and rendering over completed analysis jobs.

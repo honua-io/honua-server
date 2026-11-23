@@ -125,12 +125,14 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
             if (double.IsFinite(level.ScaleDenominator) && level.ScaleDenominator > 0 &&
                 double.IsFinite(level.CellSize) && level.CellSize > 0)
             {
+                var isGeographic = GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(entry.Srid);
                 var metersPerUnit = entry.MetersPerUnit ??
-                    (GeographicSridClassifier.IsGeographicSrid(entry.Srid)
+                    (isGeographic
                         ? SpatialConstants.WebMercatorExtent / 180.0
                         : 1.0);
                 var expectedCellSize = level.ScaleDenominator * SpatialConstants.PixelSizeMeters / metersPerUnit;
-                var tolerance = Math.Max(1e-12, Math.Abs(expectedCellSize) * 1e-6);
+                var relativeTolerance = isGeographic && !entry.MetersPerUnit.HasValue ? 1e-2 : 1e-6;
+                var tolerance = Math.Max(1e-12, Math.Abs(expectedCellSize) * relativeTolerance);
                 if (Math.Abs(level.CellSize - expectedCellSize) > tolerance)
                 {
                     failures.Add(

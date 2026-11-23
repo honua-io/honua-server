@@ -241,7 +241,10 @@ internal sealed partial class FeatureQueryBuilder
         => filter.IsSimpleEnvelope &&
            filter.AllowEnvelopeOnly &&
            query.GeometryType == MetadataV2GeometryType.Point &&
-           !query.IncludeNullGeometry;
+           !query.IncludeNullGeometry &&
+           (!filter.Srid.HasValue ||
+            filter.Srid.Value <= 0 ||
+            filter.Srid.Value == query.SpatialReferenceSrid);
 
     private static bool CanUseExactPointEnvelopeIntersects(FeatureQuery query, SpatialFilter filter)
         => filter.IsSimpleEnvelope &&
@@ -284,7 +287,7 @@ internal sealed partial class FeatureQueryBuilder
                $"ELSE ST_Intersects({geometryOperand}, {filterGeometry}) END";
     }
 
-    private static string BuildDistanceEnvelopePrefilter(
+    internal static string BuildDistanceEnvelopePrefilter(
         string geometryOperand,
         string storageFilterGeometry,
         string geographyFilter,

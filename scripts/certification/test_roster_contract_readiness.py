@@ -40,13 +40,22 @@ class ContractReadinessTests(unittest.TestCase):
             self.assertEqual(len(ready_rows), report["summary"]["byResult"]["skip"])
             self.assertIsNone(report["candidate"])
 
+    def test_contract_readiness_accepts_the_committed_roster(self):
+        self.assertEqual(0, module.main(["--check-readiness"]))
+
     def test_contract_readiness_rejects_missing_producers_and_an_empty_roster(self):
-        self.assertEqual(1, module.main(["--check-readiness"]))
-        with tempfile.TemporaryDirectory() as directory:
-            requirements = Path(directory) / "requirements.json"
-            requirements.write_text(json.dumps({**MIRROR, "requirements": []}))
-            self.assertEqual(1, module.main([
-                "--requirements", str(requirements), "--check-readiness"]))
+        builder = module._load_builder(ROOT)
+        missing = copy.deepcopy(MIRROR["requirements"][0])
+        missing.update(client_lane="no-such-lane", test_ids=["client-cert/no-such-lane/x"])
+        missing["receiptBinding"]["producerBinding"] = builder.classify_producer(
+            missing, builder.emitted_pairs(ROOT), builder.roster_cells(ROOT))
+        missing["receiptBinding"]["denominatorJoin"]["testIds"] = missing["test_ids"]
+        for rows in ([missing], []):
+            with self.subTest(rows=len(rows)), tempfile.TemporaryDirectory() as directory:
+                requirements = Path(directory) / "requirements.json"
+                requirements.write_text(json.dumps({**MIRROR, "requirements": rows}))
+                self.assertEqual(1, module.main([
+                    "--requirements", str(requirements), "--check-readiness"]))
 
     def test_readiness_cannot_replace_release_certification(self):
         with self.assertRaises(SystemExit) as raised:
@@ -54,9 +63,11 @@ class ContractReadinessTests(unittest.TestCase):
         self.assertIn("only valid in contract mode", str(raised.exception))
 
     def test_contract_readiness_rejects_stale_and_unjoinable_bindings(self):
+        # A client-compat-bound row, so emptying its test IDs leaves the producer intact.
         ready_row = next(row for row, verdict in zip(
             MIRROR["requirements"], module.verify_contract(MIRROR, ROOT))
-            if blocker_codes(verdict) == ["no-candidate"])
+            if blocker_codes(verdict) == ["no-candidate"]
+            and "baseline" in row["receiptBinding"]["producerBinding"]["producer"])
         stale = copy.deepcopy(ready_row)
         stale["receiptBinding"]["producerBinding"]["reasonCode"] = "lane-not-emitted"
         unjoinable = copy.deepcopy(ready_row)

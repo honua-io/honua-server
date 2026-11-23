@@ -21,7 +21,7 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class DatabaseMigrationTests : IAsyncLifetime
+public sealed partial class DatabaseMigrationTests : IAsyncLifetime
 {
     private readonly PostgresFixture _postgres = new();
     private string _connectionString = null!;
@@ -883,6 +883,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.GovernedLineageMigration);
         result.AppliedScripts.Should().NotContain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
             "the contract-gated adoption script has no work in the default schema");
+        result.AppliedScripts.Should().NotContain("Honua.Server.Migrations.227_AdoptConfiguredRegistrySchema.sql",
+            "the registry move has no work in the default schema");
 
         var existingDatabasePlan = await runner.PlanMigrationsAsync(
             _connectionString,
