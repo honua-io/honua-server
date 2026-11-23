@@ -1543,16 +1543,30 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            value = operation switch
+            value = ComputeWithinRange(operation, leftNumber, rightNumber);
+            error = value is null ? "Arithmetic result is outside the supported numeric range." : null;
+            return value is not null;
+        }
+
+        // Decimal arithmetic always throws on overflow; report it as an expression error instead of a 500.
+        private static decimal? ComputeWithinRange(TokenKind operation, decimal left, decimal right)
+        {
+            try
             {
-                TokenKind.Plus => leftNumber + rightNumber,
-                TokenKind.Minus => leftNumber - rightNumber,
-                TokenKind.Star => leftNumber * rightNumber,
-                TokenKind.Slash => leftNumber / rightNumber,
-                TokenKind.Percent => leftNumber % rightNumber,
-                _ => null
-            };
-            return true;
+                return operation switch
+                {
+                    TokenKind.Plus => left + right,
+                    TokenKind.Minus => left - right,
+                    TokenKind.Star => left * right,
+                    TokenKind.Slash => left / right,
+                    TokenKind.Percent => left % right,
+                    _ => throw new ArgumentOutOfRangeException(nameof(operation))
+                };
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
         }
 
         private static bool TryGetDecimal(object? value, out decimal number)

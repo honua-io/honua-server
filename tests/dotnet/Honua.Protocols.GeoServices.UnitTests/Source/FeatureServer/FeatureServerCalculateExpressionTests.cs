@@ -109,4 +109,25 @@ public sealed class FeatureServerCalculateExpressionTests
         parsed.Should().BeFalse();
         error.Should().NotBeNullOrWhiteSpace();
     }
+
+    [UnitTheory]
+    [InlineData("79228162514264337593543950335 + 1")]
+    [InlineData("-79228162514264337593543950335 - 1")]
+    [InlineData("79228162514264337593543950335 * 2")]
+    [InlineData("big * big")]
+    [InlineData("big / 0.5")]
+    public void TryEvaluateCalcExpression_NumericOverflow_ReturnsExpressionError(string expression)
+    {
+        var attributes = new Dictionary<string, object?> { ["big"] = 79228162514264337593543950335m };
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            expression,
+            attributes,
+            out var value,
+            out var error);
+
+        parsed.Should().BeFalse();
+        value.Should().BeNull();
+        error.Should().Contain("numeric range");
+    }
 }
