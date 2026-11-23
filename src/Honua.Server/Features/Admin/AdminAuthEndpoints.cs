@@ -45,6 +45,13 @@ internal static class AdminAuthEndpoints
             .AllowAnonymous()
             .CacheOutput(static policy => policy.NoCache());
 
+        _ = endpoints.MapGet(AdminPostLogoutRedirectPath, (HttpContext context, AdminOidcCallbackEndpoint endpoint)
+                => endpoint.SignedOutLanding(context))
+            .WithDisplayName("Land After Administrator Sign Out")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache());
+
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/auth")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
