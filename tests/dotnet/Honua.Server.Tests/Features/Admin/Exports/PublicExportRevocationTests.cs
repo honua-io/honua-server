@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
@@ -11,6 +12,7 @@ using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -212,6 +214,21 @@ public sealed class PublicExportRevocationTests
         readsAfterFirstSweep.Should().BeGreaterThan(0);
         storage.Invocations.Count.Should().Be(readsAfterFirstSweep, "the next tick must not repeat the whole sweep");
         harness.StateStore.Promoted.Keys.Should().BeEquivalentTo(["parcels", "roads"]);
+    }
+
+    [UnitTest]
+    public void ExportLogEvents_HaveDistinctEventIds()
+    {
+        var exportsNamespace = typeof(PublicExportRevocationService).Namespace;
+        var eventIds = typeof(PublicExportRevocationService).Assembly.GetTypes()
+            .Where(type => type.Namespace == exportsNamespace)
+            .SelectMany(type => type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            .Select(method => method.GetCustomAttribute<LoggerMessageAttribute>())
+            .OfType<LoggerMessageAttribute>()
+            .Select(attribute => attribute.EventId)
+            .ToList();
+
+        eventIds.Should().NotBeEmpty().And.OnlyHaveUniqueItems();
     }
 
     [UnitTest]

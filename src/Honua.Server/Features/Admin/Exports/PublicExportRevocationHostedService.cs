@@ -107,7 +107,7 @@ internal sealed partial class PublicExportRevocationHostedService(
         }
     }
 
-    [LoggerMessage(EventId = 10341, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 10344, Level = LogLevel.Warning,
         Message = "Public export revocation recovery sweep failed; pending revocations will retry on the next tick.")]
     private static partial void LogRevocationSweepFailed(ILogger logger, Exception exception);
 
