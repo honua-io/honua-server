@@ -10,6 +10,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -412,7 +413,7 @@ internal static partial class GeoservicesImportEndpoints
         var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
 
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-        if (progress == null)
+        if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
@@ -435,7 +436,7 @@ internal static partial class GeoservicesImportEndpoints
         var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
 
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-        if (progress == null)
+        if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
             return;
@@ -483,7 +484,8 @@ internal static partial class GeoservicesImportEndpoints
         foreach (var jobId in jobIds)
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-            if (progress != null && IsActiveStatus(progress.Status))
+            if (progress != null && IsActiveStatus(progress.Status)
+                && await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
             {
                 jobs.Add(progress);
             }

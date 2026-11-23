@@ -4,12 +4,14 @@
 using System.Reflection;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Orchestration.Domain;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Progress;
 using Honua.Migration;
@@ -61,6 +63,36 @@ public sealed class AdminOperationTenantScopeTests
 
         TenantScopeFixture.StatusOf(await scope.GetStatusAsync("print-a", "admin")).Should().Be(404);
         TenantScopeFixture.StatusOf(await scope.GetStatusAsync("print-a", "platform_admin")).Should().Be(200);
+    }
+
+    [Theory]
+    [InlineData("tenant-a", 200)]
+    [InlineData("tenant-b", 404)]
+    public async Task HandleGetOperationStatus_LayerPublishProgressWithoutJob_UsesRecordedTenant(string callerTenant, int expected)
+    {
+        var scope = new TenantScopeFixture(callerTenant);
+        var publish = new LayerPublishJobProgress
+        {
+            OperationId = "publish-a",
+            Status = OperationStatus.Processing,
+            StartedAt = DateTimeOffset.UtcNow,
+            TenantId = "tenant-a"
+        };
+        await scope.Progress.SetProgressAsync("publish-a", publish, TimeSpan.FromMinutes(5));
+
+        TenantScopeFixture.StatusOf(await scope.GetStatusAsync("publish-a", "admin")).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("tenant-a", 200)]
+    [InlineData("tenant-b", 404)]
+    public async Task HandleGetOperationStatus_WorkflowProgressWithoutJob_UsesRecordedTenant(string callerTenant, int expected)
+    {
+        var scope = new TenantScopeFixture(callerTenant);
+        var run = WorkflowProgress.CreateForPendingRun("run-a", "workflow-a", 2, DateTimeOffset.UtcNow, "tenant-a");
+        await scope.Progress.SetProgressAsync("run-a", run, TimeSpan.FromMinutes(5));
+
+        TenantScopeFixture.StatusOf(await scope.GetStatusAsync("run-a", "admin")).Should().Be(expected);
     }
 
     [Theory]

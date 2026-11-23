@@ -5,9 +5,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-public sealed record WorkflowProgress : IOperationProgress, ICancellableOperationProgress
+public sealed record WorkflowProgress : IOperationProgress, ICancellableOperationProgress, ITenantOwnedProgress
 {
     public required string OperationId { get; init; }
+
+    public string? TenantId { get; init; }
 
     public required string WorkflowId { get; init; }
 
@@ -57,10 +59,12 @@ public sealed record WorkflowProgress : IOperationProgress, ICancellableOperatio
         string runId,
         string workflowId,
         int totalSteps,
-        DateTimeOffset startedAt)
+        DateTimeOffset startedAt,
+        string? tenantId = null)
         => new()
         {
             OperationId = runId,
+            TenantId = tenantId,
             WorkflowId = workflowId,
             RunStatus = WorkflowRunStatus.Pending,
             StepsCompleted = 0,

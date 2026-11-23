@@ -79,6 +79,7 @@ internal sealed partial class FileImportJobExecutor(
             CorrelationId = request.CorrelationId,
             AuditId = request.AuditId,
             ProposalId = request.ProposalId,
+            TenantId = request.TenantId,
             SourceKind = processing.SourceKind,
             SourceUrl = processing.SourceUrl,
             CloudFileId = processing.CloudFileId,

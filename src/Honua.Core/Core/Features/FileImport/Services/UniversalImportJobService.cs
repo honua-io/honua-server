@@ -273,6 +273,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
                 ProposalId = request.ProposalId,
+                TenantId = request.TenantId,
                 Runner = ImportJobRunners.InProcess,
                 InstanceId = _instanceId,
             }));

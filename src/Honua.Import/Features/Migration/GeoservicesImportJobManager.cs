@@ -57,7 +57,8 @@ internal sealed class GeoservicesImportJobManager : IDistributedImportJobManager
             JobId = jobId,
             Request = request,
             InitialProgress = initialProgress,
-            WorkloadName = $"geoservices-import:{request.TableName}"
+            WorkloadName = $"geoservices-import:{request.TableName}",
+            TenantId = request.Target?.TenantId
         }, cancellationToken);
     }
 
