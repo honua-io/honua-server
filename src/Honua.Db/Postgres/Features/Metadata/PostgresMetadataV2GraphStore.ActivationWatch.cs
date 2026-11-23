@@ -66,8 +66,9 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         }
 
         var (priorDocument, currentDocument) = documents.Value;
-        var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
-            ?? throw new InvalidDataException("The prior catalog document is missing.");
+        var graph = MetadataV2EditingConsistency.RepairCanModify(
+            JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
+            ?? throw new InvalidDataException("The prior catalog document is missing."));
 
         // The guard compares what would actually be published: the earlier document after reconciliation.
         graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
