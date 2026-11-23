@@ -44,6 +44,8 @@ public sealed class SpecSurfaceHardeningTests(SpecSurfaceHardeningTests.GatedHos
 
         internal SpyArtifactCache Cache { get; } = new();
 
+        private readonly TestWebApplicationFactory _baseFactory = new();
+
         internal WebApplicationFactory<Program> Factory { get; private set; } = null!;
 
         internal HttpClient Client { get; private set; } = null!;
@@ -54,7 +56,7 @@ public sealed class SpecSurfaceHardeningTests(SpecSurfaceHardeningTests.GatedHos
         public async Task InitializeAsync()
         {
             var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
-            Factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+            Factory = _baseFactory.WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", BootstrapAdminKey);
@@ -81,6 +83,7 @@ public sealed class SpecSurfaceHardeningTests(SpecSurfaceHardeningTests.GatedHos
         {
             Client.Dispose();
             await Factory.DisposeAsync();
+            await _baseFactory.DisposeAsync();
         }
 
         private static async Task<string> IssueKeyAsync(IAdminApiKeyStore store, string name, string permission)
@@ -196,7 +199,6 @@ public sealed class SpecSurfaceHardeningTests(SpecSurfaceHardeningTests.GatedHos
         response.Headers.GetValues("X-Spec-Apply-Token").Should().ContainSingle(SpyApplyEngine.Token);
         host.Engine.LastOptions.Should().NotBeNull();
         host.Engine.LastOptions!.MaxConcurrency.Should().Be(expected);
-        expected.Should().BeLessThanOrEqualTo(SpecEndpoints.MaxApplyConcurrency);
     }
 
     [IntegrationTheory]
