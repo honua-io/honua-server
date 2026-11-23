@@ -39,14 +39,10 @@ public partial class StudioPackageLifecycleServiceTests
         var reopened = await service.ReopenVersionAsync(version.ItemId, version.VersionId, "tester");
         Assert.NotNull(reopened);
         Assert.Equal(newFormat, reopened.Envelope.Format);
-        Assert.Equal("saved-id", reopened.Envelope.Body!.Value.GetProperty(newId).GetString());
-        Assert.False(reopened.Envelope.Body.Value.TryGetProperty(oldId, out _));
-        Assert.Equal(newFormat, reopened.Envelope.Body.Value.GetProperty("format").GetString());
-        Assert.Equal("opaque", reopened.Envelope.Body.Value.GetProperty("mapSpec").GetProperty(oldId).GetString());
+        AssertCanonicalIdentity(reopened.Envelope, oldId, newId);
         var unchanged = await store.GetVersionAsync(version.ItemId, version.VersionId);
         Assert.Equal(version.ContentHash, unchanged!.ContentHash);
         Assert.Equal(envelope.Body.Value.GetRawText(), unchanged.Envelope.Body!.Value.GetRawText());
-
         // Simulate the migration archiving the pre-cutover draft before normalizing it.
         var current = await store.UpdateDraftAsync(originalDraft with { Envelope = reopened.Envelope });
         Assert.NotNull(current);
@@ -54,8 +50,17 @@ public partial class StudioPackageLifecycleServiceTests
             RestoreCommand(originalDraft.Generation, current.Generation, "tester"));
         Assert.NotNull(restored);
         Assert.Equal(newFormat, restored.Envelope.Format);
-        Assert.Equal(reopened.Envelope.Body.Value.GetRawText(), restored.Envelope.Body!.Value.GetRawText());
+        Assert.Equal(reopened.Envelope.Body!.Value.GetRawText(), restored.Envelope.Body!.Value.GetRawText());
         await AssertHistoricalDraftUnchangedAsync(store, originalDraft);
+    }
+
+    private static void AssertCanonicalIdentity(StudioPackageEnvelope envelope, string oldId, string newId)
+    {
+        var body = envelope.Body!.Value;
+        Assert.Equal("saved-id", body.GetProperty(newId).GetString());
+        Assert.False(body.TryGetProperty(oldId, out _));
+        Assert.Equal(envelope.Format, body.GetProperty("format").GetString());
+        Assert.Equal("opaque", body.GetProperty("mapSpec").GetProperty(oldId).GetString());
     }
 
     [Theory]
