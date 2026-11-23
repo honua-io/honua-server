@@ -873,6 +873,38 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [IntegrationTest]
     [Operation(Operations.LocationAllocation)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
+    public async Task SolveLocationAllocation_DifferentOutputSrid_ProjectsFacilityAndDemandGeometries()
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("facilities", "10,10"),
+            new KeyValuePair<string, string>("demandPoints", "11,11"),
+            new KeyValuePair<string, string>("inSR", "4326"),
+            new KeyValuePair<string, string>("outSR", "3857"),
+            new KeyValuePair<string, string>("numberFacilitiesToFind", "1"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var facilities = document.RootElement.GetProperty("facilities");
+        facilities.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var facility = facilities.GetProperty("features")[0].GetProperty("geometry");
+        facility.GetProperty("x").GetDouble().Should().BeApproximately(1113194.9079, 0.01);
+        facility.GetProperty("y").GetDouble().Should().BeApproximately(1118889.9749, 0.01);
+        var demandPoints = document.RootElement.GetProperty("demandPoints");
+        demandPoints.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var demand = demandPoints.GetProperty("features")[0].GetProperty("geometry");
+        demand.GetProperty("x").GetDouble().Should().BeApproximately(1224514.3987, 0.01);
+        demand.GetProperty("y").GetDouble().Should().BeApproximately(1232106.8019, 0.01);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.LocationAllocation)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
     public async Task SolveLocationAllocation_MinimizeFacilities_CoversDemandWithDeterministicFacilitySet()
     {
         using var payload = new FormUrlEncodedContent(

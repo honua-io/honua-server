@@ -242,7 +242,7 @@ internal static class WkbToSkiaConverter
             return default;
         }
 
-        var path = new SKPath();
+        var path = new SKPath { FillType = SKPathFillType.EvenOdd };
         try
         {
             for (int ring = 0; ring < numRings; ring++)
@@ -339,7 +339,7 @@ internal static class WkbToSkiaConverter
     private static GeometryConversionResult ReadMultiPolygon(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
     {
         var numGeometries = ReadElementCount(ref reader);
-        var combinedPath = new SKPath();
+        var combinedPath = new SKPath { FillType = SKPathFillType.EvenOdd };
         try
         {
             for (int i = 0; i < numGeometries; i++)
@@ -364,7 +364,7 @@ internal static class WkbToSkiaConverter
     private static GeometryConversionResult ReadGeometryCollection(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth)
     {
         var numGeometries = ReadElementCount(ref reader);
-        SKPath? combinedPath = new SKPath();
+        SKPath? combinedPath = new SKPath { FillType = SKPathFillType.EvenOdd };
         try
         {
             var allPoints = new List<SKPoint>();

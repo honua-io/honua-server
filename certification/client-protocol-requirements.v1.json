@@ -1,6 +1,6 @@
 {
   "schema": "honua.client-certification-requirements/v1",
-  "revision": "2026-09-21-bounded-roster",
+  "revision": "2026-11-23-bounded-roster-producer",
   "boundedRosterIssue": "https://github.com/honua-io/honua-server/issues/3434",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
   "requirements_source_revision": "7165e7f67937318a0c53a7292df7730961cf13c2",
@@ -125,7 +125,10 @@
   "generator": "scripts/certification/build-client-protocol-requirements.py",
   "producerAuthority": [
     "tests/baselines/client-compat/expected-pairs.json",
-    "tests/baselines/client-compat"
+    "tests/baselines/client-compat",
+    ".github/workflows/client-roster-certification.yml",
+    "certification/bounded-roster/run-roster.sh",
+    "certification/bounded-roster/lanes"
   ],
   "source_revisions": {
     "server": {
@@ -245,12 +248,18 @@
         "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -293,12 +302,18 @@
         "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -341,12 +356,18 @@
         "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -388,12 +409,18 @@
         "client-cert/gdal/wcs/serve.wcs"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/wcs/serve.wcs"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -457,12 +484,18 @@
         "client-cert/gdal/cog/dataset-read"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/cog/dataset-read"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -526,12 +559,18 @@
         "client-cert/gdal/flatgeobuf/feature-read"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/flatgeobuf/feature-read"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -599,12 +638,18 @@
         "client-cert/gdal/geoparquet/feature-read"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal/geoparquet/feature-read"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -645,12 +690,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -691,12 +742,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -737,12 +794,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -783,12 +846,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -829,12 +898,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -875,12 +950,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -921,12 +1002,18 @@
         "client-cert/gdal-ogr/ogc/OGC-OP-WFS-2-0"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc/OGC-OP-WFS-2-0"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -969,12 +1056,18 @@
         "client-cert/gdal-ogr/ogc-api-features/serve.ogc-api-features"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/ogc-api-features/serve.ogc-api-features"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1017,12 +1110,18 @@
         "client-cert/gdal-ogr/wfs/serve.wfs"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/gdal-ogr/wfs/serve.wfs"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1063,12 +1162,18 @@
         "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1109,12 +1214,18 @@
         "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-TILE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-TILE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1155,12 +1266,18 @@
         "client-cert/maplibre-gl-js/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1201,12 +1318,18 @@
         "client-cert/maplibre-gl-js/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1247,12 +1370,18 @@
         "client-cert/maplibre-gl-js/ogc-api-maps/serve.ogc-api-maps"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc-api-maps/serve.ogc-api-maps"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1292,12 +1421,18 @@
         "client-cert/maplibre-gl-js/ogc-api-styles/styling.ogc-api-styles"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc-api-styles/styling.ogc-api-styles"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1338,12 +1473,18 @@
         "client-cert/maplibre-gl-js/ogc-api-tiles/serve.ogc-api-tiles"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/ogc-api-tiles/serve.ogc-api-tiles"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1385,12 +1526,18 @@
         "client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1431,12 +1578,18 @@
         "client-cert/maplibre-gl-js/wms/serve.wms"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are cli, desktop-qgis, duckdb, geoservices-rest-stub, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/maplibre-gl-js/wms/serve.wms"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1477,12 +1630,18 @@
         "client-cert/owslib/ogc/OGC-OP-WCS-2-0-COVERAGE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs, wms, wmts."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/owslib/ogc/OGC-OP-WCS-2-0-COVERAGE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1523,12 +1682,18 @@
         "client-cert/owslib/ogc-api-processes/process.ogc-api-processes"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-processes'; it emits ogc-features, wfs, wms, wmts."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/owslib/ogc-api-processes/process.ogc-api-processes"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1570,12 +1735,18 @@
         "client-cert/owslib/ogc-api-records/serve.ogc-api-records"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-records'; it emits ogc-features, wfs, wms, wmts."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/owslib/ogc-api-records/serve.ogc-api-records"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1617,12 +1788,18 @@
         "client-cert/owslib/wcs/serve.wcs"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'wcs'; it emits ogc-features, wfs, wms, wmts."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/owslib/wcs/serve.wcs"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1713,12 +1890,18 @@
         "client-cert/qgis/featureserver/serve.geoservices-featureserver"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'featureserver'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/featureserver/serve.geoservices-featureserver"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1757,12 +1940,18 @@
         "client-cert/qgis/mapserver/serve.geoservices-mapserver"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'mapserver'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/mapserver/serve.geoservices-mapserver"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1803,12 +1992,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1849,12 +2044,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1895,12 +2096,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1941,12 +2148,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -1987,12 +2200,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2033,12 +2252,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2079,12 +2304,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2125,12 +2356,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2171,12 +2408,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2217,12 +2460,18 @@
         "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-TILE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-TILE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2263,12 +2512,18 @@
         "client-cert/qgis/ogc/OGC-OP-WFS-2-0"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-WFS-2-0"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2309,12 +2564,18 @@
         "client-cert/qgis/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2355,12 +2616,18 @@
         "client-cert/qgis/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2403,12 +2670,18 @@
         "client-cert/qgis/ogc-api-features/serve.ogc-api-features"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-features'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc-api-features/serve.ogc-api-features"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2449,12 +2722,18 @@
         "client-cert/qgis/ogc-api-maps/serve.ogc-api-maps"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-maps'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc-api-maps/serve.ogc-api-maps"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2494,12 +2773,18 @@
         "client-cert/qgis/ogc-api-styles/styling.ogc-api-styles"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-styles'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc-api-styles/styling.ogc-api-styles"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2540,12 +2825,18 @@
         "client-cert/qgis/ogc-api-tiles/serve.ogc-api-tiles"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-tiles'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/ogc-api-tiles/serve.ogc-api-tiles"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",
@@ -2682,12 +2973,18 @@
         "client-cert/qgis/wms/serve.wms"
       ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wms'; it emits ogc-features, wfs."
+          "status": "present",
+          "producer": {
+            "workflow": ".github/workflows/client-roster-certification.yml",
+            "runner": "certification/bounded-roster/run-roster.sh",
+            "testIds": [
+              "client-cert/qgis/wms/serve.wms"
+            ]
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
           "status": "joinable",

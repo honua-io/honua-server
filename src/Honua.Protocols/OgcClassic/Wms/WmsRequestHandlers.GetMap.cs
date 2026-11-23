@@ -90,18 +90,26 @@ internal static partial class WmsRequestHandlers
         // requested bbox, so the out-of-bounds margin simply paints as background.
         var bboxOutsideCrsBounds = !DoesExtentIntersectCrsBounds(requestedExtent, normalizedCrs);
 
-        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue) ||
-            !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
-            imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
+        if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue))
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "WIDTH parameter is required.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue) ||
-            !int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
+        if (!int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
+            imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
+        {
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue))
+        {
+            return CreateWmsServiceException(context, "MissingParameterValue", "HEIGHT parameter is required.");
+        }
+
+        if (!int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
             imageHeight <= 0 || imageHeight > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))

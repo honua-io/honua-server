@@ -807,7 +807,7 @@ public sealed class OgcClassicWmtsTests : IClassFixture<WebAppFixture>
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"TileOutOfRange\"");
+        content.Should().Contain("exceptionCode=\"PointIJOutOfRange\"");
         content.Should().Contain("locator=\"I\"");
     }
 
@@ -821,7 +821,7 @@ public sealed class OgcClassicWmtsTests : IClassFixture<WebAppFixture>
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"TileOutOfRange\"");
+        content.Should().Contain("exceptionCode=\"PointIJOutOfRange\"");
         content.Should().Contain("locator=\"J\"");
     }
 

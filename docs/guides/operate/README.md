@@ -347,7 +347,12 @@ need:
 - custom alert routing outside Honua's built-in alert and findings surfaces;
 - capacity planning across multiple services or environments.
 
-For a local or single-node bundle:
+For a local or single-node bundle, first complete the credential setup in
+[Monitor Honua Server](../deploy/monitoring.md#steps): mint an API key with only
+the read-only `admin:read` grant, save it in a file readable only by you, and
+export `HONUA_METRICS_SCRAPE_KEY_FILE` to that file's absolute path. Export
+`HONUA_MONITORING_GRAFANA_PASSWORD` with a password you choose for Grafana.
+Both variables are required. Then, from the repository root in the same shell:
 
 ```bash
 docker compose -f docker/monitoring/compose.yml up -d

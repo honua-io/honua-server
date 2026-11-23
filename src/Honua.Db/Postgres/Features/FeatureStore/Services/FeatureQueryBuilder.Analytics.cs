@@ -60,8 +60,9 @@ internal sealed partial class FeatureQueryBuilder
                 var minPointsParam = $"${paramIndex++}";
                 parameters.Add(clusterQuery.MinPoints ?? 1);
 
+                var epsExpression = ScaleMetersToProjectedUnits(epsParam, query.SpatialReferenceSrid);
                 clusterExpression = FormattableString.Invariant(
-                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsParam}, minpoints => {minPointsParam}) {clusterWindow}");
+                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsExpression}, minpoints => {minPointsParam}) {clusterWindow}");
             }
             else
             {
@@ -218,7 +219,8 @@ internal sealed partial class FeatureQueryBuilder
                 ? null
                 : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
 
-            var bufferedGeometry = $"ST_Buffer(geom_m, {distanceParam})";
+            var distanceExpression = ScaleMetersToProjectedUnits(distanceParam, query.SpatialReferenceSrid);
+            var bufferedGeometry = $"ST_Buffer(geom_m, {distanceExpression})";
             string bufferGeoJson;
             if (adaptiveGround)
             {
@@ -441,9 +443,11 @@ internal sealed partial class FeatureQueryBuilder
             }
             else
             {
-                // ST_Extent returns BOX2D (SRID-less); stamp 3857 so the grid matches
+                // ST_Extent returns BOX2D (SRID-less); stamp the projected SRID so the grid matches
                 // the projected points.
-                sql.Append(" bounds AS (SELECT ST_SetSRID(ST_Extent(pt)::geometry, 3857) AS extent FROM src),");
+                var projectedSrid = query.SpatialReferenceSrid ?? 3857;
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" bounds AS (SELECT ST_SetSRID(ST_Extent(pt)::geometry, {projectedSrid}) AS extent FROM src),");
                 cellGeometrySql = "ST_Transform(c.cell, 4326)";
             }
 
@@ -471,8 +475,9 @@ internal sealed partial class FeatureQueryBuilder
             }
             else
             {
+                var cellSizeExpression = ScaleMetersToProjectedUnits(cellSizeParam, query.SpatialReferenceSrid);
                 sql.Append(CultureInfo.InvariantCulture,
-                    $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g),");
+                    $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeExpression}, bounds.extent::geometry) g),");
                 sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell");
                 if (weightExpression != null)
                 {
@@ -515,12 +520,22 @@ internal sealed partial class FeatureQueryBuilder
 
     private static string EnsureMeters(string geometryOperand, int? sourceSrid)
     {
-        if (sourceSrid.HasValue && sourceSrid.Value == 3857)
+        if (sourceSrid.HasValue && !IsGeographicLayer(sourceSrid))
         {
             return geometryOperand;
         }
 
         return $"ST_Transform({geometryOperand}, 3857)";
+    }
+
+    private static string ScaleMetersToProjectedUnits(string metersParam, int? sourceSrid)
+    {
+        if (sourceSrid is int srid && srid != 3857 && !IsGeographicLayer(srid))
+        {
+            return $"({metersParam} / {PostgresCrsUnitSql.MetersPerProjectedUnit(srid)})";
+        }
+
+        return metersParam;
     }
 
     private static bool IsGeographicLayer(int? srid)

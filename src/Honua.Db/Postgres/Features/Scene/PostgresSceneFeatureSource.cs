@@ -322,6 +322,11 @@ internal static class WkbGeometryReader
         //      1xxx = XYZ, 2xxx = XYM, 3xxx = XYZM.
         var hasZ = (type & 0x80000000u) != 0;
         var hasM = (type & 0x40000000u) != 0;
+        var hasSrid = (type & 0x20000000u) != 0;
+        if (hasSrid)
+        {
+            cursor.ReadUInt32(byteOrder);
+        }
         var baseType = type & 0xFFFFu;
         if (baseType >= 1000u && baseType < 4000u)
         {
@@ -436,8 +441,30 @@ internal static class WkbGeometryReader
         {
             return null;
         }
-        var first = ReadGeometry(ref cursor);
-        return first;
+
+        var allVertices = new List<SceneVertex>((int)count);
+        var parts = new List<IReadOnlyList<SceneVertex>>((int)count);
+        for (var i = 0; i < count; i++)
+        {
+            var part = ReadGeometry(ref cursor);
+            if (part is { Vertices.Count: > 0 })
+            {
+                allVertices.AddRange(part.Vertices);
+                parts.Add(part.Vertices);
+            }
+        }
+
+        if (allVertices.Count == 0)
+        {
+            return null;
+        }
+
+        return new SceneFeatureGeometry
+        {
+            Kind = SceneGeometryKind.Point,
+            Vertices = allVertices,
+            Parts = parts
+        };
     }
 
     private static SceneFeatureGeometry? ReadMultiLineString(ref WkbCursor cursor, byte byteOrder)
@@ -447,7 +474,30 @@ internal static class WkbGeometryReader
         {
             return null;
         }
-        return ReadGeometry(ref cursor);
+
+        var allVertices = new List<SceneVertex>();
+        var parts = new List<IReadOnlyList<SceneVertex>>((int)count);
+        for (var i = 0; i < count; i++)
+        {
+            var part = ReadGeometry(ref cursor);
+            if (part is { Vertices.Count: > 0 })
+            {
+                allVertices.AddRange(part.Vertices);
+                parts.Add(part.Vertices);
+            }
+        }
+
+        if (allVertices.Count == 0)
+        {
+            return null;
+        }
+
+        return new SceneFeatureGeometry
+        {
+            Kind = SceneGeometryKind.LineString,
+            Vertices = allVertices,
+            Parts = parts
+        };
     }
 
     private static SceneFeatureGeometry? ReadMultiPolygon(ref WkbCursor cursor, byte byteOrder)
@@ -457,7 +507,30 @@ internal static class WkbGeometryReader
         {
             return null;
         }
-        return ReadGeometry(ref cursor);
+
+        var allVertices = new List<SceneVertex>();
+        var parts = new List<IReadOnlyList<SceneVertex>>((int)count);
+        for (var i = 0; i < count; i++)
+        {
+            var part = ReadGeometry(ref cursor);
+            if (part is { Vertices.Count: > 0 })
+            {
+                allVertices.AddRange(part.Vertices);
+                parts.Add(part.Vertices);
+            }
+        }
+
+        if (allVertices.Count == 0)
+        {
+            return null;
+        }
+
+        return new SceneFeatureGeometry
+        {
+            Kind = SceneGeometryKind.Polygon,
+            Vertices = allVertices,
+            Parts = parts
+        };
     }
 }
 

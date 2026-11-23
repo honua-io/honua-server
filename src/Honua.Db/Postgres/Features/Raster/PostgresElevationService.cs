@@ -107,10 +107,6 @@ internal sealed class PostgresElevationService : IElevationService
         {
             elevation = value;
         }
-        else if (pixel.BandValues.TryGetValue(1, out var rawAny) && rawAny is double anyValue)
-        {
-            elevation = anyValue;
-        }
 
         var noData = !elevation.HasValue;
         PostgresElevationLog.ElevationPointQueried(_logger, layerId, x, y, resolvedSrid, rasterIds.Length, noData);

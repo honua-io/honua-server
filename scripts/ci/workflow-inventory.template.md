@@ -530,7 +530,7 @@ which is why both the run count and exact observed span are recorded.
 | `mcp-inspector-pagination.yml` | Installed Inspector Pagination Controls | `pull_request`, `push` (matching paths) | Runs the public installed Inspector CLI against controlled peers to verify transparent pagination observation, compressed-response decoding and fail-closed controls. Source-bound controls are separate from candidate/version qualification. |
 | `mcp-client-contract.yml` | MCP Client Contract | path-filtered ready `pull_request` / `push`, daily `schedule` (11:40 UTC) | Exercises every MCP view through pinned published SDK and Inspector clients against the server, checking both content channels and documented inputs. Draft conversion cancels admission; draft PRs skip the contract job. |
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Test commands run in dedicated process groups; cancellation cleans up the group and snapshotted descendants, including those that leave the group, with a bounded half-second escalation. Group escalation reaches children forked after the snapshot. Signal handlers are installed before child creation and record cancellation for cleanup outside the active child wait, checked every 0.1 seconds; this also preserves cancellation during startup without reentering the subprocess wait lock. Reports only; it never gates. Also runs the validated issue-backed quarantine in a separate non-gating matrix, without retries or exclusions. |
-| `flake-quarantine.yml` | Publish Flaky Test Quarantine | completed `workflow_run` [CI, PR Gate] | Trusted same-repository publisher: validates raw first/retry TRX and candidate hashes; requires unambiguous identities within selected failed methods (including passing siblings) and all retry rows, files one bot issue per project/method, and maintains at most 25 active issue-backed exclusions expiring within 14 days. Reads one shard artifact per shard: the highest `-attempt-<n>` (unsuffixed names count as attempt 0). A coalescing publisher sweeps the CI and PR Gate run histories and reads artifacts per completed trusted source run, avoiding the repository-wide artifact listing. An overlap watermark preserves old-run reruns and deferred batches; each sweep inspects at most 25 source runs (including empty ones), rechecks completion/attempt identity after artifact listing, and checkpoints completed run versions so equal-timestamp backlogs advance, with twice-hourly scheduled recovery. Never checks out triggering code or executes downloaded artifacts. |
+| `flake-quarantine.yml` | Publish Flaky Test Quarantine | completed `workflow_run` [CI, PR Gate] | Trusted same-repository publisher: validates raw first/retry TRX and candidate hashes; requires unambiguous identities within selected failed methods (including passing siblings) and all retry rows, files one bot issue per project/method, and maintains at most 25 active issue-backed exclusions expiring within 14 days. Reads one shard artifact per shard: the highest `-attempt-<n>` (unsuffixed names count as attempt 0). A coalescing publisher sweeps the CI and PR Gate run histories and reads artifacts per completed trusted source run, avoiding the repository-wide artifact listing. An overlap watermark preserves old-run reruns and deferred batches; each sweep inspects at most 25 source runs (including empty ones), reserving five slots for the oldest pending runs and twenty for the newest pending runs so historical migration cannot starve current evidence, rechecks completion/attempt identity after artifact listing, and checkpoints completed run versions so equal-timestamp backlogs advance, with twice-hourly scheduled recovery. Never checks out triggering code or executes downloaded artifacts. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Diagnostics | daily `schedule` (11:30 UTC), `workflow_dispatch` | Nightly load/soak diagnostics against trunk source with per-run credentials. Reports regressions between candidates; release qualification stays with `capacity-soak-candidate.yml` (#5314). |
 | `capacity-soak-candidate.yml` | capacity-soak-candidate | `workflow_dispatch`, `workflow_call` | Runs at the manifest candidate source and image, collects complete raw observations, and attests a bounded evidence ZIP. The release checker independently recomputes all eight signals and binds the exact producer attestation. See docs/internal/operations/capacity-soak-runbook.md. |
@@ -545,6 +545,7 @@ which is why both the run count and exact observed span are recorded.
 | `standing-aws-cert-plan.yml` | Standing AWS certification plan only | `workflow_dispatch` on `trunk`; PR offline controls | Protected `cert` OIDC job on an ephemeral GitHub-hosted runner. Checks out public IaC at exact current `trunk`, admits the protected request, candidate, reviewed modules and deployed bootstrap ZIP, and exports only age ciphertext plus a bound public-safe receipt. The workflow does not provision the existing backend, roles, protected inputs or local decryption custody; it does not apply a plan. |
 | `lambda-preview-certification.yml` | Lambda Preview Certification | `workflow_dispatch` | Deploys an exact GHCR Lambda AOT image to the certified AWS account, invokes and verifies it, guarantees teardown, and emits a fingerprint-only receipt containing the true ECR artifact digest for the release manifest handoff. |
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; uploads the TRX and gap report as workflow artifacts under the ignored artifacts/ output root. |
+| `client-roster-certification.yml` | Client Roster Certification | `workflow_dispatch` | Runs the bounded external-client roster (`certification/bounded-roster/run-roster.sh`) on a GitHub runner against a candidate image digest and cut time; release-mode and contract verdicts decide the job, and receipts, verdicts and lane logs upload as a release-tier evidence artifact. Producer authority for the roster rows in `certification/client-protocol-requirements.v1.json`. |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). Protected-style probes resolve the seeded publication ID and independently verify that numeric-layer vector tiles reject anonymous and invalid-key requests. |
 | `multidim-raster-fixture.yml` | Real Multidimensional Raster Fixture | daily `schedule` (08:15 UTC), `workflow_dispatch` | Composes the pinned LocalStack/S3 object store, real NetCDF seed, native GDAL worker, and server; verifies production metadata scan, derived Zarr objects, and distinct selected-time ImageServer PNG slices. Uploads the verifier log and failure-only composition logs as nightly evidence. |
 | `client-compat-smoke-nightly.yml` | Generic Client Compatibility Smoke | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
@@ -616,7 +617,7 @@ candidate context.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `schedule` (nightly 10:30 UTC), `workflow_dispatch` | Regenerates the six repository-state projections, validates authored inputs against them, then — never writing trunk directly — commits any diff as `Mike McDougall <mike@honua.io>` on a fixed automation branch and opens or refreshes a PR from it into trunk, landing through the ordinary PR Gate + Review Gate + per-PR lander path. No diff means no commit or branch push; a current validated source closes an obsolete open proposal after source and head checks, retaining its branch. This adds no jobs or runners. See [inventory and dry run](generated-files-on-trunk.md). |
-| `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Cheap post-merge restore/build. Affected tests after a merge run in the selective CI that `trunk-affected.yml` dispatches. |
+| `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Post-merge restore/build plus the reduced protocol profiles (gsr, ogc-api, ogc-api-classic) whenever anything other than workflows or docs prose changed since the last successful run. Each job queues the newest push instead of cancelling. Affected tests after a merge run in the selective CI that `trunk-affected.yml` dispatches. |
 | `disabled-workflow-check.yml` | Disabled workflow check | weekly `schedule` (Monday 09:17 UTC), `workflow_dispatch` | `scripts/ci/check-disabled-workflows.py` fails when a workflow disabled on GitHub is still tracked. A disabled reusable workflow passes while an active workflow calls it; otherwise only an unexpired entry naming its deciding ticket keeps it, and an entry that no longer matches a disabled file fails. |
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `server-test-reuse-benchmark.yml` | Server Test Reuse Benchmark | `workflow_dispatch` | Bounded A/B of an overlapped reuse producer against independent baselines. Manual, read-only, publishes no status. |
@@ -1243,7 +1244,9 @@ setup and build, remains unmeasured.
 
 `GPServerEndpointTests` shares one seeded application through a class fixture.
 The sequential default-host cases clear their in-memory job store before use,
-so job listings and persisted-plan checks retain per-case state. Cases that
+so job listings and persisted-plan checks retain per-case state. Successful
+synchronous execution cases share a second host with the same job-service stub,
+clear its recorded plan before each case and use fresh clients. Other cases that
 replace authorization, metadata or geoprocessing services own separate hosts.
 All assertions and method filters remain unchanged; the GPServer/NAServer
 shards still run on selected PRs and full trunk runs.
@@ -1254,6 +1257,16 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+A subsequent synchronous-host optimization was measured with four interleaved
+Release runs of the complete owning GPServer Endpoints shard. All four passed
+the same 71 cases without skips. Class-body totals were 34.012 / 32.569 seconds
+before and 27.791 / 31.771 seconds after (medians 33.291 to 29.781 seconds).
+Fixture-inclusive TRX intervals were 46.941 / 53.211 seconds before and
+41.400 / 45.258 seconds after (medians 50.076 to 43.329 seconds). This saves
+6.747 seconds, or 0.112 test-run runner-minutes, with one runner unchanged.
+Compilation, admission and full CI-job time are excluded. The earlier timings
+above describe the separate default-host optimization, not this comparison.
 
 ### Admin authentication default application lifetime
 
@@ -2226,3 +2239,27 @@ end-to-end CI critical-path improvement.
 The shard filter, test selection, workflows, required check names and aggregate
 `needs` contract are unchanged. Every case still runs in its existing selected PR
 shard and full trunk runs; no assertions or gate coverage move to another schedule.
+
+### OIDC bearer authentication host lifetime
+
+`OidcAuthenticationTests` reuses a lazy class host for seven bearer-token read
+cases with identical OIDC settings. Each case still creates and disposes its own
+HTTP client and sets its own request headers and token. The existing database
+collection serializes the cases. xUnit disposes the shared factory after the
+class finishes. Replay, certificate, production-mode, tenant-specific and
+mutating admin scenarios retain their private factories and configuration.
+
+All 27 OIDC cases, 125 assertion calls and endpoint metadata remain unchanged.
+Every case stays in the existing Admin & Infrastructure 1 shard on selected PR
+runs and twice-daily full trunk runs. Runner count, shard filters, required check
+names and the aggregate's `needs` contract are unchanged. No workflow or shard
+definition changes are included.
+
+Four interleaved build-host runs of the complete 39-case owning shard passed
+without failures or skips and with identical case outcomes. Median summed OIDC
+class duration fell from 26.39 to 22.24 seconds; both pairs improved. Median
+fixture-inclusive shard wall time fell from 48.45 to 41.50 seconds, saving 6.95
+seconds (0.116 runner minutes), with one runner before and after. Individual
+baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
+pair was slightly slower, so the shard saving is variable. Build time is excluded;
+these results do not establish a reduction in the parallel PR Gate critical path.

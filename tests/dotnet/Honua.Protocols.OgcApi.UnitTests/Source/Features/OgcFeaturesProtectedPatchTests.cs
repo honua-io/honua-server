@@ -114,6 +114,96 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         update.ExplicitAttributeRemovals.Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [InlineData("application/json")]
+    [InlineData("application/geo+json")]
+    [InlineData("")]
+    public async Task HandlePatchFeatureAsync_NonMergePatchContentType_Returns415EvenWithZeroContentLength(string contentType)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var existing = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("name", "before"));
+        reader.GetAsync(default, default, default).ReturnsForAnyArgs((Feature?)existing);
+        reader.QueryAsync(default, default, default).ReturnsForAnyArgs(QueryResult<Feature>.Create(1, [existing]));
+        var writer = Substitute.For<IFeatureWriter>();
+        var (_, handler) = CreateHandlers(reader, writer);
+        var context = ProtectedPatchContext(string.Empty, tracking: null);
+        context.Request.ContentType = string.IsNullOrEmpty(contentType) ? null : contentType;
+        context.Request.ContentLength = 0;
+
+        var result = await handler.HandlePatchFeatureAsync("pub-cities", "42", null, context, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status415UnsupportedMediaType);
+    }
+
+    [UnitTest]
+    public async Task HandlePatchFeatureAsync_NestedObjectProperties_AppliesRecursiveJsonMergePatch()
+    {
+        var existingMeta = new Dictionary<string, object?>
+        {
+            ["keep"] = "original",
+            ["removeMe"] = "gone",
+            ["nested"] = new Dictionary<string, object?>
+            {
+                ["innerKeep"] = 1L,
+                ["innerRemove"] = 2L
+            }
+        };
+        var existing = ImmutableDictionary<string, object?>.Empty
+            .Add("name", "before")
+            .Add("metadata", existingMeta);
+
+        var result = await ExecuteProtectedPatchAsync(
+            """{"properties":{"metadata":{"removeMe":null,"added":"new","nested":{"innerRemove":null,"innerAdd":3}}}}""",
+            existing);
+
+        result.Status.Should().Be(StatusCodes.Status200OK);
+        var updated = result.Batch!.Value.Updates.Single();
+        var mergedMeta = updated.Attributes["metadata"].Should().BeAssignableTo<IReadOnlyDictionary<string, object?>>().Subject;
+        mergedMeta.Should().ContainKey("keep").WhoseValue.Should().Be("original");
+        mergedMeta.Should().ContainKey("added").WhoseValue.Should().Be("new");
+        mergedMeta.Should().NotContainKey("removeMe");
+        var mergedNested = mergedMeta["nested"].Should().BeAssignableTo<IReadOnlyDictionary<string, object?>>().Subject;
+        mergedNested.Should().ContainKey("innerKeep").WhoseValue.Should().Be(1L);
+        mergedNested.Should().ContainKey("innerAdd").WhoseValue.Should().Be(3L);
+        mergedNested.Should().NotContainKey("innerRemove");
+    }
+
+    [UnitTheory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    [InlineData("DELETE")]
+    public async Task Mutations_WithIfNoneMatchStarOrMatchingEtag_Return412PreconditionFailed(string method)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var existing = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("name", "before"));
+        reader.GetAsync(default, default, default).ReturnsForAnyArgs((Feature?)existing);
+        reader.QueryAsync(default, default, default).ReturnsForAnyArgs(QueryResult<Feature>.Create(1, [existing]));
+        var writer = Substitute.For<IFeatureWriter>();
+        var (crud, transaction) = CreateHandlers(reader, writer);
+        var currentEtag = Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
+            existing,
+            new Honua.Infrastructure.Caching.ETagService());
+
+        foreach (var ifNoneMatch in new[] { "*", currentEtag })
+        {
+            var context = ProtectedPatchContext("""{"type":"Feature","id":42,"geometry":null,"properties":{"name":"after"}}""", tracking: null);
+            context.Request.Method = method;
+            context.Request.ContentType = method == "PATCH" ? "application/merge-patch+json" : "application/geo+json";
+            context.Request.Headers.IfNoneMatch = ifNoneMatch;
+
+            var result = method switch
+            {
+                "PUT" => await transaction.HandleReplaceFeatureAsync("pub-cities", "42", null, context, CancellationToken.None),
+                "PATCH" => await transaction.HandlePatchFeatureAsync("pub-cities", "42", null, context, CancellationToken.None),
+                _ => await crud.HandleDeleteFeatureAsync("pub-cities", "42", null, context, CancellationToken.None)
+            };
+            await result.ExecuteAsync(context);
+
+            context.Response.StatusCode.Should().Be(StatusCodes.Status412PreconditionFailed);
+        }
+    }
+
     private static async Task<(int Status, FeatureEditBatch? Batch)> ExecuteProtectedPatchAsync(
         string payload, ImmutableDictionary<string, object?> attributes, MetadataV2ObjectEditing? tracking = null)
     {
@@ -166,6 +256,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         [
             new() { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "name", Type = MetadataV2FieldType.String, Nullable = false, Editable = true },
+            new() { Name = "metadata", Type = MetadataV2FieldType.Json, Nullable = true, Editable = true },
             new() { Name = "code", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },
             new() { Name = "globalid", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
             new() { Name = "creator", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },

@@ -199,6 +199,24 @@ Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify t
 migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
 database backup.
 
+### Registry tables with a configured database schema
+
+For a non-default `Database:Schema`, migration
+`227_AdoptConfiguredRegistrySchema.sql` moves `services`, `layers`,
+`service_layers`, and `layer_fields` from `honua` into the configured schema.
+It preserves rows, table identities, foreign keys, and owned sequences. Conflicting
+tables in the target schema stop the migration without overwriting either registry.
+The default `honua` schema skips this migration. With a custom schema, readiness
+requires this migration even when startup migrations are disabled. Optional raster
+provisioning uses the registry location when enabled after the move.
+
+For an existing database, back up the database and stop all older server and worker
+instances before running migrate-only. Review the migration plan and apply its
+one-shot contract approval nonce, then start the new instances with identical
+`Database:Schema` settings. Older instances still use the previous table locations;
+application-only rollback across this move is unsupported. Restore the backup and
+matching configuration and image together if rollback is required.
+
 ### Compose database image in rc.2
 
 The Compose installs' database moves to Honua's image: PostgreSQL 17 with the same
@@ -437,6 +455,9 @@ An MCP agent follows the same path with a human approval in the middle; it never
 2. `GET /api/v1/admin/deploy/preflight` — confirm readiness, pending migrations and database compatibility (its `platformRelease` block is the same projection).
 3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent server deployment (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
 4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`. Approval submits the deploy to the product executor for that registered target. On ECS the executor registers a task definition pinned to the immutable serving-artifact digest, runs the product migrate-only task first when the deployment names one, updates the service to that task definition, and waits for steady state. The workflow operation id is the durable record. A GitOps hand-off is not a completed rollout, and a schema migration is not implied by the service or function update.
+
+   On Docker Compose, a release that crosses a contract migration stops safely on the first approved convergence: the candidate runs migrate-only, the contract gate refuses before any script is applied, the prior revision keeps serving, and the proposal ends `failed` with `contract-approval-required`, naming the pending contract scripts and their one-shot nonce. To finish through the agent path, review the scripts and propose the convergence again with `"contractApproval":{"scripts":[...],"nonce":"..."}` copied from that refusal. The sealed proposal lists the scripts, and approving it authorizes exactly those migrations once; no second approval step is needed. The executor applies them only when they are exactly the candidate's pending contract scripts and the nonce matches; any other plan, including a migration the proposal does not list, refuses again and needs its own proposal and approval. Contract approval applies to Compose targets only; other targets in the same call report `blocked`. Migrations are forward-only.
+
 5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human). That rollback is a new deploy of the prior digest through the same executor, or a typed refusal when no prior revision exists.
 
 For an ECS image convergence target, configure `aws.ecs.stable_service` as a distinct service. Before shifting traffic or updating the canary service, the executor records the stable revision, candidate service revision, registered revision, and successful migration preparation in the durable operation. Reconciliation then submits activation and watches the rollout. If the host stops during migration preparation, the operation requires manual verification; it does not automatically repeat a migration whose outcome is unknown.

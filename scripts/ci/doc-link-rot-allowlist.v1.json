@@ -13,28 +13,18 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 5,
+    "entries": 2,
     "datedNames": 6,
     "missingFiles": 0,
-    "brokenAnchors": 5,
+    "brokenAnchors": 2,
     "byArea": {
-      "docs/internal": 5,
+      "docs/internal": 2,
       "docs/developer": 0,
       "docs/gis": 0,
       "docs/guides": 0
     }
   },
   "entries": [
-    {
-      "source": "docs/internal/admin-api/analysis-content.md",
-      "target": "../../reference/admin-api/overview.md#analysis-report-endpoints",
-      "reason": "Console-pending contract; the overview never grew the named section."
-    },
-    {
-      "source": "docs/internal/contributor/RELEASE_CHECKLIST.md",
-      "target": "../../concepts/ecosystem.md#machine-readable-ci-manifest",
-      "reason": "Heading dropped when concepts/ecosystem.md was rewritten."
-    },
     {
       "source": "docs/internal/contributor/architecture/metadata-v2-extensions.md",
       "target": "../adr/0040-metadata-v2-canonical-graph.md#promote-l2--l1-criteria",
@@ -44,11 +34,6 @@
       "source": "docs/internal/developer/GROUNDING.md",
       "target": "../../guides/connect/ai-agents-mcp.md#payload-notes",
       "reason": "Heading dropped in the MCP guide rewrite. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
-    },
-    {
-      "source": "docs/internal/features/README.md",
-      "target": "../../guides/secure/authentication.md#authentication",
-      "reason": "Points at the page's H1-derived slug, which GitHub does not emit for the title heading of that page."
     }
   ]
 }

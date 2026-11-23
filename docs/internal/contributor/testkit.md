@@ -422,9 +422,10 @@ dotnet test --filter "Protocol=Health"
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
 ```
 
-## Scale Tests (Multi-Node + Redis)
+## Scale Tests (Multi-Node + PostgreSQL)
 
-The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
+The `[ScaleTest]` tier runs against multiple Honua instances behind nginx,
+sharing a PostgreSQL database.
 
 1. **Export the stack credentials.** The scale stack runs the non-relaxed `ScaleTest`
    environment and ships no defaults. Set:
@@ -434,8 +435,7 @@ The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
    - `HONUA_SCALE_TEST_GRAFANA_PASSWORD`, if you use the `monitoring` profile.
 2. **Start the stack**:
    `docker compose -f docker/scale-test/compose.yml up --build --scale honua=3`.
-3. **Point the tests at it**: set `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`,
-   `HONUA_SCALE_TEST_REDIS=localhost:6379` and
+3. **Point the tests at it**: set `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080` and
    `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`.
 4. **For replica-state scale tests** (create, extract, sync, unregister), also set
    `HONUA_SCALE_TEST_SERVICE_ID=<service-name>`.
@@ -535,9 +535,11 @@ expected rejection and `unexpected-rejection` (Failed) otherwise. `403
 Forbidden` is the OGC adapter's approval-gate rejection emitted after catalog
 validation, so it is `matched-approval-required` (Passed) when the scenario
 expected `requiresApproval: true` and `unexpected-approval-required` (Failed)
-otherwise. `503` / `501` remain environmental skips, and when OGC execution
-cannot enqueue because Redis is unavailable, that probe is recorded as
-`Skipped(service-unavailable)` rather than `Failed`. The GPServer probe now
+otherwise. `503` / `501` remain environmental skips. An OGC execution response
+of `503 Service Unavailable`, such as when the PostgreSQL-backed durable job
+store is unavailable or admission rejects the request, is recorded as
+`Skipped(service-unavailable)` rather than `Failed`; `501 Not Implemented` is
+recorded as `Skipped(not-implemented)`. The GPServer probe now
 targets the published `geometry.buffer` task directly, so it records either
 `Passed(matched-acceptance)` or an environmental skip such as
 `Skipped(service-unavailable)` / `Skipped(authorization-required)` instead of a

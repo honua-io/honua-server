@@ -46,7 +46,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs;Features/Protocols/Terrain/QuantizedMesh/**/*.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints*.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/SceneWorkflowEndpoints.cs;Features/Admin/Scene/**/*.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs;Features/Protocols/Terrain/QuantizedMesh/**/*.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -155,12 +155,13 @@
     <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-    <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+    <Compile Remove="Features\Admin\SceneDatasetEndpoints*.cs" />
     <Compile Remove="Features\Admin\SceneAssetRootPolicy.cs" />
     <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
     <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
     <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
-    <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
+    <Compile Remove="Features\Admin\SceneWorkflowEndpoints.cs" />
+    <Compile Remove="Features\Admin\Scene\**\*.cs" />
     <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
     <Compile Remove="Features\Protocols\Terrain\QuantizedMesh\**\*.cs" />
   </ItemGroup>

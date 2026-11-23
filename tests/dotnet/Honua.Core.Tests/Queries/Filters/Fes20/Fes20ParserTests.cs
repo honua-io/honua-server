@@ -781,6 +781,29 @@ public sealed class Fes20ParserTests
         act.Should().Throw<Fes20ParseException>().WithMessage("*srsDimension*");
     }
 
+    [UnitTheory]
+    [InlineData("CRS:84")]
+    [InlineData("urn:ogc:def:crs:OGC:2:84")]
+    [InlineData("urn:ogc:def:crs:OGC:1.3:CRS84")]
+    public void ParseFilter_Crs84Spellings_ResolveToWgs84EastNorth(string srsName)
+    {
+        var filterXml = $"""
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Point srsName="{srsName}"><gml:pos>-122.4 37.8</gml:pos></gml:Point>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var spatial = Fes20Parser.ParseFilter(filterXml).Should().BeOfType<SpatialPredicate>().Subject;
+        var literal = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+        literal.Srid.Should().Be(4326);
+        var point = new WKBReader().Read(literal.Wkb).Should().BeOfType<Point>().Subject;
+        point.X.Should().BeApproximately(-122.4, 1e-9);
+        point.Y.Should().BeApproximately(37.8, 1e-9);
+    }
+
     [UnitTest]
     public void ParseFilter_PosListNotAMultipleOfTheDimension_ThrowsParseException()
     {

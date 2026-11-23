@@ -67,9 +67,17 @@ execution results before broader process portability wording is used.
 
 ## Targeted Verification
 
+Run all three commands: fixture contracts remain in the server test project,
+while the protocol runtime suites belong to their respective protocol projects.
+Confirm each named suite executes with a nonzero test count.
+
 ```bash
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-  --filter "FullyQualifiedName~ProcessMigrationEvidence|FullyQualifiedName~OgcProcessesEndpointsTests|FullyQualifiedName~OgcProcessesJobResultsTests|FullyQualifiedName~GPServerDurableRuntimeTests"
+  --filter "FullyQualifiedName~ProcessMigrationEvidenceFixtureTests"
+dotnet test tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj \
+  --filter "FullyQualifiedName~OgcProcessesEndpointsTests|FullyQualifiedName~OgcProcessesJobResultsTests"
+dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+  --filter "FullyQualifiedName~GPServerDurableRuntimeTests"
 ```
 
 ## Toolbox Translation Lane (#2145)

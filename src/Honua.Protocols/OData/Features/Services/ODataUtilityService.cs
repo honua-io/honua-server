@@ -267,7 +267,7 @@ internal static class ODataUtilityService
         string? expand = null)
     {
         var segment = entityType;
-        var selection = BuildContextSelection(select, expand);
+        var selection = ODataContextSelection.BuildContextSelection(select, expand);
         if (!string.IsNullOrWhiteSpace(selection))
         {
             segment = $"{segment}({selection})";
@@ -552,24 +552,6 @@ internal static class ODataUtilityService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return fields.Contains("*") ? null : fields;
-    }
-
-    private static string? BuildContextSelection(string? select, string? expand)
-    {
-        var selections = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(select))
-        {
-            selections.AddRange(select.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(item => !item.Equals("*", StringComparison.OrdinalIgnoreCase)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(expand))
-        {
-            selections.AddRange(expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        }
-
-        return selections.Count == 0 ? null : string.Join(",", selections.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     public static Dictionary<string, object?> ApplySelect(Dictionary<string, object?> payload, string select)

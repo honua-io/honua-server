@@ -687,7 +687,7 @@ internal sealed partial class Wfs20Handler
     private static void WriteLegacyGeometryField(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
     {
         var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
-        if (geometryPropertyName is null || feature.Geometry is null)
+        if (!plan.IncludeGeometry || geometryPropertyName is null || feature.Geometry is null)
         {
             return;
         }

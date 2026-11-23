@@ -90,23 +90,11 @@ internal sealed class OgcMapsRenderingHandler
             }
             var (resource, service) = collection!;
 
-            // Create map render request
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (renderRequest is null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -145,7 +133,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.CollectionMapRenderCompleted(_logger, layerId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, renderRequest.Value);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -334,6 +322,11 @@ internal sealed class OgcMapsRenderingHandler
                 datasetExtent = combinedExtent;
             }
 
+            if (ValidateAcceptFormat(request, context) is { } formatError)
+            {
+                return formatError;
+            }
+
             var (renderRequest, validationError) = CreateMapRenderRequest(
                 request,
                 defaultExtentResource,
@@ -392,7 +385,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.DatasetMapRenderCompleted(_logger, resolvedLayerCount, result.Data.Length);
             scope.SetSuccess(resolvedLayerCount);
 
-            return CreateMapFileResult(context, result, renderRequest.Value);
+            return CreateMapFileResult(context, result, (renderRequest.Value, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -456,23 +449,11 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
             }
 
-            // Create map render request
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (renderRequest is null)
             {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError!;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -508,7 +489,7 @@ internal sealed class OgcMapsRenderingHandler
                     resource,
                     service,
                     stylesheet.Content,
-                    styledRequest,
+                    (styledRequest, request.Crs),
                     context,
                     scope,
                     cancellationToken).ConfigureAwait(false);
@@ -530,7 +511,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, styledRequest);
+            return CreateMapFileResult(context, result, (styledRequest, request.Crs));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -561,11 +542,12 @@ internal sealed class OgcMapsRenderingHandler
         MetadataV2Object resource,
         MetadataV2Service? service,
         string mapLibreStyleJson,
-        MapRenderRequest renderRequest,
+        (MapRenderRequest Request, string? Crs) rendering,
         HttpContext? context,
         HonuaTelemetryScope scope,
         CancellationToken cancellationToken)
     {
+        var renderRequest = rendering.Request;
         // The Skia pipeline resolves request-scoped services (feature reader, capacity
         // limiter, coordinate transform) from the HTTP context, so styled vector rendering
         // requires a live request. Without one we surface the same honest 501 as raster.
@@ -645,7 +627,7 @@ internal sealed class OgcMapsRenderingHandler
             }
         };
 
-        return CreateMapFileResult(context, result, renderRequest);
+        return CreateMapFileResult(context, result, rendering);
     }
 
     private static bool ResourceHasGeometry(MetadataV2Object resource)
@@ -669,6 +651,19 @@ internal sealed class OgcMapsRenderingHandler
             snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
             styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
+
+    private static IResult? ValidateAcceptFormat(OgcMapRequest request, HttpContext? context)
+    {
+        if (!string.IsNullOrWhiteSpace(request.F) || ResolveOutputFormat(request.F, context) is not null)
+        {
+            return null;
+        }
+
+        const string message = "No supported image format matches the Accept header. Supported formats: png, jpeg, tiff.";
+        return context is not null
+            ? StandardErrorHelpers.CreateNotAcceptable(context, message)
+            : Results.Problem(message, statusCode: StatusCodes.Status406NotAcceptable);
+    }
 
     private static IResult CreateBadRequestResult(HttpContext? context, string message)
         => context is not null
@@ -786,8 +781,10 @@ internal sealed class OgcMapsRenderingHandler
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
             : Results.Problem(message, statusCode: 500);
 
-    private static IResult CreateMapFileResult(HttpContext? context, RasterResult result, MapRenderRequest renderRequest)
+    private static IResult CreateMapFileResult(
+        HttpContext? context, RasterResult result, (MapRenderRequest Request, string? Crs) rendering)
     {
+        var renderRequest = rendering.Request;
         if (context is not null)
         {
             string? contentBboxHeader = null;
@@ -803,12 +800,13 @@ internal sealed class OgcMapsRenderingHandler
                 bboxSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? result.Srid;
             }
 
+            var spatialHeaders = ResolveSpatialHeaders(rendering.Crs, bboxSrid, contentBboxHeader);
+            contentBboxHeader = spatialHeaders.Bbox;
+            var contentCrsHeader = spatialHeaders.Crs;
             if (contentBboxHeader is not null)
             {
                 context.Response.Headers["Content-Bbox"] = contentBboxHeader;
             }
-
-            var contentCrsHeader = FormatContentCrsHeader(bboxSrid);
             if (contentCrsHeader != null)
             {
                 context.Response.Headers["Content-Crs"] = contentCrsHeader;
@@ -819,6 +817,22 @@ internal sealed class OgcMapsRenderingHandler
         }
 
         return EncodedRasterResults.File(result.Data, result.ContentType);
+    }
+
+    private static (string? Crs, string? Bbox) ResolveSpatialHeaders(string? requestedCrs, int? bboxSrid, string? bbox)
+    {
+        var crs = FormatContentCrsHeader(bboxSrid);
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(requestedCrs, out var outputCrs) &&
+            (bboxSrid is null or <= 0 || outputCrs.Srid == bboxSrid))
+        {
+            crs = $"<{outputCrs.Uri}>";
+            if (bbox is not null && outputCrs.AxisOrder == AxisOrder.NorthEast)
+            {
+                var coordinates = bbox.Split(',');
+                bbox = $"{coordinates[1]},{coordinates[0]},{coordinates[3]},{coordinates[2]}";
+            }
+        }
+        return (crs, bbox);
     }
 
     private static void AppendLinkHeaders(HttpContext context, string currentContentType)
@@ -871,10 +885,10 @@ internal sealed class OgcMapsRenderingHandler
 
         if (srid == SpatialReference.WGS84.Wkid)
         {
-            return "<https://www.opengis.net/def/crs/OGC/1.3/CRS84>";
+            return "<http://www.opengis.net/def/crs/OGC/1.3/CRS84>";
         }
 
-        return FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");
+        return FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");
     }
 
     private static string FormatContentBboxHeader(RasterExtent extent)
@@ -925,6 +939,33 @@ internal sealed class OgcMapsRenderingHandler
 
         // Default to PNG when no format preference is expressed
         return RasterFormat.PNG;
+    }
+
+    private async Task<(MapRenderRequest? Request, IResult? Error)> PrepareCollectionRenderRequestAsync(
+        (OgcMapRequest Request, MetadataV2Object Resource, int LayerId) parameters,
+        HttpContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (ValidateAcceptFormat(parameters.Request, context) is { } formatError)
+        {
+            return (null, formatError);
+        }
+
+        var (renderRequest, validationError) = CreateMapRenderRequest(
+            parameters.Request, parameters.Resource, parameters.LayerId, context);
+        if (renderRequest is { } initialRequest)
+        {
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                initialRequest, context, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (renderRequest is not null)
+        {
+            return (renderRequest, null);
+        }
+
+        OgcMapsLog.InvalidMapParameters(_logger, parameters.LayerId, validationError!);
+        return (null, CreateBadRequestResult(context, validationError!));
     }
 
     private (MapRenderRequest?, string?) CreateMapRenderRequest(

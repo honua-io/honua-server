@@ -66,4 +66,10 @@ public static class EcefCoordinateTransform
         var z = (n * (1.0 - WgsEccentricitySquared) + heightMeters) * sinLat;
         return (x, y, z);
     }
+
+    public static (double X, double Y, double Z) ToGltfYUp(double xEcef, double yEcef, double zEcef)
+        => (xEcef, zEcef, -yEcef);
+
+    public static (double Nx, double Ny, double Nz) ToGltfYUpNormal(double nxEcef, double nyEcef, double nzEcef)
+        => (nxEcef, nzEcef, -nyEcef);
 }
