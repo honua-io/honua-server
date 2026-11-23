@@ -2,13 +2,14 @@
 import re
 import unittest
 
-from compose_quickstart import COMPOSE_FILES
 from quickstart_testing import ROOT
 
 
 GUIDE = ROOT / 'docs/guides/deploy/docker-compose.md'
 IMAGE_OVERRIDE = 'compose.executor.image.yaml'
-INSTALL_FILES = (*COMPOSE_FILES, IMAGE_OVERRIDE, 'images.json', 'edge.yaml', 'secrets.tar.gz')
+# The install directory holds secrets/, every Compose file, customer overrides, Console files and the PROJ
+# grid build context; a per-file copy misses some of them, so the backup archives the directory itself.
+INSTALL_ARCHIVE = ('/install:ro', 'tar -czf /backup/install.tar.gz', "--exclude=./backups --exclude='./backup-*'")
 
 
 def fenced_blocks(text, language):
@@ -31,13 +32,15 @@ class ComposeDeployGuideTests(unittest.TestCase):
         for line in definitions:
             self.assertNotRegex(line, r'\s-f\s', line)
 
-    def test_backup_copies_every_install_file_a_restore_needs(self):
+    def test_backup_archives_the_install_directory_a_restore_needs(self):
         backup = section(self.guide, 'Backup and recovery')
         bash = next(block for block in fenced_blocks(backup, 'bash') if 'Backup="$Install/backup-' in block)
         powershell = next(block for block in fenced_blocks(backup, 'powershell') if "$Backup = Join-Path $Install" in block)
         for block in (bash, powershell):
-            for name in INSTALL_FILES:
-                self.assertIn(name, block, f'the backup must keep {name}')
+            for part in INSTALL_ARCHIVE:
+                self.assertIn(part, block, 'the backup must archive the whole install directory')
+        self.assertIn('install.tar.gz', backup.split('**Restore is destructive', 1)[1].split('```', 1)[0],
+                      'the fresh-host restore must extract the install archive')
 
     def test_diagnostics_and_upgrade_name_the_image_the_quickstart_runs(self):
         self.assertNotIn("grep '^HONUA_IMAGE=' .env", self.guide,

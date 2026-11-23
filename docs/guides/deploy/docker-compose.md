@@ -298,29 +298,28 @@ file-ownership capabilities so the storage owner is preserved; the running
 server keeps its unprivileged, dropped-capabilities configuration. Keep
 `$Backup` — the restore needs it.
 
-The backup keeps the installation files with the data: `.env`, every Compose file,
-the image lock `images.json`, `edge.yaml` when you added the TLS edge, and
-`secrets/` (as `secrets.tar.gz`), which holds the generated database and admin
-credentials, the connection encryption key and the operation key ring. Without it a
-restored database cannot decrypt its stored connection credentials. The archive is
-taken by the same root utility container as the storage archive because the
-quickstart makes `secrets/keyring.pfx` readable only by root and the containers' group. The bash block creates the backup directory
-owner-only (`mkdir -m 700`); keep the copy that private off-host. The local approved
-operations manager keeps its approvals and audit trail in its own volume
-(`compose-manager-postgres`), which this recipe does not copy: retain that volume, or
-follow the coordinated [backup and restore policy](backup-and-restore.md).
+The backup keeps the installation directory with the data, as `install.tar.gz`:
+`.env`, every Compose file including your own overrides and `edge.yaml`, the image
+lock `images.json`, the Console files, the PROJ grid build context, and `secrets/`,
+which holds the generated database and admin credentials, the connection
+encryption key and the operation key ring. Without `secrets/` a restored database
+cannot decrypt its stored connection credentials. The same root utility container
+as the storage archive takes it, because the quickstart makes `secrets/keyring.pfx`
+readable only by root and the containers' group; the executor's own `backups/` and
+earlier `backup-*` directories are left out. The bash block creates the backup
+directory owner-only (`mkdir -m 700`); keep the copy that private off-host. The
+local approved operations manager keeps its approvals and audit trail in its own
+volume (`compose-manager-postgres`), which this recipe does not copy: retain that
+volume, or follow the coordinated [backup and restore policy](backup-and-restore.md).
 
 Take the backup:
 
 ```bash
 Backup="$Install/backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -m 700 "$Backup"
-cp -p .env compose.yaml compose.executor.yaml compose.console.yaml compose.executor.image.yaml images.json "$Backup/"
-if [ -f edge.yaml ]; then cp -p edge.yaml "$Backup/"; fi
-docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "$Install/secrets:/secrets:ro" -v "$Backup:/backup" \
+docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "$Install:/install:ro" -v "$Backup:/backup" \
   alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf \
-  tar -czf /backup/secrets.tar.gz -C /secrets .
-cp quickstart.py journey.py published-layer.json installed-packages.txt "$Backup/" 2>/dev/null || true
+  tar -czf /backup/install.tar.gz --exclude=./backups --exclude='./backup-*' -C /install .
 dc stop honua
 dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
 dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
@@ -344,12 +343,9 @@ on a Linux or Windows package install).
 ```powershell
 $Backup = Join-Path $Install ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $Backup | Out-Null
-Copy-Item -LiteralPath .env, compose.yaml, compose.executor.yaml, compose.console.yaml, compose.executor.image.yaml, images.json -Destination $Backup
-docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "$(Join-Path $Install 'secrets'):/secrets:ro" -v "${Backup}:/backup" `
+docker run --rm --user 0 --cap-add DAC_OVERRIDE -v "${Install}:/install:ro" -v "${Backup}:/backup" `
     alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf `
-    tar -czf /backup/secrets.tar.gz -C /secrets .
-Copy-Item -LiteralPath quickstart.py, journey.py, published-layer.json, installed-packages.txt -Destination $Backup -ErrorAction SilentlyContinue
-if (Test-Path -LiteralPath edge.yaml) { Copy-Item -LiteralPath edge.yaml -Destination $Backup }
+    tar -czf /backup/install.tar.gz --exclude=./backups --exclude='./backup-*' -C /install .
 dc stop honua
 try {
     dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
@@ -378,9 +374,12 @@ Honua first. These commands restore into the same project using the original
 credentials. They drop and recreate only the `honua` database in this project
 to restore partitioned tables without inherited-constraint conflicts; they do not
 delete volumes or touch other projects. For a fresh
-host, restore the saved installation files first (copy them into the new project
-directory and run `mkdir -m 700 secrets && tar -xzf "$Backup/secrets.tar.gz" -C secrets`),
-install the recorded clients, then start only PostgreSQL before continuing. File storage
+host, restore the installation directory first: extract `install.tar.gz` at the
+same absolute path (`.env` records it in `HONUA_COMPOSE_PROJECT_DIRECTORY`) with
+`mkdir -m 770 "$Install" && tar -xzf "$Backup/install.tar.gz" -C "$Install"`, update
+`DOCKER_GID` and `HONUA_PROJECT_GID` in `.env` if the new host's Docker socket group
+or the directory's group differs, install the
+recorded clients, then start only PostgreSQL before continuing. File storage
 is cleared inside this project's mounted `/var/lib/honua/storage` directory before
 extraction, including hidden files and nested paths. Keep Honua stopped if any
 restore command fails; do not resume with a partial database or storage restore.
