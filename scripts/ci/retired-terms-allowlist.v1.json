@@ -2662,7 +2662,7 @@
     {
       "path": "src/Honua.Server/Migrations/233_RenameMapAppDeploymentSources.sql",
       "rule": "app-envelope",
-      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId';",
       "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
     },
     {
@@ -2710,7 +2710,7 @@
     {
       "path": "src/Honua.Server/Migrations/233_RenameMapAppDeploymentSources.sql",
       "rule": "map-envelope",
-      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId';",
       "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
     },
     {

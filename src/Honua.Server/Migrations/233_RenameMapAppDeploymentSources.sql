@@ -15,6 +15,7 @@ DECLARE
     legacy_count integer;
     conflicting_identity boolean;
     invalid_source boolean;
+    caller_search_path text := current_setting('search_path');
 BEGIN
     IF configured_schema IS NULL THEN
         RAISE EXCEPTION 'Canonical promotion family configured schema is absent';
@@ -43,32 +44,32 @@ BEGIN
         RAISE EXCEPTION 'Canonical promotion family is absent, partial, or ambiguous (configured %, legacy %)',
             configured_count, legacy_count;
     END IF;
+    -- The migration runner substitutes dollar-delimited tokens, so the resolved schema is
+    -- selected through search_path instead of tagged dynamic SQL; restored before END.
+    PERFORM set_config('search_path', format('%I, pg_catalog, pg_temp', physical_schema), true);
 
-    EXECUTE format($sql$
-        SELECT EXISTS (
-            SELECT 1 FROM %I.promotion_deployments
+    SELECT EXISTS (
+            SELECT 1 FROM promotion_deployments
             WHERE source_kind IN ('MapPackage', 'AppPackage')
               AND (jsonb_typeof(document) IS DISTINCT FROM 'object'
                 OR jsonb_typeof(document -> 'source') IS DISTINCT FROM 'object'))
-        $sql$, physical_schema) INTO invalid_source;
+        INTO invalid_source;
     IF invalid_source THEN
         RAISE EXCEPTION 'Deployment source must be an object before its vocabulary can be migrated';
     END IF;
 
-    EXECUTE format($sql$
-        SELECT EXISTS (
-            SELECT 1 FROM %I.promotion_deployments
+    SELECT EXISTS (
+            SELECT 1 FROM promotion_deployments
             WHERE ((document -> 'source') ? 'mapPackageId' AND (document -> 'source') ? 'mapId'
                 AND document #> '{source,mapPackageId}' IS DISTINCT FROM document #> '{source,mapId}')
                OR ((document -> 'source') ? 'appPackageId' AND (document -> 'source') ? 'appId'
                 AND document #> '{source,appPackageId}' IS DISTINCT FROM document #> '{source,appId}'))
-        $sql$, physical_schema) INTO conflicting_identity;
+        INTO conflicting_identity;
     IF conflicting_identity THEN
         RAISE EXCEPTION 'Deployment source contains conflicting legacy and canonical identities';
     END IF;
 
-    EXECUTE format($sql$
-        UPDATE %I.promotion_deployments
+    UPDATE promotion_deployments
         SET source_kind = CASE source_kind WHEN 'MapPackage' THEN 'Map'
                 WHEN 'AppPackage' THEN 'App' ELSE source_kind END,
             document = jsonb_set(document, '{source}',
@@ -82,7 +83,7 @@ BEGIN
                     WHEN 'app_package' THEN '{"kind":"app"}'::jsonb ELSE '{}'::jsonb END)
         WHERE source_kind IN ('MapPackage', 'AppPackage')
            OR document #>> '{source,kind}' IN ('map_package', 'app_package')
-           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'
-        $sql$, physical_schema);
+           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId';
+    PERFORM set_config('search_path', caller_search_path, true);
 END
 $$;
