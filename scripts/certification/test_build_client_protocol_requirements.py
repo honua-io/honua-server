@@ -268,9 +268,9 @@ class RosterProducerTests(unittest.TestCase):
 
     def test_a_produced_cell_carries_its_lane_pinned_client_versions(self):
         root = self.root(self.WORKFLOW, self.RUNNER, self.MODULES)
-        [versions] = module.roster_cells(root)[self.WCS]
-        self.assertIn("0.36.0", versions)
-        self.assertIn("3.12", versions)
+        [pins] = module.roster_cells(root)[self.WCS]
+        self.assertIn("OWSLib==0.36.0", pins)
+        self.assertIn("lane-python:", pins)
 
     def test_a_workflow_that_only_mentions_the_runner_produces_nothing(self):
         root = self.root("run: echo certification/bounded-roster/run-roster.sh", self.RUNNER, self.MODULES)
@@ -343,9 +343,10 @@ class ClassificationTests(unittest.TestCase):
 
     def test_a_roster_test_id_produces_a_lane_client_compat_does_not_emit(self):
         result = module.classify_producer(
-            self.row(client_lane="gdal", test_ids=["client-cert/gdal/wfs/serve.wfs"]),
+            self.row(client_lane="gdal", canonical_client="GDAL/OGR", client_version="3.8.4",
+                     test_ids=["client-cert/gdal/wfs/serve.wfs"]),
             self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            {"client-cert/gdal/wfs/serve.wfs": [frozenset({"0.36.0"})]})
+            {"client-cert/gdal/wfs/serve.wfs": ["FROM ghcr.io/osgeo/gdal:ubuntu-small-3.8.4"]})
         self.assertEqual("present", result["status"])
         self.assertIsNone(result["reasonCode"])
         self.assertEqual(module.ROSTER_WORKFLOW_RELATIVE_PATH, result["producer"]["workflow"])
@@ -353,21 +354,36 @@ class ClassificationTests(unittest.TestCase):
     def test_the_client_compat_binding_wins_over_the_roster(self):
         result = module.classify_producer(
             self.row(), self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            {"CERT-DISC-01": [frozenset({"0.36.0"})]})
+            {"CERT-DISC-01": ["OWSLib==0.36.0"]})
         self.assertEqual("py-owslib-ogc-features.cert.json", result["producer"]["baseline"])
 
     def test_a_roster_without_the_test_id_keeps_the_absence(self):
         result = module.classify_producer(
             self.row(surface="wms"), self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            {"client-cert/other": [frozenset({"0.36.0"})]})
+            {"client-cert/other": ["OWSLib==0.36.0"]})
         self.assertEqual("surface-not-emitted", result["reasonCode"])
 
     def test_a_roster_lane_without_the_governed_version_keeps_the_absence(self):
         result = module.classify_producer(
             self.row(surface="wms", client_version="pystac=1.15.2;pystac-client=0.9.0"),
             self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            {"CERT-DISC-01": [frozenset({"1.15.2", "0.36.0"})]})
+            {"CERT-DISC-01": ["pystac==1.15.2\nOWSLib==0.36.0\n"]})
         self.assertEqual("surface-not-emitted", result["reasonCode"])
+
+    def test_a_version_pinned_for_another_package_does_not_produce(self):
+        result = module.classify_producer(
+            self.row(surface="wms", canonical_client="OWSLib", client_version="2.34.2"),
+            self.pairs(("py-owslib", "ogc-features", "0.36.0")),
+            {"CERT-DISC-01": ["OWSLib==0.36.0\nrequests==2.34.2\n"]})
+        self.assertEqual("surface-not-emitted", result["reasonCode"])
+
+    def test_every_named_package_version_must_be_pinned(self):
+        pins = {"CERT-DISC-01": ["pystac==1.15.2\npystac-client==0.9.0\n"]}
+        result = module.classify_producer(
+            self.row(surface="stac", canonical_client="PySTAC-Client",
+                     client_version="pystac=1.15.2;pystac-client=0.9.0"),
+            self.pairs(("py-owslib", "ogc-features", "0.36.0")), pins)
+        self.assertEqual("present", result["status"])
 
     def test_a_test_id_claimed_by_two_rivals_is_unjoinable(self):
         rows = [
