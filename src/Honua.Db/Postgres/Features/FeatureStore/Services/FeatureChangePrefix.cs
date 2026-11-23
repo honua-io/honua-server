@@ -18,6 +18,9 @@ internal static class FeatureChangePrefix
     // the older, still-safe horizon.
     internal static readonly TimeSpan SettleBudget = TimeSpan.FromSeconds(2);
 
+    // The wait for a caller's own committed rows, such as a version post.
+    internal static readonly TimeSpan TargetBudget = TimeSpan.FromSeconds(60);
+
     // The wait for a realtime read, which is woken again by the next commit's notification.
     internal static readonly TimeSpan CatchUpBudget = TimeSpan.FromMilliseconds(250);
 
@@ -42,15 +45,15 @@ internal static class FeatureChangePrefix
 
     // Publishes until the prefix covers every generation allocated before this call, or until
     // SettleBudget elapses, and returns the published prefix. An explicit target is a caller's own
-    // committed rows; that wait has no budget (cancellation still applies), because returning a
-    // lower prefix would let the caller record a position before its own changes.
+    // committed rows; that wait runs up to TargetBudget, because a lower prefix makes the caller
+    // record a position before its own changes. Past it the lower prefix is still safe.
     public static Task<long> SettleAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
         => SettleAsync(connection, target: null, cancellationToken);
 
     public static async Task<long> SettleAsync(NpgsqlConnection connection, long? target, CancellationToken cancellationToken)
     {
         var through = target ?? await ReadAllocatedAsync(connection, cancellationToken).ConfigureAwait(false);
-        var budget = target is null ? SettleBudget : Timeout.InfiniteTimeSpan;
+        var budget = target is null ? SettleBudget : TargetBudget;
         return await PublishUntilAsync(connection, new SettleWindow(through, budget), cancellationToken).ConfigureAwait(false);
     }
 
@@ -82,7 +85,7 @@ internal static class FeatureChangePrefix
 
     private readonly record struct SettleWindow(long Through, TimeSpan Budget)
     {
-        public bool IsOpen(TimeSpan elapsed) => Budget == Timeout.InfiniteTimeSpan || elapsed < Budget;
+        public bool IsOpen(TimeSpan elapsed) => elapsed < Budget;
     }
 
     // Settles, then reads honua.feature_change_read_horizon(), the one definition of the horizon.

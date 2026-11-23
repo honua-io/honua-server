@@ -55,8 +55,10 @@ database (`FeatureChangePrefix` in Honua.Db):
 - `PostgresChangeTracker.GetCurrentGenerationAsync`, replica registration, version create
   and reconcile wait up to 2 s for writers that were in flight when the call started, then
   read the horizon. A caller therefore sees changes committed before it asked; under a
-  long import it gets the older, still-safe horizon.
-- Version post waits, with no time budget, for the prefix to cover its own replayed rows before it advances the
+  long import it gets the older, still-safe horizon. Reconcile analyses only DEFAULT changes up
+  to the horizon it then records as the ancestor, so a later reconcile neither repeats nor
+  misses a change.
+- Version post waits up to 60 s, ignoring request cancellation once committed, for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
 - The realtime feature log advances the prefix on every head and cursor read, waiting up to
   250 ms for writers already in flight, so a read that lands during a short edit still

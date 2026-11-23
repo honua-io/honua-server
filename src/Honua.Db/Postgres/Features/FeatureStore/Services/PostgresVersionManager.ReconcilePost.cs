@@ -257,7 +257,7 @@ internal sealed partial class PostgresVersionManager
                 return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
             }
 
-            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, cancellationToken).ConfigureAwait(false);
+            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, CancellationToken.None).ConfigureAwait(false);
             activity?.SetTag("honua.version.applied_changes", replay.Applied);
             activity?.SetTag("honua.version.server_generation", replay.ServerGeneration);
             activity?.SetTag("honua.version.outcome", "posted");
@@ -414,8 +414,9 @@ internal sealed partial class PostgresVersionManager
         // The ancestor must cover the replayed rows, or later reconciles see them as DEFAULT edits.
         var postedThrough = await ReadVisibleHeadAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        // Committed: finish regardless of the request token so the ancestor is always advanced.
         var serverGeneration = await FeatureChangePrefix.SettleAndReadHorizonAsync(
-            connection, postedThrough, cancellationToken).ConfigureAwait(false);
+            connection, postedThrough, CancellationToken.None).ConfigureAwait(false);
         return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
     }
 
@@ -481,7 +482,8 @@ internal sealed partial class PostgresVersionManager
             visibleGeneration = result is long generation ? generation : 0;
         }
 
-        // default_changes: the net DEFAULT operation per (layer_id, objectid) since the merge base.
+        // default_changes: the net DEFAULT operation per (layer_id, objectid) since the merge base, up to
+        // the watermark the ancestor advances to, so a later reconcile neither repeats nor misses one.
         // For each overlapping overlay row, join the live DEFAULT row (NULL when DEFAULT deleted it) and
         // the branch's captured base image. Geometry is rendered to WKT for display only.
         await using var command = new NpgsqlCommand($"""
@@ -489,7 +491,7 @@ internal sealed partial class PostgresVersionManager
                 SELECT layer_id, objectid,
                        (array_agg(operation ORDER BY generation DESC))[1] AS last_op
                 FROM honua.feature_changes
-                WHERE version_id IS NULL AND generation > @ancestor
+                WHERE version_id IS NULL AND generation > @ancestor AND generation <= @visible
                 GROUP BY layer_id, objectid
             )
             SELECT ve.layer_id, ve.objectid, ve.operation AS branch_op, dc.last_op AS default_op,
@@ -506,6 +508,7 @@ internal sealed partial class PostgresVersionManager
             """, connection)
         { Transaction = transaction };
         command.Parameters.AddWithValue("ancestor", commonAncestorGen);
+        command.Parameters.AddWithValue("visible", visibleGeneration);
         command.Parameters.AddWithValue("version", versionId);
 
         var conflicts = new List<OverlapConflict>();
