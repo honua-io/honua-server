@@ -223,6 +223,16 @@
       "scenario_facets": ["mutation"]
     },
     {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
+      "test_ids": [
+        "FeatureServerMaintenanceTests.Calculate_ValidRequest_ReturnsSuccess",
+        "FeatureServerMaintenanceTests.Calculate_InvalidCalcExpression_ReturnsBadRequest"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
       "capability_key": "import.file",
       "surface": "control-plane-admin",
       "operation": "POST /api/v1/admin/import/upload",
