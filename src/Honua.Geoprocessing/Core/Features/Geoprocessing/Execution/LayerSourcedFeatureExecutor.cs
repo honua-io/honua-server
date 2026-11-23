@@ -528,7 +528,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return CustomizeRequest(request, inputs);
     }
 
-    private static string? ReadNonBlank(StepInputReader inputs, string key)
+    private protected static string? ReadNonBlank(StepInputReader inputs, string key)
         => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
 
     private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)

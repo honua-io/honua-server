@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -49,18 +50,10 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         var joinRequest = new DagSourceRequest
         {
             LayerId = joinLayerId,
+            Where = ReadNonBlank(inputs, "joinWhere"),
             OutputSrid = targetSrid,
         };
-        var joinFeatures = await ReadLayerAsync(
-                context.LayerSource,
-                joinRequest,
-                cancellationToken,
-                Limits.Analytics.MaxInputFeatures,
-                $"join layer {joinLayerId}",
-                Limits.Geometry.MaxVerticesPerGeometry,
-                Limits.Geometry.MaxGeometrySize,
-                Limits.Analytics.MaxInputBytes,
-                    Options.CurrentValue.MaxLayerVertices)
+        var joinFeatures = await ReadJoinLayerAsync(context.LayerSource, joinRequest, cancellationToken)
             .ConfigureAwait(false);
 
         LayerComputationBudget.EnsureTopologyWork(
@@ -88,6 +81,41 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         }
 
         return output;
+    }
+
+    // joinWhere narrows the join layer before the per-layer vertex budget and the topology
+    // budget are charged, through the same parameterized where translation as the target's
+    // `where`. Without it a large reference layer (a county flood map) could never be joined.
+    private async Task<List<IFeature>> ReadJoinLayerAsync(
+        IDagFeatureSource layerSource,
+        DagSourceRequest joinRequest,
+        CancellationToken cancellationToken)
+    {
+        var joinLayerId = joinRequest.LayerId;
+        try
+        {
+            return await ReadLayerAsync(
+                    layerSource,
+                    joinRequest,
+                    cancellationToken,
+                    Limits.Analytics.MaxInputFeatures,
+                    $"join layer {joinLayerId}",
+                    Limits.Geometry.MaxVerticesPerGeometry,
+                    Limits.Geometry.MaxGeometrySize,
+                    Limits.Analytics.MaxInputBytes,
+                    Options.CurrentValue.MaxLayerVertices)
+                .ConfigureAwait(false);
+        }
+        catch (DagSourceSelectionException ex)
+        {
+            // Raised only for a caller-written selector, with fixed guidance; name which one.
+            throw new TransformInputException($"joinWhere on join layer {joinLayerId}: {ex.Message}", ex);
+        }
+        catch (TransformInputException ex) when (joinRequest.Where is null)
+        {
+            // The budget messages say "narrow the selection"; name the parameter that does it.
+            throw new TransformInputException($"{ex.PublicMessage} Filter the join layer with joinWhere.", ex);
+        }
     }
 
     private static async Task<int?> ResolveTargetSridAsync(
