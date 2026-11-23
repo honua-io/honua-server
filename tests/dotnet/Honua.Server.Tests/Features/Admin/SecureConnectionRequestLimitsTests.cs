@@ -63,13 +63,18 @@ public sealed class SecureConnectionRequestLimitsTests
             DatabaseName = new string('b', 64),
             Username = new string('u', 64),
             Password = new string('p', 255),
+            SecretReference = new string('s', 255),
+            Provider = new string('v', 32),
             SslMode = "Require",
         };
         var update = new UpdateSecureConnectionRequest
         {
             Name = new string('n', 64),
+            Description = new string('d', 1000),
             Host = new string('h', 255),
             Port = 1,
+            DatabaseName = new string('b', 64),
+            Username = new string('u', 64),
             Password = new string('p', 255),
         };
 

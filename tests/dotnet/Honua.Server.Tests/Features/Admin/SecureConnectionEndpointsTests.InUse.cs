@@ -2,58 +2,60 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
 public partial class SecureConnectionEndpointsTests
 {
+    // The seeded test schema has no services foreign key, so the registry stands in for the
+    // migrated database (DatabaseMigrationTests proves migration 008 raises this refusal).
     [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/connections/{id}")]
-    public async Task DeleteConnection_ReferencedByService_ReturnsConflictAndKeepsConnection()
+    public async Task DeleteConnection_ReferencedByService_ReturnsConflict()
     {
-        await InitializeDefaultApplicationAsync();
-        var created = await _registry.CreateConnectionAsync(DataConnection.CreateWithEncryptedCredentials(
-            name: $"test-delete-in-use-{Guid.NewGuid():N}",
-            host: "localhost",
-            port: 5432,
-            databaseName: "testdb",
-            username: "testuser",
-            encryptedConnectionString: [9, 8, 7],
-            encryptionKeyVersion: 1,
-            createdBy: "test-user"));
-        var serviceName = $"svc_in_use_{Guid.NewGuid():N}";
-        await ExecuteServiceSqlAsync(
-            "INSERT INTO honua.services (service_name, connection_id) VALUES (@service, @connection)",
-            serviceName,
-            created.ConnectionId);
+        var connectionId = Guid.NewGuid();
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.DeleteConnectionAsync(connectionId, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new PostgresException(
+                "update or delete on table \"data_connections\" violates foreign key constraint",
+                "ERROR",
+                "ERROR",
+                PostgresErrorCodes.ForeignKeyViolation));
+        var localFixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<ISecureConnectionRegistry>();
+                services.AddSingleton(registry);
+            });
+        await localFixture.InitializeAsync();
         try
         {
-            using var response = await _client.DeleteAsync($"/api/v1/admin/connections/{created.ConnectionId}");
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            using var response = await client.DeleteAsync($"/api/v1/admin/connections/{connectionId}");
 
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
             Assert.Contains("in use", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
-            Assert.NotNull(await _registry.GetConnectionAsync(created.ConnectionId));
         }
         finally
         {
-            await ExecuteServiceSqlAsync(
-                "DELETE FROM honua.services WHERE service_name = @service AND connection_id = @connection",
-                serviceName,
-                created.ConnectionId);
-            await _registry.DeleteConnectionAsync(created.ConnectionId);
+            await localFixture.DisposeAsync();
         }
-    }
-
-    private async Task ExecuteServiceSqlAsync(string sql, string serviceName, Guid connectionId)
-    {
-        var dataSource = _fixture.Services.GetRequiredService<NpgsqlDataSource>();
-        await using var command = dataSource.CreateCommand(sql);
-        _ = command.Parameters.AddWithValue("service", serviceName);
-        _ = command.Parameters.AddWithValue("connection", connectionId);
-        _ = await command.ExecuteNonQueryAsync();
     }
 }
