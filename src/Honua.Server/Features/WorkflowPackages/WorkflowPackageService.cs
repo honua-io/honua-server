@@ -71,6 +71,11 @@ internal sealed class WorkflowPackageService(
         var packageId = string.IsNullOrWhiteSpace(request.PackageId)
             ? CreatePackageId(request.Name)
             : request.PackageId.Trim();
+        if (!WorkflowPackageRequestLimits.IsValidIdentifier(packageId))
+        {
+            throw new ArgumentException(WorkflowPackageRequestLimits.IdentifierRule("packageId"), nameof(request));
+        }
+
         var existing = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
 
         var package = new WorkflowPackage
@@ -228,6 +233,11 @@ internal sealed class WorkflowPackageService(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!string.IsNullOrWhiteSpace(request.PublicationId)
+            && !WorkflowPackageRequestLimits.IsValidIdentifier(request.PublicationId.Trim()))
+        {
+            throw new GeoprocessingValidationException(WorkflowPackageRequestLimits.IdentifierRule("publicationId"));
+        }
 
         var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
         var eligibility = await ValidateGraphAsync(packageVersion.Graph, principal, request.Target, cancellationToken).ConfigureAwait(false);
