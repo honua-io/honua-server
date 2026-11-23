@@ -32,37 +32,26 @@ public static class MetadataV2EditingConsistency
         return repaired is null ? graph : graph with { Resources = repaired };
     }
 
+    // Uses the snapshot index and its storage-binding resolution, so the repair sees the same
+    // binding that edit routing does, including the fallback to the resource's first binding.
     private sealed class EditFacts(MetadataV2Graph graph)
     {
-        private readonly Dictionary<string, MetadataV2Service> _services = graph.Services
-            .GroupBy(static service => service.Metadata.Id, StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
-
-        private readonly Dictionary<string, MetadataV2StorageBinding> _bindings = graph.StorageBindings
-            .GroupBy(static binding => binding.Metadata.Id, StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
-
-        private readonly ILookup<string, MetadataV2Layer> _publications = graph.Publications
-            .ToLookup(static publication => publication.ResourceId, StringComparer.Ordinal);
+        private readonly MetadataV2GraphSnapshot _snapshot = new(graph, string.Empty, DateTimeOffset.MinValue);
 
         public bool ExpectsModify(MetadataV2Object resource)
             => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource) &&
-               _publications[resource.Metadata.Id].Any(publication =>
+               _snapshot.Index.PublicationsByResource[resource.Metadata.Id].Any(publication =>
                    DeclaresEdit(publication) && HasEditBinding(resource, publication));
 
         private bool DeclaresEdit(MetadataV2Layer publication)
-            => _services.TryGetValue(publication.ServiceId, out var service) &&
+            => _snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
                (MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Create) ||
                 MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Update) ||
                 MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Delete));
 
         private bool HasEditBinding(MetadataV2Object resource, MetadataV2Layer publication)
-        {
-            var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
-            return bindingId is not null &&
-                   _bindings.TryGetValue(bindingId, out var binding) &&
-                   binding.ResourceId == resource.Metadata.Id &&
-                   binding.Capabilities.Contains(MetadataV2StorageBindingCapability.Edit);
-        }
+            => _snapshot.ResolveStorageBinding(publication) is { } binding &&
+               binding.ResourceId == resource.Metadata.Id &&
+               binding.Capabilities.Contains(MetadataV2StorageBindingCapability.Edit);
     }
 }

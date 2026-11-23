@@ -35,6 +35,19 @@ public sealed class MetadataV2EditingConsistencyTests
     }
 
     [UnitTest]
+    public void RepairCanModify_BindingResolvedByResourceFallback_SetsTrue()
+    {
+        var graph = CreateGraph(EditablePublication, MetadataV2StorageBindingCapability.Edit);
+        graph = graph with
+        {
+            Resources = [graph.Resources[0] with { PrimaryStorageBindingId = null, StorageBindingIds = [] }],
+            Publications = [graph.Publications[0] with { StorageBindingId = null }]
+        };
+
+        MetadataV2EditingConsistency.RepairCanModify(graph).Resources[0].Editing!.CanModify.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void RepairCanModify_QueryOnlyPublication_KeepsFalse()
     {
         var graph = CreateGraph(["Query", "Extract"], MetadataV2StorageBindingCapability.Edit);
