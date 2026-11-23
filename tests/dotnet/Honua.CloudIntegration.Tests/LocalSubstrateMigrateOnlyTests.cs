@@ -133,7 +133,6 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         var optedOutShipped = newest
             .Where(name => declared[name] != MigrationReaderCompatibilityClassification.Expand)
             .ToArray();
-        newest.Except(optedOutShipped).Should().NotBeEmpty("the window must still prove an expand script verifies");
 
         var journalBefore = await ReadJournalAsync(connectionString);
         if (optedOutShipped.Length == 0)
@@ -150,7 +149,9 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         }
         (await ReadJournalAsync(connectionString)).Should().BeEquivalentTo(journalBefore, "the skip path applies nothing");
 
-        // Sibling: the newer image also applied a script its author opted out of forward compatibility.
+        // Probe both classifications independently of the latest shipped migrations.
+        const string expand = "Honua.Server.Migrations.998_ExpandProbe.sql";
+        const string expandSql = "CREATE TABLE IF NOT EXISTS honua.expand_probe (id integer PRIMARY KEY);";
         const string optedOut = "Honua.Server.Migrations.999_OptedOutProbe.sql";
         const string sql = "-- honua:reader-incompatible reason=older readers write rows the new trigger rejects\n" +
             "CREATE TABLE IF NOT EXISTS honua.opted_out_probe (id integer PRIMARY KEY);";
@@ -158,11 +159,16 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         {
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand(
-                sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@name, now());", connection);
-            command.Parameters.AddWithValue("name", optedOut);
+                expandSql + "\n" + sql +
+                "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@expand, now()), (@optedOut, now());",
+                connection);
+            command.Parameters.AddWithValue("expand", expand);
+            command.Parameters.AddWithValue("optedOut", optedOut);
             await command.ExecuteNonQueryAsync();
             await PostgresDatabaseMigrationRunner.RecordReaderCompatibilityDeclarationsAsync(
-                connection, [MigrationReaderCompatibility.Declare(optedOut, sql)], CancellationToken.None);
+                connection,
+                [MigrationReaderCompatibility.Declare(expand, expandSql), MigrationReaderCompatibility.Declare(optedOut, sql)],
+                CancellationToken.None);
         }
 
         var refusal = (await olderReader.Invoking(guard => guard.VerifyAsync(connectionString))
