@@ -1009,7 +1009,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         {
             throw new InvalidDataException("Stored Metadata v2 document is empty.");
         }
-        return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+        return new MetadataV2GraphSnapshot(MetadataV2EditingConsistency.RepairCanModify(graph), etag, DateTimeOffset.UtcNow);
     }
 
     private async Task<MetadataV2Graph> ReconcileReservationsAsync(
