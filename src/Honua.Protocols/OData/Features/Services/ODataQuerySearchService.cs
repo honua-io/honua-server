@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData.Models;
@@ -12,13 +13,16 @@ internal sealed class ODataQuerySearchService
 {
     private readonly ODataQueryService _queryService;
     private readonly ODataSearchService _searchService;
+    private readonly ICrsRegistry _crsRegistry;
 
     public ODataQuerySearchService(
         ODataQueryService queryService,
-        ODataSearchService searchService)
+        ODataSearchService searchService,
+        ICrsRegistry crsRegistry)
     {
         _queryService = queryService;
         _searchService = searchService;
+        _crsRegistry = crsRegistry;
     }
 
     public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
@@ -36,7 +40,10 @@ internal sealed class ODataQuerySearchService
         int? publicLayerId = null,
         CancellationToken cancellationToken = default)
     {
-        if (await _searchService.FindUnsupportedFilterSridAsync(filter, cancellationToken).ConfigureAwait(false) is { } sridError)
+        var sridError = await ODataGeometrySridGuard
+            .FindUnsupportedSridErrorAsync(_crsRegistry, [filter], cancellationToken)
+            .ConfigureAwait(false);
+        if (sridError != null)
         {
             return (new FeatureQuery(), sridError);
         }
@@ -64,9 +71,6 @@ internal sealed class ODataQuerySearchService
 
     public Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
         => _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken);
-
-    public Task<string?> FindUnsupportedFilterSridAsync(string? filter, CancellationToken cancellationToken)
-        => _searchService.FindUnsupportedFilterSridAsync(filter, cancellationToken);
 
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,

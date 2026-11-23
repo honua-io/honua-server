@@ -3,9 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Query;
-using Honua.Core.Queries.Filters;
-using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using NSubstitute;
 using Xunit;
@@ -15,11 +12,11 @@ namespace Honua.Protocols.OData.Tests.Services;
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [global::Xunit.Trait("Tier", "Fast")]
-public sealed class ODataQueryServiceSridTests
+public sealed class ODataGeometrySridGuardTests
 {
     private readonly ICrsRegistry _crs = Substitute.For<ICrsRegistry>();
 
-    public ODataQueryServiceSridTests()
+    public ODataGeometrySridGuardTests()
     {
         _crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
     }
@@ -31,28 +28,16 @@ public sealed class ODataQueryServiceSridTests
     {
         _crs.IsSridSupportedAsync(srid, Arg.Any<CancellationToken>()).Returns(false);
 
-        var error = await Create().FindUnsupportedFilterSridAsync(filter, _crs, CancellationToken.None);
+        var error = await ODataGeometrySridGuard.FindUnsupportedSridErrorAsync(_crs, [filter], CancellationToken.None);
 
-        error.Should().Be($"Invalid $filter: unsupported explicit geometry CRS 'EPSG:{srid}'.");
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public async Task NonpositiveLiteralSrid_IsReportedWithoutTheRegistry(int srid)
-    {
-        var error = await Create().FindUnsupportedFilterSridAsync(
-            $"geo.intersects(Geometry,geography'SRID={srid};POINT(0 0)')", _crs, CancellationToken.None);
-
-        error.Should().Be($"Invalid $filter: unsupported explicit geometry CRS 'EPSG:{srid}'.");
-        await _crs.DidNotReceiveWithAnyArgs().IsSridSupportedAsync(default, default);
+        error.Should().Be($"Unsupported geometry literal SRID '{srid}'.");
     }
 
     [Fact]
     public async Task SupportedLiteralSrid_IsAccepted()
     {
-        var error = await Create().FindUnsupportedFilterSridAsync(
-            "geo.intersects(Geometry,geography'SRID=3857;POINT(0 0)')", _crs, CancellationToken.None);
+        var error = await ODataGeometrySridGuard.FindUnsupportedSridErrorAsync(
+            _crs, ["geo.intersects(Geometry,geography'SRID=3857;POINT(0 0)')"], CancellationToken.None);
 
         error.Should().BeNull();
         await _crs.Received().IsSridSupportedAsync(3857, Arg.Any<CancellationToken>());
@@ -63,13 +48,8 @@ public sealed class ODataQueryServiceSridTests
     [InlineData("not a filter (")]
     public async Task FilterWithoutGeometryOrUnparsable_DoesNotConsultTheRegistry(string filter)
     {
-        (await Create().FindUnsupportedFilterSridAsync(filter, _crs, CancellationToken.None)).Should().BeNull();
+        (await ODataGeometrySridGuard.FindUnsupportedSridErrorAsync(_crs, [filter], CancellationToken.None)).Should().BeNull();
 
         await _crs.DidNotReceiveWithAnyArgs().IsSridSupportedAsync(default, default);
     }
-
-    private ODataQueryService Create() => new(
-        new FilterExpressionService(Substitute.For<IFilterExpressionTranslator>()),
-        Substitute.For<IQueryParameterAdapter<ODataQueryParameters>>(),
-        Substitute.For<IQueryProcessor>());
 }

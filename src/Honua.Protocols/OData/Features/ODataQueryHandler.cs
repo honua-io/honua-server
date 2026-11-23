@@ -800,45 +800,29 @@ internal sealed partial class ODataQueryHandler(
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
-        // Query options must be valid even when no data rows or count are requested.
-        if (await _querySearchService.FindUnsupportedFilterSridAsync(filter, cancellationToken).ConfigureAwait(false) is { } sridError)
+        // Validate all query options even when neither data rows nor a count are requested.
+        // The empty page's zero limit must not reach the shared query validator.
+        var (countQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
+            filter,
+            orderby,
+            resultRecordCount: null,
+            resultOffset: null,
+            resource,
+            select,
+            expand,
+            count,
+            compute,
+            format,
+            bbox,
+            publicLayerId: publicLayerId, cancellationToken: cancellationToken);
+        if (queryError != null)
         {
-            return ODataUtilityService.CreateODataError(context, "InvalidQuery", sridError);
-        }
-
-        // An empty page still answers with an @odata.context that names the expansion.
-        if (await _querySearchService.FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
-        {
-            return ODataUtilityService.CreateODataError(context, "InvalidQuery", expandError);
+            return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
         }
 
         long? totalCount = null;
         if (count == true)
         {
-            // The count is the true total of the filtered set, independent of the empty
-            // ($top=0) data page. Build the count query with a null limit rather than the
-            // page's Limit of 0: the shared query validator rejects Limit <= 0 ("Limit must
-            // be greater than zero"), so passing 0 here would turn $top=0&$count=true into a
-            // 400. Offset is likewise irrelevant to the total, so it is dropped.
-            var (countQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
-                filter,
-                orderby,
-                resultRecordCount: null,
-                resultOffset: null,
-                resource,
-                select,
-                expand,
-                count,
-                compute,
-                format,
-                bbox,
-                publicLayerId: publicLayerId, cancellationToken: cancellationToken);
-
-            if (queryError != null)
-            {
-                return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
-            }
-
             totalCount = await featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
         }
 

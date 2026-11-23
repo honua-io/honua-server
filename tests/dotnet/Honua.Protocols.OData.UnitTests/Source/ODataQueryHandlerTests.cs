@@ -201,7 +201,7 @@ public sealed class ODataQueryHandlerTests
             Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(),
             Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>(),
             validationService,
-            new ODataQuerySearchService(null!, null!),
+            new ODataQuerySearchService(null!, null!, null!),
             Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>(),
             Substitute.For<Honua.Infrastructure.Caching.IETagService>(),
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Caching.CacheOptions()));
@@ -242,9 +242,12 @@ public sealed class ODataQueryHandlerTests
         var reader = Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>();
         var crs = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>();
         crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
-        var query = new ODataQueryService(new Honua.Core.Queries.Filters.FilterExpressionService(
-            Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionTranslator>()),
-            Substitute.For<Honua.Core.Features.Query.IQueryParameterAdapter<Honua.Protocols.OData.Models.ODataQueryParameters>>(),
+        var filterExpressions = new Honua.Core.Queries.Filters.FilterExpressionService(
+            Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionTranslator>());
+        var query = new ODataQueryService(filterExpressions,
+            new ODataQueryParameterAdapter(filterExpressions,
+                Microsoft.Extensions.Options.Options.Create(new Honua.Protocols.OData.ODataOptions()),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<ODataQueryParameterAdapter>.Instance),
             Substitute.For<Honua.Core.Features.Query.IQueryProcessor>());
         var resolver = new ODataFeatureProviderResolver(reader,
             Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureWriter>(), null);
@@ -258,7 +261,7 @@ public sealed class ODataQueryHandlerTests
             Microsoft.Extensions.Options.Options.Create(new Honua.Protocols.OData.ODataOptions()));
         var handler = new Honua.Protocols.OData.ODataQueryHandler(new Honua.Protocols.OData.ODataQueryDependencies(
             reader, Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>(), crs, validation,
-            new ODataQuerySearchService(query, search),
+            new ODataQuerySearchService(query, search, crs),
             Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>(),
             Substitute.For<Honua.Infrastructure.Caching.IETagService>(),
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Caching.CacheOptions()), resolver),
@@ -272,7 +275,7 @@ public sealed class ODataQueryHandlerTests
         context.Response.Body.Position = 0;
         using var document = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
         document.RootElement.GetProperty("error").GetProperty("message").GetString()
-            .Should().Contain("$filter").And.Contain($"EPSG:{srid}");
+            .Should().Contain("SRID").And.Contain(srid.ToString(System.Globalization.CultureInfo.InvariantCulture));
         reader.ReceivedCalls().Should().BeEmpty();
     }
 

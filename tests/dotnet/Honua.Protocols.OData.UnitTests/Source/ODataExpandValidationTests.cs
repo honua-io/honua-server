@@ -74,14 +74,14 @@ public sealed class ODataExpandValidationTests
         crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
         var query = new ODataQueryService(new FilterExpressionService(Substitute.For<IFilterExpressionTranslator>()),
             adapter, Substitute.For<IQueryProcessor>());
-        var facade = new ODataQuerySearchService(query, CreateService(query, crs));
+        var facade = new ODataQuerySearchService(query, CreateService(query, crs), crs);
 
         var (_, expandError) = await facade.BuildFeatureQueryAsync(null, null, 10, 0, Parent, expand: "NoSuchRelation");
         var (_, sridError) = await facade.BuildFeatureQueryAsync(
             "geo.intersects(Geometry,geography'SRID=999999;POINT(0 0)')", null, 10, 0, Parent);
 
         expandError.Should().Contain("not a navigation property");
-        sridError.Should().Contain("EPSG:999999");
+        sridError.Should().Contain("999999");
         await adapter.DidNotReceiveWithAnyArgs().ConvertAsync(default!, default!, default);
     }
 

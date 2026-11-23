@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -65,6 +66,46 @@ public sealed class ODataSearchServiceSqlTests
         payload.Should().NotContainKey(RelatedQuery.OriginObjectIdsAttribute);
         result[902]["Children"].Should().HaveCount(stamped ? 1 : 0);
         result[903]["Children"].Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("NoSuchRelation", "is not a navigation property")]
+    [InlineData("Children($expand=Grandchildren)", "nested $expand is not supported")]
+    public async Task ProcessExpandAsync_UnsupportedExpand_IsRejectedEvenWithoutRows(string expand, string message)
+    {
+        var parent = new MetadataV2Object
+        {
+            Metadata = new() { Id = "parents" },
+            Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+        };
+        var service = new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IMetadataV2GraphProvider>(), null!,
+            Options.Create(new ODataOptions())), null!);
+
+        var act = () => service.ProcessExpandAsync(expand, parent, 13, [], CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ValidationException>()).Which.Message.Should().Contain(message);
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("Children($select=name)")]
+    public async Task ProcessExpandAsync_SupportedExpand_IsAccepted(string expand)
+    {
+        var parent = new MetadataV2Object
+        {
+            Metadata = new() { Id = "parents" },
+            Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+        };
+        var service = new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IMetadataV2GraphProvider>(), null!,
+            Options.Create(new ODataOptions())), null!);
+
+        var result = await service.ProcessExpandAsync(expand, parent, 13, [], CancellationToken.None);
+
+        result.Should().BeEmpty();
     }
 
     [Fact]
