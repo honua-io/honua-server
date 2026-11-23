@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Reflection;
-using DbUp;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -45,21 +43,5 @@ public sealed partial class DatabaseMigrationTests
         remaining.CommandText = "SELECT count(*) FROM honua.data_connections WHERE connection_id = @id";
         remaining.Parameters.AddWithValue("id", connectionId);
         ((long)(await remaining.ExecuteScalarAsync())!).Should().Be(1, "the referenced connection is kept");
-    }
-
-    // Every canonical-schema test here migrates its private schema the same way.
-    private DbUp.Engine.UpgradeEngine BuildCanonicalUpgrader()
-    {
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-        return DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build();
     }
 }

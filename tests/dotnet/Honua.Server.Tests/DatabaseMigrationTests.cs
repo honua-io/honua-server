@@ -1524,6 +1524,21 @@ public sealed partial class DatabaseMigrationTests : IAsyncLifetime
         }
     }
 
+    private DbUp.Engine.UpgradeEngine BuildCanonicalUpgrader()
+    {
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+        return DeployChanges.To
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
+            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
+            .WithTransaction()
+            .Build();
+    }
+
     private async Task<Npgsql.NpgsqlConnection> OpenSchemaConnectionAsync()
     {
         var connection = new Npgsql.NpgsqlConnection(_connectionString);

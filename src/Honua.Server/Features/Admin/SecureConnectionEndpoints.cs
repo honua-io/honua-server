@@ -954,7 +954,7 @@ internal static partial class SecureConnectionEndpoints
             if (await CountBoundLayersAsync(context, id) is > 0 and var boundLayers)
             {
                 return TypedResults.Conflict(ApiResponse<object>.Failure(
-                    $"Connection is in use by {boundLayers} published layer(s); unpublish them first."));
+                    $"Connection is in use by {boundLayers} published layer(s)."));
             }
 
             var deleted = await registry.DeleteConnectionAsync(id, context.RequestAborted);
