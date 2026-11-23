@@ -361,11 +361,21 @@ internal static partial class FeatureStreamEndpoints
         // Capture the request's execution context so a refresh driven by the background tick
         // evaluates the same principal and tenant instead of an empty, unmasked identity.
         var executionContext = ExecutionContext.Capture();
+        if (executionContext is null && context.Features.Get<LiveStreamPolicyRefreshFeature>() is not null)
+        {
+            throw new InvalidOperationException("Live-stream authorization requires the admitted request execution context.");
+        }
+
         if (executionContext is not null)
         {
             var scopedServiceId = scopedService?.Metadata.Id;
             security.EnableRefresh(ct => RefreshSubscriberReadPoliciesAsync(
                 context, executionContext, scopedServiceId, layerIds, ct));
+        }
+
+        if (context.Features.Get<LiveStreamPolicyRefreshFeature>() is { } livePolicy)
+        {
+            await BindEventDrivenRefreshAsync(new(context, security), livePolicy, cancellationToken).ConfigureAwait(false);
         }
 
         return security;
@@ -455,7 +465,7 @@ internal static partial class FeatureStreamEndpoints
                 }
 
                 var nameKey = (service.Metadata.Name.ToUpperInvariant(), layer.LayerId);
-                if (RequireStreamLayerAccess(context, layer.Resource, service) is not null ||
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service) ||
                     !TenantScopeHelpers.IsTenantVisible(context, layer.Publication!, layer.Resource, service))
                 {
                     // Ambiguous display-name routes must not alias an inaccessible tenant.

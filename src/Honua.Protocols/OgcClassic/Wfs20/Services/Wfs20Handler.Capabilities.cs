@@ -351,6 +351,45 @@ internal sealed partial class Wfs20Handler
         return masked.MoveToImmutable();
     }
 
+    // A request without type names whose every resource id names a published type reads only those
+    // types. The other types would match no id, so the result is unchanged and each skipped type saves a
+    // count. Callers pass no ids when a filter is present: its ids are merged later.
+    private static ImmutableArray<WfsFeatureTypeDescriptor> SelectRequestedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        string[] requestedTypes,
+        string? typeSelectingResourceId)
+    {
+        var selected = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+        if (requestedTypes.Length > 0 || typeSelectingResourceId is not { } resourceId || string.IsNullOrWhiteSpace(resourceId))
+        {
+            return selected;
+        }
+
+        var namedTypes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in resourceId.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var lastDot = id.LastIndexOf('.');
+            if (lastDot <= 0 || lastDot == id.Length - 1)
+            {
+                return selected;
+            }
+
+            namedTypes.Add(FilterExpressionHelpers.NormalizeIdentifier(id[..lastDot]));
+        }
+
+        // A list with no ids (such as ",") is no id filter, so every type stays selected.
+        if (namedTypes.Count == 0)
+        {
+            return selected;
+        }
+
+        var named = selected.Where(featureType => namedTypes.Contains(featureType.LocalName)).ToImmutableArray();
+        return namedTypes.All(name => named.Any(featureType => featureType.LocalName == name)) ? named : selected;
+    }
+
+    private static string? ResourceIdSelectingTypes(string? resourceId, string? filter)
+        => string.IsNullOrWhiteSpace(filter) ? resourceId : null;
+
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
         string[] requestedTypes)
@@ -458,26 +497,13 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
         CancellationToken cancellationToken)
     {
-        const int MaxConcurrentExtentTransforms = 8;
-
-        using var throttler = new SemaphoreSlim(MaxConcurrentExtentTransforms);
-        var tasks = featureTypes.Select(async featureType =>
-        {
-            await throttler.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                return await CapabilitiesLayerBuilder.TryBuildAsync(
-                    () => BuildFeatureTypeAsync(featureType, cancellationToken),
-                    featureType.Publication.Metadata.Id,
-                    _logger).ConfigureAwait(false);
-            }
-            finally
-            {
-                throttler.Release();
-            }
-        });
-
-        var built = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var built = await RequestFanOut.SelectAsync(
+            featureTypes,
+            (featureType, typeCancellation) => CapabilitiesLayerBuilder.TryBuildAsync(
+                () => BuildFeatureTypeAsync(featureType, typeCancellation),
+                featureType.Publication.Metadata.Id,
+                _logger),
+            cancellationToken).ConfigureAwait(false);
         return built.OfType<FeatureType>().ToArray();
     }
 

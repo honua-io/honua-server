@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
@@ -13,7 +14,9 @@ internal sealed class StreamSubscriberSecurity
 {
     private PolicyState _state;
     private Func<CancellationToken, Task<StreamSubscriberSecurity>>? _refresh;
-    private int _refreshing;
+    private int _eventDriven;
+    private Task? _retired;
+    private readonly Channel<byte> _refreshGate = Channel.CreateBounded<byte>(1);
 
     public StreamSubscriberSecurity(
         HashSet<string> exactServiceIds,
@@ -21,11 +24,68 @@ internal sealed class StreamSubscriberSecurity
         IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> namedRoutes,
         IReadOnlySet<(string Service, int Layer)>? deniedExactRoutes = null)
     {
+        _refreshGate.Writer.TryWrite(0);
         _state = new PolicyState(
             exactServiceIds,
             exactRoutes,
             namedRoutes,
             deniedExactRoutes ?? new HashSet<(string Service, int Layer)>());
+    }
+
+    internal Func<CancellationToken, Task>? ReplayRevalidateAsync { get; set; }
+
+    internal void BindLifetime(Task retired) => Volatile.Write(ref _retired, retired);
+
+    internal Task<bool> RefreshActivePolicyAsync(CancellationToken cancellationToken)
+        => RefreshUntilRetiredAsync(Volatile.Read(ref _retired), cancellationToken);
+
+    // Races the refresh against the generation's retirement: once the generation retires, the
+    // refresh result is ignored, so a retired generation neither waits on nor fails because of it.
+    internal async Task<bool> RefreshUntilRetiredAsync(Task? retired, CancellationToken cancellationToken)
+    {
+        if (retired?.IsCompleted == true)
+        {
+            return true;
+        }
+
+        using var refreshStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var refresh = RefreshAsync(refreshStop.Token);
+        try
+        {
+            if (retired is not null
+                && await Task.WhenAny(refresh, retired).WaitAsync(cancellationToken).ConfigureAwait(false) == retired)
+            {
+                await refreshStop.CancelAsync().ConfigureAwait(false);
+                _ = refresh.ContinueWith(static task => { _ = task.Exception; }, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                return true;
+            }
+
+            var outcome = await refresh.ConfigureAwait(false);
+            return retired?.IsCompleted == true || outcome != StreamSubscriberSecurityRefreshOutcome.Revoked;
+        }
+        catch (Exception error) when (error is not OutOfMemoryException && retired?.IsCompleted == true)
+        {
+            return true;
+        }
+    }
+
+    internal async Task RefreshForReplayAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _retired)?.IsCompleted == true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return;
+        }
+        if (ReplayRevalidateAsync is { } revalidate)
+        {
+            await revalidate(cancellationToken).ConfigureAwait(false);
+        }
+        else if (!await RefreshActivePolicyAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new UnauthorizedAccessException("Feature stream access was revoked.");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     // Readable layers whose row policy for this subscriber cannot be applied to stream events.
@@ -56,7 +116,9 @@ internal sealed class StreamSubscriberSecurity
 
     public bool HasRowPredicates => Volatile.Read(ref _state).HasRowPredicates;
 
-    public bool IsRefreshable => Volatile.Read(ref _refresh) is not null;
+    public bool IsRefreshable => Volatile.Read(ref _refresh) is not null && Volatile.Read(ref _eventDriven) == 0;
+
+    public void EnableEventDrivenRefresh() => Volatile.Write(ref _eventDriven, 1);
 
     public bool Allows(FeatureStreamEnvelope envelope)
     {
@@ -175,7 +237,7 @@ internal sealed class StreamSubscriberSecurity
         return Project(envelope, policy);
     }
 
-    // The refresh source runs on the tick, never on each event.
+    // Refreshes replace the cached policy; frame delivery reads only that cache.
     public void EnableRefresh(Func<CancellationToken, Task<StreamSubscriberSecurity>> refresh)
     {
         ArgumentNullException.ThrowIfNull(refresh);
@@ -190,10 +252,7 @@ internal sealed class StreamSubscriberSecurity
             return StreamSubscriberSecurityRefreshOutcome.NotRefreshable;
         }
 
-        if (Interlocked.Exchange(ref _refreshing, 1) != 0)
-        {
-            return StreamSubscriberSecurityRefreshOutcome.InProgress;
-        }
+        await _refreshGate.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -217,7 +276,7 @@ internal sealed class StreamSubscriberSecurity
         }
         finally
         {
-            Volatile.Write(ref _refreshing, 0);
+            _refreshGate.Writer.TryWrite(0);
         }
     }
 
@@ -271,8 +330,6 @@ internal sealed class StreamSubscriberSecurity
 internal enum StreamSubscriberSecurityRefreshOutcome
 {
     NotRefreshable,
-
-    InProgress,
 
     Refreshed,
 

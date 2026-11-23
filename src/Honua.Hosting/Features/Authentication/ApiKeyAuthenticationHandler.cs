@@ -220,14 +220,14 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
-        return new ApiKeyValidation(
-            CreateSuccessfulAuthenticationResult(
-                presentation.SchemeName,
-                "admin-api-key",
-                record.Id,
-                record.Name,
-                record.Permissions),
-            ApiKeyRejection.None);
+        var result = CreateSuccessfulAuthenticationResult(
+            presentation.SchemeName, "admin-api-key", record.Id, record.Name, record.Permissions);
+        if (result.Properties is { } properties)
+        {
+            properties.ExpiresUtc = record.ExpiresAt;
+        }
+
+        return new ApiKeyValidation(result, ApiKeyRejection.None);
     }
 
     private static async Task<ApiKeyValidation> CompareAdminPasswordAsync(

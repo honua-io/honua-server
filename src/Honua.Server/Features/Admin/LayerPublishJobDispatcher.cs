@@ -109,7 +109,7 @@ internal sealed partial class LayerPublishJobDispatcher(
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
-            Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo(), Activity.Current),
+            Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo { TenantId = payload.TenantId }, Activity.Current),
             TimeoutPolicy = JobTimeoutPolicy.LongRunning,
             Spec = new ExecutionJobSpec
             {

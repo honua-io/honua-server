@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -678,9 +679,8 @@ internal static partial class FeatureServerEndpoints
         var bins = summary.HistogramBins.GetValueOrDefault(DefaultHistogramBins);
         var width = (maxValue - minValue) / bins;
 
-        // Build all bin definitions upfront and fan the COUNT queries out concurrently
-        // (one DB round-trip per bin) rather than sequentially, reducing total latency
-        // from O(bins) sequential round-trips to one parallel wave.
+        // Build all bin definitions upfront and fan the COUNT queries out concurrently,
+        // a bounded number at a time (one DB round-trip per bin), rather than sequentially.
         var binRanges = new SpatialAggregationRangeBucketDefinition[bins];
         for (var i = 0; i < bins; i++)
         {
@@ -696,9 +696,11 @@ internal static partial class FeatureServerEndpoints
             };
         }
 
-        var countTasks = binRanges.Select(
-            r => CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, cancellationToken));
-        var counts = await Task.WhenAll(countTasks).ConfigureAwait(false);
+        var counts = await RequestFanOut.SelectAsync(
+            binRanges,
+            (r, rangeCancellation) => CountRangeAsync(
+                featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, rangeCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var buckets = new SpatialAggregationBucketValueResponse[bins];
         var hasUnevaluatedBuckets = false;
@@ -791,11 +793,12 @@ internal static partial class FeatureServerEndpoints
     {
         var ranges = summary.Ranges.GetValueOrDefault();
 
-        // Fan the COUNT queries out concurrently rather than sequentially to reduce
-        // total latency from O(ranges) serial round-trips to one parallel wave.
-        var countTasks = ranges.Select(
-            r => CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, cancellationToken));
-        var counts = await Task.WhenAll(countTasks).ConfigureAwait(false);
+        // Fan the COUNT queries out concurrently, a bounded number at a time, rather than sequentially.
+        var counts = await RequestFanOut.SelectAsync(
+            ranges,
+            (r, rangeCancellation) => CountRangeAsync(
+                featureReader, resource, storageLayerId, featureQuery, summary.Field!, r, context, rangeCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var buckets = new SpatialAggregationBucketValueResponse[ranges.Length];
         var hasUnevaluatedBuckets = false;

@@ -124,6 +124,9 @@ public sealed record GeoservicesImportRequest
 {
     public string? JobId { get; init; }
 
+    // The tenant that accepted the import; server-assigned, never read from the client request.
+    public string? TenantId { get; init; }
+
     public bool DeferRelationshipApplyToBatch { get; init; }
 
 

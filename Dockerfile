@@ -22,7 +22,7 @@ FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-publisher
 # the same Chisel cut. The native/managed runtime gates below validate the result.
 FROM ${DOTNET_SDK_IMAGE} AS chiseled-rootfs
 WORKDIR /src
-COPY docker/runtime/cut-rootfs.sh docker/runtime/
+COPY docker/runtime/cut-rootfs*.sh docker/runtime/
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates file && \
     sh docker/runtime/cut-rootfs.sh /rootfs && rm -rf /var/lib/apt/lists/*

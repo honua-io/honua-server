@@ -23,8 +23,14 @@ internal static class ImageServerServiceCollectionExtensions
         // dynamic ImageServer contract the ArcGIS Maps SDK for .NET
         // native runtime requires; deployments serving tiled Esri clients enable it
         // via GeoServices:ImageServer:TileMetadata:Enabled.
-        services.Configure<ImageServerTileMetadataOptions>(
-            configuration.GetSection(ImageServerTileMetadataOptions.SectionName));
+        // An out-of-range MaxLevel would advertise tileInfo lods the tile grid cannot serve,
+        // so the host refuses to start instead.
+        services.AddOptions<ImageServerTileMetadataOptions>()
+            .Bind(configuration.GetSection(ImageServerTileMetadataOptions.SectionName))
+            .Validate(
+                static options => options.HasServableMaxLevel,
+                $"{ImageServerTileMetadataOptions.SectionName}:MaxLevel must be between 0 and {ImageServerTileMetadataOptions.HighestServableLevel}.")
+            .ValidateOnStart();
 
         // Additive, off-by-default opt-in for non-WebMercatorQuad WMTS matrix sets. With an
         // empty list ImageServer advertises and serves only WebMercatorQuad, preserving the WMTS

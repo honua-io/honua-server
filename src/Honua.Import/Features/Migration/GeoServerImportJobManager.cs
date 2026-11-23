@@ -52,7 +52,8 @@ internal sealed class GeoServerImportJobManager
             JobId = jobId,
             Request = request,
             InitialProgress = initialProgress,
-            WorkloadName = "geoserver-import"
+            WorkloadName = "geoserver-import",
+            TenantId = request.TenantId
         }, cancellationToken);
     }
 

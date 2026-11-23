@@ -425,6 +425,28 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /terrain/{datasetId}/tile.json")]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    public async Task GetTerrainMetadataDocuments_SendETag_AndAnswerMatchingIfNoneMatchWith304()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
+
+        foreach (var path in new[] { "/terrain/0/tile.json", "/terrain/0/layer.json" })
+        {
+            var response = await _fixture.Client.GetAsync(path);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, path);
+            var etag = response.Headers.ETag;
+            etag.Should().NotBeNull($"{path} is mapped with WithETag");
+            using var conditional = new HttpRequestMessage(HttpMethod.Get, path);
+            conditional.Headers.IfNoneMatch.Add(etag!);
+            var revalidated = await _fixture.Client.SendAsync(conditional);
+            revalidated.StatusCode.Should().Be(HttpStatusCode.NotModified, path);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /terrain/{datasetId}/layer.json")]
     public async Task GetTerrainLayerJson_WithRasterFixture_ReturnsQuantizedMeshMetadataAndCrossLinks()
     {
