@@ -66,6 +66,7 @@ DECLARE
     current_state honua.feature_change_prefix%ROWTYPE;
     allocated BIGINT;
     writers TEXT[];
+    settled BOOLEAN := FALSE;
 BEGIN
     IF current_setting('transaction_isolation') <> 'read committed'
        OR pg_current_xact_id_if_assigned() IS NOT NULL THEN
@@ -90,12 +91,15 @@ BEGIN
     END IF;
 
     SELECT * INTO STRICT current_state FROM honua.feature_change_prefix WHERE singleton;
-    -- A pending value without a holder list was fenced by migration 214's rule; finish it that way.
-    IF current_state.pending IS NOT NULL
-       AND CASE WHEN current_state.pending_writers IS NULL
-                THEN pg_snapshot_xmin(pg_current_snapshot()) >= current_state.fence
-                ELSE NOT (honua.feature_change_writers() && current_state.pending_writers)
-           END THEN
+    IF current_state.pending IS NOT NULL THEN
+        IF current_state.pending_writers IS NULL THEN
+            -- Fenced by migration 214's rule; finish it that way.
+            settled := pg_snapshot_xmin(pg_current_snapshot()) >= current_state.fence;
+        ELSE
+            settled := NOT (honua.feature_change_writers() && current_state.pending_writers);
+        END IF;
+    END IF;
+    IF settled THEN
         current_state.published := current_state.pending;
         current_state.pending := NULL;
         current_state.fence := NULL;
