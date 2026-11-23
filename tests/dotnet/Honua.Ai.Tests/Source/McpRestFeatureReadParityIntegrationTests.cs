@@ -1,13 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -199,12 +199,15 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
             "{\"rings\":[[[-123,37],[-123,38.4],[-121.5,37],[-123,37]]],\"spatialReference\":{\"wkid\":4326}}";
         var restQuery = "&geometry=" + Uri.EscapeDataString(esriPolygon)
             + "&geometryType=esriGeometryPolygon&spatialRel=esriSpatialRelIntersects&inSR=4326";
-        const string geoJsonPolygon =
-            ",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-123,37],[-121.5,37],[-123,38.4],[-123,37]]]}";
+        var byTriangle = QueryArguments(AllowedLayerId);
+        byTriangle["geometry"] = JsonNode.Parse(
+            "{\"type\":\"Polygon\",\"coordinates\":[[[-123,37],[-121.5,37],[-123,38.4],[-123,37]]]}");
+        var byRectangle = QueryArguments(AllowedLayerId);
+        byRectangle["bbox"] = JsonNode.Parse("[-123,37,-121.5,38.4]");
 
-        var rest = await ReadOverRestAsync(reader, AllowedLayerId, extraQuery: restQuery);
-        var mcp = await ReadOverMcpAsync(reader, AllowedLayerId, extraArguments: geoJsonPolygon);
-        var rectangle = await ReadOverMcpAsync(reader, AllowedLayerId, extraArguments: ",\"bbox\":[-123,37,-121.5,38.4]");
+        var rest = await ReadRestUrlAsync(reader, QueryUrl(AllowedLayerId, "1=1") + restQuery);
+        var mcp = ReadMcpRecords(await CallQueryFeaturesAsync(reader, byTriangle));
+        var rectangle = ReadMcpRecords(await CallQueryFeaturesAsync(reader, byRectangle));
 
         rest.Select(record => record.ObjectId).Should().Equal(new long[] { 1, 2, 4 },
             "REST geometry + esriSpatialRelIntersects tests the triangle, not its rectangle");
@@ -244,13 +247,15 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
             "no stored attribute value may appear anywhere in a refused response");
     }
 
-    private async Task<IReadOnlyList<FeatureRecord>> ReadOverRestAsync(
+    private Task<IReadOnlyList<FeatureRecord>> ReadOverRestAsync(
         HttpClient client,
         int layerId,
-        string where = "1=1",
-        string extraQuery = "")
+        string where = "1=1")
+        => ReadRestUrlAsync(client, QueryUrl(layerId, where));
+
+    private static async Task<IReadOnlyList<FeatureRecord>> ReadRestUrlAsync(HttpClient client, string url)
     {
-        using var response = await client.GetAsync(QueryUrl(layerId, where) + extraQuery);
+        using var response = await client.GetAsync(url);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
@@ -285,10 +290,11 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
     private async Task<IReadOnlyList<FeatureRecord>> ReadOverMcpAsync(
         HttpClient client,
         int layerId,
-        string? where = null,
-        string extraArguments = "")
+        string? where = null)
+        => ReadMcpRecords(await CallQueryFeaturesAsync(client, layerId, where: where));
+
+    private static IReadOnlyList<FeatureRecord> ReadMcpRecords(JsonElement result)
     {
-        var result = await CallQueryFeaturesAsync(client, layerId, where: where, extraArguments: extraArguments);
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
 
         var records = new List<FeatureRecord>();
@@ -318,22 +324,34 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         return [.. records.OrderBy(record => record.ObjectId)];
     }
 
-    private async Task<JsonElement> CallQueryFeaturesAsync(
+    private Task<JsonElement> CallQueryFeaturesAsync(
         HttpClient client,
         int layerId,
         string? where = null,
-        bool returnCountOnly = false,
-        string extraArguments = "")
+        bool returnCountOnly = false)
+        => CallQueryFeaturesAsync(client, QueryArguments(layerId, where, returnCountOnly));
+
+    private static JsonObject QueryArguments(int layerId, string? where = null, bool returnCountOnly = false)
     {
-        var whereArgument = where is null
-            ? string.Empty
-            : $",\"where\":{JsonSerializer.Serialize(where)}";
-        var arguments = "{\"serviceId\":\"" + ServiceId
-            + "\",\"serviceLayerIndex\":" + layerId.ToString(CultureInfo.InvariantCulture)
-            + ",\"limit\":1000,\"returnCountOnly\":" + (returnCountOnly ? "true" : "false")
-            + whereArgument + extraArguments + "}";
+        var arguments = new JsonObject
+        {
+            ["serviceId"] = ServiceId,
+            ["serviceLayerIndex"] = layerId,
+            ["limit"] = 1000,
+            ["returnCountOnly"] = returnCountOnly,
+        };
+        if (where is not null)
+        {
+            arguments["where"] = where;
+        }
+
+        return arguments;
+    }
+
+    private static async Task<JsonElement> CallQueryFeaturesAsync(HttpClient client, JsonObject arguments)
+    {
         var body = "{\"jsonrpc\":\"2.0\",\"id\":\"feature-read-parity\",\"method\":\"tools/call\","
-            + "\"params\":{\"name\":\"honua_query_features\",\"arguments\":" + arguments + "}}";
+            + "\"params\":{\"name\":\"honua_query_features\",\"arguments\":" + arguments.ToJsonString() + "}}";
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {

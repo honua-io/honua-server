@@ -520,11 +520,13 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         {
             wkb = geometryService.ConvertGeoJsonToWkb(geometry.GetRawText(), srid);
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException
+            or InvalidOperationException or InvalidCastException or NotSupportedException)
         {
             throw new GeoprocessingValidationException(
-                $"'geometry' was refused: {ex.Message} If it is too large or has too many vertices, "
-                + "simplify it or split it into smaller parts and query each part.");
+                "'geometry' was refused: it is not a valid GeoJSON geometry, or it exceeds the size or vertex "
+                + "limits. Check the coordinates; if it is large, simplify it or split it into smaller parts "
+                + "and query each part.");
         }
 
         return wkb is null

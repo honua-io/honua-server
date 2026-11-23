@@ -13,8 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-// The operating skills address the metadata, access and export tools by view (skill refresh plan
-// section 3, #9444 and #9445): each view must publish exactly its tools, canonically, within budget.
+// The operating skills address the metadata, access and export tools by view: each view must
+// publish exactly its tools, canonically, within budget.
 public sealed partial class McpWorkflowViewTests
 {
     private static readonly string[] MetadataViewToolNames =
