@@ -172,8 +172,9 @@ public sealed partial class FeatureStreamEndpointsTests
         }
     }
 
-    private static WebAppFixture BaselineCapabilityFixture(IFeatureReader reader, int maximumSnapshotFeatures = 5)
+    private WebAppFixture BaselineCapabilityFixture(IFeatureReader reader, int maximumSnapshotFeatures = 5)
         => new WebAppFixture()
+            .ShareSchemaWith(_fixture)
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider())
             .ReplaceService(reader)

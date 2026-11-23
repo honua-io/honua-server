@@ -2263,3 +2263,80 @@ seconds (0.116 runner minutes), with one runner before and after. Individual
 baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
+
+### Streaming projected-bbox handshake host lifetime
+
+`FeatureStreamEndpointsTests.Stream_WithProjectedBboxLayer_AllowsSseHandshake`
+uses the existing class-owned Pro streaming application and a fresh admin client.
+It previously started a second private Pro application for the same handshake.
+The shared host resets sessions between cases, and the projected layer is seeded
+before requests. The request URL, Accept header, five-second cancellation, status
+and content-type assertions are unchanged. All 193 assertion lines and 134
+selection/endpoint metadata lines in the changed file are retained. Cases with
+specialized configuration, real credential expiry or mutable services retain
+their existing hosts and timing bounds.
+
+Four interleaved baseline/candidate runs of the complete unchanged Server
+Features Streaming Endpoints 2 shard passed the same 23 cases, with zero skips.
+Summed class seconds were 30.821524 / 27.345450 and 27.160965 / 26.675210
+(baseline / candidate); the median was 28.991244 -> 27.010330 seconds.
+Fixture-inclusive TRX shard intervals were 47.529324 / 43.602161 and
+43.948600 / 43.279365 seconds. Their median was 45.738962 -> 43.440763 seconds,
+a measured saving of 2.298199 seconds (0.038303 runner-minutes), with one runner
+before and after. Both pairs improved, with different magnitudes; this small
+sample does not establish PR critical-path savings. Compilation/process time is
+excluded from the shard saving. This removes one redundant application boot
+without splitting the suite or reducing its assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### Streaming baseline-capability seed lifetime
+
+The eight baseline-capability cases in `FeatureStreamEndpointsTests` borrow the
+feature schema of the already initialized class fixture. Each case retains its
+private application, mock feature reader, metadata provider, license configuration
+and disposal. These GET requests read capabilities through the case-local mock
+reader; they do not mutate the shared feature data. The Database collection still
+serializes the cases, and the class fixture owns schema cleanup after every
+borrower is disposed. The one-second lookup budget, cancellation behavior, all
+assertions and endpoint metadata remain unchanged.
+
+Every case remains in its existing selected PR shard and full trunk runs. No
+workflow, shard filter, required check name, runner count or required aggregate
+`needs` contract changes.
+
+Two interleaved base/head Release runs of the complete unchanged Streaming
+Endpoints 4 shard passed the same 28 cases in every run (zero skipped), on one
+runner before and after. Summed `FeatureStreamEndpointsTests` TRX case seconds
+were 33.220638 / 31.768553 at base and 28.079612 / 25.437050 at head: median
+32.494596 to 26.758331 seconds. Fixture-inclusive TRX session seconds were
+49.478414 / 47.762028 at base and 45.713160 / 40.702234 at head: median
+48.620221 to 43.207697 seconds, saving 5.412524 seconds (0.090209 runner-minutes).
+Both pairs improved, by 3.765254 and 7.059794 seconds. Compilation is excluded;
+this is a measured shard saving, not evidence of an end-to-end CI critical-path
+improvement.
+
+### Streaming unsupported-owner seed lifetime
+
+The nine `Capabilities_UnsupportedOwner_OmitsLayer` theory rows keep private Pro
+application hosts and independently patched metadata providers while borrowing the
+already initialized class fixture's feature schema. These requests reject the
+unsupported metadata owner before reading features; they do not write features or
+read the stream event log. Each borrower is disposed within its case, before the
+class fixture drops its owned schema. The SSE and WebSocket rejection cases keep
+their existing private fixtures and all assertions and test attributes are intact.
+
+The shard filter, selected cases, workflows, required check names and aggregate
+`needs` contract are unchanged. Every case continues to run in its selected PR
+shard and full trunk runs. No test or gate coverage moves to another schedule.
+
+Two interleaved base/head Release runs of the complete Streaming Endpoints 2 shard
+passed the same 23 cases in each run, with zero failures or skips. Summed class
+case medians fell from 26.418 to 22.098 seconds. Fixture-inclusive TRX session
+seconds were 42.367 / 40.345 at base and 37.157 / 37.190 at head: median
+41.356 to 37.173 seconds, saving 4.183 seconds (0.070 runner-minutes), with one
+runner before and after. Both pairs improved, by 5.210 and 3.155 seconds.
+Compilation is excluded; this small shared-host measurement does not establish
+a reduction in the parallel PR Gate's critical path.

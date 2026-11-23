@@ -1404,29 +1404,17 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithProjectedBboxLayer_AllowsSseHandshake()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
+        await StartDefaultApplicationAsync();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/streaming/features?layers={SpatialReferenceTestLayerCatalog.PointLayerId}&bbox=-122.5,37.5,-122.0,38.0");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-        await fixture.InitializeAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
-        try
-        {
-            var client = fixture.CreateAdminClient();
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"/api/v1/streaming/features?layers={SpatialReferenceTestLayerCatalog.PointLayerId}&bbox=-122.5,37.5,-122.0,38.0");
-            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
     }
 
     [IntegrationTest]
