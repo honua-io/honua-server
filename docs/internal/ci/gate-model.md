@@ -406,7 +406,8 @@ selection compares trunk with itself there and would build only `all`, which
 is what full run 44309947920 did. Between full runs, Trunk Sanity's
 `Reduced protocol profiles` job (`trunk_sanity_profiles.py`) compiles every
 reduced profile whenever the range since the newest successful Trunk Sanity
-run that already had the job changes `src/`, `eng/` or root build inputs. Both Trunk Sanity jobs queue the newest push
+run that already had the job changes anything other than `.github/` files and
+Markdown under `docs/` or at the repository root. Both Trunk Sanity jobs queue the newest push
 behind the running one instead of cancelling it, so a burst of merges still
 gets a verdict within about two build lengths.
 

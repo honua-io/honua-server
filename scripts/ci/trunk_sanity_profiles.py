@@ -5,7 +5,8 @@ Trunk Sanity queues the newest push behind the running one, so intermediate
 pushes may never run. The range therefore starts at the newest successful
 Trunk Sanity ancestor rather than at the push's own predecessor. Only runs
 whose head contains this script count: older runs never compiled profiles.
-When that range changes compiled inputs, or no such run exists, every
+When that range changes anything but workflows or prose, or no such run
+exists, every
 profile is compiled. The selector's module narrowing is not used: it maps
 some server files that still compile in reduced profiles (gRPC hosting, for
 example) to `all` only.
@@ -13,7 +14,6 @@ example) to `all` only.
 
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 
@@ -22,9 +22,6 @@ import completed_ci_base
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = "scripts/ci/trunk_sanity_profiles.py"
 SELECTOR = ROOT / "scripts/ci/protocol-profile-selection.py"
-COMPILED_INPUT = re.compile(
-    r"^(src/|eng/|Directory\.(Build|Packages)\.(props|targets)$|global\.json$|NuGet\.config$)",
-    re.IGNORECASE)
 
 
 def compiled_profiles(run):
@@ -33,9 +30,20 @@ def compiled_profiles(run):
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
+def compiled(path):
+    """False only for workflow files and Markdown under docs/ or at the root.
+
+    Analyzer settings, banned symbols and embedded resources (skills/, docs/,
+    tests/fixtures/, docker/) live outside src/ and eng/, so only paths that
+    never reach a compilation are exempt.
+    """
+    prose = path.lower().endswith(".md") and (path.startswith("docs/") or "/" not in path)
+    return not (path.startswith(".github/") or prose)
+
+
 def compiled_changes(base, head):
     changed = subprocess.check_output(["git", "diff", "--name-only", base, head], text=True)
-    return [path for path in changed.splitlines() if COMPILED_INPUT.match(path)]
+    return [path for path in changed.splitlines() if compiled(path)]
 
 
 def select(base, head, selection):

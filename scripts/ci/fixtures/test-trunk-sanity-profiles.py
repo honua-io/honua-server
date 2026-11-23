@@ -47,8 +47,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(written, SELECTION)
         self.assertEqual(calls[0][0][-1], "--all")
 
-    def test_range_without_compiled_inputs_skips_profiles(self):
-        changed = "docs/guide.md\ntests/Honua.Server.Tests/A.cs\nscripts/ci/x.py\n.github/workflows/ci.yml\n"
+    def test_range_of_workflows_and_prose_skips_profiles(self):
+        changed = "docs/guide.md\nREADME.md\n.github/workflows/ci.yml\n.github/ci-shards.json\n"
         build, reason, written, calls = self.select(BASE, changed)
         self.assertFalse(build)
         self.assertEqual((written, calls), ("", []))
@@ -56,7 +56,10 @@ class SelectionTests(unittest.TestCase):
 
     def test_compiled_inputs_compile_every_profile_over_the_whole_range(self):
         for path in ("src/Honua.Server/Features/Admin/Scene/A.cs", "eng/Honua.ProtocolProfiles.props",
-                     "Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config"):
+                     "Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config",
+                     ".editorconfig", "scripts/ci/analyzer-baseline/BannedSymbols.txt",
+                     "docs/developer/api-specs/admin-api.json", "skills/a/SKILL.md",
+                     "src/Honua.Server/Resources/Notes.md"):
             build, _, written, calls = self.select(BASE, f"docs/a.md\n{path}\n")
             self.assertTrue(build, path)
             self.assertEqual(written, SELECTION)
