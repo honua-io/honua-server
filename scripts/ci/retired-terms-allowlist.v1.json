@@ -82,6 +82,36 @@
     {
       "path": "docs/gis/data/feature-catalog.json",
       "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MultiTypeReadBoundTests.GetFeature_QualifiedResourceIdsWithoutTypeNames_CountsOnlyNamedTypes\",",
+      "reason": "Generated inventory of a WFS 2.0 test. ResourceId is the standard WFS GetFeature parameter."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MultiTypeReadBoundTests.GetFeature_ResourceIdListWithoutIds_KeepsFullSelection\",",
+      "reason": "Generated inventory of a WFS 2.0 test. ResourceId is the standard WFS GetFeature parameter."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MultiTypeReadBoundTests.GetFeature_ResourceIdNamingNoPublishedType_KeepsFullSelection\",",
+      "reason": "Generated inventory of a WFS 2.0 test. ResourceId is the standard WFS GetFeature parameter."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MultiTypeReadBoundTests.GetFeature_ResourceIdsAllNamingOneType_CountsOnlyThatType\",",
+      "reason": "Generated inventory of a WFS 2.0 test. ResourceId is the standard WFS GetFeature parameter."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MultiTypeReadBoundTests.GetFeature_UnqualifiedResourceId_KeepsMultiTypeQualifierRule\",",
+      "reason": "Generated inventory of a WFS 2.0 test. ResourceId is the standard WFS GetFeature parameter."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
       "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_WithoutTypeNamesOrResourceId_ReturnsMissingParameterValue\",",
       "reason": "Generated inventory of a WFS 2.0 test; ResourceId is the standard WFS GetFeature parameter, not a Honua object name."
     },
