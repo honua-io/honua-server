@@ -49,8 +49,13 @@ public sealed partial class DatabaseMigrationTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task CanonicalRunner_WithPublicAsConfiguredSchema_KeepsFeatureStoreInPlace()
+    public async Task CanonicalRunner_WithPublicAsConfiguredVectorSchema_KeepsFeatureStoreInPlace()
     {
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        // The PostGIS raster_overviews view shares its name with the Honua raster table in public.
+        await ScalarAsync(connection, "DROP EXTENSION IF EXISTS postgis_raster CASCADE;");
+
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["Database:Schema"] = "public" }).Build();
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
@@ -61,8 +66,6 @@ public sealed partial class DatabaseMigrationTests
 
         result.Successful.Should().BeTrue(result.Error?.ToString() ?? result.ErrorMessage);
         result.AppliedScripts.Should().Contain(FeatureStoreAdoptionMigration);
-        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
         (await ScalarAsync(connection, SharedFeatureTablesSql)).Should().Be("public.features",
             "migration 001 already created the table in the configured schema");
         await guard.VerifyAsync(_connectionString);
