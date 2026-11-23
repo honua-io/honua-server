@@ -476,8 +476,8 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         payload.RootElement.TryGetProperty("mutation", out _).Should().BeFalse();
     }
 
-    // Long whitespace runs between clause words once made the clause patterns backtrack
-    // cubically; a turn at the length cap must still be answered promptly.
+    // A turn at the length cap made of long whitespace runs between clause words must be
+    // answered within the time bound.
     [IntegrationTheory]
     [Operation(Operations.GroundingMutate)]
     [Endpoint("POST /v1/grounding/spec/mutate")]
