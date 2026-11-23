@@ -26,5 +26,12 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
             "admin.import.preview",
             "admin.import.preview-url",
             "admin.connections.tables.validate",
+
+            // Data handoff: an agent exports a Layer as files and reads the Export without leaving MCP.
+            // create and delete always file a proposal for an agent (AgentApprovalRule).
+            "admin.exports.list",
+            "admin.exports.get",
+            "admin.exports.create",
+            "admin.exports.delete",
         };
 }

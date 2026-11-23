@@ -215,8 +215,9 @@ internal static class McpWorkflowViewCatalog
         Title = "Configure and publish",
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
-            + "style and render a map. Use the setup view for Studio authoring and publication. Select the folders view to organize folders or move services.",
-        Revision = "configure.v4",
+            + "style and render a map, and export a Layer as files. Use the setup view for Studio authoring and publication. "
+            + "Select the folders view to organize folders or move services.",
+        Revision = "configure.v5",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -305,6 +306,20 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_get_style"),
                     McpWorkflowViewMemberRule.Exact("honua_apply_style_preset"),
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "export",
+                Title = "Export as files",
+                Description = "List and read Exports, export a Layer as PMTiles and GeoParquet, or unpublish an Export. "
+                    + "An agent's export or unpublish files a proposal for human approval; poll the Export until ready or failed.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.list")),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.get")),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.create")),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.delete")),
                 ],
             },
         ],
