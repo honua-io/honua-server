@@ -1039,6 +1039,11 @@
       },
       {
         "clientLane": "cli",
+        "protocol": "mapserver",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "cli",
         "protocol": "ogc-features",
         "capability": "serve.ogc-api-features"
       },

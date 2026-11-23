@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -401,3 +402,46 @@ def wfs_layer_name(wfs_dsn: str) -> str:
         f"WFS layer discovery failed:\n{result.stderr}"
     )
     return extract_first_layer_name(result.stdout)
+
+
+# ============================================================================
+# GeoServices REST (FeatureServer / MapServer) fixtures
+# ============================================================================
+
+
+@pytest.fixture(scope="session")
+def geoservices_service() -> str:
+    """Seeded GeoServices service for the FeatureServer and MapServer cases.
+
+    The docker/client-compat lane sets ``HONUA_GDAL_GEOSERVICES_SERVICE`` to the
+    ``browser_compat`` seed (tests/seed/browser-compat.yaml). The in-process
+    chain has no such seed, so these cases skip there.
+    """
+    service = os.getenv("HONUA_GDAL_GEOSERVICES_SERVICE")
+    if not service:
+        pytest.skip("HONUA_GDAL_GEOSERVICES_SERVICE is not set (docker/client-compat lane only)")
+    return service
+
+
+@pytest.fixture(scope="session")
+def featureserver_layer_url(base_url: str, geoservices_service: str) -> str:
+    """The seeded point layer (three features) as a FeatureServer layer URL."""
+    layer = os.getenv("HONUA_GDAL_GEOSERVICES_LAYER", "2000")
+    return f"{base_url}/rest/services/{geoservices_service}/FeatureServer/{layer}"
+
+
+@pytest.fixture(scope="session")
+def mapserver_url(base_url: str, geoservices_service: str) -> str:
+    """The seeded service as a MapServer URL for GDAL's AGS minidriver."""
+    return f"{base_url}/rest/services/{geoservices_service}/MapServer"
+
+
+def esrijson_dsn(layer_url: str, **params: str) -> str:
+    """An ESRIJSON driver DSN for a FeatureServer layer query.
+
+    The ESRIJSON driver is GDAL's ArcGIS FeatureServer client: it reads the
+    query response and pages with resultOffset while the server reports
+    exceededTransferLimit.
+    """
+    query = {"where": "1=1", "outFields": "*", "f": "json", **params}
+    return f"ESRIJSON:{layer_url}/query?{urllib.parse.urlencode(query)}"
