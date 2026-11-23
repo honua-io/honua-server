@@ -114,11 +114,7 @@ internal sealed class AuthenticationFailureLimiter(
             }
 
             sharedWriteDropped = Shared?.Record(key.Source, now) is false;
-            blocked = ++window.Failures >= _options.Threshold;
-            if (blocked)
-            {
-                window.RefusedUntil = now + _options.BlockDuration;
-            }
+            blocked = window.RecordFailure(now, _options);
         }
 
         if (sharedWriteDropped)
@@ -205,6 +201,17 @@ internal sealed class AuthenticationFailureLimiter(
 
         public bool IsEvictable(DateTimeOffset now, TimeSpan length)
             => Pending.Count == 0 && (IsWindowOver(now, length) || (Failures == 0 && RefusedUntil is null));
+
+        public bool RecordFailure(DateTimeOffset now, AuthenticationFailureLimiterOptions options)
+        {
+            if (++Failures < options.Threshold)
+            {
+                return false;
+            }
+
+            RefusedUntil = now + options.BlockDuration;
+            return true;
+        }
 
         public void Release(int credential)
         {
