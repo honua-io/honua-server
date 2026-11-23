@@ -8,6 +8,13 @@ namespace Honua.Server.Features.Identity.Scim;
 
 internal static partial class ScimEndpoints
 {
+    // RFC 7644 section 3.10 allows an attribute qualified by the core schema URN of its resource.
+    private static readonly Dictionary<string, string> QualifiedFilterAttributes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["userName"] = "urn:ietf:params:scim:schemas:core:2.0:User:userName",
+        ["displayName"] = "urn:ietf:params:scim:schemas:core:2.0:Group:displayName",
+    };
+
     // RFC 7644 section 3.4.2.2: a filter the server cannot evaluate is refused with invalidFilter, never
     // ignored. An identity provider that probes for an existing account reads an unfiltered list as a match
     // and would then update or deactivate the wrong user.
@@ -28,7 +35,7 @@ internal static partial class ScimEndpoints
             return ScimEqFilter.Invalid;
         }
 
-        if (!match.Success || !string.Equals(match.Groups["attr"].Value, attribute, StringComparison.OrdinalIgnoreCase))
+        if (!match.Success || !NamesAttribute(match.Groups["attr"].Value, attribute))
         {
             return ScimEqFilter.Invalid;
         }
@@ -37,6 +44,11 @@ internal static partial class ScimEndpoints
         var value = match.Groups["quoted"].Success ? UnescapeFilterValue(match.Groups["quoted"].Value) : match.Groups["bare"].Value;
         return value.Length > 0 ? new ScimEqFilter { IsValid = true, Value = value } : ScimEqFilter.Invalid;
     }
+
+    private static bool NamesAttribute(string candidate, string attribute)
+        => string.Equals(candidate, attribute, StringComparison.OrdinalIgnoreCase)
+            || (QualifiedFilterAttributes.TryGetValue(attribute, out var qualified)
+                && string.Equals(candidate, qualified, StringComparison.OrdinalIgnoreCase));
 
     private static IResult InvalidFilterResult(string attribute)
         => ScimErrorResult(

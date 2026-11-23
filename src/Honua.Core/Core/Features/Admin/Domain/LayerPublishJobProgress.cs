@@ -5,7 +5,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Admin.Domain;
 
-public sealed record LayerPublishJobProgress : IOperationProgress
+public sealed record LayerPublishJobProgress : IOperationProgress, ITenantOwnedProgress
 {
     public required string OperationId { get; init; }
 

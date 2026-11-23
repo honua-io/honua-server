@@ -227,6 +227,12 @@ public sealed partial class FeatureStreamEndpointsTests
         var ct = timeout.Token;
 
         var client = fixture.CreateWebSocketClient();
+        var configure = client.ConfigureRequest;
+        client.ConfigureRequest = request =>
+        {
+            configure?.Invoke(request);
+            request.Headers["X-Honua-Test-Schema"] = fixture.CurrentSchema;
+        };
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ConnectAsync(
             new Uri("ws://localhost/api/v1/streaming/features?serviceId=test&layers=0"),
             ct));

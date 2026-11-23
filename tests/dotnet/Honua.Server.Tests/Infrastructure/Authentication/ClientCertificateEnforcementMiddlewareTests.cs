@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-public sealed class ClientCertificateEnforcementMiddlewareTests
+public sealed partial class ClientCertificateEnforcementMiddlewareTests
 {
     [Fact]
     public async Task InvokeAsync_OnSuccessfulValidation_ProjectsPrincipalToContextUser()
@@ -714,7 +714,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         return new ClaimsPrincipal(identity);
     }
 
-    private static X509Certificate2 CreateCertificate()
+    private static X509Certificate2 CreateCertificate(DateTimeOffset? expiresAt = null)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(
@@ -725,7 +725,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
             new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") },
             critical: false));
-        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(90));
+        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), expiresAt ?? DateTimeOffset.UtcNow.AddDays(90));
     }
 
     private sealed class StubValidator(ClientCertificateValidationResult? result) : IClientCertificateValidator

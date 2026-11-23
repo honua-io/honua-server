@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using System.Security.Claims;
+using NSubstitute;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -286,6 +288,35 @@ public sealed class PortalTokenAuthenticationHandlerTests
         context.Request.Headers.Referer = Referer;
         context.Request.QueryString = new QueryString("?f=json&token=" + Uri.EscapeDataString(token));
         return context;
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_PortalTokenRetainsBackingCredentialForStreamRevocation()
+    {
+        var keyId = Guid.NewGuid();
+        var issuer = Substitute.For<IPortalTokenIssuer>();
+        issuer.ValidateAsync(Arg.Any<string>(), Arg.Any<PortalTokenBinding>(), Arg.Any<CancellationToken>())
+            .Returns(new PortalTokenValidation(new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("sub", "alice")], PortalTokenAuthenticationExtensions.PortalTokenScheme)),
+                DateTimeOffset.UtcNow.AddMinutes(5))
+            {
+                SourceApiKeyId = keyId
+            });
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddSingleton(issuer);
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        await using var services = registrations.BuildServiceProvider();
+        var context = Context(services, GeoServicesQueryPath, false, ["portal-token"]);
+
+        var result = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
+
+        Assert.True(result.Succeeded);
+        var credential = context.Features.Get<LiveStreamCredentialFeature>();
+        Assert.NotNull(credential);
+        Assert.Equal(new LiveStreamCredential("PortalToken", LiveStreamInvalidation.Hash("portal-token")), credential.Credential);
+        Assert.Equal(new LiveStreamCredential("AdminApiKey", keyId.ToString("D")), credential.BackingCredential);
     }
 
     private static ServiceProvider CreateServices()

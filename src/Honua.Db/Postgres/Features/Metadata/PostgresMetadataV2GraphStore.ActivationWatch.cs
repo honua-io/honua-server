@@ -66,13 +66,16 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         }
 
         var (priorDocument, currentDocument) = documents.Value;
-        var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
-            ?? throw new InvalidDataException("The prior catalog document is missing.");
+        var graph = ReadRepairedGraph(priorDocument, "The prior catalog document is missing.");
 
         // The guard compares what would actually be published: the earlier document after reconciliation.
         graph = await ReconcileReservationsAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
         var restoredDocument = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        if (!CatalogAccessSettings.Match(restoredDocument, currentDocument))
+        // Both sides are compared as reads see them, so a stale stored canModify is not an access change.
+        var servedDocument = JsonSerializer.Serialize(
+            ReadRepairedGraph(currentDocument, "The current catalog document is missing."),
+            MetadataV2JsonContext.Default.MetadataV2Graph);
+        if (!CatalogAccessSettings.Match(restoredDocument, servedDocument))
         {
             // Restoring the earlier document would change who may access a resource; that is never
             // decided from serving telemetry. The watch ends and the activation stays as published.
@@ -177,4 +180,9 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         await PruneSnapshotsAsync(connection, transaction, graph.Revision, cancellationToken).ConfigureAwait(false);
         return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
     }
+
+    private static MetadataV2Graph ReadRepairedGraph(string document, string missingMessage)
+        => MetadataV2EditingConsistency.RepairCanModify(
+            JsonSerializer.Deserialize(document, MetadataV2JsonContext.Default.MetadataV2Graph)
+            ?? throw new InvalidDataException(missingMessage));
 }

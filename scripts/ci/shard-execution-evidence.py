@@ -55,7 +55,22 @@ def observe(trx: Path, label: str, project: str) -> dict:
     except (OSError, ValueError, KeyError, ET.ParseError, guard['TripwireError']) as exc:
         # Keep all observed counts/hash even on refusal; never turn absent TRX into zero success.
         evidence['problem'] = str(exc).splitlines()[0]
+        evidence['refusal'] = refusal_kind(exc, guard['TripwireError'], evidence['counts'])
     return evidence
+
+
+def refusal_kind(exc: Exception, tripwire_error: type, counts: dict | None) -> str:
+    # Cases that ran and failed are a test red; absent, unreadable or contradictory
+    # evidence is a harness red. Triage depends on telling the two apart.
+    if isinstance(exc, tripwire_error) and counts and counts['failed']:
+        return 'cases_failed'
+    return 'no_execution'
+
+
+def refusal_code(result: dict) -> str:
+    if result.get('refusal') == 'cases_failed':
+        return 'HONUA_SHARD_CASES_FAILED'
+    return 'HONUA_SHARD_NO_EXECUTION'
 
 
 def main() -> int:
@@ -67,7 +82,7 @@ def main() -> int:
     result = observe(args.trx, args.label, args.project)
     print(json.dumps(result, sort_keys=True))
     if result['status'] != 'passed':
-        print('::error::HONUA_SHARD_NO_EXECUTION ' + result['problem'], file=sys.stderr)
+        print(f"::error::{refusal_code(result)} {result['problem']}", file=sys.stderr)
         return 1
     return 0
 

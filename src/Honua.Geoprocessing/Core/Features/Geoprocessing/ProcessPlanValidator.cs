@@ -1917,7 +1917,7 @@ internal static partial class ProcessPlanValidator
     // `DuckDBFeatureQueryBuilder.FieldNameRegex` enforce. Keeping the validator
     // in lockstep with both feature-store binders prevents `ValidatePlan` from
     // admitting non-ASCII field names (e.g. `Åfield`) the stores would reject.
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex SimpleIdentifierRegex();
 
     private static bool IsSimpleIdentifier(string value)

@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
@@ -308,9 +309,7 @@ internal static class CollectionsEndpoints
         var collectionId = publication.ServiceLocalId
             ?? publication.Path
             ?? resource.Metadata.Name;
-        var displayName = publication.TitleOverride
-            ?? resource.Metadata.Title
-            ?? resource.Metadata.Name;
+        var displayName = DescriptiveMetadataResolver.DatasetTitle(resource, publication) ?? resource.Metadata.Name;
         var escapedCollectionId = Uri.EscapeDataString(collectionId);
 
         var collectionLinks = ImmutableArray.Create(
@@ -412,7 +411,7 @@ internal static class CollectionsEndpoints
         {
             Id = collectionId,
             Title = displayName,
-            Description = resource.Metadata.Description,
+            Description = DescriptiveMetadataResolver.DatasetDescription(resource, publication),
             Links = collectionLinks,
             Extent = collectionExtent,
             Crs = supportedCrs,

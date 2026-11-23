@@ -31,6 +31,23 @@ public sealed class ExternalPostgisDagSourceSafetyTests
         exception.Which.Message.Should().Contain("exactly one statement");
     }
 
+    [UnitTest]
+    public async Task ReadAsync_TableEndingInLineFeed_IsRejectedBeforeOpeningConnection()
+    {
+        var source = new ExternalPostgisDagSource();
+        var request = new DagSourceRequest { PostgisTable = "features\n" };
+        var act = async () =>
+        {
+            await foreach (var _ in source.ReadAsync(request))
+            {
+                Assert.Fail("An invalid identifier must be refused before a feature is yielded.");
+            }
+        };
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("is invalid");
+    }
+
     [UnitTheory]
     [InlineData("nextval('source_read_guard_seq') > 0")]
     [InlineData("pg_sleep(1) IS NULL")]

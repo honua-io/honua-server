@@ -69,6 +69,54 @@ public sealed class FeatureStreamReplayTests
             () => EnsureReplayableAfterAsync(store, replayCursor: 10));
     }
 
+    [UnitTest]
+    public async Task Replay_PendingMaskRefresh_PrecedesDelivery()
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var security = CreateSecurityWithPendingRefresh(denied: null);
+
+        var replayed = await FeatureStreamReplayHarness.ReplayAsync(
+            new(context.Response, FeatureStreamReplayHarness.CreateStoreWithOneChange("{\"secret\":\"private\"}"),
+                new StreamSubscriptionFilter(subscriberSecurity: security)), CancellationToken.None);
+
+        Assert.Equal(1, replayed);
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
+        Assert.Contains("feature-change", body);
+        Assert.DoesNotContain("private", body);
+    }
+
+    [UnitTest]
+    public async Task Replay_PendingRevocation_DeliversNothing()
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var security = CreateSecurityWithPendingRefresh(denied: new HashSet<(string, int)> { ("test", 0) });
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => FeatureStreamReplayHarness.ReplayAsync(
+            new(context.Response, FeatureStreamReplayHarness.CreateStoreWithOneChange("{\"secret\":\"private\"}"),
+                new StreamSubscriptionFilter(subscriberSecurity: security)), CancellationToken.None));
+
+        Assert.Equal(0, context.Response.Body.Length);
+    }
+
+    // The admitted policy is unmasked; the refresh replay must run first masks "secret" or denies the route.
+    private static StreamSubscriberSecurity CreateSecurityWithPendingRefresh(IReadOnlySet<(string Service, int Layer)>? denied)
+    {
+        var security = new StreamSubscriberSecurity(["test"],
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("test", 0)] = new([], []) },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        security.EnableEventDrivenRefresh();
+        security.EnableRefresh(_ => Task.FromResult(new StreamSubscriberSecurity(["test"],
+            new Dictionary<(string, int), StreamLayerReadPolicy>
+            {
+                [("test", 0)] = new([], new HashSet<string>(["secret"], StringComparer.OrdinalIgnoreCase))
+            }, new Dictionary<(string, int), StreamLayerReadPolicy>(), denied)));
+        return security;
+    }
+
     private static Task EnsureReplayableAfterAsync(IFeatureChangeEventStore store, long replayCursor)
         => FeatureStreamEndpoints.EnsureReplayableAfterAsync(
             new FeatureStreamEndpoints.FeatureStreamReplayContext(store, NullLogger.Instance, Guid.NewGuid(), "test"),

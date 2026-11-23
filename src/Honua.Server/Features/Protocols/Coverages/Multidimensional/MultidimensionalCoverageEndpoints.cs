@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -208,9 +209,14 @@ internal static class MultidimensionalCoverageEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        var jobId = await MultidimCoverageScanJob
-            .SubmitAsync(jobStore, jobQueue, registration, cancellationToken)
-            .ConfigureAwait(false);
+        var submission = new MultidimCoverageScanSubmission
+        {
+            JobStore = jobStore,
+            JobQueue = jobQueue,
+            Registration = registration,
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId
+        };
+        var jobId = await MultidimCoverageScanJob.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
         MultidimensionalCoverageLog.ScanJobSubmitted(logger, id, jobId);
 
         var response = new MultidimensionalCoverageScanJobResponse

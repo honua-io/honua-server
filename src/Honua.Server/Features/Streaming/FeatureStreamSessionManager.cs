@@ -138,12 +138,12 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
     // A layer the refresh denies, or that cannot be re-resolved, ends the session, and policy is read once per tick.
     public async Task RefreshSubscriberSecurityAsync(CancellationToken cancellationToken = default)
     {
-        var work = new List<(Guid SessionId, StreamSubscriberSecurity Security)>();
+        var work = new List<(Guid SessionId, SessionEntry Entry, SessionEntry.SubscriberSecuritySnapshot Subscription)>();
         foreach (var (sessionId, entry) in _sessions)
         {
             foreach (var security in entry.GetRefreshableSubscriberSecurities())
             {
-                work.Add((sessionId, security));
+                work.Add((sessionId, entry, security));
             }
         }
 
@@ -162,7 +162,7 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
             },
             async (item, token) =>
             {
-                if (!_sessions.ContainsKey(item.SessionId))
+                if (!_sessions.ContainsKey(item.SessionId) || !item.Entry.IsCurrentSubscription(item.Subscription))
                 {
                     return;
                 }
@@ -172,7 +172,7 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
                 deadline.CancelAfter(timeout);
                 try
                 {
-                    outcome = await item.Security.RefreshAsync(deadline.Token).ConfigureAwait(false);
+                    outcome = await item.Subscription.Security.RefreshAsync(deadline.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -181,7 +181,8 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Fail closed: the filter already denies every route, and the session ends.
-                    if (TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
+                    if (item.Entry.IsCurrentSubscription(item.Subscription)
+                        && TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
                     {
                         FeatureStreamLog.SubscriberPolicyRefreshFailed(_logger, item.SessionId, ex);
                     }
@@ -190,6 +191,7 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
                 }
 
                 if (outcome == StreamSubscriberSecurityRefreshOutcome.Revoked &&
+                    item.Entry.IsCurrentSubscription(item.Subscription) &&
                     TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
                 {
                     FeatureStreamLog.SubscriberAccessRevoked(_logger, item.SessionId);
@@ -809,7 +811,20 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
             bool Paused,
             long Generation,
             long LastPolledCursor,
-            long NextSequence = 0);
+            long NextSequence = 0)
+        {
+            public TaskCompletionSource Retired { get; } = CreateRetirement(Filter);
+
+            private static TaskCompletionSource CreateRetirement(StreamSubscriptionFilter? filter)
+            {
+                var retired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (filter is { SubscriberSecurity: { } security })
+                {
+                    security.BindLifetime(retired.Task);
+                }
+                return retired;
+            }
+        }
 
         public long DefaultSubscriptionGeneration { get; }
 
@@ -869,16 +884,37 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        public StreamSubscriberSecurity[] GetRefreshableSubscriberSecurities()
+        public readonly record struct SubscriptionGeneration(string SubscriptionId, long Generation);
+
+        public readonly record struct SubscriberSecuritySnapshot(
+            SubscriptionGeneration Key, StreamSubscriberSecurity Security, Task Retired);
+
+        // Periodic refresh covers only subscriptions that no event stream refreshes.
+        public SubscriberSecuritySnapshot[] GetRefreshableSubscriberSecurities()
+            => SnapshotSubscriberSecurities(static security => security.IsRefreshable);
+
+        public SubscriberSecuritySnapshot[] GetSubscriberSecurities()
+            => SnapshotSubscriberSecurities(static _ => true);
+
+        private SubscriberSecuritySnapshot[] SnapshotSubscriberSecurities(Func<StreamSubscriberSecurity, bool> include)
         {
             lock (_subscriptionLock)
             {
-                return _subscriptions.Values
-                    .Select(state => (state.Filter as StreamSubscriptionFilter)?.SubscriberSecurity)
-                    .OfType<StreamSubscriberSecurity>()
-                    .Where(static security => security.IsRefreshable)
-                    .Distinct()
+                return _subscriptions
+                    .Where(pair => pair.Value.Filter is StreamSubscriptionFilter { SubscriberSecurity: { } security }
+                        && include(security))
+                    .Select(pair => new SubscriberSecuritySnapshot(new(pair.Key, pair.Value.Generation),
+                        ((StreamSubscriptionFilter)pair.Value.Filter!).SubscriberSecurity!, pair.Value.Retired.Task))
                     .ToArray();
+            }
+        }
+
+        public bool IsCurrentSubscription(SubscriberSecuritySnapshot subscription)
+        {
+            lock (_subscriptionLock)
+            {
+                return _subscriptions.TryGetValue(subscription.Key.SubscriptionId, out var state)
+                    && state.Generation == subscription.Key.Generation;
             }
         }
 
@@ -990,6 +1026,10 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
                     return false;
                 }
 
+                if (_subscriptions.TryGetValue(subscriptionId, out var previous))
+                {
+                    previous.Retired.TrySetResult();
+                }
                 generation = ++_subscriptionGenerationCounter;
                 _subscriptions[subscriptionId] = new SubscriptionState(filter, paused, generation, LastPolledCursor: 0);
                 return true;
@@ -1014,7 +1054,12 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
         {
             lock (_subscriptionLock)
             {
-                return _subscriptions.Remove(subscriptionId);
+                if (!_subscriptions.Remove(subscriptionId, out var removed))
+                {
+                    return false;
+                }
+                removed.Retired.TrySetResult();
+                return true;
             }
         }
 

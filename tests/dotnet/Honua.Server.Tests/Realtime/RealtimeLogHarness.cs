@@ -6,6 +6,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Realtime;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging;
@@ -88,8 +89,11 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
     public static JsonElement Payload(object value) => JsonSerializer.SerializeToElement(value);
 
     // A task's dispatcher over this schema.
-    public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null)
-        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), CaptureLogger<RealtimeDispatcher>());
+    public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null, LiveStreamSecurityRegistry? security = null)
+        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), CaptureLogger<RealtimeDispatcher>())
+        {
+            Security = security
+        };
 
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)

@@ -616,7 +616,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         return value;
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
     private static partial Regex IdentifierRegex();
 
     private static partial class Log

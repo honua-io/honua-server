@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingOAuth2Tests(SharingOAuth2Tests.PortalHost host) : IClassFixture<SharingOAuth2Tests.PortalHost>
+public sealed partial class SharingOAuth2Tests(SharingOAuth2Tests.PortalHost host) : IClassFixture<SharingOAuth2Tests.PortalHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string TokenEndpoint = "/sharing/rest/oauth2/token";

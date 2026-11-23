@@ -103,6 +103,10 @@ class PullRequestLoadTests(unittest.TestCase):
                 elif name == "normalize-derived-artifacts.yml":
                     self.assertEqual(cancellation, "true")
                     self.assertNotIn("queue", concurrency)
+                elif name in ("clean-code.yml", "repo-hygiene.yml"):
+                    # Light required checks: only a new head cancels a running
+                    # run; same-head events queue so the newest suite finishes.
+                    self.assertEqual(cancellation, "${{ github.event.action == 'synchronize' }}")
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
 

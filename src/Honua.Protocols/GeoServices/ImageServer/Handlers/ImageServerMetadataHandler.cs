@@ -6,6 +6,8 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -207,7 +209,7 @@ internal sealed class ImageServerMetadataHandler
                 // and no pixels.
                 MinScale = 0,
                 MaxScale = 0,
-                CopyrightText = resolved.Description ?? "",
+                CopyrightText = CopyrightFor(snapshot, resolved),
                 ServiceDataType = "esriImageServiceDataTypeGeneric",
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
@@ -259,6 +261,19 @@ internal sealed class ImageServerMetadataHandler
         {
             DeferredDisposal.Dispose(featureActivity);
         }
+    }
+
+    // Credits follow the crosswalk like FeatureServer and MapServer: attribution, else the inherited licence.
+    private static string CopyrightFor(MetadataV2GraphSnapshot snapshot, ImageServerV2Lookups.ResolvedImageLayer resolved)
+    {
+        if (resolved.Resource is null)
+        {
+            return string.Empty;
+        }
+
+        var service = snapshot.Index.ServicesById.GetValueOrDefault(resolved.Publication.ServiceId);
+        var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resolved.Resource, service);
+        return (string.IsNullOrWhiteSpace(governance.Attribution) ? governance.License : governance.Attribution) ?? string.Empty;
     }
 
     private static SpatialReference CreateSpatialReference(int? srid)

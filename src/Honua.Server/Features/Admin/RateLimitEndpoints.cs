@@ -20,6 +20,7 @@ namespace Honua.Server.Features.Admin;
 internal static partial class RateLimitEndpoints
 {
     private const string RateLimitSettingsName = "Rate-limit policies";
+    private const string ConcurrentChangeMessage = "Another administrator changed this policy at the same time; read it again and retry.";
 
     internal sealed class RateLimitEndpointsLog;
 
@@ -225,7 +226,7 @@ internal static partial class RateLimitEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<RateLimitPolicyResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<RateLimitPolicyResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdatePolicy(
             Guid id,
             UpdateRateLimitPolicyRequest request,
@@ -261,6 +262,10 @@ internal static partial class RateLimitEndpoints
 
             return TypedResults.Ok(ApiResponse<RateLimitPolicyResponse>.CreateSuccess(ToResponse(result!)));
         }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
@@ -290,7 +295,7 @@ internal static partial class RateLimitEndpoints
         return null;
     }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleDeletePolicy(
             Guid id,
             [FromServices] IRateLimitPolicyStore store,
@@ -307,6 +312,10 @@ internal static partial class RateLimitEndpoints
 
             RateLimitLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Rate limit policy deleted"));
+        }
+        catch (ConfigurationWriteConflictException)
+        {
+            return TypedResults.Conflict(ApiResponse<object>.Failure(ConcurrentChangeMessage));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
