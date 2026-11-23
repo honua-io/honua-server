@@ -2769,7 +2769,7 @@
         "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.BatchRunner_ExecutionWorkerComposition_RunsTheLaunchedImportAndReportsBatch",
         "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.LocalDurableRunner_InProcessWorkerLoop_CompletesImportAndReportsRunner",
         "Honua.Server.Tests.Import.ImportEndpointDurableRunnerWithoutRedisTests.UploadImport_ForcedBackgroundOnHostWithoutRedis_SucceedsOnDurableRunnerAndRowsAreReadable",
-        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields",
+        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithServerAssignedUploadId_ExposesAcceptedUploadAndImportJobResultFields",
         "Honua.Server.Tests.Import.ImportReadWriteContractTests.Import_GetJobStatus_ShouldReturnJobStatus",
         "Honua.Server.Tests.Import.StreamingImportTests.GetJobStatus_WithInvalidJobId_ReturnsNotFound"
       ],
@@ -2944,7 +2944,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.ImportEndpointTests.GetUploadProgress_WithUnknownUploadId_ReturnsNotFound",
-        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields"
+        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithServerAssignedUploadId_ExposesAcceptedUploadAndImportJobResultFields"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -19518,11 +19518,11 @@
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_RepeatRequest_WithValidRequest_ReturnsImportResult",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_TargetSchemaOutsideOperationalSchemas_Returns400AndCreatesNoSchema",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_V1_WithValidRequest_ReturnsImportResult",
-        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithCloudStagingFailure_DeletesUploadedCloudObject",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithForceBackgroundAndLocalStaging_ReturnsAccepted",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithInvalidTableName_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithMissingTableName_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithServerAssignedUploadId_ExposesAcceptedUploadAndImportJobResultFields",
         "Honua.Server.Tests.Import.ImportReadWriteContractTests.Import_UploadFile_ShouldAcceptValidFormats",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_CompleteReplace_PromotesAllSourceRows",
         "Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests.Upload_CsvWithUnparseableGeometry_RetainsBothRowsOnReplace",
