@@ -467,19 +467,15 @@ internal sealed partial class PostgresVersionManager
         var transaction = (NpgsqlTransaction)dbTransaction;
         await using var transactionScope = transaction;
 
-        // Committed watermark: the published prefix (migration 228). Every generation at or below it
-        // has committed or rolled back, so an in-flight lower generation is never skipped.
-        long visibleGeneration;
-        await using (var generationCommand = new NpgsqlCommand(
-            "SELECT honua.feature_change_read_horizon()", connection)
-        { Transaction = transaction })
-        {
-            var result = await generationCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            visibleGeneration = result is long generation ? generation : 0;
-        }
+        // The ancestor this reconcile records is the published prefix (migration 228): every generation
+        // at or below it has committed or rolled back, so an in-flight lower one is never skipped. A
+        // change analysed above it is seen again by the next reconcile, where a resolved one matches its
+        // rebased base and a pending one is still pending.
+        var (visibleGeneration, analysedThrough) = await ReadAnalysisBoundsAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         // default_changes: the net DEFAULT operation per (layer_id, objectid) since the merge base, up to
-        // the watermark the ancestor advances to, so a later reconcile neither repeats nor misses one.
+        // the newest generation this snapshot sees, which is the state of the live rows it joins.
         // For each overlapping overlay row, join the live DEFAULT row (NULL when DEFAULT deleted it) and
         // the branch's captured base image. Geometry is rendered to WKT for display only.
         await using var command = new NpgsqlCommand($"""
@@ -487,7 +483,7 @@ internal sealed partial class PostgresVersionManager
                 SELECT layer_id, objectid,
                        (array_agg(operation ORDER BY generation DESC))[1] AS last_op
                 FROM honua.feature_changes
-                WHERE version_id IS NULL AND generation > @ancestor AND generation <= @visible
+                WHERE version_id IS NULL AND generation > @ancestor AND generation <= @through
                 GROUP BY layer_id, objectid
             )
             SELECT ve.layer_id, ve.objectid, ve.operation AS branch_op, dc.last_op AS default_op,
@@ -504,7 +500,7 @@ internal sealed partial class PostgresVersionManager
             """, connection)
         { Transaction = transaction };
         command.Parameters.AddWithValue("ancestor", commonAncestorGen);
-        command.Parameters.AddWithValue("visible", visibleGeneration);
+        command.Parameters.AddWithValue("through", analysedThrough);
         command.Parameters.AddWithValue("version", versionId);
 
         var conflicts = new List<OverlapConflict>();
@@ -513,87 +509,16 @@ internal sealed partial class PostgresVersionManager
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var layerId = reader.GetInt32(0);
-            var objectId = reader.GetInt64(1);
-            var branchOp = reader.GetInt16(2);
-            var defaultOp = reader.GetInt16(3);
-            var baseAttrs = reader.IsDBNull(4) ? null : reader.GetString(4);
-            var defaultAttrs = reader.IsDBNull(5) ? null : reader.GetString(5);
-            var versionAttrs = reader.IsDBNull(6) ? null : reader.GetString(6);
-            var baseGeom = reader.IsDBNull(7) ? null : reader.GetString(7);
-            var defaultGeom = reader.IsDBNull(8) ? null : reader.GetString(8);
-            var versionGeom = reader.IsDBNull(9) ? null : reader.GetString(9);
-
-            // Delete-vs-update pairs are always genuine conflicts.
-            if (branchOp == 2 && defaultOp == 3)
+            var (conflict, merge) = ClassifyOverlap(OverlapRow.Read(reader), detection);
+            if (conflict is not null)
             {
-                conflicts.Add(new OverlapConflict(layerId, objectId, ReplicaConflictType.UpdateDelete,
-                    baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, ImmutableArray<VersionConflictFieldDiff>.Empty));
-                continue;
+                conflicts.Add(conflict);
             }
 
-            if (branchOp == 3 && defaultOp == 2)
+            if (merge is not null)
             {
-                conflicts.Add(new OverlapConflict(layerId, objectId, ReplicaConflictType.DeleteUpdate,
-                    baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, ImmutableArray<VersionConflictFieldDiff>.Empty));
-                continue;
+                merges.Add(merge);
             }
-
-            if (branchOp == 3 && defaultOp == 3)
-            {
-                // Both deleted the same row: a no-op convergence, not a conflict.
-                continue;
-            }
-
-            // Update-vs-update: compute the field-level diffs and decide overlap vs auto-merge.
-            var baseFields = ParseAttributes(baseAttrs);
-            var defaultFields = ParseAttributes(defaultAttrs);
-            var versionFields = ParseAttributes(versionAttrs);
-
-            var defaultChangedFields = ChangedFields(baseFields, defaultFields);
-            if (DefaultMatchesBase(defaultChangedFields, baseGeom, defaultGeom))
-            {
-                continue;
-            }
-
-            var versionChangedFields = ChangedFields(baseFields, versionFields);
-            var overlappingFields = defaultChangedFields.Intersect(versionChangedFields, StringComparer.Ordinal).ToArray();
-
-            var geometryChangedOnBoth = !string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal)
-                && !string.Equals(baseGeom, versionGeom, StringComparison.Ordinal)
-                && !string.Equals(defaultGeom, versionGeom, StringComparison.Ordinal);
-
-            // By-attribute detection auto-merges disjoint edits and only flags genuinely-overlapping
-            // edits (overlapping fields or geometry-vs-geometry). By-object detection flags ANY feature
-            // edited on both sides since the merge base as a conflict, with no field-level auto-merge —
-            // this is the documented Esri esriReconcileByObject behavior.
-            var autoMergeable = detection == VersionConflictDetection.ByAttribute
-                && overlappingFields.Length == 0
-                && !geometryChangedOnBoth;
-
-            if (autoMergeable)
-            {
-                // Disjoint edits: auto-merge DEFAULT's field changes (and a DEFAULT-only geometry change)
-                // into the overlay so a post carries both sides without a conflict.
-                var defaultOnlyGeometryChanged =
-                    !string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal)
-                    && string.Equals(baseGeom, versionGeom, StringComparison.Ordinal);
-                merges.Add(new FieldMerge(layerId, objectId, defaultChangedFields, defaultFields, defaultOnlyGeometryChanged));
-                continue;
-            }
-
-            // Report the overlapping fields when present; under by-object detection a disjoint edit still
-            // surfaces the union of both sides' changed fields so the conflict carries a useful three-way
-            // diff for the manual-resolution UI.
-            var reportedFields = overlappingFields.Length > 0
-                ? overlappingFields
-                : defaultChangedFields.Union(versionChangedFields, StringComparer.Ordinal).ToArray();
-            var fieldDiffs = BuildFieldDiffs(reportedFields, baseFields, defaultFields, versionFields);
-            var conflictType = reportedFields.Length > 0
-                ? ReplicaConflictType.Attribute
-                : ReplicaConflictType.Geometry;
-            conflicts.Add(new OverlapConflict(layerId, objectId, conflictType,
-                baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, fieldDiffs));
         }
 
         return new OverlapAnalysis(conflicts, merges, visibleGeneration);
@@ -1016,10 +941,6 @@ internal sealed partial class PostgresVersionManager
         await using var publisher = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         _ = await FeatureChangePrefix.SettleAsync(publisher, cancellationToken).ConfigureAwait(false);
     }
-
-    // DEFAULT still matches the base the overlay was built on (a rebase took it in): nothing to resolve.
-    private static bool DefaultMatchesBase(HashSet<string> defaultChangedFields, string? baseGeom, string? defaultGeom)
-        => defaultChangedFields.Count == 0 && string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal);
 
     private static HashSet<string> ChangedFields(
         ImmutableDictionary<string, JsonElement> baseFields,
