@@ -35,9 +35,9 @@ internal static class McpRefusalNextAction
             "Check the id with the matching list tool; an id you cannot see is reported as not found.",
         McpErrorMapper.Codes.InvalidArgument =>
             "Correct the argument named in the message. The tool's inputSchema lists the accepted values.",
-        McpErrorMapper.Codes.AlreadyExists => data.ConflictingJobId is { } jobId
-            ? $"Read job {jobId} with honua_get_job_results instead of submitting it again."
-            : "Read the existing resource instead of creating it again.",
+        McpErrorMapper.Codes.AlreadyExists =>
+            "This idempotency key was already used for a different request. Send the identical request to replay it, "
+            + "or use a new key for new work.",
         McpErrorMapper.Codes.Unavailable => ForUnavailable(data),
         _ => null,
     };

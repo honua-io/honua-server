@@ -53,7 +53,7 @@ Modern requests support Multi Round-Trip Requests (MRTR, SEP-2322). Instead of a
 
 Clients that declare neither mode, and legacy sessions, get the same results as before.
 
-**Approval status names.** A change waiting for a person's approval is `AwaitingApproval` on proposals, deploy operations and publication status. Operation handles report the same state as `RequiresApproval` (with `requiresApproval: true`), and status filters such as `honua_deploy_operations` accept either name. Package review lists the requirement as `requires_approval`, and a refused call that needs approval carries the error code `approval_required`.
+**Approval status names.** A change waiting for a person's approval is `AwaitingApproval` on proposals, deploy operations and publication status. Operation handles report the same state as `RequiresApproval` (with `requiresApproval: true`), and status filters such as `honua_deploy_operations` accept either name. Package review lists the requirement as `requires_approval`. An MCP call refused because it needs approval returns `failed_precondition` with `approvalRequired: true`, plus `proposalId` and `resourceUri` when a proposal was filed; REST problem details use the code `approval_required`.
 
 ## API-key proposals
 

@@ -29,6 +29,7 @@ public sealed class McpRefusalNextActionTests
         { new GeoprocessingPreconditionFailedException("already terminal"), "resolve the condition" },
         { new GeoprocessingNotFoundException("job-missing"), "matching list tool" },
         { new GeoprocessingValidationException("steps cannot be empty"), "inputSchema" },
+        { new GeoprocessingIdempotencyConflictException("job-other"), "use a new key" },
     };
 
     [UnitTheory]
