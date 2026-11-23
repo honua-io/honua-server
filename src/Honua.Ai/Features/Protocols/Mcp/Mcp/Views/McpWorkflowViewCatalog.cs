@@ -349,8 +349,8 @@ internal static class McpWorkflowViewCatalog
         Name = MetadataViewName,
         Title = "Service and layer metadata",
         Description =
-            "Read and edit service and layer metadata: descriptions, discovery metadata, time info, field aliases "
-            + "and popups. An agent's edits file a proposal for human approval. Select access for keys, roles and grants.",
+            "Read and edit service and layer metadata: descriptions, discovery metadata and time info. "
+            + "An agent's edits file a proposal for human approval. Select access for keys, roles and grants.",
         Revision = "metadata.v1",
         Stages =
         [
@@ -358,30 +358,26 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "read",
                 Title = "Read metadata",
-                Description = "Find the service and layer, then read its schema, settings, fields and popup.",
+                Description = "Find the service and layer, then read its schema and settings.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_layers"),
                     McpWorkflowViewMemberRule.Exact("honua_describe_layer"),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_settings_get"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_fields_get"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_popup_info_get"),
                 ],
             },
             new McpWorkflowViewStageDefinition
             {
                 Id = "edit",
                 Title = "Edit metadata",
-                Description = "Set layer metadata, service or layer discovery metadata, time info, field aliases and popup.",
+                Description = "Set layer metadata, service or layer discovery metadata, and time info.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_layer_metadata_set"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_metadata_service_discovery_set"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_metadata_layer_discovery_set"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_timeinfo_set"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_fields_set"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_popup_info_set"),
                 ],
             },
         ],

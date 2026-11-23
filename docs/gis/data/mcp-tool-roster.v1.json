@@ -321,10 +321,6 @@
       "honua_update_folder"
     ],
     "metadata": [
-      "honua_admin_layer_fields_get",
-      "honua_admin_layer_fields_set",
-      "honua_admin_layer_popup_info_get",
-      "honua_admin_layer_popup_info_set",
       "honua_admin_metadata_layer_discovery_set",
       "honua_admin_metadata_service_discovery_set",
       "honua_admin_services_layer_metadata_set",

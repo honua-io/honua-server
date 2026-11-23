@@ -15,7 +15,7 @@ Read the install `AGENTS.md`. Call serving MCP at `http://127.0.0.1:<HONUA_HTTP_
 4. Verify with [a feature query](references/query.md).
 5. Success is the new layer in `honua_list_layers` and a query whose features or `count` match the filter you sent. Say when the count could not be checked.
 
-Other tasks have their own views: reconnect with `?view=metadata` to read or edit service and layer metadata (descriptions, discovery metadata, field aliases and popups), `?view=access` for API keys, roles, grants and service access policy, `?view=exports` to export a Layer as files, and `?view=folders` to organize folders. An agent's metadata or access change files a proposal; follow it to completion as in step 2.
+Other tasks have their own views: reconnect with `?view=metadata` to read or edit service and layer metadata (descriptions, discovery metadata and time info), `?view=access` for API keys, roles, grants and service access policy, `?view=exports` to export a Layer as files, and `?view=folders` to organize folders. An agent's metadata or access change files a proposal; follow it to completion as in step 2.
 
 Common failure: missing tools means the configure view was not selected. HTTP 401 means authentication failed: the key was missing or invalid. Stop. A refusal for missing admin authority or scope is permanent; another view does not grant it. Stop. An ingest timeout leaves the outcome uncertain and returns no operation identity to poll. Stop and report that supported verification is needed before continuing; do not ingest it again or publish from that table. For a submitted publication request that returned an operation, proposal, or job identity, retain that identity and inspect its status before continuing.
 

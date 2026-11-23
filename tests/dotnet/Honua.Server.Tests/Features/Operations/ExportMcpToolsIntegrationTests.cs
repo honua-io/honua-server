@@ -119,11 +119,13 @@ public sealed class ExportMcpToolsIntegrationTests
                 : null;
     }
 
-    private static async Task<string?> ExportListResponseAsync(HttpClient admin)
+    // The Export items, without the response envelope's timestamp.
+    private static async Task<string> ExportListResponseAsync(HttpClient admin)
     {
         var listed = await CallAsync(admin, "honua_admin_exports_list", new { });
-        return listed.GetProperty("result").GetProperty("structuredContent").GetProperty("details")
-            .GetProperty("response").GetString();
+        var response = listed.GetProperty("result").GetProperty("structuredContent").GetProperty("details")
+            .GetProperty("response").GetString()!;
+        return JsonElement.Parse(response).GetProperty("data").GetProperty("items").GetRawText();
     }
 
     private static async Task<HttpClient> KeyClientAsync(WebAppFixture fixture, HttpClient admin, params string[] permissions)
