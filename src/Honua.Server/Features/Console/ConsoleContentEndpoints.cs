@@ -98,6 +98,11 @@ internal static class ConsoleContentEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid visibility filter: {visibilityError}"));
             }
 
+            if (!ConsoleContentSelection.IsValidCursor(cursor))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid cursor: pass the nextCursor value from the previous page."));
+            }
+
             var query = new ConsoleContentQuery
             {
                 ItemTypes = itemTypes,
