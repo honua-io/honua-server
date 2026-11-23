@@ -543,7 +543,7 @@ which is why both the run count and exact observed span are recorded.
 | `nightly-migration-evidence.yml` | Nightly Migration Evidence Pack | daily `schedule` (07:15 UTC), `workflow_dispatch` | Drives the fixture-based GeoServer migration apply path end-to-end (#1015) and uploads the deterministic evidence pack. |
 | `protocol-harness-certification.yml` | Protocol Harness Certification | daily `schedule` (10:41 UTC), `workflow_dispatch` | Executes the exact governed server integration-test roster outside PR CI. Separately checks out the producer contract and candidate source, binds a SHA-labeled immutable image identity, rejects incomplete TRX, and emits digest-bound operation receipts with exact `test_ids` for nightly/release aggregation. |
 | `provider-http-smoke.yml` | Provider HTTP-Stack Smoke | daily `schedule` (06:30 UTC), `workflow_dispatch` | Interface-level smoke that boots a real host per secondary provider (DuckDB in-process; MySQL and SQL Server via Testcontainers) over FeatureServer/OGC API Features/OData/tiles, plus the gated Oracle real-database lane (#2947). |
-| `cloud-integration-harness.yml` | Cloud Integration Harness | daily `schedule` (05:00 UTC), `workflow_dispatch` | Docker-backed cloud-integration tests (#2163) against emulated backends (kind, LocalStack). `Category=CloudIntegration` only; excluded from every PR run. |
+| `cloud-integration-harness.yml` | Cloud Integration Harness | daily `schedule` (05:00 UTC), `workflow_dispatch`, `pull_request` on migration, Postgres store, schema-guard and process-pool paths (Local Substrate job only) | Docker-backed cloud-integration tests (#2163) against emulated backends (kind, LocalStack). Nightly runs `Category=CloudIntegration` and `Category=LocalSubstrate`; a matching PR runs only the Local Substrate job (migration gate, schema guard and local process pool), informational and not required. |
 | `real-aws-certification.yml` | Real AWS Certification | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | `Category=RealAwsCertification` against a LIVE AWS account. Gated on a maintainer OIDC role variable, budgeted, teardown-guaranteed. |
 | `standing-aws-cert-plan.yml` | Standing AWS certification plan only | `workflow_dispatch` on `trunk`; PR offline controls | Protected `cert` OIDC job on an ephemeral GitHub-hosted runner. Checks out public IaC at exact current `trunk`, admits the protected request, candidate, reviewed modules and deployed bootstrap ZIP, and exports only age ciphertext plus a bound public-safe receipt. The workflow does not provision the existing backend, roles, protected inputs or local decryption custody; it does not apply a plan. |
 | `lambda-preview-certification.yml` | Lambda Preview Certification | `workflow_dispatch` | Deploys an exact GHCR Lambda AOT image to the certified AWS account, invokes and verifies it, guarantees teardown, and emits a fingerprint-only receipt containing the true ECR artifact digest for the release manifest handoff. |
@@ -765,8 +765,7 @@ artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most two at once for every `selective_base` dispatch. A selective
 dispatch whose router reason is `no_path_match` does not schedule those default
 smoke shards. Honua.Core package compatibility runs on that dispatch only when a
-changed file is outside docs, workflows, `scripts/ci/`, repository metadata and
-tests. Repository metadata (`.github/codeql/`, issue templates, CODEOWNERS,
+changed file is a Core package input: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. Repository metadata (`.github/codeql/`, issue templates, CODEOWNERS,
 Dependabot, actionlint, hygiene and PR template files) also starts no managed
 build or integration lane on any `ci.yml` run. An empty path list still runs it. A skipped Core
 package does not cancel a selected AOT or MCP lane; a failed Core package or
@@ -777,7 +776,8 @@ Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
 including transitive publish inputs and REST/gRPC backends. Shared seed files
-select every compatibility lane. Shared inputs,
+select every compatibility lane. `skills/` (embedded in `src/Honua.Ai`) counts
+as a `src/` path and `certification/` selects no lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the

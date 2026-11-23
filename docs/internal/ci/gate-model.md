@@ -149,6 +149,8 @@ NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
+   A nightly suite may also run as an informational, path-filtered PR check when its nightly reds are PR-catchable regressions. The Cloud Integration Harness Local Substrate job runs on PRs that touch migrations, the Postgres stores the schema guard drives (raster included), the local process pool or the server host composition: 9 of its 14 nightly runs from 10 to 22 November failed on trunk changes no PR had run. It is not a required check.
+
    **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Shard identity validation checks the PR merge tree, rejecting duplicate names globally and duplicate filters within a test project (including grouped-project overlap). Disjoint test projects may share a namespace filter. This deterministic check has a five-minute timeout and feeds the existing required hygiene aggregate, so concurrent additions fail before landing without adding a required check name. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
@@ -262,8 +264,10 @@ Stage 3 details:
   Full runs retain width 16. A selective affected run whose router reason is
   `no_path_match` does not schedule those default smoke shards: they do not own
   the diff, and the twice-daily full run keeps them. The same run skips
-  Honua.Core package compatibility when every changed file is docs, a workflow,
-  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  Honua.Core package compatibility unless a changed file is one that packing
+  Honua.Core reads: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. An empty path list still runs that heavy job.
+  Skill (`skills/`, embedded in `src/Honua.Ai`) edits select the lanes a `src/`
+  edit selects; `certification/` edits select no expensive lane.
   A skipped Core package does not cancel a selected AOT or MCP lane; a failed
   Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
@@ -1092,7 +1096,8 @@ Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
 including transitive publish inputs and REST/gRPC backends. Shared seed files
-select every compatibility lane. Shared inputs,
+select every compatibility lane. `skills/` (embedded in `src/Honua.Ai`) counts
+as a `src/` path and `certification/` selects no lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
@@ -1601,8 +1606,10 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
-repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+dispatch only when a changed file is a Core package input: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`.
+Affected run 45149626646 packed Core for `docker/` and test files alone, and 12
+of 13 measured affected runs that packed Core touched no input. Its server build compiles project references that Build & Format Check
+already compiles in the same run. Repository metadata (`.github/codeql/`, issue
 templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
 starts no managed build or integration lane on any `ci.yml` run: affected run
 44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
