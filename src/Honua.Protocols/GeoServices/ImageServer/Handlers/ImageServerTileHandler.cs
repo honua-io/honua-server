@@ -516,21 +516,18 @@ internal sealed class ImageServerTileHandler
             context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
     }
 
-    // The REST tile route serves only the levels its tileInfo advertises (0..MaxLevel); WMTS shares the
-    // renderer but advertises its own tile matrix set, so it does not pass through this check.
+    // Once the service advertises a tile cache (TileMetadata:Enabled), its REST tile route serves only the
+    // levels that tileInfo lists (0..MaxLevel). A dynamic service advertises no levels and keeps the full
+    // grid. WMTS shares the renderer but advertises its own tile matrix set, so it skips this check.
     internal static IResult? RefuseLevelOutsideTileInfo(HttpContext context, int level)
     {
-        var maxLevel = AdvertisedMaxLevel(context);
-        return level <= maxLevel
+        var tileMetadata = context.RequestServices.GetService<IOptions<ImageServerTileMetadataOptions>>()?.Value;
+        return tileMetadata is not { Enabled: true } || level <= tileMetadata.MaxLevel
             ? null
             : StandardErrorHelpers.CreateBadRequest(
                 context,
-                $"Tile level {level.ToString(CultureInfo.InvariantCulture)} is outside the service tiling scheme (0-{maxLevel.ToString(CultureInfo.InvariantCulture)}).");
+                $"Tile level {level.ToString(CultureInfo.InvariantCulture)} is outside the service tiling scheme (0-{tileMetadata.MaxLevel.ToString(CultureInfo.InvariantCulture)}).");
     }
-
-    private static int AdvertisedMaxLevel(HttpContext context)
-        => context.RequestServices.GetService<IOptions<ImageServerTileMetadataOptions>>()?.Value.MaxLevel
-           ?? new ImageServerTileMetadataOptions().MaxLevel;
 
     private static class WebMercatorTileCoordinates
     {

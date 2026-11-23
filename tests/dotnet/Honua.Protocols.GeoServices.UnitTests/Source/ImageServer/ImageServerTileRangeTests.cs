@@ -71,6 +71,17 @@ public sealed class ImageServerTileRangeTests
         => ImageServerTileHandler.RefuseLevelOutsideTileInfo(ContextWithMaxLevel("/rest/services/1/ImageServer/tile/0/0/0", maxLevel), level)
             .Should().BeNull();
 
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public void RefuseLevelOutsideTileInfo_DynamicServiceAdvertisingNoLevels_AdmitsTheFullGrid()
+    {
+        var context = ImageServerTestFixtures.CreateContext(
+            "/rest/services/1/ImageServer/tile/28/0/0",
+            services => services.Configure<ImageServerTileMetadataOptions>(options => options.MaxLevel = 10));
+
+        ImageServerTileHandler.RefuseLevelOutsideTileInfo(context, 28).Should().BeNull();
+    }
+
     // WMTS shares the renderer but advertises its own tile matrix set (levels 0-22), so a level above
     // TileMetadata:MaxLevel is still served through the handler.
     [UnitTest]
@@ -91,7 +102,11 @@ public sealed class ImageServerTileRangeTests
     private static DefaultHttpContext ContextWithMaxLevel(string path, int maxLevel)
         => ImageServerTestFixtures.CreateContext(
             path,
-            services => services.Configure<ImageServerTileMetadataOptions>(options => options.MaxLevel = maxLevel));
+            services => services.Configure<ImageServerTileMetadataOptions>(options =>
+            {
+                options.Enabled = true;
+                options.MaxLevel = maxLevel;
+            }));
 
     [UnitTest]
     [Operation(Operations.GetTile)]

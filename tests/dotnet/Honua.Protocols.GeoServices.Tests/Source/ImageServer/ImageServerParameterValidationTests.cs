@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Protocols.GeoServices.ImageServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -15,6 +16,7 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Options;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
@@ -476,11 +478,31 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
     [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task GetImageTile_LevelBeyondAdvertisedTileInfo_ReturnsBadRequest()
     {
-        // TileMetadata:MaxLevel defaults to 23, the deepest level the service's tileInfo advertises.
+        var tileMetadata = _fixture.GetService<IOptions<ImageServerTileMetadataOptions>>().Value;
+        tileMetadata.Enabled = true;
+        try
+        {
+            var response = await GetSeededAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/tile/{tileMetadata.MaxLevel + 1}/0/0");
+
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+        finally
+        {
+            tileMetadata.Enabled = false;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task GetImageTile_DynamicServiceLevelBeyondMaxLevel_IsStillRendered()
+    {
+        // With no tile cache advertised (the default), the deepest grid level is a tile miss, not a refusal.
         var response = await GetSeededAsync(
             $"/rest/services/{TestLayerId}/ImageServer/tile/24/0/0");
 
-        await response.AssertGeoServicesErrorAsync(400);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     #endregion
