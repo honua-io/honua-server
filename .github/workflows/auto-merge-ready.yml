@@ -44,6 +44,8 @@ jobs:
           permission-workflows: write
       - name: Enable auto-merge for the live pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          BOT_APP_SLUG: ${{ steps.bot.outputs.app-slug }}
         with:
           github-token: ${{ steps.bot.outputs.token }}
           script: |
@@ -54,7 +56,7 @@ jobs:
                     id state isDraft baseRefName mergeStateStatus headRepository { nameWithOwner }
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     commits { totalCount }
-                    autoMergeRequest { mergeMethod }
+                    autoMergeRequest { mergeMethod enabledBy { login } }
                   }
                 }
               }`, { ...context.repo, number: context.issue.number });
@@ -72,7 +74,12 @@ jobs:
               core.notice(`Pull request is ${pr.state}; nothing to arm or revoke.`);
               return;
             }
-            if (pr?.autoMergeRequest && !eligible) {
+            // A bundle that grew past one commit after the bot armed SQUASH switches to MERGE;
+            // a method a lane chose itself is kept.
+            const armedByBot = pr?.autoMergeRequest?.enabledBy?.login?.replace(/\[bot\]$/, '') === process.env.BOT_APP_SLUG;
+            const switchToMerge = eligible && armedByBot && pr.autoMergeRequest.mergeMethod === 'SQUASH'
+              && mergeMethod === 'MERGE' && ['BLOCKED', 'BEHIND', 'UNKNOWN'].includes(pr.mergeStateStatus);
+            if (pr?.autoMergeRequest && (!eligible || switchToMerge)) {
               await github.graphql(`
                 mutation($pullRequestId: ID!) {
                   disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
@@ -104,7 +111,8 @@ jobs:
                 }`, { pullRequestId: pr.id, mergeMethod });
             } catch (error) {
               const messages = error.errors?.map(item => item.message) ?? [];
-              if (!messages.length || !messages.every(message => message === 'Pull request is in clean status')) {
+              if (switchToMerge || !messages.length
+                || !messages.every(message => message === 'Pull request is in clean status')) {
                 throw error;
               }
               core.notice('PR became mergeable before auto-merge could be armed; existing merge authority handles it.');

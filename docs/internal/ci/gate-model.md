@@ -1653,7 +1653,10 @@ A queued run that starts after the PR merged or closed ends neutrally without
 touching it: GitHub keeps `autoMergeRequest` on a merged PR but refuses to
 disable it, which used to leave a red check on the merged head.
 
-Label events start a job only for the hold labels, and `edited` only when the base branch changed;
+When the bot armed SQUASH on a single-commit PR that has since grown into a
+multi-commit bundle, the next run switches it to MERGE (only while the PR is
+still blocked); a method a lane chose itself is kept. Label events start a job
+only for the hold labels, and `edited` only when the base branch changed;
 other label and body edits are skipped without a runner.
 
 ## Admin authentication capacity split (12 November 2026)
