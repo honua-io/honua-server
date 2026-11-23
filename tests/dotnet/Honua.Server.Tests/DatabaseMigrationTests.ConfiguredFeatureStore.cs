@@ -49,6 +49,27 @@ public sealed partial class DatabaseMigrationTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_WithPublicAsConfiguredSchema_KeepsFeatureStoreInPlace()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Database:Schema"] = "public" }).Build();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+
+        var result = await runner.RunMigrationsAsync(_connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue(result.Error?.ToString() ?? result.ErrorMessage);
+        result.AppliedScripts.Should().Contain(FeatureStoreAdoptionMigration);
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        (await ScalarAsync(connection, SharedFeatureTablesSql)).Should().Be("public.features",
+            "migration 001 already created the table in the configured schema");
+        await guard.VerifyAsync(_connectionString);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task CanonicalRunner_OnPopulatedDefaultFeatureStore_AdoptsConfiguredSchemaWithoutCopyingRows()
     {
         var baseline = new PostgresDatabaseMigrationRunner(
@@ -60,7 +81,9 @@ public sealed partial class DatabaseMigrationTests
         await connection.OpenAsync();
         var legacyTable = (string)(await ScalarAsync(connection, SharedFeatureTablesSql))!;
         var originalOid = await ScalarAsync(connection,
-            $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); SELECT '{legacyTable}'::regclass::oid::bigint;");
+            $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); " +
+            $"INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type) VALUES ('moved', '{legacyTable.Split('.')[0]}', 'features', 'Point'); " +
+            $"SELECT '{legacyTable}'::regclass::oid::bigint;");
 
         var configuration = ConfiguredRegistryConfiguration();
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
@@ -79,6 +102,8 @@ public sealed partial class DatabaseMigrationTests
         (await ScalarAsync(connection,
             "INSERT INTO custom_registry.features(layer_id) VALUES (7) RETURNING objectid;"))
             .Should().Be(2L, "the owned objectid sequence moves with the table");
+        (await ScalarAsync(connection, "SELECT table_schema FROM custom_registry.layers WHERE layer_name = 'moved';"))
+            .Should().Be("custom_registry", "registry rows follow the moved table");
         await guard.VerifyAsync(_connectionString);
     }
 

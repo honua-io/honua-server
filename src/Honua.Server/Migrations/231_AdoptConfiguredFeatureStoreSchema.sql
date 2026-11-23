@@ -1,10 +1,12 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
--- 001 creates the shared managed features table unqualified, so under a non-default
--- Database:Schema it lands in honua or public. The publish check, the managed writer and the
--- attachment store address $HonuaSchema$.features, so move the table there without copying rows.
--- Indexes, constraints, the owned objectid sequence and the change trigger move with it.
+-- 001 creates the shared managed features table unqualified and migrations run with
+-- search_path public, so under a non-default Database:Schema it sits in public (or honua on
+-- older hand-built databases). The publish check, the managed writer and the attachment store
+-- address the configured schema, so move the table there without copying rows. Indexes,
+-- constraints, the owned objectid sequence and any trigger attached to it move with it.
+-- Later migrations must name this table as $HonuaSchema$.features, never bare features.
 -- honua:migration-phase contract
 -- honua:compatibility-review reason=#9627 nodes on a non-default schema already write $HonuaSchema$.features; old nodes must be drained before the table moves
 
@@ -25,7 +27,8 @@ BEGIN
     SELECT coalesce(array_agg(candidate.schema_name ORDER BY candidate.schema_name), '{}')
     INTO shared_sources
     FROM unnest(ARRAY['honua', 'public']) AS candidate(schema_name)
-    WHERE (SELECT count(*)
+    WHERE candidate.schema_name <> target_schema
+      AND (SELECT count(*)
            FROM pg_catalog.pg_attribute AS attribute
            WHERE attribute.attrelid = to_regclass(format('%I.%I', candidate.schema_name, 'features'))
              AND NOT attribute.attisdropped
@@ -48,5 +51,13 @@ BEGIN
     END IF;
 
     EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', shared_sources[1], 'features', target_schema);
+
+    -- Registry rows that recorded the old location follow the table (227 has already moved
+    -- the registry into the configured schema).
+    IF to_regclass(format('%I.%I', target_schema, 'layers')) IS NOT NULL THEN
+        EXECUTE format(
+            'UPDATE %I.layers SET table_schema = %L WHERE table_name = %L AND coalesce(table_schema, %L) IN (%L, %L)',
+            target_schema, target_schema, 'features', '', '', shared_sources[1]);
+    END IF;
 END
 $$;

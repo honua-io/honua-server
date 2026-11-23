@@ -98,9 +98,10 @@ requires this migration even when startup migrations are disabled. Optional rast
 provisioning uses the registry location when enabled after the move.
 
 Migration `231_AdoptConfiguredFeatureStoreSchema.sql` moves the shared managed
-`features` table into the configured schema from `honua` or `public`, wherever
-migration 001 created it. Rows, the table identity, indexes and the object ID
-sequence move with it. It moves only a table with Honua's `layer_id` and
+`features` table into the configured schema from `public`, where migration 001
+creates it (or `honua` on older hand-built databases). Rows, the table identity,
+indexes and the object ID sequence move with it, and registry rows that recorded the
+old location are updated. With `Database:Schema=public` the table is already in place. It moves only a table with Honua's `layer_id` and
 `attributes` columns, so a user table that happens to be called `features` stays
 where it is. The migration stops without changes when the configured schema
 already has a `features` table and a shared one also exists elsewhere, or when no

@@ -53,6 +53,45 @@ public sealed class ManagedStoreConnectionSchemaTests(PostgresFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task ResolveCanonicalFeaturesSchema_UnderConfiguredSchema_FindsTheAdoptedTableOffTheSearchPath()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("canonical_features");
+        try
+        {
+            await using (var setup = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = setup.CreateCommand())
+            {
+                command.CommandText = $"CREATE TABLE \"{schema}\".features (objectid bigint);";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // Publish and refresh connections use the role's search path, which does not
+            // include the configured schema after migration 231 moved the table there.
+            var service = new PostgreSqlLayerPublishingService(
+                Mock.Of<ITableDiscoveryService>(),
+                Mock.Of<IMetadataV2GraphStore>(),
+                NullLogger<PostgreSqlLayerPublishingService>.Instance,
+                metadataSchema: schema);
+            await using var connection = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                SearchPath = "pg_catalog"
+            }.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            var resolve = typeof(PostgreSqlLayerPublishingService).GetMethod(
+                "ResolveCanonicalFeaturesSchemaAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+            var resolved = await (Task<string>)resolve.Invoke(service, [connection, transaction, CancellationToken.None])!;
+
+            resolved.Should().Be(schema);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static PostgreSqlLayerPublishingService CreateService(string serverConnectionString)
     {
         var provider = new Mock<IAdoNetDatabaseConnectionProvider>();

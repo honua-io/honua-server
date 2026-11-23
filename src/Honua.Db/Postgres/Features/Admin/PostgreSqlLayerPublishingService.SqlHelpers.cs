@@ -42,7 +42,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             """;
     }
 
-    private static async Task<string> ResolveCanonicalFeaturesTableAsync(
+    private async Task<string> ResolveCanonicalFeaturesTableAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -52,7 +52,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier("features")}";
     }
 
-    private static async Task<string> ResolveCanonicalFeaturesSchemaAsync(
+    // Publish and refresh connections carry the role's own search path, not the server's
+    // "<schema>",public, so under a configured Database:Schema the adopted table is found by
+    // its qualified name first; otherwise the bare name resolves as before.
+    private async Task<string> ResolveCanonicalFeaturesSchemaAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -61,10 +64,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SELECT namespace.nspname
             FROM pg_class AS relation
             JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-            WHERE relation.oid = to_regclass('features');
+            WHERE relation.oid = coalesce(to_regclass(@configuredTable), to_regclass('features'));
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter("configuredTable", NpgsqlTypes.NpgsqlDbType.Text)
+        {
+            Value = _configuredFeatureSchema is null
+                ? DBNull.Value
+                : $"{SqlIdentifier.QuoteIdentifier(_configuredFeatureSchema)}.{SqlIdentifier.QuoteIdentifier("features")}"
+        });
         var schema = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
         if (string.IsNullOrWhiteSpace(schema))
         {
