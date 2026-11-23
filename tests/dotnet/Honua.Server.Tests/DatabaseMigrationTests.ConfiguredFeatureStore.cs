@@ -196,7 +196,10 @@ public sealed partial class DatabaseMigrationTests
     private static Task<object?> SeedLegacyManagedLayersAsync(Npgsql.NpgsqlConnection connection, string legacyTable)
     {
         var legacySchema = legacyTable.Split('.')[0];
+        var restoredSequence = $"{legacySchema}.\"restored\\feature_ids\"";
         return ScalarAsync(connection,
+            $"CREATE SEQUENCE {restoredSequence} OWNED BY {legacyTable}.objectid; " +
+            $"ALTER TABLE {legacyTable} ALTER COLUMN objectid SET DEFAULT nextval($id${restoredSequence}$id$::regclass); " +
             $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); " +
             "INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type, storage_options) VALUES " +
             $"('moved', '{legacySchema}', 'features', 'Point', '{{\"managedStore\":\"true\"}}'), " +
