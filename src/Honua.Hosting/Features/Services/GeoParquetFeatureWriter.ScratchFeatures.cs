@@ -39,7 +39,8 @@ public static partial class GeoParquetFeatureWriter
     private static bool ShouldSpillAttribute(string key, StreamingEncoding encoding)
     {
         var fields = encoding.Options.OutFields;
-        return !key.StartsWith("__", StringComparison.Ordinal)
+        return key.Equals(encoding.Options.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase)
+            || !key.StartsWith("__", StringComparison.Ordinal)
             && (fields is null || fields.Length == 0 || (fields.Length == 1 && fields[0] == "*")
                 || fields.Contains(key, StringComparer.OrdinalIgnoreCase));
     }

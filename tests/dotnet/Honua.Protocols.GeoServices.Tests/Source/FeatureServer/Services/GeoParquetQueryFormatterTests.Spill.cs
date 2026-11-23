@@ -54,6 +54,33 @@ public sealed partial class GeoParquetQueryFormatterTests
         }
     }
 
+    [UnitTest]
+    public async Task FormatAsGeoParquetStreamAsync_HilbertSpill_PreservesObjectIdOutsideProjection()
+    {
+        var features = ImmutableArray.Create(Feature.Create(1, CreatePointWkb(1, 1),
+            ImmutableDictionary<string, object?>.Empty.Add("objectid", 99L).Add("label", "parcel")));
+        var resource = CreateResource();
+        var options = new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = "objectid", ReturnGeometry = true, OutputSrid = 4326,
+            OutFields = ["label"],
+            EncodingLimits = new GeoParquetLimits { OrderByBboxHilbert = true },
+        };
+        var (stream, _) = await GeoParquetFeatureWriter.FormatAsGeoParquetStreamAsync(
+            ToAsyncFeatures(features), resource, options);
+        await using (stream)
+        {
+            var (expected, _) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(
+                QueryResult<Feature>.Create(features.Length, features), resource, options);
+            await using (expected)
+            {
+                var expectedIds = await ReadSpillIdsAsync(expected);
+                expectedIds.Should().Equal(99L);
+                (await ReadSpillIdsAsync(stream)).Should().Equal(expectedIds);
+            }
+        }
+    }
+
     private static async Task AssertSpillRowsAsync(Stream stream, int expectedRows)
     {
         stream.Position = 0;
