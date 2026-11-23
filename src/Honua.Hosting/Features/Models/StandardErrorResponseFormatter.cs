@@ -436,7 +436,20 @@ internal static class StandardErrorResponseFormatter
             detailParts.Add($"Debug: {errorResponse.DebugInfo}");
         }
 
-        return detailParts.Count > 0 ? string.Join(" ", detailParts) : errorResponse.Title;
+        return detailParts.Count > 0 ? JoinSentences(detailParts) : errorResponse.Title;
+    }
+
+    // Detail parts are often short titles without a full stop ("Invalid resolution"); end each part
+    // before the next one so the joined text does not run two sentences together.
+    private static string JoinSentences(List<string> parts)
+    {
+        for (var i = 0; i < parts.Count - 1; i++)
+        {
+            var part = parts[i].TrimEnd();
+            parts[i] = part.Length == 0 || part[^1] is '.' or '!' or '?' or ':' or ';' ? part : part + ".";
+        }
+
+        return string.Join(" ", parts);
     }
 
     private const string AccessDeniedExceptionCode = "AccessDenied";
