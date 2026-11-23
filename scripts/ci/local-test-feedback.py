@@ -2,8 +2,9 @@
 """Affected local feedback using the canonical unit planner and shard router; not a PR gate."""
 import argparse
 import functools
-from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
@@ -209,18 +210,19 @@ def run_feedback_tests(plan, results, invoke):
         directory.mkdir()
         invoke(command, check=True, env=env)
         require_tests(directory)
-    with ThreadPoolExecutor(max_workers=test_parallelism(execution_env)) as pool:
-        futures = [pool.submit(run_job, *job) for job in feedback_test_jobs(plan, results, execution_env)]
-        try:
-            done, _ = wait(futures, return_when=FIRST_EXCEPTION)
-        finally:
-            # On a failure or Ctrl-C, start nothing new; leaving the pool waits only for running jobs.
-            for future in futures:
-                future.cancel()
-        failed = [future for future in futures if future in done and future.exception()]
-        if failed:
-            wait(futures)
-            raise failed[0].exception()
+    limit = test_parallelism(execution_env)
+    queued = iter(feedback_test_jobs(plan, results, execution_env))
+    with ThreadPoolExecutor(max_workers=limit) as pool:
+        # Only this thread submits, one job per free slot. A failure or a Ctrl-C handled
+        # here, however late, starts nothing new; leaving the pool waits for running jobs.
+        running = {pool.submit(run_job, *job) for job in itertools.islice(queued, limit)}
+        while running:
+            done, running = wait(running, return_when=FIRST_COMPLETED)
+            failed = [future for future in done if future.exception()]
+            if failed:
+                wait(running)
+                raise failed[0].exception()
+            running |= {pool.submit(run_job, *job) for job in itertools.islice(queued, len(done))}
 
 
 def command_invoker(results, status, run):

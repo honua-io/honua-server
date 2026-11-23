@@ -31,8 +31,8 @@ Use this checklist for every MVP release.
 - [ ] Re-review the GeoServices parity **judgement** ([data/geoservices-parity-judgment.json](../../gis/data/geoservices-parity-judgment.json)) and bump its `lastReviewed` when GeoServices parameters or response shapes changed in the release. The route roster and [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) are **generated** (`scripts/ci/generate-geoservices-parity.sh`) and gated in both directions by `GeoServicesParityMatrixDriftTests`, so route drift already fails CI — what needs a human here is whether each Implemented/Partial/Stub verdict is still the *right* one, which no gate checks. Refresh the [landing page](../../reference/compatibility/geoservices-parity.md) prose to match.
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Bump [`docs/developer/sdk-compatibility-versions.json`](../../developer/sdk-compatibility-versions.json)
-  per the [Server + SDK Compatibility Matrix](../../concepts/ecosystem.md#machine-readable-ci-manifest)
-  procedure: add the new server ref and SDK set at the top, keep
+  per the [SDK-to-server compatibility policy](../../concepts/ecosystem.md#sdk-to-server-compatibility):
+  add the new server ref and SDK set at the top, keep
   `matrixDepth` entries, refresh `matrix.supported` / `matrix.evaluation`,
   and confirm a manual `sdk-server-compatibility.yml` dispatch produced a
   green `sdk-compatibility-matrix-<run-id>` artifact for the release commit

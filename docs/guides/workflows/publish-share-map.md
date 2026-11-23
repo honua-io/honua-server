@@ -145,7 +145,7 @@ workflow:
       effect: "observe"
       effectTarget: "observation"
       preconditions:
-        - "The returned publication state is observable; a pending non-admin proposal requires a separate authorized decision before activation."
+        - "The returned publication state is observable; every MCP proposal requires human approval in Console before activation, including proposals from administrators."
       authorization:
         - "Read the caller-visible publication status."
       idempotency: "Poll boundedly using the returned identity."
