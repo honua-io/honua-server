@@ -207,7 +207,11 @@ class GeneratedFilesContracts(unittest.TestCase):
         publication = workflow.index('- name: Open or refresh')
         self.assertNotIn('secrets.', workflow[:publication])
         self.assertIn('GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}', workflow[publication:])
-        self.assertNotIn('GH_TOKEN: ${{ github.token }}', workflow)
+        self.assertNotIn('GH_TOKEN: ${{ github.token }}', workflow[publication:])
+        collection = workflow.index('- name: Collect latest')
+        self.assertLess(collection, workflow.index('regenerate-generated-files.sh'))
+        self.assertIn('GH_TOKEN: ${{ github.token }}', workflow[collection:publication])
+        self.assertIn('git add --intent-to-add docs/gis/data/nightly-capability-evidence.v1.json', workflow)
 
         script = (ROOT / 'scripts/ci/publish-generated-files.sh').read_text()
         executable_lines = [line for line in script.splitlines() if not line.strip().startswith('#')]

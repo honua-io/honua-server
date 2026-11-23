@@ -184,3 +184,40 @@ join: it gates the `x-honua-cite-compliance` vendor extension in
 `src/Honua.Server/openapi.json` and the other four `*-openapi.json` files
 against `cite-status.md`'s totals, independently of this capability-matrix
 aggregation.
+
+### Nightly observations (schema 1.3.0)
+
+The scheduled generated-files publisher collects the latest completed trunk
+`schedule` or `workflow_dispatch` run from `client-interop-nightly`,
+`pyqgis-client-compat-nightly`, `client-compat-smoke-nightly`,
+`cite-evidence-report`, and `load-soak-nightly` into
+`docs/gis/data/nightly-capability-evidence.v1.json`. It regenerates the matrix
+and proposes both files through the existing generated-files PR. The aggregation
+workflow also collects current evidence for its scheduled/manual artifact;
+PR validation uses only the committed snapshot and performs no network reads.
+
+Once a snapshot exists, interop freshness and CITE pass rates use these measured
+observations instead of the committed baseline envelopes and reviewed CITE
+table. Missing, failed, source-mismatched, future-dated, or over-14-day-old
+observations cannot report fresh/100%. Collection chooses the latest completed
+run, including failures, rather than searching backwards for a successful run.
+Expired artifacts and artifacts predating the current run attempt are ignored.
+A missing interop producer report invalidates overlapping older green evidence.
+API/download/parse failures abort publication instead of publishing empty success.
+
+Each measured row carries `evidence` with workflow, run ID/attempt, run URL,
+source SHA, conclusion, and artifact IDs. CITE also records the tested SHA when
+it differs from the producer SHA. `nightlyEvidence.collectedAt` and
+`evidenceFreshness.anchor` record collection time. Consumers must compare
+`collectedAt` with their own evaluation time and reject stale snapshots: an
+unchanged committed file cannot update its own freshness clock.
+
+`geobench` remains the array of canonical crosswalk scenario names.
+`geobenchResults` adds dated measurements with request counts, duration,
+throughput, and latency metrics. Unmeasured scenarios have unknown freshness.
+The load harness uses different scenario names; its OGC Features query/filter/
+pagination scenarios join to `serve.ogc-api-features`, and FeatureServer query/
+spatial scenarios join to `serve.geoservices-featureserver`. These observations
+do not claim execution of the similarly named GeoBench scenarios. Nightly
+observations are diagnostic evidence; candidate-specific certification and
+capacity release proof remain separate gates.
