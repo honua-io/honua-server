@@ -71,13 +71,14 @@ internal static class OgcTemporalFilterParser
         var configuredStartName = temporal.StartTimeField;
         if (!string.IsNullOrWhiteSpace(configuredStartName))
         {
-            if (!TryResolveSchemaTemporalType(resource, configuredStartName, out var startType))
+            // Filter on the schema's spelling: attribute keys and storage columns are case-sensitive.
+            if (!TryFindSchemaTemporalField(resource, configuredStartName, out var startField))
             {
                 return false;
             }
 
-            startFieldName = configuredStartName;
-            propertyType = startType;
+            startFieldName = startField.Name;
+            propertyType = startField.Type;
 
             // Optional EndTimeField, when configured, is propagated so the
             // shared filter pipeline applies interval-intersection semantics.
@@ -87,10 +88,10 @@ internal static class OgcTemporalFilterParser
             // expression).
             var configuredEndName = temporal.EndTimeField;
             if (!string.IsNullOrWhiteSpace(configuredEndName) &&
-                TryResolveSchemaTemporalType(resource, configuredEndName, out var endType) &&
-                endType == startType)
+                TryFindSchemaTemporalField(resource, configuredEndName, out var endField) &&
+                endField.Type == startField.Type)
             {
-                endFieldName = configuredEndName;
+                endFieldName = endField.Name;
             }
 
             return true;
@@ -113,10 +114,10 @@ internal static class OgcTemporalFilterParser
         return false;
     }
 
-    private static bool TryResolveSchemaTemporalType(
+    private static bool TryFindSchemaTemporalField(
         MetadataV2Object resource,
         string fieldName,
-        out TemporalPropertyType type)
+        out (string Name, TemporalPropertyType Type) match)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -125,13 +126,14 @@ internal static class OgcTemporalFilterParser
                 continue;
             }
 
-            if (TryResolveTemporalTypeLabel(field.Type, out type))
+            if (TryResolveTemporalTypeLabel(field.Type, out var type))
             {
+                match = (field.Name, type);
                 return true;
             }
         }
 
-        type = TemporalPropertyType.DateTime;
+        match = (fieldName, TemporalPropertyType.DateTime);
         return false;
     }
 

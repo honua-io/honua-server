@@ -187,6 +187,33 @@ public sealed class TemporalExtentHelpersTests
         selection.EndFieldName.Should().Be("Closed_At");
     }
 
+    [UnitTest]
+    public async Task TryResolveTemporalRangeV2Async_ConfiguredNamesDifferInCase_QueriesSchemaSpelling()
+    {
+        // The opt-in gate and the time filter match the configured fields case-insensitively; the extent must
+        // read the same columns, or a layer whose time filter works reports no extent at all.
+        var resource = BuildResourceWithIntervalTemporal() with
+        {
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "START_TIME", EndTimeField = "End_Time" },
+        };
+        var startMin = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var endMax = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero);
+        var reader = Substitute.For<IFeatureReader>();
+        reader.GetTemporalExtentAsync(LayerIndex, "start_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
+            .Returns(TemporalExtentResult.Create(startMin, startMin));
+        reader.GetTemporalExtentAsync(LayerIndex, "end_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
+            .Returns(TemporalExtentResult.Create(startMin, endMax));
+
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource, LayerIndex, reader, CancellationToken.None);
+
+        range.Should().NotBeNull();
+        range!.Value.StartFieldName.Should().Be("start_time");
+        range.Value.EndFieldName.Should().Be("end_time");
+        range.Value.Min.Should().Be(startMin);
+        range.Value.Max.Should().Be(endMax);
+    }
+
     private static MetadataV2Object BuildResourceWithIntervalTemporal()
         => new()
         {
