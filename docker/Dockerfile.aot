@@ -32,7 +32,7 @@ FROM ${DOTNET_RUNTIME_DEPS_FULL_IMAGE} AS chiseled-publisher-full
 FROM ${DOTNET_SDK_IMAGE} AS chiseled-rootfs
 ARG HONUA_STORE_PROFILE
 WORKDIR /src
-COPY docker/runtime/cut-rootfs.sh docker/runtime/
+COPY docker/runtime/cut-rootfs*.sh docker/runtime/
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates file && \
     if [ "${HONUA_STORE_PROFILE:-postgis}" = postgis ]; then slices=runtime-deps; else slices=runtime-deps-extra; fi && \
