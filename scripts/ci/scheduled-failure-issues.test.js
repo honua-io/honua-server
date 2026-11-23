@@ -8,7 +8,7 @@ const config = {
   lookbackHours: 72, maxIssuesPerRun: 2, downstreamJobPattern: '^(CI Gate|.*Summary)$',
   defaultOwner: { lane: 's-ci-doctors', area: 'area/ci' },
   ignore: { app: ['watchdog.yml'] },
-  botDispatchWorkflows: { app: ['ci.yml'] },
+  botDispatchWorkflows: { app: { 'ci.yml': '^CI full' } },
   repos: { app: { default: { lane: 's-app' }, workflows: { 'nightly.yml': { lane: 's-night', area: 'area/x' } } } },
 };
 
@@ -97,7 +97,10 @@ test('a failed scheduled run opens one issue per failing job with owner, labels,
 test('a repeat failure comments once per run on the existing issue instead of opening another', async () => {
   const key = '.github/workflows/nightly.yml::Build';
   const issues = [{ number: 7, state: 'open', body: `first run https://github.com/honua-io/app/actions/runs/1\n<!-- scheduled-failure key=${key} -->` }];
-  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')], jobs: { 2: [job('Build', 'failure', 1)] }, issues });
+  const github = fakeGithub({
+    runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')],
+    jobs: { 1: [job('Build', 'failure', 1)], 2: [job('Build', 'failure', 1)] }, issues,
+  });
   assert.deepEqual((await go(github)).updated, ['app#7']);
   assert.match(github.comments[7][0].body, /Failed again: .*runs\/2/);
   const again = await go(github);
@@ -119,7 +122,7 @@ test('the latest scheduled success closes every open issue of that workflow only
 });
 
 test('cancelled, ignored, push-dispatched and human-dispatched runs are not swept; bot dispatches of listed workflows are', async () => {
-  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' } };
+  const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI full ' };
   const github = fakeGithub({
     runs: [run(1, 'later.yml', 'cancelled'), run(2, 'watchdog.yml', 'failure')],
     dispatchRuns: [run(3, 'ci.yml', 'failure', bot),
@@ -134,6 +137,39 @@ test('cancelled, ignored, push-dispatched and human-dispatched runs are not swep
   assert.deepEqual(github.issues[0].labels, ['bug', 'area/ci', 'scheduled-failure']);
   const repos = github.calls.filter(([, route]) => route === 'GET /repos/{owner}/{repo}/actions/runs').map(([, , p]) => p.repo);
   assert.deepEqual(repos, ['app']);
+});
+
+test('a successful partial dispatch neither closes issues nor counts as a run', async () => {
+  const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/ci.yml::Build -->' }];
+  const github = fakeGithub({
+    runs: [run(1, 'ci.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] }, issues,
+    dispatchRuns: [run(2, 'ci.yml', 'success', {
+      event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI affected a..b' })],
+  });
+  const report = await go(github);
+  assert.deepEqual([report.closed, report.updated], [[], ['app#7']]);
+  assert.equal(issues[0].state, 'open');
+});
+
+test('every failed run since the last success is filed, oldest first', async () => {
+  const github = fakeGithub({
+    runs: [run(3, 'nightly.yml', 'failure'), run(1, 'nightly.yml', 'success'), run(2, 'nightly.yml', 'failure')],
+    jobs: { 2: [job('Build', 'failure', 1)], 3: [job('Test', 'failure', 2), job('Build', 'failure', 1)] },
+  });
+  const report = await go(github);
+  assert.deepEqual(github.issues.map(issue => issue.title),
+    ['Scheduled run failing: nightly / Build', 'Scheduled run failing: nightly / Test']);
+  assert.deepEqual(report.updated, ['app#100']);
+  assert.match(github.comments[100][1].body, /Failed again: .*runs\/3/);
+});
+
+test('the per-run cap counts only new issues, so later failing jobs are filed on the next sweep', async () => {
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs: {
+    1: [job('Build', 'failure', 1), job('Test', 'failure', 2), job('Lint', 'failure', 3)] } });
+  await go(github);
+  assert.equal(github.issues.length, 2);
+  await go(github);
+  assert.deepEqual(github.issues.map(issue => issue.title.split(' / ')[1]), ['Build', 'Test', 'Lint']);
 });
 
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {

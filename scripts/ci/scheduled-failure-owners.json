@@ -10,7 +10,7 @@
     "honua-demo-infra": ["drift-plan.yml"]
   },
   "botDispatchWorkflows": {
-    "honua-server": ["ci.yml"]
+    "honua-server": { "ci.yml": "^CI full" }
   },
   "repos": {
     "honua-server": {
