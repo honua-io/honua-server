@@ -22718,6 +22718,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithIssuedSessionId_WhenFallbackEnabled_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithMalformedSessionId_WhenFallbackEnabled_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Request_WithUnknownSessionId_WhenFallbackEnabled_IsServedSessionless",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests.AgentDraftAuthoring_OwnDraft_RunsWithoutPerEditApproval",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests.Dashboard_AllElevenCompositionVerbs_PersistExpectedValuesAndRejectStaleWrites",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_AfterToolCall_SurvivesADraftSyncReadBack",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_PreservesTheLayersStyleBindingAndSourceThroughSync",
