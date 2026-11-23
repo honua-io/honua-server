@@ -134,6 +134,16 @@ The baseline-bump cadence is scheduled quarterly via `/schedule`. Don't bump
 baselines as part of an unrelated feature PR — that hides regressions inside
 unrelated review.
 
+### Reviewed Maps discovery count reconciliation (2026-11-23)
+
+Nightly run [45244434631](https://github.com/honua-io/honua-server/actions/runs/45244434631)
+at `5ffad99dabb6615f6b8021ac312bb0c989ead543` reported 15 conformance
+classes for OpenLayers `js/ogc-maps` `CERT-DISC-01`, up from 11.
+Commit `2389b8b59d` added the four OGC API Common Part 1 declarations
+(`core`, `landing-page`, `json`, `oas30`) to Maps discovery. Only this
+case's measured count and descriptive note are reconciled; its passing
+status and the strict measurement comparison remain unchanged.
+
 ### Reviewed measured-count reconciliation (2026-10-26)
 
 Condition 8 arrived after most envelopes here were captured (2026-05-07 to
