@@ -843,19 +843,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
-passing job duration, rounded half-to-even to 0.1 minute, over the 26 "CI full"
-trunk runs completed after the previous record that supplied samples, counting a sample
-only when its filter and project selection match the current definition
-(gate-model.md, "Measured ranks"). Scheduled run 44819335862 passed all 225
-children; every split child has 20 to 26 matching samples, so no
-split-child estimate remains. Following that measurement, 11 over-split parents
-(33 children whose combined `Run server test shard` step times on full run
-44921455496 totaled 1.20–3.30 minutes) were re-packed back into 11 single jobs
-(225 → 203 shards, saving 22 runner setups; 192 measured ranks plus 11 conservative
-estimates of 3.7–5.8 minutes; scheduling rank sum 827.1 runner-minutes, previously
-877.5; all 203 shards fit the unchanged 10-minute PR shard budget). These are
-scheduling estimates, not runtime savings.
+Measured ranks (23 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the five "CI full"
+trunk runs whose head contains #9118 (shard disk-cleanup skip) and #9168 (test
+fixture speed-ups), counting a sample only when its filter and project selection
+match the current definition (gate-model.md, "Measured ranks"). Those two changes
+halved server job time (826–878 runner-minutes per full run before, 430–451
+after), so older samples are not reused. 201 of 202 shards have 3 to 5 matching
+samples; the packed GPServer SOAP job keeps its 5.0 estimate until measured. The
+scheduling rank sum is 436.8 runner-minutes, previously 827.1 (225 → 202 shards
+since the 21 Nov record via re-packing); the six largest ranks sum to 23.9, inside
+the 45 runner-minute PR time budget. These are scheduling estimates, not runtime
+savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.
 Override priorities must be boolean; malformed values fail schema validation.

@@ -1250,28 +1250,30 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
+Measured ranks (23 Nov 2026): each recorded `dispatch_rank` is the exact median
 passing job duration (whole-second job timestamps), rounded half-to-even to
-0.1 minute, across the 26 "CI full" trunk runs completed after the previous
-record (newest run 44013566836) that supplied at least one matching sample, from
-44131638572 to 44921455496. Post-merge "CI affected" runs are not samples. A sample counts only when the shard's filter and
-project selection at the run's head match the current definition. A run supplies
-at most one sample per child (its latest passing attempt). Passing children count
-even when their full workflow fails or is cancelled; failed, skipped and cancelled
-children do not supply timing samples. Runs before the previous record are not
-reused: shared-host test fixtures have since cut many children's duration, and
-older samples no longer predict them.
-
-The latest passing scheduled run, [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
-passed all 225 current server children on trunk `a997a37`. Every current
-definition has 20 to 26 matching passing samples (median 22). Failed duration is not a successful
-completion estimate, and failures remain gating.
+0.1 minute, across the five "CI full" trunk runs whose head contains both #9118
+(shard disk-cleanup skip) and #9168 (leak-detector GC sweep skip, warm
+PostgresFixture pool), 44991760272 to 45124758997. Together they cut every
+child's job time: full runs before them spent 826 to 878 server runner-minutes,
+the one run with only #9118 657, and the five with both 430 to 451, so older
+samples no longer predict a child and are not reused (the previous record,
+44131638572 to 44921455496, ends before them).
+Post-merge "CI affected" runs are not samples. A sample counts only when the
+shard's filter and project selection at the run's head match the current
+definition. A run supplies at most one sample per child (its latest passing
+attempt). Passing children count even when their full workflow fails or is
+cancelled; failed, skipped and cancelled children do not supply timing samples.
+Every measured definition has 3 to 5 matching passing samples; refresh again
+once more full runs have completed.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
 `test-full-run-capacity-partitions.py` rejects rank drift. Split children use
 their measured rank, else their contract estimate, else the parent's rank.
 Remove a child's estimate once measured; the estimate-sum conservation rule
-applies only while every child is estimated. No child estimate remains.
+applies only while every child is estimated. The one remaining estimate is the
+packed GeoServices GPServer SOAP job (5.0, `soap-packing-contract.json`), which
+has no passing full-run sample at its new definition yet.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
@@ -1280,10 +1282,13 @@ counts tie. It changes ranking only: candidate admission, the six-job cap and
 time budgets still apply. Unmarked overrides retain their previous ranking.
 The schema accepts only boolean override priorities; malformed values fail validation.
 
-Ranks sum to 877.5 runner-minutes, previously 1,522.3;
-all 225 children fit the unchanged 10-minute PR shard budget, previously 203.
-These are scheduling estimates, not measured runtime savings. The separate tiny-shard
-consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
+Ranks sum to 436.8 runner-minutes, previously 827.1 (877.5 at the 21 Nov
+record, before #9489 packed the SOAP pair and earlier merges packed 225 children
+into 202). The six largest ranks sum to 23.9 minutes, previously 48.6, so a
+six-shard PR selection no longer exceeds the 45 runner-minute PR time budget and
+defers shards to trunk on rank inflation alone. These are scheduling estimates,
+not measured runtime savings. The separate tiny-shard consolidation measurement
+remains 75.38 to 12.11 runner-minutes (63.27 saved).
 
 ### Standalone tooling in affected producer builds
 
