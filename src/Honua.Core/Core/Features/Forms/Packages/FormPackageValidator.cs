@@ -1032,10 +1032,14 @@ public sealed partial class FormPackageValidator
                ContainsCapability(ReadServiceCapabilities(service), capability);
     }
 
+    // "Editing" grants Create, Update and Delete, as it does for feature edits.
     private static bool ContainsCapability(IEnumerable<string> capabilities, string capability)
         => capabilities.Any(candidate =>
-            string.Equals(candidate, capability, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(candidate, $"FeatureServer.{capability}", StringComparison.OrdinalIgnoreCase));
+            MatchesCapability(candidate, capability) || MatchesCapability(candidate, MetadataV2EditCapabilities.Editing));
+
+    private static bool MatchesCapability(string candidate, string capability)
+        => string.Equals(candidate, capability, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(candidate, $"FeatureServer.{capability}", StringComparison.OrdinalIgnoreCase);
 
     private static List<string> ReadServiceCapabilities(MetadataV2Service service)
     {
