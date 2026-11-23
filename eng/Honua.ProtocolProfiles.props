@@ -115,11 +115,12 @@
       <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
     </ItemGroup>
     <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-      <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+      <Compile Remove="Features\Admin\SceneDatasetEndpoints*.cs" />
       <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
       <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
       <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
-      <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
+      <Compile Remove="Features\Admin\SceneWorkflowEndpoints.cs" />
+      <Compile Remove="Features\Admin\Scene\**\*.cs" />
       <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
       <Compile Remove="Features\Protocols\Terrain\QuantizedMesh\**\*.cs" />
       <Content Remove="fixtures\scenes\**\*" />
