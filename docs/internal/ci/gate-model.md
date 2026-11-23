@@ -264,8 +264,8 @@ Stage 3 details:
   Full runs retain width 16. A selective affected run whose router reason is
   `no_path_match` does not schedule those default smoke shards: they do not own
   the diff, and the twice-daily full run keeps them. The same run skips
-  Honua.Core package compatibility when every changed file is docs, a workflow,
-  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  Honua.Core package compatibility unless a changed file is one that packing
+  Honua.Core reads: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. An empty path list still runs that heavy job.
   A skipped Core package does not cancel a selected AOT or MCP lane; a failed
   Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
@@ -1603,8 +1603,10 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
-repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+dispatch only when a changed file is a Core package input: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`.
+Affected run 45149626646 packed Core for `docker/` and test files alone, and 12
+of 13 measured affected runs that packed Core touched no input. Its server build compiles project references that Build & Format Check
+already compiles in the same run. Repository metadata (`.github/codeql/`, issue
 templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
 starts no managed build or integration lane on any `ci.yml` run: affected run
 44254098776 spent a 30-minute producer build plus Format, GDAL and Core package

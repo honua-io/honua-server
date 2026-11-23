@@ -765,8 +765,7 @@ artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most two at once for every `selective_base` dispatch. A selective
 dispatch whose router reason is `no_path_match` does not schedule those default
 smoke shards. Honua.Core package compatibility runs on that dispatch only when a
-changed file is outside docs, workflows, `scripts/ci/`, repository metadata and
-tests. Repository metadata (`.github/codeql/`, issue templates, CODEOWNERS,
+changed file is a Core package input: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. Repository metadata (`.github/codeql/`, issue templates, CODEOWNERS,
 Dependabot, actionlint, hygiene and PR template files) also starts no managed
 build or integration lane on any `ci.yml` run. An empty path list still runs it. A skipped Core
 package does not cancel a selected AOT or MCP lane; a failed Core package or

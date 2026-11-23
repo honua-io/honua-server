@@ -316,7 +316,7 @@ class ShardWidthTests(unittest.TestCase):
         self.assertTrue(TRAILING.affected_run_schedules_shards("targeted"))
         self.assertTrue(TRAILING.affected_run_schedules_shards("unmapped_source_change"))
 
-    def test_core_package_skips_only_docs_workflow_ci_and_tests(self):
+    def test_core_package_skips_measured_docs_workflow_ci_and_tests(self):
         measured = [
             ".github/workflows/compose-release-lifecycle.yml",
             ".github/workflows/nightly-container-build.yml",
@@ -330,7 +330,24 @@ class ShardWidthTests(unittest.TestCase):
         self.assertFalse(TRAILING.core_package_required(measured))
         self.assertTrue(TRAILING.core_package_required(measured + ["src/Honua.Core/Core/Honua.Core.csproj"]))
         self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
-        self.assertTrue(TRAILING.core_package_required([".github/ci-shards.json"]))
+
+    def test_core_package_runs_only_on_pack_inputs(self):
+        # Ranges of affected runs 45149626646, 45139605636, 45111892530 and
+        # 45104886981 packed Core although none of these files reaches the package.
+        for path in ["docker/Dockerfile.aot", ".github/ci-shards.json", "skills/honua-ops/SKILL.md",
+                     "certification/client-protocol-requirements.v1.json",
+                     "scripts/certification/verify-client-certification-receipts.py",
+                     "src/Honua.Server/Features/Ogc/OgcHandlers.cs", "src/Honua.Server/Directory.Build.props",
+                     "scripts/ci/analyzer-baseline-notes/x.md", ".github/test-projects.json"]:
+            with self.subTest(path=path):
+                self.assertFalse(TRAILING.core_package_required([path]))
+        for path in ["src/Honua.Core/Abstractions/IFeatureStore.cs", "src/Honua.Analyzers/CommitRule.cs",
+                     "src/Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config",
+                     ".editorconfig", "LICENSE", "README.md", "eng/schema/reviewed-migration-hashes.v1.json",
+                     "eng/nuget-locks/Honua.Core.lock.json", "scripts/ci/analyzer-baseline/BannedSymbols.txt",
+                     ".github/actions/setup-dotnet-ci/action.yml"]:
+            with self.subTest(path=path):
+                self.assertTrue(TRAILING.core_package_required(["docs/x.md", path]))
 
     def test_repository_metadata_skips_build_and_core_package(self):
         # 44254098776 built, formatted and packed Core for .github/codeql/pr-paths.txt alone.
@@ -342,10 +359,6 @@ class ShardWidthTests(unittest.TestCase):
             ".github/hygiene.json",
         ]
         self.assertFalse(TRAILING.core_package_required(metadata))
-        for path in [".github/actions/setup-dotnet-ci/action.yml", ".github/test-projects.json",
-                     ".github/codeql-extra.yml", ".github/CODEOWNERS.bak"]:
-            with self.subTest(path=path):
-                self.assertTrue(TRAILING.core_package_required([path]))
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
         run = ci['jobs']['changes']['steps']
         script = next(step['run'] for step in run if 'REPO_METADATA=' in step.get('run', ''))
