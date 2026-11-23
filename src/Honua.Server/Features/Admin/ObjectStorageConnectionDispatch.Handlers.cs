@@ -184,6 +184,7 @@ internal static partial class ObjectStorageConnectionDispatch
             (request.ExternalId is not null, "externalId cannot be changed."),
             ((request.Bucket is not null && request.Bucket != connection.Bucket) || prefixChanged, "bucket and prefix cannot be changed; create a new connection instead."),
             (request.Name is not null && request.Name.Trim().Length is < 1 or > 64, "name must be 1 to 64 characters."),
+            (request.Description is { Length: > 1000 }, "description must be at most 1000 characters."),
             (request.Region is not null && !ObjectStoragePolicy.IsKnownRegion(request.Region), "region is not a known AWS region."),
             (request.RoleArn is not null && !ObjectStoragePolicy.IsValidRoleArn(request.RoleArn), RoleArnMessage),
         ];
