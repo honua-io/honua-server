@@ -23,6 +23,11 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 {
     public const string ToolName = "honua_query_features";
 
+    private static readonly HashSet<string> FilterGeometryTypes = new(StringComparer.Ordinal)
+    {
+        "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon",
+    };
+
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<QueryFeaturesTool> _logger;
 
@@ -40,7 +45,8 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
     {
         Name = ToolName,
         Title = "Query features",
-        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox or GeoJSON geometry filter, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+            + "To test whether one feature (a parcel, a road) intersects this layer, pass its geometry, not its bbox. "
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
@@ -103,7 +109,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
             ResultOffset = offset,
             OutputSrid = outSrid,
             SqlFilter = BuildAttributeFilter(filterService, argument.Where, layer),
-            SpatialFilter = BuildBboxFilter(geometryService, argument.Bbox, argument.BboxSrid)
+            SpatialFilter = BuildSpatialFilter(geometryService, argument)
         };
 
         var reader = await MapToolLayerResolver.ResolveReaderAsync(httpContext, snapshot, layer,
@@ -467,6 +473,63 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
             envelopeMinY: minY,
             envelopeMaxX: maxX,
             envelopeMaxY: maxY);
+    }
+
+    private static SpatialFilter? BuildSpatialFilter(IGeometryService geometryService, McpQueryFeaturesArgument argument)
+    {
+        var hasGeometry = argument.Geometry is { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) };
+        if (hasGeometry && argument.Bbox is not null)
+        {
+            throw new GeoprocessingValidationException(
+                "Pass either 'bbox' or 'geometry', not both. Use 'geometry' to test a specific feature's shape.");
+        }
+
+        return hasGeometry
+            ? BuildGeometryFilter(geometryService, argument.Geometry!.Value, argument.GeometrySrid)
+            : BuildBboxFilter(geometryService, argument.Bbox, argument.BboxSrid);
+    }
+
+    // Same conversion and limits as the REST geometry parameter: GeometryService enforces the configured
+    // input size and vertex ceilings, and the filter is a true intersects test against feature geometry.
+    private static SpatialFilter BuildGeometryFilter(IGeometryService geometryService, JsonElement geometry, int? geometrySrid)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object
+            || !geometry.TryGetProperty("type", out var typeProperty)
+            || typeProperty.ValueKind != JsonValueKind.String)
+        {
+            throw new GeoprocessingValidationException(
+                "'geometry' must be a GeoJSON geometry object with 'type' and 'coordinates'.");
+        }
+
+        var type = typeProperty.GetString();
+        if (type is null || !FilterGeometryTypes.Contains(type))
+        {
+            throw new GeoprocessingValidationException(
+                $"'geometry' type '{type}' is not supported. Send a Point, LineString, Polygon, MultiPoint, "
+                + "MultiLineString or MultiPolygon geometry object (the feature's geometry, not the Feature).");
+        }
+
+        var srid = geometrySrid ?? 4326;
+        if (srid <= 0)
+        {
+            throw new GeoprocessingValidationException("'geometrySrid' must be a positive SRID/WKID.");
+        }
+
+        byte[]? wkb;
+        try
+        {
+            wkb = geometryService.ConvertGeoJsonToWkb(geometry.GetRawText(), srid);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new GeoprocessingValidationException(
+                $"'geometry' was refused: {ex.Message} If it is too large or has too many vertices, "
+                + "simplify it or split it into smaller parts and query each part.");
+        }
+
+        return wkb is null
+            ? throw new GeoprocessingValidationException("'geometry' could not be read as a GeoJSON geometry.")
+            : SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: srid);
     }
 
     private static JsonObject ToGeoJsonFeature(

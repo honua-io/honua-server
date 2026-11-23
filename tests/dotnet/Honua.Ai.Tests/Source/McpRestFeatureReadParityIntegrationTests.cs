@@ -185,6 +185,34 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         restBody.Should().NotContain(AllowedLayerMarker);
     }
 
+    // Triangle (-123,37) (-121.5,37) (-123,38.4) holds seed points 1, 2 and 4; point 5 (-122.3,37.8)
+    // lies inside the triangle's rectangle but outside the triangle itself.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task FeatureRead_GeometryFilter_MatchesRestGeometryIntersectsIdForId()
+    {
+        using var reader = CreateClient(ReaderRole);
+        const string esriPolygon =
+            "{\"rings\":[[[-123,37],[-123,38.4],[-121.5,37],[-123,37]]],\"spatialReference\":{\"wkid\":4326}}";
+        var restQuery = "&geometry=" + Uri.EscapeDataString(esriPolygon)
+            + "&geometryType=esriGeometryPolygon&spatialRel=esriSpatialRelIntersects&inSR=4326";
+        const string geoJsonPolygon =
+            ",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[-123,37],[-121.5,37],[-123,38.4],[-123,37]]]}";
+
+        var rest = await ReadOverRestAsync(reader, AllowedLayerId, extraQuery: restQuery);
+        var mcp = await ReadOverMcpAsync(reader, AllowedLayerId, extraArguments: geoJsonPolygon);
+        var rectangle = await ReadOverMcpAsync(reader, AllowedLayerId, extraArguments: ",\"bbox\":[-123,37,-121.5,38.4]");
+
+        rest.Select(record => record.ObjectId).Should().Equal(new long[] { 1, 2, 4 },
+            "REST geometry + esriSpatialRelIntersects tests the triangle, not its rectangle");
+        mcp.Should().Equal(rest, "the MCP geometry filter must return the same records as REST");
+        rectangle.Select(record => record.ObjectId).Should().Equal(new long[] { 1, 2, 4, 5 },
+            "the rectangle also covers point 5, which the triangle does not");
+    }
+
     private static void AssertGeoServicesForbidden(string body)
     {
         using var document = JsonDocument.Parse(body);
@@ -219,9 +247,10 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
     private async Task<IReadOnlyList<FeatureRecord>> ReadOverRestAsync(
         HttpClient client,
         int layerId,
-        string where = "1=1")
+        string where = "1=1",
+        string extraQuery = "")
     {
-        using var response = await client.GetAsync(QueryUrl(layerId, where));
+        using var response = await client.GetAsync(QueryUrl(layerId, where) + extraQuery);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
@@ -256,9 +285,10 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
     private async Task<IReadOnlyList<FeatureRecord>> ReadOverMcpAsync(
         HttpClient client,
         int layerId,
-        string? where = null)
+        string? where = null,
+        string extraArguments = "")
     {
-        var result = await CallQueryFeaturesAsync(client, layerId, where: where);
+        var result = await CallQueryFeaturesAsync(client, layerId, where: where, extraArguments: extraArguments);
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
 
         var records = new List<FeatureRecord>();
@@ -292,7 +322,8 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         HttpClient client,
         int layerId,
         string? where = null,
-        bool returnCountOnly = false)
+        bool returnCountOnly = false,
+        string extraArguments = "")
     {
         var whereArgument = where is null
             ? string.Empty
@@ -300,7 +331,7 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
         var arguments = "{\"serviceId\":\"" + ServiceId
             + "\",\"serviceLayerIndex\":" + layerId.ToString(CultureInfo.InvariantCulture)
             + ",\"limit\":1000,\"returnCountOnly\":" + (returnCountOnly ? "true" : "false")
-            + whereArgument + "}";
+            + whereArgument + extraArguments + "}";
         var body = "{\"jsonrpc\":\"2.0\",\"id\":\"feature-read-parity\",\"method\":\"tools/call\","
             + "\"params\":{\"name\":\"honua_query_features\",\"arguments\":" + arguments + "}}";
 
