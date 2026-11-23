@@ -54,6 +54,24 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("locator=\"BBOX\"");
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [InlineData("1,2,3")]
+    [InlineData("a,b,c,d")]
+    [InlineData("0,0,1,1,urn:not-a-crs")]
+    public async Task Wfs_GetFeature_MalformedBbox_NamesTheBboxLocator(string bbox)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&BBOX={Uri.EscapeDataString(bbox)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"BBOX\"");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
