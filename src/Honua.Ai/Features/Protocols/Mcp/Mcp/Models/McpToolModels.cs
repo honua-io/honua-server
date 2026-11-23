@@ -226,6 +226,19 @@ internal sealed class McpPlatformReleaseConvergenceArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
+    [JsonPropertyName("contractApproval")]
+    public McpContractApprovalArgument? ContractApproval { get; set; }
+}
+
+// The contract migrations a convergence proposal lists for approval, with their one-shot nonce.
+internal sealed class McpContractApprovalArgument
+{
+    [JsonPropertyName("scripts")]
+    public string[]? Scripts { get; set; }
+
+    [JsonPropertyName("nonce")]
+    public string? Nonce { get; set; }
 }
 
 internal sealed class McpProposeOperationOutput
@@ -1000,6 +1013,11 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
 
+    // What the agent can do next; the same text as the JSON-RPC error data.
+    [JsonPropertyName("nextAction")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextAction { get; set; }
+
     [JsonPropertyName("requiresReauthentication")]
     public bool? RequiresReauthentication { get; set; }
 
@@ -1047,4 +1065,7 @@ internal sealed class McpToolErrorOutput
 
     [JsonPropertyName("error")]
     public McpGeoprocessingError? Error { get; set; }
+
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; set; }
 }

@@ -275,16 +275,10 @@ internal static partial class FeatureServerEndpoints
             if (root.TryGetProperty("calendarBin", out var calendarElement) &&
                 calendarElement.ValueKind == JsonValueKind.Object)
             {
-                if (!calendarElement.TryGetProperty("unit", out var unitElement))
-                {
-                    error = "calendarBin.unit is required.";
-                    return false;
-                }
-
-                var unit = unitElement.GetString();
+                var unit = FeatureServerJsonMembers.ReadString(calendarElement, "unit");
                 if (string.IsNullOrWhiteSpace(unit))
                 {
-                    error = "calendarBin.unit must not be empty.";
+                    error = "calendarBin.unit is required and must be a non-empty string.";
                     return false;
                 }
 
@@ -342,8 +336,7 @@ internal static partial class FeatureServerEndpoints
         string paramName,
         string? defaultUnit)
     {
-        if (!fixedElement.TryGetProperty("intervalCount", out var countElement) ||
-            !countElement.TryGetInt32(out var count))
+        if (FeatureServerJsonMembers.ReadInt32(fixedElement, "intervalCount") is not { } count)
         {
             return (null, $"{paramName}.intervalCount is required.");
         }
@@ -419,15 +412,9 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                var statisticType = element.TryGetProperty("statisticType", out var typeElement)
-                    ? typeElement.GetString()
-                    : null;
-                var onField = element.TryGetProperty("onStatisticField", out var fieldElement)
-                    ? fieldElement.GetString()
-                    : null;
-                var outFieldName = element.TryGetProperty("outStatisticFieldName", out var outElement)
-                    ? outElement.GetString()
-                    : null;
+                var statisticType = FeatureServerJsonMembers.ReadString(element, "statisticType");
+                var onField = FeatureServerJsonMembers.ReadString(element, "onStatisticField");
+                var outFieldName = FeatureServerJsonMembers.ReadString(element, "outStatisticFieldName");
 
                 if (string.IsNullOrWhiteSpace(statisticType) ||
                     string.IsNullOrWhiteSpace(onField) ||

@@ -9,6 +9,12 @@ Honua exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only featu
 through the shared `IFeatureDataProvider` seam. Oracle is the dominant enterprise-geodatabase
 backend and the most-requested connect-in-place target after PostGIS / SQL Server / MySQL.
 
+The default Honua image includes only the PostGIS store. To serve from this provider, use the JIT
+full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or
+build with `HONUA_STORE_PROFILE=full`. The default image refuses this provider's configuration and
+connections and names the full variant; see
+[data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 This page describes the **read/query slice**. Edits, native MVT, native
 FlatGeobuf/Geobuf/GML, statistics aggregates, and ArcSDE proprietary formats are deliberately
 out of scope.

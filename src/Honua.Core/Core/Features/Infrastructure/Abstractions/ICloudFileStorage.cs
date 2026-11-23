@@ -9,6 +9,10 @@ public interface ICloudFileStorage
 {
     CloudStorageProvider Provider { get; }
 
+    // Key prefix the provider puts in front of the keys it generates (for example "honua/"), or null.
+    // An ObjectKeyOverride is used verbatim, so callers that build their own keys prepend this themselves.
+    string? ObjectKeyPrefix => null;
+
     // Single file operations
 
     Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);

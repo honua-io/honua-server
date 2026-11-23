@@ -878,7 +878,7 @@ internal static partial class WmsRequestHandlers
         if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
         {
             var code = trimmed["EPSG:".Length..];
-            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
             {
                 srid = parsed;
                 normalizedCrs = $"EPSG:{parsed.ToString(CultureInfo.InvariantCulture)}";

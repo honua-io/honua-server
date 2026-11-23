@@ -330,18 +330,10 @@ public static class VersionManagementServerEndpoints
                 contentType: "application/json");
         }
 
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
-        var match = versions.FirstOrDefault(v => v.VersionId == versionId);
-        if (match.VersionId != versionId)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
-        }
-
-        // BH3-002: A Private version is only visible to its owner and service admins.
+        // A Private version is only visible to its owner and service admins.
         // Return 404 (not 403) so a non-owner cannot confirm the version's existence.
-        var callerName = context.User?.Identity?.Name;
-        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
-        if (!VersionAccessPolicy.IsVersionVisible(match, callerName, isAdmin))
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
+                .ConfigureAwait(false) is not { } match)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
@@ -480,7 +472,7 @@ public static class VersionManagementServerEndpoints
 
         var versionId = matches[0].VersionId;
         var ownershipGate = await RequireVersionOwnerOrAdminAsync(
-            context, versionManager, versionId, versionName, cancellationToken).ConfigureAwait(false);
+            context, versionManager, versionId, versionName).ConfigureAwait(false);
         return ownershipGate ?? await DeleteResolvedVersionAsync(
             versionId, versionName, context, versionManager, cancellationToken).ConfigureAwait(false);
     }
@@ -717,26 +709,17 @@ public static class VersionManagementServerEndpoints
         // with authorization to view raw conflict diffs for Protected versions — BH6-001 corrects
         // the conditional so Protected versions are now gated on CanManageVersion, matching the
         // sibling HandleResolveConflicts which checks unconditionally via AuthorizeReadAndResolveVersionAsync.
-        var allVersions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
-        var conflictVersion = allVersions.FirstOrDefault(v => v.VersionId == versionId);
-        if (conflictVersion.VersionId != versionId)
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
+                .ConfigureAwait(false) is not { } conflictVersion)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
-        if (conflictVersion.Access is VersionAccess.Private or VersionAccess.Protected)
+        if (conflictVersion.Access is VersionAccess.Private or VersionAccess.Protected &&
+            !VersionAccessPolicy.CanManageVersion(conflictVersion, context.User?.Identity?.Name,
+                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
         {
-            var callerName = context.User?.Identity?.Name;
-            var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
-            if (!VersionAccessPolicy.IsVersionVisible(conflictVersion, callerName, isAdmin))
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
-            }
-
-            if (!VersionAccessPolicy.CanManageVersion(conflictVersion, callerName, isAdmin))
-            {
-                return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
-            }
+            return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
         }
 
         var conflicts = await versionManager.GetPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -877,15 +860,33 @@ public static class VersionManagementServerEndpoints
 
         // Reject jobs that do not belong to the route's service/version (mirrors GPServer's
         // ValidateJobBinding) so a caller authorized on one service cannot poll another
-        // service's reconcile/post jobs by GUID.
+        // service's reconcile/post jobs by GUID, and jobs of a version the caller may not see.
         if (!string.Equals(job.Service, serviceId, StringComparison.OrdinalIgnoreCase) ||
-            job.VersionId != versionId)
+            job.VersionId != versionId ||
+            await FindVisibleVersionAsync(versionManager, versionId, context)
+                .ConfigureAwait(false) is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
         }
 
         return Results.Json(ToJobResponse(context, serviceId, versionGuid, job),
             VersionManagementJsonContext.Default.VersionJobResponse, contentType: "application/json");
+    }
+
+    // The one lookup for a single version by id: null when the version is unknown or the caller may
+    // not see it, so every reader (versions, sessions, jobs, lifecycle gates) answers a hidden
+    // Private version exactly as it answers an unknown one.
+    private static async Task<GdbVersion?> FindVisibleVersionAsync(
+        IVersionManager versionManager,
+        Guid versionId,
+        HttpContext context)
+    {
+        var versions = await versionManager.ListAsync(context.RequestAborted).ConfigureAwait(false);
+        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
+        var visible = version.VersionId == versionId &&
+            VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
+                ServiceDataEditorAuthorization.IsAdminPrincipal(context));
+        return visible ? version : null;
     }
 
     // ---- Shared adapter plumbing ---------------------------------------------------------------
@@ -969,11 +970,8 @@ public static class VersionManagementServerEndpoints
             return Moment(true);
         }
 
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
-        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
-        if (version.VersionId != versionId ||
-            !VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
-                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
+                .ConfigureAwait(false) is not { } version)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
@@ -1113,7 +1111,7 @@ public static class VersionManagementServerEndpoints
         // regardless of the version's access level. Load the version and enforce ownership here
         // so every lifecycle handler gets the check for free via this shared entry point.
         var ownershipGate = await RequireVersionOwnerOrAdminAsync(
-            context, versionManager, versionId, versionGuid, cancellationToken).ConfigureAwait(false);
+            context, versionManager, versionId, versionGuid).ConfigureAwait(false);
         if (ownershipGate is not null)
         {
             return (ownershipGate, null, Guid.Empty);
@@ -1126,26 +1124,18 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         IVersionManager versionManager,
         Guid versionId,
-        string versionGuidString,
-        CancellationToken cancellationToken)
+        string versionGuidString)
     {
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
-        var version = versions.FirstOrDefault(v => v.VersionId == versionId);
-        if (version.VersionId != versionId)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
-        }
-
-        var callerName = context.User?.Identity?.Name;
-        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
         // A private version the caller cannot see answers exactly like an unknown GUID, so a
         // refusal never confirms that someone else's private version exists.
-        if (!VersionAccessPolicy.IsVersionVisible(version, callerName, isAdmin))
+        if (await FindVisibleVersionAsync(versionManager, versionId, context)
+                .ConfigureAwait(false) is not { } version)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
         }
 
-        if (!VersionAccessPolicy.CanManageVersion(version, callerName, isAdmin))
+        if (!VersionAccessPolicy.CanManageVersion(version, context.User?.Identity?.Name,
+                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
         {
             return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
         }

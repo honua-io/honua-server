@@ -25,11 +25,13 @@ OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [O
 | Endpoint | Parameter | Notes |
 | --- | --- | --- |
 | `{z}/{x}/{y}.mvt` | `where` | SQL-style attribute filter applied before tiling. |
-| `{z}/{x}/{y}.mvt` | `time` | Temporal filter for time-enabled layers. |
+| `{z}/{x}/{y}.mvt` | `time` | Temporal filter for time-enabled layers; a non-empty filter requires the `temporal.time-series-tiles` entitlement. `time=null,null` applies no filter and requires no temporal entitlement. |
 | `h3/{z}/{x}/{y}.mvt` | `where` | Attribute filter. |
 | `h3/{z}/{x}/{y}.mvt` | `resolution` | H3 resolution for hexagon aggregation. |
 
 Unknown query parameters, zoom levels outside the configured `Limits:Tiles` range, and out-of-range `x`/`y` coordinates are rejected with a GeoServices JSON error envelope (`{"error":{"code":400,...}}` in an HTTP `200` response). Missing or unauthorized layers return standard HTTP status codes (`401`/`403`/`404` `application/problem+json`). Tiles require the FeatureServer protocol to be enabled on the layer and respect layer access policies.
+
+H3 tiles require the `analytics.h3` entitlement. An inactive entitlement returns a GeoServices error with code `402` in an HTTP `200` response, for both H3 aggregation and non-empty time filters.
 
 Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies.
 

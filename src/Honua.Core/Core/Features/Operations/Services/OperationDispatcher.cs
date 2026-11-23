@@ -457,7 +457,8 @@ public sealed partial class OperationDispatcher : IOperationInvoker, IOperationP
         }
         else
         {
-            var refused = await RefuseRevokedAgentAuthorityAsync(envelope, descriptor, invocationContext, cancellationToken)
+            var refused = await RefuseRevokedAgentAuthorityAsync(
+                    envelope, new AgentActuationTarget(descriptor, request), invocationContext, cancellationToken)
                 .ConfigureAwait(false);
             if (refused is not null)
             {

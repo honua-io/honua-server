@@ -13,12 +13,12 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 4,
+    "entries": 1,
     "datedNames": 6,
     "missingFiles": 0,
-    "brokenAnchors": 4,
+    "brokenAnchors": 1,
     "byArea": {
-      "docs/internal": 4,
+      "docs/internal": 1,
       "docs/developer": 0,
       "docs/gis": 0,
       "docs/guides": 0
@@ -26,24 +26,9 @@
   },
   "entries": [
     {
-      "source": "docs/internal/admin-api/scene-dataset-registry.md",
-      "target": "../../guides/publish/publish-3d-scenes.md#browser-safe-access-via-signed-envelope",
-      "reason": "Heading dropped when publish-3d-scenes.md was rewritten."
-    },
-    {
-      "source": "docs/internal/contributor/RELEASE_CHECKLIST.md",
-      "target": "../../concepts/ecosystem.md#machine-readable-ci-manifest",
-      "reason": "Heading dropped when concepts/ecosystem.md was rewritten."
-    },
-    {
       "source": "docs/internal/contributor/architecture/metadata-v2-extensions.md",
       "target": "../adr/0040-metadata-v2-canonical-graph.md#promote-l2--l1-criteria",
       "reason": "ADR heading renamed; the slug's double hyphen comes from the stripped arrow."
-    },
-    {
-      "source": "docs/internal/developer/GROUNDING.md",
-      "target": "../../guides/connect/ai-agents-mcp.md#payload-notes",
-      "reason": "Heading dropped in the MCP guide rewrite. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
     }
   ]
 }

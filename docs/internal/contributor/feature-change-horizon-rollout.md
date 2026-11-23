@@ -76,4 +76,6 @@ writer, on another layer or another row of the same layer, commits first; the cu
 until the first commits or rolls back, and resume loses neither change. The same suite
 covers COPY alongside an edit and a branch overlay alongside a DEFAULT write.
 `FeatureChangePrefixPublisherTests` covers the publisher contract, including an unrelated
-open transaction that must not hold the prefix back.
+open transaction that must not hold the prefix back. Migration 228 is forward-only; prove it,
+and that a re-run is a no-op, on an installed stack; its presence alone does not prove
+installed behaviour.

@@ -202,6 +202,28 @@ class FeedbackTests(unittest.TestCase):
             feedback.execute(Path(root), self.plan([self.unit], ['Unit', 'Component']), run=run)
         self.assertEqual(len(started), 3)
 
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '1'})
+    def test_late_interrupt_starts_no_queued_test_command(self):
+        # A loaded host can run the Ctrl-C handler only after the running job returns.
+        started, interrupted, real_wait = [], threading.Event(), feedback.wait
+        def run(command, **kwargs):
+            started.append(command[1])
+            if command[1] not in ('restore', 'build'):
+                os.kill(os.getpid(), signal.SIGINT)
+        def late_wait(*args, **kwargs):
+            result = real_wait(*args, **kwargs)
+            if interrupted.is_set():
+                raise KeyboardInterrupt
+            return result
+        previous = signal.signal(signal.SIGINT, lambda *_: interrupted.set())
+        try:
+            with patch.object(feedback, 'wait', late_wait), tempfile.TemporaryDirectory() as root, \
+                    self.assertRaises(KeyboardInterrupt):
+                feedback.execute(Path(root), self.plan([self.unit], ['Unit', 'Component']), run=run)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        self.assertEqual(len(started), 3)
+
     @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '9'})
     def test_invalid_parallelism_fails_before_the_build(self):
         calls = []

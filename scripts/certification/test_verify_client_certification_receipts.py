@@ -661,9 +661,15 @@ class RealMirrorContractTierTests(unittest.TestCase):
             for path in (ROOT / "tests" / "baselines" / "client-compat").rglob("*.cert.json")
             for envelope in (json.loads(path.read_text(encoding="utf-8")),)}
 
+        roster_cells = "".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "certification" / "bounded-roster" / "lanes").rglob("*_cells.py"))
+
         expected: dict[str, str] = {}
         for row in MIRROR["requirements"]:
             pair = (row["client_lane"], row["surface"])
+            if pair not in emitted and any(f'"{test_id}"' in roster_cells for test_id in row["test_ids"]):
+                continue
             if row["client_lane"] not in emitted_lanes:
                 expected[module.cell_id(row)] = "producer-lane-not-emitted"
             elif pair not in emitted:
@@ -709,17 +715,20 @@ class RealMirrorContractTierTests(unittest.TestCase):
             self.assertEqual("present", row["receiptBinding"]["producerBinding"]["status"])
             self.assertEqual(["no-candidate"], blocker_codes(self.by_cell[module.cell_id(row)]))
 
-    def test_the_governed_qgis_raster_surfaces_have_no_lane_at_all(self):
+    def test_the_governed_qgis_raster_surfaces_are_produced_only_by_the_roster(self):
+        builder = module._load_builder(ROOT)
         for surface in ("wms",):
             row = next(r for r in MIRROR["requirements"]
                        if r["client_lane"] == "desktop-qgis" and r["surface"] == surface)
-            self.assertEqual(
-                "surface-not-emitted", row["receiptBinding"]["producerBinding"]["reasonCode"])
+            self.assertEqual("surface-not-emitted", builder.classify_client_compat(
+                row, builder.emitted_pairs(ROOT))["reasonCode"])
+            self.assertEqual(builder.ROSTER_WORKFLOW_RELATIVE_PATH,
+                             row["receiptBinding"]["producerBinding"]["producer"]["workflow"])
 
-    def test_a_lane_that_starts_emitting_a_governed_pair_makes_the_mirror_stale(self):
+    def test_a_producer_that_stops_emitting_a_governed_pair_makes_the_mirror_stale(self):
         # Guards the recomputation itself: the contract tier must not simply echo
-        # the stored binding, or a producer landing without a mirror refresh would
-        # silently keep reporting the old reason.
+        # the stored binding, or a producer removed without a mirror refresh would
+        # silently keep reporting it as present. This root has no roster workflow.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Honua.sln").write_text("", encoding="utf-8")
@@ -730,10 +739,10 @@ class RealMirrorContractTierTests(unittest.TestCase):
             baselines = root / "tests" / "baselines" / "client-compat"
             (baselines / "gdal").mkdir(parents=True)
             (baselines / "expected-pairs.json").write_text(json.dumps({
-                "expected_pairs": [{"client_lane": "gdal-flatgeobuf", "protocol": "flatgeobuf"}]}),
+                "expected_pairs": [{"client_lane": "gdal-cog", "protocol": "cog"}]}),
                 encoding="utf-8")
-            (baselines / "gdal" / "gdal-flatgeobuf-flatgeobuf.cert.json").write_text(json.dumps({
-                "client_lane": "gdal-flatgeobuf", "protocol": "flatgeobuf",
+            (baselines / "gdal" / "gdal-cog-cog.cert.json").write_text(json.dumps({
+                "client_lane": "gdal-cog", "protocol": "cog",
                 "client_version": "3.8.4"}), encoding="utf-8")
 
             row = next(r for r in MIRROR["requirements"]

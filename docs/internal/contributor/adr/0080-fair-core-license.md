@@ -33,12 +33,7 @@ License. Licensor: Honua Geo Inc.
   own managed service is a Competing Use and requires a partner agreement.
 - The repository does not accept external contributions (`close-external-prs.yml`), so Honua Geo
   Inc. retains full copyright and the ability to relicense.
-- Frozen reader-baseline migrations keep their original header bytes. The baseline file
-  hash is pinned, and changing those scripts fails the rolling-upgrade test. Post-baseline
-  migrations use the Fair Core License header. Their ledger digests, and the reviewed hash
-  for migration 129, match those bytes. The SQL statements are unchanged. DbUp journals a
-  script by name and does not rewrite a reader-compatibility declaration already recorded.
-  Editing a migration directory still schedules the N-1 reader compatibility job.
+- Journaled migrations keep their original header bytes and immutable ledger hashes. Historical exact-byte classifier review records are retained in `eng/schema/reviewed-migration-hashes.v1.json`. New migrations use the Fair Core License header and must be idempotent and tested on an installed stack. There is no prior-reader CI gate.
 - The attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
   keeps its immutable v1 bytes. That preamble is pinned by SHA-256 in `ServerCoreSchemaMigrations`,
   and a header change there makes every non-default-schema attachment migration refuse to load.

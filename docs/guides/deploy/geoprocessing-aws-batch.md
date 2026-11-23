@@ -231,24 +231,31 @@ baseline and leaves the default Batch entry at index `1`.
 ### Environment-variable override
 
 The `ExecutionWorkloads` array index of `geoprocessing-aws-batch` depends on
-your effective config (in base `appsettings.json` it is index `1`). Dotted
-parameter keys are exposed through `ParameterEntries` so they survive the
-environment-variable provider:
+your effective config (in base `appsettings.json` it is index `1`). For Bash,
+use `ParameterEntries`: dotted parameter keys are values, rather than invalid
+shell assignment names. Replace the example ARNs with your deployment outputs,
+then run these exports in the shell that launches the server. Child processes
+inherit the exported variables.
 
 ```bash
-ControlPlane__ExecutionWorkloads__1__Parameters__batch.job_queue_arn="arn:aws:batch:us-east-1:123456789012:job-queue/honua-gp"
-ControlPlane__ExecutionWorkloads__1__Parameters__batch.region="us-east-1"
-ControlPlane__ExecutionWorkloads__1__Parameters__batch.job_definition_arn.s="arn:aws:batch:us-east-1:123456789012:job-definition/honua-gp-s:1"
-# ...m / l / xl
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Key="batch.job_queue_arn"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Value="arn:aws:batch:us-east-1:123456789012:job-queue/honua-gp"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__1__Key="batch.region"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__1__Value="us-east-1"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__2__Key="batch.job_definition_arn.s"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__2__Value="arn:aws:batch:us-east-1:123456789012:job-definition/honua-gp-s:1"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__3__Key="batch.job_definition_arn.m"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__3__Value="arn:aws:batch:us-east-1:123456789012:job-definition/honua-gp-m:1"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__4__Key="batch.job_definition_arn.l"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__4__Value="arn:aws:batch:us-east-1:123456789012:job-definition/honua-gp-l:1"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__5__Key="batch.job_definition_arn.xl"
+export ControlPlane__ExecutionWorkloads__1__ParameterEntries__5__Value="arn:aws:batch:us-east-1:123456789012:job-definition/honua-gp-xl:1"
 ```
 
-If the environment provider cannot pass dotted keys, use the
-`ParameterEntries` list form instead:
-
-```bash
-ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Key="batch.job_queue_arn"
-ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Value="arn:aws:batch:..."
-```
+For container or managed deployments, set these same names and values in the
+deployment's environment configuration; exports in an unrelated shell do not
+change a running service. Dotted keys can also be supplied directly by an
+environment provider that supports them, but cannot be assigned directly in Bash.
 
 Environment variables merge into the array by index: an entry you set inherits
 every field you leave out (including `TargetKind` and `Parameters`) from the

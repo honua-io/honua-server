@@ -728,7 +728,7 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     assert selected > 100
     soap = "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests"
     for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
-                             "GeoServices GPServer SOAP Progress"),
+                             "GeoServices GPServer SOAP"),
                             ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
                              "GeoServices GPServer SOAP")):
         assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
@@ -742,6 +742,26 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
 test_method_partition_rejects_holes_duplicates_and_leaks()
 test_method_partition_rejects_unresolved_runnable_methods()
 test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+
+
+def test_soap_packing_preserves_filters_paths_and_execution_contract() -> None:
+    contract = json.loads((SCRIPT.parent / "fixtures/soap-packing-contract.json").read_text())
+    originals = contract["originalShards"]
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    packed = next(s for s in config["shards"] if s["name"] == originals[0]["name"])
+    assert originals[1]["name"] not in {s["name"] for s in config["shards"]}
+    assert packed["filter"] == "|".join(f"({s['filter']})" for s in originals)
+    assert set(packed["paths"]) == {path for s in originals for path in s["paths"]}
+    estimates = contract["estimatedRanks"]["ranks"]
+    assert estimates[packed["name"]] == sum(s["dispatch_rank"] for s in originals)
+    assert packed["dispatch_rank"] == expected_rank(packed["name"], 0, estimates)
+    for original in originals:
+        for key in ("csproj", "timeout_minutes", "test_timeout_minutes", "max_cpu_count",
+                    "upload_operator_eval_report", "upload_odata_evidence"):
+            assert packed[key] == original[key], key
+
+
+test_soap_packing_preserves_filters_paths_and_execution_contract()
 
 
 

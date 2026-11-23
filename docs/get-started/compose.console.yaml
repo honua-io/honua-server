@@ -51,6 +51,7 @@ services:
     volumes:
       - ./console:/srv/console:ro
       - ./console.config.json:/etc/honua-console/config.json:ro
+      - ./console.version.json:/etc/honua-console/version.json:ro
       - ./console.nginx.conf:/etc/nginx/conf.d/default.conf:ro
     secrets: [console_tls_certificate, console_tls_key]
     networks:

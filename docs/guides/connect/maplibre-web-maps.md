@@ -7,7 +7,7 @@ description: "Render a Honua layer in the browser from vector tiles (MVT) using 
 
 Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metadata and the server-generated MapLibre style.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)).
+**Prerequisites:** Python 3 (`python3`), a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)).
 
 The browser must be allowed to read the layer and to call the server from the page's origin:
 
@@ -71,7 +71,7 @@ Honua serves per-layer vector tiles and metadata:
 3. Serve the file and open it in a browser:
 
    ```bash
-   python -m http.server 8000
+   python3 -m http.server 8000
    # open http://localhost:8000/map.html
    ```
 

@@ -125,7 +125,7 @@ public sealed partial class CapabilityManifestEndpointTests
     [InlineData(false)]
     [InlineData(true)]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters(bool fromRegistry)
+    public async Task GetManifest_FileExportDirections_AdvertisesOnlyFourImplementedWriters(bool fromRegistry)
     {
         var fixture = fromRegistry ? await _configured.GetAsync(new() { FromRegistry = true }) : _fixture;
         using var client = fixture.CreateAdminClient();
@@ -137,7 +137,7 @@ public sealed partial class CapabilityManifestEndpointTests
         writers.Should().HaveCount(13);
         writers.Where(capability => capability.GetProperty("supported").GetBoolean())
             .Select(capability => capability.GetProperty("id").GetString()).Should().BeEquivalentTo(
-                "format.write.csv", "format.write.shapefile", "format.write.geopackage");
+                "format.write.csv", "format.write.shapefile", "format.write.geopackage", "format.write.geoparquet");
         foreach (var writer in writers)
         {
             var supported = writer.GetProperty("supported").GetBoolean();
@@ -156,7 +156,7 @@ public sealed partial class CapabilityManifestEndpointTests
         var implemented = anonymousDocument.RootElement.GetProperty("capabilities").EnumerateArray()
             .Where(row => row.GetProperty("category").GetString() is "format-read" or "format-write")
             .Where(row => row.GetProperty("supported").GetBoolean()).ToArray();
-        implemented.Should().HaveCount(16);
+        implemented.Should().HaveCount(17);
         foreach (var capability in implemented)
         {
             capability.GetProperty("available").GetBoolean().Should().BeFalse();
@@ -173,7 +173,7 @@ public sealed partial class CapabilityManifestEndpointTests
                 new CapabilityManifestRequest(principal, null, TenantContextSource.Anonymous, null, null, true));
             var formats = manifest.Capabilities.Where(row => row.Category is "format-read" or "format-write")
                 .Where(row => row.Supported).ToArray();
-            formats.Should().HaveCount(16);
+            formats.Should().HaveCount(17);
             foreach (var capability in formats)
             {
                 capability.Available.Should().Be(adminRead && capability.Category == "format-write",
@@ -228,6 +228,7 @@ public sealed partial class CapabilityManifestEndpointTests
         }).ToArray();
         await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
             edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ShareSchemaWith(_fixture)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFeatureOutputFormatRegistry>();

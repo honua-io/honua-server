@@ -72,7 +72,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var inputError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts, out var sourceInput, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
             return JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {inputError}");

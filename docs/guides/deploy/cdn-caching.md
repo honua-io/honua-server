@@ -85,6 +85,8 @@ When you remove a layer from the list, or turn off cache tags or the CDN configu
 
 Pro editions also keep cached metadata, tiles and styles in each task's memory. Each entry is keyed by the catalog revision, so after a change on any task every other task stops replaying its entries within the revision check interval (`Cache__MetadataGraphRevalidationSeconds`, default 2 s). An entry for a layer, service, collection or scene is stored only after its access check allowed an anonymous caller, and no entry lives longer than the CDN lifetime of its response, so a task never hands the CDN an older copy after a purge.
 
+The task's cache also keeps a lifetime for each output-cache policy, set as a duration under `OutputCache` (for example `OutputCache__MvtTile=00:10:00`, `OutputCache__TileJson=00:05:00` or `OutputCache__SceneTileAsset=00:30:00`); the CDN lifetime above still caps it. Scene responses are the exception: their `OutputCache__SceneTilesetMetadata` and `OutputCache__SceneTileAsset` values are also the browser and CDN lifetime in their `Cache-Control`, unless the scene's own cache setting replaces them. Every value must be a positive duration on every edition: a zero or negative value stops the service at startup with an `OutputCache:<name> must be a positive duration` error. There is no switch to turn off one policy: a CDN lifetime of 0 (for example `SharedCache__Tile__SharedMaxAgeSeconds=0`) keeps that whole response class out of both the task's cache and the CDN, except where a scene, tileset, layer or emergency lifetime replaces it; to stop caching one scene, set its own cache setting to no-store.
+
 The exported `Honua` meter includes these origin cache instruments:
 
 | Instrument | Dimensions | Meaning |
@@ -126,9 +128,19 @@ SharedCache__MetadataDocument__SharedMaxAgeSeconds=60
 
 3. Give one layer its own lifetime. Layers are named `{serviceId}/{layerId}`, as in `/rest/services/{serviceId}/FeatureServer/{layerId}`; the name applies to that layer on every surface, including `/tiles` and OGC API Tiles. A layer bound to a table that is edited outside Honua should have a lifetime no longer than the staleness you accept.
 
-```bash
-SharedCache__Layers__parcels/3__MaxAgeSeconds=0
-SharedCache__Layers__parcels/3__SharedMaxAgeSeconds=15
+Merge this fragment into the service's appsettings configuration. Keep the slash in `parcels/3`; a key containing `/` cannot be used as a Bash assignment name. Environment variables configured by the deployment take precedence over appsettings values.
+
+```json
+{
+  "SharedCache": {
+    "Layers": {
+      "parcels/3": {
+        "MaxAgeSeconds": 0,
+        "SharedMaxAgeSeconds": 15
+      }
+    }
+  }
+}
 ```
 
 4. In an emergency, shorten every public layer to 15 seconds at the CDN and 0 in the browser in one step. Stored per-layer lifetimes are not changed, and unsetting the value restores them.

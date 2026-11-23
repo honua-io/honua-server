@@ -53,7 +53,7 @@ internal sealed class ConfigurationCollectionStore<T>(
 
     public async Task<T?> MutateAsync(string key, Func<T?, T?> mutation, CancellationToken token)
     {
-        for (var attempt = 0; attempt < 16; attempt++)
+        for (var attempt = 0; attempt < ConfigurationWriteContention.MaxAttempts; attempt++)
         {
             var current = await documents.FindAsync(collection, key, token).ConfigureAwait(false);
             var next = mutation(current is null ? null : current.Value);
@@ -65,19 +65,21 @@ internal sealed class ConfigurationCollectionStore<T>(
             {
                 return next;
             }
+            await ConfigurationWriteContention.PauseAsync(attempt, token).ConfigureAwait(false);
         }
-        throw new InvalidOperationException("Concurrent configuration updates exceeded the retry limit.");
+        throw new ConfigurationWriteConflictException();
     }
 
     public async Task<bool> DeleteAsync(string key, CancellationToken token)
     {
-        for (var attempt = 0; attempt < 16; attempt++)
+        for (var attempt = 0; attempt < ConfigurationWriteContention.MaxAttempts; attempt++)
         {
             var current = await documents.FindAsync(collection, key, token).ConfigureAwait(false);
             if (current is null) { return false; }
             if (await documents.WriteAsync(collection, new(key, current.Revision, default), token).ConfigureAwait(false)) { return true; }
+            await ConfigurationWriteContention.PauseAsync(attempt, token).ConfigureAwait(false);
         }
-        throw new InvalidOperationException("Concurrent configuration updates exceeded the retry limit.");
+        throw new ConfigurationWriteConflictException();
     }
 
     // Deletes the document and, in the same transaction, the documents of the other kinds stored under its key.

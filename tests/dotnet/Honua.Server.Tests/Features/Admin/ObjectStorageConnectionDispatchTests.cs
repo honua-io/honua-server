@@ -60,6 +60,21 @@ public sealed class ObjectStorageConnectionDispatchTests
         typeof(SecureConnectionSummary).GetProperty("ExternalId").Should().BeNull();
     }
 
+    [UnitTest]
+    public void ApplyUpdate_DescriptionOverCreateLimit_IsRefused()
+    {
+        var customer = BuiltIn with { BuiltIn = false };
+
+        var (tooLong, error) = ObjectStorageConnectionDispatch.ApplyUpdate(
+            customer, new UpdateSecureConnectionRequest { Description = new string('d', 1001) });
+        var (atLimit, _) = ObjectStorageConnectionDispatch.ApplyUpdate(
+            customer, new UpdateSecureConnectionRequest { Description = new string('d', 1000) });
+
+        tooLong.Should().BeNull("update must keep the 1000-character limit create enforces");
+        error.Should().Be("description must be at most 1000 characters.");
+        atLimit!.Description.Should().HaveLength(1000);
+    }
+
     private static async Task<object?> InvokeAsync(
         Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> filter,
         UpdateSecureConnectionRequest? body)

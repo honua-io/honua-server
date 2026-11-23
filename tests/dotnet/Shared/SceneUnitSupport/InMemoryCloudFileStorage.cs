@@ -13,10 +13,13 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
     private int _downloadCount;
     private readonly TimeSpan _downloadDelay;
 
-    public InMemoryCloudFileStorage(TimeSpan? downloadDelay = null)
+    public InMemoryCloudFileStorage(TimeSpan? downloadDelay = null, string? objectKeyPrefix = null)
     {
         _downloadDelay = downloadDelay ?? TimeSpan.Zero;
+        ObjectKeyPrefix = objectKeyPrefix;
     }
+
+    public string? ObjectKeyPrefix { get; }
 
     public int DownloadCount => Volatile.Read(ref _downloadCount);
 
@@ -26,9 +29,16 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
 
     public CloudStorageProvider Provider => CloudStorageProvider.Local;
 
+    // When set, every upload is refused with this result instead of being stored.
+    public UploadResult? UploadFailure { get; set; }
+
     public async Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (UploadFailure is { } failure)
+        {
+            return failure;
+        }
         var key = request.ObjectKeyOverride
             ?? throw new InvalidOperationException("Scene uploads must supply an ObjectKeyOverride.");
 

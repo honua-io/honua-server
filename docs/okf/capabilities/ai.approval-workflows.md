@@ -16,6 +16,7 @@ Enterprise organisational approval workflows and policy-scoped agent permissions
 | Capability key | `ai.approval-workflows` |
 | Category | AI |
 | Edition | Enterprise |
+| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

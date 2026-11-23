@@ -204,6 +204,36 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/generate",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/ingest/archive",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/ingest/model",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/jobs",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/assets",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes",
+      "capability": "scene.catalog"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/import/arcgis",
       "capability": "import.geoservices"
     },

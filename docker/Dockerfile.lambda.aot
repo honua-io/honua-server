@@ -106,6 +106,9 @@ ARG HONUA_GIT_SHA=
 # error MSB3073 "...ilc... exited with code -1". Single-threaded linking trades
 # wall-clock for a much lower memory peak; the retry loop additionally rides out an
 # intermittent OOM kill (the regular AOT image relies on the same retry to stay green).
+# Compile and native-link run as two commands, as in docker/Dockerfile.aot:
+# `dotnet build` compiles in parallel without build servers, then
+# `publish --no-build -maxcpucount:1` runs ILC without resident MSBuild worker nodes.
 # Keep restore and publish in the same cached RUN, matching Dockerfile.aot. The
 # earlier restore stage warms the NuGet cache, but the full source copy can change
 # the evaluated project graph; refreshing the RID-specific assets here prevents
@@ -127,6 +130,27 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           --runtime "$RUNTIME_ID" \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           -p:HonuaUseSkiaNoDependencies=true && \
+        dotnet build src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
+          --configuration "$CONFIGURATION" \
+          --runtime "$RUNTIME_ID" \
+          --no-restore \
+          --disable-build-servers \
+          --self-contained true \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:HonuaUseSkiaNoDependencies=true \
+          -p:PublishAot=true \
+          -p:DebugType=None \
+          -p:DebugSymbols=false \
+          -p:HonuaUbuntuRuntimePublish=true \
+          -p:StripSymbols=true \
+          -p:OptimizationPreference=Speed \
+          -p:IlcOptimizationPreference=Speed \
+          -p:IlcSingleThreaded=true \
+          -p:HonuaSkipOracleForAotVerification=true \
+          -p:HonuaSkipSnowflakeForAotVerification=true && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
           ${VERSION:+-p:Version="$VERSION"} \
           ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
@@ -134,6 +158,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
+          --no-build \
+          --disable-build-servers \
+          -maxcpucount:1 \
           --self-contained true \
           --output /app \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -151,10 +178,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     do \
         status=$? ; \
         if [ "$attempt" -ge "$max_attempts" ]; then \
-            echo "AOT restore+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
+            echo "AOT restore+build+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
             exit "$status" ; \
         fi ; \
-        echo "AOT restore+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
+        echo "AOT restore+build+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \

@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
@@ -115,6 +116,41 @@ public sealed class TileOperationsEndpointsTests(TileOperationsEndpointsTests.Ti
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // The job would clamp each of these and run different work than asked, so the request is refused up front.
+    public static TheoryData<string, string> OutOfRangeSeedRequests => new()
+    {
+        { """{"operation":"seed","minZoom":-1,"maxZoom":2}""", "'minZoom' must be between" },
+        { """{"operation":"seed","minZoom":0,"maxZoom":40}""", "'maxZoom' must be between" },
+        { """{"operation":"seed","maxTiles":0}""", "'maxTiles' must be at least 1" },
+        { """{"operation":"seed","bbox":[-200,-10,10,10]}""", "longitude -180..180" },
+        { """{"operation":"seed","bbox":[-10,-95,10,10]}""", "latitude -90..90" },
+        { """{"operation":"seed","bbox":[-10,20,10,10]}""", "minLat less than or equal to maxLat" },
+        { """{"operation":"seed","bbox":[170,-10,-170,10]}""", "crosses the antimeridian" },
+    };
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [MemberData(nameof(OutOfRangeSeedRequests))]
+    public async Task StartJob_WithOutOfRangeExtent_Returns400NamingTheRule(string body, string expectedDetail)
+    {
+        var response = await PostTileOperationAsync(body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        GetPropertyCaseInsensitive(problem.RootElement, "detail").GetString().Should().Contain(expectedDetail);
+    }
+
+    // The limits themselves and the whole world (latitude is clipped to Web Mercator while the job runs) stay accepted.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task StartJob_AtTheExtentLimits_IsAccepted()
+    {
+        var response = await PostTileOperationAsync(
+            """{"operation":"invalidate","minZoom":0,"maxZoom":18,"maxTiles":1,"bbox":[-180,-90,180,90]}""");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
     public async Task GetJobStatus_NonexistentId_Returns404()
@@ -133,6 +169,13 @@ public sealed class TileOperationsEndpointsTests(TileOperationsEndpointsTests.Ti
 
         // Job may complete before cancel arrives (race), returning 400
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.BadRequest);
+    }
+
+    private async Task<HttpResponseMessage> PostTileOperationAsync(string body)
+    {
+        var request = JsonNode.Parse(body)!.AsObject();
+        request["layerId"] = WebAppFixture.TestLayerId;
+        return await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", request);
     }
 
     private async Task<string> StartInvalidateJobAsync()

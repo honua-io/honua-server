@@ -15,7 +15,26 @@ ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute-chiseled
 
 ARG HONUA_STORE_PROFILE=postgis
 
-FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-base
+FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-publisher
+
+# Recut the publisher's Ubuntu slices from the security archive as a complete OS root.
+# Keep the pinned .NET payload, but pair the loader, libc and package manifest from
+# the same Chisel cut. The native/managed runtime gates below validate the result.
+FROM ${DOTNET_SDK_IMAGE} AS chiseled-rootfs
+WORKDIR /src
+COPY docker/runtime/cut-rootfs.sh docker/runtime/
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates file && \
+    sh docker/runtime/cut-rootfs.sh /rootfs && rm -rf /var/lib/apt/lists/*
+
+FROM scratch AS chiseled-base
+COPY --from=chiseled-rootfs /rootfs/ /
+COPY --from=chiseled-publisher /usr/share/dotnet/ /usr/share/dotnet/
+COPY --from=chiseled-publisher /etc/passwd /etc/passwd
+COPY --from=chiseled-publisher /etc/group /etc/group
+COPY --from=chiseled-publisher --chown=1654:1654 /home/app/ /home/app/
+ENV APP_UID=1654 DOTNET_RUNNING_IN_CONTAINER=true ASPNETCORE_HTTP_PORTS=8080
+USER 1654
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
@@ -179,10 +198,8 @@ LABEL security.non-root="true" \
       security.read-only-root="true" \
       security.user="1001" \
       security.group="1001" \
-      maintainer="Honua Development Team" \
-      version="1.0" \
       description="Honua Geospatial Feature Server" \
-      org.opencontainers.image.source="https://github.com/honua/honua-server" \
+      org.opencontainers.image.source="https://github.com/honua-io/honua-server" \
       org.opencontainers.image.description="Chiseled JIT serving image; PostGIS by default, additional stores in the full variant" \
       org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
       honua.runtime.profile="web" \

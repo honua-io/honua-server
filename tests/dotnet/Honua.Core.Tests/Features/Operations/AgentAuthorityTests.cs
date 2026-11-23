@@ -56,6 +56,29 @@ public sealed class AgentAuthorityTests
         Assert.Equal(AgentAuthorityVerdict.Unrestricted, await Verdict(null, Descriptor(), Agent with { Roles = ["admin"] }));
     }
 
+    [UnitTheory]
+    [InlineData("studio.draft.create")]
+    [InlineData("studio.draft.update")]
+    [InlineData("studio.draft.save-version")]
+    public async Task NoCeiling_AgentDraftAuthoringFollowsPolicy(string operationId)
+    {
+        var descriptor = Descriptor() with { OperationId = operationId };
+
+        Assert.Equal(AgentAuthorityVerdict.Unrestricted, await Verdict(Store(null), descriptor, Agent));
+        Assert.Equal(AgentAuthorityVerdict.Denied, await Verdict(Store(null), descriptor, Agent with { PrincipalId = " " }));
+    }
+
+    [UnitTheory]
+    [InlineData("studio.draft.delete")]
+    [InlineData("studio.content.create-publication-request")]
+    [InlineData("studio.content.rollback")]
+    public async Task NoCeiling_AgentDraftDeleteAndPublicationNeedApproval(string operationId)
+    {
+        var descriptor = Descriptor() with { OperationId = operationId };
+
+        Assert.Equal(AgentAuthorityVerdict.ApprovalRequired, await Verdict(Store(null), descriptor, Agent));
+    }
+
     [UnitTest]
     public async Task Ceiling_IsReadAgainAfterRevocationAndForApprovedReplay()
     {
@@ -123,6 +146,57 @@ public sealed class AgentAuthorityTests
     }
 
     [UnitTest]
+    public async Task Dispatcher_NoCeiling_AgentDryRunPreviewsWithoutApproval()
+    {
+        var executor = DryRunExecutor();
+        executor.SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new OperationHandle
+            {
+                OperationInstanceId = "preview",
+                OperationId = "service.publish",
+                CorrelationId = "preview",
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
+                Status = OperationHandleStatus.Completed,
+                PolicyDecision = PolicyDecisionKind.Allow,
+                Reason = "Dry run preview.",
+            });
+        var dispatcher = new OperationDispatcher(DryRunCatalog(), [executor], Policy(PolicyDecision.Allowed), TimeProvider.System,
+            guards: new OperationActuationGuards { AgentAuthorityStore = Store(null) });
+
+        var result = await dispatcher.SubmitAsync(new OperationRequest { OperationId = "service.publish", DryRun = true }, Agent);
+
+        Assert.Equal(OperationHandleStatus.Completed, result.Status);
+        Assert.DoesNotContain("revoked", result.Reason ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        await executor.Received(1).SubmitAsync(
+            Arg.Is<OperationRequest>(r => r.DryRun), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Dispatcher_RevocationBeforeDryRunActuationStillDenies()
+    {
+        var store = Store(null);
+        var executor = DryRunExecutor();
+        var policy = Substitute.For<IOperationPolicyDecisionPoint>();
+        policy.EvaluateAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                store.GetAsync(Agent.TenantId, Agent.PrincipalId!, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<AgentAuthorityCeiling?>(Ceiling() with { Enabled = false }));
+                return PolicyDecision.Allowed;
+            });
+        var dispatcher = new OperationDispatcher(DryRunCatalog(), [executor], policy, TimeProvider.System,
+            guards: new OperationActuationGuards { AgentAuthorityStore = store });
+
+        var result = await dispatcher.SubmitAsync(new OperationRequest { OperationId = "service.publish", DryRun = true }, Agent);
+
+        Assert.Equal(OperationHandleStatus.Denied, result.Status);
+        Assert.Contains("revoked", result.Reason);
+        await executor.DidNotReceive().SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Dispatcher_CancellationDuringFinalCeilingRead_DoesNotReportActuation()
     {
         var store = Store(Ceiling());
@@ -164,6 +238,24 @@ public sealed class AgentAuthorityTests
     {
         var executor = Substitute.For<IOperationExecutor>();
         executor.OperationId.Returns("service.publish");
+        executor.ValidateAsync(Arg.Any<OperationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationValidation { IsValid = true, Status = "valid" });
+        return executor;
+    }
+
+    private static IOperationCatalog DryRunCatalog()
+    {
+        var catalog = Substitute.For<IOperationCatalog>();
+        var descriptor = Descriptor() with { Policy = Descriptor().Policy with { SupportsDryRun = true } };
+        catalog.GetDescriptorAsync("service.publish", Arg.Any<CancellationToken>()).Returns(descriptor);
+        return catalog;
+    }
+
+    private static IOperationDryRunExecutor DryRunExecutor()
+    {
+        var executor = Substitute.For<IOperationDryRunExecutor>();
+        executor.OperationId.Returns("service.publish");
+        executor.ExecutesDryRun.Returns(true);
         executor.ValidateAsync(Arg.Any<OperationRequest>(), Arg.Any<CancellationToken>())
             .Returns(new OperationValidation { IsValid = true, Status = "valid" });
         return executor;
