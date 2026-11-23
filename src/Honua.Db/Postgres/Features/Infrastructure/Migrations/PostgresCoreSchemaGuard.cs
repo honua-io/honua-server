@@ -229,6 +229,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ("sta_observation_default", "feature_of_interest_id"),
     ];
 
+    private const string ConfiguredFeatureStoreTable = "features";
+
     private static readonly string[] _initialSchemaTables =
     [
         "services",
@@ -427,6 +429,16 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         {
             VerifyRequiredMigration(state, registryAdoption,
                 ["services", "layers", "service_layers", "layer_fields"], [], []);
+        }
+
+        // The managed writer, the publish check and the attachment store address
+        // <schema>.features, so serving under a configured schema needs the adopted table.
+        if (_schemaName != PostgresSchemaConfiguration.DefaultMetadataSchema &&
+            _migrations.ConfiguredFeatureStoreAdoptionMigration is { } featureStoreAdoption)
+        {
+            VerifyRequiredMigration(state, featureStoreAdoption, [ConfiguredFeatureStoreTable], [], []);
+            await VerifyConfiguredFeatureStoreContractAsync(connection, featureStoreAdoption, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (state.RequiresRasterFloor)
@@ -1033,6 +1045,68 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
+    private async Task VerifyConfiguredFeatureStoreContractAsync(
+        DbConnection connection,
+        string migration,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) = 6
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+            WHERE n.nspname = @schema AND c.relname = 'features' AND c.relkind = 'r'
+              AND a.attnum > 0 AND NOT a.attisdropped
+              AND CASE a.attname
+                WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype AND a.attnotnull
+                    AND EXISTS (
+                        SELECT 1
+                        FROM pg_catalog.pg_depend ownership
+                        JOIN pg_catalog.pg_class seq ON seq.oid = ownership.objid AND seq.relkind = 'S'
+                        WHERE ownership.classid = 'pg_catalog.pg_class'::regclass AND ownership.objsubid = 0
+                          AND ownership.refclassid = 'pg_catalog.pg_class'::regclass
+                          AND ownership.refobjid = c.oid AND ownership.refobjsubid = a.attnum
+                          AND ((a.attidentity <> '' AND ownership.deptype = 'i')
+                            OR (ownership.deptype = 'a'
+                              AND pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+                                  ~ '^(pg_catalog[.])?nextval[(]''([^'']|'''')+''::regclass[)]$'
+                              AND EXISTS (
+                                  SELECT 1 FROM pg_catalog.pg_depend default_reference
+                                  WHERE default_reference.classid = 'pg_catalog.pg_attrdef'::regclass
+                                    AND default_reference.objid = d.oid AND default_reference.objsubid = 0
+                                    AND default_reference.refclassid = 'pg_catalog.pg_class'::regclass
+                                    AND default_reference.refobjid = seq.oid AND default_reference.refobjsubid = 0
+                                    AND default_reference.deptype = 'n'))))
+                    AND EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_index i
+                        WHERE i.indrelid = c.oid AND i.indisprimary AND i.indisvalid
+                          AND i.indnkeyatts = 1 AND i.indkey[0] = a.attnum)
+                WHEN 'layer_id' THEN a.atttypid = 'integer'::regtype
+                WHEN 'geometry' THEN a.atttypid = (
+                    SELECT t.oid FROM pg_catalog.pg_type t
+                    JOIN pg_catalog.pg_extension e ON e.extnamespace = t.typnamespace
+                    WHERE e.extname = 'postgis' AND t.typname = 'geometry')
+                WHEN 'attributes' THEN a.atttypid = 'jsonb'::regtype
+                WHEN 'created_at' THEN a.atttypid = 'timestamptz'::regtype
+                WHEN 'updated_at' THEN a.atttypid = 'timestamptz'::regtype
+                ELSE FALSE
+              END;
+            """;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "schema";
+        parameter.Value = _schemaName;
+        command.Parameters.Add(parameter);
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
+        {
+            throw CreateFailure(
+                migration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"'{_schemaName}.features' is incompatible with the managed feature store contract.");
+        }
+    }
+
     private async Task VerifyRasterTileProvenanceColumnsAsync(
         DbConnection connection,
         CancellationToken cancellationToken)
@@ -1049,6 +1123,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
             LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN a.attname = 'objectid'
+                    THEN pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid')::regclass
+                END AS owned_sequence
+            ) object_id
             WHERE n.nspname = @schema AND c.relname = 'raster_tiles'
               AND a.attnum > 0 AND NOT a.attisdropped
               AND a.attname IN ('renderer_version', 'renderer_payload_sha256');
@@ -1427,7 +1506,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
             var tablesParameter = schemaCommand.CreateParameter();
             tablesParameter.ParameterName = "tables";
-            tablesParameter.Value = _guardedTables;
+            tablesParameter.Value = _schemaName == PostgresSchemaConfiguration.DefaultMetadataSchema ||
+                _migrations.ConfiguredFeatureStoreAdoptionMigration is null
+                    ? _guardedTables
+                    : _guardedTables.Append(ConfiguredFeatureStoreTable).ToArray();
             if (tablesParameter is NpgsqlParameter npgsqlTablesParameter)
             {
                 npgsqlTablesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;

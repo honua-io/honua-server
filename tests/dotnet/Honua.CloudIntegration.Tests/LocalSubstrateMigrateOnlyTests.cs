@@ -88,8 +88,13 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs.
         var full = ServerCoreSchemaMigrations.Manifest;
         // A default Database:Schema install never discovers the configured-schema adoption
-        // scripts (109, 227), so migrate-only neither applies nor declares them here.
-        string[] adoption = [full.ConfiguredSchemaAdoptionMigration, full.ConfiguredRegistryAdoptionMigration!];
+        // scripts (109, 227, 231), so migrate-only neither applies nor declares them here.
+        string[] adoption =
+        [
+            full.ConfiguredSchemaAdoptionMigration,
+            full.ConfiguredRegistryAdoptionMigration!,
+            full.ConfiguredFeatureStoreAdoptionMigration!,
+        ];
         var newest = full.KnownMigrationNames!
             .Where(name => name.StartsWith("Honua.Server.Migrations.", StringComparison.Ordinal))
             .Except(adoption, StringComparer.Ordinal)
