@@ -358,7 +358,7 @@ internal static partial class OperationsProgressEndpoints
         var progressReader = new ExecutionJobProgressReader(progressStore, jobStore);
         var progress = await progressReader.ReadAsync(operationId, cancellationToken);
 
-        if (progress == null)
+        if (progress == null || !await CanAccessOperationAsync(httpContext, progress, cancellationToken).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,

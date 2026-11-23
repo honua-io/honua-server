@@ -50,7 +50,7 @@ internal static partial class OperationsProgressEndpoints
 
         var progress = await new ExecutionJobProgressReader(progressStore, jobStore).ReadAsync(operationId, cancellationToken);
 
-        if (progress == null)
+        if (progress == null || !await CanAccessOperationAsync(httpContext, progress, cancellationToken).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,
@@ -120,8 +120,6 @@ internal static partial class OperationsProgressEndpoints
         string? type = null,
         CancellationToken cancellationToken = default)
     {
-        var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
-        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         OperationType? operationType = null;
 
         if (!string.IsNullOrEmpty(type))
@@ -136,19 +134,10 @@ internal static partial class OperationsProgressEndpoints
             operationType = parsedType;
         }
 
-        var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
-        var operations = new List<JsonElement>();
-
-        await foreach (var storedProgress in ProgressStoreReader.ReadAvailableAsync(
-            progressStore, operationIds, cancellationToken))
-        {
-            var progress = await new ExecutionJobProgressReader(progressStore, jobStore)
-                .RepairAsync(storedProgress, cancellationToken).ConfigureAwait(false);
-            if (progress.Status is OperationStatus.Queued or OperationStatus.Processing)
-            {
-                operations.Add(SerializeOperationToElement(progress));
-            }
-        }
+        var operations = (await ReadVisibleOperationsAsync(httpContext, operationType, cancellationToken).ConfigureAwait(false))
+            .Where(progress => progress.Status is OperationStatus.Queued or OperationStatus.Processing)
+            .Select(SerializeOperationToElement)
+            .ToList();
 
         return ActiveOperationsResult(operations, operationType);
     }
@@ -158,8 +147,6 @@ internal static partial class OperationsProgressEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
-        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -168,19 +155,10 @@ internal static partial class OperationsProgressEndpoints
                 $"Invalid operation type '{operationType}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
         }
 
-        var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
-        var operations = new List<JsonElement>(operationIds.Count);
-
-        await foreach (var storedProgress in ProgressStoreReader.ReadAvailableAsync(
-            progressStore, operationIds, cancellationToken))
-        {
-            var progress = await new ExecutionJobProgressReader(progressStore, jobStore)
-                .RepairAsync(storedProgress, cancellationToken).ConfigureAwait(false);
-            if (progress.Type == parsedType)
-            {
-                operations.Add(SerializeOperationToElement(progress));
-            }
-        }
+        var operations = (await ReadVisibleOperationsAsync(httpContext, parsedType, cancellationToken).ConfigureAwait(false))
+            .Where(progress => progress.Type == parsedType)
+            .Select(SerializeOperationToElement)
+            .ToList();
 
         var response = new OperationsByTypeResponse
         {

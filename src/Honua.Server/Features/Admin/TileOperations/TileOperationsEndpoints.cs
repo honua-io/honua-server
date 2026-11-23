@@ -3,9 +3,9 @@
 
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -66,12 +66,7 @@ internal static class TileOperationsEndpoints
 
         try
         {
-            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-
-            var submission = new TileOperationSubmission(
-                request,
-                JobOwnershipSecurity.ResolveOwner(context.User),
-                schemaName);
+            var submission = TileOperationSubmission.FromRequest(context, request);
             var jobId = await jobService.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
@@ -119,7 +114,7 @@ internal static class TileOperationsEndpoints
         }
 
         var progress = await jobService.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (progress == null)
+        if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile job '{jobId}' not found.");
         }
@@ -128,11 +123,21 @@ internal static class TileOperationsEndpoints
     }
 
     private static async Task<IResult> HandleListJobs(
-        [FromServices] ITileCacheJobService jobService,
+        HttpContext context,
         bool activeOnly = true,
         CancellationToken cancellationToken = default)
     {
-        var jobs = await jobService.ListAsync(activeOnly ? TileOperationListScope.Active : TileOperationListScope.All, cancellationToken).ConfigureAwait(false);
+        var jobService = context.RequestServices.GetRequiredService<ITileCacheJobService>();
+        var listed = await jobService.ListAsync(activeOnly ? TileOperationListScope.Active : TileOperationListScope.All, cancellationToken).ConfigureAwait(false);
+        var jobs = new List<TileOperationProgress>(listed.Count);
+        foreach (var job in listed)
+        {
+            if (await OperationTenantAuthorization.CanAccessJobAsync(context, job.JobId, cancellationToken).ConfigureAwait(false))
+            {
+                jobs.Add(job);
+            }
+        }
+
         var response = new TileOperationListResponse
         {
             Jobs = jobs.ToArray(),
@@ -149,7 +154,7 @@ internal static class TileOperationsEndpoints
         CancellationToken cancellationToken)
     {
         var progress = await jobService.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (progress == null)
+        if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile job '{jobId}' not found.");
         }
@@ -174,10 +179,13 @@ internal static class TileOperationsEndpoints
         [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        string? retryJobId;
+        string? retryJobId = null;
         try
         {
-            retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+            if (await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
+            {
+                retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (ExportRetryConflictException ex)
         {
