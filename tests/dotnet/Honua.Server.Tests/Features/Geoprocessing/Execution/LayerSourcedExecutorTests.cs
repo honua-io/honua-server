@@ -1022,6 +1022,68 @@ public sealed partial class LayerSourcedExecutorTests
     }
 
     [UnitTest]
+    public async Task SpatialJoin_InvalidCarryFields_RejectsBeforeReadingEitherLayer()
+    {
+        foreach (var field in new[] { "missing", "NAME" })
+        {
+            var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId,
+                new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+                {
+                    [7] = [BoxFeature(0, 0, 10, 10)],
+                    [8] = [NamedPoint(5, 5, "value")],
+                });
+            var scope = BufferScopeFactory(source, layerId: 8, storageSrid: 3857, isGeographic: false,
+                schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]);
+
+            var (status, uri, _) = await RunAsync(
+                new LayerSpatialJoinExecutor(scope, Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+                LayerSpatialJoinExecutor.HandledProcessId,
+                ("layerId", "7"), ("joinLayerId", "8"), ("carryFields", field));
+
+            status.Should().Be(ExecutionJobStatus.Failed);
+            uri.Should().BeNull();
+            _lastRetryableForAssertions.Should().BeFalse();
+            _lastErrorForAssertions.Should().Contain("'carryFields'").And.Contain("not a field of layer 8");
+            if (field == "NAME")
+            {
+                _lastErrorForAssertions.Should().Contain("did you mean 'name'");
+            }
+            _allRequestsForAssertions.Should().BeEmpty();
+        }
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_ValidCarryFields_PreservesValuesAndNullsWithOrWithoutSchema()
+    {
+        foreach (var hasSchema in new[] { true, false })
+        {
+            var nullName = PointFeature(6, 6) with
+            {
+                Attributes = new Dictionary<string, object?> { ["name"] = null },
+            };
+            var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId,
+                new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+                {
+                    [7] = [BoxFeature(0, 0, 10, 10)],
+                    [8] = [NamedPoint(5, 5, "value"), nullName],
+                });
+            var scope = hasSchema
+                ? BufferScopeFactory(source, layerId: 8, storageSrid: 3857, isGeographic: false,
+                    schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }])
+                : ScopeFactory(source);
+
+            var (status, uri, _) = await RunAsync(
+                new LayerSpatialJoinExecutor(scope, Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+                LayerSpatialJoinExecutor.HandledProcessId,
+                ("layerId", "7"), ("joinLayerId", "8"), ("carryFields", "name"));
+
+            status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+            CarriedValues(ReadFeatures(uri!).Should().ContainSingle().Which, "name")
+                .Should().BeEquivalentTo(new string?[] { "value", null });
+        }
+    }
+
+    [UnitTest]
     public async Task SpatialJoin_Dwithin_MatchesNeighboursWithinDistance()
     {
         // Target point at origin; join layer has one point 3 units away and one 30 away.
