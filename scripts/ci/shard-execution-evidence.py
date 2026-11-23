@@ -55,12 +55,16 @@ def observe(trx: Path, label: str, project: str) -> dict:
     except (OSError, ValueError, KeyError, ET.ParseError, guard['TripwireError']) as exc:
         # Keep all observed counts/hash even on refusal; never turn absent TRX into zero success.
         evidence['problem'] = str(exc).splitlines()[0]
-        # Cases that ran and failed are a test red; absent, unreadable or contradictory
-        # evidence is a harness red. Triage depends on telling the two apart.
-        counts = evidence['counts']
-        if isinstance(exc, guard['TripwireError']) and counts and counts['failed']:
-            evidence['refusal'] = 'cases_failed'
+        evidence['refusal'] = refusal_kind(exc, guard['TripwireError'], evidence['counts'])
     return evidence
+
+
+def refusal_kind(exc: Exception, tripwire_error: type, counts: dict | None) -> str:
+    # Cases that ran and failed are a test red; absent, unreadable or contradictory
+    # evidence is a harness red. Triage depends on telling the two apart.
+    if isinstance(exc, tripwire_error) and counts and counts['failed']:
+        return 'cases_failed'
+    return 'no_execution'
 
 
 def refusal_code(result: dict) -> str:
