@@ -120,7 +120,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         try
         {
-            await ValidateStatisticsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
+            await ValidateFieldsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
@@ -531,23 +531,26 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     private protected static string? ReadNonBlank(StepInputReader inputs, string key)
         => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
 
-    private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+    private protected virtual int? ResolveFieldLayerId(StepInputReader inputs, DagSourceRequest request)
         => request.LayerId;
 
-    private async Task ValidateStatisticsAsync(
+    private protected virtual IEnumerable<(string Parameter, string Field)> ReadFieldReferences(StepInputReader inputs)
+        => StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty))
+            .Select(spec => ("outStatistics", spec.Field));
+
+    private async Task ValidateFieldsAsync(
         IServiceProvider services,
         StepInputReader inputs,
         DagSourceRequest request,
         CancellationToken cancellationToken)
     {
-        if (!inputs.TryGet("outStatistics", out var raw) || string.IsNullOrWhiteSpace(raw))
+        var references = ReadFieldReferences(inputs).Where(reference => reference.Field.Length > 0).Distinct().ToArray();
+        if (references.Length == 0)
         {
             return;
         }
-
-        var stats = StatisticsSupport.ParseOutStatistics(raw);
         var metadata = services.GetService<IMetadataV2GraphProvider>();
-        if (metadata is null || ResolveStatisticsLayerId(inputs, request) is not { } layerId)
+        if (metadata is null || ResolveFieldLayerId(inputs, request) is not { } layerId)
         {
             return;
         }
@@ -560,7 +563,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
 
         var primaryId = resource.FindPrimaryIdField()?.Name;
-        foreach (var field in stats.Select(spec => spec.Field).Where(field => field.Length > 0).Distinct(StringComparer.Ordinal))
+        foreach (var (parameter, field) in references)
         {
             if (string.Equals(field, primaryId, StringComparison.Ordinal)
                 || resource.SchemaFields.Any(schemaField => string.Equals(schemaField.Name, field, StringComparison.Ordinal)))
@@ -571,7 +574,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
             var caseMatch = resource.SchemaFields
                 .FirstOrDefault(schemaField => string.Equals(schemaField.Name, field, StringComparison.OrdinalIgnoreCase));
             throw new TransformInputException(
-                $"'outStatistics' references field '{field}', which is not a field of layer {layerId}"
+                $"'{parameter}' references field '{field}', which is not a field of layer {layerId}"
                 + (caseMatch is null ? "." : $"; did you mean '{caseMatch.Name}'?"));
         }
     }

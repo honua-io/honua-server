@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -93,6 +94,56 @@ public sealed partial class LayerSourcedExecutorTests
         _lastErrorForAssertions.Should().Contain($"joinWhere on join layer 2: {guidance}")
             .And.NotContain("Exception", "a caller error must not collapse to an exception type name");
         _lastRetryableForAssertions.Should().BeFalse("a rejected join filter fails the same way on every attempt");
+    }
+
+    [UnitTheory]
+    [InlineData("missing", "not a field of layer 2")]
+    [InlineData("NAME", "did you mean 'name'")]
+    public async Task SpatialJoin_InvalidCarryField_RefusesInsteadOfPublishingNullValues(string field, string error)
+    {
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [PointFeature(0, 0)],
+            [2] = [BoxFeature(-1, -1, 1, 1, ("name", "Flood zone"))],
+        });
+        var scopeFactory = BufferScopeFactory(source, 2, 3857, false,
+            schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(scopeFactory, Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"), ("joinLayerId", "2"), ("carryFields", field));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("'carryFields'").And.Contain(error);
+        _lastRetryableForAssertions.Should().BeFalse();
+        _allRequestsForAssertions.Should().BeEmpty("invalid join fields must be refused before either layer is read");
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_ValidCarryField_UsesJoinSchemaAndPreservesNulls()
+    {
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [PointFeature(0, 0)],
+            [2] = [BoxFeature(-1, -1, 1, 1, ("name", "Flood zone")), BoxFeature(-2, -2, 2, 2)],
+        });
+        var scopeFactory = BufferScopeFactory(source, 2, 3857, false,
+            schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(scopeFactory, Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"), ("joinLayerId", "2"), ("carryFields", "name"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+        using var document = System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(uri![DataUriPrefix.Length..]));
+        var values = document.RootElement.GetProperty("features")[0].GetProperty("properties").GetProperty("name");
+        values.GetArrayLength().Should().Be(2);
+        values.EnumerateArray().Count(value => value.ValueKind == System.Text.Json.JsonValueKind.Null).Should().Be(1);
+        values.EnumerateArray().Count(value => value.ValueKind == System.Text.Json.JsonValueKind.String
+            && value.GetString() == "Flood zone").Should().Be(1);
     }
 
     // Serves the target layer and rejects the join layer's selection, as the PostGIS source

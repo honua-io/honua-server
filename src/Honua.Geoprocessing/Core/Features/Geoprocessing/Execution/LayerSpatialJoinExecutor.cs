@@ -31,8 +31,13 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
 
     protected override string ProcessId => HandledProcessId;
 
-    private protected override int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+    private protected override int? ResolveFieldLayerId(StepInputReader inputs, DagSourceRequest request)
         => RequireLayerId(inputs, "joinLayerId");
+
+    private protected override IEnumerable<(string Parameter, string Field)> ReadFieldReferences(StepInputReader inputs)
+        => base.ReadFieldReferences(inputs).Concat(
+            StatisticsSupport.ParseFieldList(inputs.GetOrDefault("carryFields", string.Empty))
+                .Select(field => ("carryFields", field)));
 
     private protected override async Task<List<IFeature>> ApplyCoreAsync(
         LayerOpContext context,
