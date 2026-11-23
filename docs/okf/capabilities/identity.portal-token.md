@@ -16,6 +16,7 @@ Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate aga
 | Capability key | `identity.portal-token` |
 | Category | Identity |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 36 |

@@ -16,6 +16,7 @@ Select raster mosaics by acquisition timestamp for time-series imagery.
 | Capability key | `raster.temporal-mosaic` |
 | Category | Raster |
 | Edition | Pro |
+| Status | ga |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
