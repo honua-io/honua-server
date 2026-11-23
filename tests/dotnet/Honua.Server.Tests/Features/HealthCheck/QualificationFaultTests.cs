@@ -47,7 +47,7 @@ public sealed class QualificationFaultTests
     [UnitTest]
     public async Task GetActiveAsync_WedgeNotYetConsumed_IsWedgedAndDecidedOnce()
     {
-        var marker = Marker(shouldWedge: true);
+        var marker = UnconsumedMarker();
         var gate = Gate(QualificationFault.Parse("Wedged:" + Token), marker);
 
         (await gate.GetActiveAsync()).Should().Be(QualificationFaultKind.Wedged);
@@ -57,7 +57,7 @@ public sealed class QualificationFaultTests
 
     [UnitTest]
     public async Task GetActiveAsync_WedgeConsumedByEarlierRollout_ServesNormally()
-        => (await Gate(QualificationFault.Parse("Wedged:" + Token), Marker(shouldWedge: false)).GetActiveAsync())
+        => (await Gate(QualificationFault.Parse("Wedged:" + Token), ConsumedMarker()).GetActiveAsync())
             .Should().Be(QualificationFaultKind.None);
 
     [UnitTest]
@@ -84,10 +84,14 @@ public sealed class QualificationFaultTests
     internal static QualificationFaultGate Gate(QualificationFault fault, IQualificationWedgeMarker? marker)
         => new(fault, marker, NullLogger<QualificationFaultGate>.Instance);
 
-    internal static IQualificationWedgeMarker Marker(bool shouldWedge)
+    internal static IQualificationWedgeMarker UnconsumedMarker() => MarkerAnswering(wedge: true);
+
+    internal static IQualificationWedgeMarker ConsumedMarker() => MarkerAnswering(wedge: false);
+
+    private static IQualificationWedgeMarker MarkerAnswering(bool wedge)
     {
         var marker = Substitute.For<IQualificationWedgeMarker>();
-        marker.ShouldWedgeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(shouldWedge);
+        marker.ShouldWedgeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(wedge);
         return marker;
     }
 }

@@ -49,7 +49,7 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
     public async Task Wedged_DeepProbeAndPublicRoutesFailWhileLoadBalancerProbesStayHealthy()
     {
         using var host = Configure(QualificationFaultTests.Gate(
-            QualificationFault.Parse("Wedged:gate-run-0001"), QualificationFaultTests.Marker(shouldWedge: true)));
+            QualificationFault.Parse("Wedged:gate-run-0001"), QualificationFaultTests.UnconsumedMarker()));
         using var client = host.CreateClient();
 
         using var live = await client.GetAsync("/healthz/live");
@@ -70,7 +70,7 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
     public async Task Wedged_AfterTheRecoveryRestart_ServesNormally()
     {
         using var host = Configure(QualificationFaultTests.Gate(
-            QualificationFault.Parse("Wedged:gate-run-0001"), QualificationFaultTests.Marker(shouldWedge: false)));
+            QualificationFault.Parse("Wedged:gate-run-0001"), QualificationFaultTests.ConsumedMarker()));
         using var client = host.CreateClient();
 
         using var deep = await client.GetAsync("/healthz/deep");
