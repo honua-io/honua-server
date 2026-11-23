@@ -17,48 +17,32 @@ DECLARE
     target_schema text := (SELECT nspname FROM pg_catalog.pg_namespace
         WHERE oid = to_regnamespace('$HonuaSchema$'));
     shared_sources text[];
-    store_relation regclass := to_regclass(format('%I.%I', target_schema, 'features'));
-    move_required boolean := store_relation IS NULL;
+    target_relation regclass := to_regclass(format('%I.%I', target_schema, 'features'));
+    target_is_managed boolean;
 BEGIN
     IF target_schema = 'honua' THEN
         RETURN;
     END IF;
 
-    -- Only the Honua shared table qualifies: a user table that is merely named features
-    -- does not carry the layer_id discriminator and the JSONB attributes column.
-    SELECT coalesce(array_agg(candidate.schema_name ORDER BY candidate.schema_name), '{}')
-    INTO shared_sources
-    FROM unnest(ARRAY['honua', 'public']) AS candidate(schema_name)
-    WHERE candidate.schema_name <> target_schema
-      AND (SELECT count(*)
-           FROM pg_catalog.pg_attribute AS attribute
-           WHERE attribute.attrelid = to_regclass(format('%I.%I', candidate.schema_name, 'features'))
-             AND NOT attribute.attisdropped
-             AND ((attribute.attname = 'layer_id' AND attribute.atttypid = 'integer'::regtype)
-               OR (attribute.attname = 'attributes' AND attribute.atttypid = 'jsonb'::regtype))) = 2;
-
-    IF NOT move_required THEN
-        IF cardinality(shared_sources) > 0 THEN
-            RAISE EXCEPTION
-                'Cannot adopt feature store schema: %.features exists and a shared features table also exists in %',
-                target_schema, array_to_string(shared_sources, ', ');
-        END IF;
-    ELSIF cardinality(shared_sources) <> 1 THEN
-        RAISE EXCEPTION
-            'Cannot adopt feature store schema: expected one shared features table in honua or public, found % (%)',
-            cardinality(shared_sources), array_to_string(shared_sources, ', ');
-    ELSE
-        store_relation := to_regclass(format('%I.%I', shared_sources[1], 'features'));
-    END IF;
-
-    IF NOT (
-        SELECT count(*) = 6
+    -- Count only managed stores. An unrelated source view or table must not prevent
+    -- adoption, but any relation occupying the destination must be left in place.
+    WITH managed_stores AS (
+        SELECT n.nspname::text AS nspname
         FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
         JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
-        WHERE c.oid = store_relation AND c.relkind = 'r'
+        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+        WHERE n.nspname IN ('honua', 'public', target_schema)
+          AND c.relname = 'features' AND c.relkind = 'r'
           AND a.attnum > 0 AND NOT a.attisdropped
           AND CASE a.attname
-            WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype
+            WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype AND a.attnotnull
+                AND pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid') IS NOT NULL
+                AND (a.attidentity <> '' OR pg_catalog.pg_get_expr(d.adbin, d.adrelid) LIKE 'nextval(%')
+                AND EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_index i
+                    WHERE i.indrelid = c.oid AND i.indisprimary AND i.indisvalid
+                      AND i.indnkeyatts = 1 AND i.indkey[0] = a.attnum)
             WHEN 'layer_id' THEN a.atttypid = 'integer'::regtype
             WHEN 'geometry' THEN a.atttypid = (
                 SELECT t.oid FROM pg_catalog.pg_type t
@@ -69,13 +53,31 @@ BEGIN
             WHEN 'updated_at' THEN a.atttypid = 'timestamptz'::regtype
             ELSE FALSE
           END
-    ) THEN
-        RAISE EXCEPTION 'Cannot adopt feature store schema: % is incompatible with the managed feature store',
-            store_relation;
+        GROUP BY n.nspname, c.oid
+        HAVING count(*) = 6
+    )
+    SELECT coalesce(array_agg(nspname ORDER BY nspname) FILTER (WHERE nspname <> target_schema), '{}'),
+           count(*) FILTER (WHERE nspname = target_schema) = 1
+    INTO shared_sources, target_is_managed
+    FROM managed_stores;
+
+    IF target_relation IS NOT NULL THEN
+        IF cardinality(shared_sources) > 0 THEN
+            RAISE EXCEPTION
+                'Cannot adopt feature store schema: %.features exists and a shared features table also exists in %',
+                target_schema, array_to_string(shared_sources, ', ');
+        END IF;
+        IF NOT target_is_managed THEN
+            RAISE EXCEPTION 'Cannot adopt feature store schema: % is incompatible with the managed feature store',
+                target_relation;
+        END IF;
+        RETURN;
     END IF;
 
-    IF NOT move_required THEN
-        RETURN;
+    IF cardinality(shared_sources) <> 1 THEN
+        RAISE EXCEPTION
+            'Cannot adopt feature store schema: expected one shared features table in honua or public, found % (%)',
+            cardinality(shared_sources), array_to_string(shared_sources, ', ');
     END IF;
 
     EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', shared_sources[1], 'features', target_schema);

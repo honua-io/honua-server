@@ -437,7 +437,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _migrations.ConfiguredFeatureStoreAdoptionMigration is { } featureStoreAdoption)
         {
             VerifyRequiredMigration(state, featureStoreAdoption, [ConfiguredFeatureStoreTable], [], []);
-            await VerifyConfiguredFeatureStoreColumnsAsync(connection, featureStoreAdoption, cancellationToken)
+            await VerifyConfiguredFeatureStoreContractAsync(connection, featureStoreAdoption, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -1045,7 +1045,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
-    private async Task VerifyConfiguredFeatureStoreColumnsAsync(
+    private async Task VerifyConfiguredFeatureStoreContractAsync(
         DbConnection connection,
         string migration,
         CancellationToken cancellationToken)
@@ -1056,10 +1056,17 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
             WHERE n.nspname = @schema AND c.relname = 'features' AND c.relkind = 'r'
               AND a.attnum > 0 AND NOT a.attisdropped
               AND CASE a.attname
-                WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype
+                WHEN 'objectid' THEN a.atttypid = 'bigint'::regtype AND a.attnotnull
+                    AND pg_catalog.pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), 'objectid') IS NOT NULL
+                    AND (a.attidentity <> '' OR pg_catalog.pg_get_expr(d.adbin, d.adrelid) LIKE 'nextval(%')
+                    AND EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_index i
+                        WHERE i.indrelid = c.oid AND i.indisprimary AND i.indisvalid
+                          AND i.indnkeyatts = 1 AND i.indkey[0] = a.attnum)
                 WHEN 'layer_id' THEN a.atttypid = 'integer'::regtype
                 WHEN 'geometry' THEN a.atttypid = (
                     SELECT t.oid FROM pg_catalog.pg_type t
@@ -1080,7 +1087,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             throw CreateFailure(
                 migration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
-                $"'{_schemaName}.features' is incompatible with the managed feature store column contract.");
+                $"'{_schemaName}.features' is incompatible with the managed feature store contract.");
         }
     }
 
