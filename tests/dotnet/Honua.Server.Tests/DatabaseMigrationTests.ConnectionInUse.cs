@@ -15,18 +15,7 @@ public sealed partial class DatabaseMigrationTests
     [IntegrationTest]
     public async Task DbUpMigrations_ConnectionReferencedByService_RefusesRegistryDelete()
     {
-        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
-        {
-            SearchPath = $"{_schemaName},public"
-        };
-        var migration = DeployChanges.To
-            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
-            .JournalToPostgresqlTable(_schemaName, "schema_versions")
-            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
-            .WithVariable("HonuaSchema", "\"honua\"")
-            .WithTransaction()
-            .Build()
-            .PerformUpgrade();
+        var migration = ApplyAllMigrations();
         migration.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migration.Error}");
 
         await using var connection = await OpenSchemaConnectionAsync();
@@ -53,5 +42,21 @@ public sealed partial class DatabaseMigrationTests
         remaining.CommandText = "SELECT count(*) FROM honua.data_connections WHERE connection_id = @id";
         remaining.Parameters.AddWithValue("id", connectionId);
         ((long)(await remaining.ExecuteScalarAsync())!).Should().Be(1, "the referenced connection is kept");
+    }
+
+    private DbUp.Engine.DatabaseUpgradeResult ApplyAllMigrations()
+    {
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+        return DeployChanges.To
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
+            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
+            .WithTransaction()
+            .Build()
+            .PerformUpgrade();
     }
 }
