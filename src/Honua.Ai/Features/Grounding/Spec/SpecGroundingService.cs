@@ -792,9 +792,11 @@ internal sealed partial class SpecGroundingService
         }
     }
 
+    // Every clause pattern separates words with \s+, so one space is equivalent. Collapsing runs first
+    // keeps the lazy word-or-space captures from backtracking cubically over long whitespace runs.
     private static IEnumerable<string> SplitClauses(string turn)
         => SentenceBreakPattern().Split(turn)
-            .Select(sentence => sentence.Trim())
+            .Select(sentence => WhitespaceRunPattern().Replace(sentence, " ").Trim())
             .Where(trimmed => trimmed.Length > 0)
             .Select(trimmed => trimmed.TrimEnd('.'));
 
@@ -1672,6 +1674,9 @@ internal sealed partial class SpecGroundingService
 
     [GeneratedRegex(@"(?<=[A-Za-z0-9""])\.\s+|[\r\n;]+", RegexOptions.CultureInvariant)]
     private static partial Regex SentenceBreakPattern();
+
+    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
+    private static partial Regex WhitespaceRunPattern();
 
     [GeneratedRegex(@"\b(?:schedule|publish|deploy|dashboard|app)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex OutOfScopePattern();
