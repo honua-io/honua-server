@@ -29,6 +29,10 @@ Publishing another layer into a service that already exists only adds publicatio
 
 The snapshot is stored for `Metadata:Environment` (environment variable `Metadata__Environment`, otherwise the process `Environment`, otherwise `default`). A later publish in a different environment does not fill the catalogs of the running one.
 
+## Edit what catalogs show
+
+Titles, descriptions, keywords and custom fields for a service or layer are edited once and every catalog below reads the change. Use the [discovery metadata](../../reference/admin-api/discovery-metadata.md) routes; each write keeps a field-level edit history, and agent edits become proposals that a person approves.
+
 ## The shared visibility gate
 
 A publication is listed only when all of the following hold:

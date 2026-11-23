@@ -1013,6 +1013,11 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
 
+    // What the agent can do next; the same text as the JSON-RPC error data.
+    [JsonPropertyName("nextAction")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextAction { get; set; }
+
     [JsonPropertyName("requiresReauthentication")]
     public bool? RequiresReauthentication { get; set; }
 

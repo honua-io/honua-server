@@ -194,6 +194,7 @@ internal static class McpToolHelpers
             Message = jsonRpcError.Message,
             RequiresReauthentication = jsonRpcError.Data?.RequiresReauthentication,
             ApprovalRequired = jsonRpcError.Data?.ApprovalRequired,
+            NextAction = jsonRpcError.Data?.NextAction,
             PolicyRef = jsonRpcError.Data?.PolicyRef,
             StudioAuthorizationCode = jsonRpcError.Data?.StudioAuthorizationCode,
             ProposalId = jsonRpcError.Data?.ProposalId,

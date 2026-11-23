@@ -167,7 +167,7 @@ jobs:
 
       - name: Log in to ECR
         if: ${{ steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2
 
       - name: Validate Azure ACR publish credentials
         if: ${{ env.ACR_LOGIN_SERVER != '' }}
@@ -257,6 +257,8 @@ jobs:
             type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
             type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Add explicit arch suffixes to image tags
         id: arch_tags
@@ -457,7 +459,7 @@ jobs:
 
       - name: Log in to ECR
         if: ${{ steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2
 
       - name: Validate Azure ACR publish credentials
         if: ${{ env.ACR_LOGIN_SERVER != '' }}

@@ -22,7 +22,7 @@ is explicitly labelled and must not be represented as a cut NativeAOT candidate.
 Runner and licence configuration stay with evidence id `desktop-arcgis`.
 
 `GPServerDurableRuntimeTests.SoapArea_WithProductionExecutor` separately proves
-SOAP Execute and SubmitJob against the real canonical Redis job runtime and
+SOAP Execute and SubmitJob against the real canonical PostgreSQL job runtime and
 production geometry executor. Both C# and Python fixtures encode literal
 rectangle ordinates independently of server geometry serialization. Expected
 area is width times height (`3 * 4`); assertions also cover MeasureResult type,
@@ -35,7 +35,7 @@ remains in the existing GPServer suites.
 The adapter owner-denial test substitutes the job service. It therefore cannot show
 what the canonical runtime does when another caller names a job.
 `GPServerDurableRuntimeTests.OwnershipTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership`
-closes that gap. It runs the real job service over the Redis job store with the
+closes that gap. It runs the real job service over the PostgreSQL job store with the
 production executor, and substitutes only the operator grant so that two distinct
 callers may both execute GP work.
 
@@ -83,7 +83,7 @@ licence configuration stay with evidence id `desktop-arcgis`.
 diagnostic image only. Evidence id `desktop-arcgis`.
 `GPServerDurableRuntimeTests.AuthenticationTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
 keeps the same controls as a regression. It runs the real API-key handler (the dev
-bypass is off), the real job service, the Redis job store and the production
+bypass is off), the real job service, the PostgreSQL job store and the production
 executor. It also asserts that no challenged submission creates a job.
 
 ## Replay on the re-pinned 2026.1 candidate (8862065)

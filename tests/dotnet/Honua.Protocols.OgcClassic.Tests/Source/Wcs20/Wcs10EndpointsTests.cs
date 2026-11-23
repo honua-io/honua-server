@@ -494,6 +494,27 @@ public sealed class Wcs10EndpointsTests : IClassFixture<Wcs10EndpointsTests.Rast
         _exportQueries.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("WIDTH=5000&HEIGHT=16", "WIDTH")]
+    [InlineData("WIDTH=16&HEIGHT=5000", "HEIGHT")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_OversizedOutput_NamesTheOversizedDimension(string size, string expectedLocator)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            $"&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84&CRS=EPSG:4326&{size}");
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        var exception = XDocument.Parse(body).Root!
+            .Elements(XName.Get("ServiceException", OgcNamespace)).Single();
+        exception.Attribute("code")!.Value.Should().Be("InvalidParameterValue");
+        exception.Attribute("locator")!.Value.Should().Be(expectedLocator);
+        _exportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
