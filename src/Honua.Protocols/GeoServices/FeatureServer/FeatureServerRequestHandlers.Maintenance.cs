@@ -1560,9 +1560,15 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            value = ComputeWithinRange(operation, leftNumber, rightNumber);
-            error = value is null ? "Arithmetic result is outside the supported numeric range." : null;
-            return value is not null;
+            var result = ComputeWithinRange(operation, leftNumber, rightNumber);
+            if (!result.HasValue)
+            {
+                error = "Arithmetic result is outside the supported numeric range.";
+                return false;
+            }
+
+            value = result.Value;
+            return true;
         }
 
         // Decimal arithmetic always throws on overflow; report it as an expression error instead of a 500.
