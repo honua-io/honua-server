@@ -211,6 +211,33 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         }
     }
 
+    // Only the configured Console origin may send the bearer from a browser. The Console-origin
+    // preflight is the control: it proves the request reached the CORS policy at all.
+    [IntegrationTheory]
+    [InlineData("/api/v1/studio/session")]
+    [InlineData("/rest/services?f=json")]
+    [Endpoint("GET /api/v1/studio/session")]
+    [Endpoint("GET /rest/services")]
+    public async Task ConsoleRoute_PreflightFromForeignOrigin_IsNotAllowed(string route)
+    {
+        using var allowed = await PreflightAsync(route, ConsoleOrigin);
+        using var foreign = await PreflightAsync(route, "https://attacker.example");
+
+        allowed.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(ConsoleOrigin);
+        foreign.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+    }
+
+    private async Task<HttpResponseMessage> PreflightAsync(string route, string origin)
+    {
+        using var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, route);
+        preflight.Headers.Add("Origin", origin);
+        preflight.Headers.Add("Access-Control-Request-Method", "GET");
+        preflight.Headers.Add("Access-Control-Request-Headers", "authorization");
+        return await client.SendAsync(preflight);
+    }
+
     // Changes one signature character away from the base64url padding bits, so the bytes change.
     private static string Tampered(string jwt)
     {
