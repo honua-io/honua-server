@@ -56,7 +56,7 @@ database (`FeatureChangePrefix` in Honua.Db):
   and reconcile wait up to 2 s for writers that were in flight when the call started, then
   read the horizon. A caller therefore sees changes committed before it asked; under a
   long import it gets the older, still-safe horizon.
-- Version post waits for the prefix to cover its own replayed rows before it advances the
+- Version post waits, with no time budget, for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
 - The realtime feature log publishes once per head read and once per cursor read. Each
   commit sends `honua_rt_features`, which wakes the dispatcher, so a commit that was held

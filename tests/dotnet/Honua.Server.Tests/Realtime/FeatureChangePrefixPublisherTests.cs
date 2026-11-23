@@ -3,6 +3,7 @@
 
 using System.Data;
 using FluentAssertions;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
@@ -282,6 +283,23 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
         }
 
         count.Should().Be(2);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task Settle_ExplicitTarget_WaitsPastTheBudgetForAnEarlierWriter()
+    {
+        await using var writer = await database.DataSource.OpenConnectionAsync();
+        await using var transaction = await writer.BeginTransactionAsync();
+        _ = await AllocateAsync(writer);
+        var target = await AllocateCommittedAsync();
+        await using var reader = await database.DataSource.OpenConnectionAsync();
+
+        var settle = FeatureChangePrefix.SettleAsync(reader, target, CancellationToken.None);
+        await Task.Delay(FeatureChangePrefix.SettleBudget + TimeSpan.FromSeconds(1));
+        settle.IsCompleted.Should().BeFalse("a caller's own rows must be covered before it records a position");
+        await transaction.CommitAsync();
+
+        (await settle).Should().BeGreaterThanOrEqualTo(target);
     }
 
     private async Task<long> AllocateCommittedAsync()

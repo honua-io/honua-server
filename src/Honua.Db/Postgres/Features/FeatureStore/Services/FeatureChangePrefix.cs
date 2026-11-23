@@ -38,18 +38,20 @@ internal static class FeatureChangePrefix
     }
 
     // Publishes until the prefix covers every generation allocated before this call, or until
-    // SettleBudget elapses, and returns the published prefix.
+    // SettleBudget elapses, and returns the published prefix. An explicit target is a caller's own
+    // committed rows; that wait has no budget (cancellation still applies), because returning a
+    // lower prefix would let the caller record a position before its own changes.
     public static Task<long> SettleAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
         => SettleAsync(connection, target: null, cancellationToken);
 
-    // target overrides the allocation read, for a caller that must see its own committed rows.
     public static async Task<long> SettleAsync(NpgsqlConnection connection, long? target, CancellationToken cancellationToken)
     {
         var through = target ?? await ReadAllocatedAsync(connection, cancellationToken).ConfigureAwait(false);
+        var budget = target is null ? SettleBudget : Timeout.InfiniteTimeSpan;
         var started = Stopwatch.GetTimestamp();
         var backoff = TimeSpan.FromMilliseconds(2);
         var published = await PublishAsync(connection, cancellationToken).ConfigureAwait(false);
-        while (published < through && Stopwatch.GetElapsedTime(started) < SettleBudget)
+        while (published < through && (budget == Timeout.InfiniteTimeSpan || Stopwatch.GetElapsedTime(started) < budget))
         {
             await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
             backoff = backoff * 2 < _maxBackoff ? backoff * 2 : _maxBackoff;
