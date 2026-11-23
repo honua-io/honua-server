@@ -264,10 +264,6 @@
       "honua_admin_connections_list",
       "honua_admin_connections_tables_validate",
       "honua_admin_connections_test",
-      "honua_admin_exports_create",
-      "honua_admin_exports_delete",
-      "honua_admin_exports_get",
-      "honua_admin_exports_list",
       "honua_admin_import_formats",
       "honua_admin_import_limits",
       "honua_admin_import_preview",
@@ -309,6 +305,13 @@
       "honua_supported_operation_kinds",
       "honua_validate_plan"
     ],
+    "exports": [
+      "honua_admin_exports_create",
+      "honua_admin_exports_delete",
+      "honua_admin_exports_get",
+      "honua_admin_exports_list",
+      "honua_list_layers"
+    ],
     "folders": [
       "honua_admin_services_list",
       "honua_create_folder",
@@ -318,6 +321,7 @@
       "honua_update_folder"
     ],
     "metadata": [
+      "honua_admin_connection_layers_list",
       "honua_admin_layer_display_get",
       "honua_admin_layer_display_set",
       "honua_admin_layer_fields_get",

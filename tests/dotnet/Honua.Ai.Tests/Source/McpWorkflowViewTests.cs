@@ -1014,7 +1014,7 @@ public sealed partial class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
-            "access", "analyze", "configure", "default", "folders", "metadata", "operate", "review", "setup");
+            "access", "analyze", "configure", "default", "exports", "folders", "metadata", "operate", "review", "setup");
         views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 

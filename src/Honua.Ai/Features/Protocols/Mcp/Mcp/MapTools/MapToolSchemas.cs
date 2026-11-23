@@ -77,7 +77,7 @@ internal static class MapToolSchemas
               "minItems": 4,
               "maxItems": 4,
               "items": { "type": "number" },
-              "description": "Optional spatial filter envelope as [minX, minY, maxX, maxY]. To test one feature's shape, send geometry instead; not both."
+              "description": "Optional spatial filter envelope as [minX, minY, maxX, maxY]."
             },
             "bboxSrid": {
               "type": "integer",
@@ -86,17 +86,12 @@ internal static class MapToolSchemas
             },
             "geometry": {
               "type": "object",
-              "required": ["type", "coordinates"],
-              "properties": {
-                "type": { "type": "string", "enum": ["Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon"] },
-                "coordinates": { "type": "array" }
-              },
-              "description": "Optional GeoJSON geometry; returns features that intersect it (REST geometry with esriSpatialRelIntersects). Prefer it to bbox when testing whether a parcel or road falls in this layer. REST size and vertex limits apply; simplify or split an over-limit geometry."
+              "description": "Optional GeoJSON geometry object; returns features that intersect it. Use instead of bbox, not both."
             },
             "geometrySrid": {
               "type": "integer",
               "default": 4326,
-              "description": "Spatial reference (SRID/WKID) of the geometry coordinates."
+              "description": "SRID/WKID of the geometry."
             },
             "outFields": {
               "type": "array",

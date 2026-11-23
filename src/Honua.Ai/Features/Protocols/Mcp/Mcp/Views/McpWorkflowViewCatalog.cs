@@ -25,6 +25,8 @@ internal static class McpWorkflowViewCatalog
 
     public const string AccessViewName = "access";
 
+    public const string ExportsViewName = "exports";
+
     public static McpWorkflowViewDefinition Default { get; } = new()
     {
         Name = DefaultViewName,
@@ -219,8 +221,8 @@ internal static class McpWorkflowViewCatalog
         Title = "Configure and publish",
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
-            + "style and render a map, and export a Layer as files. Use the setup view for Studio authoring and publication. "
-            + "Select folders to organize folders, metadata to edit service and layer metadata, or access for keys, roles and grants.",
+            + "style and render a map. Use the setup view for Studio authoring and publication. Select folders, metadata, "
+            + "access or exports to organize folders, edit metadata, manage keys and grants, or export a Layer as files.",
         Revision = "configure.v5",
         Stages =
         [
@@ -312,14 +314,27 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],
             },
+        ],
+    };
+
+    public static McpWorkflowViewDefinition Exports { get; } = new()
+    {
+        Name = ExportsViewName,
+        Title = "Export as files",
+        Description =
+            "Export a Layer as PMTiles and GeoParquet files, list and read Exports, or unpublish one. "
+            + "An export or unpublish files a proposal for human approval; poll the Export until ready or failed.",
+        Revision = "exports.v1",
+        Stages =
+        [
             new McpWorkflowViewStageDefinition
             {
                 Id = "export",
                 Title = "Export as files",
-                Description = "List and read Exports, export a Layer as PMTiles and GeoParquet, or unpublish an Export. "
-                    + "An agent's export or unpublish files a proposal for human approval; poll the Export until ready or failed.",
+                Description = "Find the Layer, start its Export, then read the Export until ready or failed.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact("honua_list_layers"),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.list")),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.get")),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.create")),
@@ -353,6 +368,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_layer_fields_get"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_layer_display_get"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_layer_popup_info_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connection_layers_list"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -572,6 +588,7 @@ internal static class McpWorkflowViewCatalog
             [Folders.Name] = Folders,
             [Metadata.Name] = Metadata,
             [Access.Name] = Access,
+            [Exports.Name] = Exports,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
             [Review.Name] = Review,

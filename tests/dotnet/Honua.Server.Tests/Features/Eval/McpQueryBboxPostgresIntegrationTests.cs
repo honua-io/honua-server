@@ -90,7 +90,7 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
         using var provider = BuildServices();
         var result = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
         {
-            ["geometry"] = JsonDocument.Parse(geometry).RootElement.Clone(),
+            ["geometry"] = JsonElement.Parse(geometry),
         });
 
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
@@ -112,7 +112,7 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
         });
         var byLine = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
         {
-            ["geometry"] = JsonDocument.Parse("""{"type":"LineString","coordinates":[[2,9],[9,2]]}""").RootElement.Clone(),
+            ["geometry"] = JsonElement.Parse("""{"type":"LineString","coordinates":[[2,9],[9,2]]}"""),
         });
 
         byRectangle.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32().Should().Be(1,
@@ -137,7 +137,7 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
     public async Task QueryFeatures_InvalidGeometryFilter_IsAnInvalidArgument(string extraArguments, string messageFragment)
     {
         using var provider = BuildServices();
-        var extra = JsonDocument.Parse(extraArguments).RootElement.EnumerateObject()
+        var extra = JsonElement.Parse(extraArguments).EnumerateObject()
             .ToDictionary(property => property.Name, property => (object)property.Value.Clone());
 
         var result = await CallQueryFeaturesAsync(provider, extra);

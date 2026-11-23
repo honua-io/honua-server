@@ -26,6 +26,7 @@ public sealed partial class McpWorkflowViewTests
         "honua_admin_layer_fields_get",
         "honua_admin_layer_display_get",
         "honua_admin_layer_popup_info_get",
+        "honua_admin_connection_layers_list",
         "honua_admin_services_layer_metadata_set",
         "honua_admin_metadata_service_discovery_set",
         "honua_admin_metadata_layer_discovery_set",
@@ -62,8 +63,10 @@ public sealed partial class McpWorkflowViewTests
         "honua_admin_exports_delete",
     ];
 
+    private static readonly string[] ExportsViewToolNames = ["honua_list_layers", .. ExportToolNames];
+
     [UnitTest]
-    public async Task ToolsList_MetadataAndAccessViews_AreBoundedCanonicalAndRequireAuthentication()
+    public async Task ToolsList_MetadataAccessAndExportsViews_AreBoundedCanonicalAndRequireAuthentication()
     {
         await using var provider = BuildLiveProvider();
         var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
@@ -73,6 +76,7 @@ public sealed partial class McpWorkflowViewTests
                  {
                      (McpWorkflowViewCatalog.MetadataViewName, MetadataViewToolNames),
                      (McpWorkflowViewCatalog.AccessViewName, AccessViewToolNames),
+                     (McpWorkflowViewCatalog.ExportsViewName, ExportsViewToolNames),
                  })
         {
             var view = await ListToolsAsync(surface, viewName);
@@ -83,7 +87,7 @@ public sealed partial class McpWorkflowViewTests
             foreach (var tool in view.Tools)
             {
                 var canonical = full.Single(candidate => candidate.Name == tool.GetProperty("name").GetString());
-                JsonSerializer.Serialize(canonical.Describe(), McpJsonContext.Default.McpToolDescriptor)
+                JsonSerializer.Serialize(McpWorkflowViewDescriptorClassifier.Describe(canonical), McpJsonContext.Default.McpToolDescriptor)
                     .Should().Be(tool.GetRawText());
             }
 
@@ -93,17 +97,17 @@ public sealed partial class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task ExportTools_AreInTheConfigureExportStage_WithReadOnlyAndDestructiveAnnotations()
+    public async Task ExportTools_AreInTheExportsView_WithReadOnlyAndDestructiveAnnotations()
     {
         await using var provider = BuildLiveProvider();
         var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
 
-        var configure = await ListToolsAsync(surface, McpWorkflowViewCatalog.ConfigureViewName);
-        StageOf(configure, "export").Should().BeEquivalentTo(ExportToolNames);
-        configure.NextCursor.Should().BeNull();
-        configure.Meta.GetProperty("descriptorBytes").GetInt32().Should().BeLessThanOrEqualTo(128 * 1024);
+        var exports = await ListToolsAsync(surface, McpWorkflowViewCatalog.ExportsViewName);
+        StageOf(exports, "export").Should().BeEquivalentTo(ExportsViewToolNames);
+        (await ListToolsAsync(surface, McpWorkflowViewCatalog.ConfigureViewName)).Names
+            .Should().NotIntersectWith(ExportToolNames, "configure stays inside its descriptor budget");
 
-        var tools = configure.Tools.ToDictionary(tool => tool.GetProperty("name").GetString()!, StringComparer.Ordinal);
+        var tools = exports.Tools.ToDictionary(tool => tool.GetProperty("name").GetString()!, StringComparer.Ordinal);
         foreach (var readTool in new[] { "honua_admin_exports_list", "honua_admin_exports_get" })
         {
             tools[readTool].GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean().Should().BeTrue(readTool);
@@ -125,8 +129,8 @@ public sealed partial class McpWorkflowViewTests
             .GetProperty("description").GetString().Should().Contain("honua_list_layers");
 
         var anonymous = McpTestFactory.AnonymousHttpContext();
-        (await ListToolsAsync(surface, McpWorkflowViewCatalog.ConfigureViewName, anonymous)).Names
-            .Should().NotIntersectWith(ExportToolNames);
+        (await ListToolsAsync(surface, McpWorkflowViewCatalog.ExportsViewName, anonymous)).Names
+            .Should().BeEmpty("anonymous callers see no export tools");
         var refused = await DispatchAsync(surface,
             """{"jsonrpc":"2.0","id":"export","method":"tools/call","params":{"name":"honua_admin_exports_list","arguments":{}}}""",
             anonymous);
