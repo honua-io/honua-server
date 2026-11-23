@@ -609,7 +609,7 @@ public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTe
 
     [IntegrationTheory]
     [InlineData("SUBSET=phenomenonTime(\"2023-12-01\",\"9999-12-31\")")]
-    [InlineData("DATETIME=../9999-12-31")]
+    [InlineData("DATETIME=2023-12-01/9999-12-31")]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
