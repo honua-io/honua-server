@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Protocols;
 
 // One published layer with full metadata describes itself the same way in every protocol: the publication's
-// title and description over the dataset's, the dataset's keywords, and governance inherited from the service and
+// own title and description over the dataset's, the dataset's keywords, and governance inherited from the service and
 // then the environment.
 [Collection("Database")]
 public sealed class MetadataCrosswalkProtocolAgreementTests : IAsyncLifetime
@@ -80,6 +80,26 @@ public sealed class MetadataCrosswalkProtocolAgreementTests : IAsyncLifetime
         stac.RootElement.GetProperty("license").GetString().Should().Be(License);
         recordProperties.GetProperty("license").GetString().Should().Be(License);
         features.GetProperty("attribution").GetString().Should().Be(Attribution);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiTiles)]
+    [Protocol(TestProtocols.OgcApiMaps)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections")]
+    [Endpoint("GET /ogc/maps/collections")]
+    public async Task OgcApiTilesAndMaps_NameTheLayerFromTheCrosswalk()
+    {
+        using var tiles = await ReadJsonAsync("/ogc/tiles/collections");
+        using var maps = await ReadJsonAsync("/ogc/maps/collections");
+
+        foreach (var document in new[] { tiles, maps })
+        {
+            var collection = document.RootElement.GetProperty("collections").EnumerateArray()
+                .FirstOrDefault(candidate => candidate.GetProperty("title").GetString() == Title);
+            collection.ValueKind.Should().Be(JsonValueKind.Object, document.RootElement.GetRawText());
+            Member(collection, "description").Should().Be(Description);
+        }
     }
 
     [IntegrationTest]
@@ -204,9 +224,10 @@ public sealed class MetadataCrosswalkProtocolAgreementTests : IAsyncLifetime
             {
                 Id = PublicationId,
                 Name = PublicationId,
+                Title = Title,
                 Description = Description,
             },
-            TitleOverride = Title,
+            TitleOverride = null,
             LayerIndex = 0,
             Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
             IsPrimary = true,
@@ -280,6 +301,7 @@ public sealed class MetadataCrosswalkProtocolAgreementTests : IAsyncLifetime
         [
             ServiceProtocols.FeatureServer, ServiceProtocols.MapServer, ServiceProtocols.OgcFeatures, ServiceProtocols.Wfs20,
             ServiceProtocols.Wms, ServiceProtocols.Wmts, ServiceProtocols.OData, ServiceProtocols.Stac,
+            ServiceProtocols.OgcApiTiles, ServiceProtocols.OgcApiMaps,
         ],
     };
 
