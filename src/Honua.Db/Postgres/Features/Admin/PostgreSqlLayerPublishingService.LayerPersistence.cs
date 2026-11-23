@@ -213,6 +213,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
         ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        schema = schema.Trim();
+        table = table.Trim();
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            // The publish answers 404 for a schema outside this tenant; answer the same here.
+            throw new LayerPublishingException(LayerPublishingErrorKind.NotFound,
+                $"Table '{schema}.{table}' was not found.");
+        }
 
         var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         try

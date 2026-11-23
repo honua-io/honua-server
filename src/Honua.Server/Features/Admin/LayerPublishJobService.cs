@@ -39,8 +39,7 @@ internal sealed class LayerPublishJobService(
         ArgumentException.ThrowIfNullOrWhiteSpace(routeId);
 
         // Pre-accept only. An aborted count publishes nothing and rolls nothing back.
-        var rowCount = await publishingService.CountSourceRowsAsync(
-            connectionString, request.Schema, request.Table, requestCancellation).ConfigureAwait(false);
+        var rowCount = await CountSourceRowsAsync(connectionString, request, requestCancellation).ConfigureAwait(false);
         var threshold = options.Value.GetValidatedAsyncPublishRowThreshold();
         if (rowCount <= threshold)
         {
@@ -78,6 +77,20 @@ internal sealed class LayerPublishJobService(
 
         await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
         return Queued(jobId, rowCount, routeId);
+    }
+
+    // The count refuses a schema the publish would refuse, so no job or approval is spent on it.
+    // A committed sink output may sit in an unlisted schema; the publish verifies that evidence
+    // before it reads, so the count admits the schema here and the publish still decides.
+    private async Task<long> CountSourceRowsAsync(
+        string connectionString, LayerPublishRequest request, CancellationToken cancellationToken)
+    {
+        using var committedSchema = request.CommittedSinkPublication is not null
+            && request.ConnectionEndpointFingerprint is not null
+                ? CommittedExternalSchemaPublication.Begin()
+                : null;
+        return await publishingService.CountSourceRowsAsync(
+            connectionString, request.Schema, request.Table, cancellationToken).ConfigureAwait(false);
     }
 
     // The publish transaction rechecks under its lock; this check only keeps an already published
