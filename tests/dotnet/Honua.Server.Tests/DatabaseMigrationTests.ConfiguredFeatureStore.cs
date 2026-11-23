@@ -86,12 +86,7 @@ public sealed partial class DatabaseMigrationTests
         var otherSchema = legacyTable == "public.features" ? "honua" : "public";
         await ScalarAsync(connection,
             $"CREATE VIEW {otherSchema}.features AS SELECT 1 AS layer_id, '{{{{}}}}'::jsonb AS attributes;");
-        var originalOid = await ScalarAsync(connection,
-            $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); " +
-            "INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type, storage_options) VALUES " +
-            $"('moved', '{legacyTable.Split('.')[0]}', 'features', 'Point', '{{\"managedStore\":\"true\"}}'), " +
-            $"('source', '{legacyTable.Split('.')[0]}', 'features', 'Point', '{{\"sourceBacked\":\"true\"}}'); " +
-            $"SELECT '{legacyTable}'::regclass::oid::bigint;");
+        var originalOid = await SeedLegacyManagedLayersAsync(connection, legacyTable);
 
         var configuration = ConfiguredRegistryConfiguration();
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
@@ -161,13 +156,7 @@ public sealed partial class DatabaseMigrationTests
         await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        await ScalarAsync(connection, $"""
-            ALTER TABLE custom_registry.features RENAME TO original_features;
-            CREATE TABLE custom_registry.features (
-                objectid {objectIdDefinition}, layer_id integer, geometry {geometryType}, attributes jsonb,
-                created_at timestamptz, updated_at timestamptz
-            );
-            """);
+        await ReplaceManagedFeatureTableAsync(connection, objectIdDefinition, geometryType);
 
         var verify = () => guard.VerifyAsync(_connectionString);
         await verify.Should().ThrowAsync<DatabaseSchemaFloorException>()
@@ -189,6 +178,29 @@ public sealed partial class DatabaseMigrationTests
             $"SELECT count(*) FROM public.schema_versions WHERE scriptname = '{FeatureStoreAdoptionMigration}';"))
             .Should().Be(0L);
     }
+
+    private static Task<object?> SeedLegacyManagedLayersAsync(Npgsql.NpgsqlConnection connection, string legacyTable)
+    {
+        var legacySchema = legacyTable.Split('.')[0];
+        return ScalarAsync(connection,
+            $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); " +
+            "INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type, storage_options) VALUES " +
+            $"('moved', '{legacySchema}', 'features', 'Point', '{{\"managedStore\":\"true\"}}'), " +
+            $"('source', '{legacySchema}', 'features', 'Point', '{{\"sourceBacked\":\"true\"}}'); " +
+            $"SELECT '{legacyTable}'::regclass::oid::bigint;");
+    }
+
+    private static Task<object?> ReplaceManagedFeatureTableAsync(
+        Npgsql.NpgsqlConnection connection,
+        string objectIdDefinition,
+        string geometryType)
+        => ScalarAsync(connection, $"""
+            ALTER TABLE custom_registry.features RENAME TO original_features;
+            CREATE TABLE custom_registry.features (
+                objectid {objectIdDefinition}, layer_id integer, geometry {geometryType}, attributes jsonb,
+                created_at timestamptz, updated_at timestamptz
+            );
+            """);
 
     private static IConfigurationRoot ConfiguredRegistryConfiguration()
         => new ConfigurationBuilder().AddInMemoryCollection(
