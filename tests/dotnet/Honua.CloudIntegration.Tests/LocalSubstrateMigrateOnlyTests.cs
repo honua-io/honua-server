@@ -87,10 +87,19 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         // The rollback image (N) ships every script except the newest k, and starts with
         // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs.
         var full = ServerCoreSchemaMigrations.Manifest;
+        // A default Database:Schema install never discovers the configured-schema adoption
+        // scripts (109, 227), so migrate-only neither applies nor declares them here.
+        string[] adoption = [full.ConfiguredSchemaAdoptionMigration, full.ConfiguredRegistryAdoptionMigration!];
         var newest = full.KnownMigrationNames!
             .Where(name => name.StartsWith("Honua.Server.Migrations.", StringComparison.Ordinal))
+            .Except(adoption, StringComparer.Ordinal)
             .OrderByDescending(name => MigrationReaderCompatibility.ReadSchemaNumber(name))
             .Take(3)
+            .ToHashSet(StringComparer.Ordinal);
+        var windowFloor = newest.Min(name => MigrationReaderCompatibility.ReadSchemaNumber(name));
+        var shipped = full.KnownMigrationNames!
+            .Where(name => !name.StartsWith("Honua.Server.Migrations.", StringComparison.Ordinal) ||
+                MigrationReaderCompatibility.ReadSchemaNumber(name) < windowFloor)
             .ToHashSet(StringComparer.Ordinal);
         var olderReader = new PostgresCoreSchemaGuard(new PostgresCoreSchemaMigrationManifest(
             full.ApplicationMigrationAssemblyName,
@@ -107,13 +116,13 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
             full.SensorThingsSensingMigration)
         {
             Attachments = full.Attachments,
-            KnownMigrationNames = full.KnownMigrationNames!.Where(name => !newest.Contains(name)).ToHashSet(StringComparer.Ordinal),
+            KnownMigrationNames = shipped,
         });
         newest.Should().HaveCount(3);
         foreach (var name in newest)
         {
             MigrationReaderCompatibility.ReadSchemaNumber(name).Should().BeGreaterThan(
-                MigrationReaderCompatibility.ReaderSchemaOf(full.KnownMigrationNames!.Except(newest)), name);
+                MigrationReaderCompatibility.ReaderSchemaOf(shipped), name);
         }
 
         // A shipped script may opt out with honua:reader-incompatible (142 does). The older reader must
