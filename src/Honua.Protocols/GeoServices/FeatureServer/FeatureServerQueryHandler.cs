@@ -3028,9 +3028,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     return false;
                 }
 
-                if (!StatisticAliasRegex().IsMatch(outAlias))
+                if (!SqlIdentifier.IsUnicodeIdentifier(outAlias))
                 {
-                    error = $"outStatisticFieldName '{outAlias}' must start with a letter or underscore and contain only letters, digits and underscores, at most 63 characters.";
+                    error = $"outStatisticFieldName '{outAlias}' must start with a letter or underscore and contain only letters, combining marks, digits and underscores, at most 63 bytes.";
                     return false;
                 }
 
@@ -3776,11 +3776,8 @@ internal sealed partial class FeatureServerQueryHandler(
     // string, or a date/time literal. It is validated against the statistic type
     // and bound as a parameter; none of the token is concatenated into SQL.
     [GeneratedRegex(
-        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
+        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>(?:[\p{L}_]|[\uD800-\uDBFF][\uDC00-\uDFFF])(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}_]|[\uD800-\uDBFF][\uDC00-\uDFFF])*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingTermRegex();
 
-    // The alias becomes a SQL column alias; PostgreSQL identifiers stop at 63 bytes.
-    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_]{0,62}\z", RegexOptions.CultureInvariant)]
-    private static partial Regex StatisticAliasRegex();
 }
