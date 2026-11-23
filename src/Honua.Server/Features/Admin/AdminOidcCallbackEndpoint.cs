@@ -19,7 +19,7 @@ internal sealed partial class AdminOidcCallbackEndpoint(
     private const int MaxLoggedDescriptionLength = 200;
 
     internal static bool IsAllowedReturnPath(string? path) =>
-        path is DefaultReturnPath or "/console/operate/connections";
+        path is DefaultReturnPath or "/console/operate/connections" or "/console/operate/settings";
 
     internal async Task<IResult> HandleAsync(HttpContext context, IHttpClientFactory clients)
     {

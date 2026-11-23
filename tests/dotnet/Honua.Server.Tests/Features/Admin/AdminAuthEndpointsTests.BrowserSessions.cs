@@ -290,6 +290,25 @@ public sealed partial class AdminAuthEndpointsTests
             replay.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
+        [IntegrationTest]
+        [Endpoint("GET /admin/auth/callback")]
+        [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+        public async Task BrowserCallback_ConsoleSettings_ReturnsToSettings()
+        {
+            const string returnTo = "/console/operate/settings";
+            using var browser = _oidcHost.CreateBrowserWithoutRedirects();
+            browser.BaseAddress = new Uri("https://localhost");
+            using var authorize = await browser.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
+            authorize.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            var state = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
+
+            using var callback = await browser.GetAsync("/admin/auth/callback?code=code-123&state=" + state);
+            callback.StatusCode.Should().Be(HttpStatusCode.Redirect);
+            callback.Headers.Location!.OriginalString.Should().Be(returnTo);
+        }
+
         [IntegrationTheory]
         [InlineData("https://unlisted.example.com/console/")]
         [InlineData("//unlisted.example.com/console/")]
