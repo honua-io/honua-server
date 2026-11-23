@@ -242,4 +242,16 @@ public sealed class ImportTypedColumnInferenceTests
 
         inference.SkippedNameWarnings().Should().BeEmpty();
     }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public void Resolve_NameWithTrailingLineFeed_StaysUnpromotedAndIsReported()
+    {
+        var inference = new ImportTypedColumnInference();
+        inference.Observe("abc\n", "kept");
+
+        inference.Resolve().Should().BeEmpty();
+        inference.SkippedNameWarnings().Should().ContainSingle()
+            .Which.Should().Contain("column names use ASCII letters");
+    }
 }

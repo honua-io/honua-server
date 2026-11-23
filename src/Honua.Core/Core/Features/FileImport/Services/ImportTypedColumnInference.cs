@@ -240,7 +240,7 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         _ => null
     };
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdentifierPattern();
 
     [GeneratedRegex(@"^-?[0-9]+$", RegexOptions.CultureInvariant)]
