@@ -1898,7 +1898,7 @@ A cancelled run can also be the newest check suite of a head: two events in the
 same second (opened + labeled, labeled + edited) start two runs in one
 concurrency group, and GitHub orders that queue independently of suite order.
 The cancelled required context then outranks the success in the older suite and
-the armed PR stays blocked (#9533, 30 of 450 heads in 48 h, #9610).
+the armed PR stays blocked until a manual rerun (#9533, #9610).
 `repo-hygiene-rerun.yml` reruns such a run once, with its own event payload, when
 it is the newest suite for a head that is still an open PR's head. Older-suite
 cancellations, superseded heads and later attempts are left alone; every hygiene
