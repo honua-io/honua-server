@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Asp.Versioning.Builder;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
@@ -184,7 +183,7 @@ internal static partial class OidcProviderEndpoints
         CreateOidcProviderRequest request,
         CancellationToken cancellationToken)
     {
-        if (ValidateDataAnnotations(request) is { } annotationError)
+        if (AdminRequestValidation.DataAnnotationError(request) is { } annotationError)
         {
             return annotationError;
         }
@@ -201,7 +200,7 @@ internal static partial class OidcProviderEndpoints
         UpdateOidcProviderRequest request,
         CancellationToken cancellationToken)
     {
-        if (ValidateDataAnnotations(request) is { } annotationError)
+        if (AdminRequestValidation.DataAnnotationError(request) is { } annotationError)
         {
             return annotationError;
         }
@@ -214,18 +213,6 @@ internal static partial class OidcProviderEndpoints
         return request.Authority is null
             ? null
             : await ValidateAuthorityAsync(request.Authority, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string? ValidateDataAnnotations(object request)
-    {
-        var validationResults = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
-        {
-            var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-            return $"Validation failed: {errors}";
-        }
-
-        return null;
     }
 
     private static async Task<string?> ValidateAuthorityAsync(string? authority, CancellationToken cancellationToken)

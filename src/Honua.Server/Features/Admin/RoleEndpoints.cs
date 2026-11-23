@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Asp.Versioning.Builder;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -173,27 +172,12 @@ internal static partial class RoleEndpoints
     }
 
     private static string? CreateRequestError(CreateRoleRequest request)
-    {
-        var validationResults = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
-        {
-            return $"Validation failed: {string.Join(", ", validationResults.Select(r => r.ErrorMessage))}";
-        }
-
-        return TextError(request.Name, request.Description)
+        => AdminRequestValidation.DataAnnotationError(request)
+            ?? TextError(request.Name, request.Description)
             ?? (ReservedRoleNames.Contains(request.Name) ? ReservedRoleNames.Refusal(request.Name) : null);
-    }
 
     private static string? UpdateRequestError(UpdateRoleRequest request)
-    {
-        var validationResults = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
-        {
-            return $"Validation failed: {string.Join(", ", validationResults.Select(r => r.ErrorMessage))}";
-        }
-
-        return TextError(request.Name, request.Description);
-    }
+        => AdminRequestValidation.DataAnnotationError(request) ?? TextError(request.Name, request.Description);
 
     // PostgreSQL text cannot hold NUL, and control characters in a role name break audit logs and role claims.
     private static string? TextError(string? name, string? description)
