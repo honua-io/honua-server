@@ -29,12 +29,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private const string ManagedLayerDiscriminatorColumn = "layer_id";
 
     // Identifies the relation a features-table name resolves to on a connection: the
-    // database, the server instance (postmaster start time) and the relation itself.
+    // database, the server instance (postmaster start time), the relation itself and the
+    // schema it lives in.
     private const string ManagedStoreIdentitySql = """
         SELECT
             database.oid::bigint,
             pg_postmaster_start_time(),
-            to_regclass(@managedTable)::oid::bigint
+            to_regclass(@managedTable)::oid::bigint,
+            (SELECT namespace.nspname
+             FROM pg_catalog.pg_class AS relation
+             JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+             WHERE relation.oid = to_regclass(@managedTable))
         FROM pg_database AS database
         WHERE database.datname = current_database();
         """;
@@ -202,11 +207,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return primaryKeyName;
     }
 
-    private sealed record ManagedStoreIdentitySnapshot(string? Value);
+    // Schema is where the server's own connection resolves the features table. Another role
+    // on the same database can have a different search path, so the publishing connection
+    // must check that exact table rather than resolve the bare name again.
+    private sealed record ManagedStoreIdentitySnapshot(string? Value, string? Schema = null);
 
-    private string ResolveManagedStoreTableName() => _configuredFeatureSchema is null
-        ? ManagedFeaturesTableName
-        : $"{SqlIdentifier.QuoteIdentifier(_configuredFeatureSchema)}.{SqlIdentifier.QuoteIdentifier(ManagedFeaturesTableName)}";
+    private string ResolveManagedStoreTableName(string? serverSchema = null)
+        => (_configuredFeatureSchema ?? serverSchema) is { } schema
+            ? $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(ManagedFeaturesTableName)}"
+            : ManagedFeaturesTableName;
 
     private async Task<ManagedStoreIdentitySnapshot> CaptureManagedStoreIdentityAsync(CancellationToken cancellationToken)
     {
@@ -223,8 +232,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             parameter.ParameterName = "managedTable";
             parameter.Value = ResolveManagedStoreTableName();
             command.Parameters.Add(parameter);
-            return new ManagedStoreIdentitySnapshot(
-                await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false));
+            return await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -239,18 +247,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        var managedTable = ResolveManagedStoreTableName();
+        var serverIdentity = capturedIdentity ?? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false);
 
         string? publishIdentity;
         await using (var command = new NpgsqlCommand(ManagedStoreIdentitySql, connection, transaction))
         {
-            command.Parameters.AddWithValue("managedTable", managedTable);
-            publishIdentity = await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue("managedTable", ResolveManagedStoreTableName(serverIdentity.Schema));
+            publishIdentity = (await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false)).Value;
         }
 
-        var serverIdentity = (capturedIdentity ?? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false)).Value;
-
-        if (publishIdentity is null || !string.Equals(publishIdentity, serverIdentity, StringComparison.Ordinal))
+        if (publishIdentity is null || !string.Equals(publishIdentity, serverIdentity.Value, StringComparison.Ordinal))
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
@@ -258,19 +264,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private static async Task<string?> ReadManagedStoreIdentityAsync(
+    private static async Task<ManagedStoreIdentitySnapshot> ReadManagedStoreIdentityAsync(
         DbCommand command,
         CancellationToken cancellationToken)
     {
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) || reader.IsDBNull(2))
         {
-            return null;
+            return new ManagedStoreIdentitySnapshot(null);
         }
 
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{reader.GetInt64(0)}:{reader.GetFieldValue<DateTime>(1):O}:{reader.GetInt64(2)}");
+        return new ManagedStoreIdentitySnapshot(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{reader.GetInt64(0)}:{reader.GetFieldValue<DateTime>(1):O}:{reader.GetInt64(2)}"),
+            reader.GetString(3));
     }
 
     private sealed record PublishedLayerStorage(
