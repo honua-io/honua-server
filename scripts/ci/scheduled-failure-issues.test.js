@@ -314,6 +314,28 @@ test('issues are not closed as fixed when failures after the success were beyond
   assert.deepEqual((await go(github)).closed, []);
 });
 
+test('an issue closes when its job succeeds in a newer run while another job keeps the workflow red', async () => {
+  const key = name => `<!-- scheduled-failure key=.github/workflows/nightly.yml::${name} -->\n<!-- scheduled-failure run=1 -->`;
+  const issues = [{ number: 7, state: 'open', body: key('Postgres_16') }, { number: 8, state: 'open', body: key('Build') }];
+  const jobs = { 1: [job('Postgres 16', 'failure', 1), job('Build', 'failure', 2)],
+    2: [job('Postgres 16', 'success', 1), job('Build', 'failure', 2)], 3: [job('Postgres 16', 'skipped', 1), job('Build', 'failure', 2)] };
+  const runs = [1, 2, 3].map(id => run(id, 'nightly.yml', 'failure'));
+  const github = fakeGithub({ runs, jobs, issues, comments: { 7: [{ body: 'claimed: s-night x' }], 8: [{ body: 'claimed: s-night x' }] } });
+  const report = await go(github);
+  assert.deepEqual([report.closed, report.updated], [['app#7'], ['app#8', 'app#8']]);
+  assert.match(github.comments[7][1].body, /^Job `Postgres 16` in scheduled run .*runs\/2 succeeded/);
+  assert.deepEqual(issues.map(issue => issue.state), ['closed', 'open']);
+});
+
+test('a job success older than its newest recorded failure, or followed by a failure, never closes', async () => {
+  const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::A -->\n<!-- scheduled-failure run=3 -->' }];
+  const runs = [1, 2, 3, 4, 5].map(id => run(id, 'nightly.yml', 'failure'));
+  const jobs = { 2: [job('A', 'success', 1)], 3: [job('A', 'failure', 1)], 4: [job('A', 'success', 1)], 5: [job('A', 'timed_out', 1)] };
+  const github = fakeGithub({ runs, jobs, issues, comments: { 7: [{ body: 'claimed: s-night x' }] } });
+  assert.deepEqual((await go(github)).closed, []);
+  assert.equal(issues[0].state, 'open');
+});
+
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {
   const github = fakeGithub({});
   github.paginate = async route => {

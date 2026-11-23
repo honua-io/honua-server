@@ -58,7 +58,9 @@ internal static class McpErrorMapper
 
     public const int JsonRpcResourceNotFound = -32002;
 
-    public static McpJsonRpcError Map(Exception ex) => ex switch
+    public static McpJsonRpcError Map(Exception ex) => McpRefusalNextAction.Apply(MapException(ex));
+
+    private static McpJsonRpcError MapException(Exception ex) => ex switch
     {
         GeoprocessingAuthorizationException authEx when authEx.RequiresAuthentication => new McpJsonRpcError
         {
@@ -288,12 +290,12 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.NotFound }
     };
 
-    public static McpJsonRpcError InvalidArgument(string message) => new()
+    public static McpJsonRpcError InvalidArgument(string message) => McpRefusalNextAction.Apply(new McpJsonRpcError
     {
         Code = JsonRpcInvalidParams,
         Message = message,
         Data = new McpErrorData { Code = Codes.InvalidArgument }
-    };
+    });
 
     // One refusal for every requestState failure, so a client learns nothing about which check failed.
     public static McpJsonRpcError InvalidRequestState() => new()
@@ -303,14 +305,14 @@ internal static class McpErrorMapper
         Data = new McpErrorData { Code = Codes.InvalidRequestState }
     };
 
-    public static McpJsonRpcError ResourceNotFound(string message) => new()
+    public static McpJsonRpcError ResourceNotFound(string message) => McpRefusalNextAction.Apply(new McpJsonRpcError
     {
         Code = JsonRpcResourceNotFound,
         Message = message,
         Data = new McpErrorData { Code = Codes.NotFound }
-    };
+    });
 
-    public static McpJsonRpcError Unauthenticated() => new()
+    public static McpJsonRpcError Unauthenticated() => McpRefusalNextAction.Apply(new McpJsonRpcError
     {
         Code = JsonRpcServerError,
         Message = $"Authentication is required to use the MCP operator surface. {AuthenticationGuidance}",
@@ -319,9 +321,9 @@ internal static class McpErrorMapper
             Code = Codes.Unauthenticated,
             RequiresReauthentication = true
         }
-    };
+    });
 
-    public static McpJsonRpcError InvalidToken() => new()
+    public static McpJsonRpcError InvalidToken() => McpRefusalNextAction.Apply(new McpJsonRpcError
     {
         Code = JsonRpcServerError,
         Message = $"The bearer token is invalid, expired, or issued for a different resource. {AuthenticationGuidance}",
@@ -330,7 +332,7 @@ internal static class McpErrorMapper
             Code = Codes.Unauthenticated,
             RequiresReauthentication = true
         }
-    };
+    });
 
     public static McpJsonRpcError SessionPrincipalMismatch() => new()
     {

@@ -20,8 +20,20 @@ internal static class BatchComputeBackendExtensions
             return null;
         }
 
-        return backends.FirstOrDefault(backend =>
-            string.Equals(backend.BackendName, backendName, StringComparison.Ordinal) &&
-            backend.TargetKind == targetKind);
+        var named = backends
+            .Where(backend => string.Equals(backend.BackendName, backendName, StringComparison.Ordinal))
+            .ToArray();
+        var exact = named.FirstOrDefault(backend => backend.TargetKind == targetKind);
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        // The in-process backend launches no workload, so the target kind on its specs carries no
+        // routing meaning. Tile-export and topology-rebuild specs (and rows already persisted from
+        // them) say LocalProcess while the backend reports KubernetesJob.
+        return string.Equals(backendName, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            ? named.FirstOrDefault()
+            : null;
     }
 }

@@ -61,6 +61,33 @@ public sealed class McpPlatformOpsToolTests
         reader.DeployOperationsArgument.PageSize.Should().Be(25);
     }
 
+    [UnitTheory]
+    [InlineData("RequiresApproval", "AwaitingApproval")]
+    [InlineData("requiresapproval", "AwaitingApproval")]
+    [InlineData("AwaitingApproval", "AwaitingApproval")]
+    [InlineData("Failed", "Failed")]
+    public async Task DeployOperationsTool_Invoke_AcceptsTheHandleApprovalName(string status, string expected)
+    {
+        var reader = new FakePlatformOpsReader();
+        var tool = new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance);
+
+        var result = await tool.InvokeAsync(BuildContext(reader), Json($$"""{"status":"{{status}}"}"""), CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        reader.DeployOperationsArgument!.Status.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void DeployOperationsTool_StatusSchema_AdvertisesBothApprovalNames()
+    {
+        var status = new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance).Describe()
+            .InputSchema.GetProperty("properties").GetProperty("status");
+
+        status.GetProperty("enum").EnumerateArray().Select(value => value.GetString())
+            .Should().Contain(["AwaitingApproval", "RequiresApproval"], "a schema-driven client may send either name");
+        status.GetProperty("description").GetString().Should().Contain("accepted as AwaitingApproval");
+    }
+
     [UnitTest]
     public async Task SupportedOperationKindsTool_Invoke_ReturnsLiveReaderPayload()
     {
