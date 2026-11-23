@@ -18,6 +18,9 @@ internal static class FeatureChangePrefix
     // the older, still-safe horizon.
     internal static readonly TimeSpan SettleBudget = TimeSpan.FromSeconds(2);
 
+    // The wait for a realtime read, which is woken again by the next commit's notification.
+    internal static readonly TimeSpan CatchUpBudget = TimeSpan.FromMilliseconds(250);
+
     private static readonly TimeSpan _maxBackoff = TimeSpan.FromMilliseconds(50);
 
     private const string AllocatedSql =
@@ -48,10 +51,26 @@ internal static class FeatureChangePrefix
     {
         var through = target ?? await ReadAllocatedAsync(connection, cancellationToken).ConfigureAwait(false);
         var budget = target is null ? SettleBudget : Timeout.InfiniteTimeSpan;
+        return await PublishUntilAsync(connection, new SettleWindow(through, budget), cancellationToken).ConfigureAwait(false);
+    }
+
+    // A realtime head or cursor read: wait at most CatchUpBudget for writers already in flight,
+    // so a read that lands during a short edit does not leave that edit for the next poll.
+    public static async Task<long> CatchUpAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        var through = await ReadAllocatedAsync(connection, cancellationToken).ConfigureAwait(false);
+        return await PublishUntilAsync(connection, new SettleWindow(through, CatchUpBudget), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<long> PublishUntilAsync(
+        NpgsqlConnection connection,
+        SettleWindow window,
+        CancellationToken cancellationToken)
+    {
         var started = Stopwatch.GetTimestamp();
         var backoff = TimeSpan.FromMilliseconds(2);
         var published = await PublishAsync(connection, cancellationToken).ConfigureAwait(false);
-        while (published < through && (budget == Timeout.InfiniteTimeSpan || Stopwatch.GetElapsedTime(started) < budget))
+        while (published < window.Through && window.IsOpen(Stopwatch.GetElapsedTime(started)))
         {
             await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
             backoff = backoff * 2 < _maxBackoff ? backoff * 2 : _maxBackoff;
@@ -59,6 +78,11 @@ internal static class FeatureChangePrefix
         }
 
         return published;
+    }
+
+    private readonly record struct SettleWindow(long Through, TimeSpan Budget)
+    {
+        public bool IsOpen(TimeSpan elapsed) => Budget == Timeout.InfiniteTimeSpan || elapsed < Budget;
     }
 
     // Settles, then reads honua.feature_change_read_horizon(), the one definition of the horizon.

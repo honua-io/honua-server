@@ -43,13 +43,14 @@ internal sealed class PostgresFeatureChangeLog(
     public static string DatabaseEventId(long generation)
         => new RealtimePosition(RealtimeFamily.Features, generation).ToString();
 
-    // Each read publishes the committed prefix once and returns it. Commits that were in flight
-    // are published by the read their own NOTIFY wakes, so the head needs no background publisher.
+    // Each read advances the committed prefix, waiting briefly for writers already in flight, and
+    // returns it. Longer writers are published by the read their own NOTIFY wakes, so the head
+    // needs no background publisher.
     public Task<long> ReadHeadAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
+                await FeatureChangePrefix.CatchUpAsync(connection, token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand($"SELECT {ReadHorizon}", connection);
                 return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
@@ -79,7 +80,7 @@ internal sealed class PostgresFeatureChangeLog(
                 if (query.EventId is null)
                 {
                     // A cursor read stops at the horizon; publish first so commits it can see count.
-                    await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
+                    await FeatureChangePrefix.CatchUpAsync(connection, token).ConfigureAwait(false);
                 }
 
                 await using var command = new NpgsqlCommand(SelectChanges(query), connection);

@@ -58,8 +58,9 @@ database (`FeatureChangePrefix` in Honua.Db):
   long import it gets the older, still-safe horizon.
 - Version post waits, with no time budget, for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
-- The realtime feature log publishes once per head read and once per cursor read. Each
-  commit sends `honua_rt_features`, which wakes the dispatcher, so a commit that was held
+- The realtime feature log advances the prefix on every head and cursor read, waiting up to
+  250 ms for writers already in flight, so a read that lands during a short edit still
+  delivers it. Each commit sends `honua_rt_features`, which wakes the dispatcher, so a commit that was held
   behind an in-flight writer is published when that writer's own commit arrives. A
   rolled-back writer sends no notification; the 10 s safety poll covers that case.
 - The outbox dispatcher publishes before each claim.
