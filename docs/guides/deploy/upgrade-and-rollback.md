@@ -380,7 +380,7 @@ Standard output carries one JSON line; logs go to standard error. The summary (`
 | `outcome` | `completed`, `refused` (a safety gate or the configuration stopped the run) or `failed`. |
 | `code`, `exitCode` | The typed reason and the process exit code, as in the table below. |
 | `message` | The reason in words. Connection details are never included. |
-| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current, and empty on a failed run because the scripts roll back together. After a failure, `public.schema_versions` is the record of what is applied. |
+| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current, and empty on a failed run. When a script fails, the whole batch rolls back; when the check after applying fails, the scripts stay applied. After a failure, `public.schema_versions` is the record of what is applied. |
 | `schemaNumber` | The highest migration number the journal now holds. Set only on success. |
 | `binarySchemaNumber` | The highest migration number this image ships. |
 | `schemaVerified` | `true` once the runner has reconciled the journal with the physical schema. |
