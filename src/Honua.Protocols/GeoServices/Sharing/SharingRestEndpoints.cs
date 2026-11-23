@@ -193,7 +193,9 @@ public static class SharingRestEndpoints
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .DisableAntiforgery()
-            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType);
+            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapGet("/sharing/rest/content/items/{id}", HandleContentItemAsync)
             .WithDisplayName("ArcGIS Portal Content Item")
@@ -793,7 +795,7 @@ public static class SharingRestEndpoints
 
         if (!PortalSearchQueryLimits.IsAdmissible(query))
         {
-            throw new ArgumentOutOfRangeException(nameof(query), "Search query exceeds the length or nesting limit.");
+            throw new ArgumentException("Search query exceeds the length or nesting limit.", nameof(query));
         }
 
         return items.Where(item => MatchesExpression(item, query, unmappedOwnerIds)).ToList();

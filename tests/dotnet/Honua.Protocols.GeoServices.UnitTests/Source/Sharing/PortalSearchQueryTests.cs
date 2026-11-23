@@ -80,7 +80,7 @@ public sealed class PortalSearchQueryTests
     }
 
     [UnitTest]
-    public void IsAdmissibleSearchQuery_BoundsLengthAndParenthesisDepth()
+    public void IsAdmissible_BoundsLengthAndParenthesisDepth()
     {
         var limit = PortalSearchQueryLimits.MaxDepth;
 
@@ -92,7 +92,7 @@ public sealed class PortalSearchQueryTests
     }
 
     [UnitTest]
-    public void IsAdmissibleSearchQuery_IgnoresParenthesesInsideQuotes()
+    public void IsAdmissible_IgnoresParenthesesInsideQuotes()
     {
         var quoted = "title:\"" + new string('(', PortalSearchQueryLimits.MaxDepth + 1) + "\"";
 
@@ -104,7 +104,7 @@ public sealed class PortalSearchQueryTests
     {
         var apply = () => SharingRestEndpoints.ApplyQuery(Items, Nested(1000), []);
 
-        apply.Should().Throw<ArgumentOutOfRangeException>();
+        apply.Should().Throw<ArgumentException>();
     }
 
     [UnitTest]
@@ -114,6 +114,16 @@ public sealed class PortalSearchQueryTests
             Items, Nested(PortalSearchQueryLimits.MaxDepth, "type:\"Map Service\""), []);
 
         matched.Select(item => item.Id).Should().Equal("parcels");
+    }
+
+    [UnitTest]
+    public void ApplyQuery_QuotedQualifierFollowedByText_KeepsQuotedValueAndFreeText()
+    {
+        // The quoted alternative wins over the bare-value alternative, so "Ro" is the title value
+        // and "ads" stays a separate free-text term that every match must also contain.
+        SharingRestEndpoints.ApplyQuery(Items, "title:\"Ro\"ads", [])
+            .Select(item => item.Id).Should().Equal("roads");
+        SharingRestEndpoints.ApplyQuery(Items, "title:\"Ro\"zzz", []).Should().BeEmpty();
     }
 
     private static string Nested(int depth, string leaf = "roads")

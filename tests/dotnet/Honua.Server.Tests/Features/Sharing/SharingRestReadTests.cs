@@ -313,6 +313,22 @@ public sealed class SharingRestReadTests : IClassFixture<SharingRestReadTests.Re
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/search")]
+    public async Task Search_FormQueryPastLengthLimit_IsRefused()
+    {
+        using var client = _fixture.CreateClient();
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["q"] = new string('a', PortalSearchQueryLimits.MaxLength + 1),
+        });
+        using var response = await client.PostAsync("/sharing/rest/search", form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/search")]
     public async Task Search_QueryAtNestingLimit_StillFilters()
     {

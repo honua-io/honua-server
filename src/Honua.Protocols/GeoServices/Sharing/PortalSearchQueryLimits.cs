@@ -10,7 +10,7 @@ namespace Honua.Protocols.GeoServices.Sharing;
 internal static class PortalSearchQueryLimits
 {
     internal const int MaxLength = 4096;
-    internal const int MaxDepth = 32;
+    internal const int MaxDepth = 8;
 
     internal static readonly Regex QualifiedTerm = new(
         """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""",
