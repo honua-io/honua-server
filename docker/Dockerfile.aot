@@ -128,6 +128,13 @@ COPY . .
 # Single-threaded linking trades wall-clock for a much lower memory peak and
 # fits comfortably inside the 90-minute job timeout. arm64 already used this.
 #
+# Compile and native-link run as two commands. ILC peaks near 14 GiB while it
+# writes the object file, and a heavy runner's 16 GiB memory ceiling also covers
+# its Docker daemon and BuildKit, so nothing else may stay resident during ILC.
+# MSBuild worker nodes (one per visible CPU) live until their build ends:
+# `dotnet build` compiles in parallel without build servers so its nodes exit,
+# then `publish --no-build -maxcpucount:1` runs ILC alone.
+#
 # The restore+publish unit is retried with backoff so an intermittent
 # GitHub-Packages/nuget.org blip, a restore-assets hiccup, or a transient ILC
 # kill does not fail the nightly outright. Retries are cheap: a successful
@@ -160,6 +167,24 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           --runtime "$RUNTIME_ID" \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           "$@" && \
+        dotnet build src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
+          --configuration "$CONFIGURATION" \
+          --runtime "$RUNTIME_ID" \
+          --no-restore \
+          --disable-build-servers \
+          --self-contained true \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:PublishAot=true \
+          -p:DebugType=None \
+          -p:DebugSymbols=false \
+          -p:StripSymbols=true \
+          -p:OptimizationPreference=Speed \
+          -p:IlcOptimizationPreference=Speed \
+          -p:IlcSingleThreaded=true \
+          "$@" && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
           ${VERSION:+-p:Version="$VERSION"} \
           ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
@@ -167,6 +192,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
+          --no-build \
+          --disable-build-servers \
+          -maxcpucount:1 \
           --self-contained true \
           --output /app \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -181,10 +209,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     do \
         status=$? ; \
         if [ "$attempt" -ge "$max_attempts" ]; then \
-            echo "AOT restore+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
+            echo "AOT restore+build+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
             exit "$status" ; \
         fi ; \
-        echo "AOT restore+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
+        echo "AOT restore+build+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \
