@@ -147,7 +147,7 @@ class ProducerBindingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.pairs = module.emitted_pairs(ROOT)
-        cls.roster = module.roster_test_ids(ROOT)
+        cls.roster = module.roster_cells(ROOT)
 
     def test_emitted_pairs_are_exactly_the_contracted_pairs(self):
         self.assertEqual(
@@ -222,10 +222,19 @@ class ProducerBindingTests(unittest.TestCase):
                 self.assertGreater(len(reason), 40, "an absence reason must be actionable")
 
 
+COMPOSE = """services:
+  lane-python:
+    build:
+      dockerfile: lanes/python/Dockerfile
+    image: honua-roster/lane-python:local
+"""
+
+
 class RosterProducerTests(unittest.TestCase):
     """The bounded-roster workflow as a producer, read from the files it runs."""
 
-    def root(self, workflow: str | None, runner: str, modules: dict[str, str]) -> Path:
+    def root(self, workflow: str | None, runner: str, modules: dict[str, str],
+             compose: str = COMPOSE) -> Path:
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         if workflow is not None:
             path = root / module.ROSTER_WORKFLOW_RELATIVE_PATH
@@ -234,32 +243,51 @@ class RosterProducerTests(unittest.TestCase):
         runner_path = root / module.ROSTER_RUNNER_RELATIVE_PATH
         runner_path.parent.mkdir(parents=True)
         runner_path.write_text(runner, encoding="utf-8")
+        (runner_path.parent / "compose.candidate.yml").write_text(compose, encoding="utf-8")
+        lane = root / module.ROSTER_LANES_RELATIVE_PATH / "python"
+        lane.mkdir(parents=True)
+        (lane / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
+        (lane / "requirements.txt").write_text("OWSLib==0.36.0\n", encoding="utf-8")
         for name, body in modules.items():
-            path = root / module.ROSTER_LANES_RELATIVE_PATH / "lane" / f"{name}.py"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(body, encoding="utf-8")
+            (lane / f"{name}.py").write_text(body, encoding="utf-8")
         return root
 
+    WORKFLOW = "run: |\n  certification/bounded-roster/run-roster.sh --digest x\n"
     RUNNER = 'run_lane() { :; }\nrun_lane lane-python python "pip freeze" owslib_cells\n'
-    MODULES = {"owslib_cells": 'Cell("client-cert/owslib/wcs/serve.wcs")',
-               "unused_cells": 'Cell("client-cert/owslib/wms/serve.wms")'}
+    MODULES = {
+        "owslib_cells": ('def wcs():\n    Cell("client-cert/owslib/wcs/serve.wcs")\n'
+                         'def wms():\n    Cell("client-cert/owslib/wms/serve.wms")\n'
+                         'CELLS = (wcs,)\n'),
+        "unused_cells": 'def edr():\n    Cell("client-cert/owslib/edr/serve.edr")\nCELLS = (edr,)\n',
+    }
+    WCS = "client-cert/owslib/wcs/serve.wcs"
 
     def test_only_cells_the_runner_executes_are_produced(self):
-        root = self.root("run: certification/bounded-roster/run-roster.sh --digest x", self.RUNNER, self.MODULES)
-        self.assertEqual(frozenset({"client-cert/owslib/wcs/serve.wcs"}), module.roster_test_ids(root))
+        root = self.root(self.WORKFLOW, self.RUNNER, self.MODULES)
+        self.assertEqual({self.WCS}, set(module.roster_cells(root)))
+
+    def test_a_produced_cell_carries_its_lane_pinned_client_versions(self):
+        root = self.root(self.WORKFLOW, self.RUNNER, self.MODULES)
+        [versions] = module.roster_cells(root)[self.WCS]
+        self.assertIn("0.36.0", versions)
+        self.assertIn("3.12", versions)
+
+    def test_a_workflow_that_only_mentions_the_runner_produces_nothing(self):
+        root = self.root("run: echo certification/bounded-roster/run-roster.sh", self.RUNNER, self.MODULES)
+        self.assertEqual({}, module.roster_cells(root))
 
     def test_without_the_workflow_nothing_is_produced(self):
         root = self.root(None, self.RUNNER, self.MODULES)
-        self.assertEqual(frozenset(), module.roster_test_ids(root))
+        self.assertEqual({}, module.roster_cells(root))
 
     def test_a_workflow_that_does_not_run_the_roster_produces_nothing(self):
         root = self.root("run: echo roster", self.RUNNER, self.MODULES)
-        self.assertEqual(frozenset(), module.roster_test_ids(root))
+        self.assertEqual({}, module.roster_cells(root))
 
     def test_a_runner_naming_a_missing_lane_module_refuses(self):
-        root = self.root("run: certification/bounded-roster/run-roster.sh", self.RUNNER, {})
+        root = self.root(self.WORKFLOW, self.RUNNER, {})
         with self.assertRaises(SystemExit) as raised:
-            module.roster_test_ids(root)
+            module.roster_cells(root)
         self.assertIn("owslib_cells", str(raised.exception))
 
 
@@ -317,20 +345,28 @@ class ClassificationTests(unittest.TestCase):
         result = module.classify_producer(
             self.row(client_lane="gdal", test_ids=["client-cert/gdal/wfs/serve.wfs"]),
             self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            frozenset({"client-cert/gdal/wfs/serve.wfs"}))
+            {"client-cert/gdal/wfs/serve.wfs": [frozenset({"0.36.0"})]})
         self.assertEqual("present", result["status"])
         self.assertIsNone(result["reasonCode"])
         self.assertEqual(module.ROSTER_WORKFLOW_RELATIVE_PATH, result["producer"]["workflow"])
 
     def test_the_client_compat_binding_wins_over_the_roster(self):
         result = module.classify_producer(
-            self.row(), self.pairs(("py-owslib", "ogc-features", "0.36.0")), frozenset({"CERT-DISC-01"}))
+            self.row(), self.pairs(("py-owslib", "ogc-features", "0.36.0")),
+            {"CERT-DISC-01": [frozenset({"0.36.0"})]})
         self.assertEqual("py-owslib-ogc-features.cert.json", result["producer"]["baseline"])
 
     def test_a_roster_without_the_test_id_keeps_the_absence(self):
         result = module.classify_producer(
             self.row(surface="wms"), self.pairs(("py-owslib", "ogc-features", "0.36.0")),
-            frozenset({"client-cert/other"}))
+            {"client-cert/other": [frozenset({"0.36.0"})]})
+        self.assertEqual("surface-not-emitted", result["reasonCode"])
+
+    def test_a_roster_lane_without_the_governed_version_keeps_the_absence(self):
+        result = module.classify_producer(
+            self.row(surface="wms", client_version="pystac=1.15.2;pystac-client=0.9.0"),
+            self.pairs(("py-owslib", "ogc-features", "0.36.0")),
+            {"CERT-DISC-01": [frozenset({"1.15.2", "0.36.0"})]})
         self.assertEqual("surface-not-emitted", result["reasonCode"])
 
     def test_a_test_id_claimed_by_two_rivals_is_unjoinable(self):

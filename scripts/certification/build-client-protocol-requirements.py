@@ -48,6 +48,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -61,6 +62,7 @@ ROSTER_WORKFLOW_RELATIVE_PATH = ".github/workflows/client-roster-certification.y
 ROSTER_RUNNER_RELATIVE_PATH = "certification/bounded-roster/run-roster.sh"
 ROSTER_LANES_RELATIVE_PATH = "certification/bounded-roster/lanes"
 ROSTER_TEST_ID_RE = re.compile(r'"(client-cert/[^"]+)"')
+VERSION_TOKEN_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?![\d.]*\d)")
 
 SCHEMA = "honua.client-certification-requirements/v1"
 UPSTREAM_SCHEMA = "honua.protocol-certification-requirements/v1"
@@ -214,38 +216,88 @@ def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
     return pairs
 
 
-def roster_test_ids(root: Path) -> frozenset[str]:
+def roster_cells(root: Path) -> dict[str, list[frozenset[str]]]:
     """Governed test IDs the bounded-roster certification workflow executes.
 
-    The workflow is a producer only while it runs ``run-roster.sh``; the IDs are the
-    ``client-cert/...`` cells declared by the lane modules that script's
-    ``run_lane`` lines execute. A lane module the script names but the repository
-    lacks is refused rather than silently producing fewer cells.
+    The workflow is a producer only while one of its lines invokes ``run-roster.sh``
+    as a command. Each ``run_lane`` line of that script names a compose service and
+    lane modules; a module produces the ``client-cert/...`` IDs written inside the
+    functions its ``CELLS`` tuple lists. Every ID maps to the version numbers each
+    lane that runs it pins (its compose service block, Dockerfile and
+    requirements.txt), so a row is produced only by a lane that pins its governed
+    client version. A lane module the script names but the repository lacks is
+    refused rather than silently producing fewer cells.
     """
     workflow = root / ROSTER_WORKFLOW_RELATIVE_PATH
-    if not workflow.is_file() or ROSTER_RUNNER_RELATIVE_PATH not in workflow.read_text(encoding="utf-8"):
-        return frozenset()
-    runner = (root / ROSTER_RUNNER_RELATIVE_PATH).read_text(encoding="utf-8")
-    modules = sorted({name for line in re.findall(r"^run_lane (.+)$", runner, re.MULTILINE)
-                      for name in re.findall(r"\b(\w+_cells)\b", line)})
-    test_ids: set[str] = set()
-    for name in modules:
-        paths = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
-        if len(paths) != 1:
-            raise SystemExit(f"{ROSTER_RUNNER_RELATIVE_PATH} runs {name}, found {len(paths)} lane modules")
-        test_ids.update(ROSTER_TEST_ID_RE.findall(paths[0].read_text(encoding="utf-8")))
-    return frozenset(test_ids)
+    invocation = re.compile(rf"^\s*(?:run:\s*)?{re.escape(ROSTER_RUNNER_RELATIVE_PATH)}\b", re.MULTILINE)
+    if not workflow.is_file() or not invocation.search(workflow.read_text(encoding="utf-8")):
+        return {}
+    runner_path = root / ROSTER_RUNNER_RELATIVE_PATH
+    compose = (runner_path.parent / "compose.candidate.yml").read_text(encoding="utf-8")
+    cells: dict[str, list[frozenset[str]]] = {}
+    for line in re.findall(r"^run_lane (.+)$", runner_path.read_text(encoding="utf-8"), re.MULTILINE):
+        service = line.split()[0]
+        modules = re.findall(r"\b(\w+_cells)\b", line)
+        lane_dirs = set()
+        for name in modules:
+            paths = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
+            if len(paths) != 1:
+                raise SystemExit(f"{ROSTER_RUNNER_RELATIVE_PATH} runs {name}, found {len(paths)} lane modules")
+            lane_dirs.add(paths[0].parent)
+        versions = _lane_versions(compose, service, lane_dirs)
+        for name in modules:
+            [path] = sorted((root / ROSTER_LANES_RELATIVE_PATH).glob(f"*/{name}.py"))
+            for test_id in _executed_test_ids(path):
+                cells.setdefault(test_id, []).append(versions)
+    return cells
+
+
+def _executed_test_ids(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    # A module may choose CELLS per client version under a module-level `if`;
+    # every branch counts, and the lane's pinned versions narrow the binding.
+    executed: list[str] = []
+    statements = list(tree.body)
+    while statements:
+        node = statements.pop(0)
+        if isinstance(node, ast.If):
+            statements.extend([*node.body, *node.orelse])
+        elif (isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "CELLS" for target in node.targets)
+                and isinstance(node.value, (ast.Tuple, ast.List))):
+            executed.extend(element.id for element in node.value.elts if isinstance(element, ast.Name))
+    return {
+        node.value for name in executed if name in functions
+        for node in ast.walk(functions[name])
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and ROSTER_TEST_ID_RE.fullmatch(f'"{node.value}"')
+    }
+
+
+def _lane_versions(compose: str, service: str, lane_dirs: set[Path]) -> frozenset[str]:
+    block = re.search(rf"^  {re.escape(service)}:\n((?:    .*\n|\s*\n)*)", compose, re.MULTILINE)
+    text = block.group(0) if block else ""
+    for lane_dir in sorted(lane_dirs):
+        for pin_file in ("Dockerfile", "requirements.txt"):
+            if (lane_dir / pin_file).is_file():
+                text += (lane_dir / pin_file).read_text(encoding="utf-8")
+    return frozenset(VERSION_TOKEN_RE.findall(text))
 
 
 def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict],
-                      roster: frozenset[str] = frozenset()) -> dict:
+                      roster: dict[str, list[frozenset[str]]] | None = None) -> dict:
     """Decide whether a honua-server producer can emit a receipt for one governed row.
 
     A client-compat lane binding wins; otherwise the bounded-roster workflow
-    produces the row when it executes one of the row's test IDs.
+    produces the row when a lane pinning the governed client version executes one
+    of the row's test IDs.
     """
     compat = classify_client_compat(requirement, pairs)
-    produced = sorted(set(requirement.get("test_ids") or ()) & roster)
+    governed = set(VERSION_TOKEN_RE.findall(requirement["client_version"]))
+    produced = sorted(
+        test_id for test_id in requirement.get("test_ids") or ()
+        if governed and any(governed <= versions for versions in (roster or {}).get(test_id, ())))
     if compat["status"] == "present" or not produced:
         return compat
     return {
@@ -372,7 +424,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         raise SystemExit("--upstream-revision must be a lowercase 40-character commit SHA")
 
     pairs = emitted_pairs(root)
-    roster = roster_test_ids(root)
+    roster = roster_cells(root)
     bounded = [
         governed for governed in upstream["requirements"]
         if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS

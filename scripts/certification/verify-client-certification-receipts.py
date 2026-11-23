@@ -173,7 +173,7 @@ def verify_contract(requirements: dict, root: Path) -> list[dict]:
     """
     builder = _load_builder(root)
     pairs = builder.emitted_pairs(root)
-    roster = builder.roster_test_ids(root)
+    roster = builder.roster_cells(root)
     collisions = builder.ambiguous_test_ids(requirements["requirements"])
 
     verdicts = []

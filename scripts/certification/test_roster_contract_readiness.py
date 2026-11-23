@@ -48,7 +48,7 @@ class ContractReadinessTests(unittest.TestCase):
         missing = copy.deepcopy(MIRROR["requirements"][0])
         missing.update(client_lane="no-such-lane", test_ids=["client-cert/no-such-lane/x"])
         missing["receiptBinding"]["producerBinding"] = builder.classify_producer(
-            missing, builder.emitted_pairs(ROOT), builder.roster_test_ids(ROOT))
+            missing, builder.emitted_pairs(ROOT), builder.roster_cells(ROOT))
         missing["receiptBinding"]["denominatorJoin"]["testIds"] = missing["test_ids"]
         for rows in ([missing], []):
             with self.subTest(rows=len(rows)), tempfile.TemporaryDirectory() as directory:
