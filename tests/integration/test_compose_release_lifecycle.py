@@ -375,8 +375,9 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert not scope["ok"] and scope["code"] == "compose-scope-violation"
         assert image_id() == prior_id and schema() == 140
         sql("UPDATE public.rc2_lifecycle_marker SET value='after-first-rollback' WHERE id=1")
+        # The restore put the contract migrations back in the pending plan, so the proposal lists them again.
         reconvergence = call("honua_propose_platform_release_convergence", {
-            "reason": "candidate convergence after verified rollback"}, 5)
+            "reason": "candidate convergence after verified rollback", "contractApproval": plan}, 5)
         next_target = reconvergence["targets"][0]
         next_proposal = next_target.get("proposalId")
         assert next_proposal, f"re-convergence did not produce a proposal: {next_target.get('outcome')}"

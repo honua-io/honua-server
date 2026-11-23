@@ -39,13 +39,42 @@ public sealed partial class McpPlatformOpsReaderTests
         output.Targets.Should().ContainSingle(target => target.TargetId == "compose-local" && target.ProposalId == "proposal-converge");
         output.Targets.Should().ContainSingle(target => target.TargetId == "ecs-remote" && target.Outcome == "blocked");
         gateway.ProposalCalls.Should().Be(1);
-        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:compose-local:contract:0123456789abcdef");
-        var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload)!;
+        var key = gateway.LastRequest!.IdempotencyKey;
+        key.Should().MatchRegex("^caller-key:compose-local:contract:[0-9a-f]{32}$");
+        var payload = DeployExecutionPayload.Parse(gateway.LastRequest!.ExecutionPayload)!;
         payload.ParameterOverrides.Should().BeEquivalentTo(new Dictionary<string, string>
         {
             [ComposeContractApproval.NonceParameterKey] = ListedContractNonce,
             [ComposeContractApproval.ScriptsParameterKey] = ListedContractScript
         });
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_DifferentContractPlan_GetsItsOwnProposalKey()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(options: ContractApprovalOptions(), services: services);
+
+        async Task<string?> KeyFor(string[] scripts, string nonce)
+        {
+            await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), new McpPlatformReleaseConvergenceArgument
+            {
+                IdempotencyKey = "caller-key",
+                ContractApproval = new McpContractApprovalArgument { Scripts = scripts, Nonce = nonce }
+            }, CancellationToken.None);
+            return gateway.LastRequest!.IdempotencyKey;
+        }
+
+        var listed = await KeyFor([ListedContractScript, "B.sql"], ListedContractNonce);
+        var reordered = await KeyFor(["B.sql", ListedContractScript], ListedContractNonce.ToLowerInvariant());
+        var corrected = await KeyFor([ListedContractScript], ListedContractNonce);
+        var renonced = await KeyFor([ListedContractScript, "B.sql"], "fedcba9876543210");
+
+        reordered.Should().Be(listed);
+        corrected.Should().NotBe(listed);
+        renonced.Should().NotBe(listed);
     }
 
     [UnitTheory]

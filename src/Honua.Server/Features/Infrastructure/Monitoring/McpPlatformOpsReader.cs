@@ -360,7 +360,7 @@ internal sealed class McpPlatformOpsReader(
             }
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                ConvergenceIdempotencyKey(requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", argument.ContractApproval),
+                ConvergenceIdempotencyKey(requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", contractApproval),
                 cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
@@ -380,9 +380,15 @@ internal sealed class McpPlatformOpsReader(
         return ComposeContractApproval.ToParameters(nonce!, scripts);
     }
 
-    // A proposal for a contract plan is a different request from the convergence it follows.
-    private static string ConvergenceIdempotencyKey(string key, McpContractApprovalArgument? approval)
-        => approval?.Nonce is { } nonce ? $"{key}:contract:{nonce.Trim().ToLowerInvariant()}" : key;
+    // A proposal for a contract plan is a different request from the convergence it follows, and a
+    // different script list or nonce is a different plan that needs its own approval.
+    private static string ConvergenceIdempotencyKey(string key, Dictionary<string, string>? contractApproval)
+    {
+        if (contractApproval is null) return key;
+        var scripts = contractApproval[ComposeContractApproval.ScriptsParameterKey].Split(',').Order(StringComparer.Ordinal);
+        var plan = contractApproval[ComposeContractApproval.NonceParameterKey].ToLowerInvariant() + "\n" + string.Join('\n', scripts);
+        return $"{key}:contract:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plan)))[..32].ToLowerInvariant()}";
+    }
 
     private async Task<McpProposeOperationOutput> ProposeDeployAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, string idempotencyPrefix, CancellationToken cancellationToken)
     {
