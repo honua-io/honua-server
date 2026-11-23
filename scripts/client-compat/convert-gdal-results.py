@@ -162,7 +162,6 @@ def build_envelope(
     run_date: str,
     server_version: str,
     environment: str,
-    details: list[dict] | None = None,
 ) -> dict:
     # Roll up every recognised category in `categories` onto its CERT-* ID,
     # aggregating with worst-status-wins. Categories the converter does not
@@ -198,14 +197,7 @@ def build_envelope(
             if status is None:
                 results.append(_result(cid, "skip", "Not exercised by GDAL/OGR suite in this run."))
             else:
-                result = _result(cid, status)
-                deltas = [row["measured_delta"] for row in details or []
-                          if PROTOCOL_MAP.get(row.get("protocol")) == cert_protocol
-                          and CATEGORY_MAP.get(row.get("category")) == cid
-                          and row.get("measured_delta") is not None]
-                if deltas:
-                    result["measured_delta"] = max(deltas)
-                results.append(result)
+                results.append(_result(cid, status))
         else:
             results.append(_result(cid, "not-applicable"))
 
@@ -230,6 +222,20 @@ def build_envelope(
         "cite_results": None,
         "extensions": [],
     }
+
+
+def _apply_measurements(envelope: dict, details: list[dict]) -> None:
+    deltas = {}
+    for row in details:
+        delta = row.get("measured_delta")
+        if delta is None or PROTOCOL_MAP.get(row.get("protocol")) != envelope["protocol"]:
+            continue
+        case_id = CATEGORY_MAP.get(row.get("category"))
+        deltas[case_id] = max(deltas.get(case_id, delta), delta)
+
+    for result in envelope["results"]:
+        if result["status"] != "not-applicable":
+            result["measured_delta"] = deltas.get(result["test_case_id"])
 
 
 def main() -> int:
@@ -272,8 +278,8 @@ def main() -> int:
             run_date=run_date,
             server_version=server_version,
             environment=environment,
-            details=report.get("details"),
         )
+        _apply_measurements(envelope, report.get("details") or [])
         out_path = output_dir / f"{run_id}-cli-gdal-{cert_protocol}.cert.json"
         out_path.write_text(json.dumps(envelope, indent=2) + "\n")
         print(f"Wrote {out_path}")

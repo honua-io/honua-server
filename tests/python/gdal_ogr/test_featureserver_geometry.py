@@ -27,5 +27,4 @@ class TestFeatureServerGeometry:
         for name, expected in SEEDED_POINTS.items():
             assert by_name[name] == pytest.approx(expected, rel=0, abs=1e-6), name
             max_delta = max(max_delta, *(abs(actual - target) for actual, target in zip(by_name[name], expected)))
-        evidence_collector.record("test_seeded_coordinates_round_trip", "featureserver", "geometry", "pass",
-                                  measured_delta=max_delta)
+        evidence_collector.record_geometry_delta("test_seeded_coordinates_round_trip", "featureserver", max_delta)

@@ -74,9 +74,9 @@ def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
     from tests.python.gdal_ogr.conftest import EvidenceCollector
 
     collector = EvidenceCollector()
-    collector.record("round_trip", "featureserver", "geometry", "pass", measured_delta=2e-8)
-    collector.record("round_trip_second", "featureserver", "geometry", "pass", measured_delta=4e-8)
-    collector.record("other_protocol", "wfs", "geometry", "pass", measured_delta=1.0)
+    collector.record_geometry_delta("round_trip", "featureserver", 2e-8)
+    collector.record_geometry_delta("round_trip_second", "featureserver", 4e-8)
+    collector.record_geometry_delta("other_protocol", "wfs", 1.0)
     report = tmp_path / "report.json"
     collector.write_report(report)
     output = tmp_path / "envelopes"

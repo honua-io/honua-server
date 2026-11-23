@@ -84,8 +84,6 @@ class EvidenceCollector:
         category: str,
         status: str,
         detail: str = "",
-        *,
-        measured_delta: float | None = None,
     ) -> None:
         self._records.append(
             _EvidenceRecord(
@@ -94,9 +92,11 @@ class EvidenceCollector:
                 category=category,
                 status=status,
                 detail=detail,
-                measured_delta=measured_delta,
             )
         )
+
+    def record_geometry_delta(self, test_name: str, protocol: str, delta: float) -> None:
+        self._records.append(_EvidenceRecord(test_name, protocol, "geometry", "pass", measured_delta=delta))
 
     def write_report(self, path: Path) -> None:
         protocols: dict[str, dict[str, str]] = {}
