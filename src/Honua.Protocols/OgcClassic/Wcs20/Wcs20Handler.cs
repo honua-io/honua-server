@@ -1787,16 +1787,19 @@ internal sealed partial class Wcs20Handler
     {
         error = default;
 
-        var subsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
-        var acquisition = raster.AcquisitionDate ?? raster.CreatedAt;
-
-        foreach (var rawValue in subsetValues)
+        var temporalSubsets = GetQueryValues(query, Wcs20Utilities.Parameters.Subset)
+            .OfType<string>()
+            .Where(value => !string.IsNullOrWhiteSpace(value) && IsTemporalSubset(value))
+            .ToList();
+        if (FindRepeatedTemporalAxis(temporalSubsets.Count) is { } repeated)
         {
-            if (string.IsNullOrWhiteSpace(rawValue) || !IsTemporalSubset(rawValue))
-            {
-                continue;
-            }
+            error = repeated;
+            return false;
+        }
 
+        var acquisition = raster.AcquisitionDate ?? raster.CreatedAt;
+        foreach (var rawValue in temporalSubsets)
+        {
             if (!TryParseTemporalSubset(rawValue, out var low, out var high))
             {
                 error = new WcsParameterError(
@@ -1827,6 +1830,15 @@ internal sealed partial class Wcs20Handler
 
         return true;
     }
+
+    // The temporal axis, like any axis, may be named once per request (aliases included).
+    private static WcsParameterError? FindRepeatedTemporalAxis(int temporalSubsetCount)
+        => temporalSubsetCount <= 1
+            ? null
+            : new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
+                "Duplicate phenomenonTime subset axis.",
+                Wcs20Utilities.Parameters.Subset);
 
     private static bool TryApplyTemporalAlias(
         IQueryCollection query,
