@@ -65,6 +65,49 @@ public sealed class WfsTransactionLimitTests : IAsyncLifetime
         await AssertRefusedAsync(actions, "Transaction", TransactionLimitMessage);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_InsertOverFeaturesPerEditLimit_IsRefused()
+    {
+        await AssertRefusedAsync(Insert(MaxFeaturesPerEdit + 1), "Insert", "Insert action exceeds the maximum of 2 features.");
+    }
+
+    [IntegrationTheory]
+    [InlineData("Update")]
+    [InlineData("Delete")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_FilterMatchingOverFeaturesPerEditLimit_IsRefused(string action)
+    {
+        var targets = await InsertTargetsAsync(MaxFeaturesPerEdit + 1);
+
+        var actions = action == "Update" ? Update(targets) : Delete(targets);
+
+        await AssertRefusedAsync(actions, "Filter", $"{action} action exceeds the maximum of 2 matched features.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_ExactlyAtTransactionLimit_IsCommitted()
+    {
+        var targets = await InsertTargetsAsync(1);
+        var featuresBefore = int.Parse(await CountFeaturesAsync(), CultureInfo.InvariantCulture);
+
+        using var content = new StringContent(
+            TransactionDocument(Insert(MaxFeaturesPerEdit) + Delete(targets)), Encoding.UTF8, "application/xml");
+        using var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var featuresAfter = int.Parse(await CountFeaturesAsync(), CultureInfo.InvariantCulture);
+        featuresAfter.Should().Be(featuresBefore + MaxFeaturesPerEdit - 1);
+    }
+
     private async Task<long[]> InsertTargetsAsync(int count)
     {
         var targets = new long[count];
@@ -106,6 +149,10 @@ public sealed class WfsTransactionLimitTests : IAsyncLifetime
         + string.Concat(Enumerable.Range(0, featureCount)
             .Select(index => $"<honua:{TypeName}><honua:name>limit-insert-{index}</honua:name>{InsertShape}</honua:{TypeName}>"))
         + "</wfs:Insert>";
+
+    private static string Update(IEnumerable<long> targets) =>
+        $"<wfs:Update typeName=\"{TypeName}\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference>"
+        + $"<wfs:Value>limit-updated</wfs:Value></wfs:Property>{ResourceFilter(targets)}</wfs:Update>";
 
     private static string Delete(IEnumerable<long> targets) =>
         $"<wfs:Delete typeName=\"{TypeName}\">{ResourceFilter(targets)}</wfs:Delete>";
