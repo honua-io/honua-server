@@ -164,7 +164,7 @@ public sealed class OgcClassicConformance8725Tests
             ["SCALEAXES"] = "z(2)"
         });
         Wcs20Handler.TryResolveScaling(scaleAxisQuery, 64, 64, out _, out _, out var scaleAxisError).Should().BeFalse();
-        scaleAxisError.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+        scaleAxisError.ExceptionCode.Should().Be(Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
     }
 
     [UnitTest]
