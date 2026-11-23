@@ -73,6 +73,39 @@ public sealed class GeometryInputBudgetTests
         Assert.Contains("8192", result.Body, StringComparison.Ordinal);
     }
 
+    private const string GeometryServerPath = "/rest/services/Utilities/Geometry/GeometryServer/";
+
+    [UnitTheory]
+    [InlineData("intersect", "geometries", "POST")]
+    [InlineData("intersect", "geometry", "POST")]
+    [InlineData("cut", "cutter", "POST")]
+    [InlineData("relation", "geometries2", "GET")]
+    public async Task GeometryServerGeometryField_OverTextLimit_IsBoundedByGeometrySize(string operation, string name, string method)
+    {
+        var geometry = DetailedPolygon();
+        Assert.True(geometry.Length > 8192);
+        var path = GeometryServerPath + operation;
+
+        var admitted = await InvokeAsync(geometry, method, declared: false, name: name, path: path);
+        var oversized = await InvokeAsync(geometry, method, declared: false, name: name, path: path, maxBytes: 8193);
+
+        Assert.True(admitted.Passed, admitted.Body);
+        Assert.Equal(geometry, admitted.ForwardedValue);
+        Assert.False(oversized.Passed);
+        Assert.Contains("Limits:Geometry:MaxGeometrySize", oversized.Body, StringComparison.Ordinal);
+    }
+
+    [UnitTheory]
+    [InlineData(GeometryServerPath + "buffer", "distances")]
+    [InlineData("/rest/services/test/GPServer/execute", "geometries")]
+    public async Task NonGeometryServerGeometryField_OverTextLimit_IsRejected(string path, string name)
+    {
+        var result = await InvokeAsync(new string('1', 8193), declared: false, name: name, path: path);
+
+        Assert.False(result.Passed);
+        Assert.Contains("8192", result.Body, StringComparison.Ordinal);
+    }
+
     [UnitTest]
     public async Task FeatureServerWhere_OverProtocolPayloadLimit_IsRejected()
     {
