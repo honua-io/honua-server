@@ -16,6 +16,7 @@ internal static class OgcClassicRequestHelpers
     internal const int DefaultFeatureInfoTolerancePixels = 3;
     internal const string PngMimeType = "image/png";
     internal const string PlainTextMimeType = "text/plain";
+    internal const string HtmlMimeType = "text/html";
     internal const string JsonMimeType = "application/json";
 
     // WMS GetFeatureInfo GML output. WMS 1.1.1 (OGC 01-068r3) requires the
@@ -82,6 +83,16 @@ internal static class OgcClassicRequestHelpers
         }
 
         return value.ToString() ?? string.Empty;
+    }
+
+    internal static string? NormalizeWmsFeatureInfoFormat(string? format)
+    {
+        if (string.Equals(format, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
+        {
+            return HtmlMimeType;
+        }
+
+        return TryNormalizeFeatureInfoFormat(format, out var normalizedFormat) ? normalizedFormat : null;
     }
 
     internal static bool TryNormalizeFeatureInfoFormat(string? format, out string normalizedFormat)

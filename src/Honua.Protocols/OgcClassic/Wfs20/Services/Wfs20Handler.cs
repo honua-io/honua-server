@@ -126,6 +126,7 @@ internal sealed partial class Wfs20Handler
         string? wfsVersion = null)
     {
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
+        var perTypeCqlFilters = WfsCqlFilterHelper.ResolvePerTypeFilters(WfsCqlFilterHelper.Current, filter, featureTypes.Count);
 
         // The per-feature-type query build + count has no cross-type dependency, so run
         // every feature type's build+count pair concurrently instead of one at a time.
@@ -133,8 +134,9 @@ internal sealed partial class Wfs20Handler
         // on how much of the offset/count budget prior types in request order
         // consumed), so that accounting still runs as a second, I/O-free pass over the
         // precomputed results in the original order.
-        var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
+        var perTypeResults = await Task.WhenAll(featureTypes.Select(async (featureType, index) =>
         {
+            using var typeCqlScope = WfsCqlFilterHelper.BeginScope(perTypeCqlFilters?[index]);
             var query = await BuildFeatureQueryAsync(
                 featureType,
                 propertyName,
@@ -228,7 +230,10 @@ internal sealed partial class Wfs20Handler
         var resource = descriptor.Resource;
         var projectedFields = ResolveProjectedFields(resource, propertyName);
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
-        var sqlFilter = TranslateFesFilter(resource, normalizedFilter);
+        var cqlFilter = WfsCqlFilterHelper.Current;
+        var sqlFilter = !string.IsNullOrWhiteSpace(cqlFilter)
+            ? WfsCqlFilterHelper.Translate(_filterExpressionService, resource, (cqlFilter, normalizedFilter))
+            : TranslateFesFilter(resource, normalizedFilter);
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
@@ -927,6 +932,7 @@ internal sealed partial class Wfs20Handler
         AppendQueryPart(queryParts, "SORTBY", sortBy);
         AppendQueryPart(queryParts, "BBOX", bbox);
         AppendQueryPart(queryParts, "FILTER", filter);
+        AppendQueryPart(queryParts, "CQL_FILTER", WfsCqlFilterHelper.Current);
         AppendQueryPart(queryParts, "RESOURCEID", resourceId);
         AppendQueryPart(queryParts, "PROPERTYNAME", propertyName);
         AppendQueryPart(queryParts, "SRSNAME", srsName);
@@ -2056,7 +2062,7 @@ internal sealed partial class Wfs20Handler
         int ReturnedCount,
         string NumberMatchedSummary);
 
-    private sealed class WfsQueryException(
+    internal sealed class WfsQueryException(
         string exceptionCode,
         string message,
         string? locator = null) : Exception(message)

@@ -421,7 +421,9 @@ internal static partial class WmsRequestHandlers
 
         sb.AppendLine("      <GetMap>");
         sb.AppendLine("        <Format>image/png</Format>");
+        sb.AppendLine("        <Format>image/png8</Format>");
         sb.AppendLine("        <Format>image/jpeg</Format>");
+        sb.AppendLine("        <Format>image/webp</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
         sb.AppendLine("            <Get>");
@@ -433,6 +435,7 @@ internal static partial class WmsRequestHandlers
 
         sb.AppendLine("      <GetFeatureInfo>");
         sb.AppendLine("        <Format>text/plain</Format>");
+        sb.AppendLine("        <Format>text/html</Format>");
         sb.AppendLine("        <Format>application/vnd.ogc.gml</Format>");
         sb.AppendLine("        <Format>application/json</Format>");
         sb.AppendLine("        <DCPType>");

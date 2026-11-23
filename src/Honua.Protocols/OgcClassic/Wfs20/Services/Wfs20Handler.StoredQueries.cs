@@ -435,17 +435,17 @@ internal sealed partial class Wfs20Handler
 
         descriptor = (await WithCallerMasksAsync(context, [descriptor], cancellationToken).ConfigureAwait(false))[0];
 
-        var query = await BuildFeatureQueryAsync(
-            descriptor,
-            propertyName: null,
-            sortBy: null,
-            bbox: null,
-            filter: null,
-            resourceId: featureId,
-            srsName: null,
-            enforceResourceIdTypeMatch: true,
-            requireResourceIdQualifier: false,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        FeatureQuery query;
+        try
+        {
+            using var cqlScope = WfsCqlFilterHelper.BeginScope(
+                WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.GetRequestCqlFilter(context), null));
+            query = await BuildStoredFeatureQueryAsync(descriptor, featureId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (WfsQueryException ex)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(context, ex.ExceptionCode, ex.Message, ex.Locator);
+        }
 
         var reader = await ResolveQueryReaderAsync(descriptor, cancellationToken).ConfigureAwait(false);
         var limitedQuery = query with { Limit = 1 };
@@ -465,6 +465,24 @@ internal sealed partial class Wfs20Handler
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
     }
 
+
+    private async ValueTask<FeatureQuery> BuildStoredFeatureQueryAsync(
+        WfsFeatureTypeDescriptor descriptor,
+        string featureId,
+        CancellationToken cancellationToken)
+    {
+        return await BuildFeatureQueryAsync(
+            descriptor,
+            propertyName: null,
+            sortBy: null,
+            bbox: null,
+            filter: null,
+            resourceId: featureId,
+            srsName: null,
+            enforceResourceIdTypeMatch: true,
+            requireResourceIdQualifier: false,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<IResult> HandleManagedStoredQueryGetFeatureAsync(
         HttpContext context,
@@ -492,6 +510,11 @@ internal sealed partial class Wfs20Handler
         }
 
         var resolvedFilter = ResolveManagedStoredQueryFilter(definition, context);
+        if (RejectCqlOnFilteredStoredQuery(context, definition.Id, resolvedFilter) is { } cqlConflict)
+        {
+            return cqlConflict;
+        }
+
         return await HandleGetFeatureAsync(
             context,
             resolvedTypeNames,
@@ -508,6 +531,22 @@ internal sealed partial class Wfs20Handler
             cancellationToken).ConfigureAwait(false);
     }
 
+    // A stored query's own filter is FES; CQL_FILTER cannot be combined with it, and the generic
+    // "FILTER and CQL_FILTER" message would name a FILTER the caller never sent.
+    private static IResult? RejectCqlOnFilteredStoredQuery(HttpContext context, string storedQueryId, string? storedQueryFilter)
+    {
+        if (string.IsNullOrWhiteSpace(storedQueryFilter) ||
+            string.IsNullOrWhiteSpace(WfsCqlFilterHelper.GetRequestCqlFilter(context)))
+        {
+            return null;
+        }
+
+        return Wfs20ErrorResults.CreateBadRequest(
+            context,
+            "InvalidParameterValue",
+            $"Stored query '{storedQueryId}' defines its own filter, so CQL_FILTER cannot be added to it.",
+            "cql_filter");
+    }
 
     private static string? ResolveManagedStoredQueryTypeNames(StoredQueryDefinition definition, string? typeNames)
     {

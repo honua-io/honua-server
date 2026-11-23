@@ -289,6 +289,7 @@ internal static class Wfs20DispatcherEndpoint
                 var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
                 var bbox = parameters.Get(Wfs20Utilities.ParameterNames.BBox);
                 var filter = parameters.Get(Wfs20Utilities.ParameterNames.Filter);
+                WfsCqlFilterHelper.SetRequestCqlFilter(context, parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter));
                 var featureId = parameters.Get(
                     Wfs20Utilities.ParameterNames.FeatureId,
                     Wfs20Utilities.ParameterNames.ResourceId);
@@ -541,6 +542,7 @@ internal static class Wfs20DispatcherEndpoint
             var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
             var bbox = parameters.Get(Wfs20Utilities.ParameterNames.BBox);
             var filter = parameters.Get(Wfs20Utilities.ParameterNames.Filter);
+            WfsCqlFilterHelper.SetRequestCqlFilter(context, parameters.Get(Wfs20Utilities.ParameterNames.CqlFilter));
             var resourceId = parameters.Get(
                 Wfs20Utilities.ParameterNames.ResourceId,
                 Wfs20Utilities.ParameterNames.FeatureId);

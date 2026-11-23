@@ -32,6 +32,7 @@ internal sealed partial class Wfs20Handler
         string? resultType,
         CancellationToken cancellationToken = default)
     {
+        using var cqlScope = WfsCqlFilterHelper.BeginScope(WfsCqlFilterHelper.GetRequestCqlFilter(context));
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             "wfs20.get_feature", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
@@ -164,6 +165,8 @@ internal sealed partial class Wfs20Handler
                     .ConfigureAwait(false);
                 if (ReaderSupportsPagedGetFeatureFastPath(resolvedReader, normalizedFormat))
                 {
+                    using var singleCqlScope = WfsCqlFilterHelper.BeginScope(
+                        WfsCqlFilterHelper.ResolveSingleTypeFilter(WfsCqlFilterHelper.Current, filter));
                     var query = (await BuildFeatureQueryAsync(
                         descriptor,
                         propertyName,
@@ -344,6 +347,7 @@ internal sealed partial class Wfs20Handler
         bool isHitsRequest,
         CancellationToken cancellationToken)
     {
+        WfsCqlFilterHelper.EnsureSingleExpressionForXmlQueries(WfsCqlFilterHelper.Current);
         var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
         if (ValidateQueryCount(context, xmlQueries, publishedTypes) is { } queryCountError)
         {

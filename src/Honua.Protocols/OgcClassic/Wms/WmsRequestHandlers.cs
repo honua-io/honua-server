@@ -715,15 +715,28 @@ internal static partial class WmsRequestHandlers
         IQueryCollection query,
         WmsLayer[] layers)
     {
-        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter
-        // (semicolon-delimited FES XML per layer).
         var filterParam = GetQueryValue(query, "FILTER");
-        if (string.IsNullOrWhiteSpace(filterParam))
+        var cqlFilterParam = GetQueryValue(query, "CQL_FILTER");
+        var hasFesFilter = !string.IsNullOrWhiteSpace(filterParam);
+        var hasCqlFilter = !string.IsNullOrWhiteSpace(cqlFilterParam);
+
+        if (!hasFesFilter && !hasCqlFilter)
         {
             return (null, null);
         }
 
-        var filterTokens = SplitWmsFilterTokens(filterParam);
+        if (hasFesFilter && hasCqlFilter)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                "FILTER and CQL_FILTER cannot be combined in the same request."));
+        }
+
+        if (hasCqlFilter)
+        {
+            return ParseWmsCqlLayerFilters(context, layers, cqlFilterParam!);
+        }
+
+        var filterTokens = SplitWmsFilterTokens(filterParam!);
         if (filterTokens.Length != 1 && filterTokens.Length != layers.Length)
         {
             return (null, CreateWmsServiceException(context, "InvalidParameterValue",
@@ -1005,29 +1018,15 @@ internal static partial class WmsRequestHandlers
 
     private static bool TryNormalizeWmsMapFormat(string value, out string imageFormat, out string contentType)
     {
-        imageFormat = string.Empty;
-        contentType = string.Empty;
-
-        var normalized = value.Trim();
-        if (string.Equals(normalized, "image/png", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "png", StringComparison.OrdinalIgnoreCase))
+        (imageFormat, contentType) = value.Trim().ToLowerInvariant() switch
         {
-            imageFormat = "png";
-            contentType = "image/png";
-            return true;
-        }
-
-        if (string.Equals(normalized, "image/jpeg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "image/jpg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "jpeg", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "jpg", StringComparison.OrdinalIgnoreCase))
-        {
-            imageFormat = "jpg";
-            contentType = "image/jpeg";
-            return true;
-        }
-
-        return false;
+            "image/png" or "png" => ("png", "image/png"),
+            "image/png8" or "png8" or "image/png; mode=8bit" or "image/png;mode=8bit" => ("png8", "image/png"),
+            "image/jpeg" or "image/jpg" or "jpeg" or "jpg" => ("jpg", "image/jpeg"),
+            "image/webp" or "webp" => ("webp", "image/webp"),
+            _ => (string.Empty, string.Empty)
+        };
+        return imageFormat.Length > 0;
     }
 
     private static bool IsSupportedWmsExceptionFormat(string? exceptionsValue)
@@ -1375,7 +1374,7 @@ internal static partial class WmsRequestHandlers
                     return;
                 }
 
-                surface.Canvas.Clear(imageFormat == "png" ? SKColors.Transparent : SKColors.White);
+                surface.Canvas.Clear(!string.Equals(imageFormat, "jpg", StringComparison.OrdinalIgnoreCase) ? SKColors.Transparent : SKColors.White);
                 if (isInImage)
                 {
                     var textSize = Math.Max(12, Math.Min(width, height) / 12f);

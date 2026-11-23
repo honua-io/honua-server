@@ -119,7 +119,13 @@ internal static partial class WmsRequestHandlers
 
         if (!TryNormalizeWmsMapFormat(formatValue, out var imageFormat, out var contentType))
         {
-            return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png or image/jpeg.");
+            return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png, image/png8, image/jpeg, or image/webp.");
+        }
+
+        var (requestedDpi, formatOptionsError) = ParseWmsFormatOptionsDpi(GetQueryValue(query, "FORMAT_OPTIONS"));
+        if (formatOptionsError is not null)
+        {
+            return CreateWmsServiceException(context, "InvalidParameterValue", formatOptionsError);
         }
 
         var exceptionsValue = GetQueryValue(query, "EXCEPTIONS");
@@ -194,7 +200,7 @@ internal static partial class WmsRequestHandlers
         AppendWmsWarnings(context, temporalResult.Warnings);
         activity?.SetTag("wms.time_applied", layerTemporalFilters is not null);
 
-        var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
+        var effectiveTransparent = transparent && !string.Equals(imageFormat, "jpg", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
             .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
@@ -240,16 +246,18 @@ internal static partial class WmsRequestHandlers
 
         var canvas = surface.Canvas;
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
-        var transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
 
-        // BBOX + WIDTH/HEIGHT + CRS fix the scale the map is drawn at, which is what a style's
-        // minzoom/maxzoom is authored against.
+        var (transformFn, zoomImageWidth, zoomImageHeight) = PrepareDpiCanvas(
+            canvas, (requestedExtent, imageWidth, imageHeight), requestedDpi);
+
+        // BBOX + WIDTH/HEIGHT + CRS (and optional FORMAT_OPTIONS=dpi:) fix the scale the map is
+        // drawn at, which is what a style's minzoom/maxzoom is authored against.
         var renderZoom = await DeriveRenderZoomAsync(
             context,
             requestedExtent,
             requestSrid,
-            imageWidth,
-            imageHeight,
+            zoomImageWidth,
+            zoomImageHeight,
             cancellationToken).ConfigureAwait(false);
         activity?.SetTag("wms.render_zoom", renderZoom.Level);
 
@@ -260,10 +268,10 @@ internal static partial class WmsRequestHandlers
 
             if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
             {
-                totalFeatureCount += await TryDrawWmsRasterLayerAsync(
-                    context,
-                    (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
-                    cancellationToken).ConfigureAwait(false);
+                var rasterTarget = (canvas, (layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight));
+                totalFeatureCount += requestedDpi.HasValue
+                    ? await DrawWmsRasterLayerUnscaledAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false)
+                    : await TryDrawWmsRasterLayerAsync(context, rasterTarget, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -320,7 +328,8 @@ internal static partial class WmsRequestHandlers
                 layer,
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
-            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+            // The point fast path draws in device pixels, so a dpi-scaled canvas takes the general path.
+            var renderedPointCount = requestedDpi.HasValue ? -1 : await TryRenderRasterPointFastPathAsync(
                 canvas,
                 layerReader,
                 layer.StorageLayerId,
