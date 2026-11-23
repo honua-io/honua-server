@@ -383,13 +383,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             var result = await PostgresMigrationDeadlockRetry.RunAsync(CreateUpgrader, cancellationToken)
                 .ConfigureAwait(false);
-            var appliedScripts = result.Scripts.Select(script => script.Name).ToArray();
-
             if (!result.Successful)
             {
+                // One transaction covers every pending script, so a failed run committed none of them.
                 var error = result.Error ?? new InvalidOperationException("Database migration failed.");
-                return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage, appliedScripts);
+                return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage);
             }
+
+            var appliedScripts = result.Scripts.Select(script => script.Name).ToArray();
 
             // Record the forward-compatibility declaration an older rollback reader re-verifies.
             // The planning engine still has the pre-upgrade journal cache, so load the journal
