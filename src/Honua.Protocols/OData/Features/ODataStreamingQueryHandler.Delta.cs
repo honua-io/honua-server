@@ -103,9 +103,9 @@ internal sealed partial class ODataStreamingQueryHandler
         else
         {
             var (featureQuery, error) = await _querySearchService.BuildFeatureQueryAsync(
-                query.Filter, query.OrderBy, pageSize, 0, resource,
+                query.Filter, query.OrderBy, pageSize, 0, new(resource, context),
                 query.Select, null, true, query.Compute, query.Format, null, publicLayerId: query.LayerId,
-                cancellationToken: cancellationToken, context: context).ConfigureAwait(false);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (error is not null)
             {
                 return DeltaRecovery(context, "InvalidQuery", error, 400);

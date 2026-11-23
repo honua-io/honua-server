@@ -61,7 +61,7 @@ public sealed class ODataExpandValidationTests
     [InlineData("ChildRows_rrel($select=name)")]
     [InlineData("*")]
     public async Task FindInvalidExpandAsync_DeclaredRawSanitisedOrWildcard_IsAccepted(string expand)
-        => (await CreateService().FindInvalidExpandAsync(expand, Parent, CancellationToken.None)).Should().BeNull();
+        => (await CreateService().FindInvalidExpandAsync(expand, new(Parent), CancellationToken.None)).Should().BeNull();
 
     [Fact]
     public async Task ProcessExpandAsync_NavigationPropertyOfAnotherLayer_IsAnEmptyCollection()
@@ -87,9 +87,9 @@ public sealed class ODataExpandValidationTests
             adapter, Substitute.For<IQueryProcessor>());
         var facade = new ODataQuerySearchService(query, CreateService(query, crs), crs);
 
-        var (_, expandError) = await facade.BuildFeatureQueryAsync(null, null, 10, 0, Parent, expand: "NoSuchRelation");
+        var (_, expandError) = await facade.BuildFeatureQueryAsync(null, null, 10, 0, new(Parent), expand: "NoSuchRelation");
         var (_, sridError) = await facade.BuildFeatureQueryAsync(
-            "geo.intersects(Geometry,geography'SRID=999999;POINT(0 0)')", null, 10, 0, Parent);
+            "geo.intersects(Geometry,geography'SRID=999999;POINT(0 0)')", null, 10, 0, new(Parent));
 
         expandError.Should().Contain("not a navigation property");
         sridError.Should().Contain("999999");

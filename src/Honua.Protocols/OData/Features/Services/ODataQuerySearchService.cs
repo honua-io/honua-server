@@ -30,7 +30,7 @@ internal sealed class ODataQuerySearchService
         string? orderby,
         int? resultRecordCount,
         int? resultOffset,
-        MetadataV2Object resource,
+        ODataQueryResource scope,
         string? select = null,
         string? expand = null,
         bool? count = null,
@@ -38,12 +38,11 @@ internal sealed class ODataQuerySearchService
         string? format = null,
         BoundingBox? bbox = null,
         int? publicLayerId = null,
-        CancellationToken cancellationToken = default,
-        HttpContext? context = null)
+        CancellationToken cancellationToken = default)
     {
         var validationError = await ODataGeometrySridGuard
             .FindUnsupportedSridErrorAsync(_crsRegistry, [filter], cancellationToken).ConfigureAwait(false)
-            ?? await _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken, context).ConfigureAwait(false);
+            ?? await _searchService.FindInvalidExpandAsync(expand, scope, cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
             return (new FeatureQuery(), validationError);
@@ -54,7 +53,7 @@ internal sealed class ODataQuerySearchService
             orderby,
             resultRecordCount,
             resultOffset,
-            resource,
+            scope.Resource,
             select,
             expand,
             count,

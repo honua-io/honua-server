@@ -6,10 +6,12 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
+internal readonly record struct ODataQueryResource(MetadataV2Object Resource, HttpContext? Context = null);
+
 internal sealed partial class ODataSearchService
 {
     // Match the request-visible publications used to build the shared Feature type in $metadata.
-    internal async Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken, HttpContext? context = null)
+    internal async Task<string?> FindInvalidExpandAsync(string? expand, ODataQueryResource scope, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(expand))
         {
@@ -26,9 +28,9 @@ internal sealed partial class ODataSearchService
             return exception.Message;
         }
 
-        var resources = context is null
-            ? [resource]
-            : (await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, cancellationToken).ConfigureAwait(false))
+        var resources = scope.Context is null
+            ? [scope.Resource]
+            : (await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(scope.Context, cancellationToken).ConfigureAwait(false))
                 .Select(publication => publication.Resource).ToArray();
         var known = resources.SelectMany(NavigationPropertyNames).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unknown = requested.Keys.FirstOrDefault(name => name != "*" && !known.Contains(name));

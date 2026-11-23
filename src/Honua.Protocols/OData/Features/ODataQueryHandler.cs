@@ -542,14 +542,14 @@ internal sealed partial class ODataQueryHandler(
                 orderby,
                 pagination.Limit,
                 pagination.Offset,
-                resource,
+                new(resource, context),
                 select,
                 expand,
                 count,
                 compute,
                 format,
                 bbox,
-                publicLayerId: publicLayerId, cancellationToken: effectiveToken, context: context);
+                publicLayerId: publicLayerId, cancellationToken: effectiveToken);
 
             if (queryError != null)
             {
@@ -807,14 +807,14 @@ internal sealed partial class ODataQueryHandler(
             orderby,
             resultRecordCount: null,
             resultOffset: null,
-            resource,
+            new(resource, context),
             select,
             expand,
             count,
             compute,
             format,
             bbox,
-            publicLayerId: publicLayerId, cancellationToken: cancellationToken, context: context);
+            publicLayerId: publicLayerId, cancellationToken: cancellationToken);
         if (queryError != null)
         {
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
