@@ -49,8 +49,8 @@ public sealed partial class McpScopeAuthorizationTests
     [IntegrationTheory]
     [InlineData(false, "admin", true)]
     [InlineData(true, "admin", true)]
-    [InlineData(false, "user", false)]
-    [InlineData(true, "user", false)]
+    [InlineData(false, ScopeHost.CatalogReader, false)]
+    [InlineData(true, ScopeHost.CatalogReader, false)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
@@ -58,6 +58,15 @@ public sealed partial class McpScopeAuthorizationTests
     {
         var token = CreateToken("honua.mcp.full", role);
         await AssertCapabilitiesDiscoveredAsync(token, modern);
+
+        using var normalResponse = await SendDiscoveryAsync(
+            "\"name\":\"honua_list_capabilities\",\"arguments\":{}", token, modern);
+        normalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var normalDocument = await ReadJsonAsync(normalResponse);
+        var normalResult = normalDocument.RootElement.GetProperty("result");
+        IsToolError(normalResult).Should().BeFalse("the caller has ordinary catalog discovery access");
+        normalResult.GetProperty("structuredContent").GetProperty("serverName").GetString()
+            .Should().NotBeNullOrWhiteSpace();
 
         using var response = await SendDiscoveryAsync(
             "\"name\":\"honua_list_capabilities\",\"arguments\":{\"fullExport\":true}", token, modern);
@@ -83,7 +92,9 @@ public sealed partial class McpScopeAuthorizationTests
         using var response = await SendDiscoveryAsync(string.Empty, token, modern);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = await ReadJsonAsync(response);
-        document.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("_meta").GetProperty("view").GetString().Should().Be("setup");
+        result.GetProperty("tools").EnumerateArray()
             .Select(tool => tool.GetProperty("name").GetString()).Should().Contain("honua_list_capabilities");
     }
 
@@ -96,7 +107,7 @@ public sealed partial class McpScopeAuthorizationTests
         var separator = modern && parameters.Length > 0 ? "," : string.Empty;
         var body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method
             + "\",\"params\":{" + parameters + separator + metadata + "}}";
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp?view=default")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp?view=setup")
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };

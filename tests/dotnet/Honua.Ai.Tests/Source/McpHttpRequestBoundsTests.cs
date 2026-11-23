@@ -89,8 +89,11 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
         if (modern)
         {
             response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
-            body = body.Split('\n')
-                .Single(line => line.StartsWith("data: ", StringComparison.Ordinal))["data: ".Length..];
+            const string eventStart = "event: message\ndata: ";
+            const string eventEnd = "\n\n";
+            body = body.ReplaceLineEndings("\n");
+            body.Should().StartWith(eventStart).And.EndWith(eventEnd);
+            body = body[eventStart.Length..^eventEnd.Length];
         }
 
         using var document = JsonDocument.Parse(body);

@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -42,6 +44,8 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
     // host serves them all.
     public sealed class ScopeHost : IAsyncLifetime
     {
+        internal const string CatalogReader = "mcp-scope-test-catalog-reader";
+
         internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -59,7 +63,25 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
                 builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
             });
 
-        public Task InitializeAsync() => Fixture.InitializeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            using var scope = Fixture.Services.CreateScope();
+            var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+            await roles.CreateRoleAsync(new RoleDefinition
+            {
+                Name = CatalogReader,
+                Permissions =
+                [
+                    new PermissionGrant
+                    {
+                        Service = nameof(OperatorResourceType.Catalog),
+                        Layer = "*",
+                        Operation = nameof(OperatorOperation.Discover),
+                    },
+                ],
+            });
+        }
 
         public Task DisposeAsync() => Fixture.DisposeAsync();
     }
