@@ -50,6 +50,13 @@ class ContainerVersionTests(unittest.TestCase):
         self.assertEqual(workflow.count('org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}'), 6)
         self.assertEqual(workflow.count('index:org.opencontainers.image.version=${IMAGE_VERSION}'), 3)
 
+    def test_customer_quickstart_is_packaged_with_the_image_platform_version(self):
+        workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
+        step = workflow.split('- name: Package immutable customer quickstart', 1)[1].split('- uses:', 1)[0]
+        self.assertIn('PLATFORM_VERSION: ${{ needs.select-candidate.outputs.version }}', step)
+        self.assertIn('--version "$PLATFORM_VERSION"', step)
+        self.assertNotIn('nightly-${CANDIDATE_SHA7}', step)
+
     def test_handoff_handles_existing_images_and_older_workflow_inputs(self):
         workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
         handoff = workflow.split('          # One build per candidate:', 1)[1].split('          {\n', 1)[0]
