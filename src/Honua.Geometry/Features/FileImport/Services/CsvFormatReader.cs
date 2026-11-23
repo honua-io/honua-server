@@ -172,7 +172,7 @@ internal static class CsvFormatReader
             }
 
             dataRowNumber++;
-            if (fields.Skip(headers.Length).Any(static field => !string.IsNullOrWhiteSpace(field)))
+            if (fields.Count > headers.Length && fields.Skip(headers.Length).Any(static field => !string.IsNullOrWhiteSpace(field)))
             {
                 diagnostics?.RecordExtraFields();
             }

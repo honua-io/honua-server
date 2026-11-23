@@ -74,8 +74,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         OutputSchema = McpToolOutputSchemas.IngestDatasetOutputSchema,
         // Write tool: it creates a table in the catalog database (a person's call may replace one).
         // Not destructive (it loads data rather than destroying published state).
-        // Not idempotent: a replay re-runs the import (and any address geocoding)
-        // and replaces the staged dataset.
+        // Not idempotent: a replay re-runs the import (and any address geocoding); a person's
+        // replay replaces the dataset and an agent's is refused because the dataset exists.
         Annotations = McpToolAnnotationSets.Write("Ingest dataset", destructive: false, idempotent: false)
     };
 

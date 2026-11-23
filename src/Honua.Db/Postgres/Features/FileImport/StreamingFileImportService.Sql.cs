@@ -291,6 +291,17 @@ internal sealed partial class StreamingFileImportService
         return familyViews;
     }
 
+    // A target created while the source was read loses the same way as the up-front existence check.
+    private static async Task ThrowIfCreateOnlyTargetExistsAsync(
+        NpgsqlTransaction transaction, StagingPromotion promotion, CancellationToken cancellationToken)
+    {
+        if (promotion.LoadMode == ImportLoadMode.CreateOnly
+            && await ImportTableExistsAsync(transaction.Connection!, promotion.Schema, promotion.Table, cancellationToken, transaction))
+        {
+            throw new ImportTargetExistsException();
+        }
+    }
+
     private async Task SwapStagingTableAsync(
         NpgsqlConnection connection, StagingPromotion promotion, CancellationToken cancellationToken)
     {
@@ -299,6 +310,7 @@ internal sealed partial class StreamingFileImportService
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            await ThrowIfCreateOnlyTargetExistsAsync(transaction, promotion, cancellationToken);
             await ValidatePromotionIdentityAsync(
                 connection, transaction, schemaName, tableName, expectedIdentity, cancellationToken);
             var previousType = expectedIdentity is null ? null : await ReadImportedGeometryTypeAsync(

@@ -769,10 +769,19 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // explanation and includes the SQL state code so operators can correlate
             // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            var failure = DescribePostgresFailure(ex, request);
-            errorMessage = failure.Message;
-            result = ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson, errorMessage,
-                stopwatch.Elapsed, warnings, failure.Code);
+            errorMessage = ImportTargetDependencies.IsFailure(ex)
+                ? ImportTargetDependencies.Message
+                : ex.SqlState == "HN409"
+                ? $"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import."
+                : $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings,
+                errorCode: ImportTargetDependencies.IsFailure(ex) ? ImportTargetDependencies.Code
+                    : ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
             return result;
         }
         // Intentionally broad: this is the top-level import job handler — any unexpected failure
@@ -833,25 +842,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     errorMessage ?? "Unknown error", stopwatch.Elapsed.TotalMilliseconds, bytesRead);
             }
         }
-    }
-
-    private static (string Message, string? Code) DescribePostgresFailure(Npgsql.PostgresException ex, ImportRequest request)
-    {
-        if (ImportTargetDependencies.IsFailure(ex))
-        {
-            return (ImportTargetDependencies.Message, ImportTargetDependencies.Code);
-        }
-        if (ex.SqlState == "HN409")
-        {
-            return ($"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import.",
-                ImportTableOwnershipException.Code);
-        }
-        // A create-only promotion onto a table created during the load loses like the up-front existence check.
-        if (ex.SqlState == Npgsql.PostgresErrorCodes.DuplicateTable && request.EffectiveLoadMode == ImportLoadMode.CreateOnly)
-        {
-            return (ImportTargetExistsException.SafeMessage, ImportValidationErrorCodes.TargetExists);
-        }
-        return ($"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).", null);
     }
 
     private static string DescribePostgresError(string? sqlState) => sqlState switch

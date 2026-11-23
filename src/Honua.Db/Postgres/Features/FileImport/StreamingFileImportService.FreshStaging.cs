@@ -133,7 +133,7 @@ internal sealed partial class StreamingFileImportService
     // Other load modes keep a CSV row whose geometry could not be parsed or geocoded, without a
     // geometry, and ignore fields beyond the header. A create-only dataset must be complete, so a
     // missing geometry source or any such row refuses the import. Blank coordinate or WKT cells
-    // stay allowed; a blank address counts as an address that could not be geocoded.
+    // stay allowed, a blank address counts as not geocoded, and a row with no values is a blank line.
     private static void ThrowIfCreateOnlyCsvIncomplete(CsvGeometryDiagnostics diagnostics)
     {
         if (!diagnostics.GeometrySourceMapped)
