@@ -57,7 +57,8 @@ database (`FeatureChangePrefix` in Honua.Db):
   read the horizon. A caller therefore sees changes committed before it asked; under a
   long import it gets the older, still-safe horizon. Reconcile analyses only DEFAULT changes up
   to the horizon it then records as the ancestor, so a later reconcile neither repeats nor
-  misses a change.
+  misses a change. An update overlap whose base image still equals the live DEFAULT row (for
+  example after a version-wins rebase) is not a conflict.
 - Version post waits, with no time limit and ignoring request cancellation once committed (the old
   global writer lock blocked it as long), for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.

@@ -456,11 +456,7 @@ internal sealed partial class PostgresVersionManager
         CancellationToken cancellationToken)
     {
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
-        await using (var publisher = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
-        {
-            // The repeatable-read snapshot below reads the committed prefix; advance it first.
-            _ = await FeatureChangePrefix.SettleAsync(publisher, cancellationToken).ConfigureAwait(false);
-        }
+        await AdvancePrefixAsync(cancellationToken).ConfigureAwait(false);
 
         // OpenTransactionAsync sets search_path before BEGIN, so the first statement starts the snapshot.
         var (txConnection, dbTransaction) = await _connectionProvider
@@ -555,6 +551,11 @@ internal sealed partial class PostgresVersionManager
             var versionFields = ParseAttributes(versionAttrs);
 
             var defaultChangedFields = ChangedFields(baseFields, defaultFields);
+            if (DefaultMatchesBase(defaultChangedFields, baseGeom, defaultGeom))
+            {
+                continue;
+            }
+
             var versionChangedFields = ChangedFields(baseFields, versionFields);
             var overlappingFields = defaultChangedFields.Intersect(versionChangedFields, StringComparer.Ordinal).ToArray();
 
@@ -1008,6 +1009,17 @@ internal sealed partial class PostgresVersionManager
             return ImmutableDictionary<string, JsonElement>.Empty;
         }
     }
+
+    // The repeatable-read analysis snapshot reads the committed prefix; advance it first.
+    private async Task AdvancePrefixAsync(CancellationToken cancellationToken)
+    {
+        await using var publisher = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        _ = await FeatureChangePrefix.SettleAsync(publisher, cancellationToken).ConfigureAwait(false);
+    }
+
+    // DEFAULT still matches the base the overlay was built on (a rebase took it in): nothing to resolve.
+    private static bool DefaultMatchesBase(HashSet<string> defaultChangedFields, string? baseGeom, string? defaultGeom)
+        => defaultChangedFields.Count == 0 && string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal);
 
     private static HashSet<string> ChangedFields(
         ImmutableDictionary<string, JsonElement> baseFields,
