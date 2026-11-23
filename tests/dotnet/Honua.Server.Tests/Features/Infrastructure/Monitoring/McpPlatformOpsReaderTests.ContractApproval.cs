@@ -70,6 +70,25 @@ public sealed partial class McpPlatformOpsReaderTests
         gateway.ProposalCalls.Should().Be(0);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_NullContractScript_IsAValidationError()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(options: ContractApprovalOptions(), services: services);
+        var argument = new McpPlatformReleaseConvergenceArgument
+        {
+            IdempotencyKey = "caller-key",
+            ContractApproval = new McpContractApprovalArgument { Scripts = [null!], Nonce = ListedContractNonce }
+        };
+
+        var act = () => reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
     private static ControlPlaneOptions ContractApprovalOptions()
         => new()
         {

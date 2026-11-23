@@ -372,7 +372,7 @@ internal sealed class McpPlatformOpsReader(
     private static Dictionary<string, string>? ContractApprovalParameters(McpContractApprovalArgument? approval)
     {
         if (approval is null) return null;
-        var scripts = (approval.Scripts ?? []).Select(script => script.Trim()).ToArray();
+        var scripts = (approval.Scripts ?? []).Select(script => script?.Trim() ?? string.Empty).ToArray();
         var nonce = approval.Nonce?.Trim();
         if (!ComposeContractApproval.IsWellFormedNonce(nonce) || !ComposeContractApproval.AreWellFormedScripts(scripts))
             throw new GeoprocessingValidationException(

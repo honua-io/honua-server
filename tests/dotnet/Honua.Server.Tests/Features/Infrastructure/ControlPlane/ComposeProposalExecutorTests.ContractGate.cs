@@ -133,13 +133,15 @@ public sealed partial class ComposeProposalExecutorTests
             {
                 Ok = false,
                 BackupId = "backup-" + new string('c', 32),
-                Code = ComposeExecutorCodes.ContractApprovalRequired
+                Code = ComposeExecutorCodes.ContractApprovalRequired,
+                Message = "Pending contract scripts: 183. The approval nonce is " + ApprovalNonce + "."
             });
 
         var result = await Backend(client, release, "/tmp/honua-compose-unit.sock").StartAsync(Operation(release, "approver"));
 
         Assert.Equal(WorkflowOperationStatus.Failed, result.Status);
         Assert.Equal(ComposeExecutorCodes.ContractApprovalRequired, result.Message);
+        Assert.Contains(ApprovalNonce, result.Detail, StringComparison.Ordinal);
         Assert.Equal(prior, result.ObservedRevision);
     }
 

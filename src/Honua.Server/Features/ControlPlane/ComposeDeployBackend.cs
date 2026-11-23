@@ -144,7 +144,9 @@ internal sealed partial class ComposeDeployBackend(
                 ProviderOperationId = operation.OperationId,
                 // Keep the prior revision. The workflow copies ObservedRevision onto CurrentRevision.
                 ObservedRevision = priorRevision,
-                Message = ready ? response.Message : response.Code ?? response.Message
+                Message = ready ? response.Message : response.Code ?? response.Message,
+                // The refusal names the contract scripts and their nonce, which a new proposal must list.
+                Detail = response.Code == ComposeExecutorCodes.ContractApprovalRequired ? response.Message : null
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -23,10 +23,10 @@ public sealed partial class ComposeProposalExecutorTests
         var refusal = await controller.PrepareCandidateAsync(Digest('a'), Approval(ContractScript, ApprovalNonce.ToUpperInvariant()), CancellationToken.None);
 
         Assert.Null(refusal);
-        Assert.Equal(["run", "run"], docker.Subcommands);
+        Assert.Equal(["run", "rm", "run"], docker.Subcommands);
         Assert.DoesNotContain(docker.Argv[0], argument => argument.StartsWith(ApprovalSetting, StringComparison.Ordinal));
-        Assert.Contains(ApprovalSetting + ApprovalNonce.ToUpperInvariant(), docker.Argv[1]);
-        Assert.Equal("honua", docker.Argv[1][^1]);
+        Assert.Contains(ApprovalSetting + ApprovalNonce.ToUpperInvariant(), docker.Argv[2]);
+        Assert.Equal("honua", docker.Argv[2][^1]);
     }
 
     [UnitTheory]
