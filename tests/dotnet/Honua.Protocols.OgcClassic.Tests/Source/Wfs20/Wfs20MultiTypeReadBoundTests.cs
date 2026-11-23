@@ -99,9 +99,15 @@ public sealed class Wfs20MultiTypeReadBoundTests : IClassFixture<Wfs20MultiTypeR
     [IntegrationTest]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task GetFeature_UnqualifiedResourceId_KeepsFullSelection()
+    public async Task GetFeature_UnqualifiedResourceId_KeepsMultiTypeQualifierRule()
     {
-        await AssertCountsEveryTypeAsync("VERSION=2.0.0&RESOURCEID=bound_type_3.1,7");
+        // Narrowing to the one named type would accept the bare id; the full selection still rejects it.
+        using var response = await _fixture.App.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&RESULTTYPE=hits&VERSION=2.0.0&RESOURCEID=bound_type_3.1,7");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("must be qualified when multiple feature types are requested");
     }
 
     [IntegrationTest]

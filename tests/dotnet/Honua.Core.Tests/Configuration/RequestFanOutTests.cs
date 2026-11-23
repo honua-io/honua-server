@@ -91,7 +91,7 @@ public sealed class RequestFanOutTests
 
         var selection = () => RequestFanOut.SelectAsync<int, int>(
             items,
-            async (item, _) =>
+            async (item, cancellationToken) =>
             {
                 Interlocked.Increment(ref started);
                 if (item == 0)
@@ -99,7 +99,7 @@ public sealed class RequestFanOutTests
                     throw new InvalidOperationException("read failed");
                 }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(20));
+                await Task.Delay(TimeSpan.FromMilliseconds(20), cancellationToken);
                 return item;
             },
             CancellationToken.None);
