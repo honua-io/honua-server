@@ -8,23 +8,29 @@ using Honua.Protocols.Stac.Services;
 
 namespace Honua.Protocols.Stac;
 
-// Lets a catalog-wide STAC search survive one publication whose table was dropped outside Honua:
-// the search skips that publication and runs again over the remaining ones.
+// Lets a catalog-wide STAC search survive publications whose table was dropped outside Honua:
+// the search skips each such publication and runs again over the remaining ones, as the
+// /stac/collections listing leaves each one out (StacCollectionListing).
 internal static class StacSearchTargetSkip
 {
-    private const string SkippedTargetItemKey = "Honua.Stac.Search.SkippedTarget";
-
-    // Claims the request's single skip. A request skips at most one publication, and never its last
-    // one, so a shared cause (a dropped schema, a missing routing table) still ends as a 500 rather
-    // than an empty page. A search that names collections keeps the error: a named collection is
-    // never answered with an empty result.
+    // Claims a skip. A search never skips its last publication, so a shared cause (a dropped schema,
+    // a missing routing table) that takes out every target still ends as a 500 rather than an empty
+    // page. A search that names collections keeps the error: a named collection is never answered with
+    // an empty result. A response with a publication left out is marked no-store, so neither the output
+    // cache nor the CDN keeps it once the table is back.
     public static bool TryClaim(
         HttpContext context,
         StacSearchRequest request,
         StacV2Lookups.ResolvedStacPublication[] targets)
-        => targets.Length > 1
-            && request.Collections is not { IsDefault: false, Length: > 0 }
-            && context.Items.TryAdd(SkippedTargetItemKey, true);
+    {
+        if (targets.Length <= 1 || request.Collections is { IsDefault: false, Length: > 0 })
+        {
+            return false;
+        }
+
+        context.Response.Headers.CacheControl = "no-store";
+        return true;
+    }
 
     public static StacV2Lookups.ResolvedStacPublication[] Without(
         ILogger logger,

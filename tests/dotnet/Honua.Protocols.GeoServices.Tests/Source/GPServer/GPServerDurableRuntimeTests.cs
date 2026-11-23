@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed partial class GPServerDurableRuntimeTests
+public sealed partial class GPServerDurableRuntimeTests(WebAppFixture featureSchemaOwner) : IClassFixture<WebAppFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -31,7 +31,7 @@ public sealed partial class GPServerDurableRuntimeTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task SubmitJob_WithPostgresJobSubstrateAndNoRedis_CompletesAndReturnsDurableResult()
     {
-        var fixture = CreateDurableFixture(new SuccessfulGpServerJobExecutor());
+        var fixture = CreateDurableFixture(new SuccessfulGpServerJobExecutor()).ShareSchemaWith(featureSchemaOwner);
 
         await PostgresJobHost.StartAsync(fixture);
         try
@@ -95,7 +95,7 @@ public sealed partial class GPServerDurableRuntimeTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt()
     {
-        var fixture = CreateDurableFixture()
+        var fixture = CreateDurableFixture().ShareSchemaWith(featureSchemaOwner)
             .ConfigureServices(services =>
             {
                 // Exercise the unavailable-provider profile even after a provider ships.
@@ -320,7 +320,7 @@ public sealed partial class GPServerDurableRuntimeTests
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata(string operation)
     {
-        var fixture = CreateDurableFixture();
+        var fixture = CreateDurableFixture().ShareSchemaWith(featureSchemaOwner);
         await PostgresJobHost.StartAsync(fixture);
         try
         {
@@ -389,7 +389,7 @@ public sealed partial class GPServerDurableRuntimeTests
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry()
     {
-        var fixture = CreateDurableFixture();
+        var fixture = CreateDurableFixture().ShareSchemaWith(featureSchemaOwner);
         await PostgresJobHost.StartAsync(fixture);
         try
         {
@@ -432,7 +432,7 @@ public sealed partial class GPServerDurableRuntimeTests
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle()
     {
-        var fixture = CreateDurableFixture();
+        var fixture = CreateDurableFixture().ShareSchemaWith(featureSchemaOwner);
         await PostgresJobHost.StartAsync(fixture);
         try
         {

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
+using Honua.Core.Features.Shared.Services;
 
 namespace Honua.Core.Features.Compliance.Services;
 
@@ -98,16 +99,5 @@ internal sealed class CsvComplianceReportRenderer : IComplianceReportRenderer
         writer.WriteLine(Quote(detail));
     }
 
-    private static string Quote(string? value)
-    {
-        var v = value ?? string.Empty;
-        var needsQuoting = v.IndexOfAny(['"', ',', '\r', '\n']) >= 0;
-
-        if (!needsQuoting)
-        {
-            return v;
-        }
-
-        return string.Concat("\"", v.Replace("\"", "\"\"", StringComparison.Ordinal), "\"");
-    }
+    private static string Quote(string? value) => string.IsNullOrEmpty(value) ? string.Empty : CsvFieldFormatter.Escape(value);
 }

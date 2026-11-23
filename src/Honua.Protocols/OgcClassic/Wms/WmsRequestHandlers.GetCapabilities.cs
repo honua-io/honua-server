@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
@@ -162,14 +163,15 @@ internal static partial class WmsRequestHandlers
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger(LoggerCategory);
 
-        // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
+        // Fan out DB aggregate queries, a bounded number at a time; each is a MIN/MAX scan on one table.
         // Resolve each layer defensively: a single layer whose temporal column cannot be
         // aggregated (e.g. data stored in an encoding the cast cannot parse) must not 500
         // the whole GetCapabilities document — skip its TIME dimension and keep the rest.
-        var tasks = temporalLayers.Select(layer =>
-            ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, cancellationToken));
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var results = await RequestFanOut.SelectAsync(
+            temporalLayers,
+            (layer, layerCancellation) =>
+                ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
         for (var i = 0; i < temporalLayers.Length; i++)
@@ -207,9 +209,11 @@ internal static partial class WmsRequestHandlers
 
         var styleSources = new RasterStyleSources(
             styleCatalog, context.RequestServices.GetService<IGeoServicesStyleConverter>());
-        var plans = await Task.WhenAll(candidates.Select(layer =>
-            GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)))
-            .ConfigureAwait(false);
+        var plans = await RequestFanOut.SelectAsync(
+            candidates,
+            (layer, layerCancellation) =>
+                GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dimensions = new Dictionary<int, (int Width, int Height)>();
         for (var i = 0; i < candidates.Length; i++)
@@ -359,11 +363,14 @@ internal static partial class WmsRequestHandlers
         var serviceAbstract = string.IsNullOrWhiteSpace(service.Metadata.Description) ? null : service.Metadata.Description;
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger(LoggerCategory);
-        var preparedLayers = (await Task.WhenAll(accessibleLayers.Select(layer =>
-            CapabilitiesLayerBuilder.TryBuildAsync(
+        var preparedLayers = (await RequestFanOut.SelectAsync(
+            accessibleLayers,
+            (layer, _) => CapabilitiesLayerBuilder.TryBuildAsync(
                 () => PrepareWmsCapabilitiesLayerAsync(context, layer),
                 layer.Publication.Metadata.Id,
-                logger))).ConfigureAwait(false)).OfType<PreparedWmsCapabilitiesLayer>().ToArray();
+                logger),
+            TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)).ConfigureAwait(false))
+            .OfType<PreparedWmsCapabilitiesLayer>().ToArray();
 
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         if (isWms111)
@@ -479,9 +486,12 @@ internal static partial class WmsRequestHandlers
         {
             var layer = prepared.Layer;
             var layerName = GetWmsLayerDisplayName(layer);
-            var layerMetadata = layer.Resource.Metadata;
-            var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
-            var layerAbstract = string.IsNullOrWhiteSpace(layerMetadata.Description) ? null : layerMetadata.Description;
+            // The authored service, not its capabilities projection, is the governance parent.
+            var authoredService = layer.Snapshot.Index.ServicesById.GetValueOrDefault(service.Metadata.Id) ?? service;
+            var descriptive = DescriptiveMetadataResolver.ForDataset(
+                layer.Snapshot.Graph, new(layer.Resource, authoredService, layer.Publication));
+            var resourceTitle = string.IsNullOrWhiteSpace(descriptive.Title) ? layerName : descriptive.Title;
+            var layerAbstract = string.IsNullOrWhiteSpace(descriptive.Description) ? null : descriptive.Description;
 
             var queryable = OgcClassicRasterSupport.IsRasterResource(layer.Resource) ? "0" : "1";
             sb.Append("      <Layer queryable=\"").Append(queryable).AppendLine("\">");
@@ -489,7 +499,7 @@ internal static partial class WmsRequestHandlers
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             if (layerAbstract is not null)
                 sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
+            AppendWmsKeywords(sb, descriptive.Keywords.Prepend(layerName), "        ");
             var crsNames = GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, version);
             foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
                 sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
@@ -506,7 +516,7 @@ internal static partial class WmsRequestHandlers
             if (isWms111)
                 AppendWms111DeclaredExtents(sb, layer, "        ");
 
-            var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, service);
+            var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, authoredService);
             var metadataLink = governance.Links.FirstOrDefault(link =>
                 string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
             if (metadataLink is not null)

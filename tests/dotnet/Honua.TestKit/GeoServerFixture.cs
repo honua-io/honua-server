@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using Honua.TestKit.Infrastructure;
 using Xunit;
 
 namespace Honua.TestKit;
@@ -13,8 +14,17 @@ namespace Honua.TestKit;
 public sealed class GeoServerFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.
+    // The container outlives its last reference for IdleReleaseDelay so classes in different
+    // serial collections can reuse it. ProcessExit disposes a container still in its grace
+    // when the test host raises it; otherwise the Testcontainers reaper removes it.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly GeoServerSharedState SharedState = new();
+    private static readonly TimeSpan IdleReleaseDelay = TimeSpan.FromMinutes(2);
+    private static readonly IdleReleaseScheduler IdleRelease = new(
+        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync)
+    {
+        ResourceName = "Shared GeoServer container",
+    };
 
     private sealed class GeoServerSharedState
     {
@@ -60,10 +70,12 @@ public sealed class GeoServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
+            IdleRelease.Cancel();
             if (!SharedState.SharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
                 SharedState.SharedInitialized = true;
+                IdleRelease.HookProcessExit();
             }
 
             if (_seedCuratedData && !SharedState.SharedCuratedResourcesSeeded)
@@ -93,21 +105,32 @@ public sealed class GeoServerFixture : IAsyncLifetime
 
             if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
-                if (SharedState.SharedContainer is not null)
-                {
-                    await SharedState.SharedContainer.DisposeAsync().ConfigureAwait(false);
-                }
-
-                SharedState.SharedContainer = null;
-                SharedState.SharedBaseUrl = null;
-                SharedState.SharedRestUrl = null;
-                SharedState.SharedCuratedResourcesSeeded = false;
-                SharedState.SharedInitialized = false;
+                IdleRelease.Schedule();
             }
         }
         finally
         {
             _sharedLock.Release();
+        }
+    }
+
+    // Callers hold _sharedLock; the scheduler has already cancelled any pending release.
+    private static async Task DisposeIfIdleAsync()
+    {
+        if (SharedState.SharedRefCount != 0 || !SharedState.SharedInitialized)
+        {
+            return;
+        }
+
+        var container = SharedState.SharedContainer;
+        SharedState.SharedContainer = null;
+        SharedState.SharedBaseUrl = null;
+        SharedState.SharedRestUrl = null;
+        SharedState.SharedCuratedResourcesSeeded = false;
+        SharedState.SharedInitialized = false;
+        if (container is not null)
+        {
+            await container.DisposeAsync().ConfigureAwait(false);
         }
     }
 

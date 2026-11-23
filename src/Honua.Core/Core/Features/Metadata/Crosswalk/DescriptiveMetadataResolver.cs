@@ -11,6 +11,7 @@ namespace Honua.Core.Features.Metadata.Crosswalk;
 // override its dataset's. Governance fields (license, access constraints, fees, attribution, contacts, language,
 // governance links) fall back from the item to its service, then the service's folder, then the environment.
 // A dataset never inherits a publisher; a service takes its folder's, then the environment's.
+// A publication's title override names the layer ahead of every authored title.
 public static class DescriptiveMetadataResolver
 {
     private const int Wgs84Srid = 4326;
@@ -31,12 +32,30 @@ public static class DescriptiveMetadataResolver
         var governance = GovernanceFor(graph, resource, service);
         return Describe(graph, new DescriptionSource(DescribedItemKind.Dataset, own, governance)) with
         {
-            Title = First(own, metadata => metadata.Title) ?? resource.Metadata.Name,
+            Title = DatasetTitle(resource, layer) ?? string.Empty,
             Publisher = Text(resource.Metadata.Publisher),
             Extent = resource.ReadSrid() is null or Wgs84Srid ? resource.ReadBbox() : null,
             TemporalExtent = resource.Temporal?.Extent,
             Crs = SupportedCrs(resource),
         };
+    }
+
+    // The one title rule for a published dataset: the publication's override, then its own title, then the
+    // dataset's title, then the dataset's name. Null only when none is set.
+    public static string? DatasetTitle(MetadataV2Object resource, MetadataV2Layer? layer)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return Text(layer?.TitleOverride)
+            ?? Text(layer?.Metadata.Title)
+            ?? Text(resource.Metadata.Title)
+            ?? Text(resource.Metadata.Name);
+    }
+
+    // A publication's own description, else its dataset's.
+    public static string? DatasetDescription(MetadataV2Object resource, MetadataV2Layer? layer)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return DescriptionOf(layer is null ? [resource.Metadata] : [layer.Metadata, resource.Metadata]);
     }
 
     public static DescriptiveMetadata ForService(MetadataV2Graph graph, MetadataV2Service service)

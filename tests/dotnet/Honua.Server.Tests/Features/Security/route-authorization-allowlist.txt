@@ -19,6 +19,7 @@ anonymous DELETE /ogc/processes/jobs/{jobId}
 anonymous DELETE /scim/v2/Groups/{id}
 anonymous DELETE /scim/v2/Users/{id}
 anonymous GET /
+anonymous GET /admin
 anonymous GET /admin/auth/callback
 anonymous GET /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous GET /admin/services/{serviceName}.{serviceType}

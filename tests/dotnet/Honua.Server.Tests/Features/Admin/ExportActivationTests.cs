@@ -44,6 +44,74 @@ public sealed class ExportActivationTests
         await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTheory]
+    [InlineData("original-unpublish", null)]
+    [InlineData("new-unpublish", "new-unpublish")]
+    public async Task ClearUnpublished_ConcurrentReplacement_PreservesNewMarker(string storedETag, string? remainingETag)
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), "test");
+        string? currentETag = storedETag;
+        storage.GetMetadataAsync(store.UnpublishedKey, Arg.Any<CancellationToken>())
+            .Returns(new CloudFile
+            {
+                FileId = store.UnpublishedKey,
+                FileName = ExportStore.UnpublishedFileName,
+                StoragePath = store.UnpublishedKey,
+                ContentType = "application/json",
+                SizeBytes = 1,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.Local,
+                ETag = "original-unpublish"
+            });
+        storage.DeleteAsync(store.UnpublishedKey, Arg.Any<CancellationToken>())
+            .Returns(_ => { currentETag = null; return true; });
+        storage.DeleteIfMatchAsync(store.UnpublishedKey, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (!string.Equals(currentETag, call.ArgAt<string>(1), StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                currentETag = null;
+                return true;
+            });
+
+        await ExportUnpublishGuard.TryClearUnpublishedIfUnchangedAsync(store, "original-unpublish");
+
+        currentETag.Should().Be(remainingETag);
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ClearUnpublished_ConditionalDeleteUnavailable_DoesNotFallBackToUnconditionalDelete()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), "test");
+        storage.DeleteIfMatchAsync(store.UnpublishedKey, "original-unpublish", Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        await ExportUnpublishGuard.TryClearUnpublishedIfUnchangedAsync(store, "original-unpublish");
+
+        await storage.Received(1).DeleteIfMatchAsync(store.UnpublishedKey, "original-unpublish", CancellationToken.None);
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ClearUnpublished_StorageFailure_DoesNotFailCompletedActivation()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteIfMatchAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new IOException("Storage unavailable")));
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), "test");
+
+        var clear = () => ExportUnpublishGuard.TryClearUnpublishedIfUnchangedAsync(store, "original-unpublish");
+
+        await clear.Should().NotThrowAsync();
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public async Task BeginOperation_UncertainReservation_DoesNotAuthorizeArtifactWrites()
     {

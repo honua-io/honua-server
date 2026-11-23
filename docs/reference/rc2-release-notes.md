@@ -10,8 +10,11 @@ description: "Client-visible behavior clarified for the 2026.1 rc.2 release."
 With a custom `Database:Schema`, migration
 `227_AdoptConfiguredRegistrySchema.sql` moves the service and layer registry out
 of `honua` into the configured schema, preserving its rows and table identities.
-Stop older server and worker instances before applying the migration: they still
-use the previous registry location. Migrations are forward-only. To return to
+Migration `231_AdoptConfiguredFeatureStoreSchema.sql` moves the shared managed
+`features` table there too, from `honua` or `public`. Before it, managed-storage
+publishing was refused under a custom schema.
+Stop older server and worker instances before applying these migrations: they still
+use the previous table locations. Migrations are forward-only. To return to
 rc.1, restore the pre-upgrade database backup with its matching configuration
 and image. See [configured registry upgrades](../guides/deploy/upgrade-and-rollback.md#registry-tables-with-a-configured-database-schema).
 

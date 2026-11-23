@@ -13,7 +13,7 @@ namespace Honua.Server.Features.Assets;
 internal sealed partial class AssetProfileActivationValidator(IFeatureReader features)
 {
     // The feature filter grammar names fields bare, so only plain identifiers can be checked for nulls.
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
     private static partial Regex SimpleIdentifier();
 
     public async Task<IReadOnlyList<AssetFieldError>> ValidateAsync(

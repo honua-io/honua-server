@@ -279,12 +279,7 @@ internal sealed partial class Wfs20Handler
             if (actionElement.Name.LocalName is "Insert" or "Update" or "Delete" or "Replace"
                 && operations.Count >= _editLimits.MaxEditsPerTransaction)
             {
-                return TransactionPreparationResult.Failure(
-                    Wfs20ErrorResults.CreateBadRequest(
-                        context,
-                        "InvalidParameterValue",
-                        $"Transaction exceeds the maximum of {_editLimits.MaxEditsPerTransaction.ToString(CultureInfo.InvariantCulture)} edits.",
-                        "Transaction"));
+                return TransactionPreparationResult.Failure(CreateTransactionEditLimitError(context));
             }
 
             IResult? errorResult = actionElement.Name.LocalName switch
@@ -360,11 +355,7 @@ internal sealed partial class Wfs20Handler
 
         if (operations.Count > _editLimits.MaxEditsPerTransaction)
         {
-            return TransactionPreparationResult.Failure(Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "InvalidParameterValue",
-                $"Transaction contains {operations.Count.ToString(CultureInfo.InvariantCulture)} operations, exceeding the maximum of {_editLimits.MaxEditsPerTransaction.ToString(CultureInfo.InvariantCulture)}.",
-                "request"));
+            return TransactionPreparationResult.Failure(CreateTransactionEditLimitError(context));
         }
 
         // A single wfs:Transaction may carry actions for several feature types; the WFS 2.0 ETS
@@ -573,14 +564,10 @@ internal sealed partial class Wfs20Handler
             TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
-            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
+        var matchedLimitError = CheckMatchedFeatureLimits(context, "Update", (operations.Count, targetIds.Length));
+        if (matchedLimitError != null)
         {
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "InvalidParameterValue",
-                $"Update action exceeds the maximum of {_editLimits.MaxFeaturesPerEdit.ToString(CultureInfo.InvariantCulture)} matched features.",
-                "Filter");
+            return matchedLimitError;
         }
 
         var existingById = await ReadTransactionTargetsAsync(
@@ -669,14 +656,10 @@ internal sealed partial class Wfs20Handler
             TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
-            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
+        var matchedLimitError = CheckMatchedFeatureLimits(context, "Delete", (operations.Count, targetIds.Length));
+        if (matchedLimitError != null)
         {
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                "InvalidParameterValue",
-                $"Delete action exceeds the maximum of {_editLimits.MaxFeaturesPerEdit.ToString(CultureInfo.InvariantCulture)} matched features.",
-                "Filter");
+            return matchedLimitError;
         }
 
         var existingById = await ReadTransactionTargetsAsync(
@@ -1130,6 +1113,32 @@ internal sealed partial class Wfs20Handler
         return new TransactionFeatureChanges(geometrySpecified, geometry, attributes.ToImmutable());
     }
 
+
+    private IResult? CheckMatchedFeatureLimits(
+        HttpContext context,
+        string action,
+        (int Prepared, int Matched) editCounts)
+    {
+        if (editCounts.Matched > _editLimits.MaxFeaturesPerEdit)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"{action} action exceeds the maximum of {_editLimits.MaxFeaturesPerEdit.ToString(CultureInfo.InvariantCulture)} matched features.",
+                "Filter");
+        }
+
+        return editCounts.Prepared + editCounts.Matched > _editLimits.MaxEditsPerTransaction
+            ? CreateTransactionEditLimitError(context)
+            : null;
+    }
+
+    private IResult CreateTransactionEditLimitError(HttpContext context)
+        => Wfs20ErrorResults.CreateBadRequest(
+            context,
+            "InvalidParameterValue",
+            $"Transaction exceeds the maximum of {_editLimits.MaxEditsPerTransaction.ToString(CultureInfo.InvariantCulture)} edits.",
+            "Transaction");
 
     internal static int TransactionIdProbeLimit(EditLimits limits, int preparedCount, bool singleTarget)
     {

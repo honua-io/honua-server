@@ -65,7 +65,12 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             var client = fixture.CreateWebSocketClient();
             var configure = client.ConfigureRequest;
-            client.ConfigureRequest = request => { configure?.Invoke(request); request.Headers.Referer = Referer; };
+            client.ConfigureRequest = request =>
+            {
+                configure?.Invoke(request);
+                request.Headers["X-Honua-Test-Schema"] = fixture.CurrentSchema;
+                request.Headers.Referer = Referer;
+            };
             return await client.ConnectAsync(new Uri("ws://localhost" + Path(token, cursor)), ct);
         }
 

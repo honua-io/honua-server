@@ -12,16 +12,21 @@ ascender, ``left``/``top`` are zig-zag encoded ``sint32`` values, and glyphs wit
 
 Usage (DejaVu Sans Book is the face the server images install for rendering):
 
-    python3 -I generate_glyphs.py /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf 0-255
+    python3 -I generate_glyphs.py /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+        0-255 256-511 512-767 8192-8447
 
-Requires Pillow (with FreeType), NumPy and SciPy. Output is deterministic for a given font
-file and library versions; the server rewrites only the fontstack name at request time.
+The bundled ranges cover Latin-1, Latin Extended-A and -B (for example the letters of Polish,
+Czech, Hungarian, Romanian and Turkish place names) and General Punctuation (curly quotes,
+dashes, ellipsis) with the euro sign. Requires Pillow (with FreeType), NumPy, SciPy and
+fontTools. Output is deterministic for a given font file and library versions; the server
+rewrites only the fontstack name at request time.
 """
 
 import os
 import sys
 
 import numpy as np
+from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from scipy.ndimage import distance_transform_edt
 
@@ -61,9 +66,10 @@ def field_bytes(number, payload):
     return varint((number << 3) | 2) + varint(len(payload)) + payload
 
 
-def has_glyph(font, codepoint):
-    # Control characters are never drawn; the font maps every other Latin-1 codepoint.
-    return not (codepoint < 0x20 or 0x7F <= codepoint < 0xA0)
+def has_glyph(cmap, codepoint):
+    # Control characters are never drawn, and a codepoint the face does not map would draw its
+    # missing-glyph box, so it is left out and the renderer skips it.
+    return not (codepoint < 0x20 or 0x7F <= codepoint < 0xA0) and codepoint in cmap
 
 
 def render_glyph(hi_font, codepoint):
@@ -138,6 +144,7 @@ def main(argv):
 
     font_path = argv[1]
     hi_font = ImageFont.truetype(font_path, FONT_SIZE * SCALE, layout_engine=ImageFont.Layout.BASIC)
+    cmap = TTFont(font_path).getBestCmap()
     out_dir = os.path.dirname(os.path.abspath(__file__))
 
     for glyph_range in argv[2:]:
@@ -146,7 +153,7 @@ def main(argv):
         stack += field_bytes(2, glyph_range.encode("ascii"))
         count = 0
         for codepoint in range(start, end + 1):
-            if not has_glyph(hi_font, codepoint):
+            if not has_glyph(cmap, codepoint):
                 continue
             stack += field_bytes(3, encode_glyph(render_glyph(hi_font, codepoint)))
             count += 1

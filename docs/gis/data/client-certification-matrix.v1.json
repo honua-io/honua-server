@@ -1363,15 +1363,23 @@
         "CERT-SCHM-*",
         "CERT-QFLT-*",
         "CERT-PAGE-*",
-        "CERT-ERRH-*"
+        "CERT-ERRH-*",
+        "CERT-GEOM-01",
+        "CERT-RNDR-01"
       ],
       "manual": [
         "CLI-EXT-01",
         "CLI-EXT-02"
       ],
       "notApplicable": [
-        "CERT-GEOM-*",
-        "CERT-RNDR-*"
+        "CERT-GEOM-02",
+        "CERT-RNDR-02",
+        "CERT-RNDR-FIL-01",
+        "CERT-RNDR-LBL-01",
+        "CERT-RNDR-LIN-01",
+        "CERT-RNDR-SPR-01",
+        "CERT-RNDR-SYM-01",
+        "CERT-RNDR-URL-01"
       ]
     },
     {

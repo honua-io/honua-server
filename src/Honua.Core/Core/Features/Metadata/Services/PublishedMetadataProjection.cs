@@ -98,8 +98,22 @@ public sealed class PublishedMetadataProjection(
         var record = service is null
             ? DescriptiveMetadataResolver.ForCatalog(graph)
             : DescriptiveMetadataResolver.ForCapabilities(graph, service);
+        return Project(service?.Metadata ?? graph.Metadata, record);
+    }
+
+    // A service resource (GeoServices REST service JSON) keeps its own title, description and keywords, so
+    // undescribed services stay distinguishable, and inherits governance like every other emitter.
+    public static MetadataV2ObjectMetadata ForServiceResource(MetadataV2Graph graph, MetadataV2Service service)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(service);
+        return Project(service.Metadata, DescriptiveMetadataResolver.ForService(graph, service));
+    }
+
+    private static MetadataV2ObjectMetadata Project(MetadataV2ObjectMetadata metadata, DescriptiveMetadata record)
+    {
         var contact = record.PointOfContact;
-        return (service?.Metadata ?? graph.Metadata) with
+        return metadata with
         {
             Title = record.Title,
             Description = record.Description,

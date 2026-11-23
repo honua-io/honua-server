@@ -148,6 +148,38 @@ class MigrationNumberTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 1)
 
+    def test_stale_branch_behind_trunk_license_notice_update_passes(self):
+        self.assert_stale_branch_behind_license_update("", 0)
+
+    def test_stale_branch_behind_trunk_license_notice_with_executable_change_fails(self):
+        self.assert_stale_branch_behind_license_update("\nSELECT 2;", 1)
+
+    def test_stale_branch_edit_with_recomputed_pin_behind_trunk_license_update_fails(self):
+        old = "-- Copyright (c) Honua. All rights reserved.\n-- Licensed under the Elastic License 2.0. See LICENSE in the project root.\n\nSELECT 1;"
+        self.stage_license_update("")
+        self.git("branch", "-f", "trunk", self.commit())
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "001_Initial.sql", old + "\nSELECT 2;")
+        self.commit()
+        self.assertIn("hash pins are immutable", self.check().stdout)
+
+    def test_branch_after_trunk_license_update_cannot_roll_it_back(self):
+        old = "-- Copyright (c) Honua. All rights reserved.\n-- Licensed under the Elastic License 2.0. See LICENSE in the project root.\n\nSELECT 1;"
+        self.stage_license_update("")
+        self.base = self.commit()
+        self.git("branch", "-f", "trunk", self.base)
+        self.add(SERVER, "001_Initial.sql", old)
+        self.commit()
+        self.assertIn("hash pins are immutable", self.check().stdout)
+
+    def assert_stale_branch_behind_license_update(self, suffix, expected):
+        self.stage_license_update(suffix)
+        self.git("branch", "-f", "trunk", self.commit())
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "002_Pending.sql")
+        self.commit()
+        self.assertEqual(self.check().returncode, expected)
+
     def assert_license_update(self, suffix, expected):
         self.stage_license_update(suffix)
         self.commit()

@@ -255,6 +255,10 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GDAL_SERVICE_ID: test_service
       HONUA_GDAL_COLLECTION_ID: "0"
+      # GeoServices FeatureServer / MapServer cases (ESRIJSON and AGS drivers)
+      # read the browser_compat seed: three points in layer 2000.
+      HONUA_GDAL_GEOSERVICES_SERVICE: browser_compat
+      HONUA_GDAL_GEOSERVICES_LAYER: "2000"
     depends_on:
       honua:
         condition: service_healthy

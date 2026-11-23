@@ -69,7 +69,10 @@ public sealed record PortalTokenExchange(
 
 public sealed record PortalTokenIssuance(string Token, DateTimeOffset ExpiresAt);
 
-public sealed record PortalTokenValidation(ClaimsPrincipal Principal, DateTimeOffset ExpiresAt);
+public sealed record PortalTokenValidation(ClaimsPrincipal Principal, DateTimeOffset ExpiresAt)
+{
+    public Guid? SourceApiKeyId { get; init; }
+}
 
 public sealed record PortalTokenBinding(string? Referer, string? ClientIp);
 

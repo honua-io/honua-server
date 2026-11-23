@@ -12,9 +12,11 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
@@ -648,6 +650,9 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        // Allocate the operation identity at the authenticated boundary, before any
+        // progress write, provider upload or request-abort cleanup can use it.
+        request = request with { UploadId = Guid.NewGuid().ToString() };
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
@@ -697,6 +702,7 @@ internal static partial class ImportEndpoints
             var importRequest = new ImportRequest
             {
                 OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 CorrelationId = context.TraceIdentifier,
                 AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
                 ProposalId = ReadLineageHeader(context, "X-Honua-Proposal-Id"),
@@ -918,6 +924,7 @@ internal static partial class ImportEndpoints
 
         var uploadRequest = new FileUploadRequest
         {
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
             Content = uploadStream,
             FileName = request.File.FileName,
             ContentType = contentType,
@@ -969,32 +976,6 @@ internal static partial class ImportEndpoints
         return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
     }
 
-    private static Progress<UploadProgress>? CreateUploadProgressReporter(HttpContext context, string uploadId)
-    {
-        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
-        if (progressStore == null)
-        {
-            return null;
-        }
-
-        var progressLogger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-        return new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
-
-        async Task ReportProgressAsync(UploadProgress progress)
-        {
-            try
-            {
-                await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-            }
-            // Intentionally generic: this is a best-effort progress update callback; a
-            // failure to publish progress must not fail the underlying upload/import.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
-            }
-        }
-    }
-
     private static async Task ReportAcceptedUploadAsync(
         HttpContext context,
         string uploadId,
@@ -1010,6 +991,7 @@ internal static partial class ImportEndpoints
         var acceptedAt = DateTimeOffset.UtcNow;
         var progress = new UploadProgress
         {
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
             UploadId = uploadId,
             Status = OperationStatus.Completed,
             BytesUploaded = request.File.SizeBytes,
@@ -1440,6 +1422,12 @@ internal static partial class ImportEndpoints
             var storedProgress = await progressStore.GetProgressAsync(uploadId, cancellationToken);
             if (storedProgress != null)
             {
+                if (!await OperationTenantAuthorization.CanAccessOperationAsync(context, storedProgress, cancellationToken))
+                {
+                    await AdminResponseWriter.WriteErrorAsync(context, "Upload not found", StatusCodes.Status404NotFound);
+                    return;
+                }
+
                 IResult storedResult = Results.Json(storedProgress, ImportJsonContext.Default.UploadProgress);
                 await storedResult.ExecuteAsync(context);
                 return;
@@ -1455,7 +1443,7 @@ internal static partial class ImportEndpoints
 
         var progress = await cloudStorage.GetUploadProgressAsync(uploadId, cancellationToken);
 
-        if (progress == null)
+        if (progress == null || !await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, cancellationToken))
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Upload not found", StatusCodes.Status404NotFound);
             return;
@@ -1488,7 +1476,12 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = context.RequestAborted;
-        var cancelled = await cloudStorage.CancelUploadAsync(uploadId, cancellationToken);
+        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
+        var progress = progressStore is null ? null : await progressStore.GetProgressAsync(uploadId, cancellationToken);
+        progress ??= await cloudStorage.GetUploadProgressAsync(uploadId, cancellationToken);
+        var cancelled = progress is not null
+            && await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, cancellationToken)
+            && await cloudStorage.CancelUploadAsync(uploadId, cancellationToken);
 
         if (!cancelled)
         {
@@ -1515,7 +1508,7 @@ internal static partial class ImportEndpoints
         if (cloudStorage == null && progressStore != null)
         {
             var uploadsFromStore = await progressStore.GetActiveUploadsAsync(cancellationToken);
-            var storeResponse = new ActiveUploadsResponse { Uploads = uploadsFromStore.ToArray() };
+            var storeResponse = new ActiveUploadsResponse { Uploads = await VisibleUploadsAsync(context, uploadsFromStore, cancellationToken) };
             IResult storeResult = Results.Json(storeResponse, ImportJsonContext.Default.ActiveUploadsResponse);
             await storeResult.ExecuteAsync(context);
             return;
@@ -1529,7 +1522,7 @@ internal static partial class ImportEndpoints
 
         var uploads = await cloudStorage.GetActiveUploadsAsync(cancellationToken);
 
-        var response = new ActiveUploadsResponse { Uploads = uploads.ToArray() };
+        var response = new ActiveUploadsResponse { Uploads = await VisibleUploadsAsync(context, uploads, cancellationToken) };
         IResult result = Results.Json(response, ImportJsonContext.Default.ActiveUploadsResponse);
         await result.ExecuteAsync(context);
     }
@@ -1552,7 +1545,7 @@ internal static partial class ImportEndpoints
         try
         {
             CancellationToken cancellationToken = context.RequestAborted;
-            var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
+            var jobs = await VisibleImportJobsAsync(context, await jobService.GetActiveJobsAsync(cancellationToken), cancellationToken);
 
             var response = new ActiveImportJobsResponse { Jobs = jobs.ToArray() };
             IResult result = Results.Json(response, ImportJsonContext.Default.ActiveImportJobsResponse);
@@ -1566,6 +1559,30 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, "jobs", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import job service unavailable", StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    private static async Task<List<ImportProgress>> VisibleImportJobsAsync(
+        HttpContext context,
+        IReadOnlyList<ImportProgress> jobs,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<ImportProgress>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            if (await OperationTenantAuthorization.CanAccessOperationAsync(context, job, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(job);
+            }
+        }
+
+        return visible;
+    }
+
+    private static async Task<bool> CanAccessImportJobAsync(HttpContext context, IImportJobService jobService, string jobId)
+    {
+        var progress = await jobService.GetProgressAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        return progress is not null
+            && await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, context.RequestAborted).ConfigureAwait(false);
     }
 
     private static async Task HandleGetImportJobStatus(HttpContext context)
@@ -1595,7 +1612,7 @@ internal static partial class ImportEndpoints
             CancellationToken cancellationToken = context.RequestAborted;
             var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
 
-            if (progress == null)
+            if (progress == null || !await OperationTenantAuthorization.CanAccessOperationAsync(context, progress, cancellationToken))
             {
                 await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
                 return;
@@ -1645,7 +1662,8 @@ internal static partial class ImportEndpoints
         try
         {
             CancellationToken cancellationToken = context.RequestAborted;
-            var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
+            var cancelled = await CanAccessImportJobAsync(context, jobService, jobId)
+                && await jobService.CancelJobAsync(jobId, cancellationToken);
 
             if (!cancelled)
             {
