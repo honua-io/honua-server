@@ -90,6 +90,21 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
+    public void OutOfOrderSnapshots_PreserveTheCurrentRefusal()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options);
+        var now = _clock.GetUtcNow();
+        var digest = SharedAuthenticationFailures.Digest(Source);
+        var current = new SharedFailureWindow(3, now.AddMinutes(4), now.AddMinutes(4));
+        var earlier = new SharedFailureWindow(3, now.AddMinutes(1), now.AddMinutes(1));
+
+        shared.Apply(digest, current, now);
+        shared.Apply(digest, earlier, now);
+
+        shared.For(Source, now).Should().Be(current);
+    }
+
+    [UnitTest]
     public void Validator_RefusesAPollIntervalAboveOneMinute()
     {
         var options = new AuthenticationFailureLimiterOptions { SharedPollInterval = TimeSpan.FromMinutes(2) };

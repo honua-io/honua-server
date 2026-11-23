@@ -80,24 +80,29 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    // Expired windows go first; beyond MaxTrackedSources the oldest unrefused windows go, so a refusal is the last to be lost.
+    // Expired windows go first; beyond MaxTrackedSources the oldest unrefused windows go.
+    // Match on the selected row version so a concurrent renewal is left for the next sweep.
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
                     $"""
-                    WITH doomed AS (
-                        (SELECT source_digest FROM {_windows}
-                         WHERE expires_at <= now()
-                         ORDER BY expires_at LIMIT @batch_size)
-                        UNION
-                        (SELECT source_digest FROM {_windows}
-                         WHERE expires_at > now()
-                         ORDER BY refused_until > now() DESC NULLS LAST, window_started DESC
-                         OFFSET @max_sources LIMIT @batch_size))
+                    WITH expired AS (
+                        SELECT ctid FROM {_windows}
+                        WHERE expires_at <= now()
+                        ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED),
+                    overflow AS (
+                        SELECT ctid FROM {_windows}
+                        WHERE expires_at > now()
+                        ORDER BY refused_until > now() DESC NULLS LAST, window_started DESC
+                        OFFSET @max_sources LIMIT @batch_size),
+                    doomed AS (
+                        SELECT ctid FROM expired
+                        UNION ALL
+                        SELECT ctid FROM overflow)
                     DELETE FROM {_windows} AS stored USING doomed
-                    WHERE stored.source_digest = doomed.source_digest
+                    WHERE stored.ctid = doomed.ctid
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("batch_size", NpgsqlDbType.Integer) { Value = batchSize });

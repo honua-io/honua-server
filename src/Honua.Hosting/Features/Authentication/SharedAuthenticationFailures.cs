@@ -58,7 +58,11 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
             return;
         }
 
-        _windows[Key(digest)] = window;
+        // A poll and a write can complete out of order. Keep an active refusal until it expires.
+        _windows.AddOrUpdate(Key(digest), window, (_, current) =>
+            current.IsRefused(now) && current.RefusedUntil > window.RefusedUntil.GetValueOrDefault()
+                ? current
+                : window);
     }
 
     internal void Prune(DateTimeOffset now)
@@ -67,7 +71,7 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
         {
             if (window.ExpiresAt <= now)
             {
-                _windows.TryRemove(key, out _);
+                _windows.TryRemove(new KeyValuePair<string, SharedFailureWindow>(key, window));
             }
         }
     }
