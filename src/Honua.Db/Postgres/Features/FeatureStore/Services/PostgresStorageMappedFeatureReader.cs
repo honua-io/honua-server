@@ -2048,7 +2048,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             current.Append(c);
         }
 
-        if (current.Length > 0)
+        // A trailing AND leaves an empty final term; keep it so the parser rejects the clause.
+        if (current.Length > 0 || parts.Count > 0)
         {
             parts.Add(current.ToString());
         }

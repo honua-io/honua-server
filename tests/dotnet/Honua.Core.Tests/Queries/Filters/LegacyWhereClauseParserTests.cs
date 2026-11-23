@@ -80,6 +80,8 @@ public sealed class LegacyWhereClauseParserTests
     [InlineData("id IN (1,)")]
     [InlineData("id = @p0")]
     [InlineData("name = 'unterminated")]
+    [InlineData("name = 'a' AND")]
+    [InlineData("AND name = 'a'")]
     public void Parse_UnsupportedSyntax_IsRejectedByEveryGrammar(string clause)
     {
         foreach (var grammar in Enum.GetValues<LegacyWhereGrammar>())
