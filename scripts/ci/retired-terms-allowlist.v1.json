@@ -2824,7 +2824,7 @@
     {
       "path": "src/Honua.Server/Migrations/235_RenameMapAppStudioDraftBodies.sql",
       "rule": "app-envelope",
-      "line": "    envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
+      "line": "        envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
       "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
     },
     {
@@ -2860,7 +2860,7 @@
     {
       "path": "src/Honua.Server/Migrations/235_RenameMapAppStudioDraftBodies.sql",
       "rule": "map-envelope",
-      "line": "    envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
+      "line": "        envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
       "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
     },
     {

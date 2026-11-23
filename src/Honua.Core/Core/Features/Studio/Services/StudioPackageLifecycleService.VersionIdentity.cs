@@ -17,18 +17,19 @@ public sealed partial class StudioPackageLifecycleService
         }
 
         // Project immutable history into a new draft; never rewrite its stored bytes or hash.
-        var body = envelope.Body is { } storedBody
-            ? JsonNode.Parse(storedBody.GetRawText()) as JsonObject : null;
-        if (body is null)
+        // An incomplete body (missing or not an object) is a valid saved state: keep it and
+        // let draft validation report it.
+        if (envelope.Body is not { ValueKind: JsonValueKind.Object } storedBody)
         {
-            throw new JsonException("Stored Map/App version must contain an object body.");
+            return envelope with { Format = CanonicalVersionFormat(envelope.Format) };
         }
 
+        var body = JsonNode.Parse(storedBody.GetRawText())!.AsObject();
         RenameVersionIdentity(body, "mapPackageId", "mapId");
         RenameVersionIdentity(body, "appPackageId", "appId");
-        if (body["format"] is JsonValue format)
+        if (body["format"] is JsonValue format && format.TryGetValue<string>(out var bodyFormat))
         {
-            body["format"] = CanonicalVersionFormat(format.GetValue<string>());
+            body["format"] = CanonicalVersionFormat(bodyFormat);
         }
 
         using var document = JsonDocument.Parse(body.ToJsonString());

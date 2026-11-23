@@ -65,13 +65,14 @@ public sealed class MapAppStudioDraftVocabularyMigrationTests(PostgresFixture fi
     }
 
     [Theory]
-    [InlineData("{}")]
-    [InlineData("{\"body\":null}")]
-    [InlineData("{\"body\":[]}")]
+    [InlineData("{}", "7:{}")]
+    [InlineData("{\"body\": null}", "7:{\"body\": null}")]
+    [InlineData("{\"body\": []}", "7:{\"body\": []}")]
+    [InlineData("{\"body\": null, \"format\": \"honua_map_package.v1\"}", "8:{\"body\": null, \"format\": \"honua_map.v1\"}")]
     [Trait("Category", "Integration")]
-    public async Task Migration_InvalidDraftBody_RejectsWithoutChangingDraft(string envelope)
+    public async Task Migration_IncompleteDraftBody_KeepsDraftAndRenamesOnlyEnvelopeFormat(string envelope, string expected)
     {
-        var schema = await fixture.CreateIsolatedSchemaAsync("StudioDraftInvalidBody");
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioDraftIncompleteBody");
         try
         {
             await ExecuteAsync(schema, SeedContent);
@@ -80,10 +81,9 @@ public sealed class MapAppStudioDraftVocabularyMigrationTests(PostgresFixture fi
             command.Parameters.AddWithValue("envelope", envelope);
             await command.ExecuteNonQueryAsync();
             const string draft = "SELECT generation::text || ':' || envelope::text FROM \"{schema}\".studio_package_drafts WHERE family = 'map'";
-            var before = await ScalarAsync(schema, draft);
-            var apply = () => ApplyMigrationAsync(schema);
-            (await apply.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("P0001");
-            (await ScalarAsync(schema, draft)).Should().Be(before);
+            await ApplyMigrationAsync(schema);
+            await ApplyMigrationAsync(schema);
+            (await ScalarAsync(schema, draft)).Should().Be(expected);
         }
         finally
         {

@@ -59,8 +59,7 @@ public partial class StudioPackageLifecycleServiceTests
     [Trait("Tier", "Fast")]
     [InlineData("{\"mapPackageId\":\"old\",\"mapId\":\"new\"}")]
     [InlineData("{\"appPackageId\":\"old\",\"appId\":\"new\"}")]
-    [InlineData("[]")]
-    public async Task ReopenAndRestore_RejectAmbiguousOrMalformedHistoricalBody(string json)
+    public async Task ReopenAndRestore_RejectAmbiguousHistoricalIdentity(string json)
     {
         using var provider = BuildServiceProvider();
         var store = provider.GetRequiredService<IStudioPackageStore>();
@@ -84,6 +83,27 @@ public partial class StudioPackageLifecycleServiceTests
         await Assert.ThrowsAsync<JsonException>(() => service.RestoreDraftRevisionAsync(originalDraft.DraftId,
             RestoreCommand(originalDraft.Generation, current.Generation, "tester")));
         Assert.Equal(current.Generation, (await store.GetDraftAsync(originalDraft.DraftId))!.Generation);
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("[]")]
+    [InlineData("\"draft\"")]
+    [InlineData(null)]
+    public async Task ReopenVersion_IncompleteBody_KeepsBodyAndCanonicalizesFormat(string? json)
+    {
+        using var provider = BuildServiceProvider();
+        var store = provider.GetRequiredService<IStudioPackageStore>();
+        var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.App, SchemaVersion = "1.0", Format = "honua_app_package.v1",
+            Body = json is null ? null : JsonElement.Parse(json),
+        });
+        var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var reopened = await service.ReopenVersionAsync(version.ItemId, version.VersionId, "tester");
+        Assert.NotNull(reopened);
+        Assert.Equal("honua_app.v1", reopened.Envelope.Format);
+        Assert.Equal(json, reopened.Envelope.Body?.GetRawText());
     }
 
     [Fact]
