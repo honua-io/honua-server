@@ -147,6 +147,43 @@ public sealed class SettingsRevisionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/oidc/providers/{id}/undo")]
+    public async Task OidcUndo_StaleOrMissingExpectedRevision_IsRefused()
+    {
+        var providerId = await CreateProviderAsync();
+        var created = (await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}/revisions")))[0]
+            .GetProperty("revisionId").GetInt64();
+        (await _client.PutAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}", new { clientId = "rotated-client" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await _client.PostAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}/undo", new { }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PostAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}/undo", new { expectedRevisionId = created }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var provider = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}"));
+        provider.GetProperty("clientId").GetString().Should().Be("rotated-client");
+    }
+
+    // Two administrators editing one provider at once must not lose a write or its history entry.
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    [Endpoint("GET /api/v1/admin/oidc/providers/{id}/revisions")]
+    public async Task OidcUpdate_ParallelWriters_EachLeaveOneRevision()
+    {
+        var providerId = await CreateProviderAsync();
+        var clientIds = Enumerable.Range(0, 8).Select(i => $"parallel-client-{i}").ToArray();
+
+        var responses = await Task.WhenAll(clientIds.Select(clientId =>
+            _client.PutAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}", new { clientId })));
+
+        responses.Select(response => response.StatusCode).Should().AllBeEquivalentTo(HttpStatusCode.OK);
+        var revisions = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}/revisions"));
+        revisions.GetArrayLength().Should().Be(clientIds.Length + 1);
+        var provider = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}"));
+        clientIds.Should().Contain(provider.GetProperty("clientId").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers/{id}/undo")]
     public async Task OidcUndo_AgentAdministrator_IsForbidden()
     {
         var providerId = await CreateProviderAsync();

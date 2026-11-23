@@ -256,6 +256,25 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         data.GetProperty("errorMessage").GetString().Should().Be("Identity provider discovery request failed.");
     }
 
+    // A key without an admin grant authenticates, but must not read the identity configuration
+    // or make the server call out to an identity provider.
+    [IntegrationTheory]
+    [Operation(Operations.Identity)]
+    [InlineData("/api/v1/admin/identity/providers")]
+    [InlineData("/api/v1/admin/identity/providers/oidc/test")]
+    [Endpoint("GET /api/v1/admin/identity/providers")]
+    [Endpoint("GET /api/v1/admin/identity/providers/{providerType}/test")]
+    public async Task IdentityProviderAdmin_WithNonAdminKey_IsForbidden(string path)
+    {
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "identity-non-admin", ["read:layers"], null, "test", CancellationToken.None);
+        using var scoped = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        var response = await scoped.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
     // --- Cache Status ---
 
     [IntegrationTest]
