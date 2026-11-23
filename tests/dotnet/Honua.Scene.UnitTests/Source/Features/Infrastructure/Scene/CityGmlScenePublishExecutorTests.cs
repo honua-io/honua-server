@@ -185,6 +185,8 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
         };
         ActivitySource.AddActivityListener(listener);
 
+        // The listener is process-wide; parenting the call keeps spans from parallel tests out.
+        using var testRoot = new Activity("citygml-promote-fail-test").Start();
         var act = async () => await _executor.IngestAsync(
             new CityGmlSceneIngestRequest(CityGmlSceneFixtures.SingleBuildingGeographic(), SceneId: sceneId),
             CancellationToken.None);
@@ -192,6 +194,7 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
         await act.Should().ThrowAsync<IOException>();
 
         var span = activities.Should().ContainSingle(a =>
+            a.TraceId == testRoot.TraceId &&
             a.OperationName == HonuaTelemetry.Activities.TileGeneration &&
             (string?)a.GetTagItem("honua.scene.source_kind") == "citygml").Which;
         span.Status.Should().Be(ActivityStatusCode.Error);
