@@ -337,14 +337,14 @@ internal sealed class CapabilityManifestService(
                 },
                 new CapabilityManifestPackageFamily
                 {
-                    Id = "map-package",
+                    Id = "map",
                     Kind = "map",
                     SchemaVersion = "honua_map.v1",
                     Supported = true
                 },
                 new CapabilityManifestPackageFamily
                 {
-                    Id = "app-package",
+                    Id = "app",
                     Kind = "app",
                     SchemaVersion = "honua_app.v1",
                     Supported = true
@@ -422,8 +422,8 @@ internal sealed class CapabilityManifestService(
             ["package.metadata-v2"] = ("metadata-v2-graph", "metadata"),
             ["package.release-package"] = ("metadata-release-package", "publication"),
             ["package.gitops-manifest"] = ("gitops-metadata-release-manifest", "gitops"),
-            ["package.map"] = ("map-package", "map"),
-            ["package.app"] = ("app-package", "app"),
+            ["package.map"] = ("map", "map"),
+            ["package.app"] = ("app", "app"),
         };
 
     private CapabilityManifestCapability[] BuildCapabilities(
