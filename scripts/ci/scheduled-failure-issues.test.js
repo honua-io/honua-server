@@ -12,63 +12,72 @@ const config = {
   repos: { app: { default: { lane: 's-app' }, workflows: { 'nightly.yml': { lane: 's-night', area: 'area/x' } } } },
 };
 
-function run(id, file, conclusion, extra = {}) {
+function run(id, file, conclusion) {
   return {
     id, workflow_id: file, name: `${file} run ${id}`, path: `.github/workflows/${file}`, status: 'completed', conclusion,
     event: 'schedule', head_branch: 'trunk', head_sha: `${id}`.padEnd(40, 'a'),
     created_at: new Date(Date.parse('2026-11-23T00:00:00Z') + id * 60000).toISOString(),
-    html_url: `https://github.com/honua-io/app/actions/runs/${id}`, ...extra,
+    html_url: `https://github.com/honua-io/app/actions/runs/${id}`,
   };
 }
+const withRun = (base, extra) => ({ ...base, ...extra });
 const job = (name, conclusion, minute) => ({
   name, conclusion, started_at: `2026-11-23T01:${String(minute).padStart(2, '0')}:00Z`, html_url: `https://job/${name}`,
 });
 
-function fakeGithub({ runs = [], dispatchRuns = [], jobs = {}, issues = [], comments = {}, labels = ['bug'] }) {
-  const calls = [];
-  let nextIssue = 100;
-  const github = {
-    calls, issues, comments,
-    async paginate(route, params) {
-      calls.push(['paginate', route, params]);
-      if (route === 'GET /installation/repositories') {
-        return [{ name: 'app', owner: { login: 'honua-io' }, default_branch: 'trunk' },
-          { name: 'old', owner: { login: 'honua-io' }, archived: true, default_branch: 'main' }];
-      }
-      if (route === 'GET /repos/{owner}/{repo}/actions/runs') return params.event === 'schedule' ? [...runs] : [];
-      if (route.endsWith('/workflows/{workflow_id}/runs')) return [...dispatchRuns];
-      if (route.endsWith('/jobs')) return jobs[params.run_id] || [];
-      if (route === 'GET /repos/{owner}/{repo}/issues') return issues.filter(issue => issue.state === 'open');
-      if (route.endsWith('/comments')) return comments[params.issue_number] || [];
-      throw new Error(`unexpected ${route}`);
-    },
-    async request(route, params) {
-      calls.push(['request', route, params]);
-      if (route === 'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}') {
-        return { data: { name: params.workflow_id.replace('.yml', '') } };
-      }
-      if (route === 'GET /repos/{owner}/{repo}/labels/{name}') {
-        if (labels.includes(params.name)) return { data: {} };
-        throw Object.assign(new Error('Not Found'), { status: 404 });
-      }
-      if (route === 'POST /repos/{owner}/{repo}/labels') { labels.push(params.name); return { data: {} }; }
-      if (route === 'POST /repos/{owner}/{repo}/issues') {
-        const issue = { number: nextIssue++, state: 'open', title: params.title, body: params.body, labels: params.labels };
-        issues.push(issue);
-        return { data: issue };
-      }
-      if (route.endsWith('/comments')) {
-        (comments[params.issue_number] ||= []).push({ body: params.body });
-        return { data: {} };
-      }
-      if (route === 'PATCH /repos/{owner}/{repo}/issues/{issue_number}') {
-        Object.assign(issues.find(issue => issue.number === params.issue_number), { state: params.state });
-        return { data: {} };
-      }
-      throw new Error(`unexpected ${route}`);
-    },
+const REPOS = [{ name: 'app', owner: { login: 'honua-io' }, default_branch: 'trunk' },
+  { name: 'old', owner: { login: 'honua-io' }, archived: true, default_branch: 'main' }];
+
+function fakeReads(state) {
+  return async (route, params) => {
+    state.calls.push(['paginate', route, params]);
+    if (route === 'GET /installation/repositories') return REPOS;
+    if (route === 'GET /repos/{owner}/{repo}/actions/runs') return params.event === 'schedule' ? [...state.runs] : [];
+    if (route.endsWith('/workflows/{workflow_id}/runs')) return [...state.dispatchRuns];
+    if (route.endsWith('/jobs')) return state.jobs[params.run_id] || [];
+    if (route === 'GET /repos/{owner}/{repo}/issues') return state.issues.filter(issue => issue.state === 'open');
+    if (route.endsWith('/comments')) return state.comments[params.issue_number] || [];
+    throw new Error(`unexpected ${route}`);
   };
-  return github;
+}
+
+function fakeLookups(state, route, params) {
+  if (route === 'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}') {
+    return { data: { name: params.workflow_id.replace('.yml', '') } };
+  }
+  if (route === 'GET /repos/{owner}/{repo}/labels/{name}') {
+    if (state.labels.includes(params.name)) return { data: {} };
+    throw Object.assign(new Error('Not Found'), { status: 404 });
+  }
+  return null;
+}
+
+function fakeWrites(state) {
+  return async (route, params) => {
+    state.calls.push(['request', route, params]);
+    const lookup = fakeLookups(state, route, params);
+    if (lookup) return lookup;
+    if (route === 'POST /repos/{owner}/{repo}/labels') { state.labels.push(params.name); return { data: {} }; }
+    if (route === 'POST /repos/{owner}/{repo}/issues') {
+      const issue = { number: state.nextIssue++, state: 'open', title: params.title, body: params.body, labels: params.labels };
+      state.issues.push(issue);
+      return { data: issue };
+    }
+    if (route.endsWith('/comments')) {
+      (state.comments[params.issue_number] ||= []).push({ body: params.body });
+      return { data: {} };
+    }
+    if (route === 'PATCH /repos/{owner}/{repo}/issues/{issue_number}') {
+      Object.assign(state.issues.find(issue => issue.number === params.issue_number), { state: params.state });
+      return { data: {} };
+    }
+    throw new Error(`unexpected ${route}`);
+  };
+}
+
+function fakeGithub({ runs = [], dispatchRuns = [], jobs = {}, issues = [], comments = {}, labels = ['bug'] }) {
+  const state = { calls: [], nextIssue: 100, runs, dispatchRuns, jobs, issues, comments, labels };
+  return { calls: state.calls, issues, comments, paginate: fakeReads(state), request: fakeWrites(state) };
 }
 const core = { info() {}, warning() {} };
 const go = github => sweep({ github, core, config, owner: 'honua-io', now: NOW });
@@ -125,9 +134,9 @@ test('cancelled, ignored, push-dispatched and human-dispatched runs are not swep
   const bot = { event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI full ' };
   const github = fakeGithub({
     runs: [run(1, 'later.yml', 'cancelled'), run(2, 'watchdog.yml', 'failure')],
-    dispatchRuns: [run(3, 'ci.yml', 'failure', bot),
-      run(4, 'ci.yml', 'failure', { ...bot, triggering_actor: { login: 'founder' } }),
-      run(5, 'ci.yml', 'failure', { ...bot, head_branch: 'feature' })],
+    dispatchRuns: [withRun(run(3, 'ci.yml', 'failure'), bot),
+      withRun(run(4, 'ci.yml', 'failure'), { ...bot, triggering_actor: { login: 'founder' } }),
+      withRun(run(5, 'ci.yml', 'failure'), { ...bot, head_branch: 'feature' })],
     jobs: { 3: [] },
   });
   const report = await go(github);
@@ -143,7 +152,7 @@ test('a successful partial dispatch neither closes issues nor counts as a run', 
   const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/ci.yml::Build -->' }];
   const github = fakeGithub({
     runs: [run(1, 'ci.yml', 'failure')], jobs: { 1: [job('Build', 'failure', 1)] }, issues,
-    dispatchRuns: [run(2, 'ci.yml', 'success', {
+    dispatchRuns: [withRun(run(2, 'ci.yml', 'success'), {
       event: 'workflow_dispatch', triggering_actor: { login: 'github-actions[bot]' }, display_title: 'CI affected a..b' })],
   });
   const report = await go(github);

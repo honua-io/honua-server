@@ -9,13 +9,18 @@ const FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
 const SETTLED = new Set(['success', ...FAILED]);
 const NO_JOB = '(no job ran)';
 const HOUR = 3600 * 1000;
+const NOT_FOUND = 404;
+const DUE_HOURS = 24;
+const DEFAULT_ISSUES_PER_RUN = 5;
+const DEFAULT_LOOKBACK_HOURS = 72;
+const SHORT_SHA = 10;
 
 const markerFor = key => `<!-- ${LABEL} key=${key} -->`;
 const runMarkerFor = run => `<!-- ${LABEL} run=${run.id} -->`;
 const keyOf = body => (String(body || '').match(/<!-- scheduled-failure key=(\S+) -->/) || [])[1];
 const fileOf = path => path.split('/').pop();
 const isoSeconds = date => date.toISOString().replace(/\.\d+Z$/, 'Z');
-const shortSha = run => run.head_sha.slice(0, 10);
+const shortSha = run => run.head_sha.slice(0, SHORT_SHA);
 
 function ownerFor(config, repo, path) {
   const entry = config.repos?.[repo] || {};
@@ -25,15 +30,17 @@ function ownerFor(config, repo, path) {
 // Scheduled runs, plus complete automation dispatches on the default branch for workflows whose
 // scheduled work arrives as workflow_dispatch. botDispatchWorkflows maps a workflow file to the
 // run-title pattern of a complete run, so partial runs (honua-server "CI affected") never count.
-function isSweptRun({ config, repo, defaultBranch }, run) {
-  if ((config.ignore?.[repo] || []).includes(fileOf(run.path))) return false;
-  if (run.event === 'schedule') return true;
+function isCompleteBotDispatch({ config, repo, defaultBranch }, run) {
   const titlePattern = config.botDispatchWorkflows?.[repo]?.[fileOf(run.path)];
-  return run.event === 'workflow_dispatch'
-    && Boolean(titlePattern)
-    && run.head_branch === defaultBranch
-    && /\[bot\]$/.test(run.triggering_actor?.login || '')
-    && new RegExp(titlePattern).test(run.display_title || '');
+  if (run.event !== 'workflow_dispatch' || !titlePattern || run.head_branch !== defaultBranch) return false;
+  const byBot = /\[bot\]$/.test(run.triggering_actor?.login || '');
+  return byBot && new RegExp(titlePattern).test(run.display_title || '');
+}
+
+function isSweptRun(ctx, run) {
+  const ignored = ctx.config.ignore?.[ctx.repo] || [];
+  if (ignored.includes(fileOf(run.path))) return false;
+  return run.event === 'schedule' || isCompleteBotDispatch(ctx, run);
 }
 
 // Settled swept runs per workflow path, oldest first.
@@ -58,7 +65,7 @@ async function ensureLabel(ctx, name) {
   try {
     await github.request('GET /repos/{owner}/{repo}/labels/{name}', { owner, repo, name });
   } catch (error) {
-    if (error.status !== 404) throw error;
+    if (error.status !== NOT_FOUND) throw error;
     await github.request('POST /repos/{owner}/{repo}/labels', {
       owner, repo, name, color: name === LABEL ? 'b60205' : 'ededed',
     });
@@ -155,8 +162,8 @@ async function fileRunFailures(ctx, { path, run, issues }) {
   });
   const lane = ownerFor(config, repo, path);
   const labels = ['bug', lane.area, LABEL].filter(Boolean);
-  const due = isoSeconds(new Date(now.getTime() + 24 * HOUR));
-  let budget = config.maxIssuesPerRun || 5;
+  const due = isoSeconds(new Date(now.getTime() + DUE_HOURS * HOUR));
+  let budget = config.maxIssuesPerRun || DEFAULT_ISSUES_PER_RUN;
   for (const job of jobs) {
     const key = `${path}::${job.name.replace(/\s+/g, '_')}`;
     const existing = issues.find(issue => issue.state === 'open' && keyOf(issue.body) === key);
@@ -182,11 +189,11 @@ async function listRuns(ctx, since) {
   return runs;
 }
 
-// Every failed run after the workflow's last success is filed oldest first, so a failure that a
-// later run no longer shows still gets its issue; a newest successful run closes them all.
+// Every failed run after the workflow's last success is filed oldest first, so a job that failed
+// only in an earlier run still gets its issue; a successful newest run closes them all.
 async function sweepRepo(ctx) {
   const { github, owner, repo, config, now } = ctx;
-  const since = new Date(now.getTime() - (config.lookbackHours || 72) * HOUR).toISOString();
+  const since = new Date(now.getTime() - (config.lookbackHours || DEFAULT_LOOKBACK_HOURS) * HOUR).toISOString();
   const byPath = runsByWorkflow(ctx, await listRuns(ctx, since));
   const openIssues = (await github.paginate('GET /repos/{owner}/{repo}/issues', {
     owner, repo, state: 'open', labels: LABEL, per_page: 100,
