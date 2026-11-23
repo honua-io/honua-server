@@ -636,7 +636,6 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
-        // The refusal names the unknown field rather than a generic layerDefs message.
         content.Should().Contain("NONEXISTENT_FIELD");
     }
 }
