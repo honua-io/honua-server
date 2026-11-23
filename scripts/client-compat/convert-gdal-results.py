@@ -76,6 +76,7 @@ CATEGORY_MAP = {
     "errors": "CERT-ERRH-01",
     "render": "CERT-RNDR-01",
     "geometry": "CERT-GEOM-01",
+    "schema": "CERT-SCHM-01",
     # Export family is intentionally **unmapped** — see _UNMAPPED_CATEGORIES
     # below and the module docstring. The CLI / SDK lane row in the matrix
     # excludes CERT-RNDR for this lane, so a passing ogr2ogr export must not
@@ -126,14 +127,17 @@ COMMON_CORE_IDS = (
 
 # CERT-* IDs the GDAL suite substantiates for each protocol (kept as 'skip'
 # when absent from a run rather than 'not-applicable'). The OGC/WFS read path
-# keeps its original four IDs. The FeatureServer client (ESRIJSON driver) also
-# pages and surfaces errors; the MapServer client (WMS driver, AGS minidriver)
+# keeps its original four IDs. The FeatureServer client (ESRIJSON driver) reads,
+# filters, pages and surfaces errors but cannot list layers; the MapServer client (WMS driver, AGS minidriver)
 # only reads an export image, so only connection and rendering apply to it.
 _FEATURE_READ_IDS = frozenset({"CERT-CONN-01", "CERT-DISC-01", "CERT-SCHM-01", "CERT-QFLT-01"})
 APPLICABLE_BY_PROTOCOL: dict[str, frozenset[str]] = {
     "ogc-features": _FEATURE_READ_IDS,
     "wfs": _FEATURE_READ_IDS,
-    "featureserver": _FEATURE_READ_IDS | {"CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"},
+    # GDAL's ESRIJSON client opens one layer query and cannot list services or
+    # layers, so FeatureServer certifies schema but not discovery (DISC-01).
+    "featureserver": frozenset({"CERT-CONN-01", "CERT-SCHM-01", "CERT-QFLT-01",
+                                "CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"}),
     "mapserver": frozenset({"CERT-CONN-01", "CERT-RNDR-01"}),
 }
 

@@ -10,7 +10,9 @@ The seeded ``browser_compat`` layer 2000 holds exactly three points
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Callable
 
@@ -28,6 +30,28 @@ def read_features(ogr_run: Callable[..., OgrResult], layer_url: str, *open_optio
     result = ogr_run(["ogr2ogr", "-f", "GeoJSON", *options, "/vsistdout/", esrijson_dsn(layer_url, **params)])
     result.assert_success("ogr2ogr could not read the FeatureServer query through ESRIJSON")
     return json.loads(result.stdout)["features"]
+
+
+def geoservices_error_code(dsn: str) -> int | None:
+    """The ``error.code`` of the GeoServices JSON error the server returns for a DSN's URL.
+
+    GDAL only reports that it could not open the layer; this reads the same response to
+    confirm the server sent the structured ``{"error": {"code": ...}}`` body clients parse,
+    not an HTML page or a dropped connection. Returns None when the body is not that shape.
+    """
+    request = urllib.request.Request(dsn.removeprefix("ESRIJSON:"), headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = response.read()
+    except urllib.error.HTTPError as error:
+        body = error.read()
+    except OSError:
+        return None
+    try:
+        code = json.loads(body).get("error", {}).get("code")
+    except (ValueError, AttributeError):
+        return None
+    return code if isinstance(code, int) else None
 
 
 def feature_names(features: list[dict]) -> list[str]:

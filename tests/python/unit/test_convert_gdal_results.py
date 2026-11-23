@@ -36,13 +36,13 @@ def test_feature_protocols_keep_their_four_ids():
 
 
 def test_featureserver_adds_paging_errors_and_geometry():
-    categories = {"read": "pass", "discovery": "pass", "schema_introspection": "pass",
+    categories = {"read": "pass", "schema": "pass", "schema_introspection": "pass",
                   "attribute_query": "pass", "spatial_query": "pass", "paging": "pass", "errors": "pass",
                   "geometry": "pass", "export": "fail"}
 
     applicable = _non_applicable_removed(_statuses("featureserver", categories))
 
-    assert set(applicable) == {"CERT-CONN-01", "CERT-DISC-01", "CERT-SCHM-01", "CERT-QFLT-01",
+    assert set(applicable) == {"CERT-CONN-01", "CERT-SCHM-01", "CERT-QFLT-01",
                                "CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"}
     assert set(applicable.values()) == {"pass"}
 
