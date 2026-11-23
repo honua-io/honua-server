@@ -102,7 +102,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("concurrency", self.workflow)
         groups = set()
         for job in self.workflow["jobs"].values():
-            self.assertIs(job["concurrency"]["cancel-in-progress"], False)
+            self.assertEqual(job["concurrency"], {**job["concurrency"], "cancel-in-progress": False})
             groups.add(job["concurrency"]["group"])
         self.assertEqual(len(groups), len(self.workflow["jobs"]))
 
