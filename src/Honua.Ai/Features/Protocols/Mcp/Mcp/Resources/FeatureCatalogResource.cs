@@ -73,12 +73,18 @@ internal sealed class FeatureCatalogResource : IMcpResource
         };
     }
 
-    private static string LoadEmbeddedCatalog()
+    // The single embedded copy; Honua.Server's deployment capability route catalog reads it too.
+    internal static Stream OpenEmbeddedCatalog()
     {
         var assembly = typeof(FeatureCatalogResource).Assembly;
-        using var stream = assembly.GetManifestResourceStream(EmbeddedResourceName)
+        return assembly.GetManifestResourceStream(EmbeddedResourceName)
             ?? throw new InvalidOperationException(
                 $"Embedded feature catalog '{EmbeddedResourceName}' was not found in {assembly.GetName().Name}.");
+    }
+
+    private static string LoadEmbeddedCatalog()
+    {
+        using var stream = OpenEmbeddedCatalog();
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }

@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
+using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Routing.Template;
@@ -102,14 +103,12 @@ internal sealed class DeploymentCapabilityProfile
 
 internal sealed class DeploymentCapabilityRouteCatalog
 {
-    private const string CatalogResourceName = "Honua.Server.DeploymentProfiles.feature-catalog.json";
     private readonly Dictionary<string, RouteCapability[]> _routesByMethod;
     private readonly ConcurrentDictionary<Endpoint, RouteResolution> _endpointCache = new();
 
     public DeploymentCapabilityRouteCatalog()
     {
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(CatalogResourceName)
-            ?? throw new InvalidOperationException($"Embedded capability route catalog '{CatalogResourceName}' was not found.");
+        using var stream = FeatureCatalogResource.OpenEmbeddedCatalog();
         using var document = JsonDocument.Parse(stream);
         var routes = new List<RouteCapability>();
         var routed = new HashSet<string>(StringComparer.Ordinal);
