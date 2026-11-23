@@ -4,13 +4,13 @@
 PR Gate sizes its time budget and heavy placement from `dispatch_rank`
 (.github/ci-shards.json). The only other rank check compares ranks with the committed
 record (scripts/ci/fixtures/measured-dispatch-ranks.json), so a stale record passes
-forever: from #9118 to #9538 the ranks summed to ~1.9x the measured minutes and PR Gate
-deferred shards to trunk (#9530). This check reads the latest completed CI full runs on
-trunk and keeps one tracking issue open while any finding stands:
+forever: for two days in November 2026 the ranks summed to ~1.9x the measured minutes
+and PR Gate deferred shards to trunk. This check reads the latest completed CI full runs
+on trunk and keeps one tracking issue open while any finding stands:
 
-- total drift (#9545): sum of ranks / sum of median measured minutes outside the band;
-- grown shard (#9546): median at least GROWTH_RATIO x and GROWTH_MINUTES over its rank;
-- estimated shard (#9547): absent from the measured record but already sampled.
+- total drift: sum of ranks / sum of median measured minutes outside the band;
+- grown shard: median at least GROWTH_RATIO x and GROWTH_MINUTES over its rank;
+- estimated shard: absent from the measured record but already sampled.
 
 Too few measured shards (a failed or cancelled run window) neither opens nor closes it.
 """

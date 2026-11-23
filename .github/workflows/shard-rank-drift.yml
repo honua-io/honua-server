@@ -3,9 +3,9 @@ run-name: Shard rank drift check
 
 # After each completed CI full run on trunk, compare every server shard's
 # dispatch_rank with its median passing job minutes over the latest full runs
-# and keep one tracking issue (owner s-ci-shards) open while ranks have drifted
-# (#9545), a shard has outgrown its rank (#9546) or a sampled shard still runs
-# on a contract estimate (#9547). Report-only: it never gates a PR or trunk.
+# and keep one tracking issue (owner s-ci-shards) open while ranks have drifted,
+# a shard has outgrown its rank or a sampled shard still runs on a contract
+# estimate. Report-only: it never gates a PR or trunk.
 
 on:
   workflow_run:
