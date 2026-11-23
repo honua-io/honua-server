@@ -20,6 +20,7 @@ const PRIVATE_LABEL = 'a private repository';
 
 const markerFor = key => `<!-- ${LABEL} key=${key} -->`;
 const runMarkerFor = run => `<!-- ${LABEL} run=${run.id} -->`;
+const jobKeyOf = (path, name) => `${path}::${name.replace(/\s+/g, '_')}`;
 const keyOf = body => (String(body || '').match(/<!-- scheduled-failure key=(\S+) -->/) || [])[1];
 const fileOf = path => path.split('/').pop();
 const isoSeconds = date => date.toISOString().replace(/\.\d+Z$/, 'Z');
@@ -65,11 +66,15 @@ function runsByWorkflow(ctx, runs) {
   return byPath;
 }
 
+// Cached per sweep: a run's jobs are read for filing, hand-off checks and per-job closes.
 async function jobsOf(ctx, run) {
-  const { github, owner, repo } = ctx;
-  return github.paginate('GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
-    owner, repo, run_id: run.id, filter: 'latest', per_page: 100,
-  });
+  const { github, owner, repo, jobCache } = ctx;
+  if (!jobCache.has(run.id)) {
+    jobCache.set(run.id, github.paginate('GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
+      owner, repo, run_id: run.id, filter: 'latest', per_page: 100,
+    }));
+  }
+  return jobCache.get(run.id);
 }
 
 // A workflow with a successJobs pattern (honua-server's nightly container build hands off to a
@@ -138,8 +143,9 @@ function issueBody({ run, job, jobs, lane, key, due, workflowName }) {
     `- Due: ${due}`,
   ];
   if (others.length) lines.push(`- Other failed jobs in this run: ${others.join(', ')}`);
-  lines.push('', 'Fix the cause, or quarantine it with a ticket. This issue closes itself when a later scheduled',
-    'run of the workflow succeeds; each new failing run adds a comment.', '', markerFor(key), runMarkerFor(run));
+  lines.push('', 'Fix the cause, or quarantine it with a ticket. This issue closes itself when this job, or the',
+    'whole workflow, succeeds in a later scheduled run; each new failing run adds a comment.',
+    '', markerFor(key), runMarkerFor(run));
   return lines.join('\n');
 }
 
@@ -158,14 +164,15 @@ async function newestRecordedRun(ctx, issue) {
   return Math.max(0, ...ids.map(match => Number(match[1])));
 }
 
-async function closeIssues(ctx, issues, run) {
+async function closeIssues(ctx, issues, { run, what = 'Scheduled run' }) {
   const { github, owner, repo, report } = ctx;
   for (const issue of issues) {
     if (await newestRecordedRun(ctx, issue) > run.id) continue;
-    await comment(ctx, issue.number, `Scheduled run ${run.html_url} succeeded on \`${shortSha(run)}\`; closing.`);
+    await comment(ctx, issue.number, `${what} ${run.html_url} succeeded on \`${shortSha(run)}\`; closing.`);
     await github.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
       owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',
     });
+    issue.state = 'closed';
     report.closed.push(ref(ctx, issue.number));
   }
 }
@@ -249,7 +256,7 @@ async function fileRunFailures(ctx, { path, run, issues }) {
   const due = isoSeconds(new Date(ctx.now.getTime() + DUE_HOURS * HOUR));
   let budget = ctx.config.maxIssuesPerRun || DEFAULT_ISSUES_PER_RUN;
   for (const job of jobs) {
-    const key = `${path}::${job.name.replace(/\s+/g, '_')}`;
+    const key = jobKeyOf(path, job.name);
     const existing = issues.find(issue => issue.state === 'open' && keyOf(issue.body) === key);
     if (await recordedOnClosed(ctx, { issues, key, run })) continue;
     if (existing) {
@@ -292,7 +299,28 @@ async function closeFixedIssues(ctx, { issues, success, laterRuns }) {
     for (const run of laterRuns) current = current || await mentionsRun(ctx, issue, run);
     if (!current) fixed.push(issue);
   }
-  await closeIssues(ctx, fixed, success);
+  await closeIssues(ctx, fixed, { run: success });
+}
+
+// An open issue whose job ran again after its newest recorded failure and succeeded the last
+// time it settled is fixed, even while another job keeps the workflow red. Runs are read newest
+// first and the scan stops at the job's latest verdict; skipped or cancelled jobs give none.
+async function latestJobVerdict(ctx, { path, runs, key, after }) {
+  for (const run of [...runs].reverse()) {
+    if (run.id <= after) return null;
+    const job = (await jobsOf(ctx, run)).find(item => jobKeyOf(path, item.name) === key);
+    if (job?.conclusion === 'success') return { run, job };
+    if (FAILED.has(job?.conclusion)) return null;
+  }
+  return null;
+}
+
+async function closeJobsNowPassing(ctx, { path, runs, issues }) {
+  for (const issue of issues.filter(item => item.state === 'open')) {
+    const after = await newestRecordedRun(ctx, issue);
+    const passed = await latestJobVerdict(ctx, { path, runs, key: keyOf(issue.body), after });
+    if (passed) await closeIssues(ctx, [issue], { run: passed.run, what: `Job \`${passed.job.name}\` in scheduled run` });
+  }
 }
 
 // The newest failed runs after the workflow's last success are filed oldest first, so a job that
@@ -301,7 +329,7 @@ async function closeFixedIssues(ctx, { issues, success, laterRuns }) {
 async function sweepWorkflow(ctx, { path, runs, issues }) {
   const latest = runs[runs.length - 1];
   if (latest.conclusion === 'success') {
-    await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), latest);
+    await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), { run: latest });
     return;
   }
   const lastSuccess = runs.map(run => run.conclusion).lastIndexOf('success');
@@ -312,6 +340,7 @@ async function sweepWorkflow(ctx, { path, runs, issues }) {
   }
   // Close as fixed only when every failure after the success was replayed this sweep.
   if (lastSuccess >= 0 && laterRuns.length <= cap) await closeFixedIssues(ctx, { issues, success: runs[lastSuccess], laterRuns });
+  await closeJobsNowPassing(ctx, { path, runs, issues });
 }
 
 async function sweepRepo(ctx) {
@@ -338,7 +367,7 @@ async function sweep({ github, core, config, owner, now = new Date() }) {
     const label = repo.private ? PRIVATE_LABEL : repo.name;
     const ctx = {
       ...shared, repo: repo.name, defaultBranch: repo.default_branch, isPrivate: Boolean(repo.private), label,
-      commentCache: new Map(), workflowNames: new Map(),
+      commentCache: new Map(), workflowNames: new Map(), jobCache: new Map(),
     };
     try {
       await sweepRepo(ctx);
