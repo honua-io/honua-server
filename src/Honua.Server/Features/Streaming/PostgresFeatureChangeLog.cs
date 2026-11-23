@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.Realtime;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Npgsql;
@@ -30,8 +31,8 @@ internal sealed class PostgresFeatureChangeLog(
     private const string ChangesTable = "honua.feature_changes";
     private const string OutboxTable = "honua.feature_change_outbox";
 
-    // The committed horizon (migration 213). Cursor reads stop at it, so a later release that
-    // narrows the writer lock can hold back a generation whose lower neighbour has not committed.
+    // The committed horizon (migrations 213 and 228). Writers commit out of generation order, so
+    // cursor reads stop at the published prefix and never pass an uncommitted lower generation.
     private const string ReadHorizon = "honua.feature_change_read_horizon()";
     private readonly Lock _windowGate = new();
     private (long Head, long Oldest, DateTimeOffset ReadAt)? _cachedOldest;
@@ -42,10 +43,13 @@ internal sealed class PostgresFeatureChangeLog(
     public static string DatabaseEventId(long generation)
         => new RealtimePosition(RealtimeFamily.Features, generation).ToString();
 
+    // Each read publishes the committed prefix once and returns it. Commits that were in flight
+    // are published by the read their own NOTIFY wakes, so the head needs no background publisher.
     public Task<long> ReadHeadAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
+                _ = await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand($"SELECT {ReadHorizon}", connection);
                 return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
@@ -72,6 +76,12 @@ internal sealed class PostgresFeatureChangeLog(
         return database.ExecuteAsync<IReadOnlyList<FeatureChangeEvent>>(
             async (connection, _, token) =>
             {
+                if (query.EventId is null)
+                {
+                    // A cursor read stops at the horizon; publish first so commits it can see count.
+                    _ = await FeatureChangePrefix.PublishAsync(connection, token).ConfigureAwait(false);
+                }
+
                 await using var command = new NpgsqlCommand(SelectChanges(query), connection);
                 command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = query.After });
                 command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = query.Limit });

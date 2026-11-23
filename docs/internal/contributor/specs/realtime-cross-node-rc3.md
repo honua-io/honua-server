@@ -162,9 +162,12 @@ plain `UPDATE ... WHERE retention IS DISTINCT FROM @value`. Retention therefore 
 and neither a trigger nor a caller passes a TTL.
 
 ### 5.2 Ordering guarantees
-- `features`: one total order by `generation`. Allocation runs under `pg_advisory_xact_lock(144047712, 0)`,
-  which is held to commit, so no row with a lower generation becomes visible after a higher one.
-  Generations have gaps (rollbacks, branch rows), so positions mean "after N", never "the Nth".
+- `features`: one total order by `generation`. Writers allocate under the shared lock
+  `pg_advisory_xact_lock_shared(144047712, 0)`, held to commit, and may commit out of generation
+  order. Readers stop at the published committed prefix (migration 228,
+  `feature-change-horizon-rollout.md`), so no row with a lower generation becomes readable after a
+  higher one. Generations have gaps (rollbacks, branch rows), so positions mean "after N", never
+  "the Nth".
 - `realtime_events` families: one total order per family by `seq`. The head row lock is held to
   commit, so commit order equals `seq` order and there are no gaps except those left by retention.
   The same row lock serializes appending transactions of one family, which is why triggers append

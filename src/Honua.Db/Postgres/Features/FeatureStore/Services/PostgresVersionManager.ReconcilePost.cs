@@ -411,15 +411,23 @@ internal sealed partial class PostgresVersionManager
             await clearCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        long serverGeneration;
-        await using (var genCommand = new NpgsqlCommand("SELECT honua.feature_change_read_horizon()", connection) { Transaction = transaction })
-        {
-            var result = await genCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            serverGeneration = result is long gen ? gen : 0;
-        }
-
+        // The ancestor must cover the replayed rows, or later reconciles see them as DEFAULT edits.
+        var postedThrough = await ReadVisibleHeadAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        var serverGeneration = await FeatureChangePrefix.SettleAndReadHorizonAsync(
+            connection, postedThrough, cancellationToken).ConfigureAwait(false);
         return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
+    }
+
+    // The newest generation this transaction sees, including its own uncommitted rows.
+    private static async Task<long> ReadVisibleHeadAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT COALESCE(MAX(generation), 0)::BIGINT FROM honua.feature_changes", connection, transaction);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 
     private sealed record OverlayReplayResult(
@@ -447,6 +455,12 @@ internal sealed partial class PostgresVersionManager
         CancellationToken cancellationToken)
     {
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        await using (var publisher = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // The repeatable-read snapshot below reads the committed prefix; advance it first.
+            _ = await FeatureChangePrefix.SettleAsync(publisher, cancellationToken).ConfigureAwait(false);
+        }
+
         // OpenTransactionAsync sets search_path before BEGIN, so the first statement starts the snapshot.
         var (txConnection, dbTransaction) = await _connectionProvider
             .OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
@@ -456,9 +470,8 @@ internal sealed partial class PostgresVersionManager
         var transaction = (NpgsqlTransaction)dbTransaction;
         await using var transactionScope = transaction;
 
-        // Committed watermark. Rolled-back nextval leaves holes in last_value, so a gap below last_value
-        // is not proof of an in-flight write. Migration 067 holds pg_advisory_xact_lock across commit,
-        // which makes this MAX gap-free for feature_changes (same rule as PostgresChangeTracker).
+        // Committed watermark: the published prefix (migration 228). Every generation at or below it
+        // has committed or rolled back, so an in-flight lower generation is never skipped.
         long visibleGeneration;
         await using (var generationCommand = new NpgsqlCommand(
             "SELECT honua.feature_change_read_horizon()", connection)

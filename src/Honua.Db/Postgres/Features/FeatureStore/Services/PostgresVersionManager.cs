@@ -51,6 +51,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        _ = await FeatureChangePrefix.SettleAsync(connection, cancellationToken).ConfigureAwait(false);
 
         // Sequence allocations include uncommitted writes; the merge base must only include committed changes.
         const string sql = """

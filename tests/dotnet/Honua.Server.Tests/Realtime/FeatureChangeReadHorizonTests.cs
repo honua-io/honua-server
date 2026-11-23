@@ -24,14 +24,15 @@ namespace Honua.Server.Tests.Realtime;
 public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture database)
     : IClassFixture<FeatureChangeDatabaseFixture>
 {
+    // Migration 228's body: the published committed prefix.
     private const string MigratedBody = """
         CREATE OR REPLACE FUNCTION honua.feature_change_read_horizon()
         RETURNS BIGINT LANGUAGE sql STABLE
-        AS $$ SELECT COALESCE(MAX(generation), 0)::BIGINT FROM honua.feature_changes $$;
+        AS $$ SELECT published FROM honua.feature_change_prefix WHERE singleton $$;
         """;
 
     [IntegrationTest(Timeout = 120000)]
-    public async Task ReadHorizon_AsMigrated_IsTheCommittedMaximum()
+    public async Task ReadHorizon_AsMigrated_IsThePublishedCommittedPrefix()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734301);
         await layer.InsertAsync("""{"name":"horizon"}""");
@@ -134,6 +135,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734305);
         await layer.InsertAsync("""{"name":"committed"}""");
         var committed = await layer.HeadAsync();
+        (await ReadHorizonAsync()).Should().Be(committed);
         await using var connection = await database.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await using var insert = new NpgsqlCommand("""
@@ -160,7 +162,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
     }
 
     [IntegrationTest(Timeout = 120000)]
-    public async Task ReadHorizon_RolledBackAllocation_DoesNotPublishAnEmptySequenceHead()
+    public async Task ReadHorizon_RolledBackAllocation_PublishesTheGapWithoutLosingLaterChanges()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734306);
         await layer.InsertAsync("""{"name":"committed"}""");
@@ -178,9 +180,13 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         }
 
         await using var sequence = new NpgsqlCommand("SELECT last_value FROM honua.sync_generation", connection);
-        ((long)(await sequence.ExecuteScalarAsync())!).Should().BeGreaterThan(committed);
-        (await ReadHorizonAsync()).Should().Be(committed);
-        (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(committed);
+        var rolledBack = (long)(await sequence.ExecuteScalarAsync())!;
+        rolledBack.Should().BeGreaterThan(committed);
+        (await ReadHorizonAsync()).Should().Be(rolledBack, "a rolled-back allocation is a harmless gap");
+        (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(rolledBack);
+        (await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(committed, null, null, [layer.LayerId], 10), CancellationToken.None))
+            .Should().BeEmpty();
 
         var objectId = await layer.InsertAsync("""{"name":"after rollback"}""");
         var resumed = await CreateLog().ReadAsync(
@@ -224,8 +230,14 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
 
     private TestDatabaseConnectionProvider Connections() => new(database.DataSource);
 
+    // One publication, as a realtime head read does, then the horizon.
     private async Task<long> ReadHorizonAsync()
     {
+        await using (var publish = database.DataSource.CreateCommand("SELECT honua.publish_feature_change_prefix()"))
+        {
+            await publish.ExecuteScalarAsync();
+        }
+
         await using var command = database.DataSource.CreateCommand("SELECT honua.feature_change_read_horizon()");
         return (long)(await command.ExecuteScalarAsync())!;
     }

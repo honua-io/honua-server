@@ -24,10 +24,8 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
 {
     public async Task InitializeAsync()
     {
-        foreach (var file in new[] { "024_CreateFeatureChangeOutbox.sql", "214_StageFeatureChangePrefixPublisher.sql" })
-        {
-            await ExecuteAsync(await File.ReadAllTextAsync(RepositoryPaths.Resolve("src", "Honua.Server", "Migrations", file)));
-        }
+        await ExecuteAsync(await File.ReadAllTextAsync(RepositoryPaths.Resolve(
+            "src", "Honua.Server", "Migrations", "024_CreateFeatureChangeOutbox.sql")));
 
         await ExecuteAsync("""
             ALTER TABLE honua.feature_change_outbox
@@ -37,7 +35,7 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
                 ADD COLUMN IF NOT EXISTS proposal_id text;
             TRUNCATE honua.feature_changes, honua.feature_change_outbox;
             ALTER SEQUENCE honua.sync_generation RESTART WITH 1;
-            UPDATE honua.feature_change_prefix SET published = 0, pending = NULL, fence = NULL;
+            UPDATE honua.feature_change_prefix SET published = 0, pending = NULL, fence = NULL, pending_writers = NULL;
             """);
     }
 
@@ -51,7 +49,7 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
         var repository = new PostgresFeatureChangeOutboxRepository(provider);
 
         (await TickAsync(repository)).Should().BeEmpty();
-        (await PublishedAsync()).Should().Be(0);
+        (await PublishedAsync()).Should().Be(1, "no writer holds the generation lock");
         (await TickAsync(repository)).Should().BeEmpty();
         (await PublishedAsync()).Should().Be(1);
         provider.Opens.Should().Be(2);
@@ -258,7 +256,7 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
     private static async Task AllocateAsync(NpgsqlConnection connection)
     {
         await using var command = new NpgsqlCommand("""
-            SELECT pg_current_xact_id();
+            SELECT pg_advisory_xact_lock_shared(144047712, 0);
             INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, changed_at)
             VALUES (nextval('honua.sync_generation'), 734401, 1, 1, now());
             """, connection);

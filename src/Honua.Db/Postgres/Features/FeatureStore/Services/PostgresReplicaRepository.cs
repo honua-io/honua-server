@@ -37,6 +37,8 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // Advance the committed prefix before the transaction; the horizon read below returns it.
+        _ = await FeatureChangePrefix.SettleAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await using (var lockCommand = new NpgsqlCommand(

@@ -3,7 +3,6 @@
 
 using System.Data;
 using FluentAssertions;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
@@ -17,8 +16,9 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
     : IClassFixture<FeatureChangeDatabaseFixture>, IAsyncLifetime
 {
     private const string PublishSql = "SELECT honua.publish_feature_change_prefix()";
+    // The writer-trigger contract from migration 228: hold the shared generation lock before nextval.
     private const string AllocateSql = """
-        SELECT pg_current_xact_id();
+        SELECT pg_advisory_xact_lock_shared(144047712, 0);
         INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, changed_at)
         VALUES (nextval('honua.sync_generation'), 734401, 1, 1, now())
         RETURNING generation;
@@ -26,13 +26,10 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
 
     public async Task InitializeAsync()
     {
-        var migration = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
-            "src", "Honua.Server", "Migrations", "214_StageFeatureChangePrefixPublisher.sql"));
-        await ExecuteAsync(migration);
         await ExecuteAsync("""
             TRUNCATE honua.feature_changes;
             ALTER SEQUENCE honua.sync_generation RESTART WITH 1;
-            UPDATE honua.feature_change_prefix SET published = 0, pending = NULL, fence = NULL;
+            UPDATE honua.feature_change_prefix SET published = 0, pending = NULL, fence = NULL, pending_writers = NULL;
             """);
     }
 
@@ -125,9 +122,9 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
         }
 
         var first = await AllocateCommittedAsync();
-        (await TickAsync()).Should().Be(0);
+        (await TickAsync()).Should().Be(first, "no writer holds the generation lock");
         var late = await AllocateAsync(older);
-        (await TickAsync()).Should().Be(0);
+        (await TickAsync()).Should().Be(first);
         await transaction.CommitAsync();
 
         (await SettleAsync()).Should().Be(late);
@@ -163,8 +160,14 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
         await using var connection = await database.DataSource.OpenConnectionAsync();
         await using (var transaction = await connection.BeginTransactionAsync())
         {
-            (await ScalarAsync(PublishSql, connection)).Should().Be(0);
+            (await ScalarAsync(PublishSql, connection)).Should().Be(committed);
             await transaction.RollbackAsync();
+        }
+
+        await using (var command = database.DataSource.CreateCommand(
+            "SELECT published FROM honua.feature_change_prefix"))
+        {
+            ((long)(await command.ExecuteScalarAsync())!).Should().Be(0);
         }
 
         (await SettleAsync()).Should().Be(committed);
@@ -237,13 +240,36 @@ public sealed class FeatureChangePrefixPublisherTests(FeatureChangeDatabaseFixtu
     }
 
     [IntegrationTest(Timeout = 120000)]
-    public async Task Publish_StagedMigration_LeavesReaderAndWriterLockUnchanged()
+    public async Task Publish_NoWriterInFlight_PublishesInOneCall()
     {
         var generation = await AllocateCommittedAsync();
+
+        (await TickAsync()).Should().Be(generation);
         await using var command = database.DataSource.CreateCommand("SELECT honua.feature_change_read_horizon()");
         ((long)(await command.ExecuteScalarAsync())!).Should().Be(generation);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task Publish_UnrelatedOpenTransaction_DoesNotHoldBackPrefix()
+    {
+        await using var unrelated = await database.DataSource.OpenConnectionAsync();
+        await using var transaction = await unrelated.BeginTransactionAsync();
+        await using (var assign = new NpgsqlCommand("SELECT pg_current_xact_id()", unrelated))
+        {
+            await assign.ExecuteScalarAsync();
+        }
+
+        var generation = await AllocateCommittedAsync();
+        (await TickAsync()).Should().Be(generation, "only holders of the writer lock fence the prefix");
+        await transaction.RollbackAsync();
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task Publish_ActivatedMigration_WritersShareTheGenerationLock()
+    {
         await using var body = database.DataSource.CreateCommand("""
-            SELECT position('pg_advisory_xact_lock(144047712, 0)' IN pg_get_functiondef(oid)) > 0
+            SELECT position('pg_advisory_xact_lock_shared(144047712, 0)' IN pg_get_functiondef(oid)) > 0
+                   AND position('pg_advisory_xact_lock(144047712, 0)' IN pg_get_functiondef(oid)) = 0
             FROM pg_proc WHERE oid IN ('honua.track_feature_changes()'::regprocedure,
                                       'honua.track_version_edits()'::regprocedure)
             """);

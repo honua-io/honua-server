@@ -3,6 +3,9 @@ embedded_migrations:
   - Honua.Server.Migrations.002_CreateAttachmentsTable.sql
   - Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql
   - Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql
+  # Committed feature-change prefix: replaces the writer triggers and read horizon below.
+  - Honua.Server.Migrations.214_StageFeatureChangePrefixPublisher.sql
+  - Honua.Server.Migrations.228_ActivateFeatureChangePrefix.sql
 sql:
   - "CREATE SCHEMA IF NOT EXISTS honua;"
   - "CREATE SCHEMA IF NOT EXISTS honua_data;"

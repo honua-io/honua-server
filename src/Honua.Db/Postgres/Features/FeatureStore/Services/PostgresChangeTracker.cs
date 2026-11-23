@@ -21,16 +21,11 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
     public async Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
     {
-        // The sequence includes uncommitted and rolled-back allocations. Read the shared
-        // committed horizon instead; a later migration can replace its implementation for
-        // all compatible releases before allowing writers to commit out of generation order.
-        const string sql = "SELECT honua.feature_change_read_horizon()";
-
+        // The sequence includes uncommitted and rolled-back allocations. The committed prefix
+        // (migration 228) covers them once their writers finish; wait briefly for writers that
+        // were in flight, so a caller sees changes committed before it asked.
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is long gen ? gen : 0;
+        return await FeatureChangePrefix.SettleAndReadHorizonAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> HasLayerChangedSinceAsync(long sinceGeneration, int layerId, CancellationToken cancellationToken = default)

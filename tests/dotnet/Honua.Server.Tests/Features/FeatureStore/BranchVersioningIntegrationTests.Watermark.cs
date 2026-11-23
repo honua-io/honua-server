@@ -33,12 +33,12 @@ public sealed partial class BranchVersioningIntegrationTests
 
         var branch = await CreateVersionManager().CreateAsync(
             new CreateVersionRequest("InFlightMergeBase", "sde", VersionAccess.Public));
-        branch.CommonAncestorGeneration.Should().Be(baseline);
-        branch.BranchGeneration.Should().Be(baseline);
+        branch.CommonAncestorGeneration.Should().BeGreaterThanOrEqualTo(baseline);
+        branch.BranchGeneration.Should().Be(branch.CommonAncestorGeneration);
         await transaction.CommitAsync();
 
         var changes = await tracker.GetChangesSinceAsync(branch.CommonAncestorGeneration, [PointsLayerId]);
-        changes.Should().Contain(change => change.ObjectId == feature.Id && change.Generation > baseline);
+        changes.Should().Contain(change => change.ObjectId == feature.Id && change.Generation > branch.CommonAncestorGeneration);
     }
 
     [IntegrationTest]
@@ -62,16 +62,18 @@ public sealed partial class BranchVersioningIntegrationTests
 
         var branch = await CreateVersionManager().CreateAsync(
             new CreateVersionRequest("RolledBackMergeBase", "sde", VersionAccess.Public));
-        branch.CommonAncestorGeneration.Should().Be(baseline);
-        branch.BranchGeneration.Should().Be(baseline);
+        branch.CommonAncestorGeneration.Should().BeGreaterThanOrEqualTo(baseline);
+        branch.BranchGeneration.Should().Be(branch.CommonAncestorGeneration);
+        (await tracker.GetChangesSinceAsync(baseline, [PointsLayerId]))
+            .Should().NotContain(change => change.ObjectId == feature.Id, "the rolled-back allocation is only a gap");
     }
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     public async Task Update_OpenAllocation_IsVisibleAsInProgressBeforeCommit()
     {
-        await AssertAllocationAssignsTransactionIdBeforeNextvalAsync("honua.track_feature_changes()");
-        await AssertAllocationAssignsTransactionIdBeforeNextvalAsync("honua.track_version_edits()");
+        await AssertAllocationHoldsWriterLockBeforeNextvalAsync("honua.track_feature_changes()");
+        await AssertAllocationHoldsWriterLockBeforeNextvalAsync("honua.track_version_edits()");
 
         var feature = await CreateFeatureStore().CreateAsync(
             PointsLayerId, BuildFeature("xid-fence", 1, 1), CancellationToken.None);
@@ -85,14 +87,13 @@ public sealed partial class BranchVersioningIntegrationTests
         await AssertCommittedAllocationVisibleAsync(observer, allocated);
     }
 
-    private async Task AssertAllocationAssignsTransactionIdBeforeNextvalAsync(string functionName)
+    private async Task AssertAllocationHoldsWriterLockBeforeNextvalAsync(string functionName)
     {
-        // The assignment has to precede nextval inside the trigger. Observing the transaction id
-        // after the statement returns cannot establish allocation ordering because the change-row
-        // insert also assigns one. The definition order covers that window.
+        // The publisher fences on holders of the shared writer lock (migration 228), so the lock
+        // has to precede nextval inside the trigger. The definition order covers that window.
         const string sql = """
             SELECT strpos(definition, 'pg_current_xact_id()') AS assigned,
-                   strpos(definition, 'pg_advisory_xact_lock(144047712, 0)') AS locked,
+                   strpos(definition, 'pg_advisory_xact_lock_shared(144047712, 0)') AS locked,
                    strpos(definition, 'nextval(''honua.sync_generation'')') AS allocated
             FROM (SELECT pg_get_functiondef(@function::regprocedure) AS definition) AS source
             """;

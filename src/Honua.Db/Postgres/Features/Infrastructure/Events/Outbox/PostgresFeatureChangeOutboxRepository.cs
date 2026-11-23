@@ -1,11 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
@@ -119,7 +119,9 @@ RETURNING
 
         await using var owner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = owner.RequireNpgsqlConnection();
-        await PublishPrefixAsync(connection, cancellationToken).ConfigureAwait(false);
+        // Publication commits in its own READ COMMITTED transaction before the claim allocates
+        // a transaction id. Keep both operations on one managed connection lease.
+        _ = await FeatureChangePrefix.PublishAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("batch_size", NpgsqlDbType.Integer, batchSize);
         command.Parameters.AddWithValue("node_id", NpgsqlDbType.Text, nodeId);
@@ -133,18 +135,6 @@ RETURNING
         }
 
         return results;
-    }
-
-    private static async Task PublishPrefixAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
-    {
-        // Publication needs a fresh snapshot and must commit before the claim allocates
-        // its own transaction ID. Keep both operations on one managed connection lease.
-        await using var transaction = await connection.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
-            "SELECT honua.publish_feature_change_prefix()", connection, transaction);
-        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken)

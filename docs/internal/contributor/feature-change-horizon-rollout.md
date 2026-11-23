@@ -1,95 +1,74 @@
-# Feature-change horizon rollout
+# Feature-change horizon
 
 The change-feed cursor is a committed prefix of the global feature generation sequence.
-Migration 213 introduces `honua.feature_change_read_horizon()` as the common source of
-that cursor for sync, replica registration, version ancestors and realtime streaming.
-It initially returns the committed maximum. Both feature-writer triggers retain the
-global transaction advisory lock, so a later generation cannot commit before an earlier
-allocated generation. Sequence allocations that roll back are harmless holes.
+`honua.feature_change_read_horizon()` (migration 213) is the single source of that cursor
+for sync, replica registration, version ancestors, alerts, temporal history and realtime
+streaming. Readers that inspect changes for upload conflicts still inspect committed
+changes; those probes do not advance a download cursor.
 
-This is the reader prerequisite for #7505 and #7393; it does not remove write contention.
-The function is deliberately replaceable without changing readers in a running process.
-Streaming bounds both event delivery and resume-window calculations by the horizon.
-Readers that inspect changes for upload conflicts still inspect committed changes;
-those probes do not advance a download cursor.
+Migration 228 activates the committed prefix. Before it, both feature-writer triggers took
+one exclusive advisory lock from `nextval` through commit, which serialized every feature
+write in the database and kept `MAX(generation)` gap-free. Rolling deployment with an
+older reader is not supported (founder ruling, 22 November 2026), so 228 replaces the
+function bodies directly.
 
-## Deployment order
+## Writers
 
-1. Deploy this reader release with migration 213 and the existing writer lock.
-2. Establish that every supported running reader, including the supported previous
-   release during rolling deployment, calls the shared function for its cursor.
-3. Introduce a committed-prefix publisher and replace the function body to read its
-   published generation. Only then narrow the DEFAULT and branch writer locks together.
+`honua.track_feature_changes()` and `honua.track_version_edits()` take
+`pg_advisory_xact_lock_shared(144047712, 0)` before `nextval` and hold it through commit or
+rollback. Writers on any layer, and on different rows of one layer, run concurrently and
+may commit out of generation order. Row locks still serialize edits to the same row.
 
-A raw `MAX(generation)` reader cannot coexist safely with writers that commit out of
-allocation order. For example, writer A allocates generation 10 and remains open,
-writer B commits generation 11, and the old reader records cursor 11. When A commits,
-resuming strictly after 11 loses its change. Merely filtering by the oldest active
-transaction ID also fails: transaction IDs can be allocated before generations.
-The publisher must fence allocations as well as transaction completion.
+Every allocator of `honua.sync_generation` that writes `honua.feature_changes` must hold this
+lock before `nextval`. FieldCollection allocates from the same sequence under its own lock;
+those values are harmless gaps in the feature prefix. The sequence must stay monotonic with
+`CACHE 1` and must never be reset; the publisher checks this.
 
-## Required proof for writer changes
+An exclusive request for the same key (the demo STAC seed's relation recovery) still waits
+for every in-flight writer and holds new writers back.
 
-Hold one writer after generation allocation and prove a second layer's writer commits
-before releasing the first. Record a real cursor between their commits, then commit
-the first and resume without losing either change. Repeat with rollback, same-layer
-writes, branch-overlay writes, and COPY/import alongside an edit. Use bounded
-cancellation and database state to establish ordering. Compare blocking and commit
-latency on the build host. Run the N-1 reader check with the actual supported baseline;
-the presence of this migration alone does not prove that older binaries use it.
+## Publisher
 
-## Inactive publisher stage
+`honua.publish_feature_change_prefix()` stores the prefix in `honua.feature_change_prefix`.
+It reads the allocated sequence value first, then lists the virtual transaction ids that
+hold the writer lock in this database (`honua.feature_change_writers()`). A writer takes the
+lock before `nextval`, so every allocation at or below that value belongs to a transaction
+that has finished or is in the list. With no holder the value is published at once;
+otherwise it is stored as pending with the holder list and published by the first later
+call that finds none of those transactions still holding the lock. Rolled-back allocations
+become harmless gaps.
 
-Migration 214 creates `honua.feature_change_prefix` and
-`honua.publish_feature_change_prefix()`. It does not change the reader function,
-start a publisher loop or narrow either writer lock. An older supported reader
-therefore keeps its existing behavior during this additive stage.
+Only feature writers can hold the prefix back. Unrelated transactions, prepared
+transactions that hold no writer lock, and other databases on the cluster do not. A long
+import into features holds the prefix at the generation before its first allocation until
+it commits; edits on other layers keep committing, and appear once the import finishes.
 
-Call the publisher once per fresh writable READ COMMITTED transaction, on a
-managed connection outside feature writes and cursor reads. It rejects a
-transaction that already owns a transaction ID or uses a stronger isolation
-level. Competing publishers use a separate nonblocking advisory lock. Idle calls
-leave the row unchanged and do not assign a transaction ID.
+Call the publisher in a fresh, writable READ COMMITTED transaction that owns no transaction
+id; it rejects anything else. Competing publishers use a separate non-blocking advisory
+lock (key 2) and never block a writer. An idle call reads one row and writes nothing.
 
-The publisher captures the sequence cutoff before assigning its own transaction
-ID as a fence. Every feature allocation through that cutoff already belongs to
-an older transaction. A later fresh snapshot whose oldest active transaction ID
-has reached the fence proves those writers have committed or rolled back. The
-publisher then advances the persisted prefix, including harmless rollback holes.
-Snapshot xmax alone is unsafe: it can equal a lone open writer's ID and permit
-premature publication on the next call. Repeated calls while that writer is open
-must retain the old prefix, whether the writer later commits or rolls back.
+## Who publishes
 
-This protocol requires transaction identity before every feature generation
-allocation, a monotonically increasing sequence with CACHE 1, and no sequence
-reset. The function checks the sequence configuration. Long transactions,
-including prepared transactions, can conservatively delay the prefix even when
-they do not edit features. Monitor publication lag before activating the horizon;
-staging this function does not establish a latency bound or remove contention.
+Readers advance the prefix themselves, so no background service has to run for a
+database (`FeatureChangePrefix` in Honua.Db):
 
-## Publisher driver
+- `PostgresChangeTracker.GetCurrentGenerationAsync`, replica registration, version create
+  and reconcile wait up to 2 s for writers that were in flight when the call started, then
+  read the horizon. A caller therefore sees changes committed before it asked; under a
+  long import it gets the older, still-safe horizon.
+- Version post waits for the prefix to cover its own replayed rows before it advances the
+  common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
+- The realtime feature log publishes once per head read and once per cursor read. Each
+  commit sends `honua_rt_features`, which wakes the dispatcher, so a commit that was held
+  behind an in-flight writer is published when that writer's own commit arrives. A
+  rolled-back writer sends no notification; the 10 s safety poll covers that case.
+- The outbox dispatcher publishes before each claim.
 
-The existing outbox dispatcher calls the publisher before claiming pending events,
-including when the outbox is empty. Publication uses a fresh READ COMMITTED
-transaction that commits before the claim statement, on the same managed connection
-lease. This adds no background service or connection pool. A competing publisher
-does not block the claim; cancellation or publication failure releases the lease.
+## Proof
 
-The dispatcher paces itself (#9064): empty passes back off from
-`IdlePollIntervalMs` (1 s) to `MaxIdlePollIntervalMs` (10 s), and a local outbox
-write returns it to the short interval. Publication takes two passes (fence, then
-publish), so on an idle cluster the published prefix can trail a write by about
-twice `MaxIdlePollIntervalMs`, longer for writes from processes that run no
-dispatcher. Recheck this bound, or wake the publisher on commit, before
-activating the horizon.
-
-Snapshot xmin can also be held back by transactions in other databases on the same
-PostgreSQL cluster. This conservatively delays publication; measure that lag under
-the deployed workload before activating the horizon. The driver does not replace
-the reader function or narrow either writer lock.
-
-The driver runs only where the PostgreSQL outbox dispatcher is hosted. Control-plane
-event Lambda hosts omit database polling loops, and providers without transactional
-outbox capability skip dispatch. Before activation, establish a running publisher for
-every database whose readers will use the persisted prefix; a writer-only host does
-not advance it by itself. This stage does not add another publisher for those hosts.
+`FeatureChangeWriterConcurrencyTests` holds one writer after allocation and proves a second
+writer, on another layer or another row of the same layer, commits first; the cursor holds
+until the first commits or rolls back, and resume loses neither change. The same suite
+covers COPY alongside an edit and a branch overlay alongside a DEFAULT write.
+`FeatureChangePrefixPublisherTests` covers the publisher contract, including an unrelated
+open transaction that must not hold the prefix back.
