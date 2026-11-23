@@ -101,4 +101,10 @@ internal static partial class OidcAuthenticationLog
         Message = "OIDC token replay continuation could not be recorded in the replay store; reuse of this token will be rejected as a replay.")]
     public static partial void TokenReplayContinuationBindFailed(ILogger logger, Exception exception);
 
+    [LoggerMessage(
+        EventId = 4222,
+        Level = LogLevel.Warning,
+        Message = "OIDC callback for scheme {Scheme} refused: {ErrorMessage}")]
+    public static partial void OidcRemoteCallbackRefused(ILogger logger, string scheme, string errorMessage);
+
 }
