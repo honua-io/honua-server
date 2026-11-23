@@ -24,15 +24,12 @@ public sealed partial class McpWorkflowViewTests
         "honua_admin_services_list",
         "honua_admin_services_settings_get",
         "honua_admin_layer_fields_get",
-        "honua_admin_layer_display_get",
         "honua_admin_layer_popup_info_get",
-        "honua_admin_connection_layers_list",
         "honua_admin_services_layer_metadata_set",
         "honua_admin_metadata_service_discovery_set",
         "honua_admin_metadata_layer_discovery_set",
         "honua_admin_services_timeinfo_set",
         "honua_admin_layer_fields_set",
-        "honua_admin_layer_display_set",
         "honua_admin_layer_popup_info_set",
     ];
 

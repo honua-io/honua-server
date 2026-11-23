@@ -35,7 +35,7 @@ public sealed class ExportMcpToolsIntegrationTests
             structured.GetProperty("status").GetString().Should().Be("Completed", structured.GetRawText());
             structured.GetProperty("details").GetProperty("response").GetString().Should().NotBeNullOrWhiteSpace();
 
-            using var reader = await ReaderClientAsync(fixture, admin);
+            using var reader = await KeyClientAsync(fixture, admin, "read:layers");
             foreach (var (tool, arguments) in ExportToolCalls())
             {
                 var denied = await CallAsync(reader, tool, arguments);
@@ -48,8 +48,8 @@ public sealed class ExportMcpToolsIntegrationTests
         }
     }
 
-    // Creating or deleting an export always files a proposal for a person to approve, even for an
-    // administrator's credential, and nothing is written until then.
+    // An agent key's export create or delete files a proposal for a person to approve, and nothing
+    // is written until then.
     [IntegrationTheory]
     [InlineData("honua_admin_exports_create")]
     [InlineData("honua_admin_exports_delete")]
@@ -63,10 +63,11 @@ public sealed class ExportMcpToolsIntegrationTests
         try
         {
             using var admin = fixture.CreateAdminClient();
+            using var agent = await KeyClientAsync(fixture, admin, "agent", "admin:read", "admin:write");
             var before = await ExportListResponseAsync(admin);
             var arguments = ExportToolCalls().Single(call => call.Tool == tool).Arguments;
 
-            var filed = await CallAsync(admin, tool, arguments);
+            var filed = await CallAsync(agent, tool, arguments);
             var handle = filed.GetProperty("result").GetProperty("structuredContent");
             handle.GetProperty("status").GetString().Should().Be("RequiresApproval", filed.GetRawText());
             handle.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace(filed.GetRawText());
@@ -125,10 +126,10 @@ public sealed class ExportMcpToolsIntegrationTests
             .GetProperty("response").GetString();
     }
 
-    private static async Task<HttpClient> ReaderClientAsync(WebAppFixture fixture, HttpClient admin)
+    private static async Task<HttpClient> KeyClientAsync(WebAppFixture fixture, HttpClient admin, params string[] permissions)
     {
         using var created = await admin.PostAsJsonAsync(
-            "/api/v1/admin/api-keys", new { name = $"reader-{Guid.NewGuid():N}", permissions = new[] { "read:layers" } });
+            "/api/v1/admin/api-keys", new { name = $"key-{Guid.NewGuid():N}", permissions });
         var body = await created.Content.ReadAsStringAsync();
         created.StatusCode.Should().Be(HttpStatusCode.Created, body);
         using var document = JsonDocument.Parse(body);
