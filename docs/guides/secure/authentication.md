@@ -292,8 +292,16 @@ route that allows anonymous access serves the request anonymously, and
 The client address is the connection address after trusted forwarded-header
 processing. Behind a proxy, enable `ForwardedHeaders` or every client shares the
 proxy's address; the server warns at startup while `ForwardedHeaders` is off.
-List addresses that front many clients in `ExemptNetworks`. Counts are held per
-server instance, and a request without a client address is not counted.
+List addresses that front many clients in `ExemptNetworks`. A request without a
+client address is not counted.
+
+With a system database, every server instance counts into one window per source
+in PostgreSQL, so a source is refused after `Threshold` failures in total across
+all instances, and a refusal survives a restart. A failed attempt writes one row
+update; successful and uncounted requests write nothing. Another instance applies
+a refusal within `SharedPollInterval`. If the database cannot be reached, each
+instance keeps counting on its own until it recovers. A server without a system
+database counts per instance.
 
 | Setting (`Authentication:FailedAttempts`) | Default | Meaning |
 |---|---:|---|
@@ -301,7 +309,8 @@ server instance, and a request without a client address is not counted.
 | `Threshold` | `10` | Failures within `Window` that refuse a source. |
 | `Window` | `00:15:00` | Counting window, started by the first failure. |
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
-| `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
+| `MaxTrackedSources` | `10000` | Addresses tracked, per instance and in the shared store; expired entries are evicted first and refusals last. |
+| `SharedPollInterval` | `00:00:05` | How often an instance reads refusals made by other instances, at most one minute. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
 
 The `honua_authentication_failed_attempts_total` counter aggregates completed

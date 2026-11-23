@@ -34,7 +34,8 @@ internal interface IAuthenticationFailureLimiter
     void EndAttempt(AuthenticationAttemptKey key, AuthenticationAttemptOutcome outcome);
 }
 
-// Process-local store; the interface leaves room for a shared one. A success never clears failures: they expire with the window.
+// Counts in process; with a system database the shared view adds the refusals and totals of every instance.
+// A success never clears failures: they expire with the window.
 internal sealed class AuthenticationFailureLimiter(
     IOptions<AuthenticationFailureLimiterOptions> options,
     TimeProvider timeProvider,
@@ -50,30 +51,31 @@ internal sealed class AuthenticationFailureLimiter(
     private readonly Dictionary<string, FailureWindow> _sources = new(StringComparer.Ordinal);
     private readonly Lock _gate = new();
 
+    // Set by the host that has a system database; null counts per instance.
+    public SharedAuthenticationFailures? Shared { get; init; }
+
     public TimeSpan? RefusalFor(string source)
     {
         var now = timeProvider.GetUtcNow();
-        lock (_gate)
-        {
-            return _sources.TryGetValue(source, out var window) && window.RefusedUntil is { } until && until > now
-                ? until - now
-                : null;
-        }
+        var until = Later(LocalRefusal(source, now), SharedRefusal(source, now));
+        return until > now ? until - now : null;
     }
 
     // An in-flight credential holds a slot, so a parallel burst of distinct guesses cannot pass the threshold; the same credential in flight shares one slot.
     public AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key)
     {
         var now = timeProvider.GetUtcNow();
+        var sharedWindow = Shared?.For(key.Source, now);
         lock (_gate)
         {
             var window = Track(key.Source, now);
-            if (window.RefusedUntil is { } until && until > now)
+            if (Later(window.RefusedUntil, sharedWindow?.RefusedUntil) is { } until && until > now)
             {
                 return AuthenticationAttemptAdmission.Refuse(until - now);
             }
 
-            if (!window.Pending.ContainsKey(key.Credential) && window.Failures + window.Pending.Count >= _options.Threshold)
+            var failures = Math.Max(window.Failures, sharedWindow?.Failures ?? 0);
+            if (!window.Pending.ContainsKey(key.Credential) && failures + window.Pending.Count >= _options.Threshold)
             {
                 return AuthenticationAttemptAdmission.Refuse(InFlightRetryAfter);
             }
@@ -105,6 +107,7 @@ internal sealed class AuthenticationFailureLimiter(
                 return;
             }
 
+            Shared?.Record(key.Source);
             if (++window.Failures < _options.Threshold)
             {
                 return;
@@ -116,6 +119,20 @@ internal sealed class AuthenticationFailureLimiter(
         AuthenticationLog.AuthenticationSourceBlocked(
             logger, LogValueRedactor.Hash(key.Source), (int)_options.BlockDuration.TotalSeconds);
     }
+
+    private DateTimeOffset? LocalRefusal(string source, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            return _sources.TryGetValue(source, out var window) && window.IsRefused(now) ? window.RefusedUntil : null;
+        }
+    }
+
+    private DateTimeOffset? SharedRefusal(string source, DateTimeOffset now)
+        => Shared?.For(source, now) is { } window && window.IsRefused(now) ? window.RefusedUntil : null;
+
+    private static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)
+        => first is null ? second : second is null ? first : first > second ? first : second;
 
     private FailureWindow Track(string source, DateTimeOffset now)
     {
