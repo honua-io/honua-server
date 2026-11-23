@@ -346,9 +346,15 @@ def _verdict_entries(args, identity):
                                             "sourceRevision": identity.get("sourceRevision"),
                                             "registeredAt": datetime.date.today().isoformat()})
         return validate_inventory(candidate)
-    return [e for e in validate_inventory(_load_json(INVENTORY))
-            if e["image"] in _scanned_names(identity) and e["platform"] == identity.get("platform")
-            and e["release"] == args.release]
+    return registered_entries(_load_json(INVENTORY), identity, args.release)
+
+
+def registered_entries(inventory, identity, release):
+    """Inventory entries for the digest this scan was asked for (index or platform manifest)."""
+    named = identity.get("requestedImage") or identity.get("image")
+    return [e for e in validate_inventory(inventory)
+            if e["image"] == named and e["platform"] == identity.get("platform")
+            and e["release"] == release]
 
 
 def _cmd_verdict(args):

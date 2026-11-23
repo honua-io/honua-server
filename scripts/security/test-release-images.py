@@ -162,6 +162,15 @@ class Verdicts(unittest.TestCase):
         with self.assertRaises(ValueError):
             ri.verdict(dict(scanned, requestedImage=stranger), ENTRY, trivy([]))
 
+    def test_a_scan_binds_only_the_entry_it_was_asked_for(self):
+        manifest_entry = dict(ENTRY, image=OTHER)
+        both = inventory(ENTRY, manifest_entry)
+        from_index = dict(IDENTITY, image=OTHER, requestedImage=IMAGE)
+        from_manifest = dict(IDENTITY, image=OTHER)
+        self.assertEqual([ENTRY], ri.registered_entries(both, from_index, ENTRY["release"]))
+        self.assertEqual([manifest_entry], ri.registered_entries(both, from_manifest, ENTRY["release"]))
+        self.assertEqual([], ri.registered_entries(both, from_index, "2026.1"))
+
     def test_report_sets_deadlines_and_keeps_details_out_of_the_public_summary(self):
         result = ri.verdict(IDENTITY, ENTRY, trivy([finding("CVE-2026-1", "CRITICAL", "2"),
                                                     finding("CVE-2026-4", "HIGH", "3")]))
