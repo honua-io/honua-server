@@ -32,8 +32,8 @@ public sealed class AppDraftFactory
         var errors = new List<PackageDraftFinding>();
         var warnings = new List<PackageDraftFinding>();
 
-        var templateId = NormalizeOptional(request.TemplateId, "templateId", "/templateId", errors);
-        var mapId = NormalizeOptional(request.MapId, "mapId", "/mapId", errors);
+        var templateId = DraftField.NormalizeOptional(request.TemplateId, "templateId", errors);
+        var mapId = DraftField.NormalizeOptional(request.MapId, "mapId", errors);
         var boundArtifacts = BuildBoundArtifacts(request.BoundArtifactIds, errors);
         var runtimeConfig = ValidateRuntimeConfig(request.RuntimeConfig, errors);
 
@@ -136,27 +136,6 @@ public sealed class AppDraftFactory
         }
 
         return config;
-    }
-
-    private static string? NormalizeOptional(
-        string? value,
-        string name,
-        string path,
-        List<PackageDraftFinding> errors)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length != 0)
-        {
-            return trimmed;
-        }
-
-        errors.Add(Finding(name + "Invalid", path, $"{name} was supplied but is blank; omit it instead."));
-        return null;
     }
 
     private static PackageDraftFinding Finding(string code, string path, string message) =>

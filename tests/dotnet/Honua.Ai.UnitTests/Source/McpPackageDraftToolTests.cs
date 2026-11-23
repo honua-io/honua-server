@@ -35,10 +35,9 @@ public sealed class McpPackageDraftToolTests
         names.Should().NotContain(["honua_create_map_package", "honua_create_app_package"]);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("map")]
     [InlineData("app")]
-    [Trait("Category", "Unit")]
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]

@@ -40,8 +40,8 @@ public sealed partial class MapDraftFactory
         var sourceBindings = BuildSourceBindings(request.SourceBindings, errors, warnings);
         var styleRefs = BuildStyleRefs(request.StyleId, errors);
         var initialView = BuildInitialView(request.InitialView, errors);
-        var templateId = NormalizeOptional(request.TemplateId, "templateId", "/templateId", errors);
-        var themeId = NormalizeOptional(request.ThemeId, "themeId", "/themeId", errors);
+        var templateId = DraftField.NormalizeOptional(request.TemplateId, "templateId", errors);
+        var themeId = DraftField.NormalizeOptional(request.ThemeId, "themeId", errors);
 
         if (errors.Count > 0)
         {
@@ -274,27 +274,6 @@ public sealed partial class MapDraftFactory
             case "pmtiles": protocol = SourceProtocol.PMTiles; return true;
             default: return false;
         }
-    }
-
-    private static string? NormalizeOptional(
-        string? value,
-        string name,
-        string path,
-        List<PackageDraftFinding> errors)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length != 0)
-        {
-            return trimmed;
-        }
-
-        errors.Add(Finding(name + "Invalid", path, $"{name} was supplied but is blank; omit it instead."));
-        return null;
     }
 
     private static string? NullIfBlank(string? value)

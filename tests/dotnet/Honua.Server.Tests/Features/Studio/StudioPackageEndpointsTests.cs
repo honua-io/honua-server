@@ -1486,10 +1486,9 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         problem.GetProperty("detail").GetString().Should().Contain("route must start with '/'");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("map-packages")]
     [InlineData("app-packages")]
-    [Trait("Category", "Integration")]
     public async Task CreateMapOrApp_RetiredRoute_ReturnsNotFound(string retiredRoute)
     {
         var response = await PostEmptyJsonAsync(_client, $"/api/v1/studio/{retiredRoute}/generate");
