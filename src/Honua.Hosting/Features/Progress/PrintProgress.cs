@@ -5,7 +5,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Infrastructure.Progress;
 
-internal sealed record PrintProgress : IOperationProgress, ICancellableOperationProgress
+internal sealed record PrintProgress : IOperationProgress, ICancellableOperationProgress, ITenantOwnedProgress
 {
     public required string JobId { get; init; }
     public string? RequestedBy { get; init; }

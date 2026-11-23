@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +63,7 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
             UpdatedAt = now,
             CurrentPhase = "Queued",
             TimeoutPolicy = JobTimeoutPolicy.LongRunning,
+            Audit = new OperationAuditInfo { TenantId = _serviceProvider.GetService<ITenantContext>()?.TenantId },
             Spec = spec,
         };
 

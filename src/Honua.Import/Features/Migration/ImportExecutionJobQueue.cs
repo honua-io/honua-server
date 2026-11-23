@@ -31,6 +31,9 @@ internal sealed record ImportExecutionSubmission<TRequest, TProgress>
     public required TRequest Request { get; init; }
     public required TProgress InitialProgress { get; init; }
     public required string WorkloadName { get; init; }
+
+    // The tenant that accepted the submission; recorded on the durable job as its owner.
+    public string? TenantId { get; init; }
 }
 
 internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
@@ -217,6 +220,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             CurrentPhase = "Queued",
             // A large layer or a whole GeoServer catalog can outlast the one-hour default.
             TimeoutPolicy = JobTimeoutPolicy.LongRunning,
+            Audit = new OperationAuditInfo { TenantId = submission.TenantId },
             Spec = new ExecutionJobSpec
             {
                 Kind = _spec.Kind,

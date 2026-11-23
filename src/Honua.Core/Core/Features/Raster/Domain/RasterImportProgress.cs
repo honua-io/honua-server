@@ -22,9 +22,11 @@ public enum RasterImportPhase
     Failed
 }
 
-public sealed record RasterImportProgress : IOperationProgress
+public sealed record RasterImportProgress : IOperationProgress, ITenantOwnedProgress
 {
     public required string OperationId { get; init; }
+
+    public string? TenantId { get; init; }
 
     public required RasterImportPhase Phase { get; init; }
 
