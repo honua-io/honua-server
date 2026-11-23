@@ -9,10 +9,9 @@ permissions:
   contents: read
   packages: read
 
-# Each job runs one at a time and queues only the newest push behind it, so a
-# burst of merges cannot cancel every run before it reports. With workflow
-# cancellation, two thirds of runs were cancelled because merges arrive more
-# often than a build finishes.
+# Each job runs one at a time and queues only the newest push behind it.
+# Merges can arrive more often than a build finishes, and cancelling the
+# running job would then leave a burst of merges without any verdict.
 
 env:
   DOTNET_VERSION: '11.0.x'

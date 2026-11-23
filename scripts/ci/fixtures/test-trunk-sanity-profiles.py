@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -99,13 +100,25 @@ class EntryPointTests(unittest.TestCase):
 
 
     def test_runs_before_the_profile_job_existed_do_not_count(self):
-        script_commit = profiles.subprocess.check_output(
-            ["git", "log", "-1", "--format=%H", "--", profiles.SCRIPT], cwd=ROOT, text=True).strip()
-        if script_commit:
-            self.assertTrue(profiles.compiled_profiles({"head_sha": script_commit}))
-        old = profiles.subprocess.check_output(
-            ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=ROOT, text=True).split()[0]
-        self.assertFalse(profiles.compiled_profiles({"head_sha": old}))
+        with tempfile.TemporaryDirectory() as directory:
+            def commit(message):
+                subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit",
+                                "-q", "--allow-empty", "-m", message], cwd=directory, check=True)
+                return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=directory, text=True).strip()
+            subprocess.run(["git", "init", "-q", directory], check=True)
+            older = commit("before the profile job")
+            script = Path(directory) / profiles.SCRIPT
+            script.parent.mkdir(parents=True)
+            script.write_text("")
+            subprocess.run(["git", "add", profiles.SCRIPT], cwd=directory, check=True)
+            newer = commit("adds the profile job")
+            previous = os.getcwd()
+            os.chdir(directory)
+            try:
+                self.assertEqual([profiles.compiled_profiles({"head_sha": sha}) for sha in (older, newer)],
+                                 [False, True])
+            finally:
+                os.chdir(previous)
 
 
 class WorkflowTests(unittest.TestCase):
