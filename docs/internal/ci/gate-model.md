@@ -272,8 +272,8 @@ Stage 3 details:
 
 Besides the required checks below and the required Clean code check, every
 `pull_request` or `pull_request_target` workflow is optional and path-filtered,
-apart from two cheap control workflows that run on every event: auto-merge
-ready pull requests and Close external pull requests. Runner label lint reads only
+apart from two cheap control workflows: auto-merge ready pull requests (every
+event except non-hold label changes and body-only edits) and Close external pull requests. Runner label lint reads only
 `.github/workflows`, so it runs only when a pull request or trunk push changes
 that directory. A new optional pull request workflow needs a `paths` filter
 naming what can change its result.
@@ -1673,6 +1673,15 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+A queued run that starts after the PR merged or closed ends neutrally without
+touching it: GitHub keeps `autoMergeRequest` on a merged PR but refuses to
+disable it, which used to leave a red check on the merged head.
+
+When the bot armed SQUASH on a single-commit PR that has since grown into a
+multi-commit bundle, the next run switches it to MERGE (only while the PR is
+still blocked); a method a lane chose itself is kept. Label events start a job
+only for the hold labels, and `edited` only when the base branch changed;
+other label and body edits are skipped without a runner.
 
 ## Admin authentication capacity split (12 November 2026)
 
