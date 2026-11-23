@@ -509,13 +509,13 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly AOT candidate by digest
         id: build
@@ -684,13 +684,13 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Build nightly Lambda AOT candidate by digest
         id: build
@@ -992,13 +992,13 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Preserve immutable JIT architecture tags
         id: immutable_tags
@@ -1224,9 +1224,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
           labels: |
-            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.title=Honua Compose executor
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
           annotations: |
             index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             index:org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
