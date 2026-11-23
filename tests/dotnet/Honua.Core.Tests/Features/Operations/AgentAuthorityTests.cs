@@ -56,6 +56,29 @@ public sealed class AgentAuthorityTests
         Assert.Equal(AgentAuthorityVerdict.Unrestricted, await Verdict(null, Descriptor(), Agent with { Roles = ["admin"] }));
     }
 
+    [UnitTheory]
+    [InlineData("studio.draft.create")]
+    [InlineData("studio.draft.update")]
+    [InlineData("studio.draft.save-version")]
+    public async Task NoCeiling_AgentDraftAuthoringFollowsPolicy(string operationId)
+    {
+        var descriptor = Descriptor() with { OperationId = operationId };
+
+        Assert.Equal(AgentAuthorityVerdict.Unrestricted, await Verdict(Store(null), descriptor, Agent));
+        Assert.Equal(AgentAuthorityVerdict.Denied, await Verdict(Store(null), descriptor, Agent with { PrincipalId = " " }));
+    }
+
+    [UnitTheory]
+    [InlineData("studio.draft.delete")]
+    [InlineData("studio.content.create-publication-request")]
+    [InlineData("studio.content.rollback")]
+    public async Task NoCeiling_AgentDraftDeleteAndPublicationNeedApproval(string operationId)
+    {
+        var descriptor = Descriptor() with { OperationId = operationId };
+
+        Assert.Equal(AgentAuthorityVerdict.ApprovalRequired, await Verdict(Store(null), descriptor, Agent));
+    }
+
     [UnitTest]
     public async Task Ceiling_IsReadAgainAfterRevocationAndForApprovedReplay()
     {
