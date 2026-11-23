@@ -94,6 +94,7 @@ public sealed partial class StreamingFileImportStagingTableTests
 
             created.Should().BeTrue();
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.TargetExists, "a race loses the same way as the up-front check");
             await using var marker = new NpgsqlCommand(
                 $"SELECT marker FROM \"{schema}\".\"{OverwriteGuardPhysicalTable}\"", external);
             (await marker.ExecuteScalarAsync()).Should().Be("external");

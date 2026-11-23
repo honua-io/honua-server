@@ -3,5 +3,7 @@
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-internal sealed class ImportTargetExistsException()
-    : InvalidOperationException("Create-only import requires a new target table.");
+internal sealed class ImportTargetExistsException() : InvalidOperationException(SafeMessage)
+{
+    public const string SafeMessage = "Create-only import requires a new target table.";
+}
