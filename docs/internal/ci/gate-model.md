@@ -3334,3 +3334,34 @@ seconds (0.116 runner minutes), with one runner before and after. Individual
 baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the second
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
+
+### GeoServer container idle grace
+
+`GeoServerFixture` holds the shared GeoServer container for a two-minute idle
+grace after its last release, the same pattern the shared web host uses.
+`GeoServerCuratedImportIntegrationTests` (Database collection) and
+`GeoServerLiveImportIntegrationTests` (job substrate collection) run in
+different serial collections, so the reference count reached zero between them
+and each class booted its own container (about 30 to 55 seconds each on CI and
+the build host). A later class now reuses the running container; curated seed
+state is kept with it. The live cases assert only positive discovery counts and
+a completed dry run, so the curated resources do not change what they check.
+No test file or assertion changes. When the test host exits without raising
+ProcessExit, the Testcontainers reaper (enabled in every workflow) removed the
+idle container within 15 seconds in the build-host measurement.
+
+Build-host runs of the complete unchanged Migration Source Imports shard filter
+(88 passed, 4 skipped per run): the curated class's fixture-inclusive span was
+44.202 / 58.267 seconds on the base and 4.141 / 4.346 seconds on the candidate,
+which is the removed container boot. TRX shard walls were 343.845 / 263.147
+seconds (base) and 252.611 / 186.485 seconds (candidate); the first base run
+also had one unrelated failure (`GeoServerImportEndpointTests`, a disposed
+CancellationTokenSource in a class that does not use this fixture). The shared
+build host was loaded, so the wall pairs are noisy; the dependable saving is one
+GeoServer boot, about 40 seconds (0.67 runner-minutes) per run of the shard, with
+one runner before and after. On scheduled full run 45038465540 the shard spent
+136 of its 229 job seconds running tests.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
