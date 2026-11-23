@@ -67,8 +67,8 @@ public sealed partial class ImportJobServiceCancellationLifetimeTests
             IProgress<ImportProgress>? progress,
             CancellationToken cancellationToken = default)
         {
-            progress?.Report(ImportProgress.CreateInitial("importer", request.TableName, SupportedFileFormat.GeoJson)
-                with { CurrentPhase = ReportedPhase });
+            var fresh = ImportProgress.CreateInitial("importer", request.TableName, SupportedFileFormat.GeoJson);
+            progress?.Report(fresh with { CurrentPhase = ReportedPhase });
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             throw new InvalidOperationException("Unreachable.");
         }
