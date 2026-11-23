@@ -97,7 +97,16 @@ internal static class MobileAuthEndpoints
 
         if (context.Request.HasFormContentType)
         {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            IFormCollection form;
+            try
+            {
+                form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsMalformedFormBody(ex))
+            {
+                return null;
+            }
+
             return new MobileTokenRefreshRequest
             {
                 RefreshToken = FirstValue(form["refreshToken"], form["refresh_token"]),
@@ -118,6 +127,19 @@ internal static class MobileAuthEndpoints
             return null;
         }
     }
+
+    // A missing multipart boundary surfaces as InvalidDataException and a body that ends
+    // before its closing boundary as IOException; both are client faults, not 500s. Form
+    // size limits (InvalidDataException "... limit ... exceeded") and request-body limits
+    // (BadHttpRequestException) still reach the shared exception mapper, which answers 413.
+    private static bool IsMalformedFormBody(Exception exception) => exception switch
+    {
+        BadHttpRequestException => false,
+        InvalidDataException invalidData => !(invalidData.Message.Contains("limit", StringComparison.OrdinalIgnoreCase)
+            && invalidData.Message.Contains("exceeded", StringComparison.OrdinalIgnoreCase)),
+        IOException => true,
+        _ => false,
+    };
 
     private static MobileTokenMaterial? ResolveTokenMaterial(MobileAuthOptions options, IHostEnvironment environment)
     {
