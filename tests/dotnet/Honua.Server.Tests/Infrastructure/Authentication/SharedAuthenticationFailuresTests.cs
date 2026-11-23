@@ -37,7 +37,8 @@ public sealed class SharedAuthenticationFailuresTests
             .Returns(new[] { KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), new SharedFailureWindow(3, refusedUntil, refusedUntil)) });
         var limiter = CreateLimiter(shared);
 
-        await CreateSync(shared).PollAsync(CancellationToken.None);
+        using var sync = CreateSync(shared);
+        await sync.PollAsync(CancellationToken.None);
 
         limiter.RefusalFor(Source).Should().Be(TimeSpan.FromMinutes(4));
         limiter.TryBeginAttempt(new(Source, 1)).Should().Be(AuthenticationAttemptAdmission.Refuse(TimeSpan.FromMinutes(4)));
@@ -57,7 +58,8 @@ public sealed class SharedAuthenticationFailuresTests
         limiter.TryBeginAttempt(first).Admitted.Should().BeTrue();
         limiter.EndAttempt(first, AuthenticationAttemptOutcome.Failed);
         shared.Recorded.TryRead(out var recorded).Should().BeTrue();
-        await CreateSync(shared).RecordAsync(recorded!, CancellationToken.None);
+        using var sync = CreateSync(shared);
+        await sync.RecordAsync(recorded!, CancellationToken.None);
 
         limiter.TryBeginAttempt(new(Source, 2)).Admitted.Should().BeTrue("two failures in the deployment, one slot left");
         limiter.TryBeginAttempt(new(Source, 3)).Admitted.Should().BeFalse("the in-flight attempt holds the last slot");
@@ -72,7 +74,7 @@ public sealed class SharedAuthenticationFailuresTests
         _ledger.ReadRefusalsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("database unavailable"));
         var limiter = CreateLimiter(shared);
-        var sync = CreateSync(shared);
+        using var sync = CreateSync(shared);
 
         for (var credential = 0; credential < 3; credential++)
         {
