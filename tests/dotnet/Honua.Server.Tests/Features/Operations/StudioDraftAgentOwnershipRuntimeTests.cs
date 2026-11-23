@@ -10,7 +10,7 @@ using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsStudioDrafts;
 
 // The runtime reports whether every owner a Studio call touches is the actor bound to it.
 public sealed class StudioDraftAgentOwnershipRuntimeTests
