@@ -746,21 +746,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate requested identity
         run: python3 scripts/security/existing-image-scan.py validate
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Pull the release image without running it
         env:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
-          docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
-          docker image inspect --platform "$SCAN_PLATFORM" "$SCAN_IMAGE" > existing-image-inspect.json
-          python3 scripts/security/existing-image-scan.py identity
+          # An entry may name a multi-arch index. Scanning the index directly fails: the
+          # pulled image ID is the platform manifest, and Trivy cannot export the index on
+          # the other architecture. The shared step pulls the runnable platform manifest
+          # (RESOLVED_IMAGE) and records the registered digest as requestedImage.
+          bash scripts/security/bind-platform-image.sh
           # VEX is the only suppression mechanism for release images: no ignore-file entries.
           : > "$RUNNER_TEMP/release-image-empty.trivyignore"
       - name: Generate the release OpenVEX document for this digest
         run: |
+          set -euo pipefail
+          images=(--image "$SCAN_IMAGE")
+          if [ "$RESOLVED_IMAGE" != "$SCAN_IMAGE" ]; then images+=(--image "$RESOLVED_IMAGE"); fi
           python3 scripts/security/release_images.py vex-generate \
-            --name "$SCAN_RELEASE" --image "$SCAN_IMAGE" --output release-image.openvex.json
+            --name "$SCAN_RELEASE" "${images[@]}" --output release-image.openvex.json
       - name: Scan full vulnerability inventory with VEX applied
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -769,7 +775,7 @@ jobs:
           TRIVY_SHOW_SUPPRESSED: 'true'
         with:
           scan-type: image
-          image-ref: ${{ matrix.image }}
+          image-ref: ${{ env.RESOLVED_IMAGE }}
           scanners: vuln
           format: json
           output: release-image-trivy.json
@@ -784,7 +790,7 @@ jobs:
           TRIVY_VEX: release-image.openvex.json
         with:
           scan-type: image
-          image-ref: ${{ matrix.image }}
+          image-ref: ${{ env.RESOLVED_IMAGE }}
           scanners: vuln
           format: sarif
           output: release-image.sarif
@@ -810,6 +816,7 @@ jobs:
           name: release-image-security-${{ matrix.key }}
           path: |
             existing-image-identity.json
+            requested-manifest.json
             release-image.openvex.json
             release-image-trivy.json
             ${{ matrix.key }}-verdict.json
