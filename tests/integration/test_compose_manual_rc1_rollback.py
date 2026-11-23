@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.request
 
-from test_compose_release_lifecycle import ROOT, free_port, run
+from test_compose_release_lifecycle import DEFAULT_SCHEMA_OMITTED_MIGRATIONS, default_schema_migration_ceiling, free_port, run
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 from package_quickstart import package
 from compose_readiness_diagnostics import readiness_diagnostics
@@ -89,9 +89,10 @@ def restore_database_backup(compose, env, backup):
 
 
 def assert_current_schema(sql):
-    migrations = ROOT / "src/Honua.Server/Migrations"
-    expected_schema = max(int(path.name.split("_", 1)[0]) for path in migrations.glob("[0-9]*_*.sql"))
+    expected_schema = default_schema_migration_ceiling()
     assert int(sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions")) == expected_schema
+    omitted = ", ".join(f"'Honua.Server.Migrations.{name}'" for name in DEFAULT_SCHEMA_OMITTED_MIGRATIONS)
+    assert sql(f"SELECT count(*) FROM public.schema_versions WHERE scriptname IN ({omitted})") == "0"
     assert sql("SELECT PostGIS_Version()")
 
 

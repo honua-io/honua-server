@@ -39,6 +39,22 @@ def free_port():
         return sock.getsockname()[1]
 
 
+# On the default honua schema the migration runner leaves the configured-schema adoption
+# scripts out of discovery (PostgresDatabaseMigrationRunner.BuildUpgrader), so a default
+# install never journals them and its highest journaled script is the highest other one.
+DEFAULT_SCHEMA_OMITTED_MIGRATIONS = ("109_AdoptConfiguredGuardedSchema.sql", "227_AdoptConfiguredRegistrySchema.sql")
+
+
+def default_schema_migration_ceiling():
+    migrations = ROOT / "src/Honua.Server/Migrations"
+    manifest = (ROOT / "src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs").read_text()
+    adoption = {path.name for path in migrations.glob("[0-9]*_AdoptConfigured*.sql")}
+    assert adoption == set(DEFAULT_SCHEMA_OMITTED_MIGRATIONS), sorted(adoption)
+    assert all(f'"Honua.Server.Migrations.{name}"' in manifest for name in adoption)
+    return max(int(path.name.split("_", 1)[0]) for path in migrations.glob("[0-9]*_*.sql")
+               if path.name not in adoption)
+
+
 def request(base, path, key, payload=None, session=None):
     headers = {"X-API-Key": key, "Accept": "application/json, text/event-stream"}
     if session:
@@ -156,7 +172,7 @@ def create_identity_fixture(project_dir, human_port, identity_port):
 
 def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
-    candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
+    candidate_schema = default_schema_migration_ceiling()
     assert candidate_schema >= 142
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", candidate)
     # rc.1 predates the secret launcher; its real-image rollback is covered by
