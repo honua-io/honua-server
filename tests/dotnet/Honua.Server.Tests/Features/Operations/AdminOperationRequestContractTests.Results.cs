@@ -102,7 +102,6 @@ public sealed partial class AdminOperationRequestContractTests
 
     [UnitTheory]
     [InlineData("admin.layer.publish", HttpStatusCode.Created, true)]
-    [InlineData("admin.layer.publish", HttpStatusCode.Accepted, false)]
     [InlineData("admin.layer.publish", HttpStatusCode.BadRequest, false)]
     [InlineData("admin.layer.set-enabled", HttpStatusCode.Created, false)]
     public async Task SubmitAsync_WithoutCommittedPublication_DoesNotInventResourceIdentity(

@@ -218,7 +218,10 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
                     sp.GetRequiredService<TimeProvider>(),
-                    sp.GetRequiredService<OperationLineageAttestationStore>()));
+                    sp.GetRequiredService<OperationLineageAttestationStore>())
+                {
+                    LayerPublishJobs = sp.GetService<Honua.Core.Features.Admin.Abstractions.ILayerPublishJobs>()
+                });
             }
             services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
             {

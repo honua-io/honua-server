@@ -437,24 +437,38 @@ internal sealed class StudioCreatePublicationRequestExecutor(
     protected override JsonTypeInfo<StudioPublicationRequestPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload;
     protected override JsonTypeInfo<StudioPublicationRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioPublicationRequest;
 
+    internal const string NonCurrentVersionMessage =
+        "Only the current saved Studio version can be published; reopen this version and save it to publish it.";
+
     public override async Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
     {
+        // Refusals below are blocking verdicts, not throws: the dispatcher records a pre-policy
+        // throw as an unclassified failure (500), while a verdict's ErrorKind reaches the REST
+        // surface as 404/409 with the reason, matching the actuation path's taxonomy.
         var payload = ParsePayload(request);
         var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.VersionId, cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
-        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false)
-            ?? throw new KeyNotFoundException($"Studio content item '{payload.ItemId:D}' was not found.");
+            .ConfigureAwait(false);
+        if (version is null)
+        {
+            return Refusal("not-found", $"Studio content version '{payload.VersionId:D}' was not found.");
+        }
+
+        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false);
+        if (pointers is null)
+        {
+            return Refusal("not-found", $"Studio content item '{payload.ItemId:D}' was not found.");
+        }
+
         if (pointers.CurrentVersionId != payload.VersionId)
         {
-            throw new InvalidOperationException("The publication proposal must bind the current saved Studio version.");
+            return Refusal("conflict", NonCurrentVersionMessage);
         }
 
         if (!string.Equals(version.ContentHash, payload.ContentHash, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
+            return Refusal("conflict", "The supplied content hash does not match the saved Studio version.");
         }
 
         // The intent must be rejected HERE, before policy routing.
@@ -473,13 +487,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         var intentValidation = validator.ValidatePublicationIntent(payload.Intent);
         if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
         {
-            return new OperationValidation
-            {
-                IsValid = false,
-                Status = "invalid",
-                ErrorKind = "argument",
-                Messages = [FormatIntentValidationFailure(intentValidation.Diagnostics)],
-            };
+            return Refusal("argument", FormatIntentValidationFailure(intentValidation.Diagnostics));
         }
 
         // A non-null payload intent replaces the envelope intent entirely. Only a null
@@ -496,13 +504,9 @@ internal sealed class StudioCreatePublicationRequestExecutor(
                 cancellationToken).ConfigureAwait(false);
             if (governing is not null && governing.ItemId != payload.ItemId)
             {
-                return new OperationValidation
-                {
-                    IsValid = false,
-                    Status = "invalid",
-                    ErrorKind = "conflict",
-                    Messages = [$"Route '{effectiveRoute}' is already claimed by another Studio publication."],
-                };
+                return Refusal(
+                    "conflict",
+                    $"Route '{effectiveRoute}' is already claimed by another Studio publication.");
             }
         }
 
@@ -525,6 +529,14 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             },
         };
     }
+
+    private static OperationValidation Refusal(string errorKind, string message) => new()
+    {
+        IsValid = false,
+        Status = "invalid",
+        ErrorKind = errorKind,
+        Messages = [message],
+    };
 
     // Mirrors StudioPackageLifecycleService.FormatValidationFailure so a pre-policy rejection
     // and the actuation-path ArgumentException carry byte-identical diagnostics.
