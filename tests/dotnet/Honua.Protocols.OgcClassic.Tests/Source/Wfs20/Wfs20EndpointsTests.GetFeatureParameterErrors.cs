@@ -37,6 +37,38 @@ public sealed partial class Wfs20EndpointsTests
         await AssertMissingTypeNamesAsync(response);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [InlineData("GetFeature")]
+    [InlineData("GetPropertyValue")]
+    public async Task Wfs_BboxWithUnknownCrs_ReturnsInvalidParameterValue(string operation)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST={operation}&VERSION=2.0.0&TYPENAMES=pub-layer-0&VALUEREFERENCE=name&BBOX=0,0,1,1,EPSG:999999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"BBOX\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_BboxInWebMercator_ReturnsFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&COUNT=1" +
+            "&BBOX=-20037508,-20037508,20037508,20037508,EPSG:3857");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("FeatureCollection");
+    }
+
     private static async Task AssertMissingTypeNamesAsync(HttpResponseMessage response)
     {
         var content = await response.Content.ReadAsStringAsync();

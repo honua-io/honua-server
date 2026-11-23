@@ -233,6 +233,7 @@ internal sealed partial class Wfs20Handler
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(resource, normalizedFilter);
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
+        await EnsureServableBboxCrsAsync(spatialFilter, resource, cancellationToken).ConfigureAwait(false);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
             descriptor.LocalName,
@@ -739,14 +740,13 @@ internal sealed partial class Wfs20Handler
                 Wfs20Utilities.ParameterNames.SrsName);
         }
 
-        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false)
-            ?? await _crsRegistry.ResolveBySridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false);
+        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false);
         if (resolvedDefinition.HasValue)
         {
             return resolvedDefinition.Value.Srid;
         }
 
-        if (parsedDefinition.Srid == SpatialReference.WGS84.Wkid || parsedDefinition.Srid == 3857)
+        if (await IsServableSridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false))
         {
             return parsedDefinition.Srid;
         }
@@ -756,6 +756,29 @@ internal sealed partial class Wfs20Handler
             $"Unsupported srsName '{srsName}'.",
             Wfs20Utilities.ParameterNames.SrsName);
     }
+
+    private async ValueTask EnsureServableBboxCrsAsync(
+        SpatialFilter? spatialFilter,
+        MetadataV2Object resource,
+        CancellationToken cancellationToken)
+    {
+        if (spatialFilter?.Srid is not { } bboxSrid ||
+            bboxSrid == resource.ReadSrid() ||
+            await IsServableSridAsync(bboxSrid, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        throw new WfsQueryException(
+            "InvalidParameterValue",
+            $"Unsupported BBOX CRS 'EPSG:{bboxSrid.ToString(CultureInfo.InvariantCulture)}'.",
+            Wfs20Utilities.ParameterNames.BBox);
+    }
+
+    private async ValueTask<bool> IsServableSridAsync(int srid, CancellationToken cancellationToken)
+        => srid == SpatialReference.WGS84.Wkid ||
+           srid == 3857 ||
+           (await _crsRegistry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
 
     private async ValueTask<AxisOrder> ResolveOutputAxisOrderAsync(
         string? srsName,
