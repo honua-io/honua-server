@@ -106,7 +106,11 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             StorageBindingIds = ["binding"],
             Editing = new() { CanModify = false, SupportsAttachments = true }
         }],
-        Services = [new MetadataV2Service { Metadata = new() { Id = "service", Name = "upgrade" } }],
+        Services = [new MetadataV2Service
+        {
+            Metadata = new() { Id = "service", Name = "upgrade" },
+            Protocols = ["FeatureServer"]
+        }],
         Publications = [new MetadataV2Layer
         {
             Metadata = new() { Id = "publication", Name = "features" },
