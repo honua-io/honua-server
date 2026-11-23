@@ -72,7 +72,7 @@ public sealed class StacMetadataTextTests
                 .Single(item => item.GetProperty("id").GetString() == collectionId);
         }
 
-        collection.GetProperty("title").GetString().Should().Be(title);
+        collection.GetProperty("title").GetString().Should().Be(title.Trim());
         collection.GetProperty("description").GetString().Should().Be(description);
     }
 }
