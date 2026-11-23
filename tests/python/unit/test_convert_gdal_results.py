@@ -67,3 +67,23 @@ def test_a_failure_outside_the_protocol_scope_is_warned(capsys):
 
     assert statuses["CERT-ERRH-01"] == "not-applicable"
     assert "CERT-ERRH-01, which does not apply" in capsys.readouterr().err
+
+
+def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
+    import json
+    from tests.python.gdal_ogr.conftest import EvidenceCollector
+
+    collector = EvidenceCollector()
+    collector.record("round_trip", "featureserver", "geometry", "pass", measured_delta=2e-8)
+    collector.record("round_trip_second", "featureserver", "geometry", "pass", measured_delta=4e-8)
+    collector.record("other_protocol", "wfs", "geometry", "pass", measured_delta=1.0)
+    report = tmp_path / "report.json"
+    collector.write_report(report)
+    output = tmp_path / "envelopes"
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--input", str(report), "--output-dir", str(output),
+                                    "--run-id", "measurement"])
+
+    assert convert.main() == 0
+    envelope = json.loads((output / "measurement-cli-gdal-featureserver.cert.json").read_text())
+    geometry = next(row for row in envelope["results"] if row["test_case_id"] == "CERT-GEOM-01")
+    assert geometry["measured_delta"] == 4e-8

@@ -67,6 +67,7 @@ class _EvidenceRecord:
     category: str
     status: str
     detail: str = ""
+    measured_delta: float | None = None
 
 
 class EvidenceCollector:
@@ -83,6 +84,8 @@ class EvidenceCollector:
         category: str,
         status: str,
         detail: str = "",
+        *,
+        measured_delta: float | None = None,
     ) -> None:
         self._records.append(
             _EvidenceRecord(
@@ -91,6 +94,7 @@ class EvidenceCollector:
                 category=category,
                 status=status,
                 detail=detail,
+                measured_delta=measured_delta,
             )
         )
 
@@ -117,6 +121,7 @@ class EvidenceCollector:
                     "category": r.category,
                     "status": r.status,
                     "detail": r.detail,
+                    "measured_delta": r.measured_delta,
                 }
                 for r in self._records
             ],
@@ -328,7 +333,6 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     outcome = yield
     report: TestReport = outcome.get_result()
 
-    # Only act on the call phase (or setup for skips)
     # A fixture that cannot reach the server fails in setup; that is a failed case, not a skip.
     if report.when in ("setup", "call") and report.failed:
         protocol, category = _derive_protocol_category(item)

@@ -162,6 +162,7 @@ def build_envelope(
     run_date: str,
     server_version: str,
     environment: str,
+    details: list[dict] | None = None,
 ) -> dict:
     # Roll up every recognised category in `categories` onto its CERT-* ID,
     # aggregating with worst-status-wins. Categories the converter does not
@@ -197,7 +198,14 @@ def build_envelope(
             if status is None:
                 results.append(_result(cid, "skip", "Not exercised by GDAL/OGR suite in this run."))
             else:
-                results.append(_result(cid, status))
+                result = _result(cid, status)
+                deltas = [row["measured_delta"] for row in details or []
+                          if PROTOCOL_MAP.get(row.get("protocol")) == cert_protocol
+                          and CATEGORY_MAP.get(row.get("category")) == cid
+                          and row.get("measured_delta") is not None]
+                if deltas:
+                    result["measured_delta"] = max(deltas)
+                results.append(result)
         else:
             results.append(_result(cid, "not-applicable"))
 
@@ -264,6 +272,7 @@ def main() -> int:
             run_date=run_date,
             server_version=server_version,
             environment=environment,
+            details=report.get("details"),
         )
         out_path = output_dir / f"{run_id}-cli-gdal-{cert_protocol}.cert.json"
         out_path.write_text(json.dumps(envelope, indent=2) + "\n")

@@ -23,6 +23,9 @@ class TestFeatureServerGeometry:
         by_name = {feature["properties"]["name"]: feature["geometry"]["coordinates"] for feature in features}
 
         assert set(by_name) == set(SEEDED_POINTS)
+        max_delta = 0.0
         for name, expected in SEEDED_POINTS.items():
-            assert by_name[name] == pytest.approx(expected, abs=1e-6), name
-        evidence_collector.record("test_seeded_coordinates_round_trip", "featureserver", "geometry", "pass")
+            assert by_name[name] == pytest.approx(expected, rel=0, abs=1e-6), name
+            max_delta = max(max_delta, *(abs(actual - target) for actual, target in zip(by_name[name], expected)))
+        evidence_collector.record("test_seeded_coordinates_round_trip", "featureserver", "geometry", "pass",
+                                  measured_delta=max_delta)
