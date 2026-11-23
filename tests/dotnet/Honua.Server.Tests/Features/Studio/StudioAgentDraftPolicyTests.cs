@@ -37,6 +37,34 @@ public sealed class StudioAgentDraftPolicyTests
     }
 
     [UnitTheory]
+    [InlineData(GuardrailTier.RequiresApproval, HonuaEdition.Enterprise, DefaultGuardrailLadder.DefaultPolicySource)]
+    [InlineData(GuardrailTier.DirectExecute, HonuaEdition.Pro, DefaultGuardrailLadder.DefaultPolicySource)]
+    [InlineData(GuardrailTier.DirectExecute, HonuaEdition.Enterprise, DefaultGuardrailLadder.LicensingDisabledStudioCompositionSource)]
+    public async Task EvaluateAsync_AgentAuthoringOwnDraft_ExecutesDirectlyOnEveryBuiltInPolicy(
+        GuardrailTier tier, HonuaEdition edition, string source)
+    {
+        var policy = CreatePolicy(new GuardrailDecision(tier, OperationClass.StudioDraftMutation, edition, source));
+
+        var decision = await EvaluateAsync(policy, Request(StudioDraftOperations.Update));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Allow);
+    }
+
+    [UnitTheory]
+    [InlineData(GuardrailTier.DirectExecute, HonuaEdition.Pro)]
+    [InlineData(GuardrailTier.RequiresApproval, HonuaEdition.Enterprise)]
+    public async Task EvaluateAsync_AgentOutsideItsOwnDraft_RequiresHumanApprovalOnEveryEdition(GuardrailTier tier, HonuaEdition edition)
+    {
+        var policy = CreatePolicy(new GuardrailDecision(
+            tier, OperationClass.StudioDraftMutation, edition, DefaultGuardrailLadder.DefaultPolicySource));
+        var request = Request(StudioDraftOperations.Update) with { VerifiedStudioDraftWithinActor = false };
+
+        var decision = await EvaluateAsync(policy, request);
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+    }
+
+    [UnitTheory]
     [InlineData(StudioDraftOperations.Delete)]
     [InlineData(StudioDraftOperations.ReopenVersion)]
     [InlineData(StudioDraftOperations.CreatePublicationRequest)]

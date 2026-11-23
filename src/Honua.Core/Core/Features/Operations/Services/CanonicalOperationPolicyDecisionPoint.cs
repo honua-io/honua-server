@@ -52,7 +52,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // An agent authors its own unpublished draft directly; publishing it stays a human decision.
         if (AgentApprovalRule.IsAgent(context.Roles)
             && AgentApprovalRule.IsAgentDraftAuthoring(descriptor.OperationId)
-            && IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
+            && IsBuiltInPrivateDraftPolicy(guardrail, gatewayRequest, descriptor.OperationId)
             && IsAgentOwnedDraft(request, context))
         {
             return PolicyDecision.Allowed;
@@ -128,6 +128,14 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         return initiation is (OperationInitiationKind.Human,
             OperationInitiationChannel.InteractiveOidc or OperationInitiationChannel.InteractivePassword);
     }
+
+    // The built-in draft policy on every edition and licensing mode; an operator override never qualifies.
+    private static bool IsBuiltInPrivateDraftPolicy(
+        GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>
+        guardrail.Tier != GuardrailTier.Blocked
+        && guardrail.Source is DefaultGuardrailLadder.DefaultPolicySource or DefaultGuardrailLadder.LicensingDisabledStudioCompositionSource
+        && request is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
+        && StudioDraftMutationContext.IsPrivateDraftOperation(operationId);
 
     private static bool IsDefaultPrivateDraftApproval(
         GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>
