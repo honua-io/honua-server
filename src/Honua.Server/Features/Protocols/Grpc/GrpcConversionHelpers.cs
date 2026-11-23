@@ -738,22 +738,28 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    private static DomainSpatialFilter? ToSpatialFilter(Proto.SpatialFilter filter)
+    private static DomainSpatialFilter ToSpatialFilter(Proto.SpatialFilter filter)
     {
-        if (filter.Geometry == null)
-            return null;
+        // Dropping an unusable filter would answer with every row the caller can read.
+        var geometryWkb = filter.Geometry is null ? null : ProtoGeometryToWkb(filter.Geometry);
+        if (geometryWkb is null)
+        {
+            throw InvalidArgument("spatial_filter.geometry is required when spatial_filter is set.");
+        }
 
-        var geometryWkb = ProtoGeometryToWkb(filter.Geometry);
-        if (geometryWkb == null)
-            return null;
+        if (!double.IsFinite(filter.Distance) || filter.Distance < 0 || filter.NearestCount < 0)
+        {
+            throw InvalidArgument("spatial_filter.distance and nearest_count must be finite and not negative.");
+        }
 
+        var (distance, distanceUnit) = ToDomainDistance(filter.Distance, filter.DistanceUnit);
         return new DomainSpatialFilter
         {
             Geometry = geometryWkb,
             Srid = ResolveSpatialFilterSrid(filter.SpatialReference),
             SpatialRelationship = ToDomainSpatialRelationship(filter.SpatialRelationship),
-            Distance = filter.Distance > 0 ? filter.Distance : null,
-            DistanceUnit = ToDomainDistanceUnit(filter.DistanceUnit),
+            Distance = distance > 0 ? distance : null,
+            DistanceUnit = distanceUnit,
             NearestCount = filter.NearestCount > 0 ? filter.NearestCount : null,
             ReturnDistance = filter.ReturnDistance
         };
@@ -782,11 +788,9 @@ internal static class GrpcConversionHelpers
         if (poly.Rings.Count == 0)
             return Polygon.Empty;
 
-        var shell = _geoFactory.CreateLinearRing(
-            poly.Rings[0].Coords.Select(ToCoordinate).ToArray());
+        var shell = _geoFactory.CreateLinearRing(ToCoordinates(poly.Rings[0]));
         var holes = poly.Rings.Skip(1)
-            .Select(r => _geoFactory.CreateLinearRing(
-                r.Coords.Select(ToCoordinate).ToArray()))
+            .Select(r => _geoFactory.CreateLinearRing(ToCoordinates(r)))
             .ToArray();
 
         return _geoFactory.CreatePolygon(shell, holes);
@@ -794,8 +798,7 @@ internal static class GrpcConversionHelpers
 
     private static MultiLineString BuildPolyline(Proto.PolylineGeometry polyline)
     {
-        var lines = polyline.Paths.Select(p =>
-            _geoFactory.CreateLineString(p.Coords.Select(ToCoordinate).ToArray()))
+        var lines = polyline.Paths.Select(p => _geoFactory.CreateLineString(ToCoordinates(p)))
             .ToArray();
         return _geoFactory.CreateMultiLineString(lines);
     }
@@ -811,6 +814,26 @@ internal static class GrpcConversionHelpers
         var polygons = multiPoly.Polygons.Select(BuildPolygon).ToArray();
         return _geoFactory.CreateMultiPolygon(polygons);
     }
+
+    // Input sequences may use per-vertex coords or packed ordinates (geospatial.v1 spec).
+    // delta_coords needs a CoordinateTransform, which requests do not carry.
+    private static Coordinate[] ToCoordinates(Proto.CoordinateSequence sequence)
+    {
+        if (sequence.Coords.Count > 0)
+        {
+            return sequence.Coords.Select(ToCoordinate).ToArray();
+        }
+
+        if (sequence.DeltaCoords.Count > 0)
+        {
+            throw InvalidArgument("delta_coords geometry input is not supported; send coords or packed ordinates.");
+        }
+
+        return GrpcPackedOrdinates.Decode(sequence);
+    }
+
+    internal static RpcException InvalidArgument(string message)
+        => new(new Status(StatusCode.InvalidArgument, message));
 
     private static Coordinate ToCoordinate(Proto.PointGeometry point)
     {
@@ -836,6 +859,11 @@ internal static class GrpcConversionHelpers
         bool hasM,
         double m)
     {
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+        {
+            throw InvalidArgument("Geometry coordinates must be finite numbers.");
+        }
+
         if (hasZ && hasM)
         {
             return new CoordinateZM(x, y, z, m);
@@ -974,21 +1002,28 @@ internal static class GrpcConversionHelpers
             Proto.SpatialRelationship.WithinDistance => DomainSpatialRelationship.WithinDistance,
             Proto.SpatialRelationship.BeyondDistance => DomainSpatialRelationship.BeyondDistance,
             Proto.SpatialRelationship.NearestNeighbor => DomainSpatialRelationship.NearestNeighbor,
-            _ => DomainSpatialRelationship.Intersects
+            Proto.SpatialRelationship.Unspecified => DomainSpatialRelationship.Intersects,
+            _ => throw InvalidArgument($"spatial_filter.spatial_relationship {(int)rel} is not supported.")
         };
     }
 
-    private static DomainDistanceUnit ToDomainDistanceUnit(Proto.DistanceUnit unit)
+    // Units the store has no enum member for are scaled to meters, as the GeoServices builder does.
+    private static (double Distance, DomainDistanceUnit Unit) ToDomainDistance(double distance, Proto.DistanceUnit unit)
     {
         return unit switch
         {
-            Proto.DistanceUnit.Meters => DomainDistanceUnit.Meters,
-            Proto.DistanceUnit.Feet => DomainDistanceUnit.Feet,
-            Proto.DistanceUnit.Kilometers => DomainDistanceUnit.Kilometers,
-            Proto.DistanceUnit.Miles => DomainDistanceUnit.Miles,
-            _ => DomainDistanceUnit.Meters
+            Proto.DistanceUnit.Meters or Proto.DistanceUnit.Unspecified => (distance, DomainDistanceUnit.Meters),
+            Proto.DistanceUnit.Feet => (distance, DomainDistanceUnit.Feet),
+            Proto.DistanceUnit.Kilometers => (distance, DomainDistanceUnit.Kilometers),
+            Proto.DistanceUnit.Miles => (distance, DomainDistanceUnit.Miles),
+            Proto.DistanceUnit.SurveyFeet => (distance * MetersPerSurveyFoot, DomainDistanceUnit.Meters),
+            Proto.DistanceUnit.NauticalMiles => (distance * MetersPerNauticalMile, DomainDistanceUnit.Meters),
+            _ => throw InvalidArgument($"spatial_filter.distance_unit {(int)unit} is not supported.")
         };
     }
+
+    private const double MetersPerSurveyFoot = 1200.0 / 3937.0;
+    private const double MetersPerNauticalMile = 1852.0;
 
     private static StatisticDefinition ToStatisticDefinition(Proto.StatisticDefinition proto)
     {
