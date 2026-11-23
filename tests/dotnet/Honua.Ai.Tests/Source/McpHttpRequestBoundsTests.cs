@@ -94,6 +94,7 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
             body = body.ReplaceLineEndings("\n");
             body.Should().StartWith(eventStart).And.EndWith(eventEnd);
             body = body[eventStart.Length..^eventEnd.Length];
+            body.Should().NotContain("\n");
         }
 
         using var document = JsonDocument.Parse(body);
