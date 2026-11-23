@@ -554,6 +554,17 @@ public sealed class McpIngestDatasetToolTests
     }
 
     [UnitTest]
+    public void Describe_TellsAgentsThatTheyCanOnlyCreateANewDataset()
+    {
+        var descriptor = new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance).Describe();
+
+        descriptor.Description.Should()
+            .Contain("an agent can only create a new dataset").And
+            .Contain("dataset.stage.import").And
+            .NotContain("Re-ingesting the same datasetName replaces it.");
+    }
+
+    [UnitTest]
     public void Describe_TeachesThePublishChainAndFormats()
     {
         var descriptor = new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance).Describe();

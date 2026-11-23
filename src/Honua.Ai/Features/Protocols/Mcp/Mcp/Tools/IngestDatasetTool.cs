@@ -68,10 +68,11 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "For address-only CSV, first use honua_geocode_addresses, or set addressColumn for server-side geocoding "
             + "(up to 100 rows; addressColumn requires the Enterprise edition and 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
             + "Returns row count, per-row errors, and connectionId/schema/table/geometryColumn/primaryKey for honua_publish_service. "
-            + "Re-ingesting the same datasetName replaces it. Above 4 MB, import from a URL with honua_admin_import_upload_url.",
+            + "A person re-ingesting the same datasetName replaces it; an agent can only create a new dataset "
+            + "and replaces one through dataset.stage.import, which needs one human approval. Above 4 MB, import from a URL with honua_admin_import_upload_url.",
         InputSchema = McpToolSchemas.IngestDatasetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.IngestDatasetOutputSchema,
-        // Write tool: it creates (or replaces) a table in the catalog database.
+        // Write tool: it creates a table in the catalog database (a person's call may replace one).
         // Not destructive (it loads data rather than destroying published state).
         // Not idempotent: a replay re-runs the import (and any address geocoding)
         // and replaces the staged dataset.
