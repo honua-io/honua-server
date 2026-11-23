@@ -20,7 +20,7 @@ internal static class AssetTestData
     public static async Task ResetAsync(WebAppFixture fixture)
     {
         string[] tables = ["asset_inspections", "asset_service_records", "work_task_history",
-            "asset_command_receipts", "asset_summaries", "work_tasks", "asset_profiles"];
+            "asset_command_receipts", "asset_summaries", "work_task_attachments", "work_tasks", "asset_profiles"];
         await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
         await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
@@ -88,6 +88,7 @@ internal static class AssetTestData
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
+                AttachmentPolicy = new FormAttachmentPolicy { Enabled = fields.Any(static field => field.Type is "attachment" or "media") },
                 Fields = fields,
                 Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields.Select(static field => field.FieldId).OfType<string>().ToArray() }],
             },

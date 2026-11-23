@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.FeatureStore.Domain;
 using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Assets;
@@ -31,6 +32,9 @@ public sealed record WorkTaskCompletionRequest
     [JsonPropertyName("answers")]
     public JsonElement? Answers { get; init; }
 
+    [JsonPropertyName("attachments")]
+    public Guid[] Attachments { get; init; } = [];
+
     [JsonPropertyName("notes")]
     public string? Notes { get; init; }
 }
@@ -41,7 +45,39 @@ public sealed record WorkTaskCompletionCommand
     public required WorkTaskCompletionRequest Request { get; init; }
     public required WorkTaskActor Actor { get; init; }
     public required AssetCommand Command { get; init; }
-
     // The profile access was granted for; the store refuses if the locked task has since moved.
     public required Guid? AuthorizedProfileId { get; init; }
+    public required long ConfigurationGeneration { get; init; }
+    public WorkTaskAssetWriteback? AssetWriteback { get; init; }
+}
+
+public sealed record WorkTaskAssetWriteback(long ProfileVersion, int StorageLayerId, FeatureEditBatch? Batch)
+{
+    // Set when the layer's field or edit rules refuse the mapped values. The completion is
+    // refused only if its observation advances the summary; an older one keeps its evidence.
+    public string? Refusal { get; init; }
+}
+
+public sealed record WorkTaskCompletionConflict
+{
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; init; } = AssetCommandOutcome.Conflict;
+
+    [JsonPropertyName("commandId")]
+    public required Guid CommandId { get; init; }
+
+    [JsonPropertyName("candidateId")]
+    public required Guid CandidateId { get; init; }
+
+    [JsonPropertyName("taskId")]
+    public required Guid TaskId { get; init; }
+
+    [JsonPropertyName("currentVersion")]
+    public required long CurrentVersion { get; init; }
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; init; } = "The task is already completed; the observation was retained for review.";
+
+    [JsonPropertyName("candidate")]
+    public required WorkTaskCompletionRequest Candidate { get; init; }
 }
