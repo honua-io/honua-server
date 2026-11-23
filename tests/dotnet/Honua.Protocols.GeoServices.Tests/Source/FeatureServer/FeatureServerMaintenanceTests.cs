@@ -214,12 +214,13 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
     public async Task Calculate_ValidRequest_ReturnsSuccess()
     {
         var fixture = await StartMutableFixtureAsync();
+        var objectId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Original");
         var calcExpression = JsonSerializer.Serialize(new[]
         {
             new { field = "name", sqlExpression = "'Updated'" }
         });
 
-        var response = await PostCalculateAsync(fixture, calcExpression);
+        using var response = await PostCalculateAsync(fixture, calcExpression, $"objectid = {objectId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -228,7 +229,9 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var root = document.RootElement;
 
         root.GetProperty("success").GetBoolean().Should().BeTrue();
-        root.TryGetProperty("updatedFeatureCount", out _).Should().BeTrue();
+        root.GetProperty("updatedFeatureCount").GetInt32().Should().Be(1);
+        (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be("Updated");
     }
 
     [IntegrationTest]
@@ -417,10 +420,15 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
     public async Task Calculate_InvalidCalcExpression_ReturnsBadRequest()
     {
         var fixture = await StartMutableFixtureAsync();
-        var response = await PostCalculateAsync(fixture, "not-json");
+        using var response = await PostCalculateAsync(fixture, "not-json");
 
-        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var error = document.RootElement.GetProperty("error");
+
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("message").GetString().Should().Contain("calcExpression");
     }
 
     [IntegrationTest]
