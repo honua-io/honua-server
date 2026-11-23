@@ -800,6 +800,12 @@ internal sealed partial class ODataQueryHandler(
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
+        // An empty page still answers with an @odata.context that names the expansion.
+        if (await _querySearchService.FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
+        {
+            return ODataUtilityService.CreateODataError(context, "InvalidQuery", expandError);
+        }
+
         long? totalCount = null;
         if (count == true)
         {

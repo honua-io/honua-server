@@ -33,7 +33,19 @@ public sealed class ODataQueryServiceSridTests
 
         var error = await Create().FindUnsupportedFilterSridAsync(filter, _crs, CancellationToken.None);
 
-        error.Should().Be($"Unsupported explicit geometry CRS 'EPSG:{srid}'.");
+        error.Should().Be($"Invalid $filter: unsupported explicit geometry CRS 'EPSG:{srid}'.");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task NonpositiveLiteralSrid_IsReportedWithoutTheRegistry(int srid)
+    {
+        var error = await Create().FindUnsupportedFilterSridAsync(
+            $"geo.intersects(Geometry,geography'SRID={srid};POINT(0 0)')", _crs, CancellationToken.None);
+
+        error.Should().Be($"Invalid $filter: unsupported explicit geometry CRS 'EPSG:{srid}'.");
+        await _crs.DidNotReceiveWithAnyArgs().IsSridSupportedAsync(default, default);
     }
 
     [Fact]

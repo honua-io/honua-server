@@ -41,6 +41,11 @@ internal sealed class ODataQuerySearchService
             return (new FeatureQuery(), sridError);
         }
 
+        if (await FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
+        {
+            return (new FeatureQuery(), expandError);
+        }
+
         return await _queryService.BuildFeatureQueryAsync(
             filter,
             orderby,
@@ -56,6 +61,9 @@ internal sealed class ODataQuerySearchService
             publicLayerId,
             cancellationToken).ConfigureAwait(false);
     }
+
+    public Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
+        => _searchService.FindInvalidExpandAsync(expand, resource, cancellationToken);
 
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
         IEnumerable<Dictionary<string, object?>> layerPayloads,

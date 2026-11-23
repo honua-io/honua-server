@@ -35,22 +35,58 @@ internal sealed partial class ODataSearchService
         }
     }
 
-    private static void EnsureNavigationPropertiesExist(
-        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
-        MetadataV2Object resource)
+    // $metadata declares every resource's relationships on the shared Feature type, so a name is
+    // valid when any resource declares it; "*" keeps its earlier pass-through.
+    internal async Task<string?> FindInvalidExpandAsync(string? expand, MetadataV2Object resource, CancellationToken cancellationToken)
     {
-        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var relationship in resource.Relationships)
+        if (string.IsNullOrWhiteSpace(expand))
         {
-            known.Add(relationship.Name);
-            known.Add(ODataUtilityService.SanitizeIdentifier(relationship.Name));
-            known.Add(ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id));
+            return null;
         }
 
-        var unknown = optionsByName.Keys.FirstOrDefault(name => !known.Contains(name));
-        if (unknown is not null)
+        Dictionary<string, ExpandRelationshipOptions> requested;
+        try
         {
-            throw new ArgumentException($"'{unknown}' is not a navigation property of this layer.");
+            requested = ParseExpandRelationshipOptions(expand);
+        }
+        catch (ArgumentException exception)
+        {
+            return exception.Message;
+        }
+
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resources = (snapshot?.Graph.Resources ?? []).Append(resource);
+        var known = resources.SelectMany(NavigationPropertyNames).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknown = requested.Keys.FirstOrDefault(name => name != "*" && !known.Contains(name));
+        return unknown is null ? null : $"Invalid $expand query option: '{unknown}' is not a navigation property.";
+    }
+
+    private static IEnumerable<string> NavigationPropertyNames(MetadataV2Object resource)
+        => resource.Relationships.SelectMany(relationship => new[]
+        {
+            relationship.Name,
+            ODataUtilityService.SanitizeIdentifier(relationship.Name),
+            ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id),
+        });
+
+    // A schema navigation property this layer does not declare is still part of the entity shape.
+    private static void AddUndeclaredExpansions(
+        Dictionary<long, Dictionary<string, object?[]>> result,
+        IEnumerable<string> undeclared,
+        long[] objectIds)
+    {
+        foreach (var name in undeclared.Where(name => name != "*"))
+        {
+            foreach (var objectId in objectIds)
+            {
+                if (!result.TryGetValue(objectId, out var relations))
+                {
+                    relations = [];
+                    result[objectId] = relations;
+                }
+
+                relations.TryAdd(name, []);
+            }
         }
     }
 }

@@ -699,8 +699,13 @@ internal sealed partial class ODataSearchService
 
         // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
         // Validate before the empty-page return so @odata.context never names a dropped expansion.
+        if (await FindInvalidExpandAsync(expand, resource, cancellationToken).ConfigureAwait(false) is { } expandError)
+        {
+            throw new ArgumentException(expandError);
+        }
+
         var relationshipOptions = ParseExpandRelationshipOptions(expand);
-        EnsureNavigationPropertiesExist(relationshipOptions, resource);
+        var undeclared = new HashSet<string>(relationshipOptions.Keys, StringComparer.OrdinalIgnoreCase);
         if (objectIds.Length == 0)
         {
             return result;
@@ -726,6 +731,7 @@ internal sealed partial class ODataSearchService
             }
 
             var outputName = expandOptions.Name;
+            undeclared.Remove(outputName);
 
             // A declared/expanded navigation property must always appear in the payload
             // (as an empty collection) even when the related resource is unavailable,
@@ -830,6 +836,8 @@ internal sealed partial class ODataSearchService
             }
         }
 
+        AddUndeclaredExpansions(result, undeclared, objectIds);
+
         return result;
     }
 
@@ -908,7 +916,7 @@ internal sealed partial class ODataSearchService
             var key = option[..separator].Trim();
             if (key.Equals("$expand", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException("Nested $expand options are not supported.");
+                throw new ArgumentException("Invalid $expand query option: nested $expand is not supported.");
             }
 
             if (!key.Equals("$select", StringComparison.OrdinalIgnoreCase))

@@ -28,14 +28,22 @@ internal sealed partial class ODataQueryService
             return null;
         }
 
+        // The collector below skips nonpositive SRIDs, which PostGIS refuses as well.
+        if (FilterGeometryCrsValidator.TryFindUnsupportedExplicitGeometryCrs(parsed.Expression, static srid => srid > 0, out var nonpositive))
+        {
+            return UnsupportedSrid(nonpositive);
+        }
+
         foreach (var srid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsed.Expression))
         {
             if (!await crsRegistry.IsSridSupportedAsync(srid, cancellationToken).ConfigureAwait(false))
             {
-                return $"Unsupported explicit geometry CRS 'EPSG:{srid}'.";
+                return UnsupportedSrid(srid);
             }
         }
 
         return null;
     }
+
+    private static string UnsupportedSrid(int srid) => $"Invalid $filter: unsupported explicit geometry CRS 'EPSG:{srid}'.";
 }

@@ -7,7 +7,10 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
+using Honua.Core.Queries.Filters;
 using Honua.Protocols.OData;
+using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,36 +20,75 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataExpandValidationTests
 {
+    private static readonly MetadataV2Status Active = new() { Lifecycle = MetadataV2LifecycleStatus.Active };
+
     private static readonly MetadataV2Object Parent = new()
     {
         Metadata = new() { Id = "parents" },
-        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-        Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+        Status = Active,
+        Relationships = [new() { Id = "rel", Name = "Child Rows", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+    };
+
+    private static readonly MetadataV2Object Sibling = new()
+    {
+        Metadata = new() { Id = "siblings" },
+        Status = Active,
+        Relationships = [new() { Id = "other", Name = "Inspections", RelatedResourceId = "children", OriginField = "id", DestinationField = "id" }]
     };
 
     [Theory]
-    [InlineData("NoSuchRelation", "not a navigation property")]
-    [InlineData("Layer($expand=Features)", "Nested $expand")]
-    [InlineData("Children($expand=Children)", "Nested $expand")]
-    public async Task ProcessExpand_UnknownOrNestedExpansion_IsRejectedEvenOnAnEmptyPage(string expand, string message)
+    [InlineData("NoSuchRelation", "*'NoSuchRelation' is not a navigation property*")]
+    [InlineData("Layer($expand=Features)", "*nested $expand is not supported*")]
+    [InlineData("Child_Rows($expand=Child_Rows)", "*nested $expand is not supported*")]
+    public async Task ProcessExpandAsync_UnknownOrNestedExpansion_IsRejectedEvenOnAnEmptyPage(string expand, string message)
     {
         var act = () => CreateService().ProcessExpandAsync(expand, Parent, 13, [], CancellationToken.None);
 
-        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage($"*{message}*");
+        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage(message);
     }
 
     [Theory]
-    [InlineData("Children")]
-    [InlineData("Children($select=name)")]
-    public async Task ProcessExpand_DeclaredNavigationProperty_IsAccepted(string expand)
-    {
-        var result = await CreateService().ProcessExpandAsync(expand, Parent, 13, [], CancellationToken.None);
+    [InlineData("Child Rows")]
+    [InlineData("Child_Rows($select=name)")]
+    [InlineData("*")]
+    public async Task FindInvalidExpandAsync_DeclaredRawSanitisedOrWildcard_IsAccepted(string expand)
+        => (await CreateService().FindInvalidExpandAsync(expand, Parent, CancellationToken.None)).Should().BeNull();
 
-        result.Should().BeEmpty();
+    [Fact]
+    public async Task ProcessExpandAsync_NavigationPropertyOfAnotherLayer_IsAnEmptyCollection()
+    {
+        var result = await CreateService().ProcessExpandAsync("Inspections", Parent, 13, [7], CancellationToken.None);
+
+        result[7]["Inspections"].Should().BeEmpty();
     }
 
-    private static ODataSearchService CreateService() => new(new ODataSearchDependencies(
-        Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
-        Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IMetadataV2GraphProvider>(), null!,
-        Options.Create(new ODataOptions())), null!);
+    [Fact]
+    public async Task BuildFeatureQueryAsync_InvalidExpandOrSrid_FailsBeforeTheQueryIsBuilt()
+    {
+        var adapter = Substitute.For<IQueryParameterAdapter<ODataQueryParameters>>();
+        var crs = Substitute.For<ICrsRegistry>();
+        crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
+        var query = new ODataQueryService(new FilterExpressionService(Substitute.For<IFilterExpressionTranslator>()),
+            adapter, Substitute.For<IQueryProcessor>());
+        var facade = new ODataQuerySearchService(query, CreateService(query, crs));
+
+        var (_, expandError) = await facade.BuildFeatureQueryAsync(null, null, 10, 0, Parent, expand: "NoSuchRelation");
+        var (_, sridError) = await facade.BuildFeatureQueryAsync(
+            "geo.intersects(Geometry,geography'SRID=999999;POINT(0 0)')", null, 10, 0, Parent);
+
+        expandError.Should().Contain("not a navigation property");
+        sridError.Should().Contain("EPSG:999999");
+        await adapter.DidNotReceiveWithAnyArgs().ConvertAsync(default!, default!, default);
+    }
+
+    private static ODataSearchService CreateService(ODataQueryService? query = null, ICrsRegistry? crs = null)
+    {
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [Parent, Sibling] }, "test", DateTimeOffset.UtcNow));
+        return new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), Substitute.For<IRelationshipStore>(), Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), crs ?? Substitute.For<ICrsRegistry>(), graph, null!,
+            Options.Create(new ODataOptions())), query!);
+    }
 }
