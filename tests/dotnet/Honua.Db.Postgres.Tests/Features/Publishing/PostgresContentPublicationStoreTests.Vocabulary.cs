@@ -47,10 +47,14 @@ public sealed partial class PostgresContentPublicationStoreTests
             var store = new PostgresContentPublicationStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
             var (version, route, audit) = BuildPublish(PublicationVocabularyId, "canonical-app", "hash-stable");
             var kind = Enum.Parse<ContentPublicationKind>("App");
-            version = version with { Kind = kind, Dependencies = [new ContentPublicationDependencyRef
+            version = version with
+            {
+                Kind = kind,
+                Dependencies = [new ContentPublicationDependencyRef
             {
                 Kind = Enum.Parse<ContentPublicationDependencyKind>("Map"), RefId = "map-stable"
-            }] };
+            }]
+            };
             await store.AppendVersionAndSetRouteAsync(version, route with { Kind = kind }, audit, null);
             await using var connection = await OpenSchemaConnectionAsync(schema);
             await using var command = new NpgsqlCommand("SELECT kind || ':' || (dependencies->0->>'kind') FROM content_publication_versions", connection);

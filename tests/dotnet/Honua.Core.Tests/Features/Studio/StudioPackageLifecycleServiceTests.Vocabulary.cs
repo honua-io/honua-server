@@ -23,10 +23,13 @@ public partial class StudioPackageLifecycleServiceTests
         var store = provider.GetRequiredService<IStudioPackageStore>();
         var envelope = new StudioPackageEnvelope
         {
-            Family = family, SchemaVersion = "1.0", Format = oldFormat,
+            Family = family,
+            SchemaVersion = "1.0",
+            Format = oldFormat,
             Body = JsonSerializer.SerializeToElement(new Dictionary<string, object>
             {
-                [oldId] = "saved-id", ["format"] = oldFormat,
+                [oldId] = "saved-id",
+                ["format"] = oldFormat,
                 ["mapSpec"] = new Dictionary<string, string> { [oldId] = "opaque" },
             }),
         };
@@ -65,7 +68,8 @@ public partial class StudioPackageLifecycleServiceTests
         var store = provider.GetRequiredService<IStudioPackageStore>();
         var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
         {
-            Family = StudioPackageFamily.App, SchemaVersion = "1.0",
+            Family = StudioPackageFamily.App,
+            SchemaVersion = "1.0",
             Body = JsonElement.Parse(json),
         });
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
@@ -96,7 +100,9 @@ public partial class StudioPackageLifecycleServiceTests
         var store = provider.GetRequiredService<IStudioPackageStore>();
         var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
         {
-            Family = StudioPackageFamily.App, SchemaVersion = "1.0", Format = "honua_app_package.v1",
+            Family = StudioPackageFamily.App,
+            SchemaVersion = "1.0",
+            Format = "honua_app_package.v1",
             Body = json is null ? null : JsonElement.Parse(json),
         });
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
@@ -114,7 +120,9 @@ public partial class StudioPackageLifecycleServiceTests
         var store = provider.GetRequiredService<IStudioPackageStore>();
         var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
         {
-            Family = StudioPackageFamily.App, SchemaVersion = "1.0", Format = "honua_app.v1",
+            Family = StudioPackageFamily.App,
+            SchemaVersion = "1.0",
+            Format = "honua_app.v1",
             Body = JsonElement.Parse("{\"appId\":\"app-one\",\"mapPackageId\":\"map-one\",\"mapId\":\"map-one\"}"),
         });
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
@@ -140,8 +148,13 @@ public partial class StudioPackageLifecycleServiceTests
     {
         var draft = await store.CreateDraftAsync(new StudioPackageDraft
         {
-            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "legacy-map-app", Generation = 1,
-            Family = envelope.Family, Envelope = envelope, CreatedAt = DateTimeOffset.UnixEpoch,
+            DraftId = Guid.NewGuid(),
+            ItemId = Guid.NewGuid(),
+            PackageKey = "legacy-map-app",
+            Generation = 1,
+            Family = envelope.Family,
+            Envelope = envelope,
+            CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         });
         return await store.CreateVersionAsync(draft, "saved before vocabulary change", "tester");

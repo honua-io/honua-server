@@ -99,6 +99,10 @@
       "description": "Package validation and read-only preview planning"
     },
     {
+      "name": "Maps",
+      "description": "Map publication as an immutable version and publication request"
+    },
+    {
       "name": "Compliance",
       "description": "Compliance posture dashboard, evidence export, data-residency policy evaluation, and encryption key rotation."
     },
@@ -5168,14 +5172,14 @@
         }
       }
     },
-    "/packages": {
+    "/maps": {
       "post": {
         "tags": [
-          "Packages"
+          "Maps"
         ],
-        "summary": "Publish Map Package",
-        "description": "Creates a Studio map-package draft, saves an immutable version, and creates its publication request.",
-        "operationId": "publishMapPackage",
+        "summary": "Publish Map",
+        "description": "Creates a Studio Map draft, saves an immutable version, and creates its publication request.",
+        "operationId": "publishMap",
         "requestBody": {
           "required": true,
           "content": {
@@ -5183,10 +5187,10 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "package"
+                  "map"
                 ],
                 "properties": {
-                  "package": {
+                  "map": {
                     "type": "object",
                     "additionalProperties": true
                   },
@@ -5210,7 +5214,7 @@
         },
         "responses": {
           "201": {
-            "description": "Map package published as a version and publication request.",
+            "description": "Map published as a version and publication request.",
             "content": {
               "application/json": {
                 "schema": {

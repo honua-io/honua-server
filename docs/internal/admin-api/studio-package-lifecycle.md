@@ -167,8 +167,8 @@ With the flag on:
   which (as above) can be recorded under a different owner. A caller who owns
   only the target version, even with a matching `StudioDraft` operator grant,
   cannot move another principal's item's pointer.
-- **Package draft creation is elevated, never implicitly widened.** `POST
-  /map-packages/generate` and `POST /app-packages/generate` are not opened to
+- **Map and App draft creation is elevated, never implicitly widened.** `POST
+  /maps/generate` and `POST /apps/generate` are not opened to
   every authenticated principal by the end-user flag: they create content with
   no pre-existing resource whose ownership could gate it, so a non-admin caller
   requires a `StudioDraft` `Execute` operator grant (the self-service
