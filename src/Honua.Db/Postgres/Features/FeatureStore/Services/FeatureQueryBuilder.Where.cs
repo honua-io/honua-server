@@ -101,7 +101,7 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var parameterizedExpressions = new List<string>();
-        foreach (var expression in LegacyWhereClauseParser.Parse(SplitOnAnd(whereClause), LegacyWhereGrammar.Postgres, UnsupportedWhereClauseMessage))
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Postgres, UnsupportedWhereClauseMessage))
         {
             if (expression.Kind == LegacyWhereExpressionKind.True)
             {
@@ -245,82 +245,6 @@ internal sealed partial class FeatureQueryBuilder
     {
         var content = valueToken[1..^1]; // Remove surrounding quotes
         return content.Replace("''", "'"); // Unescape single quotes
-    }
-
-    private static List<string> SplitOnAnd(string whereClause)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-        var quoteChar = '\0';
-
-        for (var i = 0; i < whereClause.Length; i++)
-        {
-            var c = whereClause[i];
-
-            if (!inQuotes && (c == '\'' || c == '"'))
-            {
-                inQuotes = true;
-                quoteChar = c;
-                current.Append(c);
-            }
-            else if (inQuotes && c == quoteChar)
-            {
-                if (i + 1 < whereClause.Length && whereClause[i + 1] == quoteChar)
-                {
-                    current.Append(c);
-                    current.Append(c);
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    quoteChar = '\0';
-                    current.Append(c);
-                }
-            }
-            else if (!inQuotes && IsAndTokenAt(whereClause, i))
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                i += 2; // Skip "AND"
-                while (i < whereClause.Length && char.IsWhiteSpace(whereClause[i]))
-                {
-                    i++;
-                }
-                i--; // Compensate for the loop increment
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
-
-        return parts;
-    }
-
-    private static bool IsAndTokenAt(string whereClause, int index)
-    {
-        if (index + 3 > whereClause.Length)
-        {
-            return false;
-        }
-
-        var candidate = whereClause.Substring(index, 3);
-        if (!candidate.Equals("AND", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var prevChar = index > 0 ? whereClause[index - 1] : ' ';
-        var nextChar = index + 3 < whereClause.Length ? whereClause[index + 3] : ' ';
-
-        return !IsIdentifierChar(prevChar) && !IsIdentifierChar(nextChar);
     }
 
     private static bool IsIdentifierChar(char value) =>
