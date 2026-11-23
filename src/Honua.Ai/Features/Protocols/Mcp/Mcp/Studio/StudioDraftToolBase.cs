@@ -277,7 +277,7 @@ internal abstract class StudioDraftToolBase
                 command,
                 new StudioDraftMutationContext
                 {
-                    PrincipalId = command.ActorId,
+                    PrincipalId = PolicyPrincipalId(principal, command.ActorId),
                     TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
                     SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                     CorrelationId = httpContext.TraceIdentifier,
@@ -371,6 +371,11 @@ internal abstract class StudioDraftToolBase
             Generation = expectedGeneration,
             ActorId = actorId,
         };
+
+    // Policy and agent authority use the canonical actor, as the version tools and REST do; a principal
+    // without one keeps its Studio caller id.
+    protected static string? PolicyPrincipalId(ClaimsPrincipal principal, string? studioActorId) =>
+        CanonicalSecurityActor.Resolve(principal)?.ActorId ?? studioActorId;
 
     protected static string? ActorIdFor(IStudioAuthorizationService authorization, ClaimsPrincipal principal) =>
         authorization.ResolveCallerId(principal);
