@@ -40,9 +40,9 @@ internal static partial class ExportRequestRules
 
     public static bool IsPortableFieldName(string name) => FieldNamePattern().IsMatch(name);
 
-    [GeneratedRegex("^[a-z0-9][a-z0-9-]{2,63}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[a-z0-9][a-z0-9-]{2,63}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex ExportIdPattern();
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,62}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,62}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex FieldNamePattern();
 }

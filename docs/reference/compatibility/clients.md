@@ -141,10 +141,17 @@ token audience with the configured value before upgrading.
 
 ## Realtime credentials and reconnects
 
-Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
-their admitted credential every second in a fresh authentication scope. Expiry,
-issuer-observed revocation, changed identity/tenant/role claims, or validation
-failure ends the subscription. SSE sends `event: status` with
+Protected FeatureServer and SensorThings SSE/WebSocket subscriptions end when
+their admitted credential expires, which is checked every second. On a server with
+a database, every node consumes the realtime `security` and `catalog` events: a
+permission, sharing, principal or credential change made on any node refreshes the
+affected subscriptions on every node, and a revoked credential ends its streams
+immediately. Each node also re-evaluates every subscription as a backstop at
+`Realtime:SecurityBackstopInterval` (default and maximum 30 seconds); rotating the
+administrator password reaches open streams through this backstop. Without a
+database, subscriptions revalidate their credential every second instead. Each
+check runs in a fresh authentication scope. Expiry, revocation, changed
+identity/tenant/role claims, or validation failure ends the subscription. SSE sends `event: status` with
 `{"status":"error","code":"authorization-ended"}` and closes; WebSocket closes
 with code `1008` and reason `authorization-ended`. Clients must obtain a valid
 replacement credential before reconnecting. OData polling authenticates each

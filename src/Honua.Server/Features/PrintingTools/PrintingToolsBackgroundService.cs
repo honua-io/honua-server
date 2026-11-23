@@ -144,6 +144,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             }
             : PrintProgress.CreateInitial(job.JobId, job.Format, job.TemplateName, job.TotalElements) with
             {
+                TenantId = job.SubmitterSecurityContext?.TenantId,
                 Status = OperationStatus.Processing,
                 CurrentPhase = "Rendering map",
                 HeartbeatAt = DateTimeOffset.UtcNow

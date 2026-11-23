@@ -23,7 +23,9 @@ public sealed class HavingConditionTypeTests
             new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime },
             new MetadataV2Field { Name = "observed", Type = MetadataV2FieldType.Date },
             new MetadataV2Field { Name = "starts", Type = MetadataV2FieldType.Time },
-            new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean }
+            new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean },
+            new MetadataV2Field { Name = "名前", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "\U00020BB7_count", Type = MetadataV2FieldType.Integer }
         ]
     };
 
@@ -166,6 +168,17 @@ public sealed class HavingConditionTypeTests
 
         parsed.Should().BeTrue(error);
         conditions[0].BoundValue().Should().Be(1000.5d);
+    }
+
+    [UnitTheory]
+    [InlineData("COUNT(名前) > 1", "名前")]
+    [InlineData("COUNT(\U00020BB7_count) > 1", "\U00020BB7_count")]
+    public void TryParseHavingConditions_NonAsciiDeclaredField_IsAccepted(string having, string field)
+    {
+        var parsed = Parse(having, Stat(StatisticType.Count, field, MetadataV2FieldType.String), out var conditions, out var error);
+
+        parsed.Should().BeTrue(error);
+        conditions.Should().ContainSingle();
     }
 
     private static bool Parse(

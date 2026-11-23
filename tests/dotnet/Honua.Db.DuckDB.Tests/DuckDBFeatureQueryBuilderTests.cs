@@ -273,6 +273,48 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildStatisticsQuery_WithNonAsciiAlias_QuotesAliasInOrderBy()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "name",
+                    OutStatisticFieldName = "件数"
+                }),
+            GroupByFields = ImmutableArray.Create("type"),
+            OrderBy = ImmutableArray.Create(new OrderByClause("件数", ascending: false))
+        };
+
+        var result = _builder.BuildStatisticsQuery(TestLayerId, query);
+
+        Assert.Contains("COUNT(\"name\") AS \"件数\"", result.Sql);
+        Assert.Contains("ORDER BY \"件数\" DESC", result.Sql);
+    }
+
+    [Theory]
+    [InlineData("bad\"alias")]
+    [InlineData("count name")]
+    [InlineData("alias\n")]
+    public void BuildStatisticsQuery_WithInvalidAlias_Throws(string alias)
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "name",
+                    OutStatisticFieldName = alias
+                })
+        };
+
+        Assert.Throws<ArgumentException>(() => _builder.BuildStatisticsQuery(TestLayerId, query));
+    }
+
+    [Fact]
     public void BuildStatisticsQuery_WithOrderByUndeclaredField_Throws()
     {
         var query = new FeatureQuery

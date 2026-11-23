@@ -34,6 +34,9 @@ public sealed record ImportRequest
 {
     public string? OperationInstanceId { get; init; }
 
+    // The tenant that owns the resulting job; administrators of other tenants cannot see or control it.
+    public string? TenantId { get; init; }
+
     // The correlation identity is canonical and is never derived from job metadata.
     public string? CorrelationId { get; init; }
 

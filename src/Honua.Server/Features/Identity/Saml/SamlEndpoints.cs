@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
@@ -299,8 +298,7 @@ internal static partial class SamlEndpoints
             return Results.Content(logoutResponse, "application/samlp+xml", Encoding.UTF8);
         }
 
-        var formHtml = BuildAutoPostForm(opts.IdpSingleLogoutServiceUrl!, encodedResponse, relayState);
-        return Results.Content(formHtml, "text/html", Encoding.UTF8);
+        return LogoutRelayPage(context, new LogoutRelay(opts.IdpSingleLogoutServiceUrl!, encodedResponse, relayState));
     }
 
     // Unsigned or forged logout requests are refused before anything else is read from them.
@@ -558,25 +556,6 @@ internal static partial class SamlEndpoints
         writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:PartialLogout");
         writer.WriteEndElement();
         writer.WriteEndElement();
-    }
-
-    private static string BuildAutoPostForm(string destination, string encodedResponse, string? relayState)
-    {
-        var relayInput = string.IsNullOrEmpty(relayState)
-            ? string.Empty
-            : $"<input type=\"hidden\" name=\"RelayState\" value=\"{WebUtility.HtmlEncode(relayState)}\"/>";
-
-        return $"""
-            <!DOCTYPE html>
-            <html><head><title>SAML Single Logout</title></head>
-            <body onload="document.forms[0].submit()">
-            <form method="post" action="{WebUtility.HtmlEncode(destination)}">
-            <input type="hidden" name="SAMLResponse" value="{WebUtility.HtmlEncode(encodedResponse)}"/>
-            {relayInput}
-            <noscript><button type="submit">Continue</button></noscript>
-            </form>
-            </body></html>
-            """;
     }
 
     private static IResult LogoutRejected(HttpContext context, string detail)

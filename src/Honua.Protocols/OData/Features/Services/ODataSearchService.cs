@@ -130,6 +130,7 @@ internal sealed partial class ODataSearchService
         }
 
         var textSearchFilter = BuildTextSearchCondition(searchTerms, resource);
+        await ThrowOnUnsupportedSridAsync([filter], cancellationToken).ConfigureAwait(false);
 
         var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
@@ -289,6 +290,11 @@ internal sealed partial class ODataSearchService
         var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
         var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);
+        var applyFilters = segments.Select(ODataAggregationHandler.ParseApplyExpression)
+            .Where(parsed => parsed.Type == AggregationType.Filter)
+            .Select(parsed => parsed.FilterExpression)
+            .Prepend(filter);
+        await ThrowOnUnsupportedSridAsync(applyFilters, cancellationToken).ConfigureAwait(false);
 
         // Use existing aggregation handler for processing
         var reader = resolvedLayer.Reader;
@@ -304,6 +310,17 @@ internal sealed partial class ODataSearchService
             baseUrl,
             resolvedLayer.PublicLayerId,
             cancellationToken);
+    }
+
+    private async Task ThrowOnUnsupportedSridAsync(IEnumerable<string?> odataFilters, CancellationToken cancellationToken)
+    {
+        var sridError = await ODataGeometrySridGuard
+            .FindUnsupportedSridErrorAsync(_crsRegistry, odataFilters, cancellationToken)
+            .ConfigureAwait(false);
+        if (sridError != null)
+        {
+            throw new ArgumentException(sridError);
+        }
     }
 
     private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Object resource)
@@ -695,13 +712,14 @@ internal sealed partial class ODataSearchService
         var requestedIds = objectIds.ToHashSet();
         var remainingRows = _maxExpandedRows;
 
+        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
+        var relationshipOptions = ParseExpandRelationshipOptions(expand);
+        EnsureExpandTargetsExist(relationshipOptions, resource);
         if (objectIds.Length == 0)
         {
             return result;
         }
 
-        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
-        var relationshipOptions = ParseExpandRelationshipOptions(expand);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // Find matching relationships
@@ -845,6 +863,26 @@ internal sealed partial class ODataSearchService
 
     private sealed record ExpandRelationshipOptions(string Name, HashSet<string>? SelectFields);
 
+    // Skipping an unknown name would leave @odata.context claiming an expansion that is absent.
+    private static void EnsureExpandTargetsExist(
+        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
+        MetadataV2Object resource)
+    {
+        var known = resource.Relationships
+            .SelectMany(relationship => new[]
+            {
+                relationship.Name,
+                ODataUtilityService.SanitizeIdentifier(relationship.Name),
+                ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id),
+            })
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknown = optionsByName.Keys.FirstOrDefault(name => name != "*" && !known.Contains(name));
+        if (unknown != null)
+        {
+            throw new ArgumentException($"Unknown navigation property '{unknown}' in $expand.");
+        }
+    }
+
     private static Dictionary<string, ExpandRelationshipOptions> ParseExpandRelationshipOptions(string expand)
     {
         var optionsByName = new Dictionary<string, ExpandRelationshipOptions>(StringComparer.OrdinalIgnoreCase);
@@ -862,13 +900,14 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
-            if (trimmed.Contains('/', StringComparison.Ordinal))
+            var optionIndex = trimmed.IndexOf('(');
+            var namePart = optionIndex >= 0 ? trimmed[..optionIndex] : trimmed;
+            if (namePart.Contains('/', StringComparison.Ordinal))
             {
                 throw new ArgumentException("Nested $expand paths are not supported.");
             }
 
             HashSet<string>? selectFields = null;
-            var optionIndex = trimmed.IndexOf('(');
             if (optionIndex >= 0)
             {
                 if (!trimmed.EndsWith(')'))
@@ -903,6 +942,11 @@ internal sealed partial class ODataSearchService
             }
 
             var key = option[..separator].Trim();
+            if (key.Equals("$expand", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Nested $expand paths are not supported.");
+            }
+
             if (!key.Equals("$select", StringComparison.OrdinalIgnoreCase))
             {
                 continue;

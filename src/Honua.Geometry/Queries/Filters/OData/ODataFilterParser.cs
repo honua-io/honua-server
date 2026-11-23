@@ -775,7 +775,7 @@ public sealed class ODataFilterParser
             }
 
             var sridToken = trimmed[5..separatorIndex];
-            if (!int.TryParse(sridToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid))
+            if (!int.TryParse(sridToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) || srid <= 0)
             {
                 throw new ODataFilterParseException($"Invalid SRID value '{sridToken}'", position);
             }

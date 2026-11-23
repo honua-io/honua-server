@@ -19,6 +19,9 @@ internal static class SpecGroundingEndpointExtensions
     private const string RoutePrefix = "/v1/grounding/spec";
     private const string JsonMimeType = "application/json";
 
+    // A turn is one conversational instruction; the cap bounds per-request parsing work.
+    internal const int MaxTurnLength = 8192;
+
     public static IEndpointRouteBuilder MapSpecGroundingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -59,6 +62,11 @@ internal static class SpecGroundingEndpointExtensions
         if (string.IsNullOrWhiteSpace(request.Turn))
         {
             return InvalidRequest("turn is required.");
+        }
+
+        if (request.Turn.Length > MaxTurnLength)
+        {
+            return InvalidRequest($"turn must be at most {MaxTurnLength} characters.");
         }
 
         if (!TryReadSpecDocument(request.Spec, out var currentSpec, out var specError))

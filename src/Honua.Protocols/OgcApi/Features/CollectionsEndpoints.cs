@@ -522,14 +522,12 @@ internal static class CollectionsEndpoints
         var collectionId = publication.ServiceLocalId
             ?? publication.Path
             ?? resource.Metadata.Name;
-        var displayName = publication.TitleOverride
-            ?? resource.Metadata.Title
-            ?? resource.Metadata.Name;
-        var description = resource.Metadata.Description;
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
+        var displayName = descriptive.Title;
+        var description = descriptive.Description;
         var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
-        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
         var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resource, service);
 
         // Self link

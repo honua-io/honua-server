@@ -66,22 +66,10 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         string? expectedETag,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (conditional && expectedETag is not null)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
-        }
-
+        ValidateUploadRequest(request, conditional, expectedETag);
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
-        var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
-
-        UploadCancellationTokens[uploadId] = linkedCancellationSource;
-
-        var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
-        ReportProgressToCaller(request.Progress, uploadId, initialProgress);
+        var (linkedCancellationSource, totalBytes, initialProgress) = await BeginUploadAsync(request, cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
         try
@@ -135,6 +123,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
                     var progress = new UploadProgress
                     {
+                        TenantId = request.TenantId,
                         UploadId = uploadId,
                         Status = OperationStatus.Processing,
                         BytesUploaded = bytesTransferred,
@@ -172,6 +161,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
             var completedProgress = new UploadProgress
             {
+                TenantId = request.TenantId,
                 UploadId = uploadId,
                 Status = OperationStatus.Completed,
                 BytesUploaded = sizeBytes,

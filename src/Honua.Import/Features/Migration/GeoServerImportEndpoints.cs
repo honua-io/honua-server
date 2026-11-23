@@ -10,9 +10,11 @@ using Honua.Import.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
@@ -244,6 +246,7 @@ internal static partial class GeoServerImportEndpoints
             var importRequest = new GeoServerImportRequest
             {
                 JobId = jobId,
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 GeoServerRestUrl = request.GeoServerRestUrl,
                 Username = request.Username,
                 PasswordSecretReference = request.PasswordSecretReference,
@@ -353,7 +356,8 @@ internal static partial class GeoServerImportEndpoints
         foreach (var jobId in jobIds)
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (progress != null && IsActiveStatus(progress.Status))
+            if (progress != null && IsActiveStatus(progress.Status)
+                && await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
             {
                 jobs.Add(ToJob(progress));
             }
@@ -379,7 +383,7 @@ internal static partial class GeoServerImportEndpoints
         try
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-            if (progress == null)
+            if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(context, "GeoServer import job not found", StatusCodes.Status404NotFound);
                 return;
@@ -412,7 +416,7 @@ internal static partial class GeoServerImportEndpoints
         try
         {
             var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken);
-            if (progress == null)
+            if (progress == null || !await OperationTenantAuthorization.CanAccessJobAsync(context, jobId, cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(context, "GeoServer import job not found", StatusCodes.Status404NotFound);
                 return;
