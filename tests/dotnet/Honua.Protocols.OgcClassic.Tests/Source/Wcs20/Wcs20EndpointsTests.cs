@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
-public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.RasterApplication>
+public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.RasterApplication>
 {
     private const long TestRasterId = 377;
     private readonly IRasterStore _rasterStore;
@@ -474,23 +474,6 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         // Native grid 64x64 -> x*0.5=32, y*2=128.
         query.OutputWidth.Should().Be(32);
         query.OutputHeight.Should().Be(128);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_WithScaleExtent_SetsOutputGridSpan()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEEXTENT=x(0,99),y(0,199)");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        _exportQueries.Should().ContainSingle();
-        var query = _exportQueries.Single();
-        // Interval span high-low+1 => 100x200.
-        query.OutputWidth.Should().Be(100);
-        query.OutputHeight.Should().Be(200);
     }
 
     [IntegrationTest]
