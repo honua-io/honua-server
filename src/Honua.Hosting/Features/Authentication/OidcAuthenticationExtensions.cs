@@ -980,6 +980,7 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcRemoteSignOut.CompleteWithoutSessionAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1026,6 +1027,7 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcRemoteSignOut.CompleteWithoutSessionAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1074,6 +1076,7 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcRemoteSignOut.CompleteWithoutSessionAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1126,6 +1129,7 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcRemoteSignOut.CompleteWithoutSessionAsync,
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
@@ -1175,6 +1179,7 @@ public static partial class OidcAuthenticationExtensions
 
             options.Events = new OpenIdConnectEvents
             {
+                OnRemoteSignOut = OidcRemoteSignOut.CompleteWithoutSessionAsync,
                 OnRedirectToIdentityProvider = context =>
                 {
                     // Auth0 requires the audience parameter to issue access tokens
