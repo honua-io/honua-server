@@ -22,7 +22,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         filterCapabilities.TemporalCapabilities.Should().NotBeNull();
         filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
             .Select(op => op.Name)
-            .Should().BeEquivalentTo("After", "Before", "During");
+            .Should().BeEquivalentTo("After", "Before", "During", "TEquals");
         filterCapabilities.TemporalCapabilities.TemporalOperands!.Operands
             .Select(op => op.Name.Name)
             .Should().BeEquivalentTo("TimeInstant", "TimePeriod");

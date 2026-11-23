@@ -60,6 +60,19 @@ internal static partial class LegacyWhereClauseParser
             return new(LegacyWhereExpressionKind.True, Match.Empty);
         }
 
+        var expression = MatchTerm(term, grammar)
+            ?? throw new ArgumentException(unsupportedMessage);
+        if (grammar == LegacyWhereGrammar.StorageMapped
+            && !SqlIdentifier.HasUnicodeIdentifierShape(expression.Match.Groups["field"].Value))
+        {
+            throw new ArgumentException(unsupportedMessage);
+        }
+
+        return expression;
+    }
+
+    private static LegacyWhereExpression? MatchTerm(string term, LegacyWhereGrammar grammar)
+    {
         var nullMatch = NullCheckPattern(grammar).Match(term);
         if (nullMatch.Success)
         {
@@ -78,21 +91,23 @@ internal static partial class LegacyWhereClauseParser
         var comparison = ComparisonPattern(grammar).Match(term);
         return comparison.Success
             ? new(LegacyWhereExpressionKind.Comparison, comparison)
-            : throw new ArgumentException(unsupportedMessage);
+            : null;
     }
 
     internal static bool IsTrueLiteral(string term) => PostgresTrueLiteralRegex().IsMatch(term);
 
     private static Regex NullCheckPattern(LegacyWhereGrammar grammar) => grammar switch
     {
-        LegacyWhereGrammar.Basic or LegacyWhereGrammar.StorageMapped => BasicNullCheckRegex(),
+        LegacyWhereGrammar.Basic => BasicNullCheckRegex(),
+        LegacyWhereGrammar.StorageMapped => StorageMappedNullCheckRegex(),
         LegacyWhereGrammar.Warehouse => WarehouseNullCheckRegex(),
         _ => PostgresNullCheckRegex(),
     };
 
     private static Regex ComparisonPattern(LegacyWhereGrammar grammar) => grammar switch
     {
-        LegacyWhereGrammar.Basic or LegacyWhereGrammar.StorageMapped => BasicComparisonRegex(),
+        LegacyWhereGrammar.Basic => BasicComparisonRegex(),
+        LegacyWhereGrammar.StorageMapped => StorageMappedComparisonRegex(),
         LegacyWhereGrammar.Warehouse => WarehouseComparisonRegex(),
         _ => PostgresComparisonRegex(),
     };
@@ -209,8 +224,27 @@ internal static partial class LegacyWhereClauseParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PostgresInRegex();
 
+    // The storage-mapped reader resolves every field token against the resource's declared
+    // fields before quoting it, so its bare field names admit letters of any script
+    // (`名前 = 'x'`), matching the GeoServices SQL and CQL2 lexers. Regex classes see UTF-16
+    // units, so the token also admits surrogate pairs and ParseTerm then judges the captured
+    // name per Unicode scalar with SqlIdentifier.HasUnicodeIdentifierShape. The byte limit
+    // is left to the reader: JSONB-backed field names are bound keys and may be longer.
+    private const string StorageMappedField =
+        @"(?<field>(?:[\p{L}_]|[\uD800-\uDBFF][\uDC00-\uDFFF])(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}_]|[\uD800-\uDBFF][\uDC00-\uDFFF])*)";
+
     [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
+        @"^" + StorageMappedField + @"\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StorageMappedComparisonRegex();
+
+    [GeneratedRegex(
+        @"^" + StorageMappedField + @"\s+IS\s+(?<not>NOT\s+)?NULL$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StorageMappedNullCheckRegex();
+
+    [GeneratedRegex(
+        @"^" + StorageMappedField + @"\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex StorageMappedInRegex();
 

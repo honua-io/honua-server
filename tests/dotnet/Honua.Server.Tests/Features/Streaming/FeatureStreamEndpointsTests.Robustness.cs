@@ -40,7 +40,7 @@ public sealed partial class FeatureStreamEndpointsTests
     public async Task Capabilities_UnsupportedOwner_OmitsLayer(string collection, string patch)
     {
         var provider = await UnsupportedStreamProviderAsync(collection, patch);
-        await using var fixture = StreamRobustnessFixture(provider);
+        await using var fixture = StreamRobustnessFixture(provider).ShareSchemaWith(_fixture);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
 

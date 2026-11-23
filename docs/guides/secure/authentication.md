@@ -242,10 +242,14 @@ The operator bearer carries the administrator session's claims and reaches the
 same data routes as the session cookie, including MCP (send `Mcp-Session-Id`
 back on follow-up calls). Without a tenant claim it resolves the configured
 `MultiTenancy:DefaultTenantId`, as the cookie does; with no default tenant it is
-limited to tenant-independent administration routes. The bearer is stateless:
-signing out ends the cookie session but not a bearer already issued, which stays
-valid until it expires. The tenant is resolved on each request, so changing
-`MultiTenancy:DefaultTenantId` also moves bearers that are still valid. Keep
+limited to tenant-independent administration routes. A Console signed in with
+the session cookie can exchange it for a bearer with `POST /api/v1/admin/auth/bearer`
+(same origin, with the CSRF header). That bearer is bound to the session: it
+expires with it and stops working once the session signs out. A bearer from
+`password-token` has no session, so signing out does not end it; it stays valid
+until it expires or the administrator password is rotated. The tenant is
+resolved on each request, so changing `MultiTenancy:DefaultTenantId` also moves
+bearers that are still valid. Keep
 `Authentication:OperatorBearer:MaxLifetimeMinutes` short and rotate the signing
 key to revoke every outstanding bearer.
 

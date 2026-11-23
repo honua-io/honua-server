@@ -16,6 +16,7 @@ User/group provisioning through the SCIM 2.0 protocol surface.
 | Capability key | `identity.scim` |
 | Category | Identity |
 | Edition | Enterprise |
+| Status | ga |
 | Surface maturity | 17 implemented |
 | Registry entries | 17 |
 | Proving tests | 36 |

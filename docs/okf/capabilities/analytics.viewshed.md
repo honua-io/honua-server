@@ -16,6 +16,7 @@ Compute the radially-sampled visible area around an observer over the elevation 
 | Capability key | `analytics.viewshed` |
 | Category | Analytics |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 6 |
@@ -25,3 +26,4 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)
+- [Terrain and elevation](../../reference/protocols/terrain-and-elevation.md)

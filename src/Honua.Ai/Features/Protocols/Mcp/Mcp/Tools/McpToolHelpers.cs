@@ -201,6 +201,7 @@ internal static class McpToolHelpers
             ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
             CurrentGeneration = jsonRpcError.Data?.CurrentGeneration,
             Retryable = jsonRpcError.Data?.Retryable,
+            RetryAfterSeconds = jsonRpcError.Data?.RetryAfterSeconds,
             MissingDependency = jsonRpcError.Data?.MissingDependency,
             MissingEntitlement = jsonRpcError.Data?.MissingEntitlement,
             Capability = jsonRpcError.Data?.Capability,

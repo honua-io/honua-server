@@ -944,12 +944,6 @@ assert_descriptor \
   "false" \
   "GeoServices GPServer SOAP"
 assert_descriptor \
-  "gpserver-source-targets-soap-progress" \
-  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
-  "targeted" \
-  "false" \
-  "GeoServices GPServer SOAP Progress"
-assert_descriptor \
   "gpserver-source-targets-durable-aliases" \
   "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
@@ -1019,7 +1013,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -1029,7 +1023,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols/GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -1064,7 +1058,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -1072,7 +1066,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units","Server Features Admin Network and Jobs"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","Runtime Units","Protocol Units","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
