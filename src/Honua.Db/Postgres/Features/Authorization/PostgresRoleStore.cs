@@ -71,7 +71,8 @@ internal sealed class PostgresRoleStore : IRoleStore
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"Role with ID '{role.RoleId}' or name '{role.Name}' already exists.", ex);
+            // Role ids are generated server-side, so a unique violation here is the name.
+            throw new RoleNameConflictException(role.Name, ex);
         }
 
         return role;

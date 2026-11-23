@@ -236,9 +236,31 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /stac/search")]
     [Operation(Operations.StacSearch)]
-    public async Task UnscopedSearch_WhenTwoTablesAreMissing_StillFails()
+    public async Task UnscopedSearch_SkipsEveryCollectionWhoseTableIsMissing()
     {
-        StubMissingTables(() => Arg.Is<int>(layerId => layerId == 0 || layerId == 1));
+        var listed = ListedLayerIds(await _fixture.Client.GetStringAsync("/stac/collections"));
+        listed.Should().HaveCountGreaterThan(2, "two or more collections must be missing beside a healthy one");
+        StubMissingTables(() => Arg.Is<int>(layerId => layerId != 0));
+
+        var response = await _fixture.Client.GetAsync("/stac/search?limit=100");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).Should().NotBeEmpty()
+            .And.OnlyContain(id => id!.StartsWith("0-", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task UnscopedSearch_WhenEveryTableIsMissing_StillFails()
+    {
+        var listed = ListedLayerIds(await _fixture.Client.GetStringAsync("/stac/collections"));
+        StubMissingTables(() => Arg.Is<int>(layerId => listed.Contains(layerId)));
+
         var response = await _fixture.Client.GetAsync("/stac/search?limit=100");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -306,6 +328,9 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
+
+    private static int[] ListedLayerIds(string content)
+        => [.. ListedCollectionIds(content).Select(id => int.Parse(id!, System.Globalization.CultureInfo.InvariantCulture))];
 
     private static string?[] ListedCollectionIds(string content)
     {
