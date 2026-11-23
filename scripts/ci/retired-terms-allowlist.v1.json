@@ -81,6 +81,12 @@
     },
     {
       "path": "docs/gis/data/feature-catalog.json",
+      "rule": "dataset-reference",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_WithoutTypeNamesOrResourceId_ReturnsMissingParameterValue\",",
+      "reason": "Generated inventory of a WFS 2.0 test; ResourceId is the standard WFS GetFeature parameter, not a Honua object name."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
       "rule": "layer-membership",
       "line": "        \"Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_StorageRebound_ListsStablePublicationIds\",",
       "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
