@@ -209,9 +209,14 @@ internal static class MultidimensionalCoverageEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        var jobId = await MultidimCoverageScanJob
-            .SubmitAsync(jobStore, jobQueue, registration, context.RequestServices.GetService<ITenantContext>()?.TenantId, cancellationToken)
-            .ConfigureAwait(false);
+        var submission = new MultidimCoverageScanSubmission
+        {
+            JobStore = jobStore,
+            JobQueue = jobQueue,
+            Registration = registration,
+            TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId
+        };
+        var jobId = await MultidimCoverageScanJob.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
         MultidimensionalCoverageLog.ScanJobSubmitted(logger, id, jobId);
 
         var response = new MultidimensionalCoverageScanJobResponse

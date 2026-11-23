@@ -52,16 +52,10 @@ internal static class MultidimCoverageScanJob
         };
     }
 
-    public static async Task<string> SubmitAsync(
-        IExecutionJobStore jobStore,
-        IJobQueue jobQueue,
-        MultidimensionalCoverageRegistration registration,
-        string? tenantId,
-        CancellationToken cancellationToken)
+    public static async Task<string> SubmitAsync(MultidimCoverageScanSubmission submission, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(jobStore);
-        ArgumentNullException.ThrowIfNull(jobQueue);
-        ArgumentNullException.ThrowIfNull(registration);
+        ArgumentNullException.ThrowIfNull(submission);
+        var (jobStore, jobQueue, registration) = (submission.JobStore, submission.JobQueue, submission.Registration);
 
         var jobId = $"covscan-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -72,7 +66,7 @@ internal static class MultidimCoverageScanJob
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo { TenantId = tenantId },
+            Audit = new OperationAuditInfo { TenantId = submission.TenantId },
             Spec = BuildSpec(registration),
         };
 
@@ -344,4 +338,16 @@ internal static class MultidimCoverageScanJob
             return false;
         }
     }
+}
+
+// One coverage scan submission; the tenant that requested it is recorded as the job's owner.
+internal sealed record MultidimCoverageScanSubmission
+{
+    public required IExecutionJobStore JobStore { get; init; }
+
+    public required IJobQueue JobQueue { get; init; }
+
+    public required MultidimensionalCoverageRegistration Registration { get; init; }
+
+    public string? TenantId { get; init; }
 }

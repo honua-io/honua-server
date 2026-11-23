@@ -59,12 +59,10 @@ public sealed record WorkflowProgress : IOperationProgress, ICancellableOperatio
         string runId,
         string workflowId,
         int totalSteps,
-        DateTimeOffset startedAt,
-        string? tenantId = null)
+        DateTimeOffset startedAt)
         => new()
         {
             OperationId = runId,
-            TenantId = tenantId,
             WorkflowId = workflowId,
             RunStatus = WorkflowRunStatus.Pending,
             StepsCompleted = 0,

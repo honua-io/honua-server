@@ -284,8 +284,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
         try
         {
-            var progress = WorkflowProgress.CreateForPendingRun(
-                runId, definition.WorkflowId, stepStates.Length, now, runSecurityContext.TenantId);
+            var progress = WorkflowProgress.CreateForPendingRun(runId, definition.WorkflowId, stepStates.Length, now) with { TenantId = runSecurityContext.TenantId };
             await _progressStore.SetProgressAsync(runId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

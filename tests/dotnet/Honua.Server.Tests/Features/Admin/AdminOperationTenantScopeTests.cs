@@ -89,7 +89,7 @@ public sealed class AdminOperationTenantScopeTests
     public async Task HandleGetOperationStatus_WorkflowProgressWithoutJob_UsesRecordedTenant(string callerTenant, int expected)
     {
         var scope = new TenantScopeFixture(callerTenant);
-        var run = WorkflowProgress.CreateForPendingRun("run-a", "workflow-a", 2, DateTimeOffset.UtcNow, "tenant-a");
+        var run = WorkflowProgress.CreateForPendingRun("run-a", "workflow-a", 2, DateTimeOffset.UtcNow) with { TenantId = "tenant-a" };
         await scope.Progress.SetProgressAsync("run-a", run, TimeSpan.FromMinutes(5));
 
         TenantScopeFixture.StatusOf(await scope.GetStatusAsync("run-a", "admin")).Should().Be(expected);
