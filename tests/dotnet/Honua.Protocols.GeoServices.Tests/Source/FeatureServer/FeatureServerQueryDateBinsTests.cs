@@ -96,6 +96,26 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
     [IntegrationTheory]
     [Operation(Operations.QueryDateBins)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    [InlineData("""[{"statisticType":5,"onStatisticField":"objectid","outStatisticFieldName":"n"}]""")]
+    [InlineData("""[{"statisticType":"count","onStatisticField":["objectid"],"outStatisticFieldName":"n"}]""")]
+    [InlineData("""[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":{"name":"n"}}]""")]
+    public async Task QueryDateBins_WronglyTypedOutStatisticsMember_ReturnsBadRequest(string value)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString("""{"calendarBin":{"unit":"month"}}""")}&outStatistics={Uri.EscapeDataString(value)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("Invalid outStatistics parameter");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
     [InlineData("""{"calendarBin":{"unit":["day"]}}""")]
     [InlineData("""{"fixedBin":{"intervalCount":"1","intervalUnit":"days"}}""")]
     [InlineData("""{"fixedBin":{"intervalCount":1,"intervalUnit":7}}""")]

@@ -76,7 +76,7 @@ public static class MigrationSafetyClassifier
         CreatePattern("truncate-table", @"\bTRUNCATE\b"),
     ];
 
-    private static readonly Lazy<Dictionary<string, string>> FrozenReaderMigrationHashes = new(LoadFrozenReaderMigrationHashes);
+    private static readonly Lazy<Dictionary<string, string>> ReviewedMigrationHashes = new(LoadReviewedMigrationHashes);
 
     public static MigrationScriptClassification Classify(string scriptName, string sql)
     {
@@ -92,7 +92,7 @@ public static class MigrationSafetyClassifier
         {
             classification = MigrationSafetyClassification.Expand;
         }
-        else if (HasCompatibilityReviewMarker(sql) || IsFrozenReaderMigration(scriptName, sql))
+        else if (HasCompatibilityReviewMarker(sql) || IsReviewedMigration(scriptName, sql))
         {
             classification = MigrationSafetyClassification.ContractAnnotated;
         }
@@ -109,8 +109,8 @@ public static class MigrationSafetyClassifier
         };
     }
 
-    private static bool IsFrozenReaderMigration(string scriptName, string sql)
-        => FrozenReaderMigrationHashes.Value.TryGetValue(scriptName, out var hash) &&
+    private static bool IsReviewedMigration(string scriptName, string sql)
+        => ReviewedMigrationHashes.Value.TryGetValue(scriptName, out var hash) &&
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == hash;
 
     private static bool IsReviewedImportGuardDefinition(string scriptName, string sql)
@@ -136,15 +136,15 @@ public static class MigrationSafetyClassifier
             sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == reviewedHash;
     }
 
-    private static Dictionary<string, string> LoadFrozenReaderMigrationHashes()
+    private static Dictionary<string, string> LoadReviewedMigrationHashes()
     {
         // Expanding the detector must not require rewriting already-journaled SQL to add
-        // comments. The frozen reader baseline is its exact-byte historical review record.
+        // comments. The reviewed migration hashes are its exact-byte historical review record.
         // These scripts remain CONTRACT (and require the existing upgrade approval); only
-        // their missing inline annotation is supplied by the frozen record. The ongoing
+        // their missing inline annotation is supplied by the historical record. The ongoing
         // hash ledger deliberately grants no such exemption to future migrations.
-        using var stream = typeof(MigrationSafetyClassifier).Assembly.GetManifestResourceStream("Honua.Core.SchemaReaderBaseline.json")
-            ?? throw new InvalidOperationException("The frozen schema reader baseline is missing.");
+        using var stream = typeof(MigrationSafetyClassifier).Assembly.GetManifestResourceStream("Honua.Core.ReviewedMigrationHashes.json")
+            ?? throw new InvalidOperationException("The historical migration review record is missing.");
         using var document = JsonDocument.Parse(stream);
         var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in document.RootElement.EnumerateObject())

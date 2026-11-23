@@ -542,8 +542,7 @@ internal static partial class FeatureServerEndpoints
                 using var document = JsonDocument.Parse(trimmed);
                 var root = document.RootElement;
                 if (root.ValueKind == JsonValueKind.Object &&
-                    ((root.TryGetProperty("wkid", out var wkidElement) && wkidElement.TryGetInt32(out var jsonWkid)) ||
-                     (root.TryGetProperty("latestWkid", out wkidElement) && wkidElement.TryGetInt32(out jsonWkid))) &&
+                    (FeatureServerJsonMembers.ReadInt32(root, "wkid") ?? FeatureServerJsonMembers.ReadInt32(root, "latestWkid")) is { } jsonWkid &&
                     jsonWkid > 0)
                 {
                     outputSrid = jsonWkid;

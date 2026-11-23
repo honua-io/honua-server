@@ -3008,17 +3008,18 @@ internal sealed partial class FeatureServerQueryHandler(
 
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (!element.TryGetProperty("statisticType", out var typeElement) ||
-                    !element.TryGetProperty("onStatisticField", out var fieldElement) ||
-                    !element.TryGetProperty("outStatisticFieldName", out var aliasElement))
+                if (element.ValueKind != JsonValueKind.Object ||
+                    !element.TryGetProperty("statisticType", out _) ||
+                    !element.TryGetProperty("onStatisticField", out _) ||
+                    !element.TryGetProperty("outStatisticFieldName", out _))
                 {
                     error = "Each statistic definition must have statisticType, onStatisticField, and outStatisticFieldName.";
                     return false;
                 }
 
-                var statisticTypeStr = typeElement.GetString();
-                var onField = fieldElement.GetString();
-                var outAlias = aliasElement.GetString();
+                var statisticTypeStr = FeatureServerJsonMembers.ReadString(element, "statisticType");
+                var onField = FeatureServerJsonMembers.ReadString(element, "onStatisticField");
+                var outAlias = FeatureServerJsonMembers.ReadString(element, "outStatisticFieldName");
 
                 if (string.IsNullOrWhiteSpace(statisticTypeStr) ||
                     string.IsNullOrWhiteSpace(onField) ||

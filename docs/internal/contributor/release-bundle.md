@@ -42,8 +42,8 @@ normal candidate qualification must pass without that switch once the fresh
 database initialization fix is published. The original digest was reproduced
 with `failure=missing-safe-rollback-approval-mappers` and successful cleanup.
 
-The N-1 upgrade path remains unverified because no released baseline exists;
-this fresh-install check does not claim upgrade qualification.
+This fresh-install check does not claim installed-stack upgrade qualification.
+Forward-only migrations require separate installed-stack and idempotency proof.
 
 | File | Role |
 | --- | --- |

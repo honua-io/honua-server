@@ -107,10 +107,16 @@ internal static partial class ScimEndpoints
             return Unauthorized();
         }
 
+        var userName = ParseEqFilter(context.Request.Query["filter"], "userName");
+        if (!userName.IsValid)
+        {
+            return InvalidFilterResult("userName");
+        }
+
         var (startIndex, count) = ReadPaging(context);
         var query = new ScimUserQuery
         {
-            UserNameEquals = ParseEqFilter(context.Request.Query["filter"], "userName"),
+            UserNameEquals = userName.Value,
             StartIndex = startIndex,
             Count = count,
         };
@@ -337,10 +343,16 @@ internal static partial class ScimEndpoints
             return Unauthorized();
         }
 
+        var displayName = ParseEqFilter(context.Request.Query["filter"], "displayName");
+        if (!displayName.IsValid)
+        {
+            return InvalidFilterResult("displayName");
+        }
+
         var (startIndex, count) = ReadPaging(context);
         var query = new ScimGroupQuery
         {
-            DisplayNameEquals = ParseEqFilter(context.Request.Query["filter"], "displayName"),
+            DisplayNameEquals = displayName.Value,
             StartIndex = startIndex,
             Count = count,
         };
@@ -825,29 +837,6 @@ internal static partial class ScimEndpoints
         }
 
         return (startIndex, count);
-    }
-
-    private static string? ParseEqFilter(string? filter, string attribute)
-    {
-        if (string.IsNullOrWhiteSpace(filter))
-        {
-            return null;
-        }
-
-        var trimmed = filter.Trim();
-        var prefix = attribute + " eq ";
-        if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var rest = trimmed[prefix.Length..].Trim();
-        if (rest.Length >= 2 && rest[0] == '"' && rest[^1] == '"')
-        {
-            return rest[1..^1];
-        }
-
-        return rest;
     }
 
     private static async Task<ScimUser?> ReadUserAsync(HttpContext context)

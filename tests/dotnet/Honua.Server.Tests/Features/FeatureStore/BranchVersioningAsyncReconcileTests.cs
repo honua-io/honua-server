@@ -61,6 +61,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
             VALUES ({PointsLayerId}, 'BV Async Points', '{_schema}', 'features', 'Point', 4326)
             ON CONFLICT (layer_id) DO UPDATE SET srid = EXCLUDED.srid;
             """);
+        await _fixture.SeedIsolatedLayerCatalogAsync(_schema, (PointsLayerId, "BV Async Points", "Point"));
     }
 
     public async Task DisposeAsync()

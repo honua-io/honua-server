@@ -147,6 +147,45 @@ public sealed class SettingsRevisionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/oidc/providers/{id}/undo")]
+    public async Task OidcUndo_StaleOrMissingExpectedRevision_IsRefused()
+    {
+        var providerId = await CreateProviderAsync();
+        var created = (await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}/revisions")))[0]
+            .GetProperty("revisionId").GetInt64();
+        (await _client.PutAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}", new { clientId = "rotated-client" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await _client.PostAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}/undo", new { }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PostAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}/undo", new { expectedRevisionId = created }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var provider = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}"));
+        provider.GetProperty("clientId").GetString().Should().Be("rotated-client");
+    }
+
+    // Many administrators editing one provider at once must never see a server error, and every accepted
+    // write leaves exactly one history entry. A write that loses every retry is a retryable 409.
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    [Endpoint("GET /api/v1/admin/oidc/providers/{id}/revisions")]
+    public async Task OidcUpdate_ParallelWriters_EachAcceptedWriteLeavesOneRevision()
+    {
+        var providerId = await CreateProviderAsync();
+        var clientIds = Enumerable.Range(0, 24).Select(i => $"parallel-client-{i}").ToArray();
+
+        var responses = await Task.WhenAll(clientIds.Select(clientId =>
+            _client.PutAsJsonAsync($"/api/v1/admin/oidc/providers/{providerId}", new { clientId })));
+
+        var codes = responses.Select(response => response.StatusCode).ToArray();
+        codes.Should().OnlyContain(code => code == HttpStatusCode.OK || code == HttpStatusCode.Conflict);
+        var revisions = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}/revisions"));
+        revisions.GetArrayLength().Should().Be(codes.Count(code => code == HttpStatusCode.OK) + 1);
+        var provider = await ReadDataAsync(await _client.GetAsync($"/api/v1/admin/oidc/providers/{providerId}"));
+        clientIds.Should().Contain(provider.GetProperty("clientId").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers/{id}/undo")]
     public async Task OidcUndo_AgentAdministrator_IsForbidden()
     {
         var providerId = await CreateProviderAsync();

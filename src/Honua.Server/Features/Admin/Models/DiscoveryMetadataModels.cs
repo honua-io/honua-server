@@ -81,7 +81,9 @@ public sealed record MetadataCustomFieldSchemasResponse
 public sealed record MetadataCustomFieldSchemasUpdateRequest
 {
     public required string Etag { get; init; }
-    public MetadataV2CustomFieldSchema[] Schemas { get; init; } = [];
+
+    // No default: a body without "schemas" must be refused, not read as "remove every schema".
+    public MetadataV2CustomFieldSchema[]? Schemas { get; init; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

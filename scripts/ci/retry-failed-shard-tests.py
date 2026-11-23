@@ -108,16 +108,27 @@ def record_candidates(options, failed):
     options.candidates.write_text(json.dumps(data) + '\n')
 
 
+def describe(failed, limit=5):
+    methods = sorted({case[0] for case in failed})
+    named = ', '.join(methods[:limit])
+    return named if len(methods) <= limit else f'{named} and {len(methods) - limit} more'
+
+
 def attempt_retry(options, command):
     failed = [case for case in read_cases(options.first) if case[2] == 'Failed']
     if not failed:
         return 1
-    print(f'::warning::Retrying {len(failed)} failed case(s) once within the original shard deadline', flush=True)
+    print(f'::warning::Retrying {len(failed)} failed case(s) once within the original shard deadline: '
+          f'{describe(failed)}', flush=True)
     code = call_test(retry_command(command, failed, options.retry))
     if code != 0:
+        print(f'::error::HONUA_SHARD_RETRY_FAILED {describe(failed)} did not pass the in-job retry (exit {code}); '
+              'the failure gates and is not a quarantine candidate', flush=True)
         return code
     merge_retry(options.first, options.retry, options.output)
     record_candidates(options, failed)
+    print(f'::warning::HONUA_SHARD_FLAKE_CANDIDATE {describe(failed)} failed, then passed on retry; '
+          'the quarantine publisher files one issue per test', flush=True)
     return 0
 
 

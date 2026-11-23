@@ -16,9 +16,10 @@ Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives.
 | Capability key | `serve.vector-tiles` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 11 implemented |
 | Registry entries | 11 |
-| Proving tests | 112 |
+| Proving tests | 116 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

@@ -1288,6 +1288,10 @@ internal sealed partial class SharingRestLog
         Message = "Portal OAuth authorize rejected: redirect_uri is not registered in the deployment allow-list.")]
     public static partial void OAuthRedirectUriRejected(ILogger logger);
 
+    [LoggerMessage(EventId = 7123, Level = LogLevel.Warning,
+        Message = "Portal OAuth authorize rejected for a registered client: {Decision}.")]
+    public static partial void OAuthClientRejected(ILogger logger, PortalOAuthClientDecision decision);
+
     [LoggerMessage(EventId = 7142, Level = LogLevel.Information,
         Message = "Portal item {ItemId} {Operation} was not applied; item access is unchanged.")]
     public static partial void ItemSharingNotApplied(ILogger logger, string itemId, string operation);

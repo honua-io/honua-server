@@ -69,7 +69,7 @@ internal sealed class InMemoryRoleStore : IRoleStore
 
             if (_roleIdsByName.ContainsKey(role.Name))
             {
-                throw new InvalidOperationException($"Role with name '{role.Name}' already exists.");
+                throw new RoleNameConflictException(role.Name);
             }
 
             _roles[role.RoleId] = role;

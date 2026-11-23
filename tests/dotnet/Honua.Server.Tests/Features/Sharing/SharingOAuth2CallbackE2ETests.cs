@@ -27,6 +27,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string ClientId = "arcgispro";
     private const string RedirectUri = "https://app.example.com/oauth/redirect";
+    private const string OtherAllowedRedirectUri = "https://app.example.com/oauth/other";
 
     // Mock IdP coordinates. The broker derives the discovery URL from the provider
     // Authority; the stub serves discovery + token regardless of host.
@@ -48,6 +49,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
                 // Allow-list the ArcGIS client redirect (open-redirect mitigation).
                 builder.UseSetting("Authentication:PortalToken:OAuth2:AllowedRedirectUris:0", RedirectUri);
+                builder.UseSetting("Authentication:PortalToken:OAuth2:AllowedRedirectUris:1", OtherAllowedRedirectUri);
 
                 // UseOidc stays false. The bridge callback must validate the IdP token
                 // itself whenever OIDC is configured.
@@ -180,6 +182,53 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(400);
         response.Headers.Location.Should().BeNull();
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    public async Task Authorize_RegisteredClient_RefusesARedirectOutsideItsRegistration()
+    {
+        var clients = _fixture.Services.GetRequiredService<IOAuthClientStore>();
+        var registered = await clients.CreateAsync(
+            new OAuthClientRegistration("Field app", OAuthClientType.Public, ["authorization_code"], [RedirectUri], [], null, "test"),
+            CancellationToken.None);
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+
+        // Allow-listed for the deployment, but not one of this client's redirects.
+        using var response = await client.GetAsync(AuthorizeUrl(registered.Record.ClientId, OtherAllowedRedirectUri));
+
+        await response.AssertGeoServicesErrorAsync(400);
+        response.Headers.Location.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/authorize")]
+    public async Task Authorize_DeletedRegisteredClient_IsRefusedWithoutRedirect()
+    {
+        var clients = _fixture.Services.GetRequiredService<IOAuthClientStore>();
+        var registered = await clients.CreateAsync(
+            new OAuthClientRegistration("Field app", OAuthClientType.Public, [], [RedirectUri], [], null, "test"),
+            CancellationToken.None);
+        await clients.DeleteAsync(registered.Record.Id, CancellationToken.None);
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+
+        using var response = await client.GetAsync(AuthorizeUrl(registered.Record.ClientId, RedirectUri));
+
+        await response.AssertGeoServicesErrorAsync(400);
+        response.Headers.Location.Should().BeNull();
+    }
+
+    private static string AuthorizeUrl(string clientId, string redirectUri)
+        => QueryHelpers.AddQueryString("/sharing/rest/oauth2/authorize", new Dictionary<string, string?>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = clientId,
+            ["redirect_uri"] = redirectUri,
+            ["state"] = "client-state-xyz",
+            ["code_challenge"] = "callback-e2e-challenge-value-0123456789abcdefghijk",
+            ["code_challenge_method"] = "S256",
+        });
 
     [IntegrationTest]
     [Operation(Operations.Security)]

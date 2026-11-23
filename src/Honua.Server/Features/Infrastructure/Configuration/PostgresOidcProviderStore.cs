@@ -34,7 +34,7 @@ internal sealed class PostgresOidcProviderStore(PostgresConfigurationDocuments d
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumProviders);
         var write = documents.PrepareWrite(Collection, new(provider.ProviderId.ToString("D"), 0, provider));
-        for (var attempt = 0; attempt < 16; attempt++)
+        for (var attempt = 0; attempt < ConfigurationWriteContention.MaxAttempts; attempt++)
         {
             var snapshot = await _store.ReadAsync(cancellationToken).ConfigureAwait(false);
             // Undecryptable rows remain configured providers and consume the same entitlement capacity.
@@ -46,8 +46,9 @@ internal sealed class PostgresOidcProviderStore(PostgresConfigurationDocuments d
             {
                 return provider;
             }
+            await ConfigurationWriteContention.PauseAsync(attempt, cancellationToken).ConfigureAwait(false);
         }
-        throw new InvalidOperationException("Concurrent configuration updates exceeded the retry limit.");
+        throw new ConfigurationWriteConflictException();
     }
 
     public Task<OidcProviderConfiguration?> UpdateProviderAsync(Guid providerId, Func<OidcProviderConfiguration, OidcProviderConfiguration> update, CancellationToken cancellationToken = default)

@@ -23,13 +23,17 @@ jobs:
       && github.event.pull_request.user.login != 'dependabot[bot]'
       && (github.event.pull_request.base.ref == 'trunk' || github.event.action == 'edited')
       && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
+      && (github.event.action != 'edited' || github.event.changes.base != null)
+      && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+        || github.event.label.name == 'hold' || github.event.label.name == 'train:hold'
+        || github.event.label.name == 'train:escalated')
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-24.04' }}
     environment: bot-app
     timeout-minutes: 5
     steps:
       - name: Create repository-scoped bot token
         id: bot
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -40,6 +44,8 @@ jobs:
           permission-workflows: write
       - name: Enable auto-merge for the live pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          BOT_APP_SLUG: ${{ steps.bot.outputs.app-slug }}
         with:
           github-token: ${{ steps.bot.outputs.token }}
           script: |
@@ -50,7 +56,7 @@ jobs:
                     id state isDraft baseRefName mergeStateStatus headRepository { nameWithOwner }
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     commits { totalCount }
-                    autoMergeRequest { mergeMethod }
+                    autoMergeRequest { mergeMethod enabledBy { login } }
                   }
                 }
               }`, { ...context.repo, number: context.issue.number });
@@ -62,7 +68,18 @@ jobs:
               && !pr.labels.pageInfo.hasNextPage
               && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));
             const mergeMethod = pr?.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
-            if (pr?.autoMergeRequest && !eligible) {
+            // A queued run can start after the PR merged or closed; GitHub keeps
+            // autoMergeRequest on it but refuses to disable it, so leave it alone.
+            if (pr && pr.state !== 'OPEN') {
+              core.notice(`Pull request is ${pr.state}; nothing to arm or revoke.`);
+              return;
+            }
+            // A bundle that grew past one commit after the bot armed SQUASH switches to MERGE;
+            // a method a lane chose itself is kept.
+            const armedByBot = pr?.autoMergeRequest?.enabledBy?.login?.replace(/\[bot\]$/, '') === process.env.BOT_APP_SLUG;
+            const switchToMerge = eligible && armedByBot && pr.autoMergeRequest.mergeMethod === 'SQUASH'
+              && mergeMethod === 'MERGE' && ['BLOCKED', 'BEHIND', 'UNKNOWN'].includes(pr.mergeStateStatus);
+            if (pr?.autoMergeRequest && (!eligible || switchToMerge)) {
               await github.graphql(`
                 mutation($pullRequestId: ID!) {
                   disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
@@ -94,7 +111,8 @@ jobs:
                 }`, { pullRequestId: pr.id, mergeMethod });
             } catch (error) {
               const messages = error.errors?.map(item => item.message) ?? [];
-              if (!messages.length || !messages.every(message => message === 'Pull request is in clean status')) {
+              if (switchToMerge || !messages.length
+                || !messages.every(message => message === 'Pull request is in clean status')) {
                 throw error;
               }
               core.notice('PR became mergeable before auto-merge could be armed; existing merge authority handles it.');

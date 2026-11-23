@@ -328,6 +328,15 @@ class QuickstartTests(unittest.TestCase):
         spa = config.split('location /console/ {', 1)[1].split('}', 1)[0]
         self.assertIn('try_files $uri /console/index.html;', spa)
 
+    def test_console_version_is_the_packaged_file_and_never_cached(self):
+        config = (ROOT / 'docs/get-started/console.nginx.conf').read_text()
+        version = config.split('location = /console/version.json {', 1)[1].split('}', 1)[0]
+        self.assertIn('alias /etc/honua-console/version.json;', version)
+        self.assertIn('default_type application/json;', version)
+        self.assertIn('Cache-Control no-store', version)
+        self.assertLess(config.index('location = /console/version.json {'),
+                        config.index(r'location ~ ^/console/.+\.[A-Za-z0-9]+$ {'))
+
     def test_compose_postgres_uses_real_flags_instead_of_ignored_env_vars(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"

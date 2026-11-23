@@ -23,11 +23,33 @@ internal interface IOAuthClientStore
 
     Task<OAuthClientRecord?> DeleteAsync(Guid id, CancellationToken cancellationToken);
 
+    // Returns the registration for a client_id whatever its state (revoked or expired
+    // included), so callers can refuse it rather than mistake it for an unknown label.
+    Task<OAuthClientRecord?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken);
+
     // Callers must not distinguish an unknown client from a bad secret.
     Task<OAuthClientRecord?> ValidateSecretAsync(
         string clientId,
         string clientSecret,
         CancellationToken cancellationToken);
+}
+
+internal static class OAuthClientIdentifiers
+{
+    public const string RegistryPrefix = "client_";
+
+    // 18 random bytes, base64url without padding.
+    private const int RegistryIdLength = 24;
+
+    private static readonly System.Buffers.SearchValues<char> Base64UrlAlphabet =
+        System.Buffers.SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+
+    // A value in the registry's own identifier shape. Such an id that has no
+    // registration was deleted (or never issued) and must not act as a free label.
+    public static bool HasRegistryShape(string clientId)
+        => clientId.Length == RegistryPrefix.Length + RegistryIdLength
+            && clientId.StartsWith(RegistryPrefix, StringComparison.Ordinal)
+            && clientId.AsSpan(RegistryPrefix.Length).IndexOfAnyExcept(Base64UrlAlphabet) < 0;
 }
 
 internal enum OAuthClientType
@@ -69,7 +91,7 @@ internal sealed record OAuthClientCreateResult(OAuthClientRecord Record, string?
 
 internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null) : IOAuthClientStore
 {
-    private const string ClientIdPrefix = "client_";
+    private const string ClientIdPrefix = OAuthClientIdentifiers.RegistryPrefix;
     private const string SecretPrefix = "secret_";
     private const int IdByteCount = 18;
     private const int SecretByteCount = 32;
@@ -146,6 +168,15 @@ internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null
     {
         cancellationToken.ThrowIfCancellationRequested();
         _clients.TryRemove(id, out var record);
+        return Task.FromResult(record);
+    }
+
+    public Task<OAuthClientRecord?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var record = string.IsNullOrWhiteSpace(clientId)
+            ? null
+            : _clients.Values.FirstOrDefault(client => string.Equals(client.ClientId, clientId, StringComparison.Ordinal));
         return Task.FromResult(record);
     }
 

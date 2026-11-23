@@ -16,6 +16,7 @@ Read-only retrieval of executable spec artifacts by content hash. Applying a spe
 | Capability key | `ai.spec-artifacts` |
 | Category | AI |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
 | Proving tests | 20 |

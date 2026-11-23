@@ -68,6 +68,25 @@ public sealed partial class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifet
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // The valid development refresh token is used where it appears, so a wrong grant type is the only fault.
+    [IntegrationTheory]
+    [InlineData("application/json", """{"grantType":"password","refreshToken":"refresh-token"}""")]
+    [InlineData("application/json", """{"grant_type":"client_credentials","refresh_token":"refresh-token"}""")]
+    [InlineData("application/json", "{}")]
+    [InlineData("application/json", "not json")]
+    [InlineData("application/json", "")]
+    [InlineData("application/x-www-form-urlencoded", "grant_type=password&refresh_token=refresh-token")]
+    [InlineData("application/x-www-form-urlencoded", "grant_type=refresh_token")]
+    [Endpoint("POST /oauth/token")]
+    public async Task TokenRefresh_WithMalformedRequest_ReturnsBadRequestWithoutTokens(string mediaType, string body)
+    {
+        using var content = new StringContent(body, Encoding.UTF8, mediaType);
+        using var response = await _anonymousClient.PostAsync("/oauth/token", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("accessToken");
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/mobile/exceptions")]
     public async Task ExceptionUpload_WithApiKey_ReturnsAccepted()

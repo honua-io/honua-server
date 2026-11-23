@@ -54,9 +54,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             {
                 // A bootstrap and its first persisted snapshot can share a revision number.
                 // A pinned preview must never be rebound to a different write base on retry.
-                throw new LayerPublishingException(
-                    LayerPublishingErrorKind.Conflict,
-                    "Publication metadata changed after preview. Create a new preview before publishing.");
+                throw LayerPublicationBaseChanged.Create();
             }
             catch (MetadataV2GraphConcurrencyException) when (attempt < MetadataGraphConflictAttempts)
             {
