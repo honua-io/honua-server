@@ -24,14 +24,21 @@ def samples(**minutes):
 
 
 class FakeGitHub:
-    def __init__(self, issues=()):
-        self.issues, self.writes = list(issues), []
+    """Serves `read` from a function of the path and records writes."""
 
-    def __call__(self, endpoint, payload=None, method=None):
-        if payload is None:
-            return self.issues
-        self.writes.append((method or 'POST', endpoint, payload))
+    def __init__(self, reads):
+        self.repo, self.reads, self.writes = REPO, reads, []
+
+    def read(self, path):
+        return self.reads(path)
+
+    def write(self, path, payload, method='POST'):
+        self.writes.append((method, path, payload))
         return dict(number=77)
+
+
+def issues(*open_issues):
+    return FakeGitHub(lambda path: list(open_issues))
 
 
 class TotalDrift(unittest.TestCase):
@@ -73,8 +80,8 @@ class ShardFindings(unittest.TestCase):
         self.assertEqual([row['name'] for row in report['estimated']], ['a'])
 
 
-def run(identity, event, title, repo=REPO):
-    return dict(id=identity, event=event, display_title=title, head_repository=dict(full_name=repo))
+def run(identity, event, title):
+    return dict(id=identity, event=event, display_title=title, head_repository=dict(full_name=REPO))
 
 
 class Sampling(unittest.TestCase):
@@ -84,17 +91,16 @@ class Sampling(unittest.TestCase):
 
     def test_window_keeps_trunk_full_runs_only(self):
         page = dict(workflow_runs=[run(1, 'workflow_dispatch', 'CI affected x'), run(2, 'schedule', 'CI full '),
-                                   run(3, 'push', 'CI full '), run(4, 'workflow_dispatch', 'CI full ', 'fork/repo'),
+                                   run(3, 'push', 'CI full '), dict(run(4, 'workflow_dispatch', 'CI full '), head_repository=dict(full_name='fork/repo')),
                                    run(5, 'workflow_dispatch', 'CI full '), run(6, 'schedule', 'CI full '),
                                    run(7, 'schedule', 'CI full ')])
-        self.assertEqual([r['id'] for r in drift.full_runs(lambda endpoint: page, REPO)], [2, 5, 6])
+        self.assertEqual([r['id'] for r in drift.full_runs(FakeGitHub(lambda path: page))], [2, 5, 6])
 
     def test_window_pages_past_affected_runs(self):
         pages = {1: [run(n, 'workflow_dispatch', 'CI affected x') for n in range(99)] + [run(100, 'schedule', 'CI full ')],
                  2: [run(n, 'workflow_dispatch', 'CI full ') for n in (200, 201, 202)]}
-        def call(endpoint):
-            return dict(workflow_runs=pages[int(endpoint.rsplit('page=', 1)[1])])
-        self.assertEqual([r['id'] for r in drift.full_runs(call, REPO)], [100, 200, 201])
+        github = FakeGitHub(lambda path: dict(workflow_runs=pages[int(path.rsplit('page=', 1)[1])]))
+        self.assertEqual([r['id'] for r in drift.full_runs(github)], [100, 200, 201])
 
     def test_samples_from_a_changed_definition_are_dropped(self):
         current = drift.definitions(dict(shards=[dict(name='a', filter='A'), dict(name='b', filter='B')]))
@@ -108,24 +114,24 @@ class TrackingIssue(unittest.TestCase):
     CLEAN = dict(total=dict(status='ok'), grown=[], estimated=[])
 
     def test_finding_opens_one_issue(self):
-        github = FakeGitHub()
-        self.assertEqual(drift.reconcile(github, REPO, self.DRIFT, 'body'), 'opened #77')
-        self.assertEqual(github.writes[0][1], f'repos/{REPO}/issues')
+        github = issues()
+        self.assertEqual(drift.reconcile(github, self.DRIFT, 'body'), 'opened #77')
+        self.assertEqual(github.writes[0][1], 'issues')
 
     def test_changed_finding_updates_the_open_issue(self):
-        github = FakeGitHub([dict(number=5, body=f'{drift.MARKER} old')])
-        self.assertEqual(drift.reconcile(github, REPO, self.DRIFT, f'{drift.MARKER} new'), 'updated #5')
-        self.assertEqual(github.writes, [('PATCH', f'repos/{REPO}/issues/5', dict(body=f'{drift.MARKER} new'))])
+        github = issues(dict(number=5, body=f'{drift.MARKER} old'))
+        self.assertEqual(drift.reconcile(github, self.DRIFT, f'{drift.MARKER} new'), 'updated #5')
+        self.assertEqual(github.writes, [('PATCH', 'issues/5', dict(body=f'{drift.MARKER} new'))])
 
     def test_back_in_band_closes_it(self):
-        github = FakeGitHub([dict(number=5, body=drift.MARKER), dict(number=6, body=drift.MARKER, pull_request={})])
-        self.assertEqual(drift.reconcile(github, REPO, self.CLEAN, 'body'), 'closed #5')
+        github = issues(dict(number=5, body=drift.MARKER), dict(number=6, body=drift.MARKER, pull_request={}))
+        self.assertEqual(drift.reconcile(github, self.CLEAN, 'body'), 'closed #5')
         self.assertEqual(github.writes[-1][2]['state'], 'closed')
 
     def test_insufficient_window_never_touches_issues(self):
-        github = FakeGitHub([dict(number=5, body=drift.MARKER)])
+        github = issues(dict(number=5, body=drift.MARKER))
         report = dict(total=dict(status='insufficient'), grown=[], estimated=[])
-        self.assertEqual(drift.reconcile(github, REPO, report, 'body'), 'skipped')
+        self.assertEqual(drift.reconcile(github, report, 'body'), 'skipped')
         self.assertEqual(github.writes, [])
 
 

@@ -36,16 +36,30 @@ TITLE = 'ci: server shard dispatch_rank drifted from measured full-run job minut
 LABELS = ['area/ci']
 OWNER_LANE = 's-ci-shards'
 API_TIMEOUT_SECONDS = 120
+PER_PAGE = 100
+RAW = 'Accept: application/vnd.github.raw+json'
 
 
-def api(endpoint, payload=None, method=None, raw=False):
-    """One gh api call; writes send the payload on stdin, raw reads skip the 1 MB contents limit."""
-    command = ['gh', 'api', endpoint] + (['-H', 'Accept: application/vnd.github.raw+json'] if raw else [])
-    if payload is not None:
-        command += ['--method', method or 'POST', '--input', '-']
-    result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
-                            capture_output=True, text=True, timeout=API_TIMEOUT_SECONDS, check=True)
-    return json.loads(result.stdout or 'null')
+class GitHub:
+    """gh api for one repository; writes send the payload on stdin and run once."""
+
+    def __init__(self, repo):
+        self.repo = repo
+
+    def _run(self, command, payload=None):
+        result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
+                                capture_output=True, text=True, timeout=API_TIMEOUT_SECONDS, check=True)
+        return json.loads(result.stdout or 'null')
+
+    def read(self, path):
+        return self._run(['gh', 'api', f'repos/{self.repo}/{path}'])
+
+    def raw(self, path):
+        """Raw media type: file contents beyond the 1 MB inline limit."""
+        return self._run(['gh', 'api', '-H', RAW, f'repos/{self.repo}/{path}'])
+
+    def write(self, path, payload, method='POST'):
+        return self._run(['gh', 'api', f'repos/{self.repo}/{path}', '--method', method, '--input', '-'], payload)
 
 
 def is_full_run(run, repo):
@@ -54,14 +68,14 @@ def is_full_run(run, repo):
             and run['head_repository']['full_name'] == repo)
 
 
-def full_runs(call, repo):
+def full_runs(github):
     """The newest RUN_WINDOW completed CI full runs on trunk; affected runs outnumber them, so page."""
     runs = []
     for page in range(1, MAX_RUN_PAGES + 1):
-        batch = call(f'repos/{repo}/actions/workflows/ci.yml/runs'
-                     f'?branch=trunk&status=completed&per_page=100&page={page}')['workflow_runs']
-        runs += [run for run in batch if is_full_run(run, repo)]
-        if len(runs) >= RUN_WINDOW or len(batch) < 100:
+        batch = github.read(f'actions/workflows/ci.yml/runs?branch=trunk&status=completed'
+                            f'&per_page={PER_PAGE}&page={page}')['workflow_runs']
+        runs += [run for run in batch if is_full_run(run, github.repo)]
+        if len(runs) >= RUN_WINDOW or len(batch) < PER_PAGE:
             break
     return runs[:RUN_WINDOW]
 
@@ -72,8 +86,8 @@ def definitions(config):
             for shard in config['shards']}
 
 
-def head_definitions(call, repo, sha):
-    return definitions(call(f'repos/{repo}/contents/.github/ci-shards.json?ref={sha}', raw=True))
+def head_definitions(github, sha):
+    return definitions(github.raw(f'contents/.github/ci-shards.json?ref={sha}'))
 
 
 def matching_samples(samples, at_head, current):
@@ -97,12 +111,12 @@ def shard_samples(jobs):
     return samples
 
 
-def run_jobs(call, repo, run_id):
+def run_jobs(github, run_id):
     jobs, page = [], 1
     while True:
-        batch = call(f'repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100&page={page}')['jobs']
+        batch = github.read(f'actions/runs/{run_id}/jobs?filter=latest&per_page={PER_PAGE}&page={page}')['jobs']
         jobs += batch
-        if len(batch) < 100:
+        if len(batch) < PER_PAGE:
             return jobs
         page += 1
 
@@ -115,40 +129,38 @@ def merge_samples(per_run):
     return merged
 
 
-def medians(ranks, samples):
-    """Median measured minutes for each current shard with at least MIN_SAMPLES samples."""
-    return {name: statistics.median(samples[name]) for name in ranks
-            if len(samples.get(name, ())) >= MIN_SAMPLES}
+def measured_rows(ranks, samples):
+    """Rank, median and sample count for each current shard with at least MIN_SAMPLES samples."""
+    return [dict(name=name, rank=ranks[name], median=statistics.median(samples[name]), samples=len(samples[name]))
+            for name in sorted(ranks) if len(samples.get(name, ())) >= MIN_SAMPLES]
 
 
-def total_drift(ranks, measured):
-    if not ranks or len(measured) < MIN_COVERAGE * len(ranks):
-        return dict(status='insufficient', measured=len(measured), shards=len(ranks))
-    rank_sum = sum(ranks[name] for name in measured)
-    measured_sum = sum(measured.values())
+def total_drift(rows, shard_count):
+    if not shard_count or len(rows) < MIN_COVERAGE * shard_count:
+        return dict(status='insufficient', measured=len(rows), shards=shard_count)
+    rank_sum = sum(row['rank'] for row in rows)
+    measured_sum = sum(row['median'] for row in rows)
     ratio = rank_sum / measured_sum if measured_sum else float('inf')
     status = 'ok' if RATIO_LOW <= ratio <= RATIO_HIGH else 'drift'
-    return dict(status=status, measured=len(measured), shards=len(ranks), ratio=round(ratio, 2),
+    return dict(status=status, measured=len(rows), shards=shard_count, ratio=round(ratio, 2),
                 rank_minutes=round(rank_sum, 1), measured_minutes=round(measured_sum, 1))
 
 
-def grown_shards(ranks, measured, samples):
-    return [dict(name=name, rank=ranks[name], median=round(median, 1), samples=len(samples[name]))
-            for name, median in sorted(measured.items())
-            if median >= GROWTH_RATIO * ranks[name] and median - ranks[name] >= GROWTH_MINUTES]
+def grown(row):
+    return row['median'] >= GROWTH_RATIO * row['rank'] and row['median'] - row['rank'] >= GROWTH_MINUTES
 
 
-def estimated_shards(ranks, recorded, measured, samples):
-    return [dict(name=name, rank=ranks[name], median=round(median, 1), samples=len(samples[name]))
-            for name, median in sorted(measured.items()) if name not in recorded]
+def rounded(rows):
+    return [dict(row, median=round(row['median'], 1)) for row in rows]
 
 
 def analyze(config, record, samples):
     ranks = {shard['name']: float(shard.get('dispatch_rank') or 0.0) for shard in config['shards']}
-    measured = medians(ranks, samples)
-    return dict(total=total_drift(ranks, measured),
-                grown=grown_shards(ranks, measured, samples),
-                estimated=estimated_shards(ranks, record.get('ranks', {}), measured, samples))
+    rows = measured_rows(ranks, samples)
+    recorded = record.get('ranks', {})
+    return dict(total=total_drift(rows, len(ranks)),
+                grown=rounded([row for row in rows if grown(row)]),
+                estimated=rounded([row for row in rows if row['name'] not in recorded]))
 
 
 def has_findings(report):
@@ -177,29 +189,29 @@ def render(report, runs):
     return '\n'.join(lines) + '\n'
 
 
-def tracking_issue(call, repo):
-    issues = call(f'repos/{repo}/issues?state=open&labels=area/ci&per_page=100')
+def tracking_issue(github):
+    issues = github.read(f'issues?state=open&labels=area/ci&per_page={PER_PAGE}')
     return next((issue for issue in issues
                  if 'pull_request' not in issue and MARKER in (issue.get('body') or '')), None)
 
 
-def reconcile(call, repo, report, body):
+def reconcile(github, report, body):
     """Open, update or close the one tracking issue; returns the action taken."""
     if report['total']['status'] == 'insufficient':
         return 'skipped'
-    issue = tracking_issue(call, repo)
+    issue = tracking_issue(github)
     if has_findings(report):
         if issue is None:
-            created = call(f'repos/{repo}/issues', dict(title=TITLE, body=body, labels=LABELS))
+            created = github.write('issues', dict(title=TITLE, body=body, labels=LABELS))
             return f"opened #{created['number']}"
         if issue['body'] != body:
-            call(f"repos/{repo}/issues/{issue['number']}", dict(body=body), 'PATCH')
+            github.write(f"issues/{issue['number']}", dict(body=body), 'PATCH')
             return f"updated #{issue['number']}"
         return f"unchanged #{issue['number']}"
     if issue is None:
         return 'clean'
-    call(f"repos/{repo}/issues/{issue['number']}/comments", dict(body='Ranks are back in band:\n\n' + body))
-    call(f"repos/{repo}/issues/{issue['number']}", dict(state='closed', state_reason='completed'), 'PATCH')
+    github.write(f"issues/{issue['number']}/comments", dict(body='Ranks are back in band:\n\n' + body))
+    github.write(f"issues/{issue['number']}", dict(state='closed', state_reason='completed'), 'PATCH')
     return f"closed #{issue['number']}"
 
 
@@ -210,16 +222,16 @@ def main(argv=None):
     parser.add_argument('--record', type=Path, default=Path('scripts/ci/fixtures/measured-dispatch-ranks.json'))
     parser.add_argument('--dry-run', action='store_true', help='report only; never touch issues')
     args = parser.parse_args(argv)
-    config = json.loads(args.config.read_text())
+    github, config = GitHub(args.repo), json.loads(args.config.read_text())
     current = definitions(config)
-    runs = full_runs(api, args.repo)
-    samples = merge_samples(matching_samples(shard_samples(run_jobs(api, args.repo, run['id'])),
-                                             head_definitions(api, args.repo, run['head_sha']), current)
+    runs = full_runs(github)
+    samples = merge_samples(matching_samples(shard_samples(run_jobs(github, run['id'])),
+                                             head_definitions(github, run['head_sha']), current)
                             for run in runs)
     report = analyze(config, json.loads(args.record.read_text()), samples)
     body = render(report, runs)
     print(body)
-    print('issue:', 'dry run' if args.dry_run else reconcile(api, args.repo, report, body))
+    print('issue:', 'dry run' if args.dry_run else reconcile(github, report, body))
     return 0
 
 
