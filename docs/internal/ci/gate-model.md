@@ -1907,6 +1907,15 @@ workflow still runs, so no check is relaxed. A newest-suite run cancelled by han
 is rerun once as well, and that rerun may cancel an older-suite run still in
 progress; the attempt filter bounds both.
 
+Both workflows cancel a running run only on `synchronize` (#9615). A new head
+makes the running result obsolete, so it is still cancelled and no runner time
+is added for superseded heads. Other events (opened, edited, labeled,
+unlabeled, reopened) re-judge the same head: they queue behind the running run
+in the same group, both finish, and the newest suite reports a real result.
+Before this, 90 of 450 PR heads in 48 h carried a same-head cancelled hygiene
+run. A burst of three or more events can still replace the pending run, which
+the rerun workflow above repairs.
+
 Repository hygiene also runs on `labeled` and `unlabeled`. The shared bundle
 policy reads the PR's labels from the event payload, so a `bundle-exception`
 label added just after `opened` was invisible until the next push and left a
