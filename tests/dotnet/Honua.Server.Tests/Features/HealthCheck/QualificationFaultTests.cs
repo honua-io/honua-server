@@ -98,6 +98,27 @@ public sealed class QualificationFaultTests
     }
 
     [UnitTest]
+    public async Task GetActiveAsync_StoppingHostCancelsTheSharedDecision()
+    {
+        using var stopping = new CancellationTokenSource();
+        var marker = Substitute.For<IQualificationWedgeMarker>();
+        CancellationToken markerToken = default;
+        marker.ShouldWedgeAsync(Token, Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            markerToken = call.Arg<CancellationToken>();
+            return new TaskCompletionSource<bool>().Task;
+        });
+        var gate = new QualificationFaultGate(QualificationFault.Parse("Wedged:" + Token), marker,
+            NullLogger<QualificationFaultGate>.Instance, stopping.Token);
+
+        var decision = gate.GetActiveAsync();
+        stopping.Cancel();
+
+        markerToken.IsCancellationRequested.Should().BeTrue();
+        (await decision.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(QualificationFaultKind.None);
+    }
+
+    [UnitTest]
     public async Task GetActiveAsync_StalledMarkerFallsBackToServing()
     {
         var resolution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

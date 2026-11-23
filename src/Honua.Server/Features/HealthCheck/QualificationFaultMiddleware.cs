@@ -25,7 +25,7 @@ internal sealed class QualificationFaultMiddleware(RequestDelegate next, Qualifi
         var status = await gate.GetActiveAsync(context.RequestAborted).ConfigureAwait(false) switch
         {
             QualificationFaultKind.Wedged => StatusCodes.Status503ServiceUnavailable,
-            QualificationFaultKind.ServeErrors when !path.StartsWithSegments("/healthz/deep", StringComparison.OrdinalIgnoreCase)
+            QualificationFaultKind.ServeErrors when !IsProbe(path, "/healthz/deep")
                 => StatusCodes.Status500InternalServerError,
             _ => 0
         };
@@ -43,8 +43,11 @@ internal sealed class QualificationFaultMiddleware(RequestDelegate next, Qualifi
     }
 
     private static bool IsLoadBalancerProbe(PathString path)
-        => path.StartsWithSegments("/healthz/live", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWithSegments("/healthz/ready", StringComparison.OrdinalIgnoreCase);
+        => IsProbe(path, "/healthz/live") || IsProbe(path, "/healthz/ready");
+
+    private static bool IsProbe(PathString path, string probe)
+        => path.Equals(probe, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(probe + "/", StringComparison.OrdinalIgnoreCase);
 }
 
 internal static class QualificationFaultExtensions
@@ -58,7 +61,8 @@ internal static class QualificationFaultExtensions
             fault.Kind == QualificationFaultKind.Wedged
                 ? ResolveMarker(provider)
                 : null,
-            provider.GetRequiredService<ILogger<QualificationFaultGate>>()));
+            provider.GetRequiredService<ILogger<QualificationFaultGate>>(),
+            provider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None));
         return services;
     }
 

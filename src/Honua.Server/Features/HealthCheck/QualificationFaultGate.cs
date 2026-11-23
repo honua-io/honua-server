@@ -12,14 +12,19 @@ internal sealed partial class QualificationFaultGate
     private readonly QualificationFault _fault;
     private readonly IQualificationWedgeMarker? _marker;
     private readonly ILogger<QualificationFaultGate> _logger;
+    private readonly CancellationToken _applicationStopping;
     private readonly Lazy<Task<QualificationFaultKind>> _active;
 
     public QualificationFaultGate(
-        QualificationFault fault, IQualificationWedgeMarker? marker, ILogger<QualificationFaultGate> logger)
+        QualificationFault fault,
+        IQualificationWedgeMarker? marker,
+        ILogger<QualificationFaultGate> logger,
+        CancellationToken applicationStopping = default)
     {
         _fault = fault;
         _marker = marker;
         _logger = logger;
+        _applicationStopping = applicationStopping;
         _active = new Lazy<Task<QualificationFaultKind>>(ResolveAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -45,13 +50,19 @@ internal sealed partial class QualificationFaultGate
         try
         {
             // Each request can cancel its wait independently of the shared startup decision.
-            using var deadline = new CancellationTokenSource(MarkerTimeout);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_applicationStopping);
+            deadline.CancelAfter(MarkerTimeout);
+            deadline.Token.ThrowIfCancellationRequested();
             if (!await _marker.ShouldWedgeAsync(_fault.Token!, deadline.Token)
                     .WaitAsync(deadline.Token).ConfigureAwait(false))
             {
                 WedgeAlreadyConsumed(_logger);
                 return QualificationFaultKind.None;
             }
+        }
+        catch (OperationCanceledException) when (_applicationStopping.IsCancellationRequested)
+        {
+            return QualificationFaultKind.None;
         }
         // A qualification fault must never take down a serving process: an unreadable marker means no wedge.
         catch (Exception exception) when (exception is not OutOfMemoryException)

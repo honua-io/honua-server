@@ -9,6 +9,7 @@ namespace Honua.Aws.Features.ControlPlane;
 
 internal static class QualificationEcsDeployment
 {
+    private static readonly TimeSpan DiscoveryRetryDelay = TimeSpan.FromMilliseconds(150);
     private static readonly HttpClient _metadata = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false });
 
     public static async Task<string> ReadAsync(CancellationToken cancellationToken)
@@ -33,11 +34,18 @@ internal static class QualificationEcsDeployment
         }
 
         using var client = new AmazonECSClient();
-        var response = await client.DescribeTasksAsync(new DescribeTasksRequest { Cluster = cluster, Tasks = [task] },
-            cancellationToken).ConfigureAwait(false);
-        var deployment = response.Tasks?.SingleOrDefault()?.StartedBy;
-        return !string.IsNullOrWhiteSpace(deployment)
-            ? deployment
-            : throw new InvalidOperationException("ECS did not identify the task's deployment.");
+        var request = new DescribeTasksRequest { Cluster = cluster, Tasks = [task] };
+        // A starting task can be briefly absent from the eventually consistent ECS API.
+        while (true)
+        {
+            var response = await client.DescribeTasksAsync(request, cancellationToken).ConfigureAwait(false);
+            var deployment = response.Tasks?.SingleOrDefault()?.StartedBy;
+            if (!string.IsNullOrWhiteSpace(deployment))
+            {
+                return deployment;
+            }
+
+            await Task.Delay(DiscoveryRetryDelay, cancellationToken).ConfigureAwait(false);
+        }
     }
 }

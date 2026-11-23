@@ -36,10 +36,12 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
         using var ready = await client.GetAsync("/healthz/ready");
         using var query = await client.GetAsync(PublicQueryRoute);
         using var metrics = await client.GetAsync("/healthz/metrics");
+        using var descendant = await client.GetAsync("/healthz/deep/extra");
 
         live.StatusCode.Should().Be(HttpStatusCode.OK);
         deep.StatusCode.Should().Be(HttpStatusCode.OK, "the watchdog must not see this fault; only deployment alarms may");
         metrics.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "only the three probes are spared");
+        descendant.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         ready.StatusCode.Should().Be(HttpStatusCode.OK);
         ready.Headers.Contains(QualificationFaultMiddleware.FaultHeader).Should().BeFalse();
         query.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -66,8 +68,10 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
         using var ready = await client.GetAsync("/healthz/ready");
         using var deep = await client.GetAsync("/healthz/deep");
         using var query = await client.GetAsync(PublicQueryRoute);
+        using var descendant = await client.GetAsync("/healthz/live/extra");
 
         live.StatusCode.Should().Be(HttpStatusCode.OK);
+        descendant.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         ready.StatusCode.Should().Be(HttpStatusCode.OK);
         ready.Headers.Contains(QualificationFaultMiddleware.FaultHeader).Should().BeFalse();
         deep.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);

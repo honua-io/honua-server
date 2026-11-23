@@ -64,7 +64,8 @@ Fault responses carry `X-Honua-Qualification-Fault`. `ServeErrors` models a bad
 release that starts but serves errors: only the deployment alarms can see it, and
 rolling back removes the setting. `Wedged` is one-shot on ECS Fargate. The token
 (8 to 64 letters, digits or hyphens, new for each gate run) is recorded in the
-shared database with the first task's ECS deployment ID. All tasks in that
+shared database with the first task's ECS deployment ID for the lifetime of that
+qualification database. All tasks in that
 deployment wedge. Tasks created by the watchdog's rolling restart belong to a new
 deployment and serve normally. The gate task role needs `ecs:DescribeTasks` on
 tasks in its cluster. If the database or ECS deployment ID is unavailable within
