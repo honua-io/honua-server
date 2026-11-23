@@ -54,6 +54,26 @@ public sealed class LegacyWhereClauseParserTests
     }
 
     [UnitTheory]
+    [InlineData("名前 = '名-B2'", "名前")]
+    [InlineData("länge_straße IS NOT NULL", "länge_straße")]
+    [InlineData("ʻāina_inoa IN ('a', 'b')", "ʻāina_inoa")]
+    [InlineData("\U00020BB7_name = 'x'", "\U00020BB7_name")]
+    public void Parse_StorageMappedSyntax_AcceptsNonAsciiFieldNames(string clause, string field)
+    {
+        var parsed = Assert.Single(LegacyWhereClauseParser.Parse([clause], LegacyWhereGrammar.StorageMapped));
+        Assert.Equal(field, parsed.Match.Groups["field"].Value);
+        Assert.Throws<ArgumentException>(() => LegacyWhereClauseParser.Parse([clause], LegacyWhereGrammar.Basic).ToArray());
+    }
+
+    [UnitTest]
+    public void Parse_StorageMappedSyntax_KeepsLongJsonKeysAndRejectsBrokenScalars()
+    {
+        var longKey = new string('a', 64) + " = 'x'";
+        Assert.Single(LegacyWhereClauseParser.Parse([longKey], LegacyWhereGrammar.StorageMapped));
+        Assert.Throws<ArgumentException>(() => LegacyWhereClauseParser.Parse(["a\uD842 = 'x'"], LegacyWhereGrammar.StorageMapped).ToArray());
+    }
+
+    [UnitTheory]
     [InlineData("")]
     [InlineData("name = 'a' OR id = 2")]
     [InlineData("id = 1; DROP TABLE features")]

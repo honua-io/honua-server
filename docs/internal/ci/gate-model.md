@@ -1408,10 +1408,29 @@ metadata through the fixture start their own application within the case.
 Managed stored queries are held process-wide rather than per application, so a
 stored query created by one case stays visible to later cases; no case asserts
 an exact stored-query count. Cases with custom metadata providers, licenses, or
-service replacements also keep their own per-case applications.
-All cases and assertions remain in the WFS Endpoints shard on selected PR runs
+service replacements also keep their own per-case applications. Five read-only
+Pro metadata/query applications borrow only the initialized class schema: prefixed
+field names, projected extent, full declared field types, and the two inferred
+geometry cases. Each retains its separately configured metadata provider, license,
+services, client and disposal. Borrowers cannot drop the owner schema, which
+outlives every case in this serial class. Transactions, managed stored-query
+mutations and metadata writes retain private schemas.
+
+All 440 assertion lines, 400 test metadata lines and 94 asynchronous methods are
+unchanged. All cases and assertions remain in the WFS Endpoints shard on selected PR runs
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
+
+Two interleaved base/head runs of the full 99-case WFS Endpoints shard passed
+identical cases with zero skips. Class sums were 32.012600 / 31.165176 seconds
+at base and 31.582156 / 29.329947 at head: median 31.588888 to 30.456051 seconds.
+Fixture-inclusive TRX session pairs were 44.316083 / 44.266786 and
+43.926958 / 42.751009 seconds: median 44.121521 to 43.508898 seconds, saving
+0.612623 seconds (0.010210 runner-minutes), one runner before and after.
+Both pairs improved, but the first by only 0.049297 seconds; this is a modest
+observed saving with shared-host variability, not a demonstrated PR critical-path
+improvement. Compilation is excluded. Process times were 426.106 / 56.836 seconds
+at base and 57.608 / 60.113 at head; the first baseline included a cold build.
 
 ### Cross-protocol permission matrix fixture lifetime
 
@@ -1861,6 +1880,11 @@ when it carries the `bundle-exception` label with a
 `Bundle-exception: trunk-red|security-tracker|main-named — reason` line. Size is
 not an exception, and the label without one of those reasons fails even on a
 three-issue PR.
+Bot authors and same-repository publisher branches (`automation/`,
+`dependabot/`, `renovate/`, `release-please--`) are exempt, so
+`publish-generated-files.sh` opens `automation/regenerate-generated-files` PRs
+with its user token and no label or exception line (#9466). The lane `gh` and
+`pr-slot` gates refuse lane branches with those prefixes.
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
@@ -3317,6 +3341,30 @@ Shard filters are unchanged, so every case runs in the same shards on selected P
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
 
+### Measured SOAP shard packing
+
+The SOAP and SOAP Progress shards now share one GeoServices GPServer SOAP
+runner. Their exact filter union, affected-path union, project, tier selection,
+CPU setting, report flags and 22-minute test / 32-minute job budgets are
+preserved. The method ownership guard covers the combined shard; a frozen
+packing contract checks both former filters and execution settings. MVT keeps
+its separate coverage partition.
+
+Ordinary full runs [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+[44921455496](https://github.com/honua-io/honua-server/actions/runs/44921455496)
+and [45000554030](https://github.com/honua-io/honua-server/actions/runs/45000554030)
+passed all 81 SOAP cases with no skips. Their two shard process-wall sums were
+35, 26 and 17 seconds; even the sum of the individual maxima is 35 seconds,
+2.7% of the unchanged 1,320-second budget. The last full run failed elsewhere;
+its two SOAP shards passed. The combined dispatch rank of 5.0 minutes is an
+explicit packing estimate (the sum of the former ranks), pending a qualifying
+combined-filter job measurement. This reduces the full matrix from 203 to 202 jobs,
+and a GPServer-affected selection loses one runner. In the last run the two
+jobs occupied 203 runner-seconds (3.38 minutes), including 19 seconds in test
+steps. Combined-job runner-minute savings remain unmeasured until a live run;
+these figures do not claim a PR critical-path improvement. The old 132-to-123
+proposal requires fresh qualification for its other groups.
+
 ### OData client integration host lifetime
 
 `ODataClientIntegrationTests` initializes its Pro-licensed, `odata.yaml`-seeded
@@ -3464,3 +3512,52 @@ seconds were 42.367 / 40.345 at base and 37.157 / 37.190 at head: median
 runner before and after. Both pairs improved, by 5.210 and 3.155 seconds.
 Compilation is excluded; this small shared-host measurement does not establish
 a reduction in the parallel PR Gate's critical path.
+
+### WPS canonical rejection host lifetime
+
+The four `Wps20EndpointsTests.CanonicalExecute_UnsupportedContract_IsRejectedBeforeSubmission`
+theory cases share a lazy class-owned application with the same canonical process
+catalog and job-service substitute. Every case creates a fresh client and clears
+received job-service calls before sending its request. Other configured hosts
+retain their isolation. All 125 assertion lines and 154 selection/endpoint
+metadata lines are unchanged, including the bad-request response and assertion
+that rejected contracts never submit a job.
+
+Four interleaved baseline/candidate runs of the complete unchanged WFS 6 owning
+shard passed the same 12 cases, with zero skips; 11 belong to the WPS class.
+Summed class seconds were 8.783987 / 4.083868 and 7.195504 / 3.723192
+(baseline / candidate); the median was 7.989745 -> 3.903530 seconds.
+Fixture-inclusive TRX shard intervals were 27.592498 / 22.787546 and
+25.240013 / 27.248837 seconds. Their median was 26.416256 -> 25.018192 seconds,
+a measured saving of 1.398064 seconds (0.023301 runner-minutes), with one runner
+before and after. Both class pairs improved, but the second full-shard pair was
+slower; this variable small sample does not establish PR critical-path savings.
+Compilation/process time is excluded. This removes three redundant configured
+application boots without splitting cases or reducing assertions.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### WPS invalid-contract reference host lifetime
+
+Four `Wps20EndpointsTests.ConformanceEcho_InvalidContract_DoesNotResolveReference`
+theory rows share a lazy class-owned application with the unchanged reference
+allowlist. Every row creates and disposes a fresh client; the Database collection
+remains serial. Each request must still fail contract validation before reference
+resolution, report the expected locator, and omit the DNS-resolution failure text.
+The separate unresolvable-reference case retains its private application. All
+124 assertion lines and 154 endpoint, operation and test metadata lines are unchanged.
+
+Every case remains in the same selected PR shard and full trunk runs. No workflow,
+shard filter, required check name or aggregate dependency changes.
+
+Two interleaved base/head Release runs of the unchanged complete WFS1 shard each
+passed the same 11 cases, with zero skipped and identical test identities/outcomes.
+Summed class seconds were 8.860 / 8.573 at base and 5.586 / 5.779 at head (median
+8.716712 to 5.682745 seconds). Fixture-inclusive TRX shard seconds were 21.303095 /
+21.066283 at base and 18.091381 / 18.253105 at head (median 21.184689 to 18.172243).
+This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before and
+after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
+these small local shard measurements do not establish parallel PR Gate critical-path
+savings. The other WPS shard selections and their private hosts remain unchanged.

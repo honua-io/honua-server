@@ -1,0 +1,73 @@
+name: Scheduled failure issues
+
+# Every failed scheduled run in an honua-io repository opens or updates one issue per workflow and
+# failing job (labelled bug, the area label and scheduled-failure, owner lane and a 24-hour due time
+# in the body) and the issues close when a later scheduled run of that workflow succeeds. Owners
+# come from scripts/ci/scheduled-failure-owners.json. GitHub drops most crons on this repository,
+# so the honua-server nightlies also trigger it on completion. Plain REST calls; no model.
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_run:
+    workflows:
+      - CI
+      - Nightly Container Build
+      - Load/Soak Diagnostics
+      - Real-Client Interop Matrix (Nightly)
+      - Cloud Integration Harness
+      - Protocol harness certification
+      - Security Nightly
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scheduled-failure-issues
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: File scheduled-run failures
+    if: >-
+      github.repository == 'honua-io/honua-server' &&
+      (github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.head_repository.full_name == github.repository &&
+         contains(fromJSON('["schedule","workflow_dispatch"]'), github.event.workflow_run.event)))
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-24.04' }}
+    environment: bot-app
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: trunk
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci/scheduled-failure-issues.js
+            scripts/ci/scheduled-failure-owners.json
+          sparse-checkout-cone-mode: false
+      - name: Create organisation bot token
+        id: bot
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-actions: read
+          permission-issues: write
+      - name: Open, update and close scheduled-failure issues
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ steps.bot.outputs.token }}
+          script: |
+            const { sweep } = require(`${process.env.GITHUB_WORKSPACE}/scripts/ci/scheduled-failure-issues.js`);
+            const config = require(`${process.env.GITHUB_WORKSPACE}/scripts/ci/scheduled-failure-owners.json`);
+            const report = await sweep({ github, core, config, owner: context.repo.owner });
+            await core.summary.addHeading('Scheduled failure issues')
+              .addRaw(`Opened: ${report.opened.join(', ') || 'none'}\n\n`)
+              .addRaw(`Updated: ${report.updated.join(', ') || 'none'}\n\n`)
+              .addRaw(`Closed: ${report.closed.join(', ') || 'none'}\n\n`)
+              .addRaw(`Errors: ${report.errors.join('; ') || 'none'}\n`)
+              .write();

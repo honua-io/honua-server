@@ -16,6 +16,7 @@ Discover, search, and query Honua through MCP and the agent read surface without
 | Capability key | `ai.mcp-discovery` |
 | Category | AI |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
 | Proving tests | 178 |

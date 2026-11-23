@@ -9,6 +9,7 @@ using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
@@ -95,7 +96,7 @@ internal sealed class FieldExportService
         context.Response.Headers["X-Honua-Export-Count"] = package.Record.RecordCount.ToString(CultureInfo.InvariantCulture);
         context.Response.Headers["X-Honua-Export-Truncated"] = truncatedJson;
         var filename = $"field-export-{package.Record.ExportId}.{FieldExportFormat.Extension(format)}";
-        context.Response.Headers.ContentDisposition = $"attachment; filename=\"{filename}\"";
+        context.Response.Headers.ContentDisposition = AttachmentContentDisposition.Create(filename);
         return Results.Bytes(payload, FieldExportFormat.ContentType(format));
     }
 

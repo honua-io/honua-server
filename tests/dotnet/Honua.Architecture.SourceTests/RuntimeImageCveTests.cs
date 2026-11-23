@@ -54,6 +54,30 @@ public sealed class RuntimeImageCveTests
     }
 
     [ArchitectureTest]
+    public void ServingImages_RecutTheChiseledRootFromTheSecurityArchive()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var jit = File.ReadAllText(Path.Join(repositoryRoot, "Dockerfile")).ReplaceLineEndings("\n");
+        var aot = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.aot")).ReplaceLineEndings("\n");
+        var cut = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/cut-rootfs.sh"));
+
+        jit.Should().Contain("sh docker/runtime/cut-rootfs.sh /rootfs &&",
+            "the JIT image recuts the aspnet-extra slice set");
+        aot.Should().Contain(
+            "if [ \"${HONUA_STORE_PROFILE:-postgis}\" = postgis ]; then slices=runtime-deps; else slices=runtime-deps-extra; fi",
+            "the postgis AOT image stays ICU-free; full keeps ICU and time zone data");
+        aot.Should().Contain("sh docker/runtime/cut-rootfs.sh /rootfs \"$slices\"");
+        foreach (var profile in new[] { "postgis", "full" })
+        {
+            aot.Should().Contain($"FROM scratch AS chiseled-base-{profile}\nCOPY --from=chiseled-rootfs /rootfs/ /\n",
+                $"the {profile} AOT base must not ship the publisher's libc between publisher rebuilds");
+        }
+
+        cut.Should().Contain("runtime-deps) extra_slices=\"\" ;;");
+        cut.Should().Contain("--generate-dpkg-status");
+    }
+
+    [ArchitectureTest]
     public void LambdaJitImage_DropsTheEmulatorFromThePublishedStageOnly()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

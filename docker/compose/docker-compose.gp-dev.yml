@@ -194,6 +194,8 @@ services:
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
       # Per-job scratch root (already set in the image; pinned here for clarity).
       GdalWorker__ScratchRoot: "/tmp/honua-gdal-worker"
+      # Local-provider raster and coverage reads resolve only under this root.
+      GdalWorker__LocalCoverageRoot: "/var/lib/honua/gp-artifacts"
       # Keep referenced /vsis3 reads on the same registered object store as the API.
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
