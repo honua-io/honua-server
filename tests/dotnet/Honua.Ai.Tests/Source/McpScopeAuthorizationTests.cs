@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeHost host)
+public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeHost host)
     : IClassFixture<McpScopeAuthorizationTests.ScopeHost>
 {
     private const string JsonMediaType = "application/json";
@@ -202,7 +202,7 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
         return await _client.SendAsync(request);
     }
 
-    private static string CreateToken(string? scope)
+    private static string CreateToken(string? scope, string role = "admin")
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -212,9 +212,8 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
             new("sub", "operator-123"),
             new("tid", "scope-test-tenant"),
             new("name", "Scope Test User"),
-            // Admin role so the operator grant check always passes; this isolates the scope
-            // decision so a denial can only come from scope narrowing.
-            new("roles", "admin"),
+            // Scope-only cases default to admin to isolate OAuth narrowing from role grants.
+            new("roles", role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
