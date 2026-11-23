@@ -21,6 +21,10 @@ internal static class McpWorkflowViewCatalog
 
     public const string ReviewViewName = "review";
 
+    public const string MetadataViewName = "metadata";
+
+    public const string AccessViewName = "access";
+
     public static McpWorkflowViewDefinition Default { get; } = new()
     {
         Name = DefaultViewName,
@@ -216,7 +220,7 @@ internal static class McpWorkflowViewCatalog
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map, and export a Layer as files. Use the setup view for Studio authoring and publication. "
-            + "Select the folders view to organize folders or move services.",
+            + "Select folders to organize folders, metadata to edit service and layer metadata, or access for keys, roles and grants.",
         Revision = "configure.v5",
         Stages =
         [
@@ -320,6 +324,97 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.get")),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.create")),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.exports.delete")),
+                ],
+            },
+        ],
+    };
+
+    public static McpWorkflowViewDefinition Metadata { get; } = new()
+    {
+        Name = MetadataViewName,
+        Title = "Service and layer metadata",
+        Description =
+            "Read and edit service and layer metadata: descriptions, discovery metadata, time info, field aliases, "
+            + "display and popups. An agent's edits file a proposal for human approval. Select access for keys, roles and grants.",
+        Revision = "metadata.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "read",
+                Title = "Read metadata",
+                Description = "Find the service and layer, then read its schema, settings, fields, display and popup.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_list_layers"),
+                    McpWorkflowViewMemberRule.Exact("honua_describe_layer"),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_settings_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_fields_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_display_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_popup_info_get"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "edit",
+                Title = "Edit metadata",
+                Description = "Set layer metadata, service or layer discovery metadata, time info, field aliases, display and popup.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_layer_metadata_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_metadata_service_discovery_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_metadata_layer_discovery_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_timeinfo_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_fields_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_display_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_layer_popup_info_set"),
+                ],
+            },
+        ],
+    };
+
+    public static McpWorkflowViewDefinition Access { get; } = new()
+    {
+        Name = AccessViewName,
+        Title = "Access and grants",
+        Description =
+            "Read API keys, roles, users and their effective permissions, then set service access, role grants, "
+            + "user roles or key restrictions. An agent's changes file a proposal for human approval. Listing grants no authority.",
+        Revision = "access.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "read",
+                Title = "Read access",
+                Description = "List keys, roles and users and read what each one is allowed to do.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_api_key_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_settings_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_role_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_role_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_role_permissions_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_user_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_user_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_user_effective_permissions"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "grant",
+                Title = "Change access",
+                Description = "Set a service access policy, a role's permissions, a user's roles, or an API key's restrictions, or revoke a key.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_access_policy_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_role_permissions_set"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_user_roles_update"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_api_key_update_restrictions"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_api_key_revoke"),
                 ],
             },
         ],
@@ -475,6 +570,8 @@ internal static class McpWorkflowViewCatalog
             [Setup.Name] = Setup,
             [Configure.Name] = Configure,
             [Folders.Name] = Folders,
+            [Metadata.Name] = Metadata,
+            [Access.Name] = Access,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
             [Review.Name] = Review,

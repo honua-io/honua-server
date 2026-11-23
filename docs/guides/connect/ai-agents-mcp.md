@@ -368,6 +368,8 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 | View | What an admin selects it for |
 |---|---|
 | `configure` | The closed admin roster (server status, API-key reads, connection/table/service/folder discovery, connection create and test, import from URL, and layer publish and access policy, which file a proposal for human approval), job status and results, inline ingest, service publish, layer reads, style and render. The `export` stage lists and reads Exports and exports or unpublishes a Layer as files (`honua_admin_exports_list`, `honua_admin_exports_get`, `honua_admin_exports_create`, `honua_admin_exports_delete`); an agent's export or unpublish files a proposal. Studio authoring and publication use `setup`. |
+| `metadata` | Service and layer metadata (`metadata.v1`): layer and service reads, settings, fields, display and popup reads, then layer metadata, discovery metadata, time info, field aliases, display and popup edits. An agent's edits file a proposal for human approval. |
+| `access` | API keys, roles, users and effective permissions (`access.v1`), then service access policy, role permissions, user roles, key restrictions and key revocation. An agent's changes file a proposal for human approval; listing grants no authority. |
 | `folders` | Folder and Service discovery, Folder create, rename and delete, and Service moves through canonical operations. Select `configure` for publishing and access policy. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, `honua_propose_finding`, and the upgrade and rollback proposals `honua_propose_platform_release_convergence` and `honua_propose_rollback`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
@@ -428,7 +430,7 @@ The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data
 - `static`: the hand-authored `honua_*` tools.
 - `projectedAdmin`: the `honua_admin_*` tools that the default composition publishes. These are the audited Admin projection plus the closed operator roster, minus the audited secret and browser-session exclusions.
 - `requiresDurableControlPlane`: the projected Admin tools that register only when a durable operation-proposal store is configured.
-- `views`: the members of the `default`, `setup`, `configure`, `folders`, `operate`, `analyze` and `review` workflow views.
+- `views`: the members of the `default`, `setup`, `configure`, `folders`, `metadata`, `access`, `operate`, `analyze` and `review` workflow views.
 - `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
 
 `serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/ci/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.

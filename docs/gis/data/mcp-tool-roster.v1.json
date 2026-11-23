@@ -225,6 +225,23 @@
     "honua_update_folder"
   ],
   "views": {
+    "access": [
+      "honua_admin_api_key_effective_permissions",
+      "honua_admin_api_key_list",
+      "honua_admin_api_key_revoke",
+      "honua_admin_api_key_update_restrictions",
+      "honua_admin_role_get",
+      "honua_admin_role_list",
+      "honua_admin_role_permissions_get",
+      "honua_admin_role_permissions_set",
+      "honua_admin_services_access_policy_set",
+      "honua_admin_services_list",
+      "honua_admin_services_settings_get",
+      "honua_admin_user_effective_permissions",
+      "honua_admin_user_get",
+      "honua_admin_user_list",
+      "honua_admin_user_roles_update"
+    ],
     "analyze": [
       "honua_cancel_job",
       "honua_clarify_intent",
@@ -299,6 +316,22 @@
       "honua_list_folders",
       "honua_move_service",
       "honua_update_folder"
+    ],
+    "metadata": [
+      "honua_admin_layer_display_get",
+      "honua_admin_layer_display_set",
+      "honua_admin_layer_fields_get",
+      "honua_admin_layer_fields_set",
+      "honua_admin_layer_popup_info_get",
+      "honua_admin_layer_popup_info_set",
+      "honua_admin_metadata_layer_discovery_set",
+      "honua_admin_metadata_service_discovery_set",
+      "honua_admin_services_layer_metadata_set",
+      "honua_admin_services_list",
+      "honua_admin_services_settings_get",
+      "honua_admin_services_timeinfo_set",
+      "honua_describe_layer",
+      "honua_list_layers"
     ],
     "operate": [
       "honua_alert_events",

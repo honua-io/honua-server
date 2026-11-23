@@ -48,12 +48,14 @@
       "description": "Members of each server-authored workflow view, projected over static and projectedAdmin.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["analyze", "configure", "default", "folders", "operate", "review", "setup"],
+      "required": ["access", "analyze", "configure", "default", "folders", "metadata", "operate", "review", "setup"],
       "properties": {
+        "access": { "$ref": "#/$defs/toolNames" },
         "analyze": { "$ref": "#/$defs/toolNames" },
         "configure": { "$ref": "#/$defs/toolNames" },
         "default": { "$ref": "#/$defs/toolNames" },
         "folders": { "$ref": "#/$defs/toolNames" },
+        "metadata": { "$ref": "#/$defs/toolNames" },
         "operate": { "$ref": "#/$defs/toolNames" },
         "review": { "$ref": "#/$defs/toolNames" },
         "setup": { "$ref": "#/$defs/toolNames" }
