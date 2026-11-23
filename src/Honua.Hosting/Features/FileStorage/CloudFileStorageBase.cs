@@ -23,6 +23,8 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
     public abstract CloudStorageProvider Provider { get; }
 
+    public virtual string? ObjectKeyPrefix => null;
+
     public abstract Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);
 
     public abstract Task<UploadResult> UploadIfMatchAsync(

@@ -13,10 +13,13 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
     private int _downloadCount;
     private readonly TimeSpan _downloadDelay;
 
-    public InMemoryCloudFileStorage(TimeSpan? downloadDelay = null)
+    public InMemoryCloudFileStorage(TimeSpan? downloadDelay = null, string? objectKeyPrefix = null)
     {
         _downloadDelay = downloadDelay ?? TimeSpan.Zero;
+        ObjectKeyPrefix = objectKeyPrefix;
     }
+
+    public string? ObjectKeyPrefix { get; }
 
     public int DownloadCount => Volatile.Read(ref _downloadCount);
 

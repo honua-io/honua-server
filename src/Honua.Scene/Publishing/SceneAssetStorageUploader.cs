@@ -24,7 +24,9 @@ internal static class SceneAssetStorageUploader
             return null;
         }
 
-        var prefix = SceneAssetHydration.BuildPrefix(sceneId);
+        // The returned prefix is recorded on the scene and read back verbatim, so it carries the
+        // provider key prefix: a task role scoped to "<prefix>/*" can then write and read the assets.
+        var prefix = storage.ObjectKeyPrefix + SceneAssetHydration.BuildPrefix(sceneId);
         if (publicationId is { } id)
         {
             prefix = $"{prefix}/{id:N}";

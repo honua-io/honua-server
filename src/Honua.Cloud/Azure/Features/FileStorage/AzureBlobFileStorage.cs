@@ -47,6 +47,8 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
+    public override string? ObjectKeyPrefix => CloudStoragePath.BuildPrefix(folder: null, _options.BlobPrefix?.Trim().Trim('/'));
+
     public override Task<UploadResult> UploadAsync(
         FileUploadRequest request,
         CancellationToken cancellationToken = default)
