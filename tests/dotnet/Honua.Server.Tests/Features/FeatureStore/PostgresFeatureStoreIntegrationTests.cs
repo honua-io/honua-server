@@ -155,6 +155,11 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         // shared schema-mutation advisory lock (like the DDL above) so it serializes with parallel
         // seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync(insertSql);
+        await _fixture.SeedIsolatedLayerCatalogAsync(
+            _testSchema,
+            (PointsLayerId, "Test Points", "Point"),
+            (PolygonsLayerId, "Test Polygons", "Polygon"),
+            (LinesLayerId, "Test Lines", "LineString"));
     }
 
     private async Task InsertTestDataAsync()
