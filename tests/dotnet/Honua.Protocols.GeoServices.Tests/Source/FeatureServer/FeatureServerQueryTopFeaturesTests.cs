@@ -187,6 +187,26 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [IntegrationTheory]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    [InlineData("""{"wkid":"3857"}""")]
+    [InlineData("""{"latestWkid":"3857"}""")]
+    [InlineData("""{"wkid":{"value":3857}}""")]
+    public async Task QueryTopFeatures_WronglyTypedOutSrMember_ReturnsBadRequest(string value)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString("""{"groupByFields":"category","topCount":2,"orderByFields":"objectid desc"}""")}&outSR={Uri.EscapeDataString(value)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("Invalid outSR parameter");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     [InlineData("""{"groupByFields":"category","topCount":1,"orderByFields":["objectid desc"]}""")]
     [InlineData("""{"groupByFields":["category"],"topCount":1,"orderByFields":"objectid desc"}""")]
     [InlineData("""{"groupByFields":"category","topCount":"1","orderByFields":"objectid desc"}""")]
