@@ -4,5 +4,20 @@
   "unsupportedReleases": [
     "2026.1-rc.1"
   ],
-  "images": []
+  "images": [
+    {
+      "release": "2026.0-rc.1",
+      "image": "ghcr.io/honua-io/honua-server@sha256:db968f0b663f24f2ff55571ecddbb6fbeb8e47b621491f96e33cd523768044bd",
+      "platform": "linux/amd64",
+      "sourceRevision": "61bf8068ac03695ebb38ae177a091c1370071966",
+      "registeredAt": "2026-11-23"
+    },
+    {
+      "release": "2026.0-rc.1",
+      "image": "ghcr.io/honua-io/honua-server@sha256:db968f0b663f24f2ff55571ecddbb6fbeb8e47b621491f96e33cd523768044bd",
+      "platform": "linux/arm64",
+      "sourceRevision": "61bf8068ac03695ebb38ae177a091c1370071966",
+      "registeredAt": "2026-11-23"
+    }
+  ]
 }
