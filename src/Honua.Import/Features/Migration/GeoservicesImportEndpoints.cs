@@ -10,6 +10,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -336,6 +337,7 @@ internal static partial class GeoservicesImportEndpoints
             var importRequest = new GeoservicesImportRequest
             {
                 JobId = jobId,
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 ServiceUrl = request.ServiceUrl,
                 LayerId = request.LayerId,
                 TableName = request.TableName,

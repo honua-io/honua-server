@@ -233,6 +233,18 @@ public sealed partial class ImportExecutionJobQueueTests
         (await jobs.GetAsync(request.JobId!))!.Audit.TenantId.Should().Be("tenant-a");
     }
 
+    [UnitTest]
+    public async Task SubmitAsync_AcceptingTenantWithoutPublishTarget_RecordsTenantAsDurableJobOwner()
+    {
+        var jobs = ImportExecutionTestJobs.Create();
+        var manager = Manager(jobs, Substitute.For<IJobQueue>());
+        var request = Request() with { AutoPublish = false, TenantId = "tenant-a" };
+
+        await manager.SubmitAsync(request, Initial(request));
+
+        (await jobs.GetAsync(request.JobId!))!.Audit.TenantId.Should().Be("tenant-a");
+    }
+
     private static GeoservicesImportRequest Request() => new()
     {
         JobId = Guid.NewGuid().ToString("N"),

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -209,7 +210,7 @@ internal static class MultidimensionalCoverageEndpoints
         }
 
         var jobId = await MultidimCoverageScanJob
-            .SubmitAsync(jobStore, jobQueue, registration, cancellationToken)
+            .SubmitAsync(jobStore, jobQueue, registration, context.RequestServices.GetService<ITenantContext>()?.TenantId, cancellationToken)
             .ConfigureAwait(false);
         MultidimensionalCoverageLog.ScanJobSubmitted(logger, id, jobId);
 

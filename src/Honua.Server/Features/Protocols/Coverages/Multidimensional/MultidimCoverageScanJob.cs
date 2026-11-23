@@ -56,6 +56,7 @@ internal static class MultidimCoverageScanJob
         IExecutionJobStore jobStore,
         IJobQueue jobQueue,
         MultidimensionalCoverageRegistration registration,
+        string? tenantId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(jobStore);
@@ -71,6 +72,7 @@ internal static class MultidimCoverageScanJob
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
+            Audit = new OperationAuditInfo { TenantId = tenantId },
             Spec = BuildSpec(registration),
         };
 
