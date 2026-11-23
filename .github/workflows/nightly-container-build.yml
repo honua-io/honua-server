@@ -509,9 +509,11 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
@@ -682,9 +684,11 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
@@ -871,6 +875,8 @@ jobs:
             type=raw,value=nightly-lambda-aot
             type=raw,value=nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}
             type=raw,value=nightly-lambda-aot-${{ needs.select-candidate.outputs.sha7 }}
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Create and push multi-arch manifests
         id: manifest
@@ -987,9 +993,11 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
           annotations: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
 
@@ -1099,6 +1107,8 @@ jobs:
             type=raw,value=nightly-aot-${{ needs.mirror-base-images.outputs.build_date }}
             type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}
             type=raw,value=trunk-aot
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Create and push multi-arch manifests
         id: manifest
@@ -1216,6 +1226,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
           labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
             org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
             org.opencontainers.image.title=Honua Compose executor
           annotations: index:org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
@@ -1403,6 +1414,8 @@ jobs:
             type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
             type=raw,value=trunk-jit${{ matrix.store_suffix }}
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-FCL-1.0-ALv2
 
       - name: Create and push multi-arch manifests
         id: manifest
