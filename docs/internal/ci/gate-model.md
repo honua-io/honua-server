@@ -149,6 +149,8 @@ NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
+   A nightly suite may also run as an informational, path-filtered PR check when its nightly reds are PR-catchable regressions. The Cloud Integration Harness Local Substrate job runs on PRs that touch migrations, the Postgres stores the schema guard drives (raster included), the local process pool or the server host composition: 9 of its 14 nightly runs from 10 to 22 November failed on trunk changes no PR had run. It is not a required check.
+
    **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Shard identity validation checks the PR merge tree, rejecting duplicate names globally and duplicate filters within a test project (including grouped-project overlap). Disjoint test projects may share a namespace filter. This deterministic check has a five-minute timeout and feeds the existing required hygiene aggregate, so concurrent additions fail before landing without adding a required check name. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
@@ -262,8 +264,10 @@ Stage 3 details:
   Full runs retain width 16. A selective affected run whose router reason is
   `no_path_match` does not schedule those default smoke shards: they do not own
   the diff, and the twice-daily full run keeps them. The same run skips
-  Honua.Core package compatibility when every changed file is docs, a workflow,
-  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  Honua.Core package compatibility unless a changed file is one that packing
+  Honua.Core reads: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. An empty path list still runs that heavy job.
+  Skill (`skills/`, embedded in `src/Honua.Ai`) edits select the lanes a `src/`
+  edit selects; `certification/` edits select no expensive lane.
   A skipped Core package does not cancel a selected AOT or MCP lane; a failed
   Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
@@ -272,8 +276,8 @@ Stage 3 details:
 
 Besides the required checks below and the required Clean code check, every
 `pull_request` or `pull_request_target` workflow is optional and path-filtered,
-apart from two cheap control workflows that run on every event: auto-merge
-ready pull requests and Close external pull requests. Runner label lint reads only
+apart from two cheap control workflows: auto-merge ready pull requests (every
+event except non-hold label changes and body-only edits) and Close external pull requests. Runner label lint reads only
 `.github/workflows`, so it runs only when a pull request or trunk push changes
 that directory. A new optional pull request workflow needs a `paths` filter
 naming what can change its result.
@@ -1092,7 +1096,8 @@ Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
 including transitive publish inputs and REST/gRPC backends. Shared seed files
-select every compatibility lane. Shared inputs,
+select every compatibility lane. `skills/` (embedded in `src/Honua.Ai`) counts
+as a `src/` path and `certification/` selects no lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
@@ -1274,6 +1279,14 @@ Remove a child's estimate once measured; the estimate-sum conservation rule
 applies only while every child is estimated. The one remaining estimate is the
 packed GeoServices GPServer SOAP job (5.0, `soap-packing-contract.json`), which
 has no passing full-run sample at its new definition yet.
+Live drift (#9545, #9546, #9547): `shard-rank-drift.yml` runs after each completed
+"CI full" trunk run and compares every rank with the median passing job minutes
+of the latest three full runs (`scripts/ci/shard-rank-drift.py`). It keeps one
+`area/ci` tracking issue (owner s-ci-shards) open while the total rank/measured
+ratio is outside 0.77-1.30, a shard's median is at least 1.5x and 3 minutes over
+its rank, or a shard absent from the measured record has two or more samples; it
+closes the issue when none remain. Under 80% of shards measured, it changes
+nothing. It is report-only and never gates a PR or trunk.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
@@ -1601,8 +1614,10 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
-repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+dispatch only when a changed file is a Core package input: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`.
+Affected run 45149626646 packed Core for `docker/` and test files alone, and 12
+of 13 measured affected runs that packed Core touched no input. Its server build compiles project references that Build & Format Check
+already compiles in the same run. Repository metadata (`.github/codeql/`, issue
 templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
 starts no managed build or integration lane on any `ci.yml` run: affected run
 44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
@@ -1673,6 +1688,15 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+A queued run that starts after the PR merged or closed ends neutrally without
+touching it: GitHub keeps `autoMergeRequest` on a merged PR but refuses to
+disable it, which used to leave a red check on the merged head.
+
+When the bot armed SQUASH on a single-commit PR that has since grown into a
+multi-commit bundle, the next run switches it to MERGE (only while the PR is
+still blocked); a method a lane chose itself is kept. Label events start a job
+only for the hold labels, and `edited` only when the base branch changed;
+other label and body edits are skipped without a runner.
 
 ## Admin authentication capacity split (12 November 2026)
 
@@ -3566,3 +3590,82 @@ This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before 
 after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
 these small local shard measurements do not establish parallel PR Gate critical-path
 savings. The other WPS shard selections and their private hosts remain unchanged.
+
+### Capability plugin discovery schema lifetime
+
+The six `CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery`
+theory cases retain separate applications, service registries, license editions
+and fresh clients. Each application borrows the initialized class fixture's seeded
+schema rather than creating and seeding another schema. The fixture owner outlives
+all serial class cases; borrowers never drop its schema. Requests only read the
+capability manifest. Per-host metadata and plugin registries remain separate.
+The schema-reuse change preserves every assertion. Both measured variants
+include the GeoParquet manifest assertion correction that trunk now carries;
+their only difference is the six plugin hosts borrowing the initialized schema.
+
+Four interleaved base/head Release runs of the complete Server Features
+Capabilities shard passed the identical 103 cases with no skips on one runner
+before and after. Fixture-inclusive TRX session seconds were 88.657 / 67.712
+at base and 65.149 / 74.636 at head: median 78.184 to 69.893 seconds,
+a measured saving of 8.292 seconds (0.138 runner-minutes). The first pair
+improved by 23.508 seconds; the second regressed by 6.925 seconds, so these
+runs show substantial variability rather than a consistent per-run saving.
+The target class's 43 cases summed to 56.155 / 39.371 seconds at base and
+42.806 / 45.035 at head: median 47.763 to 43.920 seconds. Compilation and
+process startup are excluded from the shard measurement; process durations
+were 205.689 / 151.173 seconds at base and 158.666 / 164.087 at head.
+No end-to-end PR Gate critical-path reduction is claimed.
+
+### Experimental capability manifest schema lifetime
+
+The thirteen separately configured manifest GET cases in
+`ExperimentalCapabilityGatingIntegrationTests` borrow the seeded schema from the
+existing eager `DisabledPostureHost` class fixture. Each case still starts its
+own application with the same global/per-capability flags, registry composition,
+Pro edition, tenant, services and fresh client. Per-host metadata stays separate.
+The owner outlives the serial cases; borrowers do not create, seed or drop another
+schema. The mTLS-enabled admin case retains its private schema and application.
+All 32 assertion lines, four assertion-helper calls, 55 test metadata lines and
+14 test methods are unchanged. No parallel collection or polling changes apply.
+
+Four interleaved base/head Release runs of the unchanged Server Features
+Capabilities shard passed the same 103 cases with zero skips, including 34 target
+class cases, on one runner before and after. Target class summed case seconds
+were 34.685 / 27.959 at base and 28.704 / 24.533 at head: median 31.322 to
+26.618 seconds. Fixture-inclusive TRX session seconds were 85.201 / 60.185 at
+base and 72.939 / 62.115 at head: median 72.693 to 67.527 seconds, saving
+5.166 seconds (0.086 runner-minutes). The first shard pair improved by 12.262
+seconds; the second regressed by 1.930 seconds, so variability remains substantial.
+Both external benchmark variants include the same neighboring GeoParquet manifest
+assertion correction required after trunk added the writer; that correction is
+only a common measurement precondition and is not committed in this suite change.
+Process durations were 646.397 / 179.941 seconds at base and 198.986 / 154.497
+at head, including compilation (the first run was cold). They are separate from
+the fixture-inclusive session figures. No PR Gate critical-path saving is claimed.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### Deployment profile folder schema lifetime
+
+`DeploymentCapabilityProfileIntegrationTests.FolderApplications` retains one
+private application per configured capability. The first initialized application
+owns the common feature-data seed; the other three borrow its schema. Each host
+still installs its own deployment profile, metadata graph and clients. Folder-path
+cases only read the seed. Borrowers stop before the owner drops the schema.
+The three standalone profile cases retain their private schemas and hosts.
+
+Four interleaved complete Capabilities shard runs passed the same 103 cases,
+including all 11 class cases, with zero skips. Class test-duration median changed
+from 32.864138 to 30.715827 seconds. Fixture-inclusive shard median changed from
+62.444438 to 60.571979 seconds, saving 1.872459 seconds / 0.031208 runner-minutes
+on one runner before and after. Individual shard pairs were 63.240212/56.698306
+and 61.648663/64.445651 seconds: the second pair regressed 2.796988 seconds, so
+the modest median saving is subject to shared-host variability. Cold compilation
+and process time are separate; no PR critical-path saving is established.
+
+All test methods, assertions, theory rows and endpoint metadata remain unchanged.
+Every case remains in the Capabilities shard on selected PRs and full trunk runs.
+No workflow, shard filter, runner count, required check name or aggregate `needs`
+contract changes.

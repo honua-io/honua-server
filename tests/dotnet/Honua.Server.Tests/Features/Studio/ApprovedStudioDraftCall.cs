@@ -97,7 +97,7 @@ internal static class ApprovedStudioDraftCall
         return result.GetProperty("structuredContent").Clone();
     }
 
-    private static string? GetProposalId(JsonElement response)
+    internal static string? GetProposalId(JsonElement response)
     {
         if (response.TryGetProperty("error", out var error)
             && error.TryGetProperty("data", out var data)
