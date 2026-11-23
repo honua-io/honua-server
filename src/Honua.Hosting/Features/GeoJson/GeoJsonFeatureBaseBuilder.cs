@@ -107,7 +107,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
 
             if (attributes.TryGetValue(fieldName, out var value))
             {
-                properties[fieldName] = isObjectIdField && shouldIncludeObjectId
+                properties[fieldName] = isObjectIdField && shouldIncludeObjectId && options.ResolveIdFromProperties
                     ? UseCanonicalIdForNull(value, featureId)
                     : CoerceProperty(fieldName, value, schema);
             }
@@ -125,7 +125,9 @@ internal static partial class GeoJsonFeatureBaseBuilder
                 {
                     if (shouldIncludeObjectId && !properties.ContainsKey(fieldName))
                     {
-                        properties[fieldName] = UseCanonicalIdForNull(value, featureId);
+                        properties[fieldName] = options.ResolveIdFromProperties
+                            ? UseCanonicalIdForNull(value, featureId)
+                            : value ?? featureId;
                     }
 
                     continue;
@@ -340,6 +342,8 @@ internal static partial class GeoJsonFeatureBaseBuilder
         return false;
     }
 
+    // Only callers whose feature id is read back from the identifier property (FeatureServer)
+    // need a non-null identifier. OGC custom identifiers keep an explicit null distinct from missing.
     private static object UseCanonicalIdForNull(object? value, long featureId)
         => value is null or JsonElement { ValueKind: JsonValueKind.Null } ? featureId : value;
 
