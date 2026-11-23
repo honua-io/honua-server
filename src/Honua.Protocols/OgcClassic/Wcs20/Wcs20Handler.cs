@@ -2633,6 +2633,12 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
+        if (FindDuplicateSubsetAxis(subsetValues) is { } duplicate)
+        {
+            error = duplicate;
+            return false;
+        }
+
         double? minX = null;
         double? maxX = null;
         double? minY = null;
@@ -2752,6 +2758,30 @@ internal sealed partial class Wcs20Handler
     {
         var nativeSrid = raster.Extent?.Srid ?? raster.Srid;
         return nativeSrid == subsettingCrs.Srid;
+    }
+
+    // A repeated axis is reported as InvalidAxisLabel before any single subset is judged,
+    // so a duplicate slice is not misreported as an invalid bound.
+    private static WcsParameterError? FindDuplicateSubsetAxis(StringValues subsetValues)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var subsetValue in subsetValues)
+        {
+            if (string.IsNullOrWhiteSpace(subsetValue)
+                || !TryParseSingleSubset(subsetValue, out var axis, out _, out _, out _)
+                || axis is not ("x" or "y")
+                || seen.Add(axis))
+            {
+                continue;
+            }
+
+            return new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
+                axis == "x" ? "Duplicate X/E/Long subset axis." : "Duplicate Y/N/Lat subset axis.",
+                Wcs20Utilities.Parameters.Subset);
+        }
+
+        return null;
     }
 
     private static bool TryParseSingleSubset(
