@@ -3,7 +3,7 @@ run-name: Client Roster Certification ${{ inputs.candidate_digest }}
 
 # Tier: release. Dispatched by the release coordinator against the frozen
 # candidate image. Runs the bounded 2026.1 external-client roster
-# (certification/bounded-roster, honua-server#3434) on a GitHub runner, so its
+# (certification/bounded-roster) on a GitHub runner, so its
 # receipts name this run's commit as producer_source_sha and the exact candidate
 # digest, source revision and cut time. The release-mode and contract verdicts
 # decide the job result; evidence is uploaded either way.
