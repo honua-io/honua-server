@@ -445,3 +445,15 @@ def esrijson_dsn(layer_url: str, **params: str) -> str:
     """
     query = {"where": "1=1", "outFields": "*", "f": "json", **params}
     return f"ESRIJSON:{layer_url}/query?{urllib.parse.urlencode(query)}"
+
+
+@pytest.fixture
+def mapserver_export(mapserver_url: str, ogr_run, tmp_path: Path) -> Callable[[tuple[float, float, float, float]], dict]:
+    """Fetch a MapServer export window through GDAL's AGS minidriver; returns gdalinfo statistics."""
+    from .geoservices_helpers import ags_service_xml, export_image
+
+    def _export(window: tuple[float, float, float, float]) -> dict:
+        target = tmp_path / f"export-{abs(hash(window))}.png"
+        return export_image(ogr_run, ags_service_xml(mapserver_url, window), target)
+
+    return _export

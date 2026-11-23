@@ -5,12 +5,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from .conftest import EvidenceCollector
-from .geoservices_helpers import DATA_WINDOW, EMPTY_WINDOW, ags_service_xml, band_spread, export_image
+from .geoservices_helpers import DATA_WINDOW, EMPTY_WINDOW, band_spread
 
 
 @pytest.mark.integration
@@ -18,9 +16,9 @@ from .geoservices_helpers import DATA_WINDOW, EMPTY_WINDOW, ags_service_xml, ban
 class TestMapServerRender:
     """The export draws the seeded points over their extent and nothing outside the data."""
 
-    def test_points_are_drawn_over_the_data_and_absent_elsewhere(self, mapserver_url, ogr_run, tmp_path: Path, evidence_collector: EvidenceCollector):
-        drawn = export_image(ogr_run, ags_service_xml(mapserver_url, DATA_WINDOW), tmp_path / "data.png")
-        empty = export_image(ogr_run, ags_service_xml(mapserver_url, EMPTY_WINDOW), tmp_path / "empty.png")
+    def test_points_are_drawn_over_the_data_and_absent_elsewhere(self, mapserver_export, evidence_collector: EvidenceCollector):
+        drawn = mapserver_export(DATA_WINDOW)
+        empty = mapserver_export(EMPTY_WINDOW)
 
         assert band_spread(drawn) > 0, "the export over the seeded points is a uniform image"
         assert band_spread(empty) == 0, "the export outside the service extent drew something"

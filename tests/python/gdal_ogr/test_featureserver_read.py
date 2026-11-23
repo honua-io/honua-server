@@ -33,13 +33,15 @@ class TestFeatureServerRead:
         assert by_name["pt-alpha"] == pytest.approx([-122.4194, 37.7749], abs=1e-6)
         assert by_name["pt-gamma"] == pytest.approx([-122.4210, 37.7735], abs=1e-6)
 
-    def test_exports_to_geopackage(self, featureserver_layer_url, ogr_run, tmp_path: Path, evidence_collector):
+    @pytest.fixture
+    def exported_layer(self, featureserver_layer_url, ogr_run, tmp_path: Path) -> dict:
         target = tmp_path / "featureserver.gpkg"
         ogr_run(["ogr2ogr", "-f", "GPKG", str(target), esrijson_dsn(featureserver_layer_url), "-nln", "points"]) \
             .assert_success("ogr2ogr could not export the FeatureServer layer to GeoPackage")
-
         info = ogr_run(["ogrinfo", "-json", "-so", str(target), "points"]).assert_success()
-        layer = json.loads(info.stdout)["layers"][0]
-        assert layer["featureCount"] == len(SEEDED_NAMES)
-        assert layer["geometryFields"][0]["type"] == "Point"
+        return json.loads(info.stdout)["layers"][0]
+
+    def test_exports_to_geopackage(self, exported_layer, evidence_collector: EvidenceCollector):
+        assert exported_layer["featureCount"] == len(SEEDED_NAMES)
+        assert exported_layer["geometryFields"][0]["type"] == "Point"
         evidence_collector.record("test_exports_to_geopackage", "featureserver", "export_gpkg", "pass")
