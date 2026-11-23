@@ -360,7 +360,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         {
             if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
-                ValidateFieldName(stat.OutStatisticFieldName);
+                ValidateOutputAlias(stat.OutStatisticFieldName);
                 return DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             }
         }
@@ -1112,7 +1112,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         foreach (var stat in statistics.Value)
         {
             ValidateFieldName(stat.OnStatisticField);
-            ValidateFieldName(stat.OutStatisticFieldName);
+            ValidateOutputAlias(stat.OutStatisticFieldName);
             var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(stat.OnStatisticField);
             var alias = DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             var statExpr = stat.StatisticType switch
@@ -1132,7 +1132,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return string.Join(", ", columns);
     }
 
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex FieldNameRegex();
 
     private static void ValidateFieldName(string fieldName)
@@ -1140,6 +1140,16 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         if (string.IsNullOrWhiteSpace(fieldName) || !FieldNameRegex().IsMatch(fieldName))
         {
             throw new ArgumentException($"Invalid field name: {fieldName}");
+        }
+    }
+
+    // Output aliases are always emitted through QuoteIdentifier, so any Unicode identifier
+    // within the 63-byte limit is a valid result column name (same rule as PostgreSQL).
+    private static void ValidateOutputAlias(string alias)
+    {
+        if (!SqlIdentifier.IsUnicodeIdentifier(alias))
+        {
+            throw new ArgumentException($"Invalid output statistic field name: {alias}");
         }
     }
 
@@ -1418,7 +1428,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         foreach (var stat in stats)
         {
-            ValidateFieldName(stat.OutStatisticFieldName);
+            ValidateOutputAlias(stat.OutStatisticFieldName);
             var alias = DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             var agg = stat.StatisticType switch
             {

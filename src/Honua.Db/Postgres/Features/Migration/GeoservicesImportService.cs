@@ -265,7 +265,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         });
     }
 
-    [GeneratedRegex(@"^[a-zA-Z][a-zA-Z0-9_]*$")]
+    [GeneratedRegex(@"^[a-zA-Z][a-zA-Z0-9_]*\z")]
     private static partial Regex TableNameRegex();
 
     private static void ValidateTableName(string tableName)
