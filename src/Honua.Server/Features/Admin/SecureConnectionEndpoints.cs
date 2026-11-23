@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -911,6 +912,10 @@ internal static partial class SecureConnectionEndpoints
         catch (DataStoreProviderUnavailableException)
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(DataStoreProviderPolicy.RefusalMessage));
+        }
+        catch (ResourceNotFoundException)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
