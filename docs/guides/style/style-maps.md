@@ -98,7 +98,7 @@ Expected (trimmed): the document you wrote plus revision metadata.
 
 - **400 on PUT** — the MapLibre document failed schema validation; the response body names the offending property. Fix the document rather than retrying.
 - **200 but `unsupportedSymbolizers[]` is non-empty** — a submitted `drawingInfo` used a renderer outside `simple`/`uniqueValue`/`classBreaks` (code `RENDERER_TYPE_UNSUPPORTED`); the layer falls back to a default style. Submit MapLibre directly for those cases.
-- **`?theme=` returns 400** — only `default`, `dark`, `colorblind-safe`, and `print` are valid theme values.
+- **`?theme=unknown` returns 400** — only `default`, `dark`, `colorblind-safe`, and `print` are valid theme values.
 - **Suggestion ignores `preferredField`** — field-based classification needs the Pro `styling.auto-suggest` entitlement; Community responses say so in `observations`.
 - **Style changes do not show up in tiles** — caches are tag-invalidated on write, but browsers may cache `/api/styles/{publicationId}.json`; hard-reload the client. See [troubleshooting](../deploy/troubleshooting.md).
 
