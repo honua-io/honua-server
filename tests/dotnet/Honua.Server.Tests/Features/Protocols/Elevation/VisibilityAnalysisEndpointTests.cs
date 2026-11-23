@@ -37,6 +37,10 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(100);
 
+        // Constant raster elevation is a level surface that follows Earth
+        // curvature. Two 2 m eyes each see about 5.4 km to the horizon
+        // (refraction k = 0.13), so the target must sit well inside 10.8 km;
+        // 0.05 degrees (about 5.6 km) leaves a clear margin.
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
             new
@@ -44,7 +48,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 observerLon = 0.0,
                 observerLat = 0.0,
                 observerHeight = 2.0,
-                targetLon = 0.1,
+                targetLon = 0.05,
                 targetLat = 0.0,
                 targetHeight = 2.0,
                 sampleCount = 32
