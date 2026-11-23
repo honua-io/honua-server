@@ -14,8 +14,8 @@ import sys
 # run-name of every trunk-affected.yml dispatch; full CI runs never carry it.
 AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 AFFECTED_WIDTH = 2
-# Repository metadata that no build, test or package reads. The ci.yml
-# change filter keeps the same pattern in REPO_METADATA.
+# Repository metadata that no build, test or package reads. The ci.yml change
+# filter declares the same pattern; validate-affected-ci-lanes.py keeps the two equal.
 REPO_METADATA = (
     r"\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$"
     r"|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)"

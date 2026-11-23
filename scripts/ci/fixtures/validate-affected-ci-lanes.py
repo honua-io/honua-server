@@ -2,6 +2,7 @@
 """Guard expensive trailing lanes without changing selection or PR/full coverage."""
 import importlib.util
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -31,7 +32,6 @@ class AffectedLaneTests(unittest.TestCase):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
     def test_embedded_skills_select_source_lanes_and_certification_selects_none(self):
-        # Affected run 45111892530 ran every lane, AOT for 72 minutes, for certification/ files.
         measured = ['certification/bounded-roster/run-roster.sh',
                     'certification/client-protocol-requirements.v1.json',
                     'scripts/certification/verify-client-certification-receipts.py',
@@ -347,8 +347,6 @@ class ShardWidthTests(unittest.TestCase):
         self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
 
     def test_core_package_runs_only_on_pack_inputs(self):
-        # Ranges of affected runs 45149626646, 45139605636, 45111892530 and
-        # 45104886981 packed Core although none of these files reaches the package.
         for path in ["docker/Dockerfile.aot", ".github/ci-shards.json", "skills/honua-ops/SKILL.md",
                      "certification/client-protocol-requirements.v1.json",
                      "scripts/certification/verify-client-certification-receipts.py",
@@ -363,6 +361,21 @@ class ShardWidthTests(unittest.TestCase):
                      ".github/actions/setup-dotnet-ci/action.yml"]:
             with self.subTest(path=path):
                 self.assertTrue(TRAILING.core_package_required(["docs/x.md", path]))
+
+    def test_core_package_inputs_cover_every_file_the_pack_reads(self):
+        sources = {ROOT / 'src/Honua.Core/Core/Honua.Core.csproj': 'src/Honua.Core/Core',
+                   ROOT / 'src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj': 'src/Honua.Core/Abstractions',
+                   ROOT / 'Directory.Build.props': '', ROOT / 'Directory.Build.targets': ''}
+        pattern = re.compile(r'<(?:None|EmbeddedResource|Compile|Content|AdditionalFiles'
+                             r'|GlobalAnalyzerConfigFiles|ProjectReference|Import)\s[^>]*?'
+                             r'(?:Include|Project)="([^"]+)"')
+        for source, base in sources.items():
+            for include in pattern.findall(source.read_text(encoding='utf-8')):
+                path = include.replace('$(MSBuildThisFileDirectory)', '').replace('\\', '/')
+                path = re.split(r'[*$]', path)[0] or 'x'
+                resolved = os.path.normpath(os.path.join(base, path)).replace(os.sep, '/')
+                with self.subTest(source=source.name, include=include):
+                    self.assertTrue(TRAILING.core_package_required([resolved + ('/x' if (ROOT / resolved).is_dir() else '')]))
 
     def test_repository_metadata_skips_build_and_core_package(self):
         # 44254098776 built, formatted and packed Core for .github/codeql/pr-paths.txt alone.

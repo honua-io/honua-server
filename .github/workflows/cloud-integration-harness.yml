@@ -32,6 +32,7 @@ on:
       - 'src/Honua.Core/Core/Features/ControlPlane/**'
       - 'src/Honua.Core/Core/Features/Geoprocessing/Raster/**'
       - 'src/Honua.Jobs/Features/ControlPlane/**'
+      - 'eng/schema/**'
       - 'src/Honua.Server/Hosting/**'
       - 'src/Honua.Server/Startup/**'
       - 'src/Honua.Server/Program.cs'
