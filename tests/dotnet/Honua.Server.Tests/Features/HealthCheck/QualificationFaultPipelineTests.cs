@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.HealthCheck;
 public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory factory)
     : IClassFixture<TestWebApplicationFactory>
 {
-    private const string PublicQueryRoute = "/rest/services";
+    private const string PublicQueryRoute = "/rest/services?f=json";
 
     [IntegrationTest]
     [Operation(Operations.ReadinessCheck)]
@@ -91,6 +91,7 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
         using var query = await client.GetAsync(PublicQueryRoute);
 
         deep.StatusCode.Should().Be(HttpStatusCode.OK);
+        query.StatusCode.Should().Be(HttpStatusCode.OK);
         query.Headers.Contains(QualificationFaultMiddleware.FaultHeader).Should().BeFalse();
     }
 
@@ -106,6 +107,7 @@ public sealed class QualificationFaultPipelineTests(TestWebApplicationFactory fa
         using var query = await client.GetAsync(PublicQueryRoute);
 
         deep.StatusCode.Should().Be(HttpStatusCode.OK);
+        query.StatusCode.Should().Be(HttpStatusCode.OK);
         query.Headers.Contains(QualificationFaultMiddleware.FaultHeader).Should().BeFalse();
     }
 
