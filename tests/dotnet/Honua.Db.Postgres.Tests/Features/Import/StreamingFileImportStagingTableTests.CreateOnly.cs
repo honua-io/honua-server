@@ -34,6 +34,7 @@ public sealed partial class StreamingFileImportStagingTableTests
             var result = await ImportCreateOnlyAsync(schema);
 
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.TargetExists);
             (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(identity);
             (await ReadOverwriteGuardRowsAsync(schema)).Should().Equal(before);
             (await TableExistsAsync(schema, OverwriteGuardPhysicalTable + "__staging")).Should().BeFalse();

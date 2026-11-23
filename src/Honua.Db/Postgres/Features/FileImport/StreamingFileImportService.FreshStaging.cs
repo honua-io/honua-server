@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -123,6 +124,34 @@ internal sealed partial class StreamingFileImportService
         }
         return validation.FeatureCount;
     }
+
+    private const string CreateOnlyFormatMessage = "Create-only imports accept GeoJSON or CSV with complete input validation.";
+
+    private static bool SupportsCreateOnly(SupportedFileFormat? format)
+        => format is SupportedFileFormat.GeoJson or SupportedFileFormat.Csv;
+
+    // A CSV row whose geometry could not be parsed or geocoded is kept without a geometry by
+    // other load modes. A create-only dataset must be complete, so such rows refuse the import.
+    private static void ThrowIfCreateOnlyCsvIncomplete(CsvGeometryDiagnostics diagnostics)
+    {
+        var problems = new List<string>(2);
+        if (diagnostics.UnparseableGeometryRows > 0)
+        {
+            problems.Add($"{CountRows(diagnostics.UnparseableGeometryRows)} an unparseable geometry");
+        }
+        if (diagnostics.GeocodeFailureCount > 0)
+        {
+            var rows = string.Join(", ", diagnostics.GeocodeFailures.Select(static failure => failure.RowNumber));
+            problems.Add($"{CountRows(diagnostics.GeocodeFailureCount)} an address that could not be geocoded (rows {rows})");
+        }
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException(
+                $"Create-only CSV import refused: {string.Join("; ", problems)}. Fix those rows and retry; no dataset was created.");
+        }
+    }
+
+    private static string CountRows(int count) => count == 1 ? "1 row has" : $"{count} rows have";
 
     private async IAsyncEnumerable<IFeature> EnforceCreateOnlyFeatureLimit(
         IAsyncEnumerable<IFeature> features, [EnumeratorCancellation] CancellationToken cancellationToken)

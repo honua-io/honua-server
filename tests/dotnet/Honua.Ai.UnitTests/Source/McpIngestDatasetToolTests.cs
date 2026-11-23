@@ -434,7 +434,8 @@ public sealed class McpIngestDatasetToolTests
             .Returns(ImportResult.CreateFailure(
                 "landmarks",
                 SupportedFileFormat.GeoJson,
-                "Create-only import requires a new target table."));
+                "Create-only import requires a new target table.",
+                errorCode: ImportValidationErrorCodes.TargetExists));
 
         var response = await DispatchAsAgentAsync(
             BuildServices(importService),
@@ -446,6 +447,25 @@ public sealed class McpIngestDatasetToolTests
         captured.Should().NotBeNull();
         captured!.OverwriteExisting.Should().BeFalse();
         captured.EffectiveLoadMode.Should().Be(ImportLoadMode.CreateOnly);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_AgentCsvRowFailure_DoesNotTalkAboutReplacement()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        importService.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure("stops", SupportedFileFormat.Csv, "1 row has an unparseable geometry."));
+
+        var response = await DispatchAsAgentAsync(
+            BuildServices(importService),
+            """{"format":"csv","data":"name,lon,lat\nA,east,30.2\n","datasetName":"stops"}""");
+
+        var message = AssertToolSucceeded(response).GetProperty("errorMessage").GetString();
+        message.Should().Contain("unparseable geometry");
+        message.Should().NotContain("dataset.stage.import", "a new dataset that failed validation was not a replacement");
     }
 
     [UnitTest]

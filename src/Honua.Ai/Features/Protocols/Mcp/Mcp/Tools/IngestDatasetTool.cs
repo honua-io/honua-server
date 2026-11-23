@@ -144,7 +144,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
         var output = await ProjectAsync(importResult, validated, httpContext.RequestServices, cancellationToken)
             .ConfigureAwait(false);
-        if (agent && !output.Success)
+        if (agent && string.Equals(importResult.ErrorCode, ImportValidationErrorCodes.TargetExists, StringComparison.Ordinal))
         {
             output.ErrorMessage = $"{output.ErrorMessage} {AgentReplaceGuidance}";
         }
