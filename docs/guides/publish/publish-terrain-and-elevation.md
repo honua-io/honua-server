@@ -5,6 +5,7 @@ description: "You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terr
 resource: "honua://capability/serve.elevation"
 resources:
   - "honua://capability/raster.terrain-rgb"
+  - "honua://capability/serve.terrain-quantized-mesh"
 ---
 # Publish terrain and elevation
 
@@ -14,7 +15,7 @@ You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terrain, plus nume
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a single-band DEM GeoTIFF. Raster storage needs the `postgis_raster` extension in the server's database. Without it, as on the feature-only quickstart, `POST /api/v1/admin/import/raster` returns `503` with that operator action (enable `postgis_raster`, then restart the server), and terrain and elevation requests return `404`.
 
-Honua encodes registered single-band raster sources as Mapbox Terrain-RGB PNG tiles and exposes the same data through point/profile elevation endpoints. This guide covers the workflow; the full endpoint contract lives in the [terrain and elevation reference](../../reference/protocols/terrain-and-elevation.md).
+Honua encodes registered single-band raster sources as Mapbox Terrain-RGB PNG tiles and Cesium quantized-mesh tiles, and exposes the same data through point/profile elevation endpoints. This guide covers the workflow; the full endpoint contract lives in the [terrain and elevation reference](../../reference/protocols/terrain-and-elevation.md).
 
 ## Steps
 
@@ -42,7 +43,9 @@ map.addSource("dem", {
 map.setTerrain({ source: "dem" });
 ```
 
-Tiles use the standard formula `elevationMeters = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)`; no-data and uncovered pixels encode as `[0, 0, 0]` (`-10000 m`), so treat that value as the no-data sentinel.
+Tiles use the standard formula `elevationMeters = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)`. No-data and uncovered pixels have RGBA `[0, 0, 0, 0]`; honor alpha `0` as missing data. A valid `-10000 m` sample has RGB `[0, 0, 0]` with alpha `255`.
+
+For a Cesium quantized-mesh client, use the same dataset's `/terrain/{layerId}/layer.json` manifest and check `supported` and `available`. Its `.terrain` tiles use geographic EPSG:4326 TMS coordinates, with rows increasing from south to north; use the manifest's tile templates rather than the MapLibre PNG coordinates. See the [quantized-mesh contract](../../reference/protocols/terrain-and-elevation.md#quantized-mesh-terrain) for compression and optional vertex normals.
 
 ### 4. Query elevation values
 
