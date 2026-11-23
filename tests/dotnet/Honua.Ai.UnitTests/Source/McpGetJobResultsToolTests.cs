@@ -177,11 +177,48 @@ public sealed class McpGetJobResultsToolTests
         ServiceCalls().Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_NonObjectGeoJson_DoesNotBreakArtifactRetrieval(string json)
+    {
+        var uri = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+        _jobService.GetJobResultsAsync("gp-join", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var result = (await Dispatch(ToolCall("results-invalid-shape", """{"jobId":"gp-join"}""")))!.Result!.Value;
+
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        result.GetProperty("structuredContent").GetProperty("artifacts")[0]
+            .TryGetProperty("featureSummary", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_CountOnly_DoesNotOfferANonAdvancingPage()
+    {
+        _jobService.GetJobResultsAsync("gp-join", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(JoinResultUri([1, 0], 0)));
+
+        var summary = (await Dispatch(ToolCall("results-count", """{"jobId":"gp-join","rowLimit":0}""")))!
+            .Result!.Value.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("featureCount").GetInt32().Should().Be(2);
+        summary.GetProperty("rows").GetArrayLength().Should().Be(0);
+        summary.TryGetProperty("nextRowOffset", out _).Should().BeFalse();
+    }
+
     private static string JoinResultUri(int[] joinCounts, int padding)
     {
         var note = new string('n', padding);
         var features = joinCounts.Select((count, index) =>
-            $$"""{"type":"Feature","geometry":{"type":"Point","coordinates":[{{index}},{{index}}]},"properties":{"id":{{index + 1}},"note":"{{note}}","JOIN_COUNT":{{count}}}}""");
+            $$$"""{"type":"Feature","geometry":{"type":"Point","coordinates":[{{{index}}},{{{index}}}]},"properties":{"id":{{{index + 1}}},"note":"{{{note}}}","JOIN_COUNT":{{{count}}}}}""");
         var json = $$"""{"type":"FeatureCollection","features":[{{string.Join(",", features)}}]}""";
         return "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
     }

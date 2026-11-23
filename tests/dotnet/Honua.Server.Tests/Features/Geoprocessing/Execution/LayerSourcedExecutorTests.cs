@@ -1118,7 +1118,7 @@ public sealed partial class LayerSourcedExecutorTests
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["analytics.buffer-aggregate"] = ["layerId", "distance", "unit", "dissolve", "groupByFields", "outStatistics", .. SharedSelectors],
-            ["analytics.spatial-join"] = ["layerId", "joinLayerId", "predicate", "distance", "carryFields", "outStatistics", .. SharedSelectors],
+            ["analytics.spatial-join"] = ["layerId", "joinLayerId", "joinWhere", "predicate", "distance", "carryFields", "outStatistics", .. SharedSelectors],
             ["generalization.dissolve"] = ["layerId", "groupByFields", "dissolve", "outStatistics", .. SharedSelectors],
             ["generalization.simplify-layer"] = ["layerId", "tolerance", "preserveTopology", .. SharedSelectors],
         };

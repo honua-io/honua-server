@@ -48,7 +48,8 @@ internal static class JobResultFeatureSummary
         try
         {
             using var document = JsonDocument.Parse(buffer.AsMemory(0, written));
-            if (!document.RootElement.TryGetProperty("features", out var features)
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("features", out var features)
                 || features.ValueKind != JsonValueKind.Array)
             {
                 return null;
@@ -118,7 +119,7 @@ internal static class JobResultFeatureSummary
                 MatchedFeatureCount = _hasJoinCount ? _matched : null,
                 RowOffset = window.Offset,
                 Rows = _rows,
-                NextRowOffset = next < _count ? next : null,
+                NextRowOffset = window.Limit > 0 && next < _count ? next : null,
             };
         }
 
