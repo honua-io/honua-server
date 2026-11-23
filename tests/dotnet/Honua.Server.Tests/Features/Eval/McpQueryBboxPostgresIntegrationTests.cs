@@ -61,16 +61,15 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
     // The triangle's envelope is [0,0,10,10]; [8,8,9,9] lies inside that envelope but
     // outside the triangle (x + y > 10), while [1,1,2,2] lies inside the triangle.
     [IntegrationTheory]
-    [InlineData(8.0, 8.0, 9.0, 9.0, 0)]
-    [InlineData(1.0, 1.0, 2.0, 2.0, 1)]
+    [InlineData(new[] { 8.0, 8.0, 9.0, 9.0 }, 0)]
+    [InlineData(new[] { 1.0, 1.0, 2.0, 2.0 }, 1)]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task QueryFeatures_Bbox_MatchesFeatureGeometryNotItsEnvelope(
-        double minX, double minY, double maxX, double maxY, int expectedCount)
+    public async Task QueryFeatures_Bbox_MatchesFeatureGeometryNotItsEnvelope(double[] bbox, int expectedCount)
     {
         using var provider = BuildServices();
-        var result = await CallQueryFeaturesAsync(provider, [minX, minY, maxX, maxY]);
+        var result = await CallQueryFeaturesAsync(provider, bbox);
 
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
         result.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32()
