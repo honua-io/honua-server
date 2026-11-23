@@ -20,8 +20,10 @@ public sealed partial class StreamingFileImportStagingTableTests
             await EnsureImportFunctionsAsync();
             var receiptWritten = false;
 
-            var result = await ImportCreateOnlyCsvAsync(
-                schema, "name,lon,lat\nA,-97.7,30.2\nB,-97.8,30.3\n", () => receiptWritten = true);
+            var result = await ImportCreateOnlyCsvAsync(schema, new CreateOnlyCsvCase("name,lon,lat\nA,-97.7,30.2\nB,-97.8,30.3\n")
+            {
+                OnReceipt = () => receiptWritten = true,
+            });
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FeatureCount.Should().Be(2);
@@ -39,9 +41,31 @@ public sealed partial class StreamingFileImportStagingTableTests
     }
 
     [IntegrationTheory]
-    [InlineData("name,wkt\nA,POINT(1 2)\nB,POINT(oops)\n")]
-    [InlineData("name,lon,lat\nA,-97.7,30.2\nB,east,30.3\n")]
-    public async Task ImportFileAsync_CreateOnlyCsvWithUnparseableGeometry_DiscardsDatasetWithoutReceipt(string csv)
+    [InlineData("name,wkt\nA,POINT(1 2)\nB,POINT(oops)\n", "1 row has an unparseable geometry")]
+    [InlineData("name,lon,lat\nA,-97.7,30.2\nB,east,30.3\n", "1 row has an unparseable geometry")]
+    [InlineData("name,lon,lat\nA,-97.7,30.2,extra\nB,-97.8,30.3\n", "1 row has more fields than the header row")]
+    [InlineData("name,place\nA,Austin\n", "no geometry column was found")]
+    public async Task ImportFileAsync_CreateOnlyIncompleteCsv_DiscardsDatasetWithoutReceipt(string csv, string expectedMessage)
+    {
+        await AssertCreateOnlyCsvRefusedAsync(new CreateOnlyCsvCase(csv), expectedMessage);
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_CreateOnlyCsvWithUngeocodedAddress_DiscardsDatasetWithoutReceipt()
+    {
+        var options = new CsvImportOptions
+        {
+            AddressColumn = "address",
+            AddressGeocoder = (address, _) => Task.FromResult<CsvGeocodedAddress?>(
+                address == "known" ? new CsvGeocodedAddress(-97.7, 30.2) : null),
+        };
+
+        await AssertCreateOnlyCsvRefusedAsync(
+            new CreateOnlyCsvCase("name,address\nA,known\nB,nowhere\n") { Options = options },
+            "1 row has an address that could not be geocoded (data rows 2)");
+    }
+
+    private async Task AssertCreateOnlyCsvRefusedAsync(CreateOnlyCsvCase csvCase, string expectedMessage)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("create_only_csv_bad");
         try
@@ -49,10 +73,10 @@ public sealed partial class StreamingFileImportStagingTableTests
             await EnsureImportFunctionsAsync();
             var receiptWritten = false;
 
-            var result = await ImportCreateOnlyCsvAsync(schema, csv, () => receiptWritten = true);
+            var result = await ImportCreateOnlyCsvAsync(schema, csvCase with { OnReceipt = () => receiptWritten = true });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("1 row", "the agent is told how many rows to fix");
+            result.ErrorMessage.Should().Contain(expectedMessage).And.Contain("no dataset was created");
             receiptWritten.Should().BeFalse();
             (await TableExistsAsync(schema, OverwriteGuardPhysicalTable)).Should().BeFalse();
             (await StagingRelationsAsync(schema)).Should().BeEmpty();
@@ -63,9 +87,9 @@ public sealed partial class StreamingFileImportStagingTableTests
         }
     }
 
-    private async Task<ImportResult> ImportCreateOnlyCsvAsync(string schema, string csv, Action onReceipt)
+    private async Task<ImportResult> ImportCreateOnlyCsvAsync(string schema, CreateOnlyCsvCase csvCase)
     {
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csvCase.Csv));
         return await CreateOnlyService(schema).ImportFileAsync(new ImportRequest
         {
             FileStream = stream,
@@ -75,7 +99,15 @@ public sealed partial class StreamingFileImportStagingTableTests
             SourceSrid = 4326,
             TargetSrid = 4326,
             LoadMode = ImportLoadMode.CreateOnly,
-            CommitParticipant = (_, _) => { onReceipt(); return ValueTask.CompletedTask; },
+            CsvOptions = csvCase.Options,
+            CommitParticipant = (_, _) => { csvCase.OnReceipt?.Invoke(); return ValueTask.CompletedTask; },
         });
+    }
+
+    private sealed record CreateOnlyCsvCase(string Csv)
+    {
+        public CsvImportOptions? Options { get; init; }
+
+        public Action? OnReceipt { get; init; }
     }
 }

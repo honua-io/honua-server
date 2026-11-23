@@ -466,6 +466,40 @@ public sealed class CsvFormatReaderTests
         diagnostics.UnparseableGeometryRows.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("name,lon,lat\nA,1,2,extra\nB,3,4\n", 1)]
+    [InlineData("name,lon,lat\nA,1,2,\nB,3,4\n", 0)]
+    public async Task ReadStreamingAsync_FieldsBeyondHeader_AreCounted(string csv, int expectedRows)
+    {
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().HaveCount(2);
+        diagnostics.ExtraFieldRows.Should().Be(expectedRows);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("name,lon,lat\nA,1,2\n")]
+    [InlineData("name,wkt\nA,POINT(1 2)\n")]
+    public async Task ReadStreamingAsync_GeometryColumns_AreReportedAsMapped(string csv)
+    {
+        var (_, diagnostics) = await ReadAllAsync(csv);
+
+        diagnostics.GeometrySourceMapped.Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("name,place\nA,Austin\n")]
+    [InlineData("name,lat\nA,2\n")]
+    public async Task ReadStreamingAsync_NoGeometryColumn_IsReportedAsUnmapped(string csv)
+    {
+        var (_, diagnostics) = await ReadAllAsync(csv);
+
+        diagnostics.GeometrySourceMapped.Should().BeFalse();
+    }
+
     private static Task<(List<IFeature> Features, CsvGeometryDiagnostics Diagnostics)> ReadAllAsync(string csv)
         => ReadAllAsync(csv, options: null);
 

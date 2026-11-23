@@ -739,6 +739,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 errorCode: ImportTableOwnershipException.Code);
             return result;
         }
+        catch (ImportTargetExistsException ex)
+        {
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson, errorMessage,
+                stopwatch.Elapsed, warnings, ImportValidationErrorCodes.TargetExists);
+            return result;
+        }
         catch (InvalidDataException ex)
         {
             // Preserve the specific message (e.g. "Row X in row group Y contains
@@ -750,8 +758,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
                 stopwatch.Elapsed,
-                warnings,
-                errorCode: ex is ImportTargetExistsException ? ImportValidationErrorCodes.TargetExists : null);
+                warnings);
             return result;
         }
         catch (Npgsql.PostgresException ex)

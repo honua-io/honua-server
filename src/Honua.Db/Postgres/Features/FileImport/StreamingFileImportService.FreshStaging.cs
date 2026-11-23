@@ -130,25 +130,44 @@ internal sealed partial class StreamingFileImportService
     private static bool SupportsCreateOnly(SupportedFileFormat? format)
         => format is SupportedFileFormat.GeoJson or SupportedFileFormat.Csv;
 
-    // A CSV row whose geometry could not be parsed or geocoded is kept without a geometry by
-    // other load modes. A create-only dataset must be complete, so such rows refuse the import.
+    // Other load modes keep a CSV row whose geometry could not be parsed or geocoded, without a
+    // geometry, and ignore fields beyond the header. A create-only dataset must be complete, so a
+    // missing geometry source or any such row refuses the import. Blank geometry cells stay allowed.
     private static void ThrowIfCreateOnlyCsvIncomplete(CsvGeometryDiagnostics diagnostics)
     {
-        var problems = new List<string>(2);
-        if (diagnostics.UnparseableGeometryRows > 0)
+        if (!diagnostics.GeometrySourceMapped)
         {
-            problems.Add($"{CountRows(diagnostics.UnparseableGeometryRows)} an unparseable geometry");
+            throw new InvalidDataException(
+                "Create-only CSV import refused: no geometry column was found. Name longitude and latitude columns "
+                + "(longitudeColumn/latitudeColumn) or a WKT column (wkt/geom/geometry/shape); no dataset was created.");
         }
-        if (diagnostics.GeocodeFailureCount > 0)
-        {
-            var rows = string.Join(", ", diagnostics.GeocodeFailures.Select(static failure => failure.RowNumber));
-            problems.Add($"{CountRows(diagnostics.GeocodeFailureCount)} an address that could not be geocoded (rows {rows})");
-        }
+        var problems = DescribeIncompleteCsvRows(diagnostics);
         if (problems.Count > 0)
         {
             throw new InvalidDataException(
                 $"Create-only CSV import refused: {string.Join("; ", problems)}. Fix those rows and retry; no dataset was created.");
         }
+    }
+
+    private static List<string> DescribeIncompleteCsvRows(CsvGeometryDiagnostics diagnostics)
+    {
+        const int listedRows = 10;
+        var problems = new List<string>(3);
+        if (diagnostics.UnparseableGeometryRows > 0)
+        {
+            problems.Add($"{CountRows(diagnostics.UnparseableGeometryRows)} an unparseable geometry");
+        }
+        if (diagnostics.ExtraFieldRows > 0)
+        {
+            problems.Add($"{CountRows(diagnostics.ExtraFieldRows)} more fields than the header row");
+        }
+        if (diagnostics.GeocodeFailureCount > 0)
+        {
+            var rows = string.Join(", ", diagnostics.GeocodeFailures.Take(listedRows).Select(static failure => failure.RowNumber));
+            var more = diagnostics.GeocodeFailureCount > listedRows ? ", ..." : string.Empty;
+            problems.Add($"{CountRows(diagnostics.GeocodeFailureCount)} an address that could not be geocoded (data rows {rows}{more})");
+        }
+        return problems;
     }
 
     private static string CountRows(int count) => count == 1 ? "1 row has" : $"{count} rows have";

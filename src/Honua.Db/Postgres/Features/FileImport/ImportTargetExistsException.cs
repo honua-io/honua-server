@@ -3,6 +3,5 @@
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-// A create-only import found its target table already present; the import reports import.target_exists.
 internal sealed class ImportTargetExistsException()
-    : InvalidDataException("Create-only import requires a new target table.");
+    : InvalidOperationException("Create-only import requires a new target table.");

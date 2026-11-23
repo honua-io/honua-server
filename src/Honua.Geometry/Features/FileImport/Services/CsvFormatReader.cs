@@ -160,17 +160,22 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
-                if (diagnostics is not null)
-                {
-                    diagnostics.Headers = headers;
-                }
                 // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers. Tab and
                 // pipe files are as often written where ',' groups thousands, so only ';' files read a decimal comma.
                 mapping = BuildMapping(headers, options) with { DecimalComma = delimiter == ';' };
+                diagnostics?.RecordHeader(headers);
+                if (HasGeometrySource(mapping, options))
+                {
+                    diagnostics?.RecordGeometrySource();
+                }
                 return null;
             }
 
             dataRowNumber++;
+            if (fields.Skip(headers.Length).Any(static field => field.Length > 0))
+            {
+                diagnostics?.RecordExtraFields();
+            }
             return BuildFeature(headers, fields, quotedFields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
         }
 
@@ -245,6 +250,11 @@ internal static class CsvFormatReader
             }
         }
     }
+
+    private static bool HasGeometrySource(CsvColumnMapping mapping, CsvImportOptions? options)
+        => mapping.WktIndex.HasValue
+            || (mapping.LongitudeIndex.HasValue && mapping.LatitudeIndex.HasValue)
+            || (mapping.AddressIndex.HasValue && options?.AddressGeocoder is not null);
 
     private static Feature? BuildFeature(
         string[] headers,
@@ -875,9 +885,21 @@ internal sealed class CsvGeometryDiagnostics
 
     private List<CsvGeocodeFailure>? _geocodeFailures;
 
-    public IReadOnlyList<string> Headers { get; internal set; } = [];
+    public IReadOnlyList<string> Headers { get; private set; } = [];
+
+    // False when no WKT column, coordinate pair or geocoded address column was mapped.
+    public bool GeometrySourceMapped { get; private set; }
 
     public int UnparseableGeometryRows { get; private set; }
+
+    // Rows with non-empty fields beyond the header; those values are not imported.
+    public int ExtraFieldRows { get; private set; }
+
+    public void RecordHeader(IReadOnlyList<string> headers) => Headers = headers;
+
+    public void RecordGeometrySource() => GeometrySourceMapped = true;
+
+    public void RecordExtraFields() => ExtraFieldRows++;
 
     public void RecordUnparseableGeometry() => UnparseableGeometryRows++;
 
