@@ -147,6 +147,18 @@ when assessing their final branch.
 | `not_assessed` | `::error::HONUA_SHARD_KILLED` when the run was SIGKILLed | Ran under a budget but neither passed nor hit the cap. A failing run can abort early or run long on retries, so its duration is not a capacity sample and the fleet audit excludes it. |
 | `unbounded` | none | No inner timeout configured. |
 
+### Failure and retry annotations
+
+These say what a red shard's cases did, so a test red is not read as a harness fault:
+
+| Annotation | Source | Meaning |
+|---|---|---|
+| `::error::HONUA_SHARD_CASES_FAILED` | `shard-execution-evidence.py` | Cases ran and at least one failed: a test red. |
+| `::error::HONUA_SHARD_NO_EXECUTION` | `shard-execution-evidence.py` | No TRX, unreadable TRX, contradictory counters, or nothing executed: a harness red. |
+| `::warning::Retrying N failed case(s) ...: <tests>` | `retry-failed-shard-tests.py` | The one in-job retry started; names up to five methods. |
+| `::warning::HONUA_SHARD_FLAKE_CANDIDATE` | `retry-failed-shard-tests.py` | The named tests failed, then passed on retry; the quarantine publisher files them. |
+| `::error::HONUA_SHARD_RETRY_FAILED` | `retry-failed-shard-tests.py` | The named tests did not pass the retry either; the failure gates and is not a quarantine candidate. |
+
 ### Timeout exit codes
 
 `timeout` sends SIGTERM at the cap and reports **124**. A shard wedged hard
