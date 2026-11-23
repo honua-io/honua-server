@@ -257,7 +257,7 @@ internal sealed partial class PostgresVersionManager
                 return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
             }
 
-            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, CancellationToken.None).ConfigureAwait(false);
+            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.version.applied_changes", replay.Applied);
             activity?.SetTag("honua.version.server_generation", replay.ServerGeneration);
             activity?.SetTag("honua.version.outcome", "posted");
@@ -337,10 +337,7 @@ internal sealed partial class PostgresVersionManager
               -- reached the desired end state), not drift — exclude it so it does not spuriously
               -- block the post. Every other update/delete target must still match its captured base.
               AND NOT (ve.operation = 3 AND f.objectid IS NULL)
-              AND NOT (
-                    f.geometry IS NOT DISTINCT FROM ve.base_geometry
-                AND f.attributes IS NOT DISTINCT FROM ve.base_attributes
-              )
+              AND NOT ({DefaultMatchesBaseSql})
             """,
             connection)
         { Transaction = transaction })
@@ -368,7 +365,7 @@ internal sealed partial class PostgresVersionManager
         await using (var deleteCommand = new NpgsqlCommand(
             $"DELETE FROM {featuresTable} f USING honua.version_edits ve " +
             "WHERE ve.version_id = @version AND ve.operation = 3 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
-            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
+            $"AND {DefaultMatchesBaseSql}",
             connection)
         { Transaction = transaction })
         {
@@ -382,7 +379,7 @@ internal sealed partial class PostgresVersionManager
             $"UPDATE {featuresTable} f SET geometry = ve.geometry, attributes = ve.attributes " +
             "FROM honua.version_edits ve " +
             "WHERE ve.version_id = @version AND ve.operation = 2 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
-            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
+            $"AND {DefaultMatchesBaseSql}",
             connection)
         { Transaction = transaction })
         {
@@ -414,9 +411,10 @@ internal sealed partial class PostgresVersionManager
         // The ancestor must cover the replayed rows, or later reconciles see them as DEFAULT edits.
         var postedThrough = await ReadVisibleHeadAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        // Committed: finish regardless of the request token, and only once the prefix covers these rows.
+        // Committed. The token still carries version-lock loss; a cancelled post leaves the overlay
+        // cleared, so a retry replays nothing and advances the ancestor.
         var serverGeneration = await FeatureChangePrefix.SettleAndReadHorizonAsync(
-            connection, postedThrough, CancellationToken.None).ConfigureAwait(false);
+            connection, postedThrough, cancellationToken).ConfigureAwait(false);
         return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
     }
 
@@ -493,9 +491,7 @@ internal sealed partial class PostgresVersionManager
                    ST_AsText(ve.base_geometry) AS base_geom,
                    ST_AsText(f.geometry)       AS default_geom,
                    ST_AsText(ve.geometry)      AS version_geom,
-                   -- The post drift guard's predicate, so reconcile and post agree on "unchanged".
-                   (f.geometry IS NOT DISTINCT FROM ve.base_geometry
-                    AND f.attributes IS NOT DISTINCT FROM ve.base_attributes) AS default_matches_base
+                   ({DefaultMatchesBaseSql}) AS default_matches_base
             FROM honua.version_edits ve
             JOIN default_changes dc ON dc.layer_id = ve.layer_id AND dc.objectid = ve.objectid
             LEFT JOIN {featuresTable} f ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid

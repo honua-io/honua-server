@@ -11,7 +11,7 @@
 --              value once none of those transactions still holds the lock. Only feature writers
 --              can hold back the prefix, never unrelated transactions or other databases, and
 --              an idle database publishes in one call.
---              Forward-only (founder ruling 22 Nov: no N-1 reader contract). Function bodies,
+--              Forward-only: no previous-release reader is supported alongside it. Function bodies,
 --              one added column and a one-time seed of the prefix; nothing is dropped.
 -- Dependencies: Requires migrations 189 (writer triggers), 213 (read horizon) and 214 (prefix table).
 

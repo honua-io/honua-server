@@ -13,8 +13,9 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-// Reconcile while an unrelated DEFAULT writer holds the committed prefix back (migration 228): the
-// analysis reads the state its snapshot sees, and an unchanged live row is not a conflict.
+// Reconcile against the committed prefix (migration 228): a live DEFAULT row that still equals the
+// overlay base is not a conflict, and while an unrelated DEFAULT writer holds the prefix back the
+// analysis reads the state its own snapshot sees.
 public sealed partial class BranchVersioningIntegrationTests
 {
     [IntegrationTest]
@@ -52,14 +53,17 @@ public sealed partial class BranchVersioningIntegrationTests
             FeatureEditBatch.Create(deletes: [feature.Id], versionContext: VersionContext.ForVersion(version)),
             CancellationToken.None);
         await SetDefaultNameAsync(feature.Id, "updated");
+        // Publish the update, so the prefix the held writer pins sits between the update and the delete.
         _ = await CreateTracker().GetCurrentGenerationAsync();
 
         await using var held = await HoldUnrelatedDefaultWriterAsync(store);
         await store.ApplyEditsAsync(PointsLayerId, FeatureEditBatch.Create(deletes: [feature.Id]), CancellationToken.None);
+        var deleted = await LatestDefaultGenerationAsync(feature.Id);
         var result = await CreateVersionManager().ReconcileAsync(
             version.VersionId, VersionReconcilePolicy.None, VersionConflictDetection.ByObject, CancellationToken.None);
         await held.Transaction.CommitAsync();
 
+        result.NewCommonAncestorGeneration.Should().BeLessThan(deleted, "the held writer keeps the delete above the prefix");
         result.Conflicts.Should().BeEmpty("both sides deleted the row");
     }
 
@@ -80,9 +84,11 @@ public sealed partial class BranchVersioningIntegrationTests
         await using (var held = await HoldUnrelatedDefaultWriterAsync(store))
         {
             await SetDefaultNameAsync(feature.Id, "default");
+            var updated = await LatestDefaultGenerationAsync(feature.Id);
             var resolved = await CreateVersionManager().ReconcileAsync(
                 version.VersionId, VersionReconcilePolicy.VersionWins, VersionConflictDetection.ByObject, CancellationToken.None);
             resolved.CanPost.Should().BeTrue();
+            resolved.NewCommonAncestorGeneration.Should().BeLessThan(updated, "the held writer keeps the update above the prefix");
             await held.Transaction.CommitAsync();
         }
 
@@ -107,20 +113,40 @@ public sealed partial class BranchVersioningIntegrationTests
         (await update.ExecuteNonQueryAsync()).Should().Be(1);
     }
 
+    private async Task<long> LatestDefaultGenerationAsync(long featureId)
+    {
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT MAX(generation) FROM honua.feature_changes
+            WHERE layer_id = @layer AND objectid = @id AND version_id IS NULL
+            """, connection);
+        command.Parameters.AddWithValue("layer", PointsLayerId);
+        command.Parameters.AddWithValue("id", featureId);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
     // An open DEFAULT edit to another feature, allocated before the edits under test, holds the prefix.
     private async Task<HeldWriter> HoldUnrelatedDefaultWriterAsync(PostgresFeatureStoreRefactored store)
     {
         var other = await store.CreateAsync(PointsLayerId, BuildFeature("unrelated", 29, 29), CancellationToken.None);
         var connection = await OpenSchemaConnectionAsync();
-        var transaction = await connection.BeginTransactionAsync();
-        await using var update = new NpgsqlCommand(
-            "UPDATE features SET attributes = attributes WHERE layer_id = @layer AND objectid = @id",
-            connection,
-            transaction);
-        update.Parameters.AddWithValue("layer", PointsLayerId);
-        update.Parameters.AddWithValue("id", other.Id);
-        (await update.ExecuteNonQueryAsync()).Should().Be(1);
-        return new HeldWriter(connection, transaction);
+        var held = new HeldWriter(connection, await connection.BeginTransactionAsync());
+        try
+        {
+            await using var update = new NpgsqlCommand(
+                "UPDATE features SET attributes = attributes WHERE layer_id = @layer AND objectid = @id",
+                connection,
+                held.Transaction);
+            update.Parameters.AddWithValue("layer", PointsLayerId);
+            update.Parameters.AddWithValue("id", other.Id);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+            return held;
+        }
+        catch
+        {
+            await held.DisposeAsync();
+            throw;
+        }
     }
 
     private sealed class HeldWriter(NpgsqlConnection connection, NpgsqlTransaction transaction) : IAsyncDisposable

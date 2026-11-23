@@ -3,7 +3,7 @@ embedded_migrations:
   - Honua.Server.Migrations.002_CreateAttachmentsTable.sql
   - Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql
   - Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql
-  # Committed feature-change prefix: replaces the writer triggers and read horizon below.
+  # Committed feature-change prefix; the inline writer triggers and horizon below follow migration 228.
   - Honua.Server.Migrations.214_StageFeatureChangePrefixPublisher.sql
   - Honua.Server.Migrations.228_ActivateFeatureChangePrefix.sql
 sql:

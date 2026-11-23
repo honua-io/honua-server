@@ -12,6 +12,11 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 // Reconcile's per-row overlap classification and the bounds its analysis reads.
 internal sealed partial class PostgresVersionManager
 {
+    // DEFAULT's live row still equals the overlay's captured base. The post drift guard, the replay and
+    // reconcile all use this one predicate, so they agree on "unchanged".
+    private const string DefaultMatchesBaseSql =
+        "f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes";
+
     // The published prefix and the newest generation visible in this snapshot.
     private static async Task<(long Prefix, long VisibleHead)> ReadAnalysisBoundsAsync(
         NpgsqlConnection connection,
@@ -124,7 +129,7 @@ internal sealed partial class PostgresVersionManager
             BaseGeom = reader.IsDBNull(7) ? null : reader.GetString(7),
             DefaultGeom = reader.IsDBNull(8) ? null : reader.GetString(8),
             VersionGeom = reader.IsDBNull(9) ? null : reader.GetString(9),
-            DefaultMatchesBase = !reader.IsDBNull(10) && reader.GetBoolean(10),
+            DefaultMatchesBase = reader.GetBoolean(10),
         };
 
         public OverlapConflict ToConflict(ReplicaConflictType type, ImmutableArray<VersionConflictFieldDiff> diffs)

@@ -9,7 +9,7 @@ changes; those probes do not advance a download cursor.
 Migration 228 activates the committed prefix. Before it, both feature-writer triggers took
 one exclusive advisory lock from `nextval` through commit, which serialized every feature
 write in the database and kept `MAX(generation)` gap-free. Rolling deployment with an
-older reader is not supported (founder ruling, 22 November 2026), so 228 replaces the
+older reader is not supported, so 228 replaces the
 function bodies directly.
 
 ## Writers
@@ -59,8 +59,7 @@ database (`FeatureChangePrefix` in Honua.Db):
   to the horizon it then records as the ancestor, so a later reconcile neither repeats nor
   misses a change. An update overlap whose base image still equals the live DEFAULT row (for
   example after a version-wins rebase) is not a conflict.
-- Version post waits, with no time limit and ignoring request cancellation once committed (the old
-  global writer lock blocked it as long), for the prefix to cover its own replayed rows before it advances the
+- Version post waits, with no time limit, for the prefix to cover its own replayed rows before it advances the
   common ancestor, so the posted rows are not treated as concurrent DEFAULT edits.
 - The realtime feature log advances the prefix on every head and cursor read, waiting up to
   250 ms for writers already in flight, so a read that lands during a short edit still

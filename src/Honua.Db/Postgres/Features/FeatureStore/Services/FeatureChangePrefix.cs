@@ -42,8 +42,8 @@ internal static class FeatureChangePrefix
 
     // Publishes until the prefix covers every generation allocated before this call, or until
     // SettleBudget elapses, and returns the published prefix. An explicit target is a caller's own
-    // committed rows; that wait has no budget, because a lower prefix would make the caller record a
-    // position before its own changes. The old global writer lock blocked such a caller for as long.
+    // committed rows; that wait has no budget (cancellation still applies), because a lower prefix
+    // would make the caller record a position before its own changes.
     public static Task<long> SettleAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
         => SettleAsync(connection, target: null, cancellationToken);
 
