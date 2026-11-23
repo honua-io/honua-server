@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
@@ -48,6 +49,8 @@ internal static class WmtsRequestHandlers
     private const double Crs84OriginLon = -180.0;
     private const double Crs84OriginLat = 90.0;
     private const string WmtsVersion = "1.0.0";
+    private const int WmtsRestTileSegmentCount = 6;
+    private const int WmtsRestFeatureInfoSegmentCount = 8;
     private const string WmtsMimeType = "application/xml";
     private const string WmtsTextXmlMimeType = "text/xml";
     private const string WmtsUpdateSequence = "20260223";
@@ -448,7 +451,7 @@ internal static class WmtsRequestHandlers
             return await HandleWmts(context);
         }
 
-        if (segments.Length < 6)
+        if (segments.Length is not (WmtsRestTileSegmentCount or WmtsRestFeatureInfoSegmentCount))
         {
             return Results.NotFound();
         }
@@ -484,7 +487,7 @@ internal static class WmtsRequestHandlers
             ["TILECOL"] = tileColValue
         };
 
-        if (segments.Length >= 8)
+        if (segments.Length == WmtsRestFeatureInfoSegmentCount)
         {
             if (!TryUnescapeWmtsValue(segments[6], out var pixelJ) ||
                 !TryParseWmtsResourceSegment(
@@ -1315,6 +1318,7 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var authoredService = service;
         service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
@@ -1458,8 +1462,10 @@ internal static class WmtsRequestHandlers
             {
                 var styleSources = new RasterStyleSources(
                     styleCatalog, request.HttpContext.RequestServices.GetService<IGeoServicesStyleConverter>());
-                var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
-                    ResolveWmtsLegendSupportAsync(styleSources, layer, logger, cancellationToken))).ConfigureAwait(false);
+                var supportedLegends = await RequestFanOut.SelectAsync(
+                    visibleLayers,
+                    (layer, layerCancellation) => ResolveWmtsLegendSupportAsync(styleSources, layer, logger, layerCancellation),
+                    cancellationToken).ConfigureAwait(false);
                 for (var index = 0; index < visibleLayers.Count; index++)
                 {
                     if (supportedLegends[index])
@@ -1496,10 +1502,16 @@ internal static class WmtsRequestHandlers
                 var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetServiceLayerIdentifier(layer.Publication) ?? string.Empty)}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
-                var layerTitle = layer.Resource.Metadata.Title
-                    ?? layer.Resource.Metadata.Name
-                    ?? layerId;
+                var descriptive = DescriptiveMetadataResolver.ForDataset(graph, new(layer.Resource, authoredService, layer.Publication));
+                var layerTitle = string.IsNullOrWhiteSpace(descriptive.Title) ? layerId : descriptive.Title;
                 sb.Append("      <ows:Title>").Append(EscapeXml(layerTitle)).AppendLine("</ows:Title>");
+                if (!string.IsNullOrWhiteSpace(descriptive.Description))
+                {
+                    sb.Append("      <ows:Abstract>").Append(EscapeXml(descriptive.Description)).AppendLine("</ows:Abstract>");
+                }
+
+                foreach (var keywords in CatalogCapabilitiesXml.PrefixedKeywords(descriptive.Keywords, "http://www.opengis.net/ows/1.1"))
+                    sb.AppendLine(keywords.ToString());
                 sb.Append("      <ows:Identifier>").Append(EscapeXml(layerId)).AppendLine("</ows:Identifier>");
                 await AppendWmtsWgs84BoundingBoxAsync(sb, layer, request.HttpContext, cancellationToken)
                     .ConfigureAwait(false);
@@ -1704,10 +1716,10 @@ internal static class WmtsRequestHandlers
 
         // A single layer whose temporal column cannot be aggregated must not 500 the
         // whole GetCapabilities document — skip its TIME dimension and keep the rest.
-        var tasks = temporalLayers.Select(layer =>
-            ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
-
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var results = await RequestFanOut.SelectAsync(
+            temporalLayers,
+            (layer, layerCancellation) => ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, layerCancellation),
+            cancellationToken).ConfigureAwait(false);
 
         var dict = new Dictionary<int, MetadataV2TemporalRange>(temporalLayers.Length);
         for (var i = 0; i < temporalLayers.Length; i++)

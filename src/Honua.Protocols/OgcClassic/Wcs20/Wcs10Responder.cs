@@ -122,10 +122,10 @@ internal sealed partial class Wcs20Handler
     private static XElement BuildWcs10CoverageOfferingBrief(WcsCoverage coverage)
     {
         var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
-        var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
-        var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
+        var label = string.IsNullOrWhiteSpace(coverage.Descriptive.Title) ? coverageId : coverage.Descriptive.Title;
+        var description = string.IsNullOrWhiteSpace(coverage.Descriptive.Description)
             ? label
-            : coverage.Resource.Metadata.Description;
+            : coverage.Descriptive.Description;
 
         var children = new List<object>
         {
@@ -259,10 +259,10 @@ internal sealed partial class Wcs20Handler
         }
 
         var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
-        var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
-        var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
+        var label = string.IsNullOrWhiteSpace(coverage.Descriptive.Title) ? coverageId : coverage.Descriptive.Title;
+        var description = string.IsNullOrWhiteSpace(coverage.Descriptive.Description)
             ? label
-            : coverage.Resource.Metadata.Description;
+            : coverage.Descriptive.Description;
         var srsName = CreateWcs10CrsName(srid.Value);
 
         var children = new List<object>
@@ -770,7 +770,7 @@ internal sealed partial class Wcs20Handler
             error = Wcs10ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
                 $"Requested output exceeds the {MaxWcsOutputDimension}px limit per dimension.",
-                Wcs20Utilities.Parameters10.Width);
+                width > MaxWcsOutputDimension ? Wcs20Utilities.Parameters10.Width : Wcs20Utilities.Parameters10.Height);
             return false;
         }
 

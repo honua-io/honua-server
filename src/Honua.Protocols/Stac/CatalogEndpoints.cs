@@ -395,12 +395,7 @@ internal static class CatalogEndpoints
 
     private static string ResolveDisplayName(StacV2Lookups.ResolvedStacPublication resolved)
     {
-        return resolved.Publication.TitleOverride
-            ?? resolved.Publication.Metadata.Title
-            ?? (string.IsNullOrEmpty(resolved.Publication.Metadata.Name) ? null : resolved.Publication.Metadata.Name)
-            ?? resolved.Resource.Metadata.Title
-            ?? (string.IsNullOrEmpty(resolved.Resource.Metadata.Name) ? null : resolved.Resource.Metadata.Name)
-            ?? resolved.LayerIndex.ToString(CultureInfo.InvariantCulture);
+        return StacMappingService.ResolveDisplayName(resolved.Publication, resolved.Resource, resolved.LayerIndex);
     }
 
     private static ImmutableArray<string> GetConformanceClasses()

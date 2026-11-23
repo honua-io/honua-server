@@ -11,7 +11,9 @@ The shared server shard runner retries failed test methods once in the same job,
 its original deadline. Only exit code 1 with complete, consistent TRX case evidence is
 eligible; infrastructure failures, missing cases, failed/skipped retries and timeouts stay
 red. A successful retry retains both raw attempts and emits a candidate containing their
-hashes. The final TRX uses actual retry rows for the originally failed cases.
+hashes. The final TRX uses actual retry rows for the originally failed cases. The job
+annotates the outcome: `HONUA_SHARD_FLAKE_CANDIDATE` after a pass on retry,
+`HONUA_SHARD_RETRY_FAILED` when the retry fails too (see shard-timeout-budgets.md).
 
 `Publish Flaky Test Quarantine` validates this evidence after same-repository CI and PR
 Gate runs. It runs trusted default-branch code and treats downloaded artifacts only as

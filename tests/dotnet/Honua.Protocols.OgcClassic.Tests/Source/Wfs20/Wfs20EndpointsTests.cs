@@ -87,7 +87,8 @@ public sealed partial class Wfs20EndpointsTests
         const string canonicalName = "eo:cloud_cover";
         const string unknownName = "missing_x003A_field";
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildPrefixedFieldMetadataProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildPrefixedFieldMetadataProvider())
+            .ShareSchemaWith(_fixture);
 
         try
         {
@@ -288,7 +289,8 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildProjectedMetadataProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildProjectedMetadataProvider())
+            .ShareSchemaWith(_fixture);
 
         try
         {
@@ -481,7 +483,8 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType()
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildFieldTypeMetadataProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildFieldTypeMetadataProvider())
+            .ShareSchemaWith(_fixture);
 
         try
         {
@@ -595,7 +598,8 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement()
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider())
+            .ShareSchemaWith(_fixture);
 
         try
         {
@@ -626,7 +630,8 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_LayerWithGeometryTypeButNoGeometryField_ReturnsGmlGeometry()
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildGeometryFromTypeMetadataProvider())
+            .ShareSchemaWith(_fixture);
 
         try
         {

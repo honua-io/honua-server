@@ -74,7 +74,7 @@ internal sealed partial class GdalContourJobExecutor(
             offset = parsed;
         }
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.InvalidInput($"Invalid contour inputs: {sourceError}");

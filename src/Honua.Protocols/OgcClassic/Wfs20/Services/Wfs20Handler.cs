@@ -127,13 +127,13 @@ internal sealed partial class Wfs20Handler
     {
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
 
-        // The per-feature-type query build + count has no cross-type dependency, so run
-        // every feature type's build+count pair concurrently instead of one at a time.
+        // The per-feature-type query build + count has no cross-type dependency, so the
+        // build+count pairs run concurrently, a bounded number at a time.
         // The offset/limit distribution below IS sequential (each type's share depends
         // on how much of the offset/count budget prior types in request order
         // consumed), so that accounting still runs as a second, I/O-free pass over the
         // precomputed results in the original order.
-        var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
+        var perTypeResults = await RequestFanOut.SelectAsync(featureTypes, async (featureType, typeCancellation) =>
         {
             var query = await BuildFeatureQueryAsync(
                 featureType,
@@ -149,13 +149,13 @@ internal sealed partial class Wfs20Handler
                 // request because the prefix does not match that plan.
                 enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
-                cancellationToken: cancellationToken,
+                cancellationToken: typeCancellation,
                 wfsVersion: wfsVersion);
 
-            var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
-            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+            var reader = await ResolveQueryReaderAsync(featureType, typeCancellation).ConfigureAwait(false);
+            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, typeCancellation).ConfigureAwait(false);
             return (featureType, query, layerMatched, reader);
-        })).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
 
         // Known limitation (BH2-006): the per-type COUNT results above are snapshots taken at
         // slightly different points in time.  A concurrent INSERT or DELETE on any feature type
@@ -233,6 +233,7 @@ internal sealed partial class Wfs20Handler
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(resource, normalizedFilter);
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
+        await EnsureServableBboxCrsAsync(spatialFilter, resource, cancellationToken).ConfigureAwait(false);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
             descriptor.LocalName,
@@ -526,6 +527,9 @@ internal sealed partial class Wfs20Handler
     private static SpatialFilter? ParseBboxFilterForResource(string? bbox, MetadataV2Object resource, string? wfsVersion = null)
         => ParseBboxFilterCore(bbox, resource.ReadSrid() ?? SpatialReference.WGS84.Wkid, wfsVersion);
 
+    private static WfsQueryException InvalidBbox(string message)
+        => new("InvalidParameterValue", message, Wfs20Utilities.ParameterNames.BBox);
+
     private static SpatialFilter? ParseBboxFilterCore(string? bbox, int layerSrid, string? wfsVersion = null)
     {
         if (string.IsNullOrWhiteSpace(bbox))
@@ -536,13 +540,13 @@ internal sealed partial class Wfs20Handler
         var parts = bbox.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length is not 4 and not 5)
         {
-            throw new ArgumentException("BBOX must contain 4 coordinates and an optional CRS identifier.");
+            throw InvalidBbox("BBOX must contain 4 coordinates and an optional CRS identifier.");
         }
 
         var crsDefinition = parts.Length == 5
             ? SpatialReferenceHelpers.TryParseCrsDefinition(parts[4], out var bboxCrs)
                 ? bboxCrs
-                : throw new ArgumentException($"Unsupported BBOX CRS '{parts[4]}'.")
+                : throw InvalidBbox($"Unsupported BBOX CRS '{parts[4]}'.")
             : SpatialReferenceHelpers.TryParseCrsDefinition(
                 layerSrid.ToString(CultureInfo.InvariantCulture),
                 out var layerCrs)
@@ -570,7 +574,7 @@ internal sealed partial class Wfs20Handler
                 out var maxX,
                 out var maxY))
         {
-            throw new ArgumentException("BBOX contains invalid numeric coordinates or is outside supported CRS bounds.");
+            throw InvalidBbox("BBOX contains invalid numeric coordinates or is outside supported CRS bounds.");
         }
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
@@ -739,14 +743,13 @@ internal sealed partial class Wfs20Handler
                 Wfs20Utilities.ParameterNames.SrsName);
         }
 
-        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false)
-            ?? await _crsRegistry.ResolveBySridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false);
+        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false);
         if (resolvedDefinition.HasValue)
         {
             return resolvedDefinition.Value.Srid;
         }
 
-        if (parsedDefinition.Srid == SpatialReference.WGS84.Wkid || parsedDefinition.Srid == 3857)
+        if (await IsServableSridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false))
         {
             return parsedDefinition.Srid;
         }
@@ -756,6 +759,26 @@ internal sealed partial class Wfs20Handler
             $"Unsupported srsName '{srsName}'.",
             Wfs20Utilities.ParameterNames.SrsName);
     }
+
+    private async ValueTask EnsureServableBboxCrsAsync(
+        SpatialFilter? spatialFilter,
+        MetadataV2Object resource,
+        CancellationToken cancellationToken)
+    {
+        if (spatialFilter?.Srid is not { } bboxSrid ||
+            bboxSrid == resource.ReadSrid() ||
+            await IsServableSridAsync(bboxSrid, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        throw InvalidBbox($"Unsupported BBOX CRS 'EPSG:{bboxSrid.ToString(CultureInfo.InvariantCulture)}'.");
+    }
+
+    private async ValueTask<bool> IsServableSridAsync(int srid, CancellationToken cancellationToken)
+        => srid == SpatialReference.WGS84.Wkid ||
+           srid == 3857 ||
+           (await _crsRegistry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
 
     private async ValueTask<AxisOrder> ResolveOutputAxisOrderAsync(
         string? srsName,

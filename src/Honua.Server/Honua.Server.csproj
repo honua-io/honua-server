@@ -200,9 +200,6 @@
     <EmbeddedResource Include="Migrations\*.sql" />
     <EmbeddedResource Include="MigrationContracts\attachment-schema-preamble.v1.sql.template"
                       LogicalName="Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template" />
-    <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
-                      Link="DeploymentProfiles\feature-catalog.json"
-                      LogicalName="Honua.Server.DeploymentProfiles.feature-catalog.json" />
     <EmbeddedResource Include="..\..\docs\gis\data\capability-manifest-crosswalk.v1.json"
                       Link="DeploymentProfiles\capability-manifest-crosswalk.v1.json"
                       LogicalName="Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json" />

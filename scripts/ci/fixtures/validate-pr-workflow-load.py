@@ -103,6 +103,10 @@ class PullRequestLoadTests(unittest.TestCase):
                 elif name == "normalize-derived-artifacts.yml":
                     self.assertEqual(cancellation, "true")
                     self.assertNotIn("queue", concurrency)
+                elif name in ("clean-code.yml", "repo-hygiene.yml"):
+                    # Light required checks: only a new head cancels a running
+                    # run; same-head events queue so the newest suite finishes.
+                    self.assertEqual(cancellation, "${{ github.event.action == 'synchronize' }}")
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
 
@@ -427,6 +431,24 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertTrue(evaluate(condition, event))
         event["event"]["pull_request"]["head"]["repo"]["full_name"] = "fork/repo"
         self.assertFalse(evaluate(condition, event))
+
+    def test_auto_merge_control_skips_label_and_edit_events_that_cannot_change_admission(self):
+        condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]
+
+        def admitted(action, **fields):
+            event = {"repository": "owner/repo", "event": {"action": action, **fields, "pull_request": {
+                "draft": False, "head": {"repo": {"full_name": "owner/repo"}},
+                "base": {"ref": "trunk"}, "user": {"login": "contributor"},
+            }}}
+            return evaluate(condition, event)
+
+        for action in ("labeled", "unlabeled"):
+            for name in ("hold", "train:hold", "train:escalated"):
+                self.assertTrue(admitted(action, label={"name": name}), (action, name))
+            self.assertFalse(admitted(action, label={"name": "bundle-exception"}), action)
+        self.assertTrue(admitted("edited", changes={"base": {"ref": {"from": "other"}}}))
+        self.assertFalse(admitted("edited", changes={"body": {"from": "old"}}))
+        self.assertTrue(admitted("synchronize"))
 
     def test_review_gate_admits_draft_conversion_to_shed_it(self):
         gate = workflow("review-gate.yml")

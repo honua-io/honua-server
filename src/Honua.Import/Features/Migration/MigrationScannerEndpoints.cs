@@ -22,6 +22,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Migration;
 
@@ -388,8 +389,7 @@ internal static partial class MigrationScannerEndpoints
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers["Content-Disposition"] =
-            $"attachment; filename=\"{filename}\"";
+        context.Response.Headers.ContentDisposition = AttachmentContentDisposition.Create(filename);
         context.Response.Headers["X-Content-Type-Options"] = "nosniff";
 
         var buffer = new ArrayBufferWriter<byte>();

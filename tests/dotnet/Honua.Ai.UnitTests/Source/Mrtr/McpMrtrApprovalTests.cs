@@ -80,6 +80,23 @@ public sealed class McpMrtrApprovalTests
     }
 
     [UnitTheory]
+    [InlineData("The catalog changed after this publish proposal was submitted. Submit a fresh proposal.",
+        "The catalog changed after this publish proposal was submitted. Submit a fresh proposal.")]
+    [InlineData(null, "The approved change did not complete.")]
+    public async Task TryResume_FailedProposal_ReportsItsRecordedReason(string? reason, string expected)
+    {
+        _store.GetAsync(ProposalId, Arg.Any<CancellationToken>())
+            .Returns(Proposal(OperationProposalStatus.Failed) with { ResolutionReason = reason });
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        var context = Attach(services, UrlCapable, "accept");
+
+        var result = await ApprovalContinuation.TryResumeAsync(context, new(OperationId, "reader"), CancellationToken.None);
+
+        result!.StructuredContent!.Value.GetProperty("message").GetString().Should().Be(expected);
+        result.IsError.Should().BeTrue();
+    }
+
+    [UnitTheory]
     [InlineData(OperationHandleStatus.Completed)]
     [InlineData(OperationHandleStatus.Failed)]
     [InlineData(OperationHandleStatus.Cancelled)]

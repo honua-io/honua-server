@@ -17,9 +17,9 @@ A response is public only when the route is a read of public content, the reques
 | --- | --- | --- | --- |
 | Tile of a public layer | 60 s | 300 s | May be served stale for 60 s while it is refreshed, and for a day if the service is unreachable |
 | Feature query on a public layer | 0 s (revalidates) | 30 s | May be served stale for 30 s while it is refreshed, and for a day if the service is unreachable |
-| Capabilities and metadata documents, TileJSON, publication styles (`/api/styles/{publicationId}.json`) | 30 s | 60 s | OGC API Styles (`/ogc/styles/*`) are not shared |
+| Capabilities and metadata documents, TileJSON, publication styles (`/api/styles/{publicationId}.json`), VectorTileServer style, sprites, glyphs and tilemap | 30 s | 60 s | OGC API Styles (`/ogc/styles/*`) are not shared |
 | Scene assets of a public scene | 60 s | 300 s | The scene's own cache setting replaces these values |
-| Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store` |
+| Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store`. VectorTileServer sprites, glyphs and tilemap hold no layer data, so an anonymous request for them is shared for every service |
 | Errors | never | never | `private, no-store` |
 
 WMS and WMTS key-value requests, OGC API Maps, OGC API Styles (`/ogc/styles/*`), static map images, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not shared in this release (spatial feature queries return `private, must-revalidate`).
@@ -84,6 +84,8 @@ When you remove a layer from the list, or turn off cache tags or the CDN configu
 ## The server's own cache on several tasks
 
 Pro editions also keep cached metadata, tiles and styles in each task's memory. Each entry is keyed by the catalog revision, so after a change on any task every other task stops replaying its entries within the revision check interval (`Cache__MetadataGraphRevalidationSeconds`, default 2 s). An entry for a layer, service, collection or scene is stored only after its access check allowed an anonymous caller, and no entry lives longer than the CDN lifetime of its response, so a task never hands the CDN an older copy after a purge.
+
+The task's cache also keeps a lifetime for each output-cache policy, set as a duration under `OutputCache` (for example `OutputCache__MvtTile=00:10:00`, `OutputCache__TileJson=00:05:00` or `OutputCache__SceneTileAsset=00:30:00`); the CDN lifetime above still caps it. Scene responses are the exception: their `OutputCache__SceneTilesetMetadata` and `OutputCache__SceneTileAsset` values are also the browser and CDN lifetime in their `Cache-Control`, unless the scene's own cache setting replaces them. Every value must be a positive duration on every edition: a zero or negative value stops the service at startup with an `OutputCache:<name> must be a positive duration` error. There is no switch to turn off one policy: a CDN lifetime of 0 (for example `SharedCache__Tile__SharedMaxAgeSeconds=0`) keeps that whole response class out of both the task's cache and the CDN, except where a scene, tileset, layer or emergency lifetime replaces it; to stop caching one scene, set its own cache setting to no-store.
 
 The exported `Honua` meter includes these origin cache instruments:
 

@@ -190,6 +190,23 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     [UnitTest]
+    public async Task HonuaLayerSink_LayerEndingInLineFeed_FailsValidation()
+    {
+        var sink = new CapturingLayerSink();
+        var executor = new HonuaLayerSinkExecutor(Options(), NullLogger<HonuaLayerSinkExecutor>.Instance, sink);
+
+        var (status, _, message) = await RunAsync(
+            executor,
+            ("input", BuildInputUri(Feature(Point(1, 2)))),
+            ("layer", "parcels\n"),
+            ("targetSrid", "4326"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        message.Should().Contain("identifier");
+        sink.Request.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task HonuaLayerSink_InvalidLoadMode_FailsValidation()
     {
         var sink = new CapturingLayerSink();

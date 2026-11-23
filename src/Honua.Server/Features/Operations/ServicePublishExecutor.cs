@@ -399,14 +399,8 @@ internal sealed class ServicePublishExecutor
             return Echo(handle);
         }
 
-        var details = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["jobId"] = progress.OperationId,
-            ["rowsMaterialized"] = progress.RowsMaterialized.ToString(CultureInfo.InvariantCulture),
-            ["rowsTotal"] = progress.RowsTotal.ToString(CultureInfo.InvariantCulture),
-            ["status"] = progress.Status.ToString(),
-        };
-        var resourceIds = new Dictionary<string, string>(handle.ResourceIds, StringComparer.Ordinal);
+        var view = LayerPublishJobStatusProjection.Describe(handle, progress);
+        var (details, resourceIds) = view;
         // A prior poll may have advertised this identity. Re-resolve it from
         // the current persisted stores on every poll before carrying it forward.
         resourceIds.Remove("serviceName");
@@ -414,12 +408,6 @@ internal sealed class ServicePublishExecutor
         resourceIds.Remove("layerId");
         resourceIds.Remove("serviceLayerIndex");
         var metadataRevision = progress.MetadataRevision ?? handle.MetadataRevision;
-        if (progress.LayerId is int layerId)
-        {
-            var layerText = layerId.ToString(CultureInfo.InvariantCulture);
-            details["storageLayerId"] = layerText;
-            resourceIds["storageLayerId"] = layerText;
-        }
 
         if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
             progress.LayerId is int committedLayerId)
@@ -452,22 +440,7 @@ internal sealed class ServicePublishExecutor
             }
         }
 
-        return Echo(handle) with
-        {
-            Status = MapStatus(progress.Status),
-            MetadataRevision = metadataRevision,
-            UpdatedAt = progress.CompletedAt ?? handle.UpdatedAt,
-            Reason = progress.ErrorMessage ?? handle.Reason,
-            ResourceIds = resourceIds,
-            Result = new OperationResultSummary
-            {
-                Summary = progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
-                    progress.LayerId is int published
-                    ? $"Published storage layer {published.ToString(CultureInfo.InvariantCulture)}."
-                    : $"Layer publish {progress.Status}.",
-                Details = details,
-            },
-        };
+        return LayerPublishJobStatusProjection.Apply(Echo(handle), progress, view);
     }
 
     private async Task<(PublishedLayerIdentity? Identity, PromotionReadback Promotion)> ResolvePublishedLayerReadbackAsync(
@@ -637,17 +610,6 @@ internal sealed class ServicePublishExecutor
             Reason = handle.Reason,
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
-        };
-
-    private static OperationHandleStatus MapStatus(Honua.Core.Features.Infrastructure.Domain.OperationStatus status)
-        => status switch
-        {
-            Honua.Core.Features.Infrastructure.Domain.OperationStatus.Queued => OperationHandleStatus.Queued,
-            Honua.Core.Features.Infrastructure.Domain.OperationStatus.Processing => OperationHandleStatus.Running,
-            Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed => OperationHandleStatus.Completed,
-            Honua.Core.Features.Infrastructure.Domain.OperationStatus.Failed => OperationHandleStatus.Failed,
-            Honua.Core.Features.Infrastructure.Domain.OperationStatus.Cancelled => OperationHandleStatus.Cancelled,
-            _ => OperationHandleStatus.Running,
         };
 
     private async Task<string> ResolveConnectionStringAsync(string? connectionId, CancellationToken cancellationToken)

@@ -56,7 +56,10 @@ LANE_JOBS = {
 # every compatibility assumption. Unknown top-level inputs also fail closed. The canonical shard
 # router independently promotes unscopable dispatches to full CI.
 SHARED = re.compile(r'(^src/(Honua[.]Core|Honua[.]ServiceDefaults|Honua[.]Hosting)/|^src/Honua[.]Server/(Hosting|Configuration|Infrastructure|Startup)/|^src/Honua[.]Server/EndpointRegistry[^/]*[.]cs$|^tests/dotnet/Honua[.]TestKit[./]|^tests/seed/|^Directory[.]|^global[.]json$|^NuGet[.]config$|^Honua[.]sln|^eng/|^build/)')
-KNOWN = re.compile(r'^(src/|tests/|test/|docs/|scripts/|[.]github/|docker/|samples/|README[.]md$)')
+KNOWN = re.compile(r'^(src/|tests/|test/|docs/|scripts/|[.]github/|docker/|samples/|certification/|README[.]md$)')
+# Honua.Ai embeds skills/** as resources, so a skill edit is a src/Honua.Ai edit.
+# certification/ feeds the roster workflow and unit and server tests only.
+EMBEDDED_SOURCE = (('skills/', 'src/Honua.Ai/skills/'),)
 
 
 def _load_yaml_mapping(path):
@@ -151,9 +154,17 @@ def _resolve_action_lanes(action_paths, repo_root):
     return selected
 
 
+def _as_source_path(path):
+    for prefix, source in EMBEDDED_SOURCE:
+        if path.startswith(prefix):
+            return source + path[len(prefix):]
+    return path
+
+
 def select(paths, repo_root=ROOT):
     if not paths:
         return dict.fromkeys(LANES, True)
+    paths = [_as_source_path(p) for p in paths]
     action_paths = [p for p in paths if p.startswith(ACTION_PATH_PREFIX)]
     other_paths = [p for p in paths if not p.startswith(ACTION_PATH_PREFIX)]
     if any(SHARED.search(p) or not KNOWN.search(p) for p in other_paths):

@@ -47,6 +47,15 @@ class HygieneCancellationTests(unittest.TestCase):
             with self.subTest(job=key):
                 self.assertNotIn('event.action', str(job.get('if', '')))
 
+    def test_only_a_new_head_cancels_a_running_light_check(self):
+        for path in ('.github/workflows/repo-hygiene.yml', '.github/workflows/clean-code.yml'):
+            with self.subTest(workflow=path):
+                concurrency = yaml.safe_load((ROOT / path).read_text())['concurrency']
+                self.assertEqual(concurrency['group'],
+                                 '${{ github.workflow }}-${{ github.event.pull_request.number }}')
+                self.assertEqual(concurrency['cancel-in-progress'],
+                                 "${{ github.event.action == 'synchronize' }}")
+
     def test_required_contract_stays_intact(self):
         self.assertEqual(self.job['name'], 'repo-hygiene / Repository hygiene')
         self.assertIn('evidence-paths', self.job['needs'])

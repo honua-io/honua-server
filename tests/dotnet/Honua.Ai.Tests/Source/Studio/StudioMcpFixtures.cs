@@ -56,6 +56,9 @@ internal static class StudioMcpFixtures
         });
     }
 
+    // Policy and agent authority see the canonical actor; Studio ownership keeps the caller id.
+    private const string CanonicalBypassActorId = "apikey:api-key:" + WebAppFixture.DevelopmentBypassActorId;
+
     private sealed class CompositionAgentAuthorityStore : IAgentAuthorityStore
     {
         public Task<AgentAuthorityCeiling?> GetAsync(
@@ -64,7 +67,7 @@ internal static class StudioMcpFixtures
             {
                 TenantId = tenantId,
                 PrincipalId = principalId,
-                Enabled = tenantId == CompositionTenantId && principalId == WebAppFixture.DevelopmentBypassActorId,
+                Enabled = tenantId == CompositionTenantId && principalId == CanonicalBypassActorId,
                 AllowedOperationIds = [StudioDraftMutationContext.UpdateOperationId],
                 MaximumBlastRadius = OperationBlastRadiusClass.ResourceScope,
                 MaximumSideEffect = OperationSideEffectClass.MutatesMetadata,
@@ -88,8 +91,8 @@ internal static class StudioMcpFixtures
         {
             var ownedUpdate = descriptor.OperationId == StudioDraftMutationContext.UpdateOperationId
                 && request.OperationId == descriptor.OperationId
-                && context.PrincipalId == WebAppFixture.DevelopmentBypassActorId
-                && request.VerifiedStudioDraftOwnerId == context.PrincipalId;
+                && context.PrincipalId == CanonicalBypassActorId
+                && request.VerifiedStudioDraftOwnerId == WebAppFixture.DevelopmentBypassActorId;
             return Task.FromResult(ownedUpdate ? PolicyDecision.Allowed : new PolicyDecision
             {
                 Kind = PolicyDecisionKind.Deny,
