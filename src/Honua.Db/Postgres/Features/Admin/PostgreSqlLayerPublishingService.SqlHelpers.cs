@@ -68,7 +68,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new NpgsqlParameter("configuredTable", NpgsqlTypes.NpgsqlDbType.Text)
+        command.Parameters.Add(new NpgsqlParameter("configuredTable", NpgsqlDbType.Text)
         {
             Value = _configuredFeatureSchema is null
                 ? DBNull.Value

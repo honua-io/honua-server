@@ -100,13 +100,17 @@ provisioning uses the registry location when enabled after the move.
 Migration `231_AdoptConfiguredFeatureStoreSchema.sql` moves the shared managed
 `features` table into the configured schema from `public`, where migration 001
 creates it (or `honua` on older hand-built databases). Rows, the table identity,
-indexes and the object ID sequence move with it, and registry rows that recorded the
-old location are updated. With `Database:Schema=public` the table is already in place. It moves only a table with Honua's `layer_id` and
+indexes and the object ID sequence move with it, and managed-layer registry rows
+that recorded the old location are updated. With `Database:Schema=public` the
+table is already in place. It moves only a table with Honua's `layer_id` and
 `attributes` columns, so a user table that happens to be called `features` stays
 where it is. The migration stops without changes when the configured schema
 already has a `features` table and a shared one also exists elsewhere, or when no
 shared table is found. The default `honua` schema skips it. With a custom schema,
 readiness requires it, as it does 227, even when startup migrations are disabled.
+Switching an existing install from the default schema to a custom one is not
+covered: metadata snapshots taken before the switch can still name
+`public.features`.
 
 For an existing database, back up the database and stop all older server and worker
 instances before running migrate-only. Review the migration plan and apply its

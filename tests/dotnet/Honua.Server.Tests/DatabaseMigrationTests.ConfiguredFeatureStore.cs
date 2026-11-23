@@ -82,7 +82,9 @@ public sealed partial class DatabaseMigrationTests
         var legacyTable = (string)(await ScalarAsync(connection, SharedFeatureTablesSql))!;
         var originalOid = await ScalarAsync(connection,
             $"INSERT INTO {legacyTable}(layer_id, attributes) VALUES (7, '{{}}'); " +
-            $"INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type) VALUES ('moved', '{legacyTable.Split('.')[0]}', 'features', 'Point'); " +
+            "INSERT INTO honua.layers(layer_name, table_schema, table_name, geometry_type, storage_options) VALUES " +
+            $"('moved', '{legacyTable.Split('.')[0]}', 'features', 'Point', '{{\"managedStore\":\"true\"}}'), " +
+            $"('source', '{legacyTable.Split('.')[0]}', 'features', 'Point', '{{\"sourceBacked\":\"true\"}}'); " +
             $"SELECT '{legacyTable}'::regclass::oid::bigint;");
 
         var configuration = ConfiguredRegistryConfiguration();
@@ -103,7 +105,9 @@ public sealed partial class DatabaseMigrationTests
             "INSERT INTO custom_registry.features(layer_id) VALUES (7) RETURNING objectid;"))
             .Should().Be(2L, "the owned objectid sequence moves with the table");
         (await ScalarAsync(connection, "SELECT table_schema FROM custom_registry.layers WHERE layer_name = 'moved';"))
-            .Should().Be("custom_registry", "registry rows follow the moved table");
+            .Should().Be("custom_registry", "managed registry rows follow the moved table");
+        (await ScalarAsync(connection, "SELECT table_schema FROM custom_registry.layers WHERE layer_name = 'source';"))
+            .Should().Be(legacyTable.Split('.')[0], "a source-backed row names its own source table");
         await guard.VerifyAsync(_connectionString);
     }
 

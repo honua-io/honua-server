@@ -52,12 +52,14 @@ BEGIN
 
     EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', shared_sources[1], 'features', target_schema);
 
-    -- Registry rows that recorded the old location follow the table (227 has already moved
-    -- the registry into the configured schema).
+    -- Managed-store registry rows that recorded the old location follow the table (227 has
+    -- already moved the registry into the configured schema). Source-backed rows name their
+    -- own source table, which may be a user table called features on another database.
     IF to_regclass(format('%I.%I', target_schema, 'layers')) IS NOT NULL THEN
         EXECUTE format(
-            'UPDATE %I.layers SET table_schema = %L WHERE table_name = %L AND coalesce(table_schema, %L) IN (%L, %L)',
-            target_schema, target_schema, 'features', '', '', shared_sources[1]);
+            'UPDATE %I.layers SET table_schema = %L WHERE table_name = %L AND coalesce(table_schema, %L) IN (%L, %L)'
+            ' AND storage_options ->> %L = %L',
+            target_schema, target_schema, 'features', '', '', shared_sources[1], 'managedStore', 'true');
     END IF;
 END
 $$;
