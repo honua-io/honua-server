@@ -26,6 +26,7 @@ const job = (name, conclusion, minute) => ({
   name, conclusion, started_at: `2026-11-23T01:${String(minute).padStart(2, '0')}:00Z`, html_url: `https://job/${name}`,
 });
 
+const BOT = { login: 'honua-io-bot[bot]', type: 'Bot' };
 const REPOS = [{ name: 'app', owner: { login: 'honua-io' }, default_branch: 'trunk' },
   { name: 'old', owner: { login: 'honua-io' }, archived: true, default_branch: 'main' }];
 
@@ -39,9 +40,9 @@ function fakeReads(state) {
     if (route === 'GET /repos/{owner}/{repo}/issues') {
       const fresh = issue => !params.since || Date.parse(issue.updated_at || NOW) >= Date.parse(params.since);
       return state.issues.filter(issue => issue.state === params.state && fresh(issue))
-        .map(issue => ({ ...issue, comments: (state.comments[issue.number] || []).length }));
+        .map(issue => ({ user: BOT, ...issue, comments: (state.comments[issue.number] || []).length }));
     }
-    if (route.endsWith('/comments')) return state.comments[params.issue_number] || [];
+    if (route.endsWith('/comments')) return (state.comments[params.issue_number] || []).map(item => ({ user: BOT, ...item }));
     throw new Error(`unexpected ${route}`);
   };
 }
@@ -64,7 +65,7 @@ function fakeWrites(state) {
       return { data: {} };
     }
     if (route === 'POST /repos/{owner}/{repo}/issues') {
-      const issue = { number: state.nextIssue++, state: 'open', title: params.title, body: params.body, labels: params.labels };
+      const issue = { number: state.nextIssue++, state: 'open', user: BOT, title: params.title, body: params.body, labels: params.labels };
       state.issues.push(issue);
       return { data: issue };
     }
@@ -292,6 +293,25 @@ test('an older success never closes an issue for a newer run that is being re-ru
   assert.deepEqual((await go(github)).closed, []);
   const green = fakeGithub({ runs: [run(1, 'nightly.yml', 'success'), run(3, 'nightly.yml', 'success')], issues });
   assert.deepEqual((await go(green)).closed, ['app#7']);
+});
+
+test('run markers from other users and issues not opened by a bot are ignored', async () => {
+  const key = '.github/workflows/nightly.yml::Build';
+  const issues = [
+    { number: 7, state: 'open', body: `<!-- scheduled-failure key=${key} -->\n<!-- scheduled-failure run=1 -->` },
+    { number: 8, state: 'open', user: { login: 'someone', type: 'User' }, body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::Test -->' },
+  ];
+  const comments = { 7: [{ user: { login: 'someone', type: 'User' }, body: '<!-- scheduled-failure run=99999 -->' }] };
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'success')], issues, comments });
+  assert.deepEqual((await go(github)).closed, ['app#7']);
+});
+
+test('issues are not closed as fixed when failures after the success were beyond the replay cap', async () => {
+  const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::A -->' }];
+  const failures = [3, 4, 5, 6, 7, 8, 9].map(id => run(id, 'nightly.yml', 'failure'));
+  const jobs = Object.fromEntries(failures.map(item => [item.id, [job('B', 'failure', 1)]]));
+  const github = fakeGithub({ runs: [run(2, 'nightly.yml', 'success'), ...failures], jobs, issues });
+  assert.deepEqual((await go(github)).closed, []);
 });
 
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {

@@ -153,7 +153,7 @@ async function comment(ctx, issueNumber, body) {
 // A success closes only issues whose recorded runs are all older (run ids only grow), so a failed
 // run being re-run, or a cancelled re-run, never lets an earlier success close it.
 async function newestRecordedRun(ctx, issue) {
-  const texts = [issue.body, ...(await commentsOf(ctx, issue.number)).map(item => item.body)];
+  const texts = [issue.body, ...(await commentsOf(ctx, issue)).map(item => item.body)];
   const ids = texts.flatMap(text => [...String(text || '').matchAll(/<!-- scheduled-failure run=(\d+) -->/g)]);
   return Math.max(0, ...ids.map(match => Number(match[1])));
 }
@@ -171,20 +171,23 @@ async function closeIssues(ctx, issues, run) {
 }
 
 // The issues list returns `comments` as a count, so fetched comment lists are cached per sweep.
-async function commentsOf(ctx, issueNumber) {
+// Only the issue author's comments are kept: the bot opened the issue, and run markers written by
+// anyone else (public repositories accept comments from any user) must not steer the sweep.
+async function commentsOf(ctx, issue) {
   const { github, owner, repo, commentCache } = ctx;
-  if (!commentCache.has(issueNumber)) {
-    commentCache.set(issueNumber, await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-      owner, repo, issue_number: issueNumber, per_page: 100,
-    }));
+  if (!commentCache.has(issue.number)) {
+    const all = await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+      owner, repo, issue_number: issue.number, per_page: 100,
+    });
+    commentCache.set(issue.number, all.filter(item => item.user?.login === issue.user?.login));
   }
-  return commentCache.get(issueNumber);
+  return commentCache.get(issue.number);
 }
 
 async function mentionsRun(ctx, issue, run) {
   const marker = runMarkerFor(run);
   if (issue.body?.includes(marker)) return true;
-  return (await commentsOf(ctx, issue.number)).some(item => item.body?.includes(marker));
+  return (await commentsOf(ctx, issue)).some(item => item.body?.includes(marker));
 }
 
 const claimText = (ctx, { lane, run, due }) =>
@@ -192,7 +195,7 @@ const claimText = (ctx, { lane, run, due }) =>
 
 // An issue whose claim comment failed after it was opened gets the claim on a later sweep.
 async function recordFailure(ctx, { issue, run, job, lane, due }) {
-  const comments = await commentsOf(ctx, issue.number);
+  const comments = await commentsOf(ctx, issue);
   if (!comments.some(item => item.body?.startsWith('claimed: '))) {
     const claim = claimText(ctx, { lane, run, due });
     await comment(ctx, issue.number, claim);
@@ -217,7 +220,7 @@ async function openIssue(ctx, args) {
   const claim = claimText(ctx, args);
   await comment(ctx, issue.number, claim);
   ctx.commentCache.set(issue.number, [{ body: claim }]);
-  return { number: issue.number, body, state: 'open' };
+  return { number: issue.number, body, state: 'open', user: issue.user };
 }
 
 async function workflowNameOf(ctx, run) {
@@ -271,13 +274,13 @@ async function listRuns(ctx, since) {
   return runs;
 }
 
-// Every open issue regardless of age (a weekly workflow's issue may be untouched for days), plus
+// Bot-opened issues only. Every open issue regardless of age (a weekly workflow's issue may be untouched for days), plus
 // issues closed inside the run window, whose run markers stop a recorded run being filed again.
 async function knownIssues(ctx, since) {
   const { github, owner, repo } = ctx;
   const list = params => github.paginate('GET /repos/{owner}/{repo}/issues', { owner, repo, labels: LABEL, per_page: 100, ...params });
   const issues = [...await list({ state: 'open' }), ...await list({ state: 'closed', since })];
-  return issues.filter(issue => !issue.pull_request && keyOf(issue.body));
+  return issues.filter(issue => !issue.pull_request && issue.user?.type === 'Bot' && keyOf(issue.body));
 }
 
 // An open issue that records none of the runs after the workflow's last success belongs to a
@@ -303,10 +306,12 @@ async function sweepWorkflow(ctx, { path, runs, issues }) {
   }
   const lastSuccess = runs.map(run => run.conclusion).lastIndexOf('success');
   const laterRuns = runs.slice(lastSuccess + 1);
-  for (const run of laterRuns.slice(-(ctx.config.maxRunsPerWorkflow || DEFAULT_RUNS_PER_WORKFLOW))) {
+  const cap = ctx.config.maxRunsPerWorkflow || DEFAULT_RUNS_PER_WORKFLOW;
+  for (const run of laterRuns.slice(-cap)) {
     await fileRunFailures(ctx, { path, run, issues });
   }
-  if (lastSuccess >= 0) await closeFixedIssues(ctx, { issues, success: runs[lastSuccess], laterRuns });
+  // Close as fixed only when every failure after the success was replayed this sweep.
+  if (lastSuccess >= 0 && laterRuns.length <= cap) await closeFixedIssues(ctx, { issues, success: runs[lastSuccess], laterRuns });
 }
 
 async function sweepRepo(ctx) {
