@@ -11,18 +11,18 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
 {
     private readonly ChannelFieldCollectionActionDispatcher _dispatcher;
     private readonly Dictionary<FieldCollectionAutomationActionType, IFieldCollectionActionHandler> _handlers;
-    private readonly FieldCollectionAutomationOptions _options;
+    private readonly IOptionsMonitor<FieldCollectionAutomationOptions> _options;
     private readonly ILogger<FieldCollectionAutomationDispatchBackgroundService> _logger;
 
     public FieldCollectionAutomationDispatchBackgroundService(
         ChannelFieldCollectionActionDispatcher dispatcher,
         IEnumerable<IFieldCollectionActionHandler> handlers,
-        IOptions<FieldCollectionAutomationOptions> options,
+        IOptionsMonitor<FieldCollectionAutomationOptions> options,
         ILogger<FieldCollectionAutomationDispatchBackgroundService> logger)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         ArgumentNullException.ThrowIfNull(handlers);
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         var map = new Dictionary<FieldCollectionAutomationActionType, IFieldCollectionActionHandler>();
@@ -37,10 +37,12 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
+        // Enabled is read live, as the store that enqueues reads it: a reload that
+        // turns dispatch on must find a reader, and one that turns it off must stop
+        // delivery. The reader therefore runs for the life of the host.
+        if (!_options.CurrentValue.Enabled)
         {
             LogDisabled(_logger);
-            return;
         }
 
         try
@@ -56,16 +58,23 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
         }
     }
 
-    private async Task ProcessAsync(FieldCollectionActionInvocation invocation, CancellationToken cancellationToken)
+    internal async Task ProcessAsync(FieldCollectionActionInvocation invocation, CancellationToken cancellationToken)
     {
         var actionType = invocation.Action.ActionType;
+        var options = _options.CurrentValue;
+        if (!options.Enabled)
+        {
+            LogSkippedDisabled(_logger, actionType, invocation.InvocationId);
+            return;
+        }
+
         if (!_handlers.TryGetValue(actionType, out var handler))
         {
             LogNoHandler(_logger, actionType, invocation.Action.Id);
             return;
         }
 
-        var maxAttempts = Math.Max(1, _options.MaxAttempts);
+        var maxAttempts = Math.Max(1, options.MaxAttempts);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             FieldCollectionActionResult result;
@@ -130,4 +139,7 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
 
     [LoggerMessage(EventId = 21224, Level = LogLevel.Warning, Message = "No FieldCollection automation handler registered. ActionType={ActionType} ActionId={ActionId}")]
     private static partial void LogNoHandler(ILogger logger, FieldCollectionAutomationActionType actionType, string actionId);
+
+    [LoggerMessage(EventId = 21226, Level = LogLevel.Information, Message = "FieldCollection automation dispatch is disabled; dropped queued invocation. ActionType={ActionType} InvocationId={InvocationId}")]
+    private static partial void LogSkippedDisabled(ILogger logger, FieldCollectionAutomationActionType actionType, string invocationId);
 }
