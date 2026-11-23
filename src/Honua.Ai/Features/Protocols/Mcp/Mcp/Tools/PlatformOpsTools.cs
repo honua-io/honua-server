@@ -90,6 +90,11 @@ internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger)
         var argument = McpToolHelpers.ParseOptionalArguments(
             arguments,
             McpJsonContext.Default.McpDeployOperationsArgument);
+        if (argument is not null)
+        {
+            argument.Status = McpApprovalStatus.Normalize(argument.Status);
+        }
+
         var payload = await ResolveReader(httpContext)
             .GetDeployOperationsAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);

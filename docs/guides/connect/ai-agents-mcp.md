@@ -53,6 +53,8 @@ Modern requests support Multi Round-Trip Requests (MRTR, SEP-2322). Instead of a
 
 Clients that declare neither mode, and legacy sessions, get the same results as before.
 
+**Approval status names.** A change waiting for a person's approval is `AwaitingApproval` on proposals, deploy operations and publication status. Operation handles report the same state as `RequiresApproval` (with `requiresApproval: true`), and status filters such as `honua_deploy_operations` accept either name. Package review lists the requirement as `requires_approval`, and a refused call that needs approval carries the error code `approval_required`.
+
 ## API-key proposals
 
 The published MCP tool `honua_admin_api_key_revoke` submits a proposal through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; the key remains active until approved execution. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
