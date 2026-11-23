@@ -75,6 +75,7 @@ CATEGORY_MAP = {
     "paging": "CERT-PAGE-01",
     "errors": "CERT-ERRH-01",
     "render": "CERT-RNDR-01",
+    "geometry": "CERT-GEOM-01",
     # Export family is intentionally **unmapped** — see _UNMAPPED_CATEGORIES
     # below and the module docstring. The CLI / SDK lane row in the matrix
     # excludes CERT-RNDR for this lane, so a passing ogr2ogr export must not
@@ -132,7 +133,7 @@ _FEATURE_READ_IDS = frozenset({"CERT-CONN-01", "CERT-DISC-01", "CERT-SCHM-01", "
 APPLICABLE_BY_PROTOCOL: dict[str, frozenset[str]] = {
     "ogc-features": _FEATURE_READ_IDS,
     "wfs": _FEATURE_READ_IDS,
-    "featureserver": _FEATURE_READ_IDS | {"CERT-PAGE-01", "CERT-ERRH-01"},
+    "featureserver": _FEATURE_READ_IDS | {"CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"},
     "mapserver": frozenset({"CERT-CONN-01", "CERT-RNDR-01"}),
 }
 
@@ -181,6 +182,11 @@ def build_envelope(
 
     results: list[dict] = []
     applicable = APPLICABLE_BY_PROTOCOL.get(cert_protocol, _FEATURE_READ_IDS)
+    for cid, status in sorted(cid_status.items()):
+        if cid not in applicable and status == "fail":
+            print(f"::warning::GDAL {cert_protocol} failure maps to {cid}, which does not apply to that "
+                  "protocol; it is not in the envelope. Fix the test module name or APPLICABLE_BY_PROTOCOL.",
+                  file=sys.stderr)
     for cid in COMMON_CORE_IDS:
         if cid in applicable:
             status = cid_status.get(cid)

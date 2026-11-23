@@ -329,7 +329,8 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     report: TestReport = outcome.get_result()
 
     # Only act on the call phase (or setup for skips)
-    if report.when == "call" and report.failed:
+    # A fixture that cannot reach the server fails in setup; that is a failed case, not a skip.
+    if report.when in ("setup", "call") and report.failed:
         protocol, category = _derive_protocol_category(item)
         _evidence.record(
             item.name, protocol, category, "fail",

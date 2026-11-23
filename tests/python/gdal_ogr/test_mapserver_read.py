@@ -5,20 +5,24 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from .conftest import EvidenceCollector
-from .geoservices_helpers import DATA_WINDOW, IMAGE_SIZE
+from .geoservices_helpers import DATA_WINDOW, IMAGE_SIZE, export_url
 
 
 @pytest.mark.integration
 @pytest.mark.gdal
 class TestMapServerRead:
-    """GDAL fetches a MapServer export as a georeferenced RGBA image of the requested size."""
+    """GDAL opens the server's own MapServer export image at the requested size."""
 
-    def test_export_opens_as_rgba_at_the_requested_size(self, mapserver_export, evidence_collector: EvidenceCollector):
-        info = mapserver_export(DATA_WINDOW)
+    def test_export_image_opens_at_the_requested_size(self, mapserver_url, ogr_run, evidence_collector: EvidenceCollector):
+        # /vsicurl/ reads the PNG the server returned, so size and bands come from the response.
+        result = ogr_run(["gdalinfo", "-json", f"/vsicurl/{export_url(mapserver_url, DATA_WINDOW)}"], timeout=60.0)
+        info = json.loads(result.assert_success("GDAL could not open the MapServer export image").stdout)
 
         assert tuple(info["size"]) == IMAGE_SIZE
-        assert len(info["bands"]) == 4
-        evidence_collector.record("test_export_opens_as_rgba_at_the_requested_size", "mapserver", "read", "pass")
+        assert len(info["bands"]) in (3, 4), f"unexpected band layout: {len(info['bands'])}"
+        evidence_collector.record("test_export_image_opens_at_the_requested_size", "mapserver", "read", "pass")

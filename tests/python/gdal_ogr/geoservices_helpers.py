@@ -10,6 +10,7 @@ The seeded ``browser_compat`` layer 2000 holds exactly three points
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 from typing import Callable
 
@@ -18,9 +19,13 @@ from .conftest import OgrResult, esrijson_dsn
 SEEDED_NAMES = frozenset({"pt-alpha", "pt-beta", "pt-gamma"})
 
 
-def read_features(ogr_run: Callable[..., OgrResult], layer_url: str, **params: str) -> list[dict]:
-    """Read a FeatureServer query through GDAL's ESRIJSON driver as GeoJSON features."""
-    result = ogr_run(["ogr2ogr", "-f", "GeoJSON", "/vsistdout/", esrijson_dsn(layer_url, **params)])
+def read_features(ogr_run: Callable[..., OgrResult], layer_url: str, *open_options: str, **params: str) -> list[dict]:
+    """Read a FeatureServer query through GDAL's ESRIJSON driver as GeoJSON features.
+
+    ``open_options`` are ESRIJSON open options such as ``FEATURE_SERVER_PAGING=NO``.
+    """
+    options = [arg for option in open_options for arg in ("-oo", option)]
+    result = ogr_run(["ogr2ogr", "-f", "GeoJSON", *options, "/vsistdout/", esrijson_dsn(layer_url, **params)])
     result.assert_success("ogr2ogr could not read the FeatureServer query through ESRIJSON")
     return json.loads(result.stdout)["features"]
 
@@ -50,8 +55,17 @@ def ags_service_xml(mapserver_url: str, window: tuple[float, float, float, float
         f"<DataWindow><UpperLeftX>{ulx}</UpperLeftX><UpperLeftY>{uly}</UpperLeftY>"
         f"<LowerRightX>{lrx}</LowerRightX><LowerRightY>{lry}</LowerRightY>"
         f"<SizeX>{IMAGE_SIZE[0]}</SizeX><SizeY>{IMAGE_SIZE[1]}</SizeY></DataWindow>"
-        "<BandsCount>4</BandsCount><ZeroBlockHttpCodes>204</ZeroBlockHttpCodes></GDAL_WMS>"
+        "<BandsCount>4</BandsCount></GDAL_WMS>"
     )
+
+
+def export_url(mapserver_url: str, window: tuple[float, float, float, float], layer: str = "2000") -> str:
+    """The MapServer export request itself, for GDAL to read the server's own image over /vsicurl/."""
+    ulx, uly, lrx, lry = window
+    query = {"bbox": f"{ulx},{lry},{lrx},{uly}", "bboxSR": "4326", "imageSR": "4326",
+             "size": f"{IMAGE_SIZE[0]},{IMAGE_SIZE[1]}", "format": "png", "transparent": "true",
+             "layers": f"show:{layer}", "f": "image"}
+    return f"{mapserver_url}/export?{urllib.parse.urlencode(query)}"
 
 
 def export_image(ogr_run: Callable[..., OgrResult], service_xml: str, target: Path) -> dict:

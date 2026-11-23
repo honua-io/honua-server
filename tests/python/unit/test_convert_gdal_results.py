@@ -35,15 +35,15 @@ def test_feature_protocols_keep_their_four_ids():
     }
 
 
-def test_featureserver_adds_paging_and_error_handling():
+def test_featureserver_adds_paging_errors_and_geometry():
     categories = {"read": "pass", "discovery": "pass", "schema_introspection": "pass",
                   "attribute_query": "pass", "spatial_query": "pass", "paging": "pass", "errors": "pass",
-                  "export_gpkg": "pass"}
+                  "geometry": "pass", "export": "fail"}
 
     applicable = _non_applicable_removed(_statuses("featureserver", categories))
 
     assert set(applicable) == {"CERT-CONN-01", "CERT-DISC-01", "CERT-SCHM-01", "CERT-QFLT-01",
-                               "CERT-PAGE-01", "CERT-ERRH-01"}
+                               "CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"}
     assert set(applicable.values()) == {"pass"}
 
 
@@ -60,3 +60,10 @@ def test_render_never_certifies_a_feature_protocol():
 def test_new_protocols_map_to_their_cert_names():
     assert convert.PROTOCOL_MAP["featureserver"] == "featureserver"
     assert convert.PROTOCOL_MAP["mapserver"] == "mapserver"
+
+
+def test_a_failure_outside_the_protocol_scope_is_warned(capsys):
+    statuses = _statuses("mapserver", {"read": "pass", "render": "pass", "errors": "fail"})
+
+    assert statuses["CERT-ERRH-01"] == "not-applicable"
+    assert "CERT-ERRH-01, which does not apply" in capsys.readouterr().err

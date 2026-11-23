@@ -21,3 +21,11 @@ class TestFeatureServerPaging:
 
         assert names == sorted(SEEDED_NAMES), "GDAL did not page through every record, or a page repeated one"
         evidence_collector.record("test_one_record_pages_reach_every_feature", "featureserver", "paging", "pass")
+
+    def test_server_limits_a_page_to_the_requested_count(self, featureserver_layer_url, ogr_run, evidence_collector: EvidenceCollector):
+        # With GDAL's paging off, only the server's first page arrives: one record, not all three.
+        first_page = read_features(ogr_run, featureserver_layer_url, "FEATURE_SERVER_PAGING=NO",
+                                   resultRecordCount="1", orderByFields="name")
+
+        assert feature_names(first_page) == ["pt-alpha"]
+        evidence_collector.record("test_server_limits_a_page_to_the_requested_count", "featureserver", "paging", "pass")
