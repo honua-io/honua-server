@@ -169,7 +169,9 @@ internal static class ProposalEndpoints
         var execution = instanceStore is not null && proposal.Audit.OperationInstanceId is { Length: > 0 } instanceId
             ? await instanceStore.GetAsync(instanceId, context.RequestAborted).ConfigureAwait(false)
             : null;
-        return Results.Json(ToDetail(proposal, OperationProposalExecutionView.From(proposal, execution)),
+        var pinState = await ServicePublishProposalFreshness.ReadPinStateAsync(proposal, context.RequestServices, context.RequestAborted)
+            .ConfigureAwait(false);
+        return Results.Json(ToDetail(proposal, OperationProposalExecutionView.From(proposal, execution), pinState),
             ProposalJsonContext.Default.ProposalDetailResponse);
     }
 
@@ -314,7 +316,9 @@ internal static class ProposalEndpoints
             }
 
             var review = await authority.OpenReviewAsync(proposal, context).ConfigureAwait(false);
-            return Results.Json(new ProposalHumanReviewResponse { Proposal = ToDetail(proposal), Review = review },
+            var pinState = await ServicePublishProposalFreshness.ReadPinStateAsync(proposal, context.RequestServices, context.RequestAborted)
+                .ConfigureAwait(false);
+            return Results.Json(new ProposalHumanReviewResponse { Proposal = ToDetail(proposal, pinState: pinState), Review = review },
                 ProposalHumanReviewJsonContext.Default.ProposalHumanReviewResponse);
         }
         catch (HumanApprovalRequiredException exception)
@@ -461,7 +465,9 @@ internal static class ProposalEndpoints
         proposal.Status is OperationProposalStatus.Planned or OperationProposalStatus.AwaitingApproval
         && proposal.Initiation is not { Version: OperationInitiationEvidence.CurrentVersion };
 
-    private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
+    private static ProposalDetailResponse ToDetail(
+        OperationProposal proposal, OperationProposalExecutionView? execution = null,
+        ServicePublishPinState pinState = ServicePublishPinState.NotChecked) => new()
     {
         ProposalId = proposal.ProposalId,
         OperationId = proposal.OperationId,
@@ -469,8 +475,8 @@ internal static class ProposalEndpoints
         PlanHash = proposal.SealedPlanHash,
         Initiation = proposal.Initiation?.Kind.ToString() ?? "Unknown",
         ApprovalChannel = proposal.HumanApproval?.Channel,
-        RequiresReproposal = CatalogMoved(proposal, execution) || RequiresFreshProposal(proposal),
-        ApprovalRemediation = ApprovalRemediationFor(proposal, execution),
+        RequiresReproposal = CatalogMoved(proposal, execution, pinState) || RequiresFreshProposal(proposal),
+        ApprovalRemediation = ApprovalRemediationFor(proposal, execution, pinState),
         Kind = proposal.Kind.ToString(),
         Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,
@@ -495,13 +501,15 @@ internal static class ProposalEndpoints
     };
 
     // A publish pinned to a catalog revision that has since moved can only succeed as a fresh proposal.
-    private static bool CatalogMoved(OperationProposal proposal, OperationProposalExecutionView? execution)
-        => ServicePublishProposalFreshness.FailedOnStalePin(
+    private static bool CatalogMoved(
+        OperationProposal proposal, OperationProposalExecutionView? execution, ServicePublishPinState pinState)
+        => pinState == ServicePublishPinState.Stale || ServicePublishProposalFreshness.FailedOnStalePin(
             proposal, execution?.Status ?? proposal.Status.ToString(), execution?.ResolutionReason ?? proposal.ResolutionReason);
 
-    private static string? ApprovalRemediationFor(OperationProposal proposal, OperationProposalExecutionView? execution)
+    private static string? ApprovalRemediationFor(
+        OperationProposal proposal, OperationProposalExecutionView? execution, ServicePublishPinState pinState)
     {
-        if (CatalogMoved(proposal, execution))
+        if (CatalogMoved(proposal, execution, pinState))
         {
             return LayerPublicationBaseChanged.ProposalReason;
         }
