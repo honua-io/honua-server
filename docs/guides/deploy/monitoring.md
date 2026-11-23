@@ -62,14 +62,13 @@ changes. Any other value stops startup with an error naming the setting.
 
 Fault responses carry `X-Honua-Qualification-Fault`. `ServeErrors` models a bad
 release that starts but serves errors: only the deployment alarms can see it, and
-rolling back removes the setting. `Wedged` is one-shot. The token (8 to 64 letters,
-digits or hyphens, new for each gate run) is recorded in the shared database by the
-first task that checks it as it starts. Tasks that check within 150 seconds,
-the rest of the same rollout, wedge too. Tasks started by the watchdog's rolling
-restart check later and serve normally, so the restart cannot loop. The window assumes every task of the
-faulted rollout starts within 150 seconds of the first; a rollout that starts tasks in
-later batches leaves the stack partly wedged, and the gate row then fails rather than passes. Without a
-database, or if the record cannot be read, the process serves normally.
+rolling back removes the setting. `Wedged` is one-shot on ECS Fargate. The token
+(8 to 64 letters, digits or hyphens, new for each gate run) is recorded in the
+shared database with the first task's ECS deployment ID. All tasks in that
+deployment wedge. Tasks created by the watchdog's rolling restart belong to a new
+deployment and serve normally. The gate task role needs `ecs:DescribeTasks` on
+tasks in its cluster. If the database or ECS deployment ID is unavailable within
+the two-second startup check, the server serves normally.
 
 ## Which replica answered (`Honua-Instance`)
 

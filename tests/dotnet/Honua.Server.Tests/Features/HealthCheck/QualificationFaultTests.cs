@@ -2,12 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Server.Features.HealthCheck;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
@@ -79,6 +81,34 @@ public sealed class QualificationFaultTests
     }
 
     [UnitTest]
+    public async Task GetActiveAsync_CancelledRequestDoesNotCancelTheSharedDecision()
+    {
+        var resolution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var marker = Substitute.For<IQualificationWedgeMarker>();
+        marker.ShouldWedgeAsync(Token, Arg.Any<CancellationToken>()).Returns(resolution.Task);
+        var gate = Gate(QualificationFault.Parse("Wedged:" + Token), marker);
+        using var request = new CancellationTokenSource();
+
+        var cancelled = gate.GetActiveAsync(request.Token);
+        request.Cancel();
+
+        await FluentActions.Awaiting(() => cancelled).Should().ThrowAsync<OperationCanceledException>();
+        resolution.SetResult(true);
+        (await gate.GetActiveAsync()).Should().Be(QualificationFaultKind.Wedged);
+    }
+
+    [UnitTest]
+    public async Task GetActiveAsync_StalledMarkerFallsBackToServing()
+    {
+        var resolution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var marker = Substitute.For<IQualificationWedgeMarker>();
+        marker.ShouldWedgeAsync(Token, Arg.Any<CancellationToken>()).Returns(resolution.Task);
+        var gate = Gate(QualificationFault.Parse("Wedged:" + Token), marker);
+
+        (await gate.GetActiveAsync().WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(QualificationFaultKind.None);
+    }
+
+    [UnitTest]
     public async Task GetActiveAsync_ServeErrors_NeedsNoMarker()
         => (await Gate(QualificationFault.Parse("ServeErrors"), marker: null).GetActiveAsync())
             .Should().Be(QualificationFaultKind.ServeErrors);
@@ -97,7 +127,9 @@ public sealed class QualificationFaultTests
     [UnitTest]
     public async Task AddQualificationFault_WedgedWithoutSharedDatabase_ServesNormally()
     {
-        using var provider = Register("Wedged:" + Token).BuildServiceProvider();
+        var services = Register("Wedged:" + Token);
+        services.AddSingleton(provider => new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>()));
+        using var provider = services.BuildServiceProvider();
 
         (await provider.GetRequiredService<QualificationFaultGate>().GetActiveAsync()).Should().Be(QualificationFaultKind.None);
     }

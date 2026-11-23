@@ -1,7 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+#if !HONUA_EXCLUDE_AWS
+using Honua.Aws.Features.ControlPlane;
 using Honua.ControlPlane;
+using Npgsql;
+#endif
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -18,7 +22,7 @@ internal sealed class QualificationFaultMiddleware(RequestDelegate next, Qualifi
             return;
         }
 
-        var status = await gate.GetActiveAsync().ConfigureAwait(false) switch
+        var status = await gate.GetActiveAsync(context.RequestAborted).ConfigureAwait(false) switch
         {
             QualificationFaultKind.Wedged => StatusCodes.Status503ServiceUnavailable,
             QualificationFaultKind.ServeErrors when !path.StartsWithSegments("/healthz/deep", StringComparison.OrdinalIgnoreCase)
@@ -51,15 +55,31 @@ internal static class QualificationFaultExtensions
         // Only the wedge needs the shared database, so installs without it never resolve the store.
         services.AddSingleton(provider => new QualificationFaultGate(
             fault,
-            fault.Kind == QualificationFaultKind.Wedged && provider.GetService<JobStoreDatabase>() is { } database
-                ? new QualificationWedgeMarker(database)
+            fault.Kind == QualificationFaultKind.Wedged
+                ? ResolveMarker(provider)
                 : null,
             provider.GetRequiredService<ILogger<QualificationFaultGate>>()));
         return services;
     }
 
-    // The wedge is decided as the process starts, not on its first request, so every task of a
-    // rollout decides inside the arming window however sparse its traffic is.
+    private static IQualificationWedgeMarker? ResolveMarker(IServiceProvider provider)
+    {
+        var marker = provider.GetService<IQualificationWedgeMarker>();
+#if HONUA_EXCLUDE_AWS
+        return marker;
+#else
+        if (marker is not null || provider.GetService<NpgsqlDataSource>() is null)
+        {
+            return marker;
+        }
+
+        return provider.GetService<JobStoreDatabase>() is { } database
+            ? new QualificationWedgeMarker(database, QualificationEcsDeployment.ReadAsync)
+            : null;
+#endif
+    }
+
+    // Decide at process start so the probe does not have to initiate discovery.
     public static IApplicationBuilder UseQualificationFault(this IApplicationBuilder app)
     {
         var gate = app.ApplicationServices.GetRequiredService<QualificationFaultGate>();

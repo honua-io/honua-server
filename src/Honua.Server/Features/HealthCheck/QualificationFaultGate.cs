@@ -7,6 +7,8 @@ namespace Honua.Server.Features.HealthCheck;
 // one-shot; without it, or when the marker cannot be read, the process serves normally.
 internal sealed partial class QualificationFaultGate
 {
+    private static readonly TimeSpan MarkerTimeout = TimeSpan.FromSeconds(2);
+
     private readonly QualificationFault _fault;
     private readonly IQualificationWedgeMarker? _marker;
     private readonly ILogger<QualificationFaultGate> _logger;
@@ -23,7 +25,8 @@ internal sealed partial class QualificationFaultGate
 
     public bool IsConfigured => _fault.Kind != QualificationFaultKind.None;
 
-    public Task<QualificationFaultKind> GetActiveAsync() => _active.Value;
+    public Task<QualificationFaultKind> GetActiveAsync(CancellationToken cancellationToken = default)
+        => _active.Value.WaitAsync(cancellationToken);
 
     private async Task<QualificationFaultKind> ResolveAsync()
     {
@@ -41,8 +44,10 @@ internal sealed partial class QualificationFaultGate
 
         try
         {
-            // The decision is shared by every request, so no single request's cancellation applies.
-            if (!await _marker.ShouldWedgeAsync(_fault.Token!, CancellationToken.None).ConfigureAwait(false))
+            // Each request can cancel its wait independently of the shared startup decision.
+            using var deadline = new CancellationTokenSource(MarkerTimeout);
+            if (!await _marker.ShouldWedgeAsync(_fault.Token!, deadline.Token)
+                    .WaitAsync(deadline.Token).ConfigureAwait(false))
             {
                 WedgeAlreadyConsumed(_logger);
                 return QualificationFaultKind.None;
