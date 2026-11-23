@@ -32,8 +32,7 @@ class ManagedWorkflowTests(unittest.TestCase):
         profiles = (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text()
         self.assertIn('"-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"', profiles)
         self.assertIn('os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false"', profiles)
-        self.assertIn('if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi', producer)
-        self.assertIn('protocol-profile-selection.py --dry-run "${profile_scope}"', producer)
+        self.assertNotIn('protocol-profile', producer)
         self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
@@ -80,11 +79,26 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertIn('needs: changes', formatter)
         self.assertIn('dotnet-restore-retry.sh Honua.sln', formatter)
         self.assertIn('dotnet format Honua.sln --verify-no-changes --no-restore', formatter)
-        self.assertIn('build, runtime-proofs, format, test-all', job('ci-gate'))
+        self.assertIn('build, protocol-profiles, runtime-proofs, format, test-all', job('ci-gate'))
+
+    def test_protocol_profiles_are_a_sibling_of_the_producer(self):
+        # A reduced-profile break must not skip the jobs that need `build`.
+        profiles = job('protocol-profiles')
+        self.assertIn('needs: changes', profiles)
+        self.assertNotIn('needs.build', profiles)
+        self.assertEqual(job('build').split('    if: ', 1)[1].split('\n', 1)[0],
+                         profiles.split('    if: ', 1)[1].split('\n', 1)[0])
+        self.assertIn('if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi', profiles)
+        self.assertIn('protocol-profile-selection.py --dry-run "${profile_scope}"', profiles)
+        self.assertIn('build-selected-protocol-profiles.py --selection', profiles)
+        self.assertIn("PRODUCER_RUN_ANALYZERS: 'false'", profiles)
+        for name in ['build', 'server-tests', 'dotnet-foundation-family-tests', 'runtime-proofs']:
+            self.assertNotIn('Build selected protocol profiles', job(name))
 
     def test_changed_multiline_shell_blocks_parse(self):
         # Expressions are replaced only for bash syntax checking; no commands run.
-        for name in ['build', 'dotnet-foundation-family-tests', 'server-tests', 'runtime-proofs']:
+        for name in ['build', 'protocol-profiles', 'dotnet-foundation-family-tests', 'server-tests',
+                     'runtime-proofs']:
             for match in re.finditer(r'        run: \|\n((?:          .*\n|\n)+)', job(name)):
                 shell = '\n'.join(line[10:] for line in match[1].splitlines())
                 shell = re.sub(r'\$\{\{.*?\}\}', 'fixture', shell)
@@ -107,9 +121,10 @@ class ManagedWorkflowTests(unittest.TestCase):
     def test_ci_gate_selected_skips_fail_and_docs_dependabot_skips_remain_valid(self):
         shell = self.gate_shell('ci-gate')
         base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_RUNTIME_PROOFS='true', REQUIRE_FORMAT='true',
-                    BUILD_RESULT='success', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT='success')
+                    BUILD_RESULT='success', PROFILES_RESULT='success', FORMAT_RESULT='success',
+                    RUNTIME_PROOFS_RESULT='success')
         self.assertEqual(0, self.execute_guard(shell, **base))
-        for lane in ['BUILD_RESULT', 'FORMAT_RESULT', 'RUNTIME_PROOFS_RESULT']:
+        for lane in ['BUILD_RESULT', 'PROFILES_RESULT', 'FORMAT_RESULT', 'RUNTIME_PROOFS_RESULT']:
             for result in ['skipped', 'cancelled', 'failure']:
                 with self.subTest(lane=lane, result=result):
                     self.assertNotEqual(0, self.execute_guard(shell, **(base | {lane: result})))

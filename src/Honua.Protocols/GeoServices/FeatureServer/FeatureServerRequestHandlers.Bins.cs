@@ -507,36 +507,33 @@ internal static partial class FeatureServerEndpoints
         binDef = default;
         error = null;
 
-        if (!element.TryGetProperty("field", out var fieldEl) || string.IsNullOrWhiteSpace(fieldEl.GetString()))
+        var field = FeatureServerJsonMembers.ReadString(element, "field");
+        if (string.IsNullOrWhiteSpace(field))
         {
             error = "fixedIntervalBin.field is required.";
             return false;
         }
 
-        if (!element.TryGetProperty("intervalSize", out var sizeEl) || !sizeEl.TryGetDouble(out var intervalSize))
+        if (FeatureServerJsonMembers.ReadNumber(element, "intervalSize") is not { } intervalSize)
         {
             error = "fixedIntervalBin.intervalSize is required.";
             return false;
         }
 
-        double? start = null, end = null;
-        if (element.TryGetProperty("start", out var startEl) && startEl.TryGetDouble(out var startVal))
+        if (FeatureServerJsonMembers.HasMemberOfOtherKind(element, "start", JsonValueKind.Number) ||
+            FeatureServerJsonMembers.HasMemberOfOtherKind(element, "end", JsonValueKind.Number))
         {
-            start = startVal;
-        }
-
-        if (element.TryGetProperty("end", out var endEl) && endEl.TryGetDouble(out var endVal))
-        {
-            end = endVal;
+            error = "fixedIntervalBin.start and fixedIntervalBin.end must be numbers when present.";
+            return false;
         }
 
         binDef = new BinDefinition
         {
             Type = BinType.FixedInterval,
-            Field = fieldEl.GetString()!,
+            Field = field,
             IntervalSize = intervalSize,
-            IntervalStart = start,
-            IntervalEnd = end
+            IntervalStart = FeatureServerJsonMembers.ReadNumber(element, "start"),
+            IntervalEnd = FeatureServerJsonMembers.ReadNumber(element, "end")
         };
         return true;
     }
@@ -546,13 +543,14 @@ internal static partial class FeatureServerEndpoints
         binDef = default;
         error = null;
 
-        if (!element.TryGetProperty("field", out var fieldEl) || string.IsNullOrWhiteSpace(fieldEl.GetString()))
+        var field = FeatureServerJsonMembers.ReadString(element, "field");
+        if (string.IsNullOrWhiteSpace(field))
         {
             error = "autoIntervalBin.field is required.";
             return false;
         }
 
-        if (!element.TryGetProperty("numBins", out var numBinsEl) || !numBinsEl.TryGetInt32(out var numBins))
+        if (FeatureServerJsonMembers.ReadInt32(element, "numBins") is not { } numBins)
         {
             error = "autoIntervalBin.numBins is required.";
             return false;
@@ -574,7 +572,7 @@ internal static partial class FeatureServerEndpoints
         binDef = new BinDefinition
         {
             Type = BinType.AutoInterval,
-            Field = fieldEl.GetString()!,
+            Field = field,
             NumBins = numBins
         };
         return true;
@@ -585,7 +583,8 @@ internal static partial class FeatureServerEndpoints
         binDef = default;
         error = null;
 
-        if (!element.TryGetProperty("field", out var fieldEl) || string.IsNullOrWhiteSpace(fieldEl.GetString()))
+        var field = FeatureServerJsonMembers.ReadString(element, "field");
+        if (string.IsNullOrWhiteSpace(field))
         {
             error = "fixedBoundariesBin.field is required.";
             return false;
@@ -600,7 +599,7 @@ internal static partial class FeatureServerEndpoints
         var boundaries = ImmutableArray.CreateBuilder<double>();
         foreach (var item in boundariesEl.EnumerateArray())
         {
-            if (!item.TryGetDouble(out var val) || !double.IsFinite(val))
+            if (FeatureServerJsonMembers.ReadNumber(item) is not { } val || !double.IsFinite(val))
             {
                 error = "fixedBoundariesBin.boundaries must contain finite numeric values.";
                 return false;
@@ -630,7 +629,7 @@ internal static partial class FeatureServerEndpoints
         binDef = new BinDefinition
         {
             Type = BinType.FixedBoundaries,
-            Field = fieldEl.GetString()!,
+            Field = field,
             Boundaries = boundaries.ToImmutable()
         };
         return true;
@@ -641,13 +640,12 @@ internal static partial class FeatureServerEndpoints
         binDef = default;
         error = null;
 
-        if (!element.TryGetProperty("field", out var fieldEl) || string.IsNullOrWhiteSpace(fieldEl.GetString()))
+        var field = FeatureServerJsonMembers.ReadString(element, "field");
+        if (string.IsNullOrWhiteSpace(field))
         {
             error = "dateBin.field is required.";
             return false;
         }
-
-        var field = fieldEl.GetString()!;
 
         // Parse inner bin definition (calendarBin or fixedBin)
         string? calendarUnit = null;
@@ -655,7 +653,7 @@ internal static partial class FeatureServerEndpoints
 
         if (element.TryGetProperty("calendarBin", out var calEl) && calEl.ValueKind == JsonValueKind.Object)
         {
-            calendarUnit = calEl.TryGetProperty("unit", out var unitEl) ? unitEl.GetString()?.ToLowerInvariant() : null;
+            calendarUnit = FeatureServerJsonMembers.ReadString(calEl, "unit")?.ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(calendarUnit))
             {
                 error = "dateBin.calendarBin.unit is required.";
@@ -699,7 +697,8 @@ internal static partial class FeatureServerEndpoints
         binDef = default;
         error = null;
 
-        if (!element.TryGetProperty("field", out var fieldEl) || string.IsNullOrWhiteSpace(fieldEl.GetString()))
+        var field = FeatureServerJsonMembers.ReadString(element, "field");
+        if (string.IsNullOrWhiteSpace(field))
         {
             error = "classificationBin.field is required.";
             return false;
@@ -708,7 +707,7 @@ internal static partial class FeatureServerEndpoints
         binDef = new BinDefinition
         {
             Type = BinType.Classification,
-            Field = fieldEl.GetString()!
+            Field = field
         };
         return true;
     }

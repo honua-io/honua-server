@@ -114,8 +114,16 @@ public abstract class SqlFilterExpressionVisitorBase
     protected virtual string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
         => throw UnsupportedExpression(array);
 
+    // LOWER is standard SQL, so every provider can evaluate case-insensitive comparisons
+    // (CQL2 CASEI, FES matchCase="false") without its own function translation.
     protected virtual string TranslateFunction(FunctionCall function, FilterTranslationContext context)
-        => throw UnsupportedExpression(function);
+        => function is { Arguments: [var operand] } && IsCaseFoldingFunction(function.FunctionName)
+            ? $"LOWER({TranslateExpression(operand, context)})"
+            : throw UnsupportedExpression(function);
+
+    private static bool IsCaseFoldingFunction(string name)
+        => name.Equals("LOWER", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("CASEI", StringComparison.OrdinalIgnoreCase);
 
     protected virtual string TranslateIntervalLiteral(IntervalLiteral interval)
         => throw UnsupportedExpression(interval);

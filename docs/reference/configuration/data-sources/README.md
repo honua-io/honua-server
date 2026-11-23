@@ -7,6 +7,8 @@ description: "Honua serves data from one primary provider (PostgreSQL/PostGIS by
 
 Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus optional read-only providers that plug in alongside it through the shared feature-provider router. PostGIS is the only full read/write backend; the others are read/query slices for serving data in place.
 
+The default Honua image includes only the PostGIS store. The other providers need the JIT full variant (`nightly-jit-full`, `nightly-jit-<sha7>-full` or a release's `-ecs-jit-full` tag) or a build with `HONUA_STORE_PROFILE=full`. The default image refuses their configuration and connections and names the full variant; see [data-store variants](../../../guides/operate/nightly-images.md#data-store-variants).
+
 ## Provider capability matrix
 
 | Provider | Access | Selected by | Notes |
@@ -16,7 +18,7 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [SQL Server](sql-server.md) | Read/query only (additional) | Layer connection resolves to `sqlserver`/`mssql` | `geometry`/`geography` tables; no edits, native MVT, encoded exports, or statistics. |
 | [Oracle](oracle.md) | Read/query only (additional) | Layer connection resolves to `oracle`/`oracledb` | Standard `SDO_GEOMETRY` only; ArcSDE `ST_Geometry` and versioned tables are refused. Not Native AOT compatible. |
 | [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | Outside Development and Test, a host needs the PostgreSQL/PostGIS catalog and refuses a MySQL primary. MySQL 8.0.12+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
-| [Amazon Redshift](redshift.md) | Read/query only (additional) | Layer connection resolves to `redshift` | Native `GEOMETRY`/`GEOGRAPHY` (not PostGIS) over the PostgreSQL wire protocol via Npgsql; no edits, native MVT, encoded exports, statistics, distance/KNN, or temporal filters. |
+| [Amazon Redshift](redshift.md) | Read/query only (additional) | Layer connection resolves to `redshift`/`amazon-redshift`/`aws-redshift`/`redshiftdb` | Native `GEOMETRY`/`GEOGRAPHY` (not PostGIS) over the PostgreSQL wire protocol via Npgsql; no edits, native MVT, encoded exports, statistics, distance/KNN, or temporal filters. |
 | [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
 | [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. Statistics are supported; edits and native encoded exports are not. Spatial functions depend on the DBSQL/runtime. |
 
@@ -62,7 +64,7 @@ Required extensions, connection-string format, Aurora and Azure Flexible Server 
 
 Amazon Redshift, Snowflake, and Databricks register in `InfrastructureCompositionRoot` only when `WarehouseProviderDecisions` reports the provider enabled. Each experimental gate defaults to false, and `{Provider}:Enabled` defaults to true, so the provider stays unregistered until the gate is set. Setting `{Provider}__Enabled=true` while its gate is false throws at startup. These flags do not change capability or statistics rows.
 
-They are secondary providers. `DataSource__Provider` accepts only `postgres`/`postgis`, `duckdb`, or `mysql`/`mariadb`. Setting it to `redshift`, `snowflake`, or `databricks` throws at startup. A layer reaches a warehouse through its data connection's provider name.
+They are secondary providers. `DataSource__Provider` accepts only `postgres`/`postgresql`/`postgis`/`pgsql`, `duckdb`, or `mysql`/`mariadb`. Setting it to `redshift`, `snowflake`, or `databricks` throws at startup. A layer reaches a warehouse through its data connection's provider name.
 
 Environment names below are the `.env.example` form. They bind to the colon keys the composition root reads (`Experimental:Features:RedshiftProvider`, `Redshift:Enabled`, and the same pattern for Snowflake and Databricks).
 

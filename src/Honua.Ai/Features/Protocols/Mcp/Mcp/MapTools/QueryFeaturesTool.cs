@@ -459,7 +459,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 
         return SpatialFilter.Create(
             wkb,
-            SpatialRelationship.EnvelopeIntersects,
+            SpatialRelationship.Intersects,
             srid: srid,
             isSimpleEnvelope: true,
             allowEnvelopeOnly: true,

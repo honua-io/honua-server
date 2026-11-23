@@ -3516,11 +3516,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "GlobalIdField must reference a published UUID column.");
         }
 
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
+        var hasEditCapabilities = request.Capabilities is { Count: > 0 }
+            ? request.Capabilities.Any(static capability =>
+                !string.IsNullOrWhiteSpace(capability) &&
+                Array.Exists(_editCapabilityTokens, token => token.Equals(capability.Trim(), StringComparison.OrdinalIgnoreCase)))
+            : request.CreateEditableCopy;
+
         return new MetadataV2ObjectEditing
         {
             GlobalIdField = globalId?.Name,
             SupportsAttachments = request.SupportsAttachments,
-            CanModify = request.CreateEditableCopy,
+            CanModify = isManagedStore && hasEditCapabilities,
             SupportsRelatedRecords = false
         };
     }

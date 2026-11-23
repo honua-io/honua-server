@@ -226,6 +226,19 @@ internal sealed class McpPlatformReleaseConvergenceArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
+    [JsonPropertyName("contractApproval")]
+    public McpContractApprovalArgument? ContractApproval { get; set; }
+}
+
+// The contract migrations a convergence proposal lists for approval, with their one-shot nonce.
+internal sealed class McpContractApprovalArgument
+{
+    [JsonPropertyName("scripts")]
+    public string[]? Scripts { get; set; }
+
+    [JsonPropertyName("nonce")]
+    public string? Nonce { get; set; }
 }
 
 internal sealed class McpProposeOperationOutput
@@ -1047,4 +1060,7 @@ internal sealed class McpToolErrorOutput
 
     [JsonPropertyName("error")]
     public McpGeoprocessingError? Error { get; set; }
+
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; set; }
 }

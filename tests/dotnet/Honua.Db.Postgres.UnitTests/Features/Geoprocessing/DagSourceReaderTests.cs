@@ -292,10 +292,17 @@ public sealed class DagSourceReaderTests
     {
         // The connector appends its own watermark predicate; with no caller where, a store
         // argument failure must not be reported as an unsupported caller clause.
+        var translated = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("updated_at >= @p0", [new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)])
+        };
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        translator.TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(LayerSelectionTranslation.Success(translated));
         var store = Substitute.For<IStreamingFeatureStore>();
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(_ => ThrowingAsync(new ArgumentException("WHERE clause format not supported.")));
-        var reader = new HonuaLayerDagSource(store);
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
         var request = new DagSourceRequest { LayerId = 42, Since = "2026-01-01T00:00:00Z", WatermarkField = "updated_at" };
 
         var act = async () => await CollectAsync(reader.ReadAsync(request));
@@ -306,6 +313,8 @@ public sealed class DagSourceReaderTests
     [UnitTheory]
     [InlineData("name = 'x'")]
     [InlineData("1=1")]
+    [InlineData("category = 'drainage' AND status <> 'exercise_closed'")]
+    [InlineData("category = 'drainage' and opened_at >= '2026-08-01' AND id <= 94")]
     public void IsSupportedWhereClause_SimpleComparison_IsSupported(string where)
         => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
             .Should().BeTrue();
@@ -340,9 +349,9 @@ public sealed class DagSourceReaderTests
     }
 
     [UnitTest]
-    public async Task HonuaLayer_GeometryOrTimeSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
+    public async Task HonuaLayer_GeometryTimeOrWatermarkSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
     {
-        // A geometry/time selector the connector cannot interpret canonically must never be
+        // A geometry, time or watermark selector the connector cannot interpret canonically must never be
         // dropped — reading without it would hand back a broader feature set than requested.
         var store = Substitute.For<IStreamingFeatureStore>();
         var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42));
@@ -351,6 +360,7 @@ public sealed class DagSourceReaderTests
         {
             new DagSourceRequest { LayerId = 42, Geometry = """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}""", GeometryType = "esriGeometryEnvelope" },
             new DagSourceRequest { LayerId = 42, Time = "1700000000000" },
+            new DagSourceRequest { LayerId = 42, Since = "2026-01-03T00:00:00Z", WatermarkField = "observed" },
         })
         {
             var act = async () => await CollectAsync(reader.ReadAsync(request));
@@ -414,6 +424,48 @@ public sealed class DagSourceReaderTests
             "permanent filters and row-level security are resolved and ANDed by the store itself, never replaced by caller selectors");
         query.EnforcedMaskedFields.Should().BeNull();
         query.SpatialReferenceSrid.Should().Be(4326, "the connector keeps the canonical storage SRID");
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_SinceWatermark_IsAndedAsOneGroupWithTheCallerWhere()
+    {
+        LayerSelectionFilter? seen = null;
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        translator.TranslateAsync(Arg.Do<LayerSelectionFilter>(s => seen = s), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(LayerSelectionTranslation.Success(new FeatureQuery()));
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
+
+        await CollectAsync(reader.ReadAsync(new DagSourceRequest
+        {
+            LayerId = 42,
+            Where = "pop = 5 OR zone = 'b'",
+            Since = "2026-01-03T00:00:00Z",
+            WatermarkField = "observed",
+        }));
+
+        seen!.Where.Should().Be("(pop = 5 OR zone = 'b') AND observed >= TIMESTAMP '2026-01-03T00:00:00Z'");
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_WatermarkFieldThatIsNotAFieldName_FailsClosedBeforeTranslating()
+    {
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
+
+        var act = async () => await CollectAsync(reader.ReadAsync(new DagSourceRequest
+        {
+            LayerId = 42,
+            Since = "2026-01-03T00:00:00Z",
+            WatermarkField = "pop < 0 OR observed",
+        }));
+
+        await act.Should().ThrowAsync<DagSourceSelectionException>().WithMessage("*watermarkField*");
+        await translator.DidNotReceive().TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+        store.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

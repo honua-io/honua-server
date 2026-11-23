@@ -315,6 +315,7 @@ internal sealed class McpPlatformOpsReader(
 
         var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
         if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
+        var contractApproval = ContractApprovalParameters(argument.ContractApproval);
         var observer = _services.GetService<IManagedComposeObserver>();
         var liveTargets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
         var outcomes = new List<McpConvergenceTargetOutput>();
@@ -323,6 +324,11 @@ internal sealed class McpPlatformOpsReader(
             if (!string.IsNullOrWhiteSpace(target.ArtifactReference) && !string.Equals(target.ArtifactReference, desiredRevision, StringComparison.Ordinal))
             {
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
+                continue;
+            }
+            if (contractApproval is not null && target.TargetKind != DeployTargetKind.LocalCompose)
+            {
+                outcomes.Add(new() { TargetId = target.TargetId, Outcome = "blocked", Message = "A contract migration approval applies only to Compose targets." });
                 continue;
             }
             var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
@@ -337,7 +343,7 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
                 continue;
             }
-            var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
+            var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision, ParameterOverrides = contractApproval }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
             string? defaultKey = null;
             if (requestedKey is null)
@@ -354,10 +360,34 @@ internal sealed class McpPlatformOpsReader(
             }
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                ConvergenceIdempotencyKey(requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", contractApproval),
+                cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };
+    }
+
+    // The listed scripts and nonce become deploy parameters the sealed proposal shows its approver;
+    // the Compose executor applies them only if they are exactly the candidate's pending contract plan.
+    private static Dictionary<string, string>? ContractApprovalParameters(McpContractApprovalArgument? approval)
+    {
+        if (approval is null) return null;
+        var scripts = (approval.Scripts ?? []).Select(script => script?.Trim() ?? string.Empty).ToArray();
+        var nonce = approval.Nonce?.Trim();
+        if (!ComposeContractApproval.IsWellFormedNonce(nonce) || !ComposeContractApproval.AreWellFormedScripts(scripts))
+            throw new GeoprocessingValidationException(
+                "'contractApproval' needs the refused contract scripts and their approval nonce, exactly as the contract-approval-required refusal reported them.");
+        return ComposeContractApproval.ToParameters(nonce!, scripts);
+    }
+
+    // A proposal for a contract plan is a different request from the convergence it follows, and a
+    // different script list or nonce is a different plan that needs its own approval.
+    private static string ConvergenceIdempotencyKey(string key, Dictionary<string, string>? contractApproval)
+    {
+        if (contractApproval is null) return key;
+        var scripts = contractApproval[ComposeContractApproval.ScriptsParameterKey].Split(',').Order(StringComparer.Ordinal);
+        var plan = contractApproval[ComposeContractApproval.NonceParameterKey].ToLowerInvariant() + "\n" + string.Join('\n', scripts);
+        return $"{key}:contract:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plan)))[..32].ToLowerInvariant()}";
     }
 
     private async Task<McpProposeOperationOutput> ProposeDeployAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, string idempotencyPrefix, CancellationToken cancellationToken)

@@ -293,6 +293,20 @@ public sealed class StudioVersionMcpTests
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task ProposalResource_MissingProposal_MapsToResourceNotFound()
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+            services.AddSingleton(store));
+        var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
+
+        var read = () => resource.ReadAsync(context, "honua://proposals/proposal-missing", default);
+
+        var exception = await read.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        AssertResourceNotFound(exception.Which);
+    }
+
     private static async Task AssertPollableResultAsync(OperationHandle operation, IOperationInstanceStore instances)
     {
         var proposal = new OperationProposal
@@ -330,7 +344,15 @@ public sealed class StudioVersionMcpTests
         (await ReadAsync()).TryGetProperty("resourceIds", out _).Should().BeFalse();
         proposal = proposal with { RequestedBy = actor, TenantId = "another-tenant" };
         var crossTenant = () => ReadAsync();
-        await crossTenant.Should().ThrowAsync<KeyNotFoundException>();
+        var exception = await crossTenant.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        AssertResourceNotFound(exception.Which);
+    }
+
+    private static void AssertResourceNotFound(GeoprocessingNotFoundException exception)
+    {
+        var error = McpErrorMapper.Map(exception);
+        error.Code.Should().Be(McpErrorMapper.JsonRpcResourceNotFound);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
     }
 
     private static StudioDraftMutationRuntime Runtime(IStudioPackageLifecycleService lifecycle,

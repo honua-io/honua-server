@@ -38,6 +38,15 @@ class HygieneCancellationTests(unittest.TestCase):
                     env=dict(os.environ, **dict(zip(variables, values))))
                 self.assertEqual(result.returncode == 0, all(v == 'success' for v in values))
 
+    def test_label_changes_rerun_bundle_policy(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/repo-hygiene.yml').read_text())
+        types = workflow[True]['pull_request']['types']
+        for action in ('opened', 'synchronize', 'reopened', 'edited', 'labeled', 'unlabeled'):
+            self.assertIn(action, types)
+        for key, job in workflow['jobs'].items():
+            with self.subTest(job=key):
+                self.assertNotIn('event.action', str(job.get('if', '')))
+
     def test_required_contract_stays_intact(self):
         self.assertEqual(self.job['name'], 'repo-hygiene / Repository hygiene')
         self.assertIn('evidence-paths', self.job['needs'])
