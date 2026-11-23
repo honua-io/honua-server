@@ -22,6 +22,7 @@ internal static class ServerCoreSchemaMigrations
         "Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql")
     {
         ConfiguredRegistryAdoptionMigration = "Honua.Server.Migrations.227_AdoptConfiguredRegistrySchema.sql",
+        ConfiguredFeatureStoreAdoptionMigration = "Honua.Server.Migrations.231_AdoptConfiguredFeatureStoreSchema.sql",
         Attachments = new(
             "Honua.Server.Migrations.002_CreateAttachmentsTable.sql",
             "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql",
