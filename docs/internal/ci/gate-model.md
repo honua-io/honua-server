@@ -417,7 +417,16 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+tripwires. Protocol-profile compilation also runs in full CI, in its own
+`Protocol profiles` job beside the producer rather than inside it. Every
+server-test shard, the foundation tests and the runtime proofs need `build`, so a
+break that only affects a reduced profile used to skip the whole trailing matrix:
+full run 45066303710 skipped it for about six hours, which hid an unrelated
+integration regression (#9351, #9371). `CI Gate` requires the job, so a profile
+break still fails the run. It runs on a standard hosted runner and builds the
+referenced projects once without analyzers. `build` analyzes them in full runs
+and PR Gate in affected runs; `Honua.Server`, the only project that reads the
+profile, compiles with analyzers for each profile. Full and scheduled
 runs select every profile with `protocol-profile-selection.py --all`. A range
 selection compares trunk with itself there and would build only `all`, which
 is what full run 44309947920 did. Between full runs, Trunk Sanity's
@@ -574,9 +583,10 @@ already publishes its managed outputs from this no-analyzer build mode under
 the same build-properties label. An analyzer finding that only appears when
 several landed PRs combine is left to the scheduled full run. Selected
 protocol-profile builds keep analyzers for Honua.Server, whose profile
-constants change. Referenced projects are first resolved in the producer's
-no-analyzer mode and then reused with `BuildProjectReferences=false`; PR Gate
-analyzed them on each PR. A single `RunAnalyzers=true` profile build would
+constants change. The `Protocol profiles` job first resolves referenced projects
+without analyzers and then reuses them with `BuildProjectReferences=false`, in
+full and affected runs alike; the producer (full) or PR Gate (affected)
+analyzed them. A single `RunAnalyzers=true` profile build would
 recompile all 29 referenced projects: affected run 44379685745 spent 10.2 of
 16.3 profile minutes on that (6.4-7.0 min before the producer dropped
 analyzers).
@@ -1550,7 +1560,8 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use
 the same completed-run selector; execution never regresses behind the dispatched
 base. `affected_admission.py` admits only a complete selection whose conservative
-job bound fits 40: 33 side jobs plus selected server shards. The side bound counts
+job bound fits 40: 34 side jobs (33 before the `Protocol profiles` job, #9371)
+plus selected server shards. The side bound counts
 all foundation families, MCP transports and Postgres versions even when lane
 conditions would skip them. Router fixtures check the bound against the workflow,
 including matrix expansion; new dynamic or reusable jobs require an explicit bound.
