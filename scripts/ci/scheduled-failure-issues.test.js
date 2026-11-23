@@ -249,6 +249,31 @@ test('an open issue untouched for longer than the run window is still updated an
   assert.deepEqual((await go(green)).closed, ['app#7']);
 });
 
+test('a success between failures closes the issues it fixed and keeps the still-failing ones', async () => {
+  const issues = [
+    { number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::A -->\n<!-- scheduled-failure run=1 -->' },
+    { number: 8, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::B -->\n<!-- scheduled-failure run=1 -->' },
+  ];
+  const github = fakeGithub({
+    runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'success'), run(3, 'nightly.yml', 'failure')],
+    jobs: { 3: [job('B', 'failure', 1)] }, issues,
+  });
+  const report = await go(github);
+  assert.deepEqual([report.closed, report.updated], [['app#7'], ['app#8']]);
+});
+
+test('runs recorded on a closed issue are not replayed onto its open successor', async () => {
+  const key = '.github/workflows/nightly.yml::Build';
+  const issues = [
+    { number: 7, state: 'closed', body: `<!-- scheduled-failure key=${key} -->\n<!-- scheduled-failure run=1 -->` },
+    { number: 20, state: 'open', body: `<!-- scheduled-failure key=${key} -->\n<!-- scheduled-failure run=2 -->` },
+  ];
+  const jobs = { 1: [job('Build', 'failure', 1)], 2: [job('Build', 'failure', 1)] };
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(2, 'nightly.yml', 'failure')], jobs, issues,
+    comments: { 20: [{ body: 'claimed: s-night x' }] } });
+  assert.deepEqual((await go(github)).updated, []);
+});
+
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {
   const github = fakeGithub({});
   github.paginate = async route => {

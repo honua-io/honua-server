@@ -224,9 +224,10 @@ async function fileRunFailures(ctx, { path, run, issues }) {
   for (const job of jobs) {
     const key = `${path}::${job.name.replace(/\s+/g, '_')}`;
     const existing = issues.find(issue => issue.state === 'open' && keyOf(issue.body) === key);
+    if (await recordedOnClosed(ctx, { issues, key, run })) continue;
     if (existing) {
       await recordFailure(ctx, { issue: existing, run, job, lane, due });
-    } else if (budget > 0 && !await recordedOnClosed(ctx, { issues, key, run })) {
+    } else if (budget > 0) {
       budget -= 1;
       const workflowName = await workflowNameOf(ctx, run);
       issues.push(await openIssue(ctx, { run, job, jobs, lane, key, due, labels, workflowName }));
@@ -255,26 +256,44 @@ async function knownIssues(ctx, since) {
   return issues.filter(issue => !issue.pull_request && keyOf(issue.body));
 }
 
+// An open issue that records none of the runs after the workflow's last success belongs to a
+// failure that success fixed, even though a later run failed in another job.
+async function closeFixedIssues(ctx, { issues, success, laterRuns }) {
+  const fixed = [];
+  for (const issue of issues.filter(item => item.state === 'open')) {
+    let current = false;
+    for (const run of laterRuns) current = current || await mentionsRun(ctx, issue, run);
+    if (!current) fixed.push(issue);
+  }
+  await closeIssues(ctx, fixed, success);
+}
+
 // The newest failed runs after the workflow's last success are filed oldest first, so a job that
 // failed only in an earlier run still gets its issue; a successful newest run closes them all.
 // A failure followed by a success before any sweep is not filed.
+async function sweepWorkflow(ctx, { path, runs, issues }) {
+  const latest = runs[runs.length - 1];
+  if (latest.conclusion === 'success') {
+    await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), latest);
+    return;
+  }
+  const lastSuccess = runs.map(run => run.conclusion).lastIndexOf('success');
+  const laterRuns = runs.slice(lastSuccess + 1);
+  for (const run of laterRuns.slice(-(ctx.config.maxRunsPerWorkflow || DEFAULT_RUNS_PER_WORKFLOW))) {
+    await fileRunFailures(ctx, { path, run, issues });
+  }
+  if (lastSuccess >= 0) await closeFixedIssues(ctx, { issues, success: runs[lastSuccess], laterRuns });
+}
+
 async function sweepRepo(ctx) {
-  const { github, owner, repo, config, now } = ctx;
-  const since = isoSeconds(new Date(now.getTime() - (config.lookbackHours || DEFAULT_LOOKBACK_HOURS) * HOUR));
+  const since = isoSeconds(new Date(ctx.now.getTime() - (ctx.config.lookbackHours || DEFAULT_LOOKBACK_HOURS) * HOUR));
   const byPath = runsByWorkflow(ctx, await listRuns(ctx, since));
   const known = await knownIssues(ctx, since);
   for (const [path, swept] of byPath) {
     const runs = await withoutHandoffs(ctx, path, swept);
     if (!runs.length) continue;
     const issues = known.filter(issue => keyOf(issue.body).startsWith(`${path}::`));
-    const latest = runs[runs.length - 1];
-    if (latest.conclusion === 'success') {
-      await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), latest);
-      continue;
-    }
-    const lastSuccess = runs.map(run => run.conclusion).lastIndexOf('success');
-    const failures = runs.slice(lastSuccess + 1).slice(-(config.maxRunsPerWorkflow || DEFAULT_RUNS_PER_WORKFLOW));
-    for (const run of failures) await fileRunFailures(ctx, { path, run, issues });
+    await sweepWorkflow(ctx, { path, runs, issues });
   }
 }
 
