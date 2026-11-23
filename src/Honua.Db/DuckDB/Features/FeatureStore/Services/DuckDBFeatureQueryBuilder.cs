@@ -1132,7 +1132,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return string.Join(", ", columns);
     }
 
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex FieldNameRegex();
 
     private static void ValidateFieldName(string fieldName)
