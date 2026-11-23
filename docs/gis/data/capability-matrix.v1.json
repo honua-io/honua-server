@@ -18,7 +18,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-11-16T16:59:08.963573Z",
+    "anchor": "2026-11-23T07:15:30.689673Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -793,7 +793,7 @@
       "displayName": "Branch Versioning",
       "category": "Editing",
       "edition": "Pro",
-      "status": null,
+      "status": "experimental",
       "entryCount": 20,
       "provingTestCount": 96,
       "maturity": {
@@ -911,6 +911,28 @@
       "geobench": []
     },
     {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Format",
+      "category": "Format",
+      "edition": "Community",
+      "status": "live",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "format.geoparquet",
+        "reasonCode": "content-negotiation",
+        "reason": "GeoParquet is selected with f=parquet on FeatureServer, $format=parquet on OData, format=geoparquet on bulk export, and file upload import; it has no separate route.",
+        "category": "Format",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",
@@ -1015,7 +1037,7 @@
       "displayName": "mTLS Client-Certificate Authentication",
       "category": "Identity",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 13,
       "provingTestCount": 35,
       "maturity": {
@@ -1581,7 +1603,7 @@
       "displayName": "CityGML/BIM Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -1599,7 +1621,7 @@
       "displayName": "Scene Catalog",
       "category": "Scene",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 3,
       "provingTestCount": 15,
       "maturity": {
@@ -1617,7 +1639,7 @@
       "displayName": "Point Cloud Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": null,
+      "status": "experimental",
       "entryCount": 1,
       "provingTestCount": 11,
       "maturity": {
@@ -1635,7 +1657,7 @@
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 6,
       "provingTestCount": 78,
       "maturity": {
@@ -1713,17 +1735,17 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
-            "runDate": "2026-05-07T14:05:19.209522Z"
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:15:30.096120Z"
           }
         },
         {
           "clientLane": "cli",
           "protocol": "featureserver",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:14:00.088963Z"
           }
         },
         {
@@ -1864,8 +1886,17 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
-            "runDate": "2026-05-07T14:05:19.321037Z"
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:15:30.298080Z"
+          }
+        },
+        {
+          "clientLane": "cli",
+          "protocol": "mapserver",
+          "freshness": {
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:14:00.088963Z"
           }
         },
         {
@@ -2095,7 +2126,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:39.990000Z"
           }
         },
@@ -2104,7 +2135,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 86,
+            "ageDays": 93,
             "runDate": "2026-08-22T02:57:06.792964Z"
           }
         },
@@ -2112,9 +2143,9 @@
           "clientLane": "cli",
           "protocol": "ogc-features",
           "freshness": {
-            "state": "stale",
-            "ageDays": 193,
-            "runDate": "2026-05-07T14:05:27.279118Z"
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:14:00.088963Z"
           }
         },
         {
@@ -2154,7 +2185,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:39.755000Z"
           }
         },
@@ -2163,7 +2194,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2217,7 +2248,7 @@
           "protocol": "ogc-tiles",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2229,7 +2260,7 @@
       "displayName": "OGC SensorThings API",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 64,
       "provingTestCount": 250,
       "maturity": {
@@ -2261,6 +2292,22 @@
       "geobench": []
     },
     {
+      "key": "serve.terrain-quantized-mesh",
+      "displayName": "Quantized-Mesh Terrain",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "serve.vector-tiles",
       "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
       "category": "Serve",
@@ -2281,7 +2328,7 @@
           "protocol": "mvt",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:52.394000Z"
           }
         }
@@ -2359,7 +2406,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:40.991000Z"
           }
         },
@@ -2368,7 +2415,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 86,
+            "ageDays": 93,
             "runDate": "2026-08-22T02:57:06.793352Z"
           }
         },
@@ -2376,9 +2423,9 @@
           "clientLane": "cli",
           "protocol": "wfs",
           "freshness": {
-            "state": "stale",
-            "ageDays": 193,
-            "runDate": "2026-05-07T14:05:27.279118Z"
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-23T07:14:00.088963Z"
           }
         }
       ],
@@ -2416,7 +2463,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:39.001000Z"
           }
         },
@@ -2425,7 +2472,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
@@ -2475,7 +2522,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:37.557000Z"
           }
         },
@@ -2484,7 +2531,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 193,
+            "ageDays": 199,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
