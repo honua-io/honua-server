@@ -40,6 +40,7 @@ internal sealed partial class ComposeDeployBackend(
         cancellationToken.ThrowIfCancellationRequested();
         var blocking = new List<string>();
         ClassifyParameters(spec.Parameters, blocking);
+        ClassifyContractApproval(spec, blocking);
         if (!ComposeExecutorRules.IsImmutableImage(spec.DesiredRevision))
         {
             blocking.Add(ComposeExecutorCodes.ImageNotImmutable);
@@ -94,6 +95,12 @@ internal sealed partial class ComposeDeployBackend(
         var desired = deploy.DesiredRevision;
         var op = string.Equals(desired, _options.ReleaseImage, StringComparison.Ordinal) ? "converge" : "rollback";
         var priorRevision = deploy.CurrentRevision;
+        var contractApproval = ComposeContractApproval.FromParameters(deploy.Parameters);
+        if (contractApproval != null && (op != "converge" || !contractApproval.IsWellFormed()))
+        {
+            return Submission(operation, WorkflowOperationStatus.Failed, ComposeExecutorCodes.ConfigUnsupported);
+        }
+
         var dispatched = false;
         try
         {
@@ -118,7 +125,8 @@ internal sealed partial class ComposeDeployBackend(
                         Op = op,
                         Image = desired,
                         BackupId = deploy.PreMigrationBackupId,
-                        RequestId = operation.OperationId
+                        RequestId = operation.OperationId,
+                        ContractApproval = contractApproval
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -268,9 +276,19 @@ internal sealed partial class ComposeDeployBackend(
             && !string.Equals(approvedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase);
     }
 
+    // A contract approval rides only on convergence to the release image, and only well formed.
+    private void ClassifyContractApproval(DeployOperationSpec spec, List<string> blocking)
+    {
+        if (ComposeContractApproval.FromParameters(spec.Parameters) is { } approval
+            && (!string.Equals(spec.DesiredRevision, _options.ReleaseImage, StringComparison.Ordinal) || !approval.IsWellFormed()))
+        {
+            blocking.Add(ComposeExecutorCodes.ConfigUnsupported);
+        }
+    }
+
     private static void ClassifyParameters(IReadOnlyDictionary<string, string> parameters, List<string> blocking)
     {
-        foreach (var key in parameters.Keys)
+        foreach (var key in parameters.Keys.Where(key => !ComposeContractApproval.IsParameterKey(key)))
         {
             if (string.Equals(key, DeployPromotionPolicy.PromotionGateParameterKey, StringComparison.Ordinal)
                 || key.StartsWith("deployment.protection.", StringComparison.Ordinal))

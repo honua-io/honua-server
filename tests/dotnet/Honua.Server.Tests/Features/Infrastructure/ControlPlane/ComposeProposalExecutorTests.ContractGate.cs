@@ -26,7 +26,7 @@ public sealed partial class ComposeProposalExecutorTests
         var docker = new MigrateOnlyDocker(5, MigrateOnlySummary("contract-approval-required", 5, "contract-annotated"));
         using var controller = new ComposeProjectController(options, docker);
 
-        var refusal = await controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None);
+        var refusal = await controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None);
 
         Assert.NotNull(refusal);
         Assert.False(refusal.Ok);
@@ -45,7 +45,7 @@ public sealed partial class ComposeProposalExecutorTests
         var docker = new MigrateOnlyDocker(5, MigrateOnlySummary("contract-approval-required", 5, "contract-annotated"));
         using var controller = new ComposeProjectController(options, docker);
 
-        var refusal = await controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None);
+        var refusal = await controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None);
 
         Assert.Equal(ComposeExecutorCodes.ContractApprovalRequired, refusal?.Code);
         Assert.False(File.Exists(Path.Join(options.ProjectDirectory, ComposeExecutorProtocol.OverrideFileName)));
@@ -58,7 +58,7 @@ public sealed partial class ComposeProposalExecutorTests
         var docker = new MigrateOnlyDocker(5, MigrateOnlySummary("contract-approval-required", 5, "contract-annotated"), startExitCode: 1);
         using var controller = new ComposeProjectController(options, docker);
 
-        var refusal = await controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None);
+        var refusal = await controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None);
 
         Assert.Equal(ComposeExecutorCodes.ReadbackIncomplete, refusal?.Code);
     }
@@ -70,7 +70,7 @@ public sealed partial class ComposeProposalExecutorTests
         var docker = new MigrateOnlyDocker(0, MigrateOnlySummary("success", 0, "expand"));
         using var controller = new ComposeProjectController(options, docker);
 
-        var refusal = await controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None);
+        var refusal = await controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None);
 
         Assert.Null(refusal);
         var run = Assert.Single(docker.Argv);
@@ -90,7 +90,7 @@ public sealed partial class ComposeProposalExecutorTests
         var docker = new MigrateOnlyDocker(exitCode, MigrateOnlySummary(code, exitCode, classification));
         using var controller = new ComposeProjectController(options, docker);
 
-        var refusal = await controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None);
+        var refusal = await controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None);
 
         Assert.Equal(ComposeExecutorCodes.ReadbackIncomplete, refusal?.Code);
         Assert.Equal(["run", "rm"], docker.Subcommands);
@@ -106,7 +106,7 @@ public sealed partial class ComposeProposalExecutorTests
         using var controller = new ComposeProjectController(options, docker);
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None));
+            () => controller.PrepareCandidateAsync(Digest('a'), null, CancellationToken.None));
 
         Assert.Equal(["run", "rm"], docker.Subcommands);
         var name = docker.Argv[0][Array.IndexOf(docker.Argv[0], "--name") + 1];
@@ -165,6 +165,9 @@ public sealed partial class ComposeProposalExecutorTests
 
         public Exception? RunFailure { get; init; }
 
+        // Results for successive migrate-only runs; the constructor result applies once these run out.
+        public Queue<DockerProcessResult> RunResults { get; } = new();
+
         public Task<DockerProcessResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
         {
             var args = arguments.ToArray();
@@ -178,7 +181,7 @@ public sealed partial class ComposeProposalExecutorTests
 
             return Task.FromResult(subcommand switch
             {
-                "run" => new DockerProcessResult(runExitCode, runStdout, string.Empty),
+                "run" => RunResults.Count > 0 ? RunResults.Dequeue() : new DockerProcessResult(runExitCode, runStdout, string.Empty),
                 "up" => new DockerProcessResult(startExitCode, string.Empty, string.Empty),
                 _ => new DockerProcessResult(0, string.Empty, string.Empty),
             });
