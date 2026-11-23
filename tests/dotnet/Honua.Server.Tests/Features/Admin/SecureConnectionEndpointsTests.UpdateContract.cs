@@ -90,6 +90,36 @@ public partial class SecureConnectionEndpointsTests
         Assert.Equal("kept name", stored!.Description);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task CreateConnection_ConcurrentSameName_OneCreatedOthersBadRequest()
+    {
+        await InitializeDefaultApplicationAsync();
+        var request = new CreateSecureConnectionRequest
+        {
+            Name = $"concurrent-{Guid.NewGuid():N}",
+            Host = "localhost",
+            Port = 5432,
+            DatabaseName = "testdb",
+            Username = "testuser",
+            SecretReference = "env:HONUA_TEST_DB_CONNECTION",
+            SecretType = "environment",
+        };
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(
+            _ => _client.PostAsJsonAsync("/api/v1/admin/connections", request, _jsonOptions)));
+
+        var statuses = responses.Select(response => response.StatusCode).ToList();
+        Assert.Equal(1, statuses.Count(status => status == HttpStatusCode.Created));
+        Assert.Equal(7, statuses.Count(status => status == HttpStatusCode.BadRequest));
+        var stored = await _registry.GetConnectionByNameAsync(request.Name);
+        Assert.NotNull(stored);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
     private static DataConnection SecretReferenceConnection(string name) => DataConnection.CreateWithSecretReference(
         name: name,
         host: "localhost",
