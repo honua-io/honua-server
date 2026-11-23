@@ -32,6 +32,28 @@ public class GeoServicesSqlParserTests
 
     [Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("名前 = '名-B2'", "名前")]
+    [InlineData("länge_straße = '名-B2'", "länge_straße")]
+    [InlineData("ʻāina_inoa = '名-B2'", "ʻāina_inoa")]
+    [InlineData("x\u0301y2 = '名-B2'", "x\u0301y2")]
+    [InlineData("\U00020BB7_name = '名-B2'", "\U00020BB7_name")]
+    public void Parse_BareNonAsciiIdentifier_ReturnsPropertyReference(string filter, string field)
+    {
+        var expression = (BinaryExpression)_parser.Parse(filter);
+        ((PropertyReference)expression.Left).PropertyName.Should().Be(field);
+        ((Literal)expression.Right).Value.Should().Be("名-B2");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_LoneSurrogateInIdentifier_IsRejected()
+    {
+        var parse = () => _parser.Parse("a\uD842 = 'x'");
+        parse.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
     [InlineData("\"layer\".\"name\" = 'Test Feature'")]
     [InlineData("[layer].[name] = 'Test Feature'")]
     public void Parse_DelimitedQualifiedIdentifier_RemovesEachDelimiter(string filter)
