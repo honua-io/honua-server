@@ -36,6 +36,11 @@ internal sealed class ODataQuerySearchService
         int? publicLayerId = null,
         CancellationToken cancellationToken = default)
     {
+        if (await _searchService.FindUnsupportedFilterSridAsync(filter, cancellationToken).ConfigureAwait(false) is { } sridError)
+        {
+            return (new FeatureQuery(), sridError);
+        }
+
         return await _queryService.BuildFeatureQueryAsync(
             filter,
             orderby,

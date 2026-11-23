@@ -130,6 +130,7 @@ internal sealed partial class ODataSearchService
         }
 
         var textSearchFilter = BuildTextSearchCondition(searchTerms, resource);
+        await EnsureFilterSridsSupportedAsync(filter, cancellationToken).ConfigureAwait(false);
 
         var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
@@ -289,6 +290,7 @@ internal sealed partial class ODataSearchService
         var segments = ODataAggregationHandler.SplitApplyTransforms(applyExpression);
         var aggregation = ODataAggregationHandler.ParseApplyExpression(segments[^1]);
         ValidateAggregationFields(aggregation, resource);
+        await EnsureApplyFilterSridsSupportedAsync(segments, filter, cancellationToken).ConfigureAwait(false);
 
         // Use existing aggregation handler for processing
         var reader = resolvedLayer.Reader;
@@ -924,25 +926,6 @@ internal sealed partial class ODataSearchService
         return selectFields is { Count: > 0 } && !selectFields.Contains("*")
             ? selectFields
             : null;
-    }
-
-    private static void EnsureNavigationPropertiesExist(
-        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
-        MetadataV2Object resource)
-    {
-        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var relationship in resource.Relationships)
-        {
-            known.Add(relationship.Name);
-            known.Add(ODataUtilityService.SanitizeIdentifier(relationship.Name));
-            known.Add(ODataUtilityService.BuildRelationshipMetadataNameForV2(relationship.Name, relationship.Id));
-        }
-
-        var unknown = optionsByName.Keys.FirstOrDefault(name => !known.Contains(name));
-        if (unknown is not null)
-        {
-            throw new ArgumentException($"'{unknown}' is not a navigation property of this layer.");
-        }
     }
 
     private static bool TryGetExpandRelationshipOptions(

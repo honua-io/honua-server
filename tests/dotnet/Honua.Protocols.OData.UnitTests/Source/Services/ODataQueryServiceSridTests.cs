@@ -27,37 +27,37 @@ public sealed class ODataQueryServiceSridTests
     [Theory]
     [InlineData("geo.intersects(Geometry,geography'SRID=999999;POINT(0 0)')", 999999)]
     [InlineData("geo.distance(Geometry,geography'SRID=12345;POINT(0 0)') lt 10", 12345)]
-    public async Task EnsureFilterSridsSupported_UnknownLiteralSrid_IsRejected(string filter, int srid)
+    public async Task UnknownLiteralSrid_IsReportedWithItsCode(string filter, int srid)
     {
         _crs.IsSridSupportedAsync(srid, Arg.Any<CancellationToken>()).Returns(false);
 
-        var act = () => Create().EnsureFilterSridsSupportedAsync(filter, CancellationToken.None);
+        var error = await Create().FindUnsupportedFilterSridAsync(filter, _crs, CancellationToken.None);
 
-        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage($"*EPSG:{srid}*");
+        error.Should().Be($"Unsupported explicit geometry CRS 'EPSG:{srid}'.");
     }
 
     [Fact]
-    public async Task EnsureFilterSridsSupported_SupportedLiteralSrid_IsAccepted()
+    public async Task SupportedLiteralSrid_IsAccepted()
     {
-        await Create().EnsureFilterSridsSupportedAsync(
-            "geo.intersects(Geometry,geography'SRID=3857;POINT(0 0)')", CancellationToken.None);
+        var error = await Create().FindUnsupportedFilterSridAsync(
+            "geo.intersects(Geometry,geography'SRID=3857;POINT(0 0)')", _crs, CancellationToken.None);
 
+        error.Should().BeNull();
         await _crs.Received().IsSridSupportedAsync(3857, Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task FindUnsupportedSridError_FilterWithoutGeometry_DoesNotConsultTheRegistry()
+    [Theory]
+    [InlineData("population gt 10")]
+    [InlineData("not a filter (")]
+    public async Task FilterWithoutGeometryOrUnparsable_DoesNotConsultTheRegistry(string filter)
     {
-        var parsed = new FilterExpressionService(Substitute.For<IFilterExpressionTranslator>())
-            .Parse(FilterLanguage.OData, "population gt 10");
+        (await Create().FindUnsupportedFilterSridAsync(filter, _crs, CancellationToken.None)).Should().BeNull();
 
-        (await Create().FindUnsupportedSridErrorAsync(parsed.Expression, CancellationToken.None)).Should().BeNull();
         await _crs.DidNotReceiveWithAnyArgs().IsSridSupportedAsync(default, default);
     }
 
     private ODataQueryService Create() => new(
         new FilterExpressionService(Substitute.For<IFilterExpressionTranslator>()),
         Substitute.For<IQueryParameterAdapter<ODataQueryParameters>>(),
-        Substitute.For<IQueryProcessor>(),
-        _crs);
+        Substitute.For<IQueryProcessor>());
 }

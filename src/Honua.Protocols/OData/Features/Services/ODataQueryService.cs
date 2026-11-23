@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -19,15 +18,12 @@ internal sealed partial class ODataQueryService
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly IQueryParameterAdapter<ODataQueryParameters> _queryParameterAdapter;
     private readonly IQueryProcessor _queryProcessor;
-    private readonly ICrsRegistry? _crsRegistry;
 
     public ODataQueryService(
         IFilterExpressionService filterExpressionService,
         IQueryParameterAdapter<ODataQueryParameters> queryParameterAdapter,
-        IQueryProcessor queryProcessor,
-        ICrsRegistry? crsRegistry = null)
+        IQueryProcessor queryProcessor)
     {
-        _crsRegistry = crsRegistry;
         _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         _queryParameterAdapter = queryParameterAdapter ?? throw new ArgumentNullException(nameof(queryParameterAdapter));
         _queryProcessor = queryProcessor ?? throw new ArgumentNullException(nameof(queryProcessor));
@@ -83,11 +79,6 @@ internal sealed partial class ODataQueryService
         if (!validation.IsValid)
         {
             return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
-        }
-
-        if (await FindUnsupportedSridErrorAsync(unifiedQuery.Filter?.Expression, cancellationToken).ConfigureAwait(false) is { } sridError)
-        {
-            return (new FeatureQuery(), sridError);
         }
 
         var optimized = _queryProcessor.OptimizeQuery(unifiedQuery, resource);

@@ -59,7 +59,6 @@ internal sealed class ODataAggregationHandler
         // Read one sentinel row beyond the budget so truncation never produces a
         // plausible but incorrect aggregate. Apply the same bound to every transform.
         var query = new FeatureQuery { Limit = _maxInputRows + 1 };
-        await _queryService.EnsureFilterSridsSupportedAsync(filter, cancellationToken).ConfigureAwait(false);
         query = ApplyODataFilter(query, filter, resource, publicLayerId);
 
         // The terminal (last) transform decides whether the result is an aggregation or features.
@@ -68,7 +67,6 @@ internal sealed class ODataAggregationHandler
         {
             // filter() narrows rows before aggregation; apply every filter segment to the query
             // (a trailing filter-only pipeline then simply returns the filtered features).
-            await _queryService.EnsureFilterSridsSupportedAsync(parsed.FilterExpression, cancellationToken).ConfigureAwait(false);
             query = ApplyODataFilter(query, parsed.FilterExpression, resource, publicLayerId);
         }
 
