@@ -41,8 +41,11 @@ public sealed class QualificationWedgeMarkerTests(DatabaseFixtureAdapter databas
             $"UPDATE {harness.Table("leases")} SET expires_at = now() + interval '1 day' WHERE lease_key = @lease_key",
             new NpgsqlParameter("lease_key", QualificationWedgeMarker.LeaseKey(token)));
 
-        (await original.ShouldWedgeAsync(token, CancellationToken.None)).Should().BeTrue();
         (await replacement.ShouldWedgeAsync(token, CancellationToken.None)).Should().BeFalse();
+        (await original.ShouldWedgeAsync(token, CancellationToken.None)).Should().BeTrue();
+        (await harness.ScalarAsync<bool>(
+            $"SELECT expires_at = 'infinity' FROM {harness.Table("leases")} WHERE lease_key = @lease_key",
+            new NpgsqlParameter("lease_key", QualificationWedgeMarker.LeaseKey(token)))).Should().BeTrue();
         (await replacement.ShouldWedgeAsync(NewToken(), CancellationToken.None)).Should().BeTrue();
     }
 

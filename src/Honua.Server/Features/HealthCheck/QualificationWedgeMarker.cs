@@ -16,13 +16,13 @@ internal sealed class QualificationWedgeMarker(
     JobStoreDatabase database,
     Func<CancellationToken, Task<string>> readDeployment) : IQualificationWedgeMarker
 {
-    // On conflict the no-op update returns the existing row, including one a concurrent task is
+    // On conflict the update returns the existing owner, including one a concurrent task is
     // still inserting, so every task reads the same winning deployment ID. An unbounded expiry
     // preserves the decision until the isolated qualification database is removed.
     private readonly string _armOrRead = $"""
         INSERT INTO {database.Table("leases")} AS marker (lease_key, owner_id, expires_at)
         VALUES (@lease_key, @deployment, 'infinity')
-        ON CONFLICT (lease_key) DO UPDATE SET owner_id = marker.owner_id
+        ON CONFLICT (lease_key) DO UPDATE SET expires_at = EXCLUDED.expires_at
         RETURNING marker.owner_id = @deployment
         """;
 

@@ -165,11 +165,12 @@ public sealed class QualificationFaultTests
     }
 
     [UnitTest]
-    public void AddQualificationFault_InvalidValue_FailsRegistration()
+    public void AddQualificationFault_InvalidValue_FailsStartup()
     {
-        var register = () => Register("Wedged:short");
+        using var provider = Register("Wedged:short").BuildServiceProvider();
+        var start = () => provider.GetRequiredService<QualificationFaultGate>();
 
-        register.Should().Throw<InvalidOperationException>().WithMessage($"*{QualificationFault.ConfigurationKey}*");
+        start.Should().Throw<InvalidOperationException>().WithMessage($"*{QualificationFault.ConfigurationKey}*");
     }
 
     private static ServiceCollection Register(string? value)
@@ -179,7 +180,8 @@ public sealed class QualificationFaultTests
             .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddQualificationFault(configuration);
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddQualificationFault();
         return services;
     }
 

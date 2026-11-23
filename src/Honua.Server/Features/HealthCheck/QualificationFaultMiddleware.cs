@@ -52,16 +52,18 @@ internal sealed class QualificationFaultMiddleware(RequestDelegate next, Qualifi
 
 internal static class QualificationFaultExtensions
 {
-    public static IServiceCollection AddQualificationFault(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddQualificationFault(this IServiceCollection services)
     {
-        var fault = QualificationFault.Parse(configuration[QualificationFault.ConfigurationKey]);
-        // Only the wedge needs the shared database, so installs without it never resolve the store.
-        services.AddSingleton(provider => new QualificationFaultGate(
-            new QualificationWedgeDecision(
+        services.AddSingleton(provider =>
+        {
+            var fault = QualificationFault.Parse(provider.GetRequiredService<IConfiguration>()[QualificationFault.ConfigurationKey]);
+            // Only the wedge needs the shared database, so installs without it never resolve the store.
+            var decision = new QualificationWedgeDecision(
                 fault,
                 fault.Kind == QualificationFaultKind.Wedged ? ResolveMarker(provider) : null,
-                provider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None),
-            provider.GetRequiredService<ILogger<QualificationFaultGate>>()));
+                provider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None);
+            return new QualificationFaultGate(decision, provider.GetRequiredService<ILogger<QualificationFaultGate>>());
+        });
         return services;
     }
 
