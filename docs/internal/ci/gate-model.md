@@ -1895,14 +1895,15 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 A cancelled run can also be the newest check suite of a head: two events in the
-same second (opened + labeled, labeled + edited) start two runs in one
+same second (opened + labeled, opened + edited) start two runs in one
 concurrency group, and GitHub orders that queue independently of suite order.
 The cancelled required context then outranks the success in the older suite and
-the armed PR stays blocked until a manual rerun (#9533, #9610).
-`repo-hygiene-rerun.yml` reruns such a run once, with its own event payload, when
-it is the newest suite for a head that is still an open PR's head. Older-suite
-cancellations, superseded heads and later attempts are left alone; every hygiene
-job still runs, so no check is relaxed.
+the armed PR stays blocked until a manual rerun (#9533, #9610). `Clean code` has
+the same shape (#9611). `cancelled-check-rerun.yml` reruns such a run of either
+workflow once, with its own event payload, when it is the newest suite of that
+workflow for a head that is still an open PR's head. Older-suite cancellations,
+superseded heads and later attempts are left alone; every job of the rerun
+workflow still runs, so no check is relaxed.
 
 Repository hygiene also runs on `labeled` and `unlabeled`. The shared bundle
 policy reads the PR's labels from the event payload, so a `bundle-exception`

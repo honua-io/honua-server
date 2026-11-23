@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const workflow = fs.readFileSync('.github/workflows/repo-hygiene-rerun.yml', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/cancelled-check-rerun.yml', 'utf8');
 const script = workflow.split('          script: |\n')[1].replace(/^            /gm, '');
 const HEAD = 'a'.repeat(40);
 const cancelled = (changes = {}) => ({
-  id: 2, workflow_id: 7, check_suite_id: 20, head_sha: HEAD, head_branch: 'fix/x',
+  id: 2, name: 'Repository hygiene', workflow_id: 7, check_suite_id: 20, head_sha: HEAD, head_branch: 'fix/x',
   head_repository: { owner: { login: 'honua-io' } },
   status: 'completed', conclusion: 'cancelled', run_attempt: 1, ...changes,
 });
@@ -67,6 +67,13 @@ test('supersession, stale heads, closed PRs and later attempts are left alone', 
   assert.deepEqual((await run({ trigger: cancelled({ head_repository: null }) })).reruns, []);
 });
 
+test('Clean code runs are handled with the same rules, per workflow', async () => {
+  const trigger = cancelled({ name: 'Clean code', workflow_id: 9 });
+  const { reruns, calls } = await run({ trigger, runs: [success({ workflow_id: 9 }), trigger] });
+  assert.deepEqual(reruns, [2]);
+  assert.equal(calls[0].workflow_id, 9);
+});
+
 test('fork heads are matched by owner and branch', async () => {
   const trigger = cancelled({ head_repository: { owner: { login: 'someone' } } });
   const { reruns, calls } = await run({ trigger, runs: [success(), trigger] });
@@ -83,7 +90,7 @@ test('API errors stay failures', async () => {
 });
 
 test('only cancelled first attempts start a job, with least privilege and no checkout', () => {
-  assert.match(workflow, /^on:\n  workflow_run:\n    workflows: \[Repository hygiene\]\n    types: \[completed\]\n/m);
+  assert.match(workflow, /^on:\n  workflow_run:\n    workflows: \[Repository hygiene, Clean code\]\n    types: \[completed\]\n/m);
   assert.match(workflow, /^permissions: \{\}$/m);
   assert.match(workflow, /github.event.workflow_run.event == 'pull_request'/);
   assert.match(workflow, /github.event.workflow_run.conclusion == 'cancelled'/);

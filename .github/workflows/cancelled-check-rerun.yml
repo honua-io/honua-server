@@ -1,20 +1,20 @@
-name: Repository hygiene rerun
+name: Cancelled required check rerun
 
-# Same-second pull_request events (opened + labeled, labeled + edited) start two Repository
-# hygiene runs for one head in one concurrency group. GitHub orders that queue independently of
-# check-suite order, so the run it cancels can sit in the newest suite, whose cancelled required
-# check then outranks the success and blocks the merge (#9610). This reruns that run once, with
-# its own event payload. It checks out nothing and only calls the API.
+# Same-second pull_request events (opened + labeled, opened + edited) start two Repository
+# hygiene or Clean code runs for one head in one concurrency group. GitHub orders that queue
+# independently of check-suite order, so the run it cancels can sit in the newest suite, whose
+# cancelled required check then outranks the success and blocks the merge (#9610, #9611). This
+# reruns that run once, with its own event payload. It checks out nothing and only calls the API.
 on:
   workflow_run:
-    workflows: [Repository hygiene]
+    workflows: [Repository hygiene, Clean code]
     types: [completed]
 
 permissions: {}
 
 jobs:
   rerun:
-    name: Rerun a cancelled newest-suite hygiene run
+    name: Rerun a cancelled newest-suite required check
     if: >-
       github.event.workflow_run.event == 'pull_request'
       && github.event.workflow_run.conclusion == 'cancelled'
@@ -56,4 +56,4 @@ jobs:
               return;
             }
             await github.rest.actions.reRunWorkflow({ ...context.repo, run_id: run.id });
-            core.notice(`Reran cancelled newest-suite hygiene run ${run.id} for #${pull.number}.`);
+            core.notice(`Reran cancelled newest-suite ${run.name} run ${run.id} for #${pull.number}.`);
