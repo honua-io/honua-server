@@ -135,7 +135,11 @@ internal sealed partial class Wfs20Handler
 
         if (decision.RequiresAuthentication)
         {
-            return Results.Unauthorized();
+            AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+            return Wfs20ErrorResults.CreateUnauthorized(
+                context,
+                "AccessDenied",
+                AccessPolicyHelpers.AuthRequiredMessage);
         }
 
         return Wfs20ErrorResults.CreateForbidden(

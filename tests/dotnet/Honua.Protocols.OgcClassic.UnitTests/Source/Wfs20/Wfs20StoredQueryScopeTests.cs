@@ -107,6 +107,27 @@ public sealed class Wfs20StoredQueryScopeTests
     }
 
     [UnitTest]
+    public async Task HandleCreateStoredQuery_AnonymousCaller_ReturnsChallengedExceptionReport()
+    {
+        var context = CreateAnonymousContext();
+        SetParsedCreateDocument(context, $"urn:srv-ogc-012:anonymous:{Guid.NewGuid():N}");
+
+        var result = await Wfs20Handler.HandleCreateStoredQueryAsync(context);
+
+        await AssertChallengedExceptionReportAsync(context, result);
+    }
+
+    [UnitTest]
+    public async Task HandleDropStoredQuery_AnonymousCaller_ReturnsChallengedExceptionReport()
+    {
+        var context = CreateAnonymousContext();
+
+        var result = await Wfs20Handler.HandleDropStoredQueryAsync(context, "urn:srv-ogc-012:anonymous");
+
+        await AssertChallengedExceptionReportAsync(context, result);
+    }
+
+    [UnitTest]
     public async Task HandleCreateStoredQuery_GlobalDataEditor_Succeeds()
     {
         var services = new ServiceCollection();
@@ -154,6 +175,22 @@ public sealed class Wfs20StoredQueryScopeTests
         // (the formatter dispatches on path prefix via ProtocolRequestClassifier.IsWfs).
         context.Request.Path = "/wfs";
         return context;
+    }
+
+    private static DefaultHttpContext CreateAnonymousContext()
+    {
+        var context = CreateContextWithTenant("tenant-a");
+        context.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity());
+        return context;
+    }
+
+    private static async Task AssertChallengedExceptionReportAsync(DefaultHttpContext context, IResult result)
+    {
+        var (status, body) = await ExecuteAsync(context, result);
+        status.Should().Be(StatusCodes.Status401Unauthorized);
+        body.Should().Contain("ExceptionReport");
+        body.Should().Contain("AccessDenied");
+        context.Response.Headers.WWWAuthenticate.Should().NotBeEmpty();
     }
 
     private static void SetParsedCreateDocument(DefaultHttpContext context, string storedQueryId)
