@@ -150,9 +150,18 @@ async function comment(ctx, issueNumber, body) {
   });
 }
 
+// A success closes only issues whose recorded runs are all older (run ids only grow), so a failed
+// run being re-run, or a cancelled re-run, never lets an earlier success close it.
+async function newestRecordedRun(ctx, issue) {
+  const texts = [issue.body, ...(await commentsOf(ctx, issue.number)).map(item => item.body)];
+  const ids = texts.flatMap(text => [...String(text || '').matchAll(/<!-- scheduled-failure run=(\d+) -->/g)]);
+  return Math.max(0, ...ids.map(match => Number(match[1])));
+}
+
 async function closeIssues(ctx, issues, run) {
   const { github, owner, repo, report } = ctx;
   for (const issue of issues) {
+    if (await newestRecordedRun(ctx, issue) > run.id) continue;
     await comment(ctx, issue.number, `Scheduled run ${run.html_url} succeeded on \`${shortSha(run)}\`; closing.`);
     await github.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
       owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',

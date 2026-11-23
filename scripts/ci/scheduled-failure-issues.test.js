@@ -285,6 +285,15 @@ test('a job cancelled by its own timeout names the issue when no job concluded f
   assert.deepEqual(github.issues.map(issue => issue.title), ['Scheduled run failing: nightly / Soak']);
 });
 
+test('an older success never closes an issue for a newer run that is being re-run or was cancelled', async () => {
+  const issues = [{ number: 7, state: 'open', body: '<!-- scheduled-failure key=.github/workflows/nightly.yml::Build -->\n<!-- scheduled-failure run=2 -->' }];
+  const rerunning = { ...run(2, 'nightly.yml', null), status: 'in_progress' };
+  const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'success'), rerunning], issues });
+  assert.deepEqual((await go(github)).closed, []);
+  const green = fakeGithub({ runs: [run(1, 'nightly.yml', 'success'), run(3, 'nightly.yml', 'success')], issues });
+  assert.deepEqual((await go(green)).closed, ['app#7']);
+});
+
 test('a failing repository sweep is reported without stopping the others; all failing throws', async () => {
   const github = fakeGithub({});
   github.paginate = async route => {
