@@ -186,7 +186,8 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
         ActivitySource.AddActivityListener(listener);
 
         // The listener is process-wide; parenting the call keeps spans from parallel tests out.
-        using var testRoot = new Activity("citygml-promote-fail-test").Start();
+        using var testRoot = new Activity("citygml-promote-fail-test");
+        testRoot.Start();
         var act = async () => await _executor.IngestAsync(
             new CityGmlSceneIngestRequest(CityGmlSceneFixtures.SingleBuildingGeographic(), SceneId: sceneId),
             CancellationToken.None);

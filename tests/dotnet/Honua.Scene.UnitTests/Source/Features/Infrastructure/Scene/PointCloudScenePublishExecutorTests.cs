@@ -237,7 +237,8 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
         ActivitySource.AddActivityListener(listener);
 
         // The listener is process-wide; parenting the call keeps spans from parallel tests out.
-        using var testRoot = new Activity("pointcloud-promote-fail-test").Start();
+        using var testRoot = new Activity("pointcloud-promote-fail-test");
+        testRoot.Start();
         var act = async () => await _executor.IngestAsync(
             new PointCloudSceneIngestRequest(PointCloudSceneFixtures.SinglePointGeographic(), SceneId: sceneId),
             CancellationToken.None);
