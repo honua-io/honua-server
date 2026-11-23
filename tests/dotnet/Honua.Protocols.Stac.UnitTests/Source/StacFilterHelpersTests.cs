@@ -430,7 +430,7 @@ public sealed class StacFilterHelpersTests
     [UnitTest]
     public void IsValidDatetimeSyntax_WithSingleOpenInterval_ReturnsTrue()
     {
-        foreach (var datetime in new[] { "../2023-01-02T00:00:00Z", "2023-01-02T00:00:00Z/.." })
+        foreach (var datetime in new[] { "../2023-01-02T00:00:00Z", "2023-01-02T00:00:00Z/..", "/2023-01-02T00:00:00Z", "2023-01-02T00:00:00Z/" })
         {
             StacFilterHelpers.IsValidDatetimeSyntax(datetime)
                 .Should().BeTrue("'{0}' is a valid half-bounded interval", datetime);
@@ -446,7 +446,7 @@ public sealed class StacFilterHelpersTests
                 new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
             ]);
 
-        var filter = StacFilterHelpers.ParseDatetime("../2023-01-02T00:00:00Z", resource);
+        var filter = StacFilterHelpers.ParseDatetime("/2023-01-02T00:00:00Z", resource);
 
         filter.Should().NotBeNull();
         var value = filter!.Value;
@@ -463,7 +463,7 @@ public sealed class StacFilterHelpersTests
                 new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
             ]);
 
-        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z/..", resource);
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z/", resource);
 
         filter.Should().NotBeNull();
         var value = filter!.Value;

@@ -14,6 +14,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
@@ -37,6 +38,8 @@ internal sealed partial class Wfs20Handler
         string? filter,
         string? resourceId,
         string? srsName,
+        string? sortBy = null,
+        string? resultType = null,
         CancellationToken cancellationToken = default)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -63,6 +66,17 @@ internal sealed partial class Wfs20Handler
                 "The 'valueReference' parameter must not be empty for GetPropertyValue.",
                 "valueReference");
         }
+
+        if (!Wfs20Utilities.TryNormalizeResultType(resultType, out var normalizedResultType))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid RESULTTYPE parameter '{resultType}'. Supported values are 'results' and 'hits'.",
+                "resultType");
+        }
+
+        var isHitsRequest = string.Equals(normalizedResultType, "hits", StringComparison.OrdinalIgnoreCase);
 
         var normalizedOutputFormat = Wfs20Utilities.OutputFormats.NormalizeOutputFormat(outputFormat);
         if (!IsSupportedValueOutputFormat(normalizedOutputFormat))
@@ -101,6 +115,17 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
+                if (await RequiresAuthenticationForWithheldTypesAsync(context, unknownTypes, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+                    return Wfs20ErrorResults.CreateUnauthorized(
+                        context,
+                        "AccessDenied",
+                        AccessPolicyHelpers.AuthRequiredMessage,
+                        "typeNames");
+                }
+
                 var requestedTypeMessage = unknownTypes.Length == 1
                     ? $"Unknown feature type '{unknownTypes[0]}'."
                     : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.";
@@ -115,12 +140,16 @@ internal sealed partial class Wfs20Handler
                 context, ResolveRequestedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             if (selectedTypes.Length == 0)
             {
-                return CreateEmptyValueCollectionResult(normalizedOutputFormat);
+                return isHitsRequest
+                    ? CreateHitsValueCollectionXmlResult(0)
+                    : CreateEmptyValueCollectionResult(normalizedOutputFormat);
             }
 
+            var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             var planSet = await BuildLayerValuePlansAsync(
                 selectedTypes,
                 valueReference,
+                sortBy,
                 bbox,
                 filter,
                 resourceId,
@@ -129,13 +158,36 @@ internal sealed partial class Wfs20Handler
                 maxFeatures,
                 cancellationToken);
 
-            if (planSet.TotalMatched == 0)
+            var pagingLinks = isHitsRequest
+                ? new PagingLinks(null, null)
+                : BuildValueCollectionPagingLinks(
+                    wfsUrl,
+                    selectedTypes,
+                    valueReference,
+                    outputFormat,
+                    sortBy,
+                    bbox,
+                    filter,
+                    resourceId,
+                    srsName,
+                    offset,
+                    maxFeatures,
+                    planSet.TotalMatched);
+
+            if (isHitsRequest)
             {
-                return CreateEmptyValueCollectionResult(normalizedOutputFormat);
+                Wfs20Log.GetPropertyValueReturned(_logger, 0);
+                return CreateHitsValueCollectionXmlResult(planSet.TotalMatched);
             }
 
-            var (result, returnedCount) = string.Equals(normalizedOutputFormat, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase)
-                ? await BuildValueCollectionResultAsync(planSet, cancellationToken)
+            if (planSet.TotalMatched == 0)
+            {
+                return CreateEmptyValueCollectionResult(normalizedOutputFormat, pagingLinks.Next, pagingLinks.Previous);
+            }
+
+            var (result, returnedCount) = string.Equals(normalizedOutputFormat, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(normalizedOutputFormat, Wfs20Utilities.OutputFormats.Gml32Simplified, StringComparison.OrdinalIgnoreCase)
+                ? await BuildValueCollectionResultAsync(planSet, pagingLinks.Next, pagingLinks.Previous, cancellationToken)
                 : await BuildValueJsonResultAsync(planSet, normalizedOutputFormat, cancellationToken);
             Wfs20Log.GetPropertyValueReturned(_logger, returnedCount);
             return result;
@@ -169,6 +221,7 @@ internal sealed partial class Wfs20Handler
     private async Task<LayerValuePlanSet> BuildLayerValuePlansAsync(
         IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
         string valueReference,
+        string? sortBy,
         string? bbox,
         string? filter,
         string? resourceId,
@@ -188,6 +241,7 @@ internal sealed partial class Wfs20Handler
             var query = await BuildValueQueryAsync(
                 featureType,
                 resolvedValueReference,
+                sortBy,
                 bbox,
                 filter,
                 resourceId,
@@ -232,6 +286,7 @@ internal sealed partial class Wfs20Handler
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
                 resolvedValueReference,
+                srsName,
                 reader));
 
             remainingCount -= layerLimit;
@@ -243,6 +298,7 @@ internal sealed partial class Wfs20Handler
     private async ValueTask<FeatureQuery> BuildValueQueryAsync(
         WfsFeatureTypeDescriptor descriptor,
         ValueReferenceResolution valueReference,
+        string? sortBy,
         string? bbox,
         string? filter,
         string? resourceId,
@@ -257,6 +313,7 @@ internal sealed partial class Wfs20Handler
 
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(descriptor.Resource, normalizedFilter);
+        var orderBy = ParseSortBy(descriptor.Resource, sortBy);
         var spatialFilter = ParseBboxFilterForResource(bbox, descriptor.Resource);
         var resourceIds = ParseResourceIds(normalizedResourceId, descriptor.LocalName, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
@@ -270,6 +327,7 @@ internal sealed partial class Wfs20Handler
                 SqlFilter = sqlFilter,
                 ObjectIds = resourceIds.ObjectIds,
                 OutFields = outFields,
+                OrderBy = orderBy,
                 SpatialFilter = spatialFilter,
                 OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder)
             },
@@ -291,6 +349,8 @@ internal sealed partial class Wfs20Handler
 
     private async Task<(IResult Result, int ReturnedCount)> BuildValueCollectionResultAsync(
         LayerValuePlanSet planSet,
+        string? next,
+        string? previous,
         CancellationToken cancellationToken)
     {
         var queryResults = new List<(LayerValuePlan Plan, ImmutableArray<GmlFeature>? GmlFeatures, ImmutableArray<Feature>? Features)>(planSet.Plans.Length);
@@ -319,6 +379,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteAttributeString("timeStamp", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
             writer.WriteAttributeString("numberMatched", planSet.TotalMatched.ToString(CultureInfo.InvariantCulture));
             writer.WriteAttributeString("numberReturned", returnedCount.ToString(CultureInfo.InvariantCulture));
+            WritePagingAttributes(writer, next, previous);
 
             foreach (var queryResult in queryResults)
             {
@@ -329,7 +390,7 @@ internal sealed partial class Wfs20Handler
                         writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
                         if (!string.IsNullOrWhiteSpace(feature.GeometryGml))
                         {
-                            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, queryResult.Plan.Query));
+                            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, queryResult.Plan.Query, queryResult.Plan.RequestedSrsName));
                         }
                         writer.WriteEndElement();
                     }
@@ -446,7 +507,10 @@ internal sealed partial class Wfs20Handler
                string.Equals(format, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IResult CreateEmptyValueCollectionResult(string normalizedFormat)
+    private static IResult CreateEmptyValueCollectionResult(
+        string normalizedFormat,
+        string? next = null,
+        string? previous = null)
     {
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase))
@@ -460,17 +524,120 @@ internal sealed partial class Wfs20Handler
             return Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType);
         }
 
-        return CreateEmptyValueCollectionXmlResult();
+        return CreateEmptyValueCollectionXmlResult(next, previous);
     }
 
-    private static IResult CreateEmptyValueCollectionXmlResult()
+    private static IResult CreateEmptyValueCollectionXmlResult(
+        string? next = null,
+        string? previous = null)
+        => CreateHitsValueCollectionXmlResult(0, next, previous);
+
+    private static IResult CreateHitsValueCollectionXmlResult(
+        long totalMatched,
+        string? next = null,
+        string? previous = null)
     {
-        var xml = $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <wfs:ValueCollection xmlns:wfs="{{Wfs20Utilities.WfsNamespace}}" xmlns:gml="{{Wfs20Utilities.GmlNamespace}}" timeStamp="{{DateTimeOffset.UtcNow:O}}" numberMatched="0" numberReturned="0" />
-            """;
+        var xml = WriteXmlDocument(writer =>
+        {
+            writer.WriteStartDocument();
+            writer.WriteStartElement("wfs", "ValueCollection", Wfs20Utilities.WfsNamespace);
+            writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
+            writer.WriteAttributeString("timeStamp", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("numberMatched", totalMatched.ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("numberReturned", "0");
+            WritePagingAttributes(writer, next, previous);
+            writer.WriteEndElement();
+            writer.WriteEndDocument();
+        });
 
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
+    }
+
+    private static PagingLinks BuildValueCollectionPagingLinks(
+        string wfsUrl,
+        IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
+        string valueReference,
+        string? outputFormat,
+        string? sortBy,
+        string? bbox,
+        string? filter,
+        string? resourceId,
+        string? srsName,
+        int offset,
+        int pageSize,
+        long totalMatched)
+    {
+        if (pageSize <= 0 || selectedTypes.Count == 0)
+        {
+            return new PagingLinks(null, null);
+        }
+
+        var nextOffset = (long)offset + pageSize;
+        var next = nextOffset < totalMatched && nextOffset <= int.MaxValue
+            ? BuildGetPropertyValuePagingLink(
+                wfsUrl,
+                selectedTypes,
+                valueReference,
+                outputFormat,
+                sortBy,
+                bbox,
+                filter,
+                resourceId,
+                srsName,
+                (int)nextOffset,
+                pageSize)
+            : null;
+        var previous = offset > 0
+            ? BuildGetPropertyValuePagingLink(
+                wfsUrl,
+                selectedTypes,
+                valueReference,
+                outputFormat,
+                sortBy,
+                bbox,
+                filter,
+                resourceId,
+                srsName,
+                Math.Max(offset - pageSize, 0),
+                pageSize)
+            : null;
+
+        return new PagingLinks(next, previous);
+    }
+
+    private static string BuildGetPropertyValuePagingLink(
+        string wfsUrl,
+        IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
+        string valueReference,
+        string? outputFormat,
+        string? sortBy,
+        string? bbox,
+        string? filter,
+        string? resourceId,
+        string? srsName,
+        int offset,
+        int count)
+    {
+        var typeNames = selectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
+        var queryParts = new List<string>
+        {
+            $"SERVICE={Uri.EscapeDataString(Wfs20Utilities.ServiceType)}",
+            $"VERSION={Uri.EscapeDataString(Wfs20Utilities.Version)}",
+            $"REQUEST={Uri.EscapeDataString(Wfs20Utilities.Operations.GetPropertyValue)}",
+            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', typeNames))}",
+            $"VALUEREFERENCE={Uri.EscapeDataString(valueReference)}",
+            $"COUNT={count.ToString(CultureInfo.InvariantCulture)}",
+            $"STARTINDEX={offset.ToString(CultureInfo.InvariantCulture)}"
+        };
+
+        AppendQueryPart(queryParts, "OUTPUTFORMAT", outputFormat);
+        AppendQueryPart(queryParts, "SORTBY", sortBy);
+        AppendQueryPart(queryParts, "BBOX", bbox);
+        AppendQueryPart(queryParts, "FILTER", filter);
+        AppendQueryPart(queryParts, "RESOURCEID", resourceId);
+        AppendQueryPart(queryParts, "SRSNAME", srsName);
+
+        return $"{wfsUrl}?{string.Join("&", queryParts)}";
     }
 
     private sealed record LayerValuePlan(
@@ -478,6 +645,7 @@ internal sealed partial class Wfs20Handler
         FeatureQuery Query,
         long MatchedCount,
         ValueReferenceResolution ValueReference,
+        string? RequestedSrsName = null,
         IFeatureReader? Reader = null);
 
     private IFeatureReader ReaderFor(LayerValuePlan plan) => plan.Reader ?? _featureReader;
@@ -486,7 +654,7 @@ internal sealed partial class Wfs20Handler
         LayerValuePlan plan,
         CancellationToken cancellationToken)
         => QueryGmlFeaturesAsync(
-            new LayerQueryPlan(plan.Descriptor, plan.Query, plan.MatchedCount, Reader: plan.Reader),
+            new LayerQueryPlan(plan.Descriptor, plan.Query, plan.MatchedCount, plan.RequestedSrsName, plan.Reader),
             cancellationToken);
 
     private readonly record struct LayerValuePlanSet(

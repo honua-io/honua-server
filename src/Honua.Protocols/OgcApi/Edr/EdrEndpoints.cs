@@ -68,8 +68,8 @@ public static class EdrEndpoints
     private static IResult GetLandingPage(HttpContext context)
         => EdrHandler.GetLandingPage(context);
 
-    private static IResult GetConformance()
-        => EdrHandler.GetConformance();
+    private static IResult GetConformance(HttpContext context)
+        => EdrHandler.GetConformance(context);
 
     private static Task<IResult> GetCollections(HttpContext context, EdrHandler handler)
         => handler.GetCollectionsAsync(context, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context));

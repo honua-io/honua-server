@@ -809,6 +809,35 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains(500.0, result.WhereParameters.OfType<double>());
     }
 
+    [Theory]
+    [InlineData(2227, 1200d / 3937d)]
+    [InlineData(2229, 1200d / 3937d)]
+    [InlineData(2223, 0.3048d)]
+    public void BuildSelectQuery_WithinDistance_FootProjectedSrid_ScalesMeterDistanceToNativeUnits(int srid, double metersPerUnit)
+    {
+        var projectedMapping = new DuckDBLayerMapping
+        {
+            LayerId = 2,
+            TableName = "parcels_state_plane",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = srid,
+            AttributeColumns = ["name"]
+        };
+        var builder = new DuckDBFeatureQueryBuilder(new DuckDBLayerRegistry([projectedMapping]));
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([1, 2, 3, 4], 100.0, DistanceUnit.Meters)
+        };
+
+        var result = builder.BuildSelectQuery(2, query);
+
+        Assert.Contains("ST_DWithin(", result.Sql);
+        var boundDistance = Assert.Single(result.WhereParameters.OfType<double>());
+        Assert.Equal(100.0 / metersPerUnit, boundDistance, precision: 9);
+    }
+
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
     {

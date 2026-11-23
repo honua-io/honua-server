@@ -47,7 +47,7 @@ $ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-ce94c24647822a598078de88487cb638607e73e0d23a90115ab13d6cce6eb280  -
+70339524832217dc7fea24e75901beadae1d827951be670823b789341ada7b80  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32  -
 ```

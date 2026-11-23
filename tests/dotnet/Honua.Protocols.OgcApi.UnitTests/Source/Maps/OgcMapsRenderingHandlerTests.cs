@@ -407,6 +407,79 @@ public class OgcMapsRenderingHandlerTests
         transform.ExtentCalls.Should().Be(2);
     }
 
+    [UnitTest]
+    public async Task CollectionMap_SpatialHeaders_DistinguishCrs84FromEpsg4326WithoutQueryString()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "roads", MetadataV2ObjectType.FeatureDataset)
+            .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
+            .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
+            .AddPublication("publication", "service", "resource", layerIndex: 1)
+            .BuildProvider();
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderCollectionMapAsync(Arg.Any<int>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1, Srid = 4326 });
+        var handler = new OgcMapsRenderingHandler(
+            graph,
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        var defaultContext = CreateGrantContext();
+        await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            defaultContext);
+        defaultContext.Response.Headers["Content-Crs"].ToString()
+            .Should().Be("<http://www.opengis.net/def/crs/OGC/1.3/CRS84>");
+
+        defaultContext.Response.Headers["Content-Bbox"].ToString().Should().Be("-158,20,-156,22");
+
+        var epsg4326Context = CreateGrantContext();
+        await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Crs = "EPSG:4326", Width = 1, Height = 1 },
+            epsg4326Context);
+        epsg4326Context.Response.Headers["Content-Crs"].ToString()
+            .Should().Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
+        epsg4326Context.Response.Headers["Content-Bbox"].ToString().Should().Be("20,-158,22,-156");
+    }
+
+    [UnitTest]
+    public async Task CollectionMap_FormatNegotiation_DistinguishesInvalidFormatParamFromUnacceptableAcceptHeader()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "roads", MetadataV2ObjectType.FeatureDataset)
+            .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
+            .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
+            .AddPublication("publication", "service", "resource", layerIndex: 1)
+            .BuildProvider();
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        var handler = new OgcMapsRenderingHandler(
+            graph,
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+
+        var acceptContext = CreateGrantContext();
+        acceptContext.Request.Headers.Accept = "application/xml";
+        var notAcceptable = await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
+            acceptContext);
+        notAcceptable.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status406NotAcceptable);
+
+        var badFormatContext = CreateGrantContext();
+        badFormatContext.Request.Headers.Accept = "application/xml";
+        var badRequest = await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "-158,20,-156,22", F = "invalid", Width = 1, Height = 1 },
+            badFormatContext);
+        badRequest.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
     private static TestMetadataV2GraphProvider RestrictedMapsProvider()
     {
         var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };

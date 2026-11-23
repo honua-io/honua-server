@@ -377,7 +377,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         string featureId,
         string? ifMatch,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? ifNoneMatch = null)
     {
         try
         {
@@ -434,6 +435,39 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return lockedResult;
             }
 
+            // Check if feature exists and validate ETag preconditions if provided. The pre-check gives
+            // a fast 412 without parsing/validating the payload; the canonical state token
+            // computed from the same snapshot is re-validated by the feature writer inside
+            // the write transaction so a concurrent commit between this check and the
+            // write cannot be silently overwritten (TOCTOU).
+            string? expectedStateToken = null;
+            var effectiveIfNoneMatch = string.IsNullOrWhiteSpace(ifNoneMatch)
+                ? context.Request.Headers.IfNoneMatch.ToString()
+                : ifNoneMatch;
+            if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(effectiveIfNoneMatch))
+            {
+                var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
+                if (!string.IsNullOrWhiteSpace(ifMatch) &&
+                    !OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource has been modified since the provided ETag.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(effectiveIfNoneMatch) &&
+                    OgcFeatureEntityTag.MatchesEntityOrRepresentation(effectiveIfNoneMatch, etag, _etagService, allowWeak: true))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource matches the If-None-Match precondition.");
+                }
+
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
+            }
+
             var contentTypeError = OgcFeaturePayloadReader.ValidateFeatureContentType(context);
             if (contentTypeError is not null)
             {
@@ -470,26 +504,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     $"Payload public feature ID '{payloadPublicId}' does not match route feature ID '{featureId}'.");
             }
             requestFeature = EnsureFeaturePublicId(requestFeature, resource, expectedFeatureId);
-
-            // Check if feature exists and validate ETag if provided. The pre-check gives
-            // a fast 412 without parsing/validating the payload; the canonical state token
-            // computed from the same snapshot is re-validated by the feature writer inside
-            // the write transaction so a concurrent commit between this check and the
-            // write cannot be silently overwritten (TOCTOU).
-            string? expectedStateToken = null;
-            if (!string.IsNullOrWhiteSpace(ifMatch))
-            {
-                var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
-                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
-                {
-                    return Results.Problem(
-                        statusCode: 412,
-                        title: "Precondition Failed",
-                        detail: "The resource has been modified since the provided ETag.");
-                }
-
-                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
-            }
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
                 context.Request,
@@ -681,7 +695,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         string featureId,
         string? ifMatch,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? ifNoneMatch = null)
     {
         try
         {
@@ -744,15 +759,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // transaction so omitted properties and geometry cannot overwrite concurrent
             // changes, including requests without an explicit If-Match precondition.
             var expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
-            if (!string.IsNullOrWhiteSpace(ifMatch))
+            var effectiveIfNoneMatch = string.IsNullOrWhiteSpace(ifNoneMatch)
+                ? context.Request.Headers.IfNoneMatch.ToString()
+                : ifNoneMatch;
+            if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(effectiveIfNoneMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
-                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
+                if (!string.IsNullOrWhiteSpace(ifMatch) &&
+                    !OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
                 {
                     return Results.Problem(
                         statusCode: 412,
                         title: "Precondition Failed",
                         detail: "The resource has been modified since the provided ETag.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(effectiveIfNoneMatch) &&
+                    OgcFeatureEntityTag.MatchesEntityOrRepresentation(effectiveIfNoneMatch, etag, _etagService, allowWeak: true))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource matches the If-None-Match precondition.");
                 }
             }
 
@@ -847,9 +875,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var properties = patchRequest.Properties?.Where(property => !trackingFields.Contains(property.Key))
-                .ToImmutableDictionary(property => property.Key, property => property.Value, StringComparer.OrdinalIgnoreCase);
             var fieldsByName = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+            var properties = patchRequest.Properties?.Where(property => !trackingFields.Contains(property.Key))
+                .ToImmutableDictionary(
+                    property => property.Key,
+                    property => MergePropertyValueWithExisting(existing.Attributes, fieldsByName, property.Key, property.Value),
+                    StringComparer.OrdinalIgnoreCase);
             var removals = ImmutableArray.CreateBuilder<string>();
             foreach (var (name, value) in (IReadOnlyDictionary<string, object?>?)properties ?? ImmutableDictionary<string, object?>.Empty)
             {
@@ -2100,6 +2131,92 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (JsonException)
         {
             return (null, null, "Invalid JSON payload.");
+        }
+    }
+
+    private static object? MergePropertyValueWithExisting(
+        ImmutableDictionary<string, object?> existingAttributes,
+        Dictionary<string, MetadataV2Field> fieldsByName,
+        string propertyName,
+        object? patchValue)
+    {
+        if (patchValue is null || !TryAsJsonObject(patchValue, out var patchObject))
+        {
+            return patchValue;
+        }
+
+        var canonicalName = fieldsByName.TryGetValue(propertyName, out var field) && field is not null
+            ? field.Name
+            : propertyName;
+
+        object? existingValue = null;
+        if (!existingAttributes.TryGetValue(canonicalName, out existingValue) &&
+            !existingAttributes.TryGetValue(propertyName, out existingValue))
+        {
+            foreach (var (key, candidate) in existingAttributes)
+            {
+                if (string.Equals(key, canonicalName, StringComparison.OrdinalIgnoreCase))
+                {
+                    existingValue = candidate;
+                    break;
+                }
+            }
+        }
+
+        return ApplyJsonMergePatch(existingValue, patchObject);
+    }
+
+    private static Dictionary<string, object?> ApplyJsonMergePatch(
+        object? target,
+        IReadOnlyDictionary<string, object?> patch)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (TryAsJsonObject(target, out var targetObject))
+        {
+            foreach (var (key, value) in targetObject)
+            {
+                result[key] = value;
+            }
+        }
+
+        foreach (var (key, patchValue) in patch)
+        {
+            if (patchValue is null or JsonElement { ValueKind: JsonValueKind.Null })
+            {
+                result.Remove(key);
+            }
+            else if (TryAsJsonObject(patchValue, out var nestedPatch))
+            {
+                result.TryGetValue(key, out var existingNested);
+                result[key] = ApplyJsonMergePatch(existingNested, nestedPatch);
+            }
+            else
+            {
+                result[key] = patchValue;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool TryAsJsonObject(
+        object? value,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IReadOnlyDictionary<string, object?>? jsonObject)
+    {
+        switch (value)
+        {
+            case IReadOnlyDictionary<string, object?> readOnlyDict:
+                jsonObject = readOnlyDict;
+                return true;
+            case IDictionary<string, object?> dict:
+                jsonObject = dict.ToDictionary(static kvp => kvp.Key, static kvp => kvp.Value, StringComparer.Ordinal);
+                return true;
+            case JsonElement { ValueKind: JsonValueKind.Object } element:
+                jsonObject = (Dictionary<string, object?>)JsonElementConverter.ConvertToObject(element)!;
+                return true;
+            default:
+                jsonObject = null;
+                return false;
         }
     }
 

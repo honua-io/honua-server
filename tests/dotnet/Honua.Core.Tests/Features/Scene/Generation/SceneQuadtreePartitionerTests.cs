@@ -225,6 +225,47 @@ public sealed class SceneQuadtreePartitionerTests
         AssertNonRootLeavesAreZero(tree.Root, isRoot: true);
     }
 
+    [UnitTest]
+    public void Partition_PolygonVerticesCrossingQuadrantMidpoint_ExpandsNodeBoundsToEncloseGeometry()
+    {
+        // Polygon in SW quadrant whose east/north vertices extend across the midpoint (-122.45, 37.75).
+        var swPolygonCrossingMidpoint = new SceneFeature
+        {
+            Id = 1,
+            Geometry = new SceneFeatureGeometry
+            {
+                Kind = SceneGeometryKind.Polygon,
+                Vertices =
+                [
+                    new SceneVertex(-122.49, 37.71, 0),
+                    new SceneVertex(-122.42, 37.71, 0), // crosses midLon (-122.45)
+                    new SceneVertex(-122.42, 37.77, 0), // crosses midLat (37.75)
+                    new SceneVertex(-122.49, 37.77, 0),
+                    new SceneVertex(-122.49, 37.71, 0),
+                ]
+            }
+        };
+        var nePoint = MakePoint(2, -122.41, 37.79);
+        var options = new SceneLodOptions { MaxFeaturesPerTile = 1, MaxDepth = 4, InteriorSampleCount = 2 };
+
+        var tree = SceneQuadtreePartitioner.Partition(
+            [swPolygonCrossingMidpoint, nePoint],
+            Bounds,
+            1000.0,
+            options);
+
+        tree.Root.IsLeaf.Should().BeFalse();
+        var swChild = tree.Root.Children[0];
+        swChild.Features.Should().ContainSingle(f => f.Id == 1);
+        swChild.East.Should().BeGreaterThanOrEqualTo(-122.42);
+        swChild.North.Should().BeGreaterThanOrEqualTo(37.77);
+
+        tree.Root.West.Should().BeLessThanOrEqualTo(swChild.West);
+        tree.Root.South.Should().BeLessThanOrEqualTo(swChild.South);
+        tree.Root.East.Should().BeGreaterThanOrEqualTo(swChild.East);
+        tree.Root.North.Should().BeGreaterThanOrEqualTo(swChild.North);
+    }
+
     private static void AssertNonRootLeavesAreZero(SceneTileNode node, bool isRoot)
     {
         if (node.IsLeaf && !isRoot)

@@ -21,6 +21,7 @@ public static class GeographicSridClassifier
         4275,   // NTF
         4277,   // OSGB 1936
         4283,   // GDA94
+        4301,   // Tokyo (Bessel 1841)
         4326,   // WGS 84
         4490,   // CGCS2000
         4612,   // JGD2000

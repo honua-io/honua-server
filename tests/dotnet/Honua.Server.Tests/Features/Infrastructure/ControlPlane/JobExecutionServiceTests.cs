@@ -1384,6 +1384,7 @@ public sealed partial class JobExecutionServiceTests
 
         var jobQueue = Substitute.For<IJobQueue>();
         using var stoppingCts = new CancellationTokenSource();
+        var timeoutObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
@@ -1393,10 +1394,11 @@ public sealed partial class JobExecutionServiceTests
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                // Wait for the timeout to fire, then also trigger shutdown.
-                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
+                var executionToken = callInfo.Arg<CancellationToken>();
+                using var registration = executionToken.Register(() => timeoutObserved.TrySetResult());
+                await timeoutObserved.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
                 await stoppingCts.CancelAsync().ConfigureAwait(false);
-                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                executionToken.ThrowIfCancellationRequested();
                 return JobExecutionResult.Succeeded(); // Unreachable.
             });
 
@@ -1408,6 +1410,10 @@ public sealed partial class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId,
             provisioning.ClaimedBy!, stoppingCts.Token);
+
+        // Assert outside the executor so a watchdog failure cannot be swallowed by the service.
+        Assert.True(timeoutObserved.Task.IsCompletedSuccessfully, "Execution timeout cancellation was not observed.");
+        Assert.True(stoppingCts.IsCancellationRequested, "Shutdown was not requested after the timeout.");
 
         // The job must be terminally failed (timeout), not requeued.
         await jobStore.Received().TrySetAsync(

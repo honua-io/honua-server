@@ -124,6 +124,37 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(50, len(state['run_versions']))
         self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(source()['updated_at']))
 
+    def test_current_evidence_is_published_while_historical_backlog_advances(self):
+        runs = {i: source(i) for i in range(1, 61)}
+        for identity, run in runs.items():
+            run['updated_at'] = f'2026-11-15T00:{identity - 1:02d}:00Z'
+        evidence = [artifact(identity, identity) for identity in runs]
+        state, publish = self.execute(evidence, runs)
+        published = {call.args[0]['id'] for call in publish.call_args_list}
+        self.assertEqual(set(range(1, 6)) | set(range(41, 61)), published)
+        self.assertEqual(25, publish.call_count)
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(runs[6]['updated_at']))
+
+        # New completions must not displace the oldest unpublished evidence forever.
+        for identity in range(61, 91):
+            runs[identity] = source(identity)
+            runs[identity]['updated_at'] = f'2026-11-15T01:{identity - 61:02d}:00Z'
+            evidence.append(artifact(identity, identity))
+        state, publish = self.execute(evidence, runs, state)
+        published = {call.args[0]['id'] for call in publish.call_args_list}
+        self.assertEqual(set(range(6, 11)) | set(range(71, 91)), published)
+        self.assertEqual(25, publish.call_count)
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(runs[11]['updated_at']))
+
+        observed = set(range(1, 11)) | set(range(41, 61)) | set(range(71, 91))
+        for _ in range(3):
+            state, publish = self.execute(evidence, runs, state)
+            batch = {call.args[0]['id'] for call in publish.call_args_list}
+            self.assertFalse(observed & batch)
+            self.assertLessEqual(len(batch), 25)
+            observed.update(batch)
+        self.assertEqual(set(runs), observed)
+
     def test_rerun_started_after_discovery_never_consumes_new_attempt(self):
         listed = source()
         pending = dict(listed, status='in_progress', run_attempt=3)

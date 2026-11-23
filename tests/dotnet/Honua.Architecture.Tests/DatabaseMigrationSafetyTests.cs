@@ -20,6 +20,8 @@ public sealed class DatabaseMigrationSafetyTests
         "144_RenameGeoServicesRestSourceKind.sql",
         "145_ProtectImportDependencies.sql",
         "183_RemoveUnusedFeatureIndexes.sql",
+        // Forward-only schema adoption is pinned as an approved contract migration.
+        "227_AdoptConfiguredRegistrySchema.sql",
         "232_RenameMapAppDraftIdentities.sql",
         "233_RenameMapAppDeploymentSources.sql",
         "234_RenameMapAppResultReferences.sql",

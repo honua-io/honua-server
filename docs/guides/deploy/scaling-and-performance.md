@@ -82,9 +82,21 @@ When a backlog grows:
 
 Calls to external services (GeoServices REST/GeoServer imports, geocoders, key vaults, webhooks) get automatic retries with exponential backoff and per-service circuit breakers. Three profiles exist — `FastApi`, `Standard`, `SlowService` — plus per-service overrides, all tunable under `HttpResilience__`:
 
-```bash
-HttpResilience__SlowService__TimeoutSeconds=300
-HttpResilience__ServiceOverrides__geoserver-rest__TimeoutSeconds=240
+Merge this fragment into the service's appsettings configuration. Keep the service name `geoserver-rest`; the hyphen makes its environment-variable key invalid as a Bash assignment name. Deployment environment variables take precedence over appsettings values.
+
+```json
+{
+  "HttpResilience": {
+    "SlowService": {
+      "TimeoutSeconds": 300
+    },
+    "ServiceOverrides": {
+      "geoserver-rest": {
+        "TimeoutSeconds": 240
+      }
+    }
+  }
+}
 ```
 
 Key knobs per profile/override: `MaxRetryAttempts`, `BaseDelayMs`, `BackoffExponent`, `JitterPercentage`, `CircuitBreakerFailures`, `CircuitBreakDurationSeconds`, `TimeoutSeconds`. Defaults live in `src/Honua.Server/appsettings.HttpResilience.json`. Raise timeouts and retry counts for slow import sources; lower the breaker threshold for flaky webhooks so failures fail fast.
