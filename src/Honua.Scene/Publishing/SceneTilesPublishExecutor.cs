@@ -412,8 +412,9 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
         // Intentionally generic: this is the top-level scene-generation job boundary.
         // ValidationException and cancellation are already handled above; any other
-        // failure is logged here. Local output failures retain their operator-facing
-        // classification; remaining failures become ServiceUnavailableException.
+        // failure is logged here. Unwritable local output and object-store permission
+        // refusals keep their operator-facing classification; remaining failures become
+        // ServiceUnavailableException.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);

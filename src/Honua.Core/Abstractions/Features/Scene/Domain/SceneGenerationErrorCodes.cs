@@ -21,5 +21,7 @@ public static class SceneGenerationErrorCodes
 
     public const string OutputUnwritable = "SCENE_OUTPUT_UNWRITABLE";
 
+    public const string AssetStoreUnwritable = "SCENE_ASSET_STORE_UNWRITABLE";
+
     public const string OptionsInvalid = "SCENE_OPTIONS_INVALID";
 }

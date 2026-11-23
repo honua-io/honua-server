@@ -9,15 +9,22 @@
 #       --evidence artifacts/client-certification-2cc2213 \
 #       --run-root /path/on/real/disk/roster-runs
 #
+# A frozen release candidate is named by digest instead of tag, with its cut time:
+#
+#   certification/bounded-roster/run-roster.sh --digest sha256:<64-hex> \
+#       --cut-at 2026-11-23T07:00:00Z --evidence ... --run-root ...
+#
 # The producer is this repository at a clean, committed HEAD: the receipts'
 # producer_source_sha is that commit, so uncommitted harness edits refuse to run.
 # Only the compose project named by --project is created or torn down.
 set -euo pipefail
 
-TAG="" EXPECT_DIGEST="" EVIDENCE="" RUN_ROOT="" PROJECT="roster3434" KEEP_STACK=0
+TAG="" DIGEST="" CUT_AT="" EXPECT_DIGEST="" EVIDENCE="" RUN_ROOT="" PROJECT="roster3434" KEEP_STACK=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag) TAG="$2"; shift 2 ;;
+    --digest) DIGEST="$2"; shift 2 ;;
+    --cut-at) CUT_AT="$2"; shift 2 ;;
     --expect-digest) EXPECT_DIGEST="$2"; shift 2 ;;
     --evidence) EVIDENCE="$2"; shift 2 ;;
     --run-root) RUN_ROOT="$2"; shift 2 ;;
@@ -26,7 +33,10 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown argument $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$TAG" && -n "$EVIDENCE" && -n "$RUN_ROOT" ]] || { echo "--tag, --evidence and --run-root are required" >&2; exit 2; }
+[[ -n "$EVIDENCE" && -n "$RUN_ROOT" ]] || { echo "--evidence and --run-root are required" >&2; exit 2; }
+[[ -n "$TAG" && -z "$DIGEST" ]] || [[ -z "$TAG" && -n "$DIGEST" ]] || { echo "name the candidate with exactly one of --tag or --digest" >&2; exit 2; }
+[[ -z "$DIGEST" || "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "--digest must be sha256:<64 hex>" >&2; exit 2; }
+[[ -z "$CUT_AT" || "$CUT_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || { echo "--cut-at must be an RFC 3339 UTC timestamp" >&2; exit 2; }
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 ROSTER_HOME="$REPO_ROOT/certification/bounded-roster"
@@ -44,17 +54,20 @@ retry() { local attempt; for attempt in 1 2 3 4 5; do "$@" && return 0; sleep $(
 # --- candidate ---------------------------------------------------------------
 IMAGE_REPO="ghcr.io/honua-io/honua-server"
 ANON_DOCKER_CONFIG="$(mktemp -d)"; echo '{}' > "$ANON_DOCKER_CONFIG/config.json"
-log "pulling $IMAGE_REPO:$TAG"
-retry env DOCKER_CONFIG="$ANON_DOCKER_CONFIG" docker pull -q "$IMAGE_REPO:$TAG" >/dev/null
-INDEX_DIGEST="$(docker image inspect "$IMAGE_REPO:$TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' | sed -n "s#^$IMAGE_REPO@##p" | head -1)"
+if [[ -n "$DIGEST" ]]; then CANDIDATE_REF="$IMAGE_REPO@$DIGEST" TAG="$DIGEST"; else CANDIDATE_REF="$IMAGE_REPO:$TAG"; fi
+log "pulling $CANDIDATE_REF"
+retry env DOCKER_CONFIG="$ANON_DOCKER_CONFIG" docker pull -q "$CANDIDATE_REF" >/dev/null
+INDEX_DIGEST="$(docker image inspect "$CANDIDATE_REF" --format '{{range .RepoDigests}}{{println .}}{{end}}' | sed -n "s#^$IMAGE_REPO@##p" | head -1)"
 [[ "$INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "could not resolve an index digest for $TAG" >&2; exit 1; }
+[[ -z "$DIGEST" || "$INDEX_DIGEST" == "$DIGEST" ]] || { echo "$CANDIDATE_REF resolved to $INDEX_DIGEST" >&2; exit 1; }
 if [[ -n "$EXPECT_DIGEST" && "$INDEX_DIGEST" != "$EXPECT_DIGEST" ]]; then
   echo "$TAG resolves to $INDEX_DIGEST, not the expected $EXPECT_DIGEST" >&2; exit 1
 fi
-SOURCE_SHA="$(docker image inspect "$IMAGE_REPO:$TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
-IMAGE_CREATED="$(docker image inspect "$IMAGE_REPO:$TAG" --format '{{index .Config.Labels "org.opencontainers.image.created"}}')"
-PLATFORM_ID="$(docker image inspect "$IMAGE_REPO:$TAG" --format '{{.Id}}')"
+SOURCE_SHA="$(docker image inspect "$CANDIDATE_REF" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+IMAGE_CREATED="$(docker image inspect "$CANDIDATE_REF" --format '{{index .Config.Labels "org.opencontainers.image.created"}}')"
+PLATFORM_ID="$(docker image inspect "$CANDIDATE_REF" --format '{{.Id}}')"
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "image carries no source revision label" >&2; exit 1; }
+if [[ -n "$CUT_AT" ]]; then CUT_LABEL="frozen release candidate cut at $CUT_AT"; else CUT_AT="$IMAGE_CREATED"; CUT_LABEL="pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists"; fi
 export HONUA_CANDIDATE_IMAGE="$IMAGE_REPO@$INDEX_DIGEST"
 
 RUN_ID="roster-$(date -u +%Y%m%dT%H%M%SZ)-${SOURCE_SHA:0:7}"
@@ -153,7 +166,7 @@ def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def inspect(image, template):
     return subprocess.run(["docker", "image", "inspect", image, "--format", template], capture_output=True, text=True).stdout.strip()
 candidate = {
-    "run_id": "$RUN_ID", "release": "2026.1", "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
+    "run_id": "$RUN_ID", "release": "2026.1", "cut": "$CUT_LABEL", "cut_at": "$CUT_AT",
     "tag": "$TAG", "image": "$HONUA_CANDIDATE_IMAGE", "index_digest": "$INDEX_DIGEST", "platform_image_id": "$PLATFORM_ID",
     "source_sha": "$SOURCE_SHA", "image_created": "$IMAGE_CREATED",
     "producer_source_sha": "$PRODUCER_SHA", "target": "local-docker",
@@ -204,7 +217,7 @@ source "$REPO_ROOT/scripts/certification/record_roster_verdicts.sh"
 declare -A roster_candidate=(
   [source_sha]="$SOURCE_SHA"
   [image_digest]="$INDEX_DIGEST"
-  [cut_at]="$IMAGE_CREATED"
+  [cut_at]="$CUT_AT"
   [producer_sha]="$PRODUCER_SHA"
 )
 verdict_failed=0

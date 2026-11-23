@@ -10,9 +10,16 @@ namespace Honua.ControlPlane;
 internal sealed partial class ComposeProjectController
 {
     private const string MigrateOnlyFormat = "honua.migrate-only/v1";
-    private const int MaxNonceLength = 256;
 
     internal sealed record ContractGateRefusal(IReadOnlyList<string> Scripts, string? Nonce);
+
+    // The image override file and the content it had before the candidate wrote it (null: absent).
+    private sealed record PriorOverride(string Path, string? Content);
+
+    private const string UnapprovedLead = "The release has contract migrations that need operator approval before they are applied: ";
+
+    private const string MismatchedApprovalLead =
+        "The approved release proposal does not list exactly the release's pending contract migrations, so none were applied: ";
 
     // A migrate-only summary line; Refusal is set only for a contract-gate refusal that names scripts.
     private readonly record struct MigrateOnlySummary(ContractGateRefusal? Refusal);
@@ -21,7 +28,10 @@ internal sealed partial class ComposeProjectController
     // refuses before any script is applied, so the stopped prior restarts unchanged and the
     // operator gets the gate's own code instead of an unhealthy candidate start. The run adds only
     // the migrate-only switch, so an approval the install's Compose files forward still applies.
-    internal async Task<ComposeExecutorResponse?> PrepareCandidateAsync(string image, CancellationToken cancellationToken)
+    // An approved release proposal that lists exactly the refused scripts and their nonce applies
+    // them once; any other contract plan refuses as before and needs its own proposal.
+    internal async Task<ComposeExecutorResponse?> PrepareCandidateAsync(
+        string image, ComposeContractApproval? approval, CancellationToken cancellationToken)
     {
         var overridePath = OverridePath();
         string? priorOverride;
@@ -43,30 +53,60 @@ internal sealed partial class ComposeProjectController
             return written;
         }
 
-        var migrated = await RunMigrateOnlyAsync(cancellationToken).ConfigureAwait(false);
+        return await MigrateCandidateAsync(new PriorOverride(overridePath, priorOverride), approval, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ComposeExecutorResponse?> MigrateCandidateAsync(
+        PriorOverride prior, ComposeContractApproval? approval, CancellationToken cancellationToken)
+    {
+        var migrated = await RunMigrateOnlyAsync(approvalNonce: null, cancellationToken).ConfigureAwait(false);
         if (migrated.ExitCode == 0)
         {
             return null;
         }
 
         var refusal = ContractGateRefusalFrom(migrated.Stdout);
-        return refusal == null
-            ? Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The candidate's database migration did not complete.")
-            : await RefuseAtContractGateAsync(overridePath, priorOverride, refusal).ConfigureAwait(false);
+        if (refusal == null)
+        {
+            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The candidate's database migration did not complete.");
+        }
+
+        if (approval == null || !approval.Covers(refusal.Scripts, refusal.Nonce))
+        {
+            var lead = approval == null ? UnapprovedLead : MismatchedApprovalLead;
+            return await RefuseAtContractGateAsync(prior, refusal, lead).ConfigureAwait(false);
+        }
+
+        // The runner re-plans under its migration lock and refuses again if the plan changed in between.
+        var approved = await RunMigrateOnlyAsync(approval.Nonce, cancellationToken).ConfigureAwait(false);
+        if (approved.ExitCode == 0)
+        {
+            return null;
+        }
+
+        var replanned = ContractGateRefusalFrom(approved.Stdout);
+        return replanned == null
+            ? Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The candidate's approved database migration did not complete.")
+            : await RefuseAtContractGateAsync(prior, replanned, MismatchedApprovalLead).ConfigureAwait(false);
     }
 
     // A named one-shot container, removed unless the run succeeded, so a timed-out or cancelled
     // run cannot keep migrating after recovery restores the backup.
-    private async Task<DockerProcessResult> RunMigrateOnlyAsync(CancellationToken cancellationToken)
+    private async Task<DockerProcessResult> RunMigrateOnlyAsync(string? approvalNonce, CancellationToken cancellationToken)
     {
         var name = _options.ProjectName + "-migrate-" + Guid.NewGuid().ToString("N")[..12];
+        List<string> arguments = ["run", "--rm", "--no-deps", "-T", "--name", name, "-e", "HONUA_MIGRATE_ONLY=true"];
+        if (approvalNonce != null)
+        {
+            arguments.AddRange(["-e", MigrationSafetyOptions.ApproveContractMigrationsKey + "=" + approvalNonce]);
+        }
+
+        arguments.AddRange(["--", _options.ServiceName]);
         var succeeded = false;
         try
         {
             var result = await ComposeAsync(
-                TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60),
-                ["run", "--rm", "--no-deps", "-T", "--name", name, "-e", "HONUA_MIGRATE_ONLY=true", "--", _options.ServiceName],
-                cancellationToken).ConfigureAwait(false);
+                TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60), [.. arguments], cancellationToken).ConfigureAwait(false);
             succeeded = result.ExitCode == 0;
             return result;
         }
@@ -80,9 +120,9 @@ internal sealed partial class ComposeProjectController
     }
 
     private async Task<ComposeExecutorResponse> RefuseAtContractGateAsync(
-        string overridePath, string? priorOverride, ContractGateRefusal refusal)
+        PriorOverride prior, ContractGateRefusal refusal, string lead)
     {
-        if (!await RestorePriorOverrideAsync(overridePath, priorOverride).ConfigureAwait(false))
+        if (!await RestorePriorOverrideAsync(prior.Path, prior.Content).ConfigureAwait(false))
         {
             return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The prior image override could not be restored.");
         }
@@ -106,10 +146,10 @@ internal sealed partial class ComposeProjectController
         return Refuse(
             null,
             ComposeExecutorCodes.ContractApprovalRequired,
-            "The release has contract migrations that need operator approval before they are applied: "
-            + string.Join(", ", refusal.Scripts)
-            + ". Nothing was migrated and the prior revision is healthy again. Review the scripts and upgrade with the"
-            + " manual migrate-only step in the upgrade and rollback guide." + approval);
+            lead + string.Join(", ", refusal.Scripts)
+            + ". Nothing was migrated and the prior revision is healthy again. Review the scripts, then propose the"
+            + " release convergence again listing them with this nonce, or upgrade with the manual migrate-only step in"
+            + " the upgrade and rollback guide." + approval);
     }
 
     private string OverridePath()
@@ -195,7 +235,7 @@ internal sealed partial class ComposeProjectController
         => root.TryGetProperty("contractApproval", out var approval)
             && approval.ValueKind == JsonValueKind.Object
             && approval.TryGetProperty("nonce", out var value)
-            && Text(value) is { Length: > 0 and <= MaxNonceLength } nonce
-            && nonce.All(char.IsAsciiLetterOrDigit)
+            && Text(value) is { } nonce
+            && ComposeContractApproval.IsWellFormedNonce(nonce)
                 ? nonce : null;
 }

@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.Stac;
 using Honua.Protocols.Stac.Models;
 using Honua.TestKit;
@@ -51,6 +52,9 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         {
             services.RemoveAll<IFeatureDataProvider>();
             services.AddSingleton(provider);
+            // Collection metadata reads extents through the directly injected reader.
+            services.RemoveAll<IFeatureReader>();
+            services.AddSingleton(_reader);
             services.PostConfigure<StacOptions>(options => options.NumberMatchedPolicy = StacNumberMatchedPolicy.OmitWhenExpensive);
         });
     }
@@ -238,6 +242,85 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/stac/search?limit=100");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/collections")]
+    [Operation(Operations.Query)]
+    public async Task CollectionsListing_LeavesOutCollectionWhoseTableIsMissing()
+    {
+        StubMissingTemporalTable(layerId: 1);
+        var response = await _fixture.Client.GetAsync("/stac/collections");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        ListedCollectionIds(content).Should().Contain("0").And.NotContain("1");
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        await _reader.Received().GetTemporalExtentAsync(1, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/collections")]
+    [Operation(Operations.Query)]
+    public async Task CollectionsListing_AfterMissingTableIsRestored_ListsCollectionWithoutMetadataChange()
+    {
+        StubMissingTemporalTable(layerId: 1);
+        var partial = await _fixture.Client.GetAsync("/stac/collections");
+        partial.StatusCode.Should().Be(HttpStatusCode.OK);
+        ListedCollectionIds(await partial.Content.ReadAsStringAsync()).Should().NotContain("1");
+
+        _reader.GetTemporalExtentAsync(1, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<TemporalExtentResult?>(null));
+        var recovered = await _fixture.Client.GetAsync("/stac/collections");
+
+        recovered.StatusCode.Should().Be(HttpStatusCode.OK);
+        ListedCollectionIds(await recovered.Content.ReadAsStringAsync()).Should().Contain(["0", "1"]);
+        await _reader.Received(2).GetTemporalExtentAsync(1, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    [Operation(Operations.GetById)]
+    public async Task NamedCollection_WhoseTableIsMissing_StillFails()
+    {
+        StubMissingTemporalTable(layerId: 1);
+        var response = await _fixture.Client.GetAsync("/stac/collections/1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await _reader.Received().GetTemporalExtentAsync(1, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /stac/collections")]
+    [Operation(Operations.Query)]
+    public async Task CollectionsListing_WhenEveryTableIsMissing_StillFails()
+    {
+        var listed = ListedCollectionIds(await _fixture.Client.GetStringAsync("/stac/collections"));
+        listed.Should().Contain(["0", "1"]);
+        foreach (var collectionId in listed)
+        {
+            StubMissingTemporalTable(int.Parse(collectionId!, System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        var response = await _fixture.Client.GetAsync("/stac/collections");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    private static string?[] ListedCollectionIds(string content)
+    {
+        using var json = JsonDocument.Parse(content);
+        return [.. json.RootElement.GetProperty("collections").EnumerateArray().Select(item => item.GetProperty("id").GetString())];
+    }
+
+    // Gives the publication a temporal field, so the listing reads its table for the temporal extent,
+    // and makes that read fail as a dropped table does.
+    private void StubMissingTemporalTable(int layerId)
+    {
+        _fixture.UpdateV2ResourceSchemaField(layerId, new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime });
+        _fixture.UpdateV2ResourceMetadata(layerId, temporal: new MetadataV2ObjectTemporal { StartTimeField = "observed_at" });
+        _reader.GetTemporalExtentAsync(layerId, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>())
+            .Returns<Task<TemporalExtentResult?>>(_ => throw new MissingTableException());
     }
 
     private void StubMissingTable(int layerId) => StubMissingTables(() => Arg.Is(layerId));

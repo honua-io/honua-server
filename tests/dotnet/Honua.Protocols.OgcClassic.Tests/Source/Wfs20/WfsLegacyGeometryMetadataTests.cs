@@ -82,6 +82,7 @@ public sealed class WfsLegacyGeometryMetadataTests
             // Adding the missing geometry must not change attribute projection semantics.
             var projected = await GetFeatureAsync(fixture, version, usePost, "legacy_point", 5001, "name");
             queries.Last().ExcludeAttributes.Should().BeFalse();
+            projected.Descendants(Honua + "geometry").Should().BeEmpty();
             projected.Descendants(Honua + "name").Single().Value.Should().Be("Legacy Point");
             projected.Descendants(Honua + "objectid").Should().BeEmpty();
 
@@ -123,6 +124,7 @@ public sealed class WfsLegacyGeometryMetadataTests
 
             var wildcard = await GetFeatureAsync(fixture, version, usePost, "legacy_point", 5001, "*");
             queries.Last().ExcludeAttributes.Should().BeFalse("wildcards retain all attributes");
+            wildcard.Descendants(Honua + "geometry").Should().ContainSingle();
             wildcard.Descendants(Honua + "name").Single().Value.Should().Be("Legacy Point");
 
             // A nonspatial resource advertises no geometry property, so requesting one

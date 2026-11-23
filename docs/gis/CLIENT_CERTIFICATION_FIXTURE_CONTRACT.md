@@ -311,7 +311,7 @@ Its absence is recorded here as governed gaps and must not block the 2026.1 core
 ```console
 $ python3 scripts/certification/verify-fixture-manifest.py
 $ python3 -m pytest scripts/certification/test_verify_fixture_manifest.py -q
-$ dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+$ dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj \
     --filter "FullyQualifiedName~CanonicalFixtureManifestTests"
 ```
 
