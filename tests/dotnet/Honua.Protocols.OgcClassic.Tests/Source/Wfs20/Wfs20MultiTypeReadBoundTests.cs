@@ -43,10 +43,11 @@ public sealed class Wfs20MultiTypeReadBoundTests : IClassFixture<Wfs20MultiTypeR
     [IntegrationTest]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task GetFeature_WithoutTypeNames_CountsPublishedTypesWithBoundedConcurrency()
+    public async Task GetFeature_AllPublishedTypeNames_CountsWithBoundedConcurrency()
     {
+        var typeNames = string.Join(",", Enumerable.Range(1, PublishedTypeCount).Select(id => $"bound_type_{id}"));
         using var response = await _fixture.App.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&RESULTTYPE=hits");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&RESULTTYPE=hits&TYPENAMES={typeNames}");
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
