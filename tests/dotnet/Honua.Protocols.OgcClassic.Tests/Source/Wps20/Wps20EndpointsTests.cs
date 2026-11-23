@@ -20,15 +20,24 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wps202)]
-public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>
+public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>,
+    IClassFixture<Wps20EndpointsTests.CanonicalRejectionHost>,
+    IClassFixture<Wps20EndpointsTests.InvalidContractHost>
 {
     private readonly WebAppFixture _fixture;
     private readonly WebAppFixture _conformanceFixture;
+    private readonly CanonicalRejectionHost _canonicalRejectionHost;
+    private readonly InvalidContractHost _invalidContractHost;
 
-    public Wps20EndpointsTests(Fixture fixture)
+    public Wps20EndpointsTests(
+        Fixture fixture,
+        CanonicalRejectionHost canonicalRejectionHost,
+        InvalidContractHost invalidContractHost)
     {
         _fixture = fixture.Default;
         _conformanceFixture = fixture.Conformance;
+        _canonicalRejectionHost = canonicalRejectionHost;
+        _invalidContractHost = invalidContractHost;
     }
 
     // Shares the default and echo-enabled applications while keeping service overrides
@@ -57,6 +66,56 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             }
         }
     }
+
+    // Starts its application on first use, so a host whose cases are not selected never boots.
+    public abstract class LazyApplicationHost(WebAppFixture fixture) : IAsyncLifetime
+    {
+        private Task? _initialized;
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task<HttpClient> CreateClientAsync()
+        {
+            await (_initialized ??= fixture.InitializeAsync());
+            return fixture.CreateClient();
+        }
+
+        public Task DisposeAsync() => _initialized is null ? Task.CompletedTask : fixture.DisposeAsync();
+    }
+
+    public sealed class CanonicalRejectionHost : LazyApplicationHost
+    {
+        public CanonicalRejectionHost()
+            : this(Substitute.For<IGeoprocessingJobService>())
+        {
+        }
+
+        private CanonicalRejectionHost(IGeoprocessingJobService jobs)
+            : base(CreateFixture(jobs)) => Jobs = jobs;
+
+        internal IGeoprocessingJobService Jobs { get; }
+
+        private static WebAppFixture CreateFixture(IGeoprocessingJobService jobs)
+        {
+            var catalog = Substitute.For<IProcessCatalog>();
+            catalog.GetProcess("canonical.test").Returns(new ProcessDefinition
+            {
+                ProcessId = "canonical.test",
+                Title = "Canonical",
+                Description = "Test process.",
+                Category = "test",
+                ExecutionKind = ProcessExecutionKind.Job,
+                SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+                SupportedEntryPoints = ProcessEntryPoints.Job,
+                Parameters = [],
+                OutputArtifactKinds = []
+            });
+            return new WebAppFixture().ReplaceService(catalog).ReplaceService(jobs);
+        }
+    }
+
+    public sealed class InvalidContractHost()
+        : LazyApplicationHost(CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]));
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -771,12 +830,11 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
         string responseForm,
         string locator)
     {
-        await using var fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
-        await fixture.InitializeAsync();
+        using var client = await _invalidContractHost.CreateClientAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='{outputId}' transmission='{transmission}'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
-        var response = await fixture.Client.PostAsync("/wps", requestContent);
+        var response = await client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -810,26 +868,13 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
     [Endpoint("POST /wps")]
     public async Task CanonicalExecute_UnsupportedContract_IsRejectedBeforeSubmission(string mode, string responseForm, string transmission)
     {
-        var catalog = Substitute.For<IProcessCatalog>();
-        catalog.GetProcess("canonical.test").Returns(new ProcessDefinition
-        {
-            ProcessId = "canonical.test",
-            Title = "Canonical",
-            Description = "Test process.",
-            Category = "test",
-            ExecutionKind = ProcessExecutionKind.Job,
-            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
-            SupportedEntryPoints = ProcessEntryPoints.Job,
-            Parameters = [],
-            OutputArtifactKinds = []
-        });
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        await using var fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(jobs);
-        await fixture.InitializeAsync();
+        using var client = await _canonicalRejectionHost.CreateClientAsync();
+        var jobs = _canonicalRejectionHost.Jobs;
+        jobs.ClearReceivedCalls();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>canonical.test</ows:Identifier><wps:Output id='result' transmission='{transmission}'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
-        var response = await fixture.Client.PostAsync("/wps", requestContent);
+        var response = await client.PostAsync("/wps", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await jobs.DidNotReceive().SubmitJobAsync(

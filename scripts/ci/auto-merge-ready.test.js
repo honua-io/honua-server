@@ -11,23 +11,27 @@ const ready = () => ({
   labels: { nodes: [], pageInfo: { hasNextPage: false } },
   commits: { totalCount: 1 }, autoMergeRequest: null,
 });
+function apiError(failure) {
+  if (failure instanceof Error) return failure;
+  const messages = Array.isArray(failure) ? failure : [failure];
+  return Object.assign(new Error(`Request failed: ${messages.join('; ')}`), {
+    errors: messages.map(message => ({ type: 'UNPROCESSABLE', message })),
+  });
+}
 async function run(pr, mutationError = null, eventPr = { draft: false, labels: [] }) {
   const mutations = [];
   const summary = { addHeading() { return this; }, addRaw() { return this; }, async write() {} };
   await vm.runInNewContext(`(async () => {${script}})()`, {
     context: { payload: { pull_request: eventPr }, repo: { owner: 'honua-io', repo: 'honua-server' }, issue: { number: 42 } },
-    core: { notice() {}, summary },
+    core: { notice() {}, summary }, process: { env: { BOT_APP_SLUG: 'honua-io-bot' } },
     github: { async graphql(query, variables) {
       if (query.includes('query(')) return { repository: { pullRequest: pr } };
-      if (mutationError) {
-        if (mutationError instanceof Error) throw mutationError;
-        const messages = Array.isArray(mutationError) ? mutationError : [mutationError];
-        throw Object.assign(new Error(`Request failed: ${messages.join('; ')}`), {
-          errors: messages.map(message => ({ type: 'UNPROCESSABLE', message })),
-        });
-      }
+      const action = query.includes('disablePullRequestAutoMerge') ? 'disable' : 'enable';
+      // { onEnable } lets the disable succeed and fails only the re-arm.
+      const failure = mutationError?.onEnable ? action === 'enable' && mutationError.onEnable : mutationError;
+      if (failure) throw apiError(failure);
       assert.match(query, /mutation\([^)]*\)\s*\{\s*(enable|disable)PullRequestAutoMerge\(/);
-      mutations.push({ ...variables, action: query.includes('disablePullRequestAutoMerge') ? 'disable' : 'enable' });
+      mutations.push({ ...variables, action });
       return {};
     } },
   });
@@ -147,4 +151,46 @@ test('draft or held event cannot re-arm admission after live state changes', asy
     assert.equal(actions.length, 1);
     assert.equal(actions[0].action, 'disable');
   }
+});
+
+test('merged or closed pull request with stale admission is left alone', async () => {
+  // Queued runs can start after the merge; disabling then fails with "Can't disable auto-merge".
+  for (const state of ['MERGED', 'CLOSED']) {
+    assert.deepEqual(await run({ ...ready(), state, autoMergeRequest: { mergeMethod: 'SQUASH' } }), []);
+    assert.deepEqual(await run({ ...ready(), state, autoMergeRequest: { mergeMethod: 'SQUASH' } }, null,
+      { draft: false, labels: [{ name: 'hold' }] }), []);
+  }
+});
+
+test('a bundle that grew after the bot armed squash switches to merge', async () => {
+  for (const login of ['honua-io-bot', 'honua-io-bot[bot]']) {
+    const grown = { ...ready(), commits: { totalCount: 3 },
+      autoMergeRequest: { mergeMethod: 'SQUASH', enabledBy: { login } } };
+    assert.deepEqual((await run(grown)).map(m => [m.action, m.mergeMethod]),
+      [['disable', undefined], ['enable', 'MERGE']]);
+  }
+});
+test('a lane-chosen method, a single commit, or a settled PR keeps the bot method', async () => {
+  const armed = ({ mergeMethod = 'SQUASH', login = 'honua-io-bot', totalCount = 3, mergeStateStatus = 'BLOCKED' }) => ({
+    ...ready(), commits: { totalCount }, mergeStateStatus, autoMergeRequest: { mergeMethod, enabledBy: { login } } });
+  for (const pr of [
+    armed({ login: 'lane-user' }), armed({ totalCount: 1 }), armed({ mergeMethod: 'MERGE', totalCount: 1 }),
+    ...['CLEAN', 'UNSTABLE', 'HAS_HOOKS', 'DIRTY'].map(mergeStateStatus => armed({ mergeStateStatus })),
+  ]) assert.deepEqual(await run(pr), []);
+});
+test('a failed re-arm after switching methods fails the run', async () => {
+  const grown = { ...ready(), commits: { totalCount: 2 }, mergeStateStatus: 'UNKNOWN',
+    autoMergeRequest: { mergeMethod: 'SQUASH', enabledBy: { login: 'honua-io-bot' } } };
+  await assert.rejects(run(grown, 'Pull request is in clean status'), /clean status/);
+  await assert.rejects(run(grown, { onEnable: 'Pull request is in clean status' }), /clean status/);
+  const fresh = { ...ready(), mergeStateStatus: 'UNKNOWN' };
+  await run(fresh, { onEnable: 'Pull request is in clean status' });
+});
+test('label and edit events start a job only when they can change admission', () => {
+  assert.match(workflow, /&& \(github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null\)\n/);
+  assert.match(workflow, /\(\(github\.event\.action != 'labeled' && github\.event\.action != 'unlabeled'\)\n/);
+  for (const name of ['hold', 'train:hold', 'train:escalated']) {
+    assert.match(workflow, new RegExp(`github\\.event\\.label\\.name == '${name}'`));
+  }
+  assert.match(workflow, /BOT_APP_SLUG: \$\{\{ steps\.bot\.outputs\.app-slug \}\}/);
 });

@@ -117,6 +117,24 @@ public sealed class AdminMetadataHistoryAndSchemasTests : IAsyncLifetime
             .Single(e => e.Name.LocalName == "supplementalInformation").Value.Should().Contain("\"steward\":\"Planning\"");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/schemas")]
+    [Endpoint("PUT /api/v1/admin/metadata/schemas")]
+    public async Task UpdateSchemas_WithoutSchemasArray_IsRefusedAndKeepsDefinedSchemas()
+    {
+        var client = _fixture.CreateAdminClient();
+        await DefineStewardSchemaAsync(client);
+        var defined = await ReadSchemasAsync(client);
+
+        using var body = new StringContent($"{{\"etag\":{JsonSerializer.Serialize(defined.Etag)}}}", Encoding.UTF8, "application/json");
+        using var response = await client.PutAsync("/api/v1/admin/metadata/schemas", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var after = await ReadSchemasAsync(client);
+        after.Etag.Should().Be(defined.Etag);
+        after.Schemas.Should().ContainSingle(schema => schema.Name == "steward");
+    }
+
     private static async Task DefineStewardSchemaAsync(HttpClient client)
     {
         var initialSchemas = await ReadSchemasAsync(client);

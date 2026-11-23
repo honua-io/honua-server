@@ -580,6 +580,54 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         (await ReadVersionAsync(_ownerToken, hidden)).GetProperty("description").GetString().Should().Be("hidden");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}")]
+    public async Task JobStatus_PrivateVersionOfAnotherOwner_AnswersLikeAnUnknownJob()
+    {
+        var guid = (await CreateVersionAsync(_ownerToken, "alice.job_visibility", "job-owner"))
+            .GetProperty("versionGuid").GetString()!;
+        string jobId;
+        using (var started = await PostFormAsync(
+            _ownerToken, $"{ServiceBase}/versions/{guid}/reconcile", ("async", "true"), ("f", "json")))
+        {
+            var startedBody = await started.Content.ReadAsStringAsync();
+            started.StatusCode.Should().Be(HttpStatusCode.Accepted, startedBody);
+            using var document = JsonDocument.Parse(startedBody);
+            jobId = document.RootElement.GetProperty("jobId").GetString()!;
+        }
+
+        var unknownJob = Guid.NewGuid().ToString();
+        var hidden = await JobAnswerAsync(_nonOwnerToken, guid, jobId);
+        var unknown = await JobAnswerAsync(_nonOwnerToken, guid, unknownJob);
+        hidden.Code.Should().Be(404, "another owner's private version must not expose its jobs: {0}", hidden.Body);
+        hidden.Code.Should().Be(unknown.Code);
+        hidden.Body.Should().NotContain("\"kind\"").And.NotContain("\"conflictCount\"");
+        hidden.Message.Replace(jobId, "<job>", StringComparison.OrdinalIgnoreCase).Should().Be(
+            unknown.Message.Replace(unknownJob, "<job>", StringComparison.OrdinalIgnoreCase),
+            "a hidden version's job must answer exactly like an unknown job");
+
+        // The owner still polls the same job: the denial measures visibility, not a missing job.
+        var owner = await JobAnswerAsync(_ownerToken, guid, jobId);
+        owner.Code.Should().Be(0, "the owner must still poll its own job: {0}", owner.Body);
+    }
+
+    private async Task<(int Code, string Message, string Body)> JobAnswerAsync(string token, string guid, string jobId)
+    {
+        using var response = await GetAsync(token, $"{ServiceBase}/versions/{guid}/jobs/{jobId}?f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("error", out var error))
+        {
+            document.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+            return (0, string.Empty, body);
+        }
+
+        // details[0] carries the explanation; later entries are per-response correlation data.
+        var detail = error.GetProperty("details")[0].GetString()!;
+        return (error.GetProperty("code").GetInt32(), $"{error.GetProperty("message").GetString()} {detail}", body);
+    }
+
     private async Task<(HttpStatusCode Status, int Code, string Message)> ManagementAnswerAsync(string guid, string operation)
     {
         using var response = await PostFormAsync(

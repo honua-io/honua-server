@@ -178,6 +178,83 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         CredentialDenials.Should().Contain(response.StatusCode);
     }
 
+    // The Console re-issues its bearer only when a route refuses it. A forged or unsigned bearer
+    // must therefore be refused visibly on every route the Console calls with it, never served
+    // as an anonymous caller: Studio routes answer 401, GeoServices routes the Esri token error.
+    [IntegrationTheory]
+    [InlineData("/api/v1/studio/session", "tampered")]
+    [InlineData("/api/v1/studio/session", "unsigned")]
+    [InlineData("/api/v1/studio/package-families", "tampered")]
+    [InlineData("/api/v1/studio/ai/capabilities", "unsigned")]
+    [InlineData("/rest/services?f=json", "tampered")]
+    [InlineData("/rest/services?f=json", "unsigned")]
+    [InlineData("/rest/services/console-missing/FeatureServer/0/query?where=1%3D1&returnGeometry=false&f=json", "tampered")]
+    [Endpoint("GET /api/v1/studio/session")]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ConsoleRoute_ForgedOperatorBearer_IsRefusedNotServedAnonymously(string route, string forgery)
+    {
+        var token = await IssueOperatorBearerAsync();
+        using var client = CreateCrossOriginClient(forgery == "unsigned" ? Unsigned(token) : Tampered(token));
+
+        using var response = await client.GetAsync(route);
+
+        if (route.StartsWith("/rest/", StringComparison.Ordinal))
+        {
+            (await ReadsAsEsriTokenDenialAsync(response)).Should().BeTrue("a forged bearer must not read as anonymous");
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    // Only the configured Console origin may send the bearer from a browser. The Console-origin
+    // preflight is the control: it proves the request reached the CORS policy at all.
+    [IntegrationTheory]
+    [InlineData("/api/v1/studio/session")]
+    [InlineData("/rest/services?f=json")]
+    [Endpoint("GET /api/v1/studio/session")]
+    [Endpoint("GET /rest/services")]
+    public async Task ConsoleRoute_PreflightFromForeignOrigin_IsNotAllowed(string route)
+    {
+        using var allowed = await PreflightAsync(route, ConsoleOrigin);
+        using var foreign = await PreflightAsync(route, "https://attacker.example");
+
+        allowed.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(ConsoleOrigin);
+        foreign.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+    }
+
+    private async Task<HttpResponseMessage> PreflightAsync(string route, string origin)
+    {
+        using var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, route);
+        preflight.Headers.Add("Origin", origin);
+        preflight.Headers.Add("Access-Control-Request-Method", "GET");
+        preflight.Headers.Add("Access-Control-Request-Headers", "authorization");
+        return await client.SendAsync(preflight);
+    }
+
+    // Changes one signature character away from the base64url padding bits, so the bytes change.
+    private static string Tampered(string jwt)
+    {
+        var signatureStart = jwt.LastIndexOf('.') + 1;
+        var index = signatureStart + ((jwt.Length - signatureStart) / 2);
+        var replacement = jwt[index] == 'A' ? 'B' : 'A';
+        return string.Concat(jwt.AsSpan(0, index), replacement.ToString(), jwt.AsSpan(index + 1));
+    }
+
+    // Keeps the genuine claims under an alg:none header with no signature.
+    private static string Unsigned(string jwt)
+    {
+        var header = Convert.ToBase64String("{\"alg\":\"none\",\"typ\":\"JWT\"}"u8.ToArray())
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return $"{header}.{jwt.Split('.')[1]}.";
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/session")]
     public async Task StudioSession_CookieAndCrossOriginBearer_ReturnServerOwnedBootstrap()
@@ -235,7 +312,9 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         return client;
     }
 
-    private async Task<HttpClient> SignInCrossOriginAsync()
+    private async Task<HttpClient> SignInCrossOriginAsync() => CreateCrossOriginClient(await IssueOperatorBearerAsync());
+
+    private async Task<string> IssueOperatorBearerAsync()
     {
         using var browser = _fixture.CreateClient();
         browser.BaseAddress = new Uri("https://localhost");
@@ -243,11 +322,15 @@ public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteA
         using var issued = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = AdminPassword });
         issued.StatusCode.Should().Be(HttpStatusCode.OK);
         var token = await issued.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+        return token!.AccessToken;
+    }
 
+    private HttpClient CreateCrossOriginClient(string accessToken)
+    {
         var client = _fixture.CreateClient();
         client.BaseAddress = new Uri("https://localhost");
         client.DefaultRequestHeaders.Add("Origin", ConsoleOrigin);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return client;
     }
 

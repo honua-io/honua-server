@@ -420,6 +420,8 @@ internal sealed partial class StreamingFileImportService
                     }
                 }
 
+                // After promotion, so the warnings match the columns the table publishes.
+                completionWarningsBuilder.AddRange(typedColumnInference.SkippedNameWarnings(dataCommitted ? typedColumns : null));
                 if (dataCommitted && csvSourceIdAlias is not null)
                 {
                     completionWarningsBuilder.Add(BuildCsvSourceIdWarning(csvSourceIdAlias, typedColumns));
