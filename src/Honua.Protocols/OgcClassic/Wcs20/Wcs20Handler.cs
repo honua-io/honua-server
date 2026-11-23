@@ -2302,7 +2302,7 @@ internal sealed partial class Wcs20Handler
         if (isSlice ||
             !NumericTolerance.IsWholeNumber(low) ||
             !NumericTolerance.IsWholeNumber(high) ||
-            high <= low)
+            high < low)
         {
             return false;
         }
