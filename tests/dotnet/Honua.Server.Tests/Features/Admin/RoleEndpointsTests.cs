@@ -271,6 +271,49 @@ public class RoleEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(after!.Data!, grant => grant.Operation == "*");
     }
 
+    // Several administrators creating the same role at once: one wins, the rest learn it already exists.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/roles")]
+    public async Task CreateRole_SameNameInParallel_CreatesOneAndAnswersConflict()
+    {
+        var name = $"parallel-role-{Guid.NewGuid():N}";
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
+            _client.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = name }, _jsonOptions)));
+
+        var codes = responses.Select(response => response.StatusCode).ToArray();
+        Assert.Equal(1, codes.Count(code => code == HttpStatusCode.Created));
+        Assert.All(codes.Where(code => code != HttpStatusCode.Created), code => Assert.Equal(HttpStatusCode.Conflict, code));
+    }
+
+    [IntegrationTheory]
+    [InlineData("nul\u0000role", null)]
+    [InlineData("bell\u0007role", null)]
+    [InlineData("control-description", "line\u0000break")]
+    [Endpoint("POST /api/v1/admin/roles")]
+    public async Task CreateRole_WithControlCharacters_ReturnsBadRequest(string name, string? description)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/roles", new CreateRoleRequest { Name = name, Description = description }, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/roles/{id}")]
+    public async Task UpdateRole_InvalidDescription_ReturnsBadRequestAndKeepsRole()
+    {
+        var role = await CreateRoleAsync($"update-validation-{Guid.NewGuid():N}");
+
+        var nul = await _client.PutAsJsonAsync($"/api/v1/admin/roles/{role.RoleId}", new UpdateRoleRequest { Description = "a\u0000b" }, _jsonOptions);
+        var tooLong = await _client.PutAsJsonAsync($"/api/v1/admin/roles/{role.RoleId}", new UpdateRoleRequest { Description = new string('d', 501) }, _jsonOptions);
+        var multiLine = await _client.PutAsJsonAsync($"/api/v1/admin/roles/{role.RoleId}", new UpdateRoleRequest { Description = "first\r\nsecond\tline" }, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, nul.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, multiLine.StatusCode);
+    }
+
     private async Task<RoleResponse> CreateRoleAsync(string name)
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = name }, _jsonOptions);

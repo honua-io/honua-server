@@ -54,6 +54,19 @@ class EvidenceTests(unittest.TestCase):
             trx(path, [], declared={'total': '5', 'executed': '5', 'passed': '5', 'failed': '0'})
             self.assertIn('disagree', evidence.observe(path, 'test', 'test.csproj')['problem'])
 
+    def test_failed_cases_are_labelled_apart_from_missing_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'test.trx'
+            trx(path, ['Passed', 'Failed'])
+            self.assertEqual('HONUA_SHARD_CASES_FAILED', evidence.refusal_code(evidence.observe(path, 'test', 'p')))
+            for outcomes in (['NotExecuted'], []):
+                trx(path, outcomes)
+                self.assertEqual('HONUA_SHARD_NO_EXECUTION', evidence.refusal_code(evidence.observe(path, 'test', 'p')))
+            trx(path, ['Failed'], declared={'total': '2', 'executed': '2', 'passed': '1', 'failed': '1'})
+            self.assertEqual('HONUA_SHARD_NO_EXECUTION', evidence.refusal_code(evidence.observe(path, 'test', 'p')))
+            path.unlink()
+            self.assertEqual('HONUA_SHARD_NO_EXECUTION', evidence.refusal_code(evidence.observe(path, 'test', 'p')))
+
     def test_missing_malformed_and_absent_counters_cannot_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'test.trx'

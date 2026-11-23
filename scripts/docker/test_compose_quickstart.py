@@ -20,6 +20,7 @@ from quickstart_testing import EXECUTOR, PACKAGE_IMAGES, ROOT, SERVER, WORKER, Q
 from test_console_edge_quickstart import ConsoleEdgeTests  # noqa: F401
 from test_console_package_quickstart import ConsolePackageTests  # noqa: F401
 from test_console_quickstart import ConsoleLifecycleTests  # noqa: F401
+from test_compose_deploy_guide import ComposeDeployGuideTests  # noqa: F401
 from test_shipped_images import ShippedImageTests  # noqa: F401
 
 

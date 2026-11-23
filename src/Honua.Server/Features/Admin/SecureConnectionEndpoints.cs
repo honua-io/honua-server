@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -921,6 +922,22 @@ internal static partial class SecureConnectionEndpoints
         }
     }
 
+    // Published layers name their connection in the metadata storage bindings; services.connection_id
+    // is only set when the publish created the service, so the foreign key alone misses the rest.
+    private static async Task<int> CountBoundLayersAsync(HttpContext context, Guid connectionId)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is null)
+        {
+            return 0;
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var connectionKey = connectionId.ToString("D");
+        return snapshot.Graph.StorageBindings.Count(binding =>
+            string.Equals(binding.ConnectionId, connectionKey, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleDeleteConnection(
             Guid id,
@@ -933,6 +950,12 @@ internal static partial class SecureConnectionEndpoints
         {
             // Capture metadata before deletion so the audit record carries the target.
             var existing = await registry.GetConnectionAsync(id, context.RequestAborted);
+
+            if (await CountBoundLayersAsync(context, id) is > 0 and var boundLayers)
+            {
+                return TypedResults.Conflict(ApiResponse<object>.Failure(
+                    $"Connection is in use by {boundLayers} published layer(s)."));
+            }
 
             var deleted = await registry.DeleteConnectionAsync(id, context.RequestAborted);
             if (!deleted)
@@ -958,7 +981,8 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
-        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
+        // Migration 008's RESTRICT key raises restrict_violation on PostgreSQL 18 and foreign_key_violation before it.
+        catch (Npgsql.PostgresException ex) when (ex.SqlState is Npgsql.PostgresErrorCodes.RestrictViolation or Npgsql.PostgresErrorCodes.ForeignKeyViolation)
         {
             SecureConnectionLog.SecureConnectionInUse(logger, id, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));

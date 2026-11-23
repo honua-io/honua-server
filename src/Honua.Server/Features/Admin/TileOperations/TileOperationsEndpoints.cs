@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Progress;
@@ -8,6 +9,7 @@ using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -227,6 +229,18 @@ internal static class TileOperationsEndpoints
                 detail);
     }
 
+    private static ProblemDetailsResponse? ValidateExtent(HttpContext context, TileOperationStartRequest request)
+    {
+        var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        return TileOperationRequestBounds.FindViolation(request, tileLimits) is { } violation
+            ? ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                violation)
+            : null;
+    }
+
     private static ProblemDetailsResponse? ValidateStartRequest(HttpContext context, TileOperationStartRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Operation))
@@ -254,6 +268,11 @@ internal static class TileOperationsEndpoints
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
                 "Property 'minZoom' must be less than or equal to 'maxZoom'.");
+        }
+
+        if (ValidateExtent(context, request) is { } extentError)
+        {
+            return extentError;
         }
 
         var operation = request.Operation.Trim().ToLowerInvariant();

@@ -55,23 +55,11 @@ internal sealed class WorkflowPackageService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new ArgumentException("Workflow package name is required.", nameof(request));
-        }
-
-        if (request.Graph is null)
-        {
-            throw new ArgumentException("Workflow package graph is required.", nameof(request));
-        }
-
+        EnsureSaveRequestIsValid(request);
         var now = clock.GetUtcNow();
-        var packageId = string.IsNullOrWhiteSpace(request.PackageId)
-            ? CreatePackageId(request.Name)
-            : request.PackageId.Trim();
+        var packageId = ResolvePackageId(request);
         var existing = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        EnsureNewPackageIdIsValid(packageId, existing);
 
         var package = new WorkflowPackage
         {
@@ -228,6 +216,11 @@ internal sealed class WorkflowPackageService(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!string.IsNullOrWhiteSpace(request.PublicationId)
+            && !WorkflowPackageRequestLimits.IsValidIdentifier(request.PublicationId.Trim()))
+        {
+            throw new GeoprocessingValidationException(WorkflowPackageRequestLimits.IdentifierRule("publicationId"));
+        }
 
         var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
         var eligibility = await ValidateGraphAsync(packageVersion.Graph, principal, request.Target, cancellationToken).ConfigureAwait(false);
@@ -1231,6 +1224,40 @@ internal sealed class WorkflowPackageService(
     private static string ComputePackageHash(WorkflowGraph graph)
         => WorkflowPackageGraphHasher.Compute(graph);
 
+    private static void EnsureSaveRequestIsValid(SaveWorkflowPackageRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw new ArgumentException("Workflow package name is required.", nameof(request));
+        }
+
+        if (request.Graph is null)
+        {
+            throw new ArgumentException("Workflow package graph is required.", nameof(request));
+        }
+
+        if (WorkflowPackageRequestLimits.FindExceededLimit(request) is { } exceeded)
+        {
+            throw new ArgumentException(exceeded);
+        }
+    }
+
+    private static string ResolvePackageId(SaveWorkflowPackageRequest request)
+        => string.IsNullOrWhiteSpace(request.PackageId)
+            ? CreatePackageId(request.Name)
+            : request.PackageId.Trim();
+
+    // Drafts saved before ids were restricted keep their id, so they stay editable.
+    private static void EnsureNewPackageIdIsValid(string packageId, WorkflowPackage? existing)
+    {
+        if (existing is null && !WorkflowPackageRequestLimits.IsValidIdentifier(packageId))
+        {
+            throw new ArgumentException(WorkflowPackageRequestLimits.IdentifierRule("packageId"));
+        }
+    }
+
     private static string CreatePackageId(string name)
     {
         var candidate = $"pkg-{Slug(name)}-{Guid.NewGuid():N}";
@@ -1242,7 +1269,7 @@ internal sealed class WorkflowPackageService(
         var builder = new StringBuilder(value.Length);
         foreach (var ch in value.Trim().ToLowerInvariant())
         {
-            if (char.IsLetterOrDigit(ch))
+            if (char.IsAsciiLetterOrDigit(ch))
             {
                 builder.Append(ch);
             }
