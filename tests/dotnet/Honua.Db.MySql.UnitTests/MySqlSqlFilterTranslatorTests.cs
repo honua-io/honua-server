@@ -56,6 +56,22 @@ public class MySqlSqlFilterTranslatorTests
         Assert.Contains(expectedToken, result.Sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("CASEI")]
+    [InlineData("LOWER")]
+    public void Translate_CaseFoldingFunction_RendersLowerOnBothOperands(string function)
+    {
+        var filter = new BinaryExpression(
+            new FunctionCall(function, [new PropertyReference("name")]),
+            BinaryOperator.Equal,
+            new FunctionCall(function, [new Literal("ACME", LiteralType.Text)]));
+
+        var result = _translator.Translate(filter, _resource);
+
+        Assert.Equal("LOWER(`name`) = LOWER(@p0)", result.Sql);
+        Assert.Equal("ACME", result.Parameters[0]);
+    }
+
     [Fact]
     public void Translate_AndExpression_WrapsBothSides()
     {

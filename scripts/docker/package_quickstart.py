@@ -149,6 +149,9 @@ def add_console_bundle(destination, console):
     lock = json.loads(lock_file.read_text())
     lock.update(consoleWeb=CONSOLE_WEB_IMAGE, consoleBundle=receipt)
     lock_file.write_text(json.dumps(lock, indent=2) + '\n')
+    # Served at /console/version.json: the bundle keeps its own identity, the package names the platform.
+    version = dict(name='honua-console', bundleSha256=receipt['sha256'], platformVersion=lock['version'])
+    (destination / 'console.version.json').write_text(json.dumps(version, indent=2) + '\n')
     with (destination / 'README.md').open('a', encoding='utf-8') as readme:
         readme.write('\nConsole: run `python3 quickstart.py --profile console`, then open https://localhost:18083/console/ '
                      'and trust the locally generated certificate in `secrets/console_tls_certificate`. Sign in with '

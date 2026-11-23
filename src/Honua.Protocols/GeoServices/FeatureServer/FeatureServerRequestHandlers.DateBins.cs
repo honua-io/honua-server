@@ -412,15 +412,9 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                var statisticType = element.TryGetProperty("statisticType", out var typeElement)
-                    ? typeElement.GetString()
-                    : null;
-                var onField = element.TryGetProperty("onStatisticField", out var fieldElement)
-                    ? fieldElement.GetString()
-                    : null;
-                var outFieldName = element.TryGetProperty("outStatisticFieldName", out var outElement)
-                    ? outElement.GetString()
-                    : null;
+                var statisticType = FeatureServerJsonMembers.ReadString(element, "statisticType");
+                var onField = FeatureServerJsonMembers.ReadString(element, "onStatisticField");
+                var outFieldName = FeatureServerJsonMembers.ReadString(element, "outStatisticFieldName");
 
                 if (string.IsNullOrWhiteSpace(statisticType) ||
                     string.IsNullOrWhiteSpace(onField) ||

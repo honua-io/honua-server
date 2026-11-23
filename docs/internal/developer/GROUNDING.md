@@ -227,9 +227,10 @@ the engine they were captured against.
 ## Tool surface
 
 The MCP tools `honua_ground_candidates` and `honua_clarify_intent` are thin
-delegations over `IGroundingService.GroundAsync`. Tool payload shapes live
-in [MCP_SERVER.md](../../guides/connect/ai-agents-mcp.md#payload-notes); the domain types they map
-to live in `Honua.Core.Features.Grounding.Domain`.
+delegations over `IGroundingService.GroundAsync`. Discover their current input
+and output schemas through the [full MCP tool catalog](../../guides/connect/ai-agents-mcp.md#workflow-views-bounded-discovery),
+following `nextCursor` until it is absent. The domain types they map to live
+in `Honua.Core.Features.Grounding.Domain`.
 
 The `GroundingToolMapper` is the only place that converts between wire
 payloads and domain records — all tool integration tests drive through it.

@@ -585,23 +585,9 @@ requirement and is gated on its own store instead of on the job-store classifica
 Jobs in progress are not carried over from earlier pre-release builds; start from a clean
 deployment.
 
-A rollout runs two releases side by side behind the load balancer (canary and primary), and the
-workers of both claim from the same table. A job record written by release N must therefore be
-readable and executable by release N-1 for the length of a rollout:
+There is no rolling mixed-version or N-1 reader compatibility contract. Drain in-flight jobs before the switch and deploy the matching application after applying forward-only, idempotent migrations. Verify the upgrade on an installed stack.
 
-- fields are only added to `ExecutionJobRecord` and `ExecutionJobSpec`, never removed or renamed
-  within one release step;
-- a field is never reused with a changed meaning;
-- a release that rewrites a record keeps the fields it does not know. `ExecutionJobRecord` and
-  `ExecutionJobSpec` carry unknown JSON members through deserialization and back
-  (`ExtensibleJsonRecord`), so a heartbeat from an N-1 worker does not strip what release N wrote.
-  Test: `PostgresExecutionSubstrateIntegrationTests.TrySetAsync_RecordWithFieldsThisReleaseDoesNotKnow_KeepsThem`.
-  Unknown members of the other nested records (audit, policies) are not preserved;
-- a new column of `execution_jobs` is nullable or has a default, so an N-1 writer that does not set
-  it still inserts.
-
-The existing rollout step "drain in-flight jobs before the switch" still applies: the rule above
-covers the overlap, not a job that needs behaviour only release N has.
+`ExecutionJobRecord` and `ExecutionJobSpec` preserve unknown JSON members through `ExtensibleJsonRecord`. That data-preservation behavior remains useful independently of release compatibility. Test: `PostgresExecutionSubstrateIntegrationTests.TrySetAsync_RecordWithFieldsThisReleaseDoesNotKnow_KeepsThem`. Unknown members of other nested records (audit, policies) are not preserved.
 
 What still uses Redis after this change, each owned by the follow-on branch
 `feat/postgres-control-plane-state`: proposals, operation instances, operation secrets and workflow

@@ -236,6 +236,9 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
     [InlineData("https://localhost:8443/")]
     [InlineData("ftp://auth.example.com/oidc")]
     [InlineData("https://auth.example.com/\r\nX-Injected: 1")]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [InlineData("https://auth.example.com/realms/x?")]
     [Endpoint("POST /api/v1/admin/oidc/providers")]
     public async Task CreateProvider_WithInvalidOrDisallowedAuthority_ReturnsBadRequest(string authority)
     {
@@ -289,6 +292,31 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
             new UpdateOidcProviderRequest { Authority = "http://169.254.169.254/" },
             _jsonOptions);
         Assert.Equal(HttpStatusCode.BadRequest, updateBadAuthority.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://auth.example.com/#frag")]
+    [InlineData("https://auth.example.com/?tenant=a")]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    public async Task UpdateProvider_WithQueryOrFragmentInAuthority_ReturnsBadRequest(string authority)
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Issuer Shape Provider",
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "client-issuer-shape",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
+            await created.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        var update = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/oidc/providers/{provider.ProviderId}",
+            new UpdateOidcProviderRequest { Authority = authority },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, update.StatusCode);
     }
 
     [IntegrationTest]

@@ -20,7 +20,7 @@ import affected_admission as admission
 
 class AdmissionTests(unittest.TestCase):
     def test_total_job_boundary_includes_side_jobs(self):
-        for count, allowed in ((0, True), (7, True), (8, False), (139, False)):
+        for count, allowed in ((0, True), (6, True), (7, False), (139, False)):
             result, _ = admission.decision({"shards": list(range(count)), "run_all": False})
             self.assertEqual(result, allowed, count)
 
@@ -74,7 +74,7 @@ class AdmissionTests(unittest.TestCase):
                                   ("github.ref", "refs/heads/trunk"), ("inputs.full_ci", "false")):
             guard = guard.replace("${{ " + expression + " }}", value)
         with tempfile.TemporaryDirectory() as directory:
-            for count, full, expected in ((7, False, 0), (8, False, 1), (142, True, 1)):
+            for count, full, expected in ((6, False, 0), (7, False, 1), (142, True, 1)):
                 environment = {**os.environ, "TRAILING_SELECTIVE_BASE": "a" * 40,
                                "descriptor": json.dumps({"shards": list(range(count)), "run_all": full}),
                                "GITHUB_STEP_SUMMARY": f"{directory}/summary"}

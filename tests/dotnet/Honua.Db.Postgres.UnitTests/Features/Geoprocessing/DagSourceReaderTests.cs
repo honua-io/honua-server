@@ -313,6 +313,8 @@ public sealed class DagSourceReaderTests
     [UnitTheory]
     [InlineData("name = 'x'")]
     [InlineData("1=1")]
+    [InlineData("category = 'drainage' AND status <> 'exercise_closed'")]
+    [InlineData("category = 'drainage' and opened_at >= '2026-08-01' AND id <= 94")]
     public void IsSupportedWhereClause_SimpleComparison_IsSupported(string where)
         => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
             .Should().BeTrue();
