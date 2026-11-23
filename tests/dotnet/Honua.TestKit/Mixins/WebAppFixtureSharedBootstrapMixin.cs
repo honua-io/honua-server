@@ -17,13 +17,12 @@ namespace Honua.TestKit.Mixins;
 internal static class WebAppFixtureSharedBootstrapMixin
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static readonly TimeSpan ProcessExitDisposalLimit = TimeSpan.FromSeconds(10);
+    private static readonly IdleReleaseScheduler IdleRelease = new(
+        _sharedLock, () => IdleReleaseDelay, DisposeIfIdleAsync, "Shared test host");
     private static WebApplicationFactory<Program>? _sharedFactory;
     private static PostgresFixture? _sharedPostgres;
     private static int _sharedRefCount;
     private static bool _sharedInitialized;
-    private static CancellationTokenSource? _pendingRelease;
-    private static int _processExitHooked;
 
     internal static TimeSpan IdleReleaseDelay { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -50,7 +49,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
                     _sharedFactory = (buildFactory ?? BuildSharedFactory)(_sharedPostgres.ConnectionString, sharedAdminPassword);
                     _sharedFactory.StartServer();
                     _sharedInitialized = true;
-                    HookProcessExit();
+                    IdleRelease.HookProcessExit();
                 }
                 catch
                 {
@@ -86,10 +85,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
 
             if (_sharedRefCount == 0 && _sharedInitialized)
             {
-                CancelPendingRelease();
-                var pending = new CancellationTokenSource();
-                _pendingRelease = pending;
-                _ = ReleaseWhenIdleAsync(pending);
+                IdleRelease.Schedule();
             }
         }
         finally
@@ -99,53 +95,11 @@ internal static class WebAppFixtureSharedBootstrapMixin
     }
 
     // Disposes an unreferenced shared host now instead of after the idle grace.
-    internal static async Task ReleaseIdleNowAsync()
-    {
-        await _sharedLock.WaitAsync();
-        try
-        {
-            await DisposeIfIdleAsync();
-        }
-        finally
-        {
-            _sharedLock.Release();
-        }
-    }
+    internal static Task ReleaseIdleNowAsync() => IdleRelease.ReleaseNowAsync();
 
-    private static async Task ReleaseWhenIdleAsync(CancellationTokenSource pending)
-    {
-        try
-        {
-            await Task.Delay(IdleReleaseDelay, pending.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        await _sharedLock.WaitAsync();
-        try
-        {
-            if (ReferenceEquals(_pendingRelease, pending))
-            {
-                await DisposeIfIdleAsync();
-            }
-        }
-        catch (Exception exception)
-        {
-            // No test awaits this release; report a disposal failure instead of dropping it.
-            await Console.Error.WriteLineAsync($"Shared test host idle release failed: {exception}");
-        }
-        finally
-        {
-            _sharedLock.Release();
-        }
-    }
-
-    // Callers hold _sharedLock.
+    // Callers hold _sharedLock; the scheduler has already cancelled any pending release.
     private static async Task DisposeIfIdleAsync()
     {
-        CancelPendingRelease();
         if (_sharedRefCount == 0 && _sharedInitialized)
         {
             await DisposeSharedResourcesAsync();
@@ -156,32 +110,10 @@ internal static class WebAppFixtureSharedBootstrapMixin
     // a graph swap a failed case armed for its next read must not fire in the next case.
     private static void ReclaimIdleHost()
     {
-        CancelPendingRelease();
+        IdleRelease.Cancel();
         if (_sharedInitialized && _sharedRefCount == 0)
         {
             _sharedFactory?.Services.GetService<TestMetadataV2GraphProvider>()?.ClearPendingActivation();
-        }
-    }
-
-    private static void CancelPendingRelease()
-    {
-        var pending = _pendingRelease;
-        _pendingRelease = null;
-        if (pending is null)
-        {
-            return;
-        }
-
-        pending.Cancel();
-        pending.Dispose();
-    }
-
-    private static void HookProcessExit()
-    {
-        if (Interlocked.Exchange(ref _processExitHooked, 1) == 0)
-        {
-            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-                ReleaseIdleNowAsync().Wait(ProcessExitDisposalLimit);
         }
     }
 
