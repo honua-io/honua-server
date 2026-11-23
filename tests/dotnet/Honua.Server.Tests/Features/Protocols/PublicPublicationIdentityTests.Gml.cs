@@ -102,7 +102,7 @@ public sealed partial class PublicPublicationIdentityTests
         ConfigureSchemaPublication("Other", "Other");
         BindPublicationsToSeededFeatures();
 
-        var collection = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&COUNT=0");
+        var collection = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=Other,{SecondPublicationId}&COUNT=0");
 
         XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
         var locations = collection.Root!.Attribute(xsi + "schemaLocation")!.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
