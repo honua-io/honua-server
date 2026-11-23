@@ -3,10 +3,17 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Import.FileImport;
+using Honua.FileStorage;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,6 +77,97 @@ public sealed class AdminUploadTenantScopeTests
         else
         {
             await storage.Received(1).CancelUploadAsync("upload-a", Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Theory]
+    [InlineData("completed", 2L)]
+    [InlineData("cancelled", 2L)]
+    [InlineData("completed", 11534336L)]
+    [InlineData("cancelled", 11534336L)]
+    public async Task ImportExecution_AllocatesIndependentUploadAndPreservesLiveOwner(string outcome, long stagedSize)
+    {
+        var stored = new System.Collections.Concurrent.ConcurrentDictionary<string, UploadProgress>();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = Substitute.For<IUploadProgressStore>();
+        store.SetProgressAsync(Arg.Any<string>(), Arg.Any<UploadProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var progress = call.ArgAt<UploadProgress>(1);
+                stored[progress.UploadId] = progress;
+                if (progress.UploadId == "upload-a" && progress.Status == OperationStatus.Queued)
+                {
+                    entered.TrySetResult();
+                    await resume.Task;
+                }
+            });
+        store.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(stored.GetValueOrDefault(call.ArgAt<string>(0))));
+        var directory = Path.Join(Path.GetTempPath(), $"honua-upload-{Guid.NewGuid():N}");
+        var storage = new LocalFileStorage(Options.Create(new LocalStorageOptions { BasePath = directory, CreateDirectoryIfNotExists = true }),
+            NullLogger<LocalFileStorage>.Instance, store);
+        using var content = new MemoryStream("owner content"u8.ToArray());
+        var liveUpload = storage.UploadAsync(new FileUploadRequest
+        {
+            UploadId = "upload-a", TenantId = "tenant-a", Content = content,
+            FileName = "owner.txt", ContentType = "text/plain", SizeBytes = content.Length
+        });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var import = Substitute.For<IFileImportService>();
+            import.Limits.Returns(ImportLimits.Default);
+            using var cancellation = new CancellationTokenSource();
+            import.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                {
+                    if (outcome == "cancelled")
+                    {
+                        cancellation.Cancel();
+                        return Task.FromCanceled<ImportResult>(cancellation.Token);
+                    }
+
+                    return Task.FromResult(new ImportResult { Success = false, TableName = "parcels", Format = SupportedFileFormat.GeoJson });
+                });
+            var authorization = Substitute.For<IAuthorizationService>();
+            authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
+                .Returns(AuthorizationResult.Success());
+            var scope = new TenantScopeFixture("tenant-b")
+            {
+                Configure = services => services.AddSingleton(store).AddSingleton<ICloudFileStorage>(storage)
+                    .AddSingleton(import).AddSingleton(authorization)
+            };
+            var stagedPath = Path.Join(directory, "staged.geojson");
+            await File.WriteAllTextAsync(stagedPath, "{}");
+            var context = scope.Context("admin");
+            context.Response.Body = new MemoryStream();
+            var execution = InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
+            {
+                UploadId = "upload-a", TableName = "parcels",
+                File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = stagedSize }
+            }, cancellation.Token);
+            if (outcome == "cancelled")
+            {
+                await FluentActions.Awaiting(() => execution).Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                await execution;
+            }
+
+            stored["upload-a"].TenantId.Should().Be("tenant-a");
+            stored.Values.Should().Contain(progress => progress.TenantId == "tenant-b" && progress.UploadId != "upload-a");
+            var cancel = Context(scope, "admin", HttpMethods.Post);
+            await InvokeAsync("HandleCancelUpload", cancel);
+            cancel.Response.StatusCode.Should().Be(404);
+            (await storage.CancelUploadAsync("upload-a")).Should().BeTrue();
+        }
+        finally
+        {
+            resume.TrySetResult();
+            await liveUpload;
+            Directory.Delete(directory, recursive: true);
         }
     }
 

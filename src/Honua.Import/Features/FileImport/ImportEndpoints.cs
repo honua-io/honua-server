@@ -650,6 +650,9 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        // Allocate the operation identity at the authenticated boundary, before any
+        // progress write, provider upload or request-abort cleanup can use it.
+        request = request with { UploadId = Guid.NewGuid().ToString() };
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
