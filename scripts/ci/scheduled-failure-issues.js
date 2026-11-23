@@ -164,7 +164,7 @@ async function newestRecordedRun(ctx, issue) {
   return Math.max(0, ...ids.map(match => Number(match[1])));
 }
 
-async function closeIssues(ctx, issues, run, what = 'Scheduled run') {
+async function closeIssues(ctx, issues, { run, what = 'Scheduled run' }) {
   const { github, owner, repo, report } = ctx;
   for (const issue of issues) {
     if (await newestRecordedRun(ctx, issue) > run.id) continue;
@@ -299,7 +299,7 @@ async function closeFixedIssues(ctx, { issues, success, laterRuns }) {
     for (const run of laterRuns) current = current || await mentionsRun(ctx, issue, run);
     if (!current) fixed.push(issue);
   }
-  await closeIssues(ctx, fixed, success);
+  await closeIssues(ctx, fixed, { run: success });
 }
 
 // An open issue whose job ran again after its newest recorded failure and succeeded the last
@@ -319,7 +319,7 @@ async function closeJobsNowPassing(ctx, { path, runs, issues }) {
   for (const issue of issues.filter(item => item.state === 'open')) {
     const after = await newestRecordedRun(ctx, issue);
     const passed = await latestJobVerdict(ctx, { path, runs, key: keyOf(issue.body), after });
-    if (passed) await closeIssues(ctx, [issue], passed.run, `Job \`${passed.job.name}\` in scheduled run`);
+    if (passed) await closeIssues(ctx, [issue], { run: passed.run, what: `Job \`${passed.job.name}\` in scheduled run` });
   }
 }
 
@@ -329,7 +329,7 @@ async function closeJobsNowPassing(ctx, { path, runs, issues }) {
 async function sweepWorkflow(ctx, { path, runs, issues }) {
   const latest = runs[runs.length - 1];
   if (latest.conclusion === 'success') {
-    await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), latest);
+    await closeIssues(ctx, issues.filter(issue => issue.state === 'open'), { run: latest });
     return;
   }
   const lastSuccess = runs.map(run => run.conclusion).lastIndexOf('success');
