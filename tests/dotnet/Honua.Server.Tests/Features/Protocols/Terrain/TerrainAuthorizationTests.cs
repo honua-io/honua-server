@@ -68,7 +68,10 @@ public sealed class TerrainAuthorizationTests : IAsyncLifetime
         var response = await administrator.GetAsync(path);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.CacheControl?.Public.Should().BeFalse("an authorized response must not enter a shared cache");
+        var cacheControl = response.Headers.CacheControl;
+        cacheControl.Should().NotBeNull("an authorized response must declare its cache policy");
+        cacheControl!.Private.Should().BeTrue("an authorized response must not enter a shared cache");
+        cacheControl.NoStore.Should().BeTrue("an authorized response must not survive credential changes");
     }
 
     [IntegrationTest]
