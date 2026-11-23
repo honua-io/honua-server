@@ -1408,6 +1408,17 @@ unchanged. All cases and assertions remain in the WFS Endpoints shard on selecte
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
 
+Two interleaved base/head runs of the full 99-case WFS Endpoints shard passed
+identical cases with zero skips. Class sums were 32.012600 / 31.165176 seconds
+at base and 31.582156 / 29.329947 at head: median 31.588888 to 30.456051 seconds.
+Fixture-inclusive TRX session pairs were 44.316083 / 44.266786 and
+43.926958 / 42.751009 seconds: median 44.121521 to 43.508898 seconds, saving
+0.612623 seconds (0.010210 runner-minutes), one runner before and after.
+Both pairs improved, but the first by only 0.049297 seconds; this is a modest
+observed saving with shared-host variability, not a demonstrated PR critical-path
+improvement. Compilation is excluded. Process times were 426.106 / 56.836 seconds
+at base and 57.608 / 60.113 at head; the first baseline included a cold build.
+
 ### Cross-protocol permission matrix fixture lifetime
 
 CrossProtocolPermissionMatrixTests starts one application for the whole class,
@@ -3414,14 +3425,3 @@ This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before 
 after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
 these small local shard measurements do not establish parallel PR Gate critical-path
 savings. The other WPS shard selections and their private hosts remain unchanged.
-
-Two interleaved base/head runs of the full 99-case WFS Endpoints shard passed
-identical cases with zero skips. Class sums were 32.012600 / 31.165176 seconds
-at base and 31.582156 / 29.329947 at head: median 31.588888 to 30.456051 seconds.
-Fixture-inclusive TRX session pairs were 44.316083 / 44.266786 and
-43.926958 / 42.751009 seconds: median 44.121521 to 43.508898 seconds, saving
-0.612623 seconds (0.010210 runner-minutes), one runner before and after.
-Both pairs improved, but the first by only 0.049297 seconds; this is a modest
-observed saving with shared-host variability, not a demonstrated PR critical-path
-improvement. Compilation is excluded. Process times were 426.106 / 56.836 seconds
-at base and 57.608 / 60.113 at head; the first baseline included a cold build.
