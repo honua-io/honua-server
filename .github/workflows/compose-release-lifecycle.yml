@@ -27,6 +27,7 @@ on:
       - 'scripts/docker/*shipped_images.py'
       - 'docs/get-started/linux-packages.md'
       - 'docs/get-started/windows-packages.md'
+      - 'docs/guides/deploy/docker-compose.md'
       - 'docker/proj-grids/Dockerfile'
       - 'docker/compose/docker-compose.production.yml'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
