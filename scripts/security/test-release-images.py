@@ -152,6 +152,16 @@ class Verdicts(unittest.TestCase):
         with self.assertRaises(ValueError):
             ri.verdict(IDENTITY, ENTRY, mismatched)
 
+    def test_an_index_entry_binds_to_its_scanned_platform_manifest(self):
+        scanned = dict(IDENTITY, image=OTHER, requestedImage=IMAGE)
+        result = ri.verdict(scanned, ENTRY, trivy([]) | {"Metadata": {
+            "RepoDigests": [OTHER], "ImageID": IDENTITY["imageId"]}})
+        self.assertEqual((IMAGE, OTHER), (result["image"], result["scannedImage"]))
+        self.assertEqual(ri.scan_key(ENTRY), result["key"])
+        stranger = "ghcr.io/honua-io/honua-server@sha256:" + "f" * 64
+        with self.assertRaises(ValueError):
+            ri.verdict(dict(scanned, requestedImage=stranger), ENTRY, trivy([]))
+
     def test_report_sets_deadlines_and_keeps_details_out_of_the_public_summary(self):
         result = ri.verdict(IDENTITY, ENTRY, trivy([finding("CVE-2026-1", "CRITICAL", "2"),
                                                     finding("CVE-2026-4", "HIGH", "3")]))
