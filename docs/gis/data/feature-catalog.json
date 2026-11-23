@@ -16593,7 +16593,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainLayerJson_WithRasterFixture_ReturnsQuantizedMeshMetadataAndCrossLinks",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainLayerJson_WithUnknownDataset_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainLayerJson_WithUnknownSourceCrs_ReportsUnavailableCapabilities"
+        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainLayerJson_WithUnknownSourceCrs_ReportsUnavailableCapabilities",
+        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainMetadataDocuments_SendETag_AndAnswerMatchingIfNoneMatchWith304"
       ],
       "proof_ledger_surface": "terrain-rgb-tiles",
       "maturity": "implemented",
@@ -16607,6 +16608,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainMetadataDocuments_SendETag_AndAnswerMatchingIfNoneMatchWith304",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainMetadata_WhenTerrainProtocolDisabled_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainMetadata_WithCollectionName_ResolvesDataset",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainMetadata_WithRasterFixture_ReturnsTileJsonExtensionsAndCacheHeaders",
@@ -16726,6 +16728,7 @@
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_FeatureServerProtocolDisabled_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_NonExistentLayer_ReturnsRealNotFoundWithProblemJson",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_ReturnsTileJsonMetadata",
+        "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_SendsETag_AndAnswersMatchingIfNoneMatchWith304",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_ValidatesAgainstSchema",
         "Honua.Server.Tests.Features.Protocols.Tiles.VectorTileHiddenFieldTests.TileJson_DoesNotListHiddenField",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_OwnedTileSource_AdvertisesTileRouteZoomRange"
@@ -26923,6 +26926,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.KeyPropertiesRenderingRule_RejectsExcessiveDuplicatesBeforeStatisticsOrHistogramWork",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.KeyPropertiesSoap_MatchesRestKeyProperties",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.MultidimensionalInfoAndSupportsTime_MatchRest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.TileCacheSoap_GetImageTileAboveAdvertisedMaxLevel_ReturnsBadRequestFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.TileCacheSoap_MatchesRestWhenMetadataIsEnabled",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerSoapParityTests.TileCacheSoap_StaysUncachedWhenMetadataIsDisabled"
       ],
