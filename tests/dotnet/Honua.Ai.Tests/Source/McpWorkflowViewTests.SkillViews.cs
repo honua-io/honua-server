@@ -25,7 +25,6 @@ public sealed partial class McpWorkflowViewTests
         "honua_admin_services_settings_get",
         "honua_admin_services_layer_metadata_set",
         "honua_admin_metadata_service_discovery_set",
-        "honua_admin_metadata_layer_discovery_set",
         "honua_admin_services_timeinfo_set",
     ];
 

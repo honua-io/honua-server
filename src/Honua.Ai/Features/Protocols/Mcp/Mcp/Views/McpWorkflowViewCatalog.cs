@@ -371,12 +371,11 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "edit",
                 Title = "Edit metadata",
-                Description = "Set layer metadata, service or layer discovery metadata, and time info.",
+                Description = "Set layer metadata, service discovery metadata, and time info.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_layer_metadata_set"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_metadata_service_discovery_set"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_metadata_layer_discovery_set"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_timeinfo_set"),
                 ],
             },
