@@ -123,15 +123,15 @@ async function closeIssues(ctx, issues, run) {
   }
 }
 
-// The issues list returns `comments` as a count, so the fetched list lives in its own field.
-async function commentsOf(ctx, issue) {
-  const { github, owner, repo } = ctx;
-  if (!issue.fetchedComments) {
-    issue.fetchedComments = await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-      owner, repo, issue_number: issue.number, per_page: 100,
-    });
+// The issues list returns `comments` as a count, so fetched comment lists are cached per sweep.
+async function commentsOf(ctx, issueNumber) {
+  const { github, owner, repo, commentCache } = ctx;
+  if (!commentCache.has(issueNumber)) {
+    commentCache.set(issueNumber, await github.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+      owner, repo, issue_number: issueNumber, per_page: 100,
+    }));
   }
-  return issue.fetchedComments;
+  return commentCache.get(issueNumber);
 }
 
 const claimText = (ctx, { lane, run, due }) =>
@@ -140,7 +140,7 @@ const claimText = (ctx, { lane, run, due }) =>
 // An issue whose claim comment failed after it was opened gets the claim on a later sweep.
 async function recordFailure(ctx, { issue, run, job, lane, due }) {
   const { repo, report } = ctx;
-  const comments = await commentsOf(ctx, issue);
+  const comments = await commentsOf(ctx, issue.number);
   if (!comments.some(item => item.body?.startsWith('claimed: '))) {
     const claim = claimText(ctx, { lane, run, due });
     await comment(ctx, issue.number, claim);
@@ -163,11 +163,10 @@ async function openIssue(ctx, args) {
     title: `Scheduled run failing: ${args.workflowName} / ${args.job.name}`,
   });
   report.opened.push(`${repo}#${issue.number}`);
-  const opened = { number: issue.number, body, state: 'open', comments: 0, fetchedComments: [] };
   const claim = claimText(ctx, args);
   await comment(ctx, issue.number, claim);
-  opened.fetchedComments.push({ body: claim });
-  return opened;
+  ctx.commentCache.set(issue.number, [{ body: claim }]);
+  return { number: issue.number, body, state: 'open' };
 }
 
 async function fileRunFailures(ctx, { path, run, issues }) {
@@ -235,7 +234,8 @@ async function sweep({ github, core, config, owner, now = new Date() }) {
   const labelCache = new Set();
   for (const { name: repo, default_branch: defaultBranch } of repos) {
     try {
-      await sweepRepo({ github, owner, repo, defaultBranch, config, now, labelCache, report });
+      const commentCache = new Map();
+      await sweepRepo({ github, owner, repo, defaultBranch, config, now, labelCache, commentCache, report });
     } catch (error) {
       report.errors.push(`${repo}: ${error.status || ''} ${error.message}`.trim());
       core.warning(`scheduled-failure sweep of ${repo} failed: ${error.message}`);

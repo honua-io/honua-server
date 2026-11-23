@@ -156,7 +156,6 @@ test('a later sweep reads the comment list of an issue it opened earlier and rec
   const jobs = { 1: [job('Build', 'failure', 1)], 12: [job('Build', 'failure', 1)] };
   const github = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure')], jobs });
   await go(github);
-  github.issues.forEach(issue => { delete issue.fetchedComments; });
   const later = fakeGithub({ runs: [run(1, 'nightly.yml', 'failure'), run(12, 'nightly.yml', 'failure')],
     jobs, issues: github.issues, comments: github.comments });
   const report = await go(later);
