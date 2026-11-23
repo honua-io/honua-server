@@ -19,9 +19,9 @@ The descriptive-metadata crosswalk is defined once in code; this page explains i
 - With no explicit access-constraints statement, the statement is derived from the license.
 - A published dataset's title is the publication's title override, then the publication's title, then the
   dataset's title, then the dataset's name (`DescriptiveMetadataResolver.DatasetTitle`).
-- Every protocol reads the resolver rather than its own field mapping: STAC, OGC API Records and Features,
-  OData, WMS, WMTS, WFS 1.x/2.0 and WCS 1.0/2.0 layer entries, and FeatureServer and MapServer service and
-  layer JSON. Service-level capabilities read `PublishedMetadataProjection.ForCapabilities`; GeoServices
+- Every protocol reads the resolver rather than its own field mapping: STAC, OGC API Records, Features, Tiles
+  and Maps, OData, WMS, WMTS, WFS 1.x/2.0 and WCS 1.0/2.0 layer entries, FeatureServer, MapServer and
+  ImageServer service and layer JSON, the gRPC layer descriptors and the Console content list. Service-level capabilities read `PublishedMetadataProjection.ForCapabilities`; GeoServices
   service JSON reads `ForServiceResource`, which keeps the service's own text and inherits governance. `MetadataCrosswalkProtocolAgreementTests` publishes one
   fully described layer and checks that these protocols agree.
 - `Iso19139Writer`, `Iso19115Part3Writer` and `DcatApWriter` encode the record. The ISO encodings describe
