@@ -4,11 +4,13 @@
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -39,6 +41,42 @@ public sealed class ImageServerTileRangeTests
         context.Response.Headers.ContentRange.ToString().Should().Be("bytes 0-3/8");
         context.Response.Body.Position = 0;
         ((MemoryStream)context.Response.Body).ToArray().Should().Equal(SampleTileBytes[..4]);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.GetTile)]
+    [InlineData(24, 23)]
+    [InlineData(28, 23)]
+    [InlineData(11, 10)]
+    public async Task GetImageTileAsync_LevelBeyondAdvertisedTileInfo_IsRefused(int level, int maxLevel)
+    {
+        var handler = CreateCloudCogHandler();
+        var context = ImageServerTestFixtures.CreateContext(
+            $"/rest/services/1/ImageServer/tile/{level}/0/0",
+            services => services.Configure<ImageServerTileMetadataOptions>(options => options.MaxLevel = maxLevel));
+
+        var result = await handler.GetImageTileAsync(context, 1, level, 0, 0, "cog");
+        await result.ExecuteAsync(context);
+
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        body.Should().Contain("outside the service tiling scheme");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_AtAdvertisedMaxLevel_IsServed()
+    {
+        var handler = CreateCloudCogHandler();
+        var context = ImageServerTestFixtures.CreateContext(
+            "/rest/services/1/ImageServer/tile/10/0/0?format=cog",
+            services => services.Configure<ImageServerTileMetadataOptions>(options => options.MaxLevel = 10));
+
+        var result = await handler.GetImageTileAsync(context, 1, 10, 0, 0, "cog");
+
+        await result.ExecuteAsync(context);
+        context.Response.Body.Position = 0;
+        (await new StreamReader(context.Response.Body).ReadToEndAsync()).Should().NotContain("outside the service tiling scheme");
     }
 
     [UnitTest]
