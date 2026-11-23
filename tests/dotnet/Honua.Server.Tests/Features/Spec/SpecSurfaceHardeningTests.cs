@@ -172,6 +172,62 @@ public sealed class SpecSurfaceHardeningTests(SpecSurfaceHardeningTests.GatedHos
         payload.RootElement.GetProperty("code").GetString().Should().Be(SpecDiagnosticCodes.InvalidRequestBody);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    [InlineData(1, 1)]
+    [InlineData(16, 16)]
+    [InlineData(17, 16)]
+    [InlineData(int.MaxValue, 16)]
+    [InlineData(0, 4)]
+    [InlineData(-5, 4)]
+    [InlineData(null, 4)]
+    public async Task Apply_MaxConcurrency_IsClampedToTheServerCeiling(int? requested, int expected)
+    {
+        var maxConcurrency = requested is int value
+            ? $",\"maxConcurrency\":{value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : string.Empty;
+        using var request = Post("/v1/spec/apply", ApplyBody(maxConcurrency), "admin-write");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await host.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("X-Spec-Apply-Token").Should().ContainSingle(SpyApplyEngine.Token);
+        host.Engine.LastOptions.Should().NotBeNull();
+        host.Engine.LastOptions!.MaxConcurrency.Should().Be(expected);
+        expected.Should().BeLessThanOrEqualTo(SpecEndpoints.MaxApplyConcurrency);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    [InlineData("missing-accept")]
+    [InlineData("unknown-cache-mode")]
+    [InlineData("malformed-body")]
+    public async Task Apply_RefusedRequest_NeverStartsTheEngineOrIssuesAToken(string refusal)
+    {
+        var startsBefore = host.Engine.StartCalls;
+        var body = refusal switch
+        {
+            "unknown-cache-mode" => ApplyBody(",\"cacheMode\":999"),
+            "malformed-body" => "{\"nodes\":",
+            _ => ApplyBody(string.Empty)
+        };
+        using var request = Post("/v1/spec/apply", body, "admin-write");
+        if (refusal != "missing-accept")
+        {
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        }
+
+        using var response = await host.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, refusal);
+        response.Headers.Contains("X-Spec-Apply-Token").Should().BeFalse(refusal);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/event-stream", refusal);
+        host.Engine.StartCalls.Should().Be(startsBefore, $"a refused apply must not start a run ({refusal})");
+    }
+
     private static string ApplyBody(string extra)
         => "{\"grammarVersion\":\"grammar/1.0\",\"processFamilyVersion\":\"family/1.0\",\"nodes\":[]" + extra + "}";
 
