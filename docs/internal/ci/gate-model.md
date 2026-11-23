@@ -1809,6 +1809,15 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
+Repository hygiene also runs on `labeled` and `unlabeled`. The shared bundle
+policy reads the PR's labels from the event payload, so a `bundle-exception`
+label added just after `opened` was invisible until the next push and left a
+false Bundle policy red (#8481, #8703, #8832, #9326). A label event reruns every
+hygiene job; no job is skipped on label events, because a skipped job would
+cancel the active run and report the required context without running the
+policy. Concurrency cancels the superseded run, so a label change costs one
+light-runner hygiene run.
+
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Compose readiness failure evidence
