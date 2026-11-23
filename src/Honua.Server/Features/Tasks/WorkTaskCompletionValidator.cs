@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Assets;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Server.Features.Assets;
@@ -57,7 +58,7 @@ internal sealed class WorkTaskCompletionValidator(
             return new AssetFieldError("answers", "answers must be a JSON object.");
         }
 
-        if (request.Answers is { } answers && ContainsNul(answers))
+        if (request.Answers is { } answers && JsonTextValidation.ContainsNul(answers))
         {
             return new AssetFieldError("answers", "answers cannot contain NUL characters.");
         }
@@ -114,13 +115,4 @@ internal sealed class WorkTaskCompletionValidator(
 
         return values;
     }
-
-    private static bool ContainsNul(JsonElement element) => element.ValueKind switch
-    {
-        JsonValueKind.String => element.GetString()?.Contains('\0', StringComparison.Ordinal) == true,
-        JsonValueKind.Array => element.EnumerateArray().Any(ContainsNul),
-        JsonValueKind.Object => element.EnumerateObject().Any(static property =>
-            property.Name.Contains('\0', StringComparison.Ordinal) || ContainsNul(property.Value)),
-        _ => false,
-    };
 }
