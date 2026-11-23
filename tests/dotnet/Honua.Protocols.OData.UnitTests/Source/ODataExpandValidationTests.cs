@@ -39,7 +39,7 @@ public sealed class ODataExpandValidationTests
     [Theory]
     [InlineData("NoSuchRelation", "*'NoSuchRelation' is not a navigation property*")]
     [InlineData("Layer($expand=Features)", "*nested $expand is not supported*")]
-    [InlineData("Child_Rows($expand=Child_Rows)", "*nested $expand is not supported*")]
+    [InlineData("ChildRows($expand=ChildRows)", "*nested $expand is not supported*")]
     public async Task ProcessExpandAsync_UnknownOrNestedExpansion_IsRejectedEvenOnAnEmptyPage(string expand, string message)
     {
         var act = () => CreateService().ProcessExpandAsync(expand, Parent, 13, [], CancellationToken.None);
@@ -49,7 +49,8 @@ public sealed class ODataExpandValidationTests
 
     [Theory]
     [InlineData("Child Rows")]
-    [InlineData("Child_Rows($select=name)")]
+    [InlineData("ChildRows($select=name)")]
+    [InlineData("ChildRows_rrel($select=name)")]
     [InlineData("*")]
     public async Task FindInvalidExpandAsync_DeclaredRawSanitisedOrWildcard_IsAccepted(string expand)
         => (await CreateService().FindInvalidExpandAsync(expand, Parent, CancellationToken.None)).Should().BeNull();
