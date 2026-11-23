@@ -14,6 +14,23 @@ public sealed class GeoServicesCloudTileCacheTests
 {
     private const string ObjectKey = "prefix/imageserver/tiles/1/webmercatorquad/default/hash/2/1/1.png";
 
+    [UnitTheory]
+    [InlineData(CloudStorageProvider.AwsS3, "honua", "honua/imageserver/tiles/1.png")]
+    [InlineData(CloudStorageProvider.AwsS3, "/tenant/honua/", "tenant/honua/imageserver/tiles/1.png")]
+    [InlineData(CloudStorageProvider.AzureBlob, "blob root", "blob_root/imageserver/tiles/1.png")]
+    [InlineData(CloudStorageProvider.Local, "ignored", "imageserver/tiles/1.png")]
+    public void BuildObjectKey_PutsTheSelectedProvidersPrefixFirst(CloudStorageProvider provider, string prefix, string expected)
+    {
+        var options = new CloudStorageOptions
+        {
+            Provider = provider,
+            AwsS3 = new AwsS3Options { KeyPrefix = prefix },
+            AzureBlob = new AzureBlobOptions { BlobPrefix = prefix }
+        };
+
+        GeoServicesCloudTileCache.BuildObjectKey(options, "imageserver", "tiles", "1.png").Should().Be(expected);
+    }
+
     [UnitTest]
     public async Task TryReadAsync_FreshObject_ReturnsStoredBytesAndContentType()
     {
