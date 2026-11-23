@@ -30,6 +30,21 @@ class AffectedLaneTests(unittest.TestCase):
             with self.subTest(paths=paths):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
+    def test_embedded_skills_select_source_lanes_and_certification_selects_none(self):
+        # Affected run 45111892530 ran every lane, AOT for 72 minutes, for certification/ files.
+        measured = ['certification/bounded-roster/run-roster.sh',
+                    'certification/client-protocol-requirements.v1.json',
+                    'scripts/certification/verify-client-certification-receipts.py',
+                    'docs/gis/data/operation-capability.v1.json',
+                    '.github/workflows/client-roster-certification.yml',
+                    'tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/SceneAdminCapabilityMappingTests.cs']
+        self.assertFalse(any(MODULE.select(measured).values()))
+        skills = MODULE.select(['skills/honua-ops/SKILL.md'])
+        self.assertEqual(skills, MODULE.select(['src/Honua.Ai/skills/honua-ops/SKILL.md']))
+        self.assertEqual({lane for lane, enabled in skills.items() if enabled},
+                         {'aot', 'docker', 'mcp', 'postgres', 'runtime'})
+        self.assertTrue(all(MODULE.select(['certificates/new.json']).values()))
+
     def test_shared_setup_actions_keep_their_consumers(self):
         server = MODULE.select(['.github/actions/setup-honua-server/action.yml'])
         self.assertEqual(

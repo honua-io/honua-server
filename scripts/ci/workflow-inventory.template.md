@@ -776,7 +776,8 @@ Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
 including transitive publish inputs and REST/gRPC backends. Shared seed files
-select every compatibility lane. Shared inputs,
+select every compatibility lane. `skills/` (embedded in `src/Honua.Ai`) counts
+as a `src/` path and `certification/` selects no lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the

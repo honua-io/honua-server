@@ -266,6 +266,8 @@ Stage 3 details:
   the diff, and the twice-daily full run keeps them. The same run skips
   Honua.Core package compatibility unless a changed file is one that packing
   Honua.Core reads: `src/Honua.Core/`, `src/Honua.Analyzers/`, a file directly under `src/`, a root-level file, `eng/`, `scripts/ci/analyzer-baseline/` or `.github/actions/setup-dotnet-ci/`. An empty path list still runs that heavy job.
+  Skill (`skills/`, embedded in `src/Honua.Ai`) edits select the lanes a `src/`
+  edit selects; `certification/` edits select no expensive lane.
   A skipped Core package does not cancel a selected AOT or MCP lane; a failed
   Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
@@ -1094,7 +1096,8 @@ Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
 including transitive publish inputs and REST/gRPC backends. Shared seed files
-select every compatibility lane. Shared inputs,
+select every compatibility lane. `skills/` (embedded in `src/Honua.Ai`) counts
+as a `src/` path and `certification/` selects no lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
