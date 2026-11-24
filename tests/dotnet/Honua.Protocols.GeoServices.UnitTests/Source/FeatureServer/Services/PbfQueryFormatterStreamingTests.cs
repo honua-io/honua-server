@@ -232,7 +232,7 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
-    public async Task StreamAsPbfAsync_BlockedScratchWrite_ResumesWithIdenticalBytes()
+    public async Task StreamAsPbfAsync_BlockedScratchWrite_AllowsAnotherResponseToComplete()
     {
         var layer = CreateLayerWithStringField();
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
@@ -257,14 +257,20 @@ public sealed partial class PbfQueryFormatterTests
         try
         {
             await body.FirstChunkStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var otherFeature = Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty
+                .Add("name", new string('c', 2 * PbfFeatureSpool.StreamChunkBytes)));
+            var otherQuery = QueryResult<Feature>.Create(1, [otherFeature], hasMoreResults: true);
+            await AssertStreamAsPbfMatchesFormatAsPbfAsync(otherQuery).WaitAsync(TimeSpan.FromSeconds(10));
+
             response.IsCompleted.Should().BeFalse();
         }
         finally
         {
             body.Resume.TrySetResult();
+            await response.WaitAsync(TimeSpan.FromSeconds(10));
         }
 
-        await response;
         context.Response.ContentLength.Should().Be(expected.Length);
         body.ToArray().Should().Equal(expected);
     }
