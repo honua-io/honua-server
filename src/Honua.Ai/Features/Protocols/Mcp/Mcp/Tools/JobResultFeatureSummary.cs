@@ -113,6 +113,7 @@ internal static class JobResultFeatureSummary
         private int _pageEnd = window.Offset;
         private bool _pageFull;
         private bool _fieldsTruncated;
+        private bool _geometryTypesTruncated;
         private int _count;
         private int _matched;
         private bool _hasJoinCount;
@@ -129,17 +130,7 @@ internal static class JobResultFeatureSummary
                 CountProperties(properties, cancellationToken);
             }
 
-            if (feature.ValueKind == JsonValueKind.Object
-                && feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind == JsonValueKind.Object
-                && geometry.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String
-                && JsonMarshal.GetRawUtf8Value(type).Length <= _remainingMetadataBytes)
-            {
-                var name = type.GetString()!;
-                if (!_geometryTypes.Contains(name) && TryReserveMetadata(name))
-                {
-                    _geometryTypes.Add(name);
-                }
-            }
+            CountGeometryType(feature);
 
             if (!_pageFull && _count >= window.Offset && _count - window.Offset < window.Limit)
             {
@@ -157,12 +148,44 @@ internal static class JobResultFeatureSummary
                 Fields = _fields,
                 FieldsTruncated = _fieldsTruncated,
                 GeometryTypes = [.. _geometryTypes],
+                GeometryTypesTruncated = _geometryTypesTruncated,
                 MatchedFeatureCount = _hasJoinCount || (kind == ResultKind.SpatialJoin && _count == 0) ? _matched : null,
                 RowOffset = window.Offset,
                 Rows = _rows,
                 OmittedRowOffsets = _omittedRowOffsets.Count > 0 ? _omittedRowOffsets : null,
                 NextRowOffset = window.Limit > 0 && _pageEnd < _count ? _pageEnd : null,
             };
+        }
+
+        private void CountGeometryType(JsonElement feature)
+        {
+            if (feature.ValueKind != JsonValueKind.Object
+                || !feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind != JsonValueKind.Object
+                || !geometry.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String)
+            {
+                return;
+            }
+
+            if (JsonMarshal.GetRawUtf8Value(type).Length > previewBytes)
+            {
+                _geometryTypesTruncated = true;
+                return;
+            }
+
+            var name = type.GetString()!;
+            if (_geometryTypes.Contains(name))
+            {
+                return;
+            }
+
+            if (TryReserveMetadata(name))
+            {
+                _geometryTypes.Add(name);
+            }
+            else
+            {
+                _geometryTypesTruncated = true;
+            }
         }
 
         private void CountProperties(JsonElement properties, CancellationToken cancellationToken)
@@ -218,16 +241,46 @@ internal static class JobResultFeatureSummary
             return document.RootElement.Clone();
         }
 
+        private static bool MightFitCompactRow(JsonElement row, int limit, CancellationToken cancellationToken)
+        {
+            var raw = JsonMarshal.GetRawUtf8Value(row);
+            if (raw.Length < limit)
+            {
+                return true;
+            }
+
+            // Whitespace between tokens disappears and escape sequences can shrink on serialization.
+            // Count a lower bound before allocating a compact copy for exact measurement.
+            var reader = new Utf8JsonReader(raw);
+            var minimumBytes = 0;
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                minimumBytes += reader.TokenType switch
+                {
+                    JsonTokenType.String or JsonTokenType.PropertyName => (reader.ValueSpan.Length / 6) + 2,
+                    JsonTokenType.Number => reader.ValueSpan.Length,
+                    _ => 1
+                };
+                if (minimumBytes >= limit)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private void AddPageRow(JsonElement properties, CancellationToken cancellationToken)
         {
             var row = properties.ValueKind == JsonValueKind.Object ? properties : EmptyRow;
             cancellationToken.ThrowIfCancellationRequested();
             var rowByteLimit = previewBytes / 2;
-            var rowBytes = JsonMarshal.GetRawUtf8Value(row).Length >= rowByteLimit
-                ? rowByteLimit + 1
-                : JsonSerializer.SerializeToUtf8Bytes(row, McpJsonContext.Default.JsonElement).Length + 1;
-            var omitRow = rowBytes > rowByteLimit;
-            var requiredBytes = omitRow ? OmittedOffsetBytes : rowBytes;
+            var compactRow = MightFitCompactRow(row, rowByteLimit, cancellationToken)
+                ? JsonSerializer.SerializeToUtf8Bytes(row, McpJsonContext.Default.JsonElement)
+                : null;
+            var omitRow = compactRow is null || compactRow.Length >= rowByteLimit;
+            var requiredBytes = omitRow ? OmittedOffsetBytes : compactRow!.Length + 1;
             if (requiredBytes > _remainingRowBytes)
             {
                 _pageFull = true;
@@ -239,7 +292,8 @@ internal static class JobResultFeatureSummary
             }
             else
             {
-                _rows.Add(row.Clone());
+                using var document = JsonDocument.Parse(compactRow!);
+                _rows.Add(document.RootElement.Clone());
             }
 
             _remainingRowBytes -= requiredBytes;

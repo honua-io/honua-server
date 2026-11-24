@@ -207,6 +207,9 @@ internal sealed class McpArtifactFeatureSummary
     [JsonPropertyName("geometryTypes")]
     public IReadOnlyList<string> GeometryTypes { get; set; } = [];
 
+    [JsonPropertyName("geometryTypesTruncated")]
+    public bool GeometryTypesTruncated { get; set; }
+
     [JsonPropertyName("matchedFeatureCount")]
     public int? MatchedFeatureCount { get; set; }
 

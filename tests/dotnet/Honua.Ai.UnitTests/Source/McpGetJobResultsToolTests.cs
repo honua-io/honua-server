@@ -290,6 +290,27 @@ public sealed class McpGetJobResultsToolTests
         summary.GetProperty("fieldsTruncated").GetBoolean().Should().Be(fieldCount > 100);
     }
 
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(5000)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RowPreview_IgnoresInsignificantWhitespace(int paddingLength)
+    {
+        var padding = new string(' ', paddingLength);
+        var json = $$$"""{"features":[{"properties":{ {{{padding}}} "id":1}}]}""";
+        var uri = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+        _jobService.GetJobResultsAsync("gp-format", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var summary = (await Dispatch(ToolCall("results-format", """{"jobId":"gp-format"}""")))!
+            .Result!.Value.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("rows")[0].GetProperty("id").GetInt32().Should().Be(1);
+        summary.TryGetProperty("omittedRowOffsets", out _).Should().BeFalse();
+    }
+
     private static string JoinResultUri(int[] joinCounts, int padding, string processId = "analytics.spatial-join")
     {
         var note = new string('n', padding);
