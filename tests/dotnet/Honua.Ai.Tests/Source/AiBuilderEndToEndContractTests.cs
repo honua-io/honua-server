@@ -122,13 +122,13 @@ public sealed class AiBuilderEndToEndContractTests
             "emit-app-manifest"
         ]);
 
-        // AppPackage preview → widgets and data bindings ready for the SDK
-        var appPackage = body.GetProperty("appPackage");
-        appPackage.GetProperty("appPackageId").GetString().Should().Be("app-pkg-ops-dashboard");
-        appPackage.GetProperty("widgets").EnumerateArray()
+        // App preview → widgets and data bindings ready for the SDK
+        var app = body.GetProperty("app");
+        app.GetProperty("appId").GetString().Should().Be("app-pkg-ops-dashboard");
+        app.GetProperty("widgets").EnumerateArray()
             .Select(w => w.GetString())
             .Should().Contain("district-filter");
-        appPackage.GetProperty("dataBindings").GetProperty("chartGroupBy").GetString()
+        app.GetProperty("dataBindings").GetProperty("chartGroupBy").GetString()
             .Should().Be("incident_type");
     }
 

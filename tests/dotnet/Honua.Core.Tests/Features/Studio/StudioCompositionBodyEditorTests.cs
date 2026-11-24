@@ -73,15 +73,15 @@ public sealed class StudioCompositionBodyEditorTests
     public void ReadBody_ThenWriteBody_PreservesFieldsOutsideTheProjection()
     {
         // StudioCompositionBody is a PROJECTION, not the whole document: a canonical map package
-        // also carries mapPackageId/format/status/createdAt/sourceBindings/initialView, which
-        // the canonical MapPackage carries. Both round trips that serialize this record back over the
+        // also carries mapId/format/status/createdAt/sourceBindings/initialView, which
+        // the canonical Map carries. Both round trips that serialize this record back over the
         // stored body -- the collaboration checkpoint applier and the MCP Studio composition tools
         // -- would otherwise DELETE every unmodelled field on the first edit. Silent data loss, not
         // a wedge, so nothing would surface at the time.
         using var document = System.Text.Json.JsonDocument.Parse(
             """
             {
-              "mapPackageId": "pkg-1",
+              "mapId": "pkg-1",
               "format": "honua.map/1.0",
               "status": "published",
               "sourceBindings": [{"sourceId": "parcels", "layerId": 7}],
@@ -97,7 +97,7 @@ public sealed class StudioCompositionBodyEditorTests
         var written = StudioCompositionBodyEditor.WriteBody(envelope, mutated);
 
         var reread = written.Body!.Value;
-        Assert.Equal("pkg-1", reread.GetProperty("mapPackageId").GetString());
+        Assert.Equal("pkg-1", reread.GetProperty("mapId").GetString());
         Assert.Equal("honua.map/1.0", reread.GetProperty("format").GetString());
         Assert.Equal("published", reread.GetProperty("status").GetString());
         Assert.Equal(3, reread.GetProperty("initialView").GetProperty("zoom").GetInt32());
@@ -125,14 +125,14 @@ public sealed class StudioCompositionBodyEditorTests
         JsonElement written;
         {
             using var document = JsonDocument.Parse(
-                """{"mapPackageId":"pkg-1","layers":[{"id":"parcels"}]}""");
+                """{"mapId":"pkg-1","layers":[{"id":"parcels"}]}""");
             var envelope = BuildEnvelope(StudioPackageFamily.Map, document.RootElement.Clone());
             var mutated = StudioCompositionBodyEditor.SetLayerStyleRef(
                 StudioCompositionBodyEditor.ReadBody(envelope), "parcels", "night");
             written = StudioCompositionBodyEditor.WriteBody(envelope, mutated).Body!.Value;
         }
 
-        Assert.Equal("pkg-1", written.GetProperty("mapPackageId").GetString());
+        Assert.Equal("pkg-1", written.GetProperty("mapId").GetString());
         Assert.Equal("night", written.GetProperty("layers")[0].GetProperty("styleRef").GetString());
     }
 

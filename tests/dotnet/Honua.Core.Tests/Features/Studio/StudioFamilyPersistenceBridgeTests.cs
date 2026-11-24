@@ -59,7 +59,7 @@ public sealed class StudioFamilyPersistenceBridgeTests
 
         // Non-bridged families are untouched.
         var map = Assert.Single(capabilities.Families, descriptor => descriptor.Family == StudioPackageFamily.Map);
-        Assert.Equal("honua_map_package.v1", map.Format);
+        Assert.Equal("honua_map.v1", map.Format);
     }
 
     [UnitTest]

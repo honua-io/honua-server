@@ -142,7 +142,7 @@ internal sealed class HtmlReportRenderer : IAnalysisReportRenderer
 
             case MapEmbedSection map:
                 sb.Append("<p class=\"report-map\">Map: <a href=\"")
-                    .Append(WebUtility.HtmlEncode(map.MapPackageUri))
+                    .Append(WebUtility.HtmlEncode(map.MapUri))
                     .Append("\">")
                     .Append(WebUtility.HtmlEncode(map.Caption))
                     .AppendLine("</a></p>");

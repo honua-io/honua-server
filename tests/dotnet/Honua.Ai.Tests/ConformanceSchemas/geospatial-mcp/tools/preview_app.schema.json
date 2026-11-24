@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_app.schema.json",
+  "title": "preview_app inputSchema",
+  "description": "Argument shape for preview_app (Build App; returns a preview ArtifactRef). Produces a read-only preview artifact for an existing App. Responsibility-level. See taxonomy.md §App composition.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["appId"],
+  "properties": {
+    "appId": {
+      "type": "string",
+      "description": "Identifier (app_…) of the App to preview."
+    }
+  }
+}

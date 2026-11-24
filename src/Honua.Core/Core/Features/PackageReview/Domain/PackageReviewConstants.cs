@@ -14,13 +14,13 @@ public static class PackageReviewFamilies
 
     public const string AnalysisPlan = "analysis_plan";
 
-    public const string MapPackage = "map_package";
+    public const string Map = "map";
 
     public const string DashboardReport = "dashboard_report";
 
     public const string Form = "form";
 
-    public const string AppPackage = "app_package";
+    public const string App = "app";
 
     public const string Workflow = "workflow";
 
@@ -31,10 +31,10 @@ public static class PackageReviewFamilies
     public static bool IsKnown(string? family)
         => string.Equals(family, Query, StringComparison.Ordinal) ||
            string.Equals(family, AnalysisPlan, StringComparison.Ordinal) ||
-           string.Equals(family, MapPackage, StringComparison.Ordinal) ||
+           string.Equals(family, Map, StringComparison.Ordinal) ||
            string.Equals(family, DashboardReport, StringComparison.Ordinal) ||
            string.Equals(family, Form, StringComparison.Ordinal) ||
-           string.Equals(family, AppPackage, StringComparison.Ordinal) ||
+           string.Equals(family, App, StringComparison.Ordinal) ||
            string.Equals(family, Workflow, StringComparison.Ordinal) ||
            string.Equals(family, Geoprocessing, StringComparison.Ordinal) ||
            string.Equals(family, Etl, StringComparison.Ordinal);

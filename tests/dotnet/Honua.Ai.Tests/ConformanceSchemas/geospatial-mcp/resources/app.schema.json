@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/resources/app.schema.json",
+  "title": "App resource payload",
+  "description": "Responsibility-level projection of an App at honua://apps/{appId}. Concrete field spellings finalize upstream (honua-server#731); only the stable appId is pinned. Responsibilities: target SDK declaration, template binding, package format/manifest, bundle artifact, delivery asset manifest, map binding, runtime config schema, hosting/route hints, bound data artifacts. See resources.md \u00a7honua://apps/{appId}.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "appId"
+  ],
+  "properties": {
+    "appId": {
+      "type": "string",
+      "description": "Stable identifier (app_\u2026)."
+    },
+    "templateId": {
+      "type": "string"
+    },
+    "targetSdk": {
+      "type": "string"
+    },
+    "mapId": {
+      "type": "string"
+    },
+    "bundleArtifactId": {
+      "type": "string"
+    },
+    "boundArtifactIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "controls": {
+      "$ref": "../common/controls.schema.json#/properties/controls",
+      "description": "Standard-owned input affordances; the collection `control:{id}` references resolve against (ADR-0031)."
+    },
+    "explorationContexts": {
+      "$ref": "../common/exploration.schema.json#/properties/explorationContexts",
+      "description": "Standard-owned units of shared interaction state; the primary interaction model, which components join by naming a context (ADR-0032)."
+    },
+    "interactions": {
+      "$ref": "../common/interactions.schema.json#/properties/interactions",
+      "description": "Standard-owned declarative event\u2192action bindings, narrowed by ADR-0032 to one-shot gestures (ADR-0030)."
+    },
+    "layout": {
+      "$ref": "../common/interactions.schema.json#/properties/layout",
+      "description": "Standard-owned grid placement for widgets (ADR-0030)."
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "appPackageId"
+        ]
+      },
+      {
+        "required": [
+          "mapPackageId"
+        ]
+      }
+    ]
+  }
+}

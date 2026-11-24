@@ -73,10 +73,10 @@ internal static class CapabilityManifestEmitter
         {
             [McpTelemetry.ResourceFamily.Workspaces] =
                 Resource("Workspace", "honua://workspaces/{workspace_id}"),
-            [McpTelemetry.ResourceFamily.MapPackages] =
-                Resource("Map package", "honua://map-packages/{map_package_id}"),
-            [McpTelemetry.ResourceFamily.AppPackages] =
-                Resource("App package", "honua://app-packages/{app_package_id}"),
+            [McpTelemetry.ResourceFamily.Maps] =
+                Resource("Map", "honua://maps/{mapId}"),
+            [McpTelemetry.ResourceFamily.Apps] =
+                Resource("App", "honua://apps/{appId}"),
             [McpTelemetry.ResourceFamily.PublishedServices] =
                 Resource("Published service", "honua://published-services/{published_service_id}"),
             [McpTelemetry.ResourceFamily.Deployments] =

@@ -52,9 +52,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
         // Studio published-route resolver: serves an Active publication's activeUrl.
         new("GET", "/api/v1/studio/published/{*route}"),
-        // Deterministic map/app package draft creation (ADR-0076).
-        new("POST", "/api/v1/studio/app-packages/generate"),
-        new("POST", "/api/v1/studio/map-packages/generate"),
+        // Deterministic Map/App draft creation (ADR-0076).
+        new("POST", "/api/v1/studio/apps/generate"),
+        new("POST", "/api/v1/studio/maps/generate"),
         // Studio deliverable export: render a map/dashboard/report content item to PDF/PNG.
         new("POST", "/api/v1/studio/{kind}/{id}/export"),
 

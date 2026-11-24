@@ -17,9 +17,9 @@ public sealed record AnalysisResultPackage
 
     public IReadOnlyList<WorkspaceRef> WorkspaceRefs { get; init; } = [];
 
-    public string? MapPackageId { get; init; }
+    public string? MapId { get; init; }
 
-    public string? AppPackageId { get; init; }
+    public string? AppId { get; init; }
 
     public required ProvenanceRecord Provenance { get; init; }
 
@@ -32,8 +32,8 @@ public sealed record AnalysisResultPackage
         IReadOnlyList<WorkspaceRef> workspaceRefs,
         ProvenanceRecord provenance,
         IReadOnlyList<string>? assumptions = null,
-        string? mapPackageId = null,
-        string? appPackageId = null)
+        string? mapId = null,
+        string? appId = null)
         => new()
         {
             ResultPackageId = resultPackageId,
@@ -43,8 +43,8 @@ public sealed record AnalysisResultPackage
             WorkspaceRefs = workspaceRefs,
             Provenance = provenance,
             Assumptions = assumptions ?? [],
-            MapPackageId = mapPackageId,
-            AppPackageId = appPackageId
+            MapId = mapId,
+            AppId = appId
         };
 
     public static AnalysisResultPackage CreateFailed(

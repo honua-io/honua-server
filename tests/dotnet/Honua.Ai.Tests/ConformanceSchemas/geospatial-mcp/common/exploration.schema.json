@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/common/exploration.schema.json",
+  "title": "Map and App exploration contexts",
+  "description": "Standard-owned `explorationContexts` collection for Map and App documents. An exploration context is a named unit of shared interaction state — filters, spatial filter, extent, selection, sort, page, visible fields, grouping, aggregation — that components bind to. Components that name the same context share that state, so cross-filtering is context membership rather than an event→action edge; this is the primary interaction model, and the `interactions` block (common/interactions.schema.json) is retained for one-shot gestures. Propagation between bound components is governed by a closed preset vocabulary keyed on the component's role. Contexts are data, never code: there is no expression language and no $event.* substitution here, because a context's state is not produced by an event. Reference resolution (context ids, source ids) is a validation-gate responsibility. See docs/adr/0032-shared-exploration-contexts.md.",
+  "type": "object",
+  "$defs": {
+    "presetName": {
+      "type": "string",
+      "enum": [
+        "globalLinked",
+        "mapDriven",
+        "gridDriven",
+        "chartDriven",
+        "decoupled"
+      ],
+      "description": "Closed linked-view preset vocabulary, naming which bound components propagate state outward. globalLinked: every bound component contributes and receives every shared slice. mapDriven: only the map's extent and selection propagate outward, though filter components still contribute filter state. gridDriven: only the grid's selection, sort, and page propagate outward. chartDriven: only the chart's grouping, aggregation, and selection propagate outward. decoupled: nothing propagates and each component is independent. Extending this set requires a standard ADR (ADR-0032)."
+    },
+    "viewRole": {
+      "type": "string",
+      "enum": [
+        "map",
+        "grid",
+        "chart",
+        "filter",
+        "detail",
+        "form",
+        "custom"
+      ],
+      "description": "Coarse role a bound component plays in its context. The preset's propagation policy is keyed on this value, not on the component's kind, so two chart widgets of different kinds behave identically when both are bound as `chart`. `form` is retained for compatibility with older detail/filter integrations; new documents should prefer the more precise `filter` and `detail` roles."
+    },
+    "explorationStateSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1,
+          "description": "Snapshot format version. Pinned to 1: this ADR defines only the initial format and gives implementations no semantics for any later value, so admitting `version: 2` would produce a schema-valid document no runtime could interpret portably. Later versions join through explicit versioned branches in a follow-on ADR."
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shared filter clauses keyed by clause id."
+        },
+        "spatialFilter": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shared spatial filter (geometry plus relationship)."
+        },
+        "extent": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shared viewport extent."
+        },
+        "selection": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "number",
+              "object"
+            ]
+          },
+          "description": "Shared feature selection. Raw ids are permitted for single-source documents; multi-source documents should use source-qualified targets."
+        },
+        "sort": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "description": "Shared sort order."
+        },
+        "page": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shared pagination offset and limit."
+        },
+        "visibleFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Shared field visibility for tabular and form components. An empty array means all fields."
+        },
+        "grouping": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Shared group-by keys for chart and pivot components."
+        },
+        "aggregation": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shared aggregation specification."
+        }
+      },
+      "description": "Optional versioned snapshot of a context's shared state at document load. Static JSON only — the same data-never-code posture ADR-0030 established for interaction arguments, minus the $event.* substitution, which has no meaning outside an event payload."
+    },
+    "explorationContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Stable identifier, unique within the document's explorationContexts block. A component's explorationContextId resolves against this value; create_exploration_context replaces an existing context with the same id."
+        },
+        "sourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Identifiers of the sources whose records this context's shared state addresses. Each must resolve within the document; resolution is a validation-gate responsibility, as for layer references."
+        },
+        "preset": {
+          "$ref": "#/$defs/presetName",
+          "default": "globalLinked",
+          "description": "Propagation policy for components bound to this context. Defaults to globalLinked, which is the behaviour an author means by 'link these together'."
+        },
+        "initialState": {
+          "$ref": "#/$defs/explorationStateSnapshot",
+          "description": "Optional starting shared state. Omit it and the context starts empty."
+        }
+      },
+      "description": "One exploration context. Components bind to it by id; components sharing an id share its state."
+    },
+    "componentBinding": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "explorationContextId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Identifier of the exploration context this component binds to. It must resolve against the document's explorationContexts block (validation-gate check). A component binds to at most one context; omitting the property leaves the component unbound and independent."
+        },
+        "role": {
+          "$ref": "#/$defs/viewRole",
+          "description": "The role this component plays in its context, which the preset's propagation policy is keyed on. Meaningful only alongside explorationContextId."
+        }
+      },
+      "description": "The two optional properties a bindable component (the map, or an entry in layers, widgets, or controls) carries to join an exploration context. Cross-filtering is identity of explorationContextId: there is no edge to author, no ordering between bindings, and no fan-out to cap."
+    }
+  },
+  "properties": {
+    "explorationContexts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/explorationContext"
+      },
+      "description": "Units of shared interaction state declared by this Map or App document. Optional and additive: a document without exploration contexts is valid, and one whose components are all unbound behaves exactly as it did before this block existed. Ids must be unique within the collection, and a declared context with no bound components is valid but should warn (validation-gate checks)."
+    }
+  }
+}

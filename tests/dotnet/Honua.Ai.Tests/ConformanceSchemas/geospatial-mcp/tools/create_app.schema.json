@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/create_app.schema.json",
+  "title": "create_app inputSchema",
+  "description": "Argument shape for create_app (Build App; returns an App). Composes an SDK-native application from a Map, artifacts, and an app template. V1 targets honua-sdk-js with MapLibre GL JS. Responsibility-level: the App authoring field set finalizes upstream (honua-server#731). See taxonomy.md \u00a7App composition and resources.md \u00a7honua://apps/{appId}.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "templateId": {
+      "type": "string",
+      "description": "App-template registry identifier (surfaced through App.templateId)."
+    },
+    "targetSdk": {
+      "type": "string",
+      "description": "Target SDK declaration. V1 default is honua-sdk-js.",
+      "default": "honua-sdk-js"
+    },
+    "mapId": {
+      "type": "string",
+      "description": "Map (map_\u2026) bound into the application."
+    },
+    "boundArtifactIds": {
+      "type": "array",
+      "description": "ArtifactRef identifiers (artifact_\u2026) required at runtime.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "runtimeConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Runtime configuration values projected into the generated app."
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "mapPackageId"
+        ]
+      }
+    ]
+  }
+}

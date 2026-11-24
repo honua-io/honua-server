@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/bind_component_context.schema.json",
+  "title": "bind_component_context inputSchema",
+  "description": "Argument shape for bind_component_context (interactivity profile, ADR-0032). Sets or clears one component's exploration-context membership, addressed by the ADR-0030 `ref` grammar (map, layer:{id}, widget:{id}, control:{id}). Because cross-filtering is identity of explorationContextId rather than an event→action edge, linking N components into one shared-state workspace is N calls to this tool, not one call per component pair. Omitting explorationContextId clears the binding and leaves the component independent. Target addressing matches the other composition tools: a Map or App document (mapId or appId) at the standard level, with the reference implementation's draft-lifecycle spelling (draftId + generation) admitted as x-honua-reference-shape. Validation gate: ref must resolve within the document, explorationContextId must resolve against the document's explorationContexts block, and role must be a member of the closed role vocabulary. See docs/adr/0032-shared-exploration-contexts.md and common/exploration.schema.json. Supplying explorationContextId requires role; omitting both clears the binding.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ref"
+  ],
+  "properties": {
+    "mapId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target Map document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "appId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target App document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "ref": {
+      "$ref": "../common/interactions.schema.json#/$defs/componentRef",
+      "description": "The component whose binding is being set or cleared, in the ADR-0030 reference grammar."
+    },
+    "explorationContextId": {
+      "$ref": "../common/exploration.schema.json#/$defs/componentBinding/properties/explorationContextId",
+      "description": "Context to bind the component to. Omit to clear the component's binding; a component belongs to at most one context, so binding replaces any previous membership."
+    },
+    "role": {
+      "$ref": "../common/exploration.schema.json#/$defs/componentBinding/properties/role",
+      "description": "Role the component plays in the context, which the preset's propagation policy is keyed on. Meaningful only when explorationContextId is present; implementations SHOULD reject a role given without a context rather than storing an inert value."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "explorationContextId"
+        ]
+      },
+      "then": {
+        "required": [
+          "role"
+        ]
+      },
+      "description": "A component that joins a context must declare its role. The mapDriven, gridDriven, and chartDriven presets key propagation on role, and no inference or default is specified — without it two conforming runtimes could disagree on whether the component contributes state."
+    }
+  ]
+}

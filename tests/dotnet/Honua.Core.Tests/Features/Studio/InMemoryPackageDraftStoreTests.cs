@@ -17,7 +17,7 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task SaveThenGet_MapDraft_RoundTripsUnderTheMintedIdentifier()
     {
         var (store, _) = CreateStore();
-        var package = NewMapPackage("map_alpha");
+        var package = NewMap("map_alpha");
 
         await store.SaveMapDraftAsync(package, Owner);
 
@@ -28,7 +28,7 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task SaveThenGet_AppDraft_RoundTripsUnderTheMintedIdentifier()
     {
         var (store, _) = CreateStore();
-        var package = NewAppPackage("app_alpha");
+        var package = NewApp("app_alpha");
 
         await store.SaveAppDraftAsync(package, Owner);
 
@@ -50,7 +50,7 @@ public sealed class InMemoryPackageDraftStoreTests
         // The two kinds are separate resource families; a map draft must never satisfy an
         // app-package read even if the identifiers collided.
         var (store, _) = CreateStore();
-        await store.SaveMapDraftAsync(NewMapPackage("shared_id"), Owner);
+        await store.SaveMapDraftAsync(NewMap("shared_id"), Owner);
 
         Assert.NotNull(await store.GetMapDraftAsync("shared_id", Owner));
         Assert.Null(await store.GetAppDraftAsync("shared_id", Owner));
@@ -60,7 +60,7 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task Get_AfterTtlElapses_ReturnsNull()
     {
         var (store, clock) = CreateStore(new PackageDraftRetentionOptions { Ttl = TimeSpan.FromHours(1) });
-        await store.SaveMapDraftAsync(NewMapPackage("map_aging"), Owner);
+        await store.SaveMapDraftAsync(NewMap("map_aging"), Owner);
 
         clock.Advance(TimeSpan.FromMinutes(59));
         Assert.NotNull(await store.GetMapDraftAsync("map_aging", Owner));
@@ -74,11 +74,11 @@ public sealed class InMemoryPackageDraftStoreTests
     {
         var (store, clock) = CreateStore(new PackageDraftRetentionOptions { Capacity = 2 });
 
-        await store.SaveMapDraftAsync(NewMapPackage("map_1"), Owner);
+        await store.SaveMapDraftAsync(NewMap("map_1"), Owner);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await store.SaveMapDraftAsync(NewMapPackage("map_2"), Owner);
+        await store.SaveMapDraftAsync(NewMap("map_2"), Owner);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await store.SaveMapDraftAsync(NewMapPackage("map_3"), Owner);
+        await store.SaveMapDraftAsync(NewMap("map_3"), Owner);
 
         // The draft still being composed is the most recently written, so it survives.
         Assert.Null(await store.GetMapDraftAsync("map_1", Owner));
@@ -90,8 +90,8 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task Save_SameIdentifierTwice_KeepsTheLatestDraft()
     {
         var (store, _) = CreateStore();
-        await store.SaveMapDraftAsync(NewMapPackage("map_alpha"), Owner);
-        var replacement = NewMapPackage("map_alpha") with { TemplateId = "replaced" };
+        await store.SaveMapDraftAsync(NewMap("map_alpha"), Owner);
+        var replacement = NewMap("map_alpha") with { TemplateId = "replaced" };
 
         await store.SaveMapDraftAsync(replacement, Owner);
 
@@ -102,12 +102,12 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task Save_WithoutOwner_WritesNothing()
     {
         var (store, _) = CreateStore();
-        var package = NewMapPackage("map_unowned");
+        var package = NewMap("map_unowned");
 
         await Assert.ThrowsAsync<ArgumentException>(() => store.SaveMapDraftAsync(package, " "));
-        await Assert.ThrowsAsync<ArgumentException>(() => store.SaveAppDraftAsync(NewAppPackage("app_unowned"), ""));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.SaveAppDraftAsync(NewApp("app_unowned"), ""));
 
-        Assert.Null(await store.GetMapDraftAsync(package.MapPackageId, Owner));
+        Assert.Null(await store.GetMapDraftAsync(package.MapId, Owner));
         Assert.Null(await store.GetAppDraftAsync("app_unowned", Owner));
     }
 
@@ -115,8 +115,8 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task Get_DifferentOwner_MatchesAMissingDraft()
     {
         var (store, _) = CreateStore();
-        await store.SaveMapDraftAsync(NewMapPackage("map_owned"), Owner);
-        await store.SaveAppDraftAsync(NewAppPackage("app_owned"), Owner);
+        await store.SaveMapDraftAsync(NewMap("map_owned"), Owner);
+        await store.SaveAppDraftAsync(NewApp("app_owned"), Owner);
 
         Assert.Null(await store.GetMapDraftAsync("map_owned", OtherOwner));
         Assert.Null(await store.GetAppDraftAsync("app_owned", OtherOwner));
@@ -126,7 +126,7 @@ public sealed class InMemoryPackageDraftStoreTests
         Assert.NotNull(await store.GetMapDraftAsync("map_owned", Owner));
         Assert.NotNull(await store.GetAppDraftAsync("app_owned", Owner));
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            store.SaveMapDraftAsync(NewMapPackage("map_owned") with { TemplateId = "stolen" }, OtherOwner));
+            store.SaveMapDraftAsync(NewMap("map_owned") with { TemplateId = "stolen" }, OtherOwner));
         Assert.Null((await store.GetMapDraftAsync("map_owned", Owner))!.TemplateId);
     }
 
@@ -134,8 +134,8 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task TwoInstances_OverOneBacking_ReadWhatTheOtherWrote()
     {
         var (writer, reader, _) = CreateSharedPair();
-        var map = NewMapPackage("map_shared");
-        var app = NewAppPackage("app_shared");
+        var map = NewMap("map_shared");
+        var app = NewApp("app_shared");
 
         await writer.SaveMapDraftAsync(map, Owner);
         await writer.SaveAppDraftAsync(app, Owner);
@@ -151,8 +151,8 @@ public sealed class InMemoryPackageDraftStoreTests
     public async Task SharedBacking_AfterTtlElapses_ReadsAsNotFound()
     {
         var (writer, reader, clock) = CreateSharedPair(new PackageDraftRetentionOptions { Ttl = TimeSpan.FromHours(1) });
-        await writer.SaveMapDraftAsync(NewMapPackage("map_aging"), Owner);
-        await writer.SaveAppDraftAsync(NewAppPackage("app_aging"), Owner);
+        await writer.SaveMapDraftAsync(NewMap("map_aging"), Owner);
+        await writer.SaveAppDraftAsync(NewApp("app_aging"), Owner);
 
         clock.Advance(TimeSpan.FromMinutes(59));
         Assert.NotNull(await reader.GetMapDraftAsync("map_aging", Owner));
@@ -167,13 +167,13 @@ public sealed class InMemoryPackageDraftStoreTests
     {
         var (writer, reader, clock) = CreateSharedPair(new PackageDraftRetentionOptions { Capacity = 2 });
 
-        await writer.SaveMapDraftAsync(NewMapPackage("map_1"), Owner);
+        await writer.SaveMapDraftAsync(NewMap("map_1"), Owner);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await writer.SaveMapDraftAsync(NewMapPackage("map_2"), Owner);
+        await writer.SaveMapDraftAsync(NewMap("map_2"), Owner);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await writer.SaveAppDraftAsync(NewAppPackage("app_kept"), Owner);
+        await writer.SaveAppDraftAsync(NewApp("app_kept"), Owner);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await writer.SaveMapDraftAsync(NewMapPackage("map_3"), Owner);
+        await writer.SaveMapDraftAsync(NewMap("map_3"), Owner);
 
         Assert.Null(await reader.GetMapDraftAsync("map_1", Owner));
         Assert.NotNull(await reader.GetMapDraftAsync("map_2", Owner));
@@ -189,7 +189,7 @@ public sealed class InMemoryPackageDraftStoreTests
         var first = new InMemoryPackageDraftStore(options, clock);
         var second = new InMemoryPackageDraftStore(options, clock);
 
-        await first.SaveMapDraftAsync(NewMapPackage("map_local"), Owner);
+        await first.SaveMapDraftAsync(NewMap("map_local"), Owner);
 
         Assert.NotNull(await first.GetMapDraftAsync("map_local", Owner));
         Assert.Null(await second.GetMapDraftAsync("map_local", Owner));
@@ -223,19 +223,19 @@ public sealed class InMemoryPackageDraftStoreTests
         public override DateTimeOffset GetUtcNow() => _utcNow;
     }
 
-    private static MapPackage NewMapPackage(string id) => new()
+    private static Map NewMap(string id) => new()
     {
-        MapPackageId = id,
-        Format = MapPackageDraftFactory.MapPackageFormat,
+        MapId = id,
+        Format = MapDraftFactory.MapFormat,
         Status = PackageStatus.Draft,
         CreatedAt = FixedNow,
     };
 
-    private static AppPackage NewAppPackage(string id) => new()
+    private static App NewApp(string id) => new()
     {
-        AppPackageId = id,
-        TargetSdk = AppPackageDraftFactory.DefaultTargetSdk,
-        Format = AppPackageDraftFactory.AppPackageFormat,
+        AppId = id,
+        TargetSdk = AppDraftFactory.DefaultTargetSdk,
+        Format = AppDraftFactory.AppFormat,
         Status = PackageStatus.Draft,
         CreatedAt = FixedNow,
     };

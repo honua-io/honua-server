@@ -553,7 +553,7 @@ public sealed partial class StudioPackageLifecycleService : IStudioPackageLifecy
                 OwnerId = version.OwnerId,
                 ExpectedExistingItemOwnerId = pointers?.OwnerId,
                 ExpectedExistingItemPresent = pointers is not null,
-                Envelope = version.Envelope,
+                Envelope = NormalizeVersionForReopen(version.Envelope),
                 ActorId = actorId,
                 BaseVersionId = versionId,
             },
