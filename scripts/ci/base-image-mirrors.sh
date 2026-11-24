@@ -9,7 +9,7 @@
 # back out of GHCR).
 #
 # Usage:
-#   scripts/ci/base-image-mirrors.sh            # print "<mirror-tag>\t<source-ref>" lines
+#   scripts/ci/base-image-mirrors.sh [--ecs-only] # print "<mirror-tag>\t<source-ref>" lines
 #   scripts/ci/base-image-mirrors.sh --verify <workflow.yml>...
 #                                               # fail if the workflow consumes a
 #                                               # BASE_REPO tag this map does not
@@ -67,9 +67,12 @@ resolve_arg_default() {
 }
 
 print_mirror_set() {
-  local entry tag dockerfile arg_name source_ref
+  local ecs_only="$1" entry tag dockerfile arg_name source_ref
   for entry in "${MIRROR_MAP[@]}"; do
     IFS='|' read -r tag dockerfile arg_name <<<"${entry}"
+    if [[ "${ecs_only}" == true && "${dockerfile}" != docker/Dockerfile.aot ]]; then
+      continue
+    fi
     source_ref="$(resolve_arg_default "${dockerfile}" "${arg_name}")"
     printf '%s\t%s\n' "${tag}" "${source_ref}"
   done
@@ -264,12 +267,17 @@ main() {
     exit 0
   fi
 
+  local ecs_only=false
+  if [[ "${1:-}" == "--ecs-only" ]]; then
+    ecs_only=true
+    shift
+  fi
   if [[ "$#" -gt 0 ]]; then
     echo "::error::unknown argument '$1'" >&2
     exit 2
   fi
 
-  print_mirror_set
+  print_mirror_set "${ecs_only}"
 }
 
 main "$@"
