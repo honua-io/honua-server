@@ -149,7 +149,7 @@ public sealed class McpGetJobResultsToolTests
     {
         var uri = JoinResultUri(joinCounts: [], padding: 0);
         _jobService.GetJobResultsAsync("gp-empty", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Returns(CompletedPackage(uri));
+            .Returns(CompletedPackage(uri, description: new string('x', 1024)));
 
         var result = (await Dispatch(ToolCall("results-empty", """{"jobId":"gp-empty"}""")))!.Result!.Value;
         var summary = result.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
@@ -299,13 +299,15 @@ public sealed class McpGetJobResultsToolTests
         return "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
     }
 
-    private static AnalysisResultPackage CompletedPackage(string uri = "honua://artifacts/artifact-1")
+    private static AnalysisResultPackage CompletedPackage(
+        string uri = "honua://artifacts/artifact-1",
+        string description = "5-meter parcel buffers")
         => AnalysisResultPackage.CreateCompleted(
             "pkg-123",
             new ResultSummary
             {
                 Title = "Buffered parcels",
-                Description = "5-meter parcel buffers"
+                Description = description
             },
             [
                 new ArtifactRef
