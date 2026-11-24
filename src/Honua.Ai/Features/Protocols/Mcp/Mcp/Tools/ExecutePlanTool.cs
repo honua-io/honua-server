@@ -36,10 +36,9 @@ internal sealed class ExecutePlanTool : IMcpTool
     {
         Name = ToolName,
         Title = "Execute plan",
-        Description = "Submit an analysis plan for asynchronous execution. Returns jobId; submission is not completed analysis. "
-            + "Poll honua_list_jobs until terminal (Succeeded, Failed, or Cancelled), then call honua_get_job_results with jobId. "
-            + "Promote publishable artifacts with honua_publish_result. resources/read also supports honua://jobs/{jobId} "
-            + "and honua://jobs/{jobId}/results. This is the execute->poll->results->publish loop.",
+        Description = "Submit a plan and return jobId. Poll honua_list_jobs until terminal (Succeeded, Failed, or Cancelled). "
+            + "Read honua_get_job_results and promote artifacts with honua_publish_result. "
+            + "With resources/read, use honua://jobs/{jobId} or honua://jobs/{jobId}/results.",
         InputSchema = McpToolSchemas.ExecutePlanArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ExecuteOutputSchema,
         // Write tool: it submits server-side work. Idempotent because it honors

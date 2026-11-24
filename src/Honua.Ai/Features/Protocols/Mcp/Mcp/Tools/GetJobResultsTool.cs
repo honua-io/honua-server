@@ -89,12 +89,7 @@ internal sealed class GetJobResultsTool : IMcpTool
     {
         Name = ToolName,
         Title = "Get job results",
-        Description = "Read one terminal job's result package. "
-            + "jobId comes from honua_execute_plan or honua_list_jobs, which still reports status. "
-            + "GeoJSON artifacts come back as featureSummary: featureCount, fields, matchedFeatureCount (joins), a page of attribute rows. "
-            + "Large rows may be skipped and reported in omittedRowOffsets. The results resource has the full artifacts. "
-            + "Missing and other owners' jobs are not_found; a non-terminal job is failed_precondition. "
-            + "honua://jobs/{jobId}/results stays available.",
+        Description = "Read terminal results. GeoJSON featureSummary includes counts and paged rows. Full artifacts are at honua://jobs/{jobId}/results.",
         InputSchema = InputSchema,
         OutputSchema = OutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Get job results")
