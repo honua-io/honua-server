@@ -55,11 +55,11 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_CreateMapPackage_ReturnsRealPackageWithStableIdentifier()
+    public async Task ToolsCall_CreateMap_ReturnsRealPackageWithStableIdentifier()
     {
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-draft","method":"tools/call","params":{
-                "name":"honua_create_map_package",
+                "name":"honua_create_map",
                 "arguments":{
                   "templateId":"analysis_default",
                   "styleId":"style_choropleth",
@@ -80,13 +80,13 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("status").GetString().Should().Be("created");
 
-        var packageId = structured.GetProperty("packageId").GetString();
+        var packageId = structured.GetProperty("mapId").GetString();
         packageId.Should().StartWith("map_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://map-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://maps/" + packageId);
 
-        var package = structured.GetProperty("package");
-        package.GetProperty("mapPackageId").GetString().Should().Be(packageId);
-        package.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        var package = structured.GetProperty("map");
+        package.GetProperty("mapId").GetString().Should().Be(packageId);
+        package.GetProperty("format").GetString().Should().Be("honua_map.v1");
         package.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
         package.GetProperty("initialView").GetProperty("crs").GetString().Should().Be("EPSG:4326");
     }
@@ -95,14 +95,14 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_CreateAppPackage_ReturnsRealPackageWithStableIdentifier()
+    public async Task ToolsCall_CreateApp_ReturnsRealPackageWithStableIdentifier()
     {
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"app-draft","method":"tools/call","params":{
-                "name":"honua_create_app_package",
+                "name":"honua_create_app",
                 "arguments":{
                   "templateId":"analysis_dashboard",
-                  "mapPackageId":"map_5a90",
+                  "mapId":"map_5a90",
                   "boundArtifactIds":["artifact_summary_report"],
                   "runtimeConfig":{"title":"Flood Exposure Dashboard"}
                 }
@@ -120,12 +120,12 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("status").GetString().Should().Be("created");
 
-        var packageId = structured.GetProperty("packageId").GetString();
+        var packageId = structured.GetProperty("appId").GetString();
         packageId.Should().StartWith("app_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://apps/" + packageId);
 
-        var package = structured.GetProperty("package");
-        package.GetProperty("appPackageId").GetString().Should().Be(packageId);
+        var package = structured.GetProperty("app");
+        package.GetProperty("appId").GetString().Should().Be(packageId);
         package.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         package.GetProperty("sharePolicy").GetProperty("visibility").GetString().Should().Be("private");
     }
@@ -134,13 +134,13 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_CreateMapPackage_WithNoArgumentsAtAll_StillCreatesAPackage()
+    public async Task ToolsCall_CreateMap_WithNoArgumentsAtAll_StillCreatesAPackage()
     {
         // Nothing about draft creation requires a prompt any more, so the empty
         // structured call is a valid one.
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-empty","method":"tools/call","params":{
-                "name":"honua_create_map_package","arguments":{}
+                "name":"honua_create_map","arguments":{}
             }}
             """);
 
@@ -149,30 +149,30 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
 
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
-        result.GetProperty("structuredContent").GetProperty("packageId").GetString().Should().StartWith("map_");
+        result.GetProperty("structuredContent").GetProperty("mapId").GetString().Should().StartWith("map_");
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
-    public async Task ResourcesRead_MapPackageDraftUri_ResolvesWithoutADeployment()
+    public async Task ResourcesRead_MapDraftUri_ResolvesWithoutADeployment()
     {
         // ADR-0076 promises the returned identifier is addressable at its URI. Creating
         // without persisting passes the create half of that promise and fails this half,
         // so both halves are asserted in one call sequence.
         var resourceUri = await CreateAndReadUriAsync("""
             {"jsonrpc":"2.0","id":"map-persist","method":"tools/call","params":{
-                "name":"honua_create_map_package",
+                "name":"honua_create_map",
                 "arguments":{"templateId":"analysis_default"}
             }}
-            """, "map_", "honua://map-packages/");
+            """, new DraftContract("mapId", "map_", "honua://maps/"));
 
         var body = await ReadResourceAsync(resourceUri);
 
-        body.GetProperty("packageKind").GetString().Should().Be("map_package");
+        body.GetProperty("kind").GetString().Should().Be("map");
         body.GetProperty("resourceUri").GetString().Should().Be(resourceUri);
-        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("status").GetString().Should().Be("draft");
         // A draft is reachable precisely because it does not need a deployment yet.
         body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
         body.GetProperty("deploymentResourceUris").GetArrayLength().Should().Be(0);
@@ -182,20 +182,20 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     [Operation(Operations.GetById)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
-    public async Task ResourcesRead_AppPackageDraftUri_ResolvesWithoutADeployment()
+    public async Task ResourcesRead_AppDraftUri_ResolvesWithoutADeployment()
     {
         var resourceUri = await CreateAndReadUriAsync("""
             {"jsonrpc":"2.0","id":"app-persist","method":"tools/call","params":{
-                "name":"honua_create_app_package",
+                "name":"honua_create_app",
                 "arguments":{"templateId":"analysis_dashboard"}
             }}
-            """, "app_", "honua://app-packages/");
+            """, new DraftContract("appId", "app_", "honua://apps/"));
 
         var body = await ReadResourceAsync(resourceUri);
 
-        body.GetProperty("packageKind").GetString().Should().Be("app_package");
+        body.GetProperty("kind").GetString().Should().Be("app");
         body.GetProperty("resourceUri").GetString().Should().Be(resourceUri);
-        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("status").GetString().Should().Be("draft");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
     }
 
@@ -209,7 +209,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         // accepts any identifier: an id nobody created is still unknown.
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-unknown","method":"resources/read","params":{
-                "uri":"honua://map-packages/map_never_created"
+                "uri":"honua://maps/map_never_created"
             }}
             """);
 
@@ -226,7 +226,9 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         isNotFound.Should().BeTrue();
     }
 
-    private async Task<string> CreateAndReadUriAsync(string createRequest, string idPrefix, string uriPrefix)
+    private sealed record DraftContract(string IdProperty, string IdPrefix, string UriPrefix);
+
+    private async Task<string> CreateAndReadUriAsync(string createRequest, DraftContract contract)
     {
         var response = await PostRpcAsync(createRequest);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -234,11 +236,11 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         using var document = await ReadJsonAsync(response);
         var structured = document.RootElement.GetProperty("result").GetProperty("structuredContent");
 
-        var packageId = structured.GetProperty("packageId").GetString();
-        packageId.Should().StartWith(idPrefix);
+        var packageId = structured.GetProperty(contract.IdProperty).GetString();
+        packageId.Should().StartWith(contract.IdPrefix);
 
         var resourceUri = structured.GetProperty("resourceUri").GetString();
-        resourceUri.Should().Be(uriPrefix + packageId);
+        resourceUri.Should().Be(contract.UriPrefix + packageId);
         return resourceUri!;
     }
 

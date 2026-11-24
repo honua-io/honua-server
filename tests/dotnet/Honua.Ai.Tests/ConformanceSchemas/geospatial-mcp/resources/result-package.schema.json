@@ -47,13 +47,13 @@
       "type": "array",
       "items": { "$ref": "workspace.schema.json" }
     },
-    "mapPackageId": {
+    "mapId": {
       "type": "string",
-      "description": "Deferred reference to a MapPackage (map_…)."
+      "description": "Deferred reference to a Map (map_…)."
     },
-    "appPackageId": {
+    "appId": {
       "type": "string",
-      "description": "Deferred reference to an AppPackage (app_…)."
+      "description": "Deferred reference to an App (app_…)."
     },
     "provenance": { "$ref": "provenance.schema.json" },
     "errors": {

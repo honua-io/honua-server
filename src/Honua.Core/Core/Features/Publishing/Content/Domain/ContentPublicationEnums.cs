@@ -17,8 +17,8 @@ public enum ContentPublicationKind
     [JsonStringEnumMemberName("report")]
     Report,
 
-    [JsonStringEnumMemberName("generated-app")]
-    GeneratedApp
+    [JsonStringEnumMemberName("app")]
+    App
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<ContentPublicationVisibility>))]
@@ -84,11 +84,11 @@ public enum ContentPublicationDependencyKind
     [JsonStringEnumMemberName("service")]
     Service,
 
-    [JsonStringEnumMemberName("resource")]
-    Resource,
+    [JsonStringEnumMemberName("dataset")]
+    Dataset,
 
-    [JsonStringEnumMemberName("publication")]
-    Publication,
+    [JsonStringEnumMemberName("layer")]
+    Layer,
 
     [JsonStringEnumMemberName("published-service")]
     PublishedService,
@@ -96,11 +96,11 @@ public enum ContentPublicationDependencyKind
     [JsonStringEnumMemberName("deployment")]
     Deployment,
 
-    [JsonStringEnumMemberName("map-package")]
-    MapPackage,
+    [JsonStringEnumMemberName("map")]
+    Map,
 
-    [JsonStringEnumMemberName("app-package")]
-    AppPackage,
+    [JsonStringEnumMemberName("app")]
+    App,
 
     [JsonStringEnumMemberName("result-package")]
     ResultPackage,

@@ -270,16 +270,16 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
         {
             if (envelope.Family == StudioPackageFamily.App)
             {
-                var app = envelope.Body.Value.Deserialize(PackagingJsonContext.Default.AppPackage);
+                var app = envelope.Body.Value.Deserialize(PackagingJsonContext.Default.App);
                 if (app is null)
                 {
-                    diagnostics.Add(Error("studio.app.body.invalid", "/body", "app body must match honua_app_package.v1."));
+                    diagnostics.Add(Error("studio.app.body.invalid", "/body", "app body must match honua_app.v1."));
                     return;
                 }
 
-                if (!string.Equals(app.Format, "honua_app_package.v1", StringComparison.Ordinal))
+                if (!string.Equals(app.Format, "honua_app.v1", StringComparison.Ordinal))
                 {
-                    diagnostics.Add(Error("studio.app.format.invalid", "/body/format", "app body format must be honua_app_package.v1."));
+                    diagnostics.Add(Error("studio.app.format.invalid", "/body/format", "app body format must be honua_app.v1."));
                 }
             }
         }

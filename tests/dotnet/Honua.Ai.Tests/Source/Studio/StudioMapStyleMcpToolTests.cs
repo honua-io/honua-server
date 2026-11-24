@@ -73,7 +73,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
     private async Task<(Guid DraftId, long Generation)> CreateStyledMapDraftAsync()
     {
         var body = """
-            {"mapPackageId":"parcels-style-map","format":"honua_map_package.v1",
+            {"mapId":"parcels-style-map","format":"honua_map.v1",
              "layers":[{"id":"parcels","sourceId":"parcels","visible":true,"styleRef":"honua-inline:parcels"}],
              "styleRefs":[{"styleId":"honua-inline:parcels","body":{"parcels":{"paint":{}}}}],
              "mapSpec":

@@ -723,8 +723,8 @@ public sealed class ContentPublicationService : IContentPublicationService
             switch (dependency.Kind)
             {
                 case ContentPublicationDependencyKind.Service:
-                case ContentPublicationDependencyKind.Resource:
-                case ContentPublicationDependencyKind.Publication:
+                case ContentPublicationDependencyKind.Dataset:
+                case ContentPublicationDependencyKind.Layer:
                     if (_graphProvider is null)
                     {
                         // Graph not registered in this deployment: cannot validate, accept opaquely.
@@ -757,7 +757,7 @@ public sealed class ContentPublicationService : IContentPublicationService
                     break;
 
                 default:
-                    // Deployment / map-package / app-package / result-package / report / provenance-item:
+                    // Deployment / Map / App / result-package / report / provenance-item:
                     // no canonical store is wired in this ticket, so references are accepted opaquely
                     // rather than fabricating package state.
                     break;
@@ -780,8 +780,8 @@ public sealed class ContentPublicationService : IContentPublicationService
         => kind switch
         {
             ContentPublicationDependencyKind.Service => snapshot.Index.ServicesById.ContainsKey(refId),
-            ContentPublicationDependencyKind.Resource => snapshot.Index.ResourcesById.ContainsKey(refId),
-            ContentPublicationDependencyKind.Publication => snapshot.Index.PublicationsById.ContainsKey(refId),
+            ContentPublicationDependencyKind.Dataset => snapshot.Index.ResourcesById.ContainsKey(refId),
+            ContentPublicationDependencyKind.Layer => snapshot.Index.PublicationsById.ContainsKey(refId),
             _ => true,
         };
 
@@ -789,7 +789,7 @@ public sealed class ContentPublicationService : IContentPublicationService
         => kind is ContentPublicationKind.Map
             or ContentPublicationKind.Dashboard
             or ContentPublicationKind.Report
-            or ContentPublicationKind.GeneratedApp;
+            or ContentPublicationKind.App;
 
     private static bool IsDefinedVisibility(ContentPublicationVisibility visibility)
         => visibility is ContentPublicationVisibility.Private
@@ -799,12 +799,12 @@ public sealed class ContentPublicationService : IContentPublicationService
 
     private static bool IsDefinedDependencyKind(ContentPublicationDependencyKind kind)
         => kind is ContentPublicationDependencyKind.Service
-            or ContentPublicationDependencyKind.Resource
-            or ContentPublicationDependencyKind.Publication
+            or ContentPublicationDependencyKind.Dataset
+            or ContentPublicationDependencyKind.Layer
             or ContentPublicationDependencyKind.PublishedService
             or ContentPublicationDependencyKind.Deployment
-            or ContentPublicationDependencyKind.MapPackage
-            or ContentPublicationDependencyKind.AppPackage
+            or ContentPublicationDependencyKind.Map
+            or ContentPublicationDependencyKind.App
             or ContentPublicationDependencyKind.ResultPackage
             or ContentPublicationDependencyKind.Report
             or ContentPublicationDependencyKind.ProvenanceItem;

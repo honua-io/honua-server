@@ -16,7 +16,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Publishing;
 
 [Collection("Database")]
-public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresContentPublicationStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task RoundTrip_PublishRepublishRollback_PreservesImmutableVersionsAndMovesRoute()
@@ -324,7 +324,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
             SourceContentId = sourceContentId,
             ContentHash = contentHash,
             Policy = effectivePolicy,
-            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.MapPackage, RefId = "pkg-1" }],
+            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Map, RefId = "pkg-1" }],
             CreatedBy = "u",
             CreatedAt = now,
         };

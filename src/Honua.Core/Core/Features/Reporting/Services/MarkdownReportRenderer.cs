@@ -85,7 +85,7 @@ internal sealed class MarkdownReportRenderer : IAnalysisReportRenderer
                 sb.Append("- Map: [")
                     .Append(map.Caption)
                     .Append("](")
-                    .Append(map.MapPackageUri)
+                    .Append(map.MapUri)
                     .AppendLine(")");
                 break;
 

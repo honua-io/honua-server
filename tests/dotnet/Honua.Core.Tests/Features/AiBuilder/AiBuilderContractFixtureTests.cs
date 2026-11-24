@@ -92,7 +92,7 @@ public sealed class AiBuilderContractFixtureTests
         mcp.GetProperty("tools").EnumerateArray().Select(tool => tool.GetString())
             .Should().Contain(["honua_ground_candidates", "honua_clarify_intent", "honua_execute_plan"]);
         mcp.GetProperty("resources").EnumerateArray().Select(resource => resource.GetString())
-            .Should().Contain(["honua://jobs/{jobId}/results", "honua://map-packages/{packageId}", "honua://app-packages/{packageId}"]);
+            .Should().Contain(["honua://jobs/{jobId}/results", "honua://maps/{packageId}", "honua://apps/{packageId}"]);
     }
 
     [Trait("Tier", "Fast")]
@@ -185,7 +185,7 @@ public sealed class AiBuilderContractFixtureTests
         appDraft.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         appDraft.GetProperty("runtimeConfigSchema").GetProperty("required").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain(["honuaBaseUrl", "mapPackageUri", "appPackageUri"]);
+            .Should().Contain(["honuaBaseUrl", "mapUri", "appUri"]);
 
         var plan = success.GetProperty("plan");
         plan.GetProperty("dag").EnumerateArray()
@@ -293,8 +293,8 @@ public sealed class AiBuilderContractFixtureTests
         resources.Select(resource => resource.GetProperty("uri").GetString()).Should().Contain([
             "honua://published-services/city-ops-incidents",
             "honua://catalog/processes",
-            "honua://map-packages/map-pkg-ops-dashboard",
-            "honua://app-packages/app-pkg-ops-dashboard",
+            "honua://maps/map-pkg-ops-dashboard",
+            "honua://apps/app-pkg-ops-dashboard",
             "honua://jobs/job-ops-dashboard-success",
             "honua://jobs/job-ops-dashboard-success/results",
             "honua://deployments/deploy-ops-dashboard"]);
@@ -359,44 +359,44 @@ public sealed class AiBuilderContractFixtureTests
         var artifacts = apply.GetProperty("artifacts").EnumerateArray().ToList();
 
         artifacts.Should().Contain(artifact =>
-            artifact.GetProperty("kind").GetString() == "MapPackage"
-            && artifact.GetProperty("format").GetString() == "honua_map_package.v1"
-            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://map-packages/", StringComparison.Ordinal)
+            artifact.GetProperty("kind").GetString() == "Map"
+            && artifact.GetProperty("format").GetString() == "honua_map.v1"
+            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://maps/", StringComparison.Ordinal)
             && artifact.GetProperty("packageable").GetBoolean());
 
         artifacts.Should().Contain(artifact =>
-            artifact.GetProperty("kind").GetString() == "AppPackage"
-            && artifact.GetProperty("format").GetString() == "honua_app_package.v1"
-            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://app-packages/", StringComparison.Ordinal)
+            artifact.GetProperty("kind").GetString() == "App"
+            && artifact.GetProperty("format").GetString() == "honua_app.v1"
+            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://apps/", StringComparison.Ordinal)
             && artifact.GetProperty("packageable").GetBoolean());
     }
 
     private static void AssertOperationsDashboardAppPackage(JsonElement apply)
     {
-        var appPackage = apply.GetProperty("packages").GetProperty("appPackage");
-        appPackage.GetProperty("appPackageId").GetString().Should().Be("app-pkg-ops-dashboard");
-        appPackage.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
-        appPackage.GetProperty("mapPackageId").GetString().Should().Be("map-pkg-ops-dashboard");
-        appPackage.GetProperty("manifestArtifactId").GetString().Should().Be("artifact-app-manifest-ops");
-        appPackage.GetProperty("bundleArtifactId").GetString().Should().Be("artifact-app-bundle-ops");
+        var app = apply.GetProperty("packages").GetProperty("app");
+        app.GetProperty("appId").GetString().Should().Be("app-pkg-ops-dashboard");
+        app.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
+        app.GetProperty("mapId").GetString().Should().Be("map-pkg-ops-dashboard");
+        app.GetProperty("manifestArtifactId").GetString().Should().Be("artifact-app-manifest-ops");
+        app.GetProperty("bundleArtifactId").GetString().Should().Be("artifact-app-bundle-ops");
 
-        var manifestArtifact = appPackage.GetProperty("manifestArtifact");
+        var manifestArtifact = app.GetProperty("manifestArtifact");
         manifestArtifact.GetProperty("artifactId").GetString().Should().Be("artifact-app-manifest-ops");
         manifestArtifact.GetProperty("format").GetString().Should().Be("honua_app_manifest.v1");
         manifestArtifact.GetProperty("contentType").GetString().Should().Be("application/vnd.honua.app-manifest+json");
         manifestArtifact.GetProperty("resourceUri").GetString()
             .Should().Be("honua://jobs/job-ops-dashboard-success/results#artifact-app-manifest-ops");
 
-        appPackage.GetProperty("generatedFiles").EnumerateArray().Select(file => file.GetString())
+        app.GetProperty("generatedFiles").EnumerateArray().Select(file => file.GetString())
             .Should().Contain("src/honua-app-manifest.json");
-        appPackage.GetProperty("assetManifest").EnumerateArray()
+        app.GetProperty("assetManifest").EnumerateArray()
             .Should().Contain(asset =>
                 asset.GetProperty("path").GetString() == "src/honua-app-manifest.json" &&
                 asset.GetProperty("contentType").GetString() == "application/vnd.honua.app-manifest+json");
-        appPackage.GetProperty("boundArtifacts").EnumerateArray().Select(artifact => artifact.GetString())
+        app.GetProperty("boundArtifacts").EnumerateArray().Select(artifact => artifact.GetString())
             .Should().Contain(["artifact-app-bundle-ops", "artifact-app-manifest-ops"]);
 
-        var manifestPreview = appPackage.GetProperty("manifestPreview");
+        var manifestPreview = app.GetProperty("manifestPreview");
         manifestPreview.GetProperty("schemaVersion").GetString().Should().Be("honua.app_manifest.v1");
         manifestPreview.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         manifestPreview.GetProperty("widgets").EnumerateArray().Select(widget => widget.GetString())

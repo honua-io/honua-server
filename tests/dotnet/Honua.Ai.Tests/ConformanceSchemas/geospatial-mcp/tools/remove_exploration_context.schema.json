@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/remove_exploration_context.schema.json",
+  "title": "remove_exploration_context inputSchema",
+  "description": "Argument shape for remove_exploration_context (interactivity profile, ADR-0032). Removes one exploration context, by id, from a Map or App document's `explorationContexts` collection. Target addressing matches create_exploration_context: a Map or App document (mapId or appId) at the standard level, with the reference implementation's draft-lifecycle spelling (draftId + generation) admitted as x-honua-reference-shape. Removing an unknown explorationContextId is an error, not a no-op. Removing a context leaves every component that names it bound to nothing, so an implementation MUST either reject the removal or clear those bindings with it — silently orphaning a binding is not conformant. See docs/adr/0032-shared-exploration-contexts.md.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["explorationContextId"],
+  "properties": {
+    "mapId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target Map document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "appId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target App document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "explorationContextId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Id of the exploration context to remove."
+    },
+    "cascadeBindings": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, every component naming this context has its explorationContextId and role cleared, leaving the components in place and independent. When false (default), the call fails while any component is still bound, so a document never silently retains an unresolvable binding. This mirrors remove_control's cascadeInteractions."
+    }
+  }
+}

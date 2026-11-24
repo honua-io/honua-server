@@ -19,9 +19,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             ["honua_publish_result"] =
                 "The geospatial-mcp publish_result schema admits extension members; Honua reads only the declared ones.",
-            ["honua_create_map_package"] =
+            ["honua_create_map"] =
                 "The geospatial-mcp create_map_package schema admits extension members; Honua reads only the declared ones.",
-            ["honua_create_app_package"] =
+            ["honua_create_app"] =
                 "The geospatial-mcp create_app_package schema admits extension members; Honua reads only the declared ones.",
             ["honua_apply_style_preset"] =
                 "The geospatial-mcp apply_style_preset schema admits extension members; Honua reads only the declared ones.",

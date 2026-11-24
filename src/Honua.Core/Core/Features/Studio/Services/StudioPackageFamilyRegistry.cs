@@ -50,11 +50,11 @@ public sealed class StudioPackageFamilyRegistry
             [
                 Build(StudioPackageFamily.Query, "studio_query_package.v1", "envelope", durable),
                 Build(StudioPackageFamily.Analysis, "studio_analysis_package.v1", "envelope", durable),
-                Build(StudioPackageFamily.Map, "honua_map_package.v1", "family-specific", durable),
+                Build(StudioPackageFamily.Map, "honua_map.v1", "family-specific", durable),
                 Build(StudioPackageFamily.Dashboard, "studio_dashboard_package.v1", "envelope", durable),
                 Build(StudioPackageFamily.Report, "studio_report_package.v1", "envelope", durable),
                 Build(StudioPackageFamily.Form, "studio_form_package.v1", "envelope", durable),
-                Build(StudioPackageFamily.App, "honua_app_package.v1", "family-specific", durable),
+                Build(StudioPackageFamily.App, "honua_app.v1", "family-specific", durable),
                 Build(StudioPackageFamily.Workflow, "studio_workflow_package.v1", "envelope", durable),
                 Build(StudioPackageFamily.Geoprocessing, "studio_gp_package.v1", "envelope", durable),
                 Build(StudioPackageFamily.Etl, "studio_etl_package.v1", "envelope", durable),

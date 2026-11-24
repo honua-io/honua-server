@@ -1799,16 +1799,19 @@ internal sealed partial class Wcs20Handler
     {
         error = default;
 
-        var subsetValues = GetQueryValues(query, Wcs20Utilities.Parameters.Subset);
-        var acquisition = raster.AcquisitionDate ?? raster.CreatedAt;
-
-        foreach (var rawValue in subsetValues)
+        var temporalSubsets = GetQueryValues(query, Wcs20Utilities.Parameters.Subset)
+            .OfType<string>()
+            .Where(value => !string.IsNullOrWhiteSpace(value) && IsTemporalSubset(value))
+            .ToList();
+        if (FindRepeatedTemporalAxis(temporalSubsets.Count) is { } repeated)
         {
-            if (string.IsNullOrWhiteSpace(rawValue) || !IsTemporalSubset(rawValue))
-            {
-                continue;
-            }
+            error = repeated;
+            return false;
+        }
 
+        var acquisition = raster.AcquisitionDate ?? raster.CreatedAt;
+        foreach (var rawValue in temporalSubsets)
+        {
             if (!TryParseTemporalSubset(rawValue, out var low, out var high))
             {
                 error = new WcsParameterError(
@@ -1839,6 +1842,15 @@ internal sealed partial class Wcs20Handler
 
         return true;
     }
+
+    // The temporal axis, like any axis, may be named once per request (aliases included).
+    private static WcsParameterError? FindRepeatedTemporalAxis(int temporalSubsetCount)
+        => temporalSubsetCount <= 1
+            ? null
+            : new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
+                "Duplicate phenomenonTime subset axis.",
+                Wcs20Utilities.Parameters.Subset);
 
     private static bool TryApplyTemporalAlias(
         IQueryCollection query,
@@ -1971,7 +1983,7 @@ internal sealed partial class Wcs20Handler
             // start of the day, the upper bound the final instant before the next.
             if (!isLowerBound && IsDateOnly(value))
             {
-                bound = parsed.AddDays(1).AddTicks(-1);
+                bound = EndOfUtcDay(parsed);
                 return true;
             }
 
@@ -1988,6 +2000,12 @@ internal sealed partial class Wcs20Handler
            value[7] == '-' &&
            !value.Contains('T', StringComparison.Ordinal) &&
            !value.Contains(':', StringComparison.Ordinal);
+
+    // The final calendar day has no next day to step back from, so it ends at MaxValue.
+    private static DateTimeOffset EndOfUtcDay(DateTimeOffset startOfDay)
+        => startOfDay.UtcDateTime.Date == DateTime.MaxValue.Date
+            ? DateTimeOffset.MaxValue
+            : startOfDay.AddDays(1).AddTicks(-1);
 
     // A trim wholly outside the coverage selects no cells; WCS 2.0 Core answers it with
     // InvalidSubsetting rather than handing the raster store an empty clip. The extent is
@@ -2200,7 +2218,7 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                 return false;
             }
         }
@@ -2264,7 +2282,7 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleExtentError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                error = CreateScaleExtentError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                 return false;
             }
         }
@@ -2301,14 +2319,14 @@ internal sealed partial class Wcs20Handler
         if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
             !string.Equals(axis, "y", StringComparison.Ordinal))
         {
-            exceptionCode = Wcs20Utilities.ExceptionCodes.InvalidAxisLabel;
+            exceptionCode = Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined;
             return false;
         }
 
         if (isSlice ||
             !NumericTolerance.IsWholeNumber(low) ||
             !NumericTolerance.IsWholeNumber(high) ||
-            high <= low)
+            high < low)
         {
             return false;
         }
@@ -2406,7 +2424,7 @@ internal sealed partial class Wcs20Handler
                 if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
                     !string.Equals(axis, "y", StringComparison.Ordinal))
                 {
-                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined);
                     return false;
                 }
 
@@ -2739,19 +2757,20 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        if (hasXAxis != hasYAxis && !IsNativeSubsettingCrs(raster, subsettingCrs))
+        var hasUnboundedLimit = new[] { minX, maxX, minY, maxY }.Any(limit => limit is { } value && double.IsInfinity(value));
+        if ((hasXAxis != hasYAxis || hasUnboundedLimit) && !IsNativeSubsettingCrs(raster, subsettingCrs))
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                "Single-axis SUBSET requires SUBSETTINGCRS or BBOXCRS to match the coverage native CRS.",
+                "A single-axis SUBSET or a '*' trim limit requires SUBSETTINGCRS or BBOXCRS to match the coverage native CRS.",
                 Wcs20Utilities.Parameters.Subset);
             return false;
         }
 
-        var resolvedMinX = minX ?? extent.XMin;
-        var resolvedMaxX = maxX ?? extent.XMax;
-        var resolvedMinY = minY ?? extent.YMin;
-        var resolvedMaxY = maxY ?? extent.YMax;
+        var resolvedMinX = ResolveTrimLimit(minX, double.NegativeInfinity, extent.XMin);
+        var resolvedMaxX = ResolveTrimLimit(maxX, double.PositiveInfinity, extent.XMax);
+        var resolvedMinY = ResolveTrimLimit(minY, double.NegativeInfinity, extent.YMin);
+        var resolvedMaxY = ResolveTrimLimit(maxY, double.PositiveInfinity, extent.YMax);
 
         return TryCreateEnvelope(
             resolvedMinX,
@@ -2765,6 +2784,12 @@ internal sealed partial class Wcs20Handler
             out envelope,
             out error);
     }
+
+    // An absent axis or an unbounded limit falls back to the coverage edge on that side.
+    private static double ResolveTrimLimit(double? requested, double unbounded, double coverageEdge)
+        => requested is { } value && !(double.IsInfinity(value) && double.IsNegative(value) == double.IsNegative(unbounded))
+            ? value
+            : coverageEdge;
 
     private static bool IsNativeSubsettingCrs(RasterInfo raster, CrsDefinition subsettingCrs)
     {
@@ -2780,7 +2805,7 @@ internal sealed partial class Wcs20Handler
         foreach (var subsetValue in subsetValues)
         {
             if (string.IsNullOrWhiteSpace(subsetValue)
-                || !TryParseSingleSubset(subsetValue, out var axis, out _, out _, out _)
+                || Wcs20Utilities.ReadSubsetAxis(subsetValue.Trim()) is not { Axis: var axis }
                 || axis is not ("x" or "y")
                 || seen.Add(axis))
             {
@@ -2809,37 +2834,51 @@ internal sealed partial class Wcs20Handler
         isSlice = false;
 
         var trimmed = subset.Trim();
-        var open = trimmed.IndexOf('(', StringComparison.Ordinal);
-        if (open <= 0 || !trimmed.EndsWith(')'))
+        if (Wcs20Utilities.ReadSubsetAxis(trimmed) is not { } axis)
         {
             return false;
         }
 
-        var axis = trimmed[..open].Trim();
-        var values = trimmed[(open + 1)..^1].Split(",", StringSplitOptions.TrimEntries);
-        if (values.Length is < 1 or > 2 ||
-            !double.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low))
-        {
-            return false;
-        }
-
+        normalizedAxis = axis.Axis;
+        var values = trimmed[(axis.Open + 1)..^1].Split(",", StringSplitOptions.TrimEntries);
         if (values.Length == 1)
         {
-            high = low;
             isSlice = true;
+            if (!double.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low))
+            {
+                return false;
+            }
+
+            high = low;
         }
-        else if (!double.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out high))
+        else
         {
-            return false;
+            var lowLimit = values.Length == 2 ? ParseTrimLimit(values[0], double.NegativeInfinity) : null;
+            var highLimit = values.Length == 2 ? ParseTrimLimit(values[1], double.PositiveInfinity) : null;
+            if (lowLimit is null || highLimit is null)
+            {
+                return false;
+            }
+
+            low = lowLimit.Value;
+            high = highLimit.Value;
         }
 
-        normalizedAxis = axis.ToLowerInvariant() switch
-        {
-            "x" or "e" or "long" or "lon" => "x",
-            "y" or "n" or "lat" => "y",
-            _ => axis,
-        };
         return true;
+    }
+
+    // '*' leaves that side of a trim unbounded (WCS 2.0 KVP binding).
+    private static double? ParseTrimLimit(string token, double unbounded)
+    {
+        if (string.Equals(token, "*", StringComparison.Ordinal))
+        {
+            return unbounded;
+        }
+
+        return double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var limit)
+            && double.IsFinite(limit)
+            ? limit
+            : null;
     }
 
     internal static bool TryParseBboxEnvelope(
@@ -3118,6 +3157,7 @@ internal sealed partial class Wcs20Handler
 
     private static IResult CreateGetCoverageParameterError(WcsParameterError error)
         => error.ExceptionCode is Wcs20Utilities.ExceptionCodes.InvalidAxisLabel
+            or Wcs20Utilities.ExceptionCodes.ScaleAxisUndefined
             or Wcs20Utilities.ExceptionCodes.InvalidSubsetting
             or Wcs20Utilities.ExceptionCodes.NoSuchField
             ? Wcs20ErrorResults.CreateNotFound(error.ExceptionCode, error.Detail, error.Locator)

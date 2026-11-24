@@ -2,20 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/add_control.schema.json",
   "title": "add_control inputSchema",
-  "description": "Argument shape for add_control (composition profile, ADR-0031). Adds or replaces (by control id) one control in a composition document's `controls` collection. The standard-level target is a composition document (mapPackageId or appPackageId). The reference implementation authors compositions through a draft lifecycle; its optimistic-concurrency draft spelling (draftId + generation) is admitted as x-honua-reference-shape, consistent with ADR-0030's bind_interaction and ADR-0029's admission of reference spellings. Validation gate: control.id must be unique within the document, control.kind must be a member of the closed vocabulary, and a control.sourceId must resolve to a layer or datasource declared in the target document. See docs/adr/0031-composition-controls.md and common/controls.schema.json.",
+  "description": "Argument shape for add_control (interactivity profile, ADR-0031). Adds or replaces (by control id) one control in a Map or App document's `controls` collection. The standard-level target is a Map or App document (mapId or appId). The reference implementation authors compositions through a draft lifecycle; its optimistic-concurrency draft spelling (draftId + generation) is admitted as x-honua-reference-shape, consistent with ADR-0030's bind_interaction and ADR-0029's admission of reference spellings. Validation gate: control.id must be unique within the document, control.kind must be a member of the closed vocabulary, and a control.sourceId must resolve to a layer or datasource declared in the target document. See docs/adr/0031-composition-controls.md and common/controls.schema.json. Exactly one target must be supplied: mapId, appId, or the x-honua-reference-shape draftId (which requires generation, and generation may not appear without it). The oneOf enforces that; without it a call with no destination, several destinations, a bare draftId, or a stray generation all validated against a contract no server can route.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["control"],
+  "required": [
+    "control"
+  ],
   "properties": {
-    "mapPackageId": {
+    "mapId": {
       "type": "string",
       "minLength": 1,
-      "description": "Target MapPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+      "description": "Target Map document. Exactly one of mapId / appId / draftId identifies the target."
     },
-    "appPackageId": {
+    "appId": {
       "type": "string",
       "minLength": 1,
-      "description": "Target AppPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+      "description": "Target App document. Exactly one of mapId / appId / draftId identifies the target."
     },
     "draftId": {
       "type": "string",
@@ -31,5 +33,75 @@
       "$ref": "../common/controls.schema.json#/$defs/control",
       "description": "The control to add or replace. Replacement matches on control.id."
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "mapId"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "appId"
+            ]
+          },
+          {
+            "required": [
+              "draftId"
+            ]
+          },
+          {
+            "required": [
+              "generation"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "appId"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "mapId"
+            ]
+          },
+          {
+            "required": [
+              "draftId"
+            ]
+          },
+          {
+            "required": [
+              "generation"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "draftId",
+        "generation"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "mapId"
+            ]
+          },
+          {
+            "required": [
+              "appId"
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

@@ -159,7 +159,7 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/published/{*routeSlug}")]
     public async Task GeneratedApp_ReopenOlderRevision_AfterRouteMoved_ReturnsThatRevision()
     {
-        var detail = await PublishAsync("demo-app", ContentPublicationKind.GeneratedApp, manifestId: "manifest-v1", bundleId: "bundle-v1");
+        var detail = await PublishAsync("demo-app", ContentPublicationKind.App, manifestId: "manifest-v1", bundleId: "bundle-v1");
         await SetVisibilityPublicAsync(detail.Route.PublicationId);
 
         // Republish to v2 with a new manifest; the active route now points at v2.

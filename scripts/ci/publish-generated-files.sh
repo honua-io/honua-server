@@ -17,14 +17,6 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/ci/generated-files.sh
-# The collector produces observed inputs, not offline projections. Publish the
-# snapshot atomically with its matrix, but exclude it from generated-files.sh:
-# regeneration must retain it, and snapshot changes use ordinary PR checks.
-publication_files=("${GENERATED_FILES[@]}")
-nightly_snapshot='docs/gis/data/nightly-capability-evidence.v1.json'
-if [[ -f "$nightly_snapshot" ]]; then
-  publication_files+=("$nightly_snapshot")
-fi
 
 branch='automation/regenerate-generated-files'
 title='ci: regenerate generated files'
@@ -37,7 +29,7 @@ remote_branch="${remote_branch%%[[:space:]]*}"
 source_sha="$(git rev-parse HEAD)"
 remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
 remote_trunk="${remote_trunk%%[[:space:]]*}"
-mapfile -d '' -t candidate_files < <(git diff --name-only -z HEAD -- "${publication_files[@]}")
+mapfile -d '' -t candidate_files < <(git diff --name-only -z HEAD -- "${GENERATED_FILES[@]}")
 # A first attempt on trunk publishes on its validated source even if trunk has
 # moved: the PR is an ordinary branch behind trunk, PR Gate tests the merge, and
 # generated-only admission (base == source) falls back to the full checks.
@@ -80,7 +72,7 @@ fi
 # A clean, current, validated source makes an older proposal obsolete. Keep
 # its branch for evidence, but do not leave its PR red until the next drift.
 # The ancestry check above applies to cleanup as well as branch replacement.
-if git diff --quiet HEAD -- "${publication_files[@]}"; then
+if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
   echo 'Generated files are up to date; nothing to publish.'
   if [[ -n "$remote_branch" ]]; then
     : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to reconcile a generated-files PR}"
@@ -106,9 +98,9 @@ if git diff --quiet HEAD -- "${publication_files[@]}"; then
   exit 0
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
-git diff --stat HEAD -- "${publication_files[@]}"
+git diff --stat HEAD -- "${GENERATED_FILES[@]}"
 
-git add -- "${publication_files[@]}"
+git add -- "${GENERATED_FILES[@]}"
 git -c user.name='Mike McDougall' \
     -c user.email='mike@honua.io' \
     commit -m "${title}" \

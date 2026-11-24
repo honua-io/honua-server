@@ -280,10 +280,10 @@ internal sealed class PackageReviewService : IPackageReviewService
     {
         yield return PackageReviewFamilies.Query;
         yield return PackageReviewFamilies.AnalysisPlan;
-        yield return PackageReviewFamilies.MapPackage;
+        yield return PackageReviewFamilies.Map;
         yield return PackageReviewFamilies.DashboardReport;
         yield return PackageReviewFamilies.Form;
-        yield return PackageReviewFamilies.AppPackage;
+        yield return PackageReviewFamilies.App;
         yield return PackageReviewFamilies.Workflow;
         yield return PackageReviewFamilies.Geoprocessing;
         yield return PackageReviewFamilies.Etl;

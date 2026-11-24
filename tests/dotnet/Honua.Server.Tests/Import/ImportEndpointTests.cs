@@ -1013,9 +1013,8 @@ public class ImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     [Endpoint("GET /api/v1/admin/import/uploads/{uploadId}/progress")]
     [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
-    public async Task ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields()
+    public async Task ImportFile_WithServerAssignedUploadId_ExposesAcceptedUploadAndImportJobResultFields()
     {
-        var uploadId = $"client-upload-{Guid.NewGuid():N}";
         var tableName = $"background_import_{Guid.NewGuid():N}"[..30];
         var geoJsonContent = """
         {
@@ -1036,16 +1035,17 @@ public class ImportEndpointTests : IAsyncLifetime
         """;
 
         using var content = new MultipartFormDataContent();
-        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        using var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
             Name = "File",
             FileName = "background.geojson"
         };
         content.Add(fileContent);
-        content.Add(new StringContent(tableName), "TableName");
-        content.Add(new StringContent("true"), "ForceBackground");
-        content.Add(new StringContent(uploadId), "UploadId");
+        using var tableNameContent = new StringContent(tableName);
+        content.Add(tableNameContent, "TableName");
+        using var forceBackgroundContent = new StringContent("true");
+        content.Add(forceBackgroundContent, "ForceBackground");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload") { Content = content };
         var lineage = new OperationPolicyContext
@@ -1062,7 +1062,8 @@ public class ImportEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queued = await response.Content.ReadFromJsonAsync<JsonElement>();
-        queued.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        var uploadId = queued.GetProperty("uploadId").GetString();
+        Guid.TryParse(uploadId, out _).Should().BeTrue();
         queued.GetProperty("operationInstanceId").GetString().Should().Be("opinst-import-exact");
         queued.GetProperty("correlationId").GetString().Should().Be("corr-import-exact");
         queued.GetProperty("auditId").GetString().Should().Be("audit-import-exact");

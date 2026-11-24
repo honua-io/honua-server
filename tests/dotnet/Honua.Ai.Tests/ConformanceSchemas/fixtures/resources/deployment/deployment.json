@@ -13,6 +13,6 @@
     "publicationState": "live"
   },
   "expected": "resource_projection",
-  "canonicalRefs": ["Deployment", "AppPackage"],
+  "canonicalRefs": ["Deployment", "App"],
   "notes": "Responsibility-level: concrete Deployment field set finalizes upstream (honua-server#732); stable deploymentId, kind, and target binding are scoreable now."
 }

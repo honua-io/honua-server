@@ -212,12 +212,12 @@ public sealed class StudioCompositionInteractionsTests
         // The regression this guards: StudioCompositionBody is a PROJECTION overlaid onto the
         // stored document. An interactions block authored via bind_interaction must survive
         // every later add-layer/set-view/add-widget edit AND leave the document's unmodelled
-        // members (mapPackageId, format, sourceBindings, ...) untouched.
+        // members (mapId, format, sourceBindings, ...) untouched.
         using var stored = JsonDocument.Parse(
             """
             {
-              "mapPackageId": "map_maui_parcels",
-              "format": "honua_map_package.v1",
+              "mapId": "map_maui_parcels",
+              "format": "honua_map.v1",
               "sourceBindings": [{ "bindingId": "b1", "datasetId": "parcels" }],
               "layers": [{ "id": "parcels", "type": "fill" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }]
@@ -247,8 +247,8 @@ public sealed class StudioCompositionInteractionsTests
 
         // Unmodelled members are still there, and the ordinary edits landed.
         var body = envelope.Body!.Value;
-        Assert.Equal("map_maui_parcels", body.GetProperty("mapPackageId").GetString());
-        Assert.Equal("honua_map_package.v1", body.GetProperty("format").GetString());
+        Assert.Equal("map_maui_parcels", body.GetProperty("mapId").GetString());
+        Assert.Equal("honua_map.v1", body.GetProperty("format").GetString());
         Assert.Equal(1, body.GetProperty("sourceBindings").GetArrayLength());
         Assert.Equal(["parcels", "zoning"], final.Layers.Select(l => l.Id));
         Assert.Equal(["area-chart", "legend"], final.Widgets.Select(w => w.Id));
@@ -260,7 +260,7 @@ public sealed class StudioCompositionInteractionsTests
     {
         // Null (rather than empty) is what keeps every unrelated map/app package from
         // growing an `"interactions": []` member on its first edit.
-        using var stored = JsonDocument.Parse("""{"format":"honua_map_package.v1","layers":[]}""");
+        using var stored = JsonDocument.Parse("""{"format":"honua_map.v1","layers":[]}""");
         var envelope = BuildEnvelope(StudioPackageFamily.Map, stored.RootElement.Clone());
 
         var written = StudioCompositionBodyEditor.WriteBody(

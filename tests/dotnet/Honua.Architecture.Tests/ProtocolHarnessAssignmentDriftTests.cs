@@ -32,6 +32,7 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures",
         "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures",
         "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
         "import.file|control-plane-admin|POST /api/v1/admin/import/upload",
         "printing.pdf-output|printing-tools|POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
         "serve.geoservices-vectortileserver|vector-tile-server|GET /rest/services/{serviceId}/VectorTileServer",
@@ -79,7 +80,7 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal("https://github.com/honua-io/honua-server/issues/3388", root.GetProperty("tracking_issue").GetString());
 
         var assignments = root.GetProperty("assignments").EnumerateArray().ToArray();
-        Assert.Equal(51, assignments.Length);
+        Assert.Equal(52, assignments.Length);
         Assert.Equal(25, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(

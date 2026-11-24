@@ -15,6 +15,17 @@ Paired publications move out of the tile-operations API and become Exports under
 - `POST /api/v1/admin/tile-operations/jobs` no longer accepts `operation: "paired-publish"` or `"export"`, and `TileOperationStartRequestPayload` drops `publicationId` and `identityField`. Use `POST /api/v1/admin/exports` instead.
 - `TileOperationProgressView` drops `publishedPublication`, and the `TileOpsPublishedPublication` schema is removed. Read Export status, versions, and URLs from `GET /api/v1/admin/exports` and `GET /api/v1/admin/exports/{exportId}`, and unpublish with `DELETE /api/v1/admin/exports/{exportId}`.
 
+## Map and App routes
+
+Map publication and Studio draft generation use the Map and App names. There are no aliases for the retired routes, operation IDs or body members.
+
+- `POST /api/v1/admin/packages` becomes `POST /api/v1/admin/maps` (operation `publishMap`). The request carries the Map document in `map` and the response returns `mapId` and `map`. The success status remains `202 Accepted`.
+- `POST /api/v1/studio/map-packages/generate` becomes `POST /api/v1/studio/maps/generate` (operation `generateStudioMap`).
+- `POST /api/v1/studio/app-packages/generate` becomes `POST /api/v1/studio/apps/generate` (operation `generateStudioApp`).
+- `POST /api/v1/admin/packages/validate` and `POST /api/v1/admin/packages/preview` are unchanged.
+
+Regenerate SDKs from the matching server contract and upgrade the server, MCP contract and clients together. The [rc.2 release notes](release-notes/2026.1-rc.2.md) list the model, field and format renames.
+
 ## Forms routes and operation names
 
 Forms authoring routes move from `/api/v1/admin/forms/packages` to

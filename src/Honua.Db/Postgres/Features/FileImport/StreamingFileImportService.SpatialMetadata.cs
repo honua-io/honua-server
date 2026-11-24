@@ -51,7 +51,7 @@ internal sealed partial class StreamingFileImportService
         var mode = options.Request.EffectiveLoadMode;
         if (existed && mode == ImportLoadMode.CreateOnly)
         {
-            throw new InvalidDataException("Create-only import requires a new target table.");
+            throw new ImportTargetExistsException();
         }
         // A replace drops the live table. Prove ownership before resolving geometry:
         // an unowned table may have no geometry column, and that lookup would report

@@ -2037,10 +2037,10 @@
       "path": "/connections/{id}/layers"
     },
     {
-      "operationId": "publishMapPackage",
+      "operationId": "publishMap",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/packages"
+      "path": "/maps"
     },
     {
       "operationId": "queryMetadataEnvironmentBindings",

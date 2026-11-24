@@ -191,8 +191,8 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
 
                     // Package review uses a separate view to keep this view within its 128 KiB descriptor budget.
-                    McpWorkflowViewMemberRule.Exact("honua_create_map_package"),
-                    McpWorkflowViewMemberRule.Exact("honua_create_app_package"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_map"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_app"),
                 ],
 
                 // Publication submit belongs to the publication stage below even

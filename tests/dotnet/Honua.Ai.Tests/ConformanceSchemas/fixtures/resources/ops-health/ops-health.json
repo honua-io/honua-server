@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "ops-health.snapshot",
   "schemaRef": "resources/ops-health.schema.json",
   "validates": "inputs",

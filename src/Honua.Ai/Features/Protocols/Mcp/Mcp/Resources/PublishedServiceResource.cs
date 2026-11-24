@@ -114,7 +114,7 @@ internal sealed class PublishedServiceResource : IMcpResource
         var deployments = await deploymentStore
             .ListBySourceAsync(DeploymentSourceKind.PublishedService, record.ServiceId, cancellationToken)
             .ConfigureAwait(false);
-        deployments = PackageViewFactory.FilterPublished(deployments);
+        deployments = MapAppViewFactory.FilterPublished(deployments);
 
         McpLog.PublishedServiceRead(_logger, serviceId, record.Status.ToString());
 

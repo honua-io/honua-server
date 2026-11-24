@@ -251,6 +251,11 @@ internal sealed partial class StreamingFileImportService
                 // the staging dataset is complete enough to replace an existing target.
                 totalFailed += wktGeometryDiagnostics?.UnparseableRecords ?? 0;
 
+                if (loadMode == ImportLoadMode.CreateOnly && csvGeometryDiagnostics is not null)
+                {
+                    ThrowIfCreateOnlyCsvIncomplete(csvGeometryDiagnostics);
+                }
+
                 if (loadMode == ImportLoadMode.CreateOnly && (totalFailed > 0 || totalImported == 0))
                 {
                     throw new InvalidDataException("Create-only import requires a nonempty dataset with every source feature imported.");

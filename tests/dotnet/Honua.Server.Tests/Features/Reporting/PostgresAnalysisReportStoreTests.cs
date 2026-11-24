@@ -131,7 +131,7 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
             new KeyMetricSection { Label = "Area", Value = "12.5", Unit = "m2", SpatialReference = "EPSG:4326" },
             new TableSection { Caption = "Table", Columns = ["value"], Rows = [["one"]], TruncatedRowCount = 2 },
             new ChartSection { ChartKind = ReportChartKind.Bar, Categories = ["one"], Series = [new ChartSeries { Name = "count", Values = [1.5] }] },
-            new MapEmbedSection { Caption = "Map", MapPackageUri = "https://example.test/map" },
+            new MapEmbedSection { Caption = "Map", MapUri = "https://example.test/map" },
             new NarrativeSection { SlotId = "summary", DeterministicText = "Summary", LlmText = "Narrative", Mode = NarrativeMode.Deterministic },
             new ProvenanceFooterSection { ResultPackageId = "package", JobId = jobId, ProcessDefinitions = ["process"], Sources = ["source"], ExecutedAt = DateTimeOffset.UnixEpoch, GeneratedAt = DateTimeOffset.UnixEpoch },
         ],

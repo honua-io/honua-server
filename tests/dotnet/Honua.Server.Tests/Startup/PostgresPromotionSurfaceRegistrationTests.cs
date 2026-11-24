@@ -41,8 +41,8 @@ public sealed class PostgresPromotionSurfaceRegistrationTests
         {
             typeof(PublishedServiceResource),
             typeof(DeploymentResource),
-            typeof(MapPackageResource),
-            typeof(AppPackageResource),
+            typeof(MapResource),
+            typeof(AppResource),
             typeof(PromotionSurfaceIndexResource)
         });
     }

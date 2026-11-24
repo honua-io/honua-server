@@ -22,9 +22,9 @@ internal sealed partial class StreamingFileImportService
 
     private IAsyncEnumerable<IFeature> ReadImportFeatures(FeatureReadContext context, CancellationToken cancellationToken)
     {
-        if (context.LoadMode == ImportLoadMode.CreateOnly && context.Format != SupportedFileFormat.GeoJson)
+        if (context.LoadMode == ImportLoadMode.CreateOnly && !SupportsCreateOnly(context.Format))
         {
-            throw new NotSupportedException("Create-only imports require GeoJSON with complete input validation.");
+            throw new NotSupportedException(CreateOnlyFormatMessage);
         }
 
         var features = context.Format switch

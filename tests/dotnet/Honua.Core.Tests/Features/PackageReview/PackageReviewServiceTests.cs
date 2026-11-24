@@ -52,7 +52,7 @@ public sealed class PackageReviewServiceTests
         var service = CreateService();
         var request = new PackageReviewRequest
         {
-            PackageFamily = PackageReviewFamilies.MapPackage,
+            PackageFamily = PackageReviewFamilies.Map,
             PackageId = "pkg-warning",
             Requirements = new PackageReviewRequirements
             {
@@ -82,7 +82,7 @@ public sealed class PackageReviewServiceTests
         var service = CreateService();
         var request = new PackageReviewRequest
         {
-            PackageFamily = PackageReviewFamilies.AppPackage,
+            PackageFamily = PackageReviewFamilies.App,
             PackageId = "pkg-blocked",
             Requirements = new PackageReviewRequirements
             {
@@ -366,7 +366,7 @@ public sealed class PackageReviewServiceTests
         // failing with an internal error (geospatial-mcp app-package certification on 8cb074f7).
         var request = JsonSerializer.Deserialize(
             """
-            { "packageFamily": "app_package", "packageId": "app-partial", "requestedAction": "publish",
+            { "packageFamily": "app", "packageId": "app-partial", "requestedAction": "publish",
               "requirements": {
                 "dataBindings": [ { "id": "map", "sourceId": "map-1", "isResolved": true, "required": true } ],
                 "approvals": [ { "policyRef": "explicit-approval", "appliesTo": "publish", "required": true, "approved": false } ] } }
