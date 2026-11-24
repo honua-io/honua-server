@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -219,7 +220,7 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
         Title = "Get Studio draft",
         Description = "Read a Studio draft and its current generation for the next optimistic edit.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
-        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftResultSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Get Studio draft")
     };
 
@@ -257,7 +258,7 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
 }
 
 // This updater never accepts publicationIntent, so a publish signal can only be recorded through the propose tool.
-internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
+internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool, IMcpInputRequiredTool
 {
     public const string ToolName = "honua_studio_update_draft";
 
@@ -270,6 +271,8 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
     }
 
     public string Name => ToolName;
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
 
@@ -300,6 +303,11 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 StudioAuthorizationOperation.UpdateDraft,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioUpdateDraftArgument);
@@ -373,8 +381,11 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             },
             cancellationToken).ConfigureAwait(false);
 
-        Audit(principal, ToolName, draftId, generationBefore: generation, generationAfter: updated.Generation);
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        if (updated.Draft is { } completed)
+        {
+            Audit(principal, ToolName, draftId, generationBefore: generation, generationAfter: completed.Generation);
+        }
+        return updated.ToMcpResult();
     }
 }
 

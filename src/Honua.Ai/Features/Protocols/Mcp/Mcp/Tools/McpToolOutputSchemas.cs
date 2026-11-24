@@ -1009,7 +1009,7 @@ internal static class McpToolOutputSchemas
         """);
 
     public static readonly JsonElement ApplyStylePresetOutputSchema = IncludeApprovalStatus(ApplyStylePresetResultSchema);
-    public static readonly JsonElement StudioDraftOutputSchema = Parse(
+    public static readonly JsonElement StudioDraftResultSchema = Parse(
         """
         {
           "type": "object",
@@ -1036,6 +1036,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    public static readonly JsonElement StudioDraftOutputSchema = IncludeApprovalStatus(StudioDraftResultSchema);
     public static readonly JsonElement StudioDraftMutationOutputSchema = Parse(
         """
         {

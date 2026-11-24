@@ -160,6 +160,11 @@ public sealed class McpMrtrPublishToolTests
         await _invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
     }
 
+    [UnitTest]
+    public void StudioCompletionSchema_RequiresTheDraft() =>
+        JObject.Parse("""{"status":"Completed","operationId":"studio.update","proposalId":"prop-1"}""")
+            .IsValid(JSchema.Parse(McpToolOutputSchemas.StudioDraftOutputSchema.GetRawText())).Should().BeFalse();
+
     internal static void AssertMatchesOutputSchema(IMcpTool tool, McpToolsCallResult result)
     {
         var schema = JSchema.Parse(tool.Describe().OutputSchema!.Value.GetRawText());

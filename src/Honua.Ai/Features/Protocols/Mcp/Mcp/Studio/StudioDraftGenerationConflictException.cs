@@ -6,7 +6,9 @@ using Honua.Geoprocessing;
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
 internal sealed class StudioDraftGenerationConflictException(long currentGeneration)
-    : GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.")
+    : GeoprocessingPreconditionFailedException(StudioDraftGenerationConflictException.ConflictMessage)
 {
+    internal const string ConflictMessage = "Stale draft generation; refresh and retry.";
+
     public long CurrentGeneration { get; } = currentGeneration;
 }
