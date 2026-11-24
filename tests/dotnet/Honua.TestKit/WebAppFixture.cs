@@ -19,6 +19,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
@@ -459,6 +461,14 @@ public sealed class WebAppFixture : IAsyncLifetime
         _serviceConfigurations.Add(configure);
         return this;
     }
+
+    // The security tail reads PostgreSQL events, so credential changes must use the same store.
+    public WebAppFixture WithPostgresStreamCredentials()
+        => ConfigureServices(services =>
+        {
+            services.RemoveAll<ISecurityTokenStore>();
+            services.AddSingleton<ISecurityTokenStore>(provider => provider.GetRequiredService<PostgresSecurityTokenStore>());
+        });
 
     // Settings applied after the fixture's own, for a test that must replace one the fixture sets.
     public WebAppFixture OverrideConfiguration(IReadOnlyDictionary<string, string?> settings)

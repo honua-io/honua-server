@@ -34,17 +34,19 @@ public sealed partial class SensorThingsStreamEndpointsTests(SensorThingsStreamE
         public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
-    private static WebAppFixture CreateFixture() => new WebAppFixture().ConfigureWebHost(builder =>
-    {
-        builder.UseSetting("HONUA_DEV_AUTH", "false");
-        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>
-            {
-                ["MultiTenancy:Enabled"] = "true",
-                ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
-            }));
-    });
+    private static WebAppFixture CreateFixture() => new WebAppFixture()
+        .WithPostgresStreamCredentials()
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["MultiTenancy:Enabled"] = "true",
+                    ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
+                }));
+        });
 
     [IntegrationTest]
     [Operation(Operations.Streaming)]
