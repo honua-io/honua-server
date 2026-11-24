@@ -6,6 +6,8 @@ resource: "honua://capability/import.geoserver"
 ---
 # Migrate from GeoServer
 
+GeoServer import is a Preview capability in Honua 2026.1.
+
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 
 **Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
