@@ -2698,7 +2698,6 @@ jobs:
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: mcp-certification
     continue-on-error: true
-    # Setup and PostgreSQL startup took 594 seconds in run 45159280398.
     # The step limits leave four minutes for runner/service startup and post-job cleanup.
     timeout-minutes: 33
     # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
