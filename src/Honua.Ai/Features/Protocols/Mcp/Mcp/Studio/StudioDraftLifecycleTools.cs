@@ -136,7 +136,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 },
                 new StudioDraftMutationContext
                 {
-                    PrincipalId = actorId,
+                    PrincipalId = PolicyPrincipalId(principal, actorId),
                     TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
                     SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                     CorrelationId = httpContext.TraceIdentifier,

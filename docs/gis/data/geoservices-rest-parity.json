@@ -2572,7 +2572,7 @@
         "Mapbox GL style resource composed from the stored layer style"
       ],
       "knownGaps": [
-        "tiles carry only the service\u0027s primary tiled publication, not every layer packed per tile",
+        "tiles carry only the service\u0027s primary tiled Layer, not every layer packed per tile",
         "tilemap availability is grid arithmetic and never consults the tile store",
         "no sprite store: sprite resources are content-free placeholders",
         "glyphs come from one bundled sans-serif face substituted for every served fontstack, Basic Latin and Latin-1 only",
@@ -2639,7 +2639,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. Only the 0-255 range is bundled; all other ranges return 404."
+            "notes": "Returns signed-distance-field glyphs for the requested fontstack and range, labelled with the requested fontstack, from one bundled sans-serif face (DejaVu Sans). Any fontstack naming a common sans-serif family is served with that face, so weights and styles are not distinguished; other fontstacks return 404. The 0-255, 256-511, 512-767 and 8192-8447 ranges are bundled (Latin-1, Latin Extended-A and -B, General Punctuation and the euro sign); all other ranges return 404."
           },
           {
             "name": "Style sub-resource",
@@ -2667,7 +2667,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Renders genuine MVT through the canonical tile provider with zoom and coordinate validation, but serves only the service\u0027s single primary tiled publication \u2014 a multi-layer service returns one layer\u0027s data per tile, where an Esri vector-tile cache packs every layer into the tile."
+            "notes": "Renders genuine MVT through the canonical tile provider with zoom and coordinate validation, but serves only the service\u0027s single primary tiled Layer \u2014 a multi-layer service returns one layer\u0027s data per tile, where a GeoServices REST vector-tile cache packs every layer into the tile."
           },
           {
             "name": "Tilemap",
@@ -3413,6 +3413,20 @@
             "notes": "Job cancellation with route binding validation. Implemented in #723."
           },
           {
+            "name": "Job Messages (generic)",
+            "status": "implemented",
+            "geoServicesPaths": [
+              "/GPServer/{taskName}/jobs/{jobId}/messages"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/messages"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Returns the Esri GP job messages array for a submitted job with route binding validation."
+          },
+          {
             "name": "Job Results (generic)",
             "status": "implemented",
             "geoServicesPaths": [
@@ -3546,6 +3560,7 @@
             "honuaEndpoints": [
               "GET /rest/services/GeocodeServer/geocodeAddresses",
               "GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses",
+              "POST /rest/services/GeocodeServer/geocodeAddresses",
               "POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses"
             ],
             "capabilityMaturity": [
@@ -3562,6 +3577,7 @@
             "honuaEndpoints": [
               "GET /rest/services/GeocodeServer/reverseGeocode",
               "GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
+              "POST /rest/services/GeocodeServer/reverseGeocode",
               "POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode"
             ],
             "capabilityMaturity": [
@@ -3578,6 +3594,7 @@
             "honuaEndpoints": [
               "GET /rest/services/GeocodeServer/suggest",
               "GET /rest/services/{locatorName}/GeocodeServer/suggest",
+              "POST /rest/services/GeocodeServer/suggest",
               "POST /rest/services/{locatorName}/GeocodeServer/suggest"
             ],
             "capabilityMaturity": [
@@ -4238,7 +4255,7 @@
       "implementedSurface": [
         "POST /sharing/rest/generateToken (form-encoded)",
         "GET /sharing/rest/generateToken (query-string)",
-        "opaque token storage via IDistributedCache (Redis or in-memory)",
+        "opaque token storage via ISecurityTokenStore (PostgreSQL shared or in-memory local)",
         "referer or client-IP binding with mismatch rejection",
         "configurable default and maximum token lifetime (caller-requested expiration clamped)",
         "HTTPS-only issuance (Authentication:PortalToken:RequireHttps, default true)",

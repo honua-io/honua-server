@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "operate_events.result_page",
   "schemaRef": "tools/operate_events.result.schema.json",
   "validates": "inputs",

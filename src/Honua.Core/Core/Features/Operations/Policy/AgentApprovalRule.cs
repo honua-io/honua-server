@@ -44,7 +44,23 @@ public static class AgentApprovalRule
         "studio.content.rollback",
     };
 
+    // Authoring inside an unpublished Studio draft. These change no access, publication or live content,
+    // so an agent may run them on its own drafts under the default draft guardrail (the canonical policy
+    // checks ownership). Publication requests, rollback, reopening a version and draft deletion keep
+    // the human approval.
+    private static readonly HashSet<string> AgentDraftAuthoringOperationIds = new(StringComparer.Ordinal)
+    {
+        StudioDraftMutationContext.CreateOperationId,
+        StudioDraftMutationContext.UpdateOperationId,
+        StudioDraftMutationContext.RestoreRevisionOperationId,
+        StudioDraftMutationContext.ValidateOperationId,
+        StudioDraftMutationContext.PreviewPlanOperationId,
+        StudioDraftMutationContext.SaveVersionOperationId,
+    };
+
     public static bool IsGated(string operationId) => GatedOperationIds.Contains(operationId);
+
+    public static bool IsAgentDraftAuthoring(string operationId) => AgentDraftAuthoringOperationIds.Contains(operationId);
 
     public static bool IsAgent(IReadOnlyList<string> roles)
     {

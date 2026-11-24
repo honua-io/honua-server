@@ -68,6 +68,15 @@ internal sealed partial class Wfs20Handler
         }
 
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
+        if (requestedTypes.Length == 0 && string.IsNullOrWhiteSpace(resourceId))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "MissingParameterValue",
+                "GetFeature requires a typeNames or resourceId parameter.",
+                "typeNames");
+        }
+
         var isHitsRequest = string.Equals(normalizedResultType, "hits", StringComparison.OrdinalIgnoreCase);
 
         Wfs20Log.GetFeatureRequested(_logger, typeNames ?? "ALL", normalizedFormat);
@@ -146,7 +155,9 @@ internal sealed partial class Wfs20Handler
             }
 
             var selectedTypes = await WithCallerMasksAsync(
-                context, ResolveRequestedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
+                context,
+                SelectRequestedFeatureTypes(publishedTypes, requestedTypes, ResourceIdSelectingTypes(resourceId, filter)),
+                cancellationToken).ConfigureAwait(false);
             var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             if (selectedTypes.Length == 0)
             {

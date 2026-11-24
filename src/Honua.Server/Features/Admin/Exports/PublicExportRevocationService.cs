@@ -40,15 +40,27 @@ internal sealed partial class PublicExportRevocationService(
         IReadOnlyCollection<int>? layerIds,
         CancellationToken cancellationToken = default)
     {
+        var unpublishCheckFailure = await SweepEligibilityAsync(cancellationToken).ConfigureAwait(false);
+        if (unpublishCheckFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(unpublishCheckFailure).Throw();
+        }
+    }
+
+    // Re-evaluates every promoted export. A failed unpublish check for one export is logged and
+    // returned rather than thrown: the other exports are still evaluated and that export waits
+    // for the next sweep. Failures that stop the whole sweep (graph, promoted list) still throw.
+    internal async Task<Exception?> SweepEligibilityAsync(CancellationToken cancellationToken)
+    {
         if (deps.Destination is null)
         {
-            return;
+            return null;
         }
 
         var promoted = await deps.StateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false);
         if (promoted.Count == 0)
         {
-            return;
+            return null;
         }
 
         var snapshot = await deps.GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -70,10 +82,7 @@ internal sealed partial class PublicExportRevocationService(
             firstUnpublishCheckFailure ??= failure;
         }
 
-        if (firstUnpublishCheckFailure is not null)
-        {
-            ExceptionDispatchInfo.Capture(firstUnpublishCheckFailure).Throw();
-        }
+        return firstUnpublishCheckFailure;
     }
 
     public Task<PublicExportRevocationRecord> RevokeUnpublishedAsync(

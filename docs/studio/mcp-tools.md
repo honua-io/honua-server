@@ -53,7 +53,7 @@ resolution; the server never blindly replays a mutation. Dashboard drafts use
 the same composition editor, whole-document validation, and durable lifecycle
 as map/app drafts.
 
-When draft creation requires approval, retain the returned proposal identity and
+When draft creation requires approval (a deployment with a stricter draft guardrail), retain the returned proposal identity and
 wait for a person to approve it. The original proposer can read
 `honua://proposals/{proposalId}` after execution succeeds to recover
 `resourceIds.draftId` and `resourceIds.itemId` from the completed operation,
@@ -96,12 +96,15 @@ also require their own receipts and audience checks.
 
 ## Composition policy
 
-Every MCP caller is an agent, administrators included. Draft mutations can return
-`RequiresApproval` with a proposal identity instead of a draft or version result.
-A person approves or rejects that proposal in Console; an agent credential cannot
-decide it. Respect the actual operation outcome and retain the original proposal
-while awaiting approval. Do not change deployment policy or add requester
-permissions as an implicit part of a creative edit.
+Every MCP caller is an agent, administrators included. Under the default policy an
+agent creates, edits, validates, previews and saves versions of its own unpublished
+drafts directly, without a proposal per edit. Deleting a draft, reopening a saved
+version, working on a draft another principal owns, and any deployment that sets a stricter Studio draft
+guardrail return `RequiresApproval` with a proposal identity instead of a draft or
+version result. A person approves or rejects that proposal in Console; an agent
+credential cannot decide it. Respect the actual operation outcome and retain the
+original proposal while awaiting approval. Do not change deployment policy or add
+requester permissions as an implicit part of a creative edit.
 
 Publication always waits for a person. Every MCP caller is an agent,
 administrators included, so a new proposal returns `AwaitingApproval`,

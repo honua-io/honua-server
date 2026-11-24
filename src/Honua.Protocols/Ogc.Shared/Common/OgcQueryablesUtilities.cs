@@ -106,20 +106,21 @@ internal static class OgcQueryablesUtilities
             return false;
         }
 
-        if (!TryResolveSchemaTemporalType(resource, fields.StartTimeField, out var startType))
+        // The schema's spelling, not the configured one: attribute keys and storage columns are case-sensitive.
+        if (!TryFindSchemaTemporalField(resource, fields.StartTimeField, out var start))
         {
             return false;
         }
 
-        startFieldName = fields.StartTimeField;
-        startPropertyType = startType;
+        startFieldName = start.Name;
+        startPropertyType = start.Type;
 
         if (string.IsNullOrWhiteSpace(fields.EndTimeField))
         {
             return true;
         }
 
-        if (!TryResolveSchemaTemporalType(resource, fields.EndTimeField, out var endType))
+        if (!TryFindSchemaTemporalField(resource, fields.EndTimeField, out var end))
         {
             // End field is configured but not in schema: fail the whole resolution.
             startFieldName = null;
@@ -127,15 +128,15 @@ internal static class OgcQueryablesUtilities
             return false;
         }
 
-        endFieldName = fields.EndTimeField;
-        endPropertyType = endType;
+        endFieldName = end.Name;
+        endPropertyType = end.Type;
         return true;
     }
 
-    private static bool TryResolveSchemaTemporalType(
+    private static bool TryFindSchemaTemporalField(
         MetadataV2Object resource,
         string fieldName,
-        out TemporalPropertyType type)
+        out (string Name, TemporalPropertyType Type) match)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -148,15 +149,15 @@ internal static class OgcQueryablesUtilities
             {
                 case MetadataV2FieldType.DateTime:
                 case MetadataV2FieldType.TimestampOffset:
-                    type = TemporalPropertyType.DateTime;
+                    match = (field.Name, TemporalPropertyType.DateTime);
                     return true;
                 case MetadataV2FieldType.Date:
-                    type = TemporalPropertyType.Date;
+                    match = (field.Name, TemporalPropertyType.Date);
                     return true;
             }
         }
 
-        type = TemporalPropertyType.DateTime;
+        match = (fieldName, TemporalPropertyType.DateTime);
         return false;
     }
 

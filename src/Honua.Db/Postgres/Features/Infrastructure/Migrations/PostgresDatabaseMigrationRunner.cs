@@ -116,7 +116,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema,
+                _migrations.ConfiguredFeatureStoreAdoptionMigration);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, connection,
@@ -325,7 +326,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration, registrySchema,
+                _migrations.ConfiguredFeatureStoreAdoptionMigration);
             var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
@@ -553,7 +555,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         PostgresAttachmentMigrationContract? attachmentContract = null,
         IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null,
         string? configuredRegistryAdoptionMigration = null,
-        string? registrySchema = null)
+        string? registrySchema = null,
+        string? configuredFeatureStoreAdoptionMigration = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -582,7 +585,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
                      (!string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal) &&
-                      !string.Equals(name, configuredRegistryAdoptionMigration, StringComparison.Ordinal))));
+                      !string.Equals(name, configuredRegistryAdoptionMigration, StringComparison.Ordinal) &&
+                      !string.Equals(name, configuredFeatureStoreAdoptionMigration, StringComparison.Ordinal))));
             IScriptProvider schemaBoundProvider = bindsResidentTablesToHonua && residentTableBindings is { Count: > 0 }
                 ? new HonuaResidentTableScriptProvider(provider, residentTableBindings)
                 : provider;

@@ -60,6 +60,11 @@ internal sealed partial class FeatureQueryBuilder
         return true;
     }
 
+    // Output aliases are always emitted through QuoteIdentifier, so any Unicode identifier
+    // within the 63-byte limit is a valid result column name.
+    internal static bool IsValidOutputAlias(string alias)
+        => SqlIdentifier.IsUnicodeIdentifier(alias);
+
     internal static bool IsValidEncodedColumnAlias(string fieldName)
         => IsValidJsonAttributeKey(fieldName)
             && Encoding.UTF8.GetByteCount(fieldName) <= PostgreSqlMaxIdentifierBytes;

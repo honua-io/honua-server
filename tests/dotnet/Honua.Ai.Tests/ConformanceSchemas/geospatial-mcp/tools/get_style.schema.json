@@ -6,6 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "not": { "required": ["layerId"] },
+  "dependentRequired": { "serviceId": ["serviceLayerIndex"], "serviceLayerIndex": ["serviceId"] },
   "properties": {
     "styleId": {
       "type": "string",

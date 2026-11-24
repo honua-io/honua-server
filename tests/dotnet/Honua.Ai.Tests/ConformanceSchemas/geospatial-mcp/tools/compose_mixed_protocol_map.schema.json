@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/compose_mixed_protocol_map.schema.json",
   "title": "compose_mixed_protocol_map inputSchema",
-  "description": "Argument shape for compose_mixed_protocol_map (Analyze, Build App; returns a MapPackage). Composes a single map from layers bound across multiple protocols (GeoServices, OGC API, WMS/WFS, tiles) at the semantic level — protocol adaptation happens below the contract layer (taxonomy.md §Non-Goals 4). Responsibility-level; concrete binding field set finalizes upstream.",
+  "description": "Argument shape for compose_mixed_protocol_map (Analyze, Build App; returns a Map). Composes a single map from layers bound across multiple protocols (GeoServices, OGC API, WMS/WFS, tiles) at the semantic level — protocol adaptation happens below the contract layer (taxonomy.md §Non-Goals 4). Responsibility-level; concrete binding field set finalizes upstream.",
   "type": "object",
   "additionalProperties": true,
   "required": ["sourceBindings"],

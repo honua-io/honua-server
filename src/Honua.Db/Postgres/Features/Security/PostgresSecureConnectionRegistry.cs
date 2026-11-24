@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Data.Common;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -301,7 +302,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
             if (rowsAffected == 0)
             {
-                throw new InvalidOperationException($"Connection with ID {connection.ConnectionId} not found for update");
+                // Deleted after the caller read it; the admin PUT answers 404, not 500.
+                throw new ResourceNotFoundException($"Connection with ID {connection.ConnectionId} not found for update");
             }
 
             connection.Id = connection.ConnectionId.ToString("D");

@@ -71,8 +71,8 @@ internal static class McpTelemetry
         public const string Catalog = "catalog";
         public const string PublishedServices = "published-services";
         public const string Deployments = "deployments";
-        public const string MapPackages = "map-packages";
-        public const string AppPackages = "app-packages";
+        public const string Maps = "maps";
+        public const string Apps = "apps";
         public const string PromotionIndex = "promotion-index";
         public const string OpsHealth = "ops-health";
         public const string OpsFindings = "ops-findings";

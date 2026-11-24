@@ -735,11 +735,13 @@
       "activationState": "activated",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live nightly",
-      "clientVersionPolicy": "GDAL version pinned by the lane container image tag; the full build string is recorded in every envelope (currently GDAL 3.14.0dev-480c02a).",
+      "clientVersionPolicy": "GDAL version pinned by the lane container image tag; the full build string is recorded in every envelope (currently GDAL 3.14.0dev-d10415f).",
       "protocolSurfaces": [
         "ogc-features",
         "wfs",
-        "admin-api"
+        "admin-api",
+        "featureserver",
+        "mapserver"
       ],
       "operationApplicability": {
         "applicable": [
@@ -749,16 +751,13 @@
           "CERT-SCHM",
           "CERT-QFLT",
           "CERT-PAGE",
+          "CERT-GEOM",
           "CERT-ERRH"
         ],
         "notApplicable": [
           {
-            "family": "CERT-GEOM",
-            "reason": "Declared not-applicable for the `cli` lane in client-certification-matrix.v1.json; coordinate tolerance is proven by the feature-client lanes."
-          },
-          {
             "family": "CERT-RNDR",
-            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+            "reason": "Headless data client with no map canvas or table surface; symbology fidelity is not observable. The one rendering case it substantiates is CERT-RNDR-01 on MapServer export (GDAL's AGS minidriver), declared per case in client-certification-matrix.v1.json."
           },
           {
             "family": "CERT-PRTL",

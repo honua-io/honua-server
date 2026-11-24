@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "operate_events.release_by_id",
   "schemaRef": "tools/operate_events.schema.json",
   "validates": "inputs",

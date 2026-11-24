@@ -189,6 +189,49 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         Assert.Equal("filter-me@example.com", resources[0].GetProperty("userName").GetString());
     }
 
+    // An identity provider probing for an existing account must never read the unfiltered list as a match.
+    [IntegrationTheory]
+    [InlineData("/scim/v2/Users", "externalId eq \"not-a-user\"")]
+    [InlineData("/scim/v2/Users", "userName co \"bystander\"")]
+    [InlineData("/scim/v2/Users", "userName eq \"bystander@example.com\" and active eq true")]
+    [InlineData("/scim/v2/Users", "emails[type eq \"work\"]")]
+    [InlineData("/scim/v2/Groups", "id eq \"x\" and members[value eq \"y\"]")]
+    [InlineData("/scim/v2/Groups", "externalId eq \"not-a-group\"")]
+    [InlineData("/scim/v2/Users", "userName eq \"\"")]
+    [InlineData("/scim/v2/Groups", "displayName eq \"\"")]
+    [InlineData("/scim/v2/Groups", "urn:ietf:params:scim:schemas:core:2.0:User:displayName eq \"x\"")]
+    [Endpoint("GET /scim/v2/Users")]
+    [Endpoint("GET /scim/v2/Groups")]
+    public async Task List_WithUnsupportedFilter_ReturnsInvalidFilterWithoutResources(string path, string filter)
+    {
+        await CreateUserAsync($"bystander-{Guid.NewGuid():N}@example.com");
+
+        var response = await _client.GetAsync($"{path}?filter={Uri.EscapeDataString(filter)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidFilter", error.GetProperty("scimType").GetString());
+        Assert.False(error.TryGetProperty("resources", out _));
+    }
+
+    [IntegrationTheory]
+    [InlineData("USERNAME EQ \"quote\\\"d@example.com\"", "quote\"d@example.com")]
+    [InlineData("  userName   eq   plain@example.com  ", "plain@example.com")]
+    [InlineData("urn:ietf:params:scim:schemas:core:2.0:User:userName eq \"urn@example.com\"", "urn@example.com")]
+    [Endpoint("GET /scim/v2/Users")]
+    public async Task ListUsers_WithEqFilterVariants_ReturnsOnlyTheMatch(string filter, string userName)
+    {
+        await CreateUserAsync(userName);
+        await CreateUserAsync($"bystander-{Guid.NewGuid():N}@example.com");
+
+        var response = await _client.GetAsync($"/scim/v2/Users?filter={Uri.EscapeDataString(filter)}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await ReadAsync(response);
+        Assert.Equal(1, body.GetProperty("totalResults").GetInt32());
+        Assert.Equal(userName, body.GetProperty("resources")[0].GetProperty("userName").GetString());
+    }
+
     [IntegrationTest]
     [Endpoint("GET /scim/v2/Users/{id}")]
     public async Task GetUser_Existing_ReturnsUser()

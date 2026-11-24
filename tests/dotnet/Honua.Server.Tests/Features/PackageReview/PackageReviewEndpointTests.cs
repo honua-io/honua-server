@@ -98,32 +98,32 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithoutPackage_ReturnsBadRequest()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithoutMap_ReturnsBadRequest()
     {
-        using var content = new StringContent("{\"package\":null}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{\"map\":null}", Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
-            "/api/v1/admin/packages",
+            "/api/v1/admin/maps",
             content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("Map package is required");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Map is required");
     }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithCliBuiltPackage_ProposesPublicationWithoutMovingPublishedPointer()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithCliBuiltMap_ProposesPublicationWithoutMovingPublishedPointer()
     {
         // The body `honua map publish <id> --package @map.json` sends
-        // (honua-sdk-js map-package.publish), carrying the honua_map_package.v1 fixture from the
+        // (honua-sdk-js map-package.publish), carrying the honua_map.v1 fixture from the
         // SDK CLI replay. It omits nothing the CLI omits and keeps the members the server's
-        // MapPackage record does not model (view, layers, widgets, styleRefs[].body).
+        // Map record does not model (view, layers, widgets, styleRefs[].body).
         var body = $$"""
             {
               "mapId": "honolulu-places",
               "message": "cli",
-              "package": {{CliMapPackageJson("\"status\": \"Draft\", \"createdAt\": \"2026-09-15T00:00:00Z\",")}}
+              "map": {{CliMapPackageJson("\"status\": \"Draft\", \"createdAt\": \"2026-09-15T00:00:00Z\",")}}
             }
             """;
 
@@ -134,10 +134,12 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, payload);
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
-        root.GetProperty("packageId").GetString().Should().Be("honolulu-places");
+        root.GetProperty("mapId").GetString().Should().Be("honolulu-places");
+        root.TryGetProperty("packageId", out _).Should().BeFalse();
+        root.TryGetProperty("package", out _).Should().BeFalse();
         root.GetProperty("publicationStatus").GetString().Should().Be("AwaitingApproval");
         root.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
-        root.GetProperty("package").GetProperty("status").GetString().Should().Be("Ready");
+        root.GetProperty("map").GetProperty("status").GetString().Should().Be("Ready");
 
         var itemId = root.GetProperty("itemId").GetGuid();
         var versionId = root.GetProperty("versionId").GetGuid();
@@ -152,13 +154,13 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithCliBuiltPackage_SavesAVersionThatPassesPublicationValidation()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithCliBuiltPackage_SavesAVersionThatPassesPublicationValidation()
     {
         // Actuation rejects an approved publication whose saved version is Invalid, so the
         // version this route saves must pass the same Studio validation.
         await using var host = await PublishingHost.StartAsync();
-        using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
+        using var response = await PostPublishAsync(host.Client, $$"""{"map": {{CliMapPackageJson(string.Empty)}}}""");
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, payload);
@@ -173,11 +175,11 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithReadOnlyAdminScope_ReturnsForbiddenWithoutDraft()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithReadOnlyAdminScope_ReturnsForbiddenWithoutDraft()
     {
         await using var host = await PublishingHost.StartAsync(readOnlyScope: true);
-        using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
+        using var response = await PostPublishAsync(host.Client, $$"""{"map": {{CliMapPackageJson(string.Empty)}}}""");
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, payload);
@@ -190,12 +192,12 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithoutLifecycleMembers_DefaultsThemAndProposesPublication()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithoutLifecycleMembers_DefaultsThemAndProposesPublication()
     {
-        // status and createdAt are optional in honua_map_package.v1 and in the CLI's HonuaMapPackage.
+        // status and createdAt are optional in honua_map.v1 and in the CLI's HonuaMapPackage.
         await using var host = await PublishingHost.StartAsync();
-        using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
+        using var response = await PostPublishAsync(host.Client, $$"""{"map": {{CliMapPackageJson(string.Empty)}}}""");
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, payload);
@@ -205,28 +207,38 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/packages")]
-    public async Task PublishMapPackage_WithInvalidMember_ReturnsProblemNamingTheMember()
+    [Endpoint("POST /api/v1/admin/maps")]
+    public async Task PublishMap_WithInvalidMember_ReturnsProblemNamingTheMember()
     {
         using var badStatus = await PostPublishAsync(
             _client,
-            $$"""{"package": {{CliMapPackageJson("\"status\": \"Shipped\",")}}}""");
+            $$"""{"map": {{CliMapPackageJson("\"status\": \"Shipped\",")}}}""");
 
-        await AssertMemberProblemAsync(badStatus, "$.package.status");
+        await AssertMemberProblemAsync(badStatus, "$.map.status");
 
         using var incompleteBinding = await PostPublishAsync(
             _client,
-            """{"package": {"mapPackageId": "m", "format": "honua_map_package.v1", "sourceBindings": [{"sourceId": "places"}], "mapSpec": {"version": 8}}}""");
+            """{"map": {"mapId": "m", "format": "honua_map.v1", "sourceBindings": [{"sourceId": "places"}], "mapSpec": {"version": 8}}}""");
 
-        var errors = await AssertMemberProblemAsync(incompleteBinding, "$.package.sourceBindings[0]");
+        var errors = await AssertMemberProblemAsync(incompleteBinding, "$.map.sourceBindings[0]");
         errors[0].GetProperty("message").GetString().Should().Contain("protocol").And.Contain("locator")
             .And.NotContain("Honua.", "problem messages must not leak CLR type names");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages")]
+    public async Task PublishMap_RetiredRoute_ReturnsNotFound()
+    {
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync("/api/v1/admin/packages", content);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private static async Task<HttpResponseMessage> PostPublishAsync(HttpClient client, string body)
     {
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        return await client.PostAsync("/api/v1/admin/packages/", content);
+        return await client.PostAsync("/api/v1/admin/maps/", content);
     }
 
     private static async Task<JsonElement[]> AssertMemberProblemAsync(HttpResponseMessage response, string path)
@@ -243,8 +255,8 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     private static string CliMapPackageJson(string lifecycleMembers) => $$"""
         {
-          "mapPackageId": "honolulu-places",
-          "format": "honua_map_package.v1",
+          "mapId": "honolulu-places",
+          "format": "honua_map.v1",
           {{lifecycleMembers}}
           "sourceBindings": [],
           "styleRefs": [

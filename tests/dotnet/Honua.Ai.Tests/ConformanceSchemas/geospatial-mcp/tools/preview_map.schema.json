@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_map.schema.json",
+  "title": "preview_map inputSchema",
+  "description": "Argument shape for preview_map (Analyze, Build App; returns a preview ArtifactRef). Produces a read-only preview artifact for an existing Map. Responsibility-level. See taxonomy.md §Map composition.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mapId"],
+  "properties": {
+    "mapId": {
+      "type": "string",
+      "description": "Identifier (map_…) of the Map to preview."
+    },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 }
+  }
+}

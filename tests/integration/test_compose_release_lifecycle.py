@@ -154,9 +154,19 @@ def create_identity_fixture(project_dir, human_port, identity_port):
     return identity, human_base, overlay
 
 
+def default_schema_max():
+    # Configured-schema adoption migrations are omitted on a default Database:Schema
+    # install, so a default-schema journal never records them.
+    manifest = (ROOT / "src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs").read_text()
+    pattern = r"Honua\.Server\.Migrations\.(\d+)_AdoptConfigured\w*\.sql"
+    skipped = {int(number) for number in re.findall(pattern, manifest)}
+    migrations = (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql")
+    return max({int(path.name.split("_", 1)[0]) for path in migrations} - skipped)
+
+
 def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
-    candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
+    candidate_schema = default_schema_max()
     assert candidate_schema >= 142
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", candidate)
     # rc.1 predates the secret launcher; its real-image rollback is covered by

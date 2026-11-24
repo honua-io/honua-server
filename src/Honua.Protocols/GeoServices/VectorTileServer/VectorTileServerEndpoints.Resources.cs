@@ -24,6 +24,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.ServiceDefaults;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -46,6 +47,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the Mapbox GL v8 style JSON for the service, with the vector source referencing this service and its tile template.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: JsonContentType)
             .Produces(404);
 
@@ -58,6 +60,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the root.json style document. Sprite and glyph sub-resources are served under resources/sprites and resources/fonts.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: JsonContentType)
             .Produces(404);
 
@@ -70,6 +73,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the scoped-minimal sprite index (empty JSON object) or sprite image (1x1 transparent PNG). Unknown sprite resources return 404.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: VectorTileEmbeddedAssets.SpriteJsonContentType)
             .Produces(200, contentType: VectorTileEmbeddedAssets.SpritePngContentType)
             .Produces(404);
@@ -83,6 +87,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns the glyph PBF for the requested fontstack and range from the bundled sans-serif face. Unserved fontstacks and ranges return 404.")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces(200, contentType: VectorTileEmbeddedAssets.GlyphPbfContentType)
             .Produces(404);
     }

@@ -1,0 +1,112 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Studio.Drafts;
+using Honua.Geoprocessing;
+using Honua.Ai.Protocols.Mcp.Models;
+
+namespace Honua.Ai.Protocols.Mcp.Resources;
+
+// Drafts are consulted because a newly created package has a URI and no deployment yet.
+internal sealed class MapResource : IMcpResource
+{
+    public const string Template = McpResourceUris.MapsPrefix + "{mapId}";
+    private const string PackageKind = "map";
+
+    private readonly IDeploymentStore _deployments;
+    private readonly IPackageDraftStore _drafts;
+    private readonly IGeoprocessingJobService _jobService;
+    private readonly ILogger<MapResource> _logger;
+
+    public MapResource(
+        IDeploymentStore deployments,
+        IPackageDraftStore drafts,
+        IGeoprocessingJobService jobService,
+        ILogger<MapResource> logger)
+    {
+        _deployments = deployments;
+        _drafts = drafts;
+        _jobService = jobService;
+        _logger = logger;
+    }
+
+    public string Family => McpTelemetry.ResourceFamily.Maps;
+
+    public IReadOnlyList<McpResourceDescriptor> Describe() => [];
+
+    public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => new[]
+    {
+        new McpResourceTemplateDescriptor
+        {
+            UriTemplate = Template,
+            Name = "Map",
+            Description = "Map surface: a created draft held by the draft store, or a published Map referenced by deployments. Exposes lifecycle status and deployment provenance edges only.",
+            MimeType = McpResourceHelpers.JsonMimeType
+        }
+    };
+
+    public bool CanHandle(string uri)
+    {
+        if (!uri.StartsWith(McpResourceUris.MapsPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var remainder = uri.AsSpan(McpResourceUris.MapsPrefix.Length);
+        return remainder.Length > 0 && !remainder.Contains('/');
+    }
+
+    public async Task<McpResourcesReadResult> ReadAsync(
+        HttpContext httpContext,
+        string uri,
+        CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("GetMap");
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        await _jobService.EnsureCallerAuthorizedAsync(
+                principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
+
+        var mapId = uri[McpResourceUris.MapsPrefix.Length..];
+        McpLog.ResourceRead(_logger, Family, uri);
+
+        var deployments = await _deployments
+            .ListBySourceAsync(DeploymentSourceKind.Map, mapId, cancellationToken)
+            .ConfigureAwait(false);
+        deployments = MapAppViewFactory.FilterPublished(deployments);
+
+        if (deployments.Count == 0)
+        {
+            // Deployment-backed visibility is checked first so a promoted package
+            // keeps reporting its deployment edges rather than the stale draft it
+            // grew from. Only when nothing serves it do we fall back to the draft.
+            var ownerId = PackageDraftCaller.ResolveOwnerId(principal);
+            var draft = string.IsNullOrWhiteSpace(ownerId)
+                ? null
+                : await _drafts.GetMapDraftAsync(mapId, ownerId, cancellationToken).ConfigureAwait(false);
+            if (draft is null)
+            {
+                throw new GeoprocessingNotFoundException(
+                    $"Map '{mapId}' is not a known draft and is not referenced by any currently-published deployment.");
+            }
+
+            McpLog.PackageRead(_logger, PackageKind, mapId, 0);
+
+            var draftView = MapAppViewFactory.BuildDraft(
+                PackageKind,
+                mapId);
+            return McpResourceHelpers.SingleJsonContent(uri, draftView, McpJsonContext.Default.McpMapAppView);
+        }
+
+        McpLog.PackageRead(_logger, PackageKind, mapId, deployments.Count);
+
+        var view = MapAppViewFactory.Build(
+            PackageKind,
+            mapId,
+            deployments);
+        return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpMapAppView);
+    }
+}

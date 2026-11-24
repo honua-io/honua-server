@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Portal.Domain;
@@ -155,7 +156,8 @@ internal sealed class PublishedConsoleContent(
             Id = publication.Metadata.Id,
             TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.ConsoleLayerTypeMetadata),
             Visibility = ProjectVisibility(accessTier),
-            Title = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name,
+            Title = DescriptiveMetadataResolver.DatasetTitle(resource, publication) ?? resource.Metadata.Name,
+            Description = DescriptiveMetadataResolver.DatasetDescription(resource, publication),
             Lifecycle = resource.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
             OperationalState = resource.Status?.State ?? MetadataV2OperationalState.Unknown
         };

@@ -55,11 +55,11 @@ public sealed class PostgresPackageDraftBackingTests(DatabaseFixtureAdapter data
         await using var harness = await CreateHarnessAsync();
         var writer = new PackageDraftLedger(harness.CreatePackageDraftBacking(), new PackageDraftRetentionOptions(), TimeProvider.System);
         var reader = new PackageDraftLedger(harness.CreatePackageDraftBacking(), new PackageDraftRetentionOptions(), TimeProvider.System);
-        await writer.SaveMapDraftAsync(MapPackageNamed("map_shared"), Owner);
-        await writer.SaveAppDraftAsync(AppPackageNamed("app_shared"), Owner);
+        await writer.SaveMapDraftAsync(MapNamed("map_shared"), Owner);
+        await writer.SaveAppDraftAsync(AppNamed("app_shared"), Owner);
 
-        (await reader.GetMapDraftAsync("map_shared", Owner))!.MapPackageId.Should().Be("map_shared");
-        (await reader.GetAppDraftAsync("app_shared", Owner))!.TargetSdk.Should().Be(AppPackageDraftFactory.DefaultTargetSdk);
+        (await reader.GetMapDraftAsync("map_shared", Owner))!.MapId.Should().Be("map_shared");
+        (await reader.GetAppDraftAsync("app_shared", Owner))!.TargetSdk.Should().Be(AppDraftFactory.DefaultTargetSdk);
         (await reader.GetMapDraftAsync("map_shared", "owner-b")).Should().BeNull();
         (await reader.GetAppDraftAsync("map_shared", Owner)).Should().BeNull();
     }
@@ -68,23 +68,23 @@ public sealed class PostgresPackageDraftBackingTests(DatabaseFixtureAdapter data
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresPackageDraftBackingTests));
 
     private static PackageDraftRecord MapRecord(string id, DateTimeOffset? writtenAt = null)
-        => new(Owner, writtenAt ?? DateTimeOffset.UtcNow, MapPackageNamed(id), null);
+        => new(Owner, writtenAt ?? DateTimeOffset.UtcNow, MapNamed(id), null);
 
-    private static PackageDraftRecord AppRecord(string id) => new(Owner, DateTimeOffset.UtcNow, null, AppPackageNamed(id));
+    private static PackageDraftRecord AppRecord(string id) => new(Owner, DateTimeOffset.UtcNow, null, AppNamed(id));
 
-    private static MapPackage MapPackageNamed(string id) => new()
+    private static Map MapNamed(string id) => new()
     {
-        MapPackageId = id,
-        Format = MapPackageDraftFactory.MapPackageFormat,
+        MapId = id,
+        Format = MapDraftFactory.MapFormat,
         Status = PackageStatus.Draft,
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    private static AppPackage AppPackageNamed(string id) => new()
+    private static App AppNamed(string id) => new()
     {
-        AppPackageId = id,
-        TargetSdk = AppPackageDraftFactory.DefaultTargetSdk,
-        Format = AppPackageDraftFactory.AppPackageFormat,
+        AppId = id,
+        TargetSdk = AppDraftFactory.DefaultTargetSdk,
+        Format = AppDraftFactory.AppFormat,
         Status = PackageStatus.Draft,
         CreatedAt = DateTimeOffset.UtcNow,
     };

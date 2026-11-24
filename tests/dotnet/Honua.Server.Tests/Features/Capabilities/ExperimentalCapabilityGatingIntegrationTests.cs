@@ -120,7 +120,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         // versioning.branch, which remains built-experimental.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "versioning.branch");
+            perCapabilityEnabled: "versioning.branch").ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -152,7 +152,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: true);
+        var fixture = CreateFixture(experimentalGlobalEnabled: true)
+            .ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -198,7 +199,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [InlineData("serve.ogc-api-edr")]
     public async Task Manifest_WhenAdoptedCapabilityIsIndividuallyOptedIn_IsRuntimeEligible(string capabilityId)
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId);
+        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId)
+            .ShareSchemaWith(disabledPosture.SchemaOwner);
         await fixture.InitializeAsync();
 
         try
@@ -259,6 +261,33 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync(
                 "/rest/services/svc-vms-gate-test/VersionManagementServer?f=json");
+
+            await AssertExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // The certificate validator is registered only while mTLS is enabled, so every route in the group,
+    // including validation, must stop at the capability gate instead of failing to resolve it.
+    [IntegrationTheory]
+    [InlineData("GET", "/api/v1/admin/security/client-certificates/profiles")]
+    [InlineData("POST", "/api/v1/admin/security/client-certificates/validate")]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/validate")]
+    public async Task ClientCertificateAdmin_WhenMtlsDisabled_Returns404ExperimentalDisabled(string method, string path)
+    {
+        var fixture = disabledPosture.Share();
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            request.Content = new StringContent("""{"certificate":"not-a-certificate"}""", System.Text.Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(request);
 
             await AssertExperimentalDisabledAsync(response);
         }
@@ -511,6 +540,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         public Task InitializeAsync() => _fixture.InitializeAsync();
 
         public Task DisposeAsync() => _fixture.DisposeAsync();
+
+        internal WebAppFixture SchemaOwner => _fixture;
 
         internal SharedHost Share() => new(_fixture);
     }

@@ -102,7 +102,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             familiesResponse,
             StudioApiJsonContext.Default.ApiResponseStudioPackageFamilyCapabilities);
         families.Families.Should().HaveCount(10);
-        families.Families.Should().Contain(f => f.Family == StudioPackageFamily.Map && f.Format == "honua_map_package.v1");
+        families.Families.Should().Contain(f => f.Family == StudioPackageFamily.Map && f.Format == "honua_map.v1");
 
         var createResponse = await PostAsync(
             "/api/v1/studio/package-drafts",
@@ -122,14 +122,14 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         var getDraftResponse = await _client.GetAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}");
         getDraftResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var validateResponse = await _client.PostAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}/validate", EmptyJson());
+        var validateResponse = await PostEmptyJsonAsync(_client, $"/api/v1/studio/package-drafts/{draft.DraftId:D}/validate");
         validateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var validation = await ReadAsync<StudioValidationSummary>(
             validateResponse,
             StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
         validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
 
-        var previewResponse = await _client.PostAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}/preview-plan", EmptyJson());
+        var previewResponse = await PostEmptyJsonAsync(_client, $"/api/v1/studio/package-drafts/{draft.DraftId:D}/preview-plan");
         previewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var preview = await ReadAsync<StudioPreviewPlan>(
             previewResponse,
@@ -159,9 +159,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         var getVersionResponse = await _client.GetAsync($"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}");
         getVersionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var reopenResponse = await _client.PostAsync(
-            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/reopen",
-            EmptyJson());
+        var reopenResponse = await PostEmptyJsonAsync(_client,
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/reopen");
         reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var reopened = await ReadAsync<StudioPackageDraft>(
             reopenResponse,
@@ -533,8 +532,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/map-packages/generate")]
-    [Endpoint("POST /api/v1/studio/app-packages/generate")]
+    [Endpoint("POST /api/v1/studio/maps/generate")]
+    [Endpoint("POST /api/v1/studio/apps/generate")]
     public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
     {
         // The end-user flag does not hard-block non-admins at the route
@@ -552,8 +551,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         using var endUserClient = endUserFixture.CreateClient(
             client => client.DefaultRequestHeaders.Add("X-API-Key", endUserKey.Key));
 
-        using var mapResponse = await endUserClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
-        using var appResponse = await endUserClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+        using var mapResponse = await PostEmptyJsonAsync(endUserClient, "/api/v1/studio/maps/generate");
+        using var appResponse = await PostEmptyJsonAsync(endUserClient, "/api/v1/studio/apps/generate");
 
         mapResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
@@ -851,9 +850,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
 
         // The owner can export the current, unpublished-beyond version explicitly -- ownership
         // grants full access, not just the published pointer.
-        var response = await aliceClient.PostAsync(
-            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}",
-            EmptyJson());
+        var response = await PostEmptyJsonAsync(aliceClient,
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
@@ -888,22 +886,20 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
 
         // No versionId supplied: pinned server-side to the published version rather than
         // trusting the exporter's own "latest by version number" default.
-        var defaultResponse = await bobClient.PostAsync($"/api/v1/studio/map/{itemId:D}/export?format=png", EmptyJson());
+        var defaultResponse = await PostEmptyJsonAsync(bobClient, $"/api/v1/studio/map/{itemId:D}/export?format=png");
         defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var defaultBytes = await defaultResponse.Content.ReadAsByteArrayAsync();
         defaultBytes.Take(PngMagic.Length).Should().Equal(PngMagic);
 
         // Explicitly requesting the published version succeeds the same authorization check.
-        var explicitPublishedResponse = await bobClient.PostAsync(
-            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={publishedVersionId:D}",
-            EmptyJson());
+        var explicitPublishedResponse = await PostEmptyJsonAsync(bobClient,
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={publishedVersionId:D}");
         explicitPublishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Explicitly requesting the current (unpublished-beyond) version is denied.
         auditLog.Events.Clear();
-        var explicitCurrentResponse = await bobClient.PostAsync(
-            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}",
-            EmptyJson());
+        var explicitCurrentResponse = await PostEmptyJsonAsync(bobClient,
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}");
         explicitCurrentResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var explicitCurrentProblem = JsonSerializer.Deserialize<JsonElement>(await explicitCurrentResponse.Content.ReadAsStringAsync());
         explicitCurrentProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
@@ -941,7 +937,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
                     PackageKey = $"unpublished-export-map-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = ownerId,
-                    Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
+                    Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map.v1"),
                 },
                 StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -952,7 +948,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var version = await ReadAsync<StudioContentVersion>(saveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
 
-        var response = await bobClient.PostAsync($"/api/v1/studio/map/{version.ItemId:D}/export?format=png", EmptyJson());
+        var response = await PostEmptyJsonAsync(bobClient, $"/api/v1/studio/map/{version.ItemId:D}/export?format=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
@@ -1490,8 +1486,19 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         problem.GetProperty("detail").GetString().Should().Contain("route must start with '/'");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    [Endpoint("POST /api/v1/studio/app-packages/generate")]
+    [InlineData("map-packages")]
+    [InlineData("app-packages")]
+    public async Task CreateMapOrApp_RetiredRoute_ReturnsNotFound(string retiredRoute)
+    {
+        var response = await PostEmptyJsonAsync(_client, $"/api/v1/studio/{retiredRoute}/generate");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/maps/generate")]
     public async Task CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
         // ADR-0076 defines deterministic draft creation from structured input without a
@@ -1510,20 +1517,22 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             """,
             Encoding.UTF8,
             "application/json");
-        var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", body);
+        var response = await _client.PostAsync("/api/v1/studio/maps/generate", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var payload = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
         var data = payload.GetProperty("data");
-        data.GetProperty("packageId").GetString().Should().StartWith("map_");
-        var package = data.GetProperty("package");
-        package.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        data.GetProperty("mapId").GetString().Should().StartWith("map_");
+        data.TryGetProperty("packageId", out _).Should().BeFalse();
+        var package = data.GetProperty("map");
+        data.TryGetProperty("package", out _).Should().BeFalse();
+        package.GetProperty("format").GetString().Should().Be("honua_map.v1");
         package.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
         package.GetProperty("initialView").GetProperty("crs").GetString().Should().Be("EPSG:4326");
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    [Endpoint("POST /api/v1/studio/maps/generate")]
     public async Task CreateMapPackageDraft_InvalidStructuralInput_ReturnsBadRequestWithFindingCode()
     {
         // A half-specified reference is a blocking error rather than a deferred warning
@@ -1532,7 +1541,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             """{"styleId":"   "}""",
             Encoding.UTF8,
             "application/json");
-        var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", body);
+        var response = await _client.PostAsync("/api/v1/studio/maps/generate", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
@@ -1540,7 +1549,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    [Endpoint("POST /api/v1/studio/maps/generate")]
     public async Task GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant()
     {
         // The group-level end-user widening must not implicitly
@@ -1562,12 +1571,12 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
         // Without an Execute grant: denied at the authorization gate, for both generate routes.
-        var deniedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        var deniedMap = await PostEmptyJsonAsync(aliceClient, "/api/v1/studio/maps/generate");
         deniedMap.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var deniedProblem = JsonSerializer.Deserialize<JsonElement>(await deniedMap.Content.ReadAsStringAsync());
         deniedProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
 
-        var deniedApp = await aliceClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+        var deniedApp = await PostEmptyJsonAsync(aliceClient, "/api/v1/studio/apps/generate");
         deniedApp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         // With the self-service "own"-sentinel Execute grant, provisioned under Alice's real
@@ -1577,51 +1586,52 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         roleStore.Grant(
             aliceKey.Record.Id.ToString("D"),
             [new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Execute" }]);
-        var allowedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        var allowedMap = await PostEmptyJsonAsync(aliceClient, "/api/v1/studio/maps/generate");
         allowedMap.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // Per-key isolation: Alice's Execute grant must not authorize
         // Bob's key. Each API-key principal must resolve to a distinct subject id so
         // one key's grant cannot open generation to all of them.
-        var bobDenied = await bobClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        var bobDenied = await PostEmptyJsonAsync(bobClient, "/api/v1/studio/maps/generate");
         bobDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobDenied.Content.ReadAsStringAsync());
         bobProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
 
         // Admin remains admitted with no grant.
         using var adminClient = fixture.CreateAdminClient();
-        var adminResponse = await adminClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        var adminResponse = await PostEmptyJsonAsync(adminClient, "/api/v1/studio/maps/generate");
         adminResponse.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/studio/app-packages/generate")]
+    [Endpoint("POST /api/v1/studio/apps/generate")]
     public async Task CreateAppPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
         // ADR-0076 counterpart of the map route: deterministic, model-free, and returning
         // a real package with a stable app_ identifier.
         using var body = new StringContent(
-            """{"templateId":"basic-app","mapPackageId":"map_00000000000000000000000000000000"}""",
+            """{"templateId":"basic-app","mapId":"map_00000000000000000000000000000000"}""",
             Encoding.UTF8,
             "application/json");
-        var response = await _client.PostAsync("/api/v1/studio/app-packages/generate", body);
+        var response = await _client.PostAsync("/api/v1/studio/apps/generate", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var payload = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
         var data = payload.GetProperty("data");
-        data.GetProperty("packageId").GetString().Should().StartWith("app_");
-        data.GetProperty("package").GetProperty("templateId").GetString().Should().Be("basic-app");
+        data.GetProperty("appId").GetString().Should().StartWith("app_");
+        data.TryGetProperty("packageId", out _).Should().BeFalse();
+        data.GetProperty("app").GetProperty("templateId").GetString().Should().Be("basic-app");
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_MapAsPng_ReturnsPngArtifact()
-        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map_package.v1", "map", "png", "image/png", PngMagic);
+        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map.v1", "map", "png", "image/png", PngMagic);
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_MapAsPdf_ReturnsPdfArtifact()
-        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map_package.v1", "map", "pdf", "application/pdf", PdfMagic);
+        => await ExportRoundTripAsync(StudioPackageFamily.Map, "honua_map.v1", "map", "pdf", "application/pdf", PdfMagic);
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
@@ -1647,7 +1657,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_UnknownItem_ReturnsNotFound()
     {
-        var response = await _client.PostAsync($"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png", EmptyJson());
+        var response = await PostEmptyJsonAsync(_client, $"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -1656,10 +1666,10 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_KindMismatch_ReturnsBadRequest()
     {
-        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map_package.v1");
+        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map.v1");
 
         // The item is a map; requesting a report deliverable must be rejected.
-        var response = await _client.PostAsync($"/api/v1/studio/report/{itemId:D}/export?format=png", EmptyJson());
+        var response = await PostEmptyJsonAsync(_client, $"/api/v1/studio/report/{itemId:D}/export?format=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -1692,9 +1702,9 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         await unavailableFixture.InitializeAsync();
         var unavailableClient = unavailableFixture.CreateAdminClient();
 
-        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map_package.v1", unavailableClient);
+        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map.v1", unavailableClient);
 
-        var response = await unavailableClient.PostAsync($"/api/v1/studio/map/{itemId:D}/export?format=png", EmptyJson());
+        var response = await PostEmptyJsonAsync(unavailableClient, $"/api/v1/studio/map/{itemId:D}/export?format=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
@@ -1711,9 +1721,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     {
         using var unauthenticatedClient = _fixture.CreateClient();
 
-        var response = await unauthenticatedClient.PostAsync(
-            $"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png",
-            EmptyJson());
+        var response = await PostEmptyJsonAsync(unauthenticatedClient,
+            $"/api/v1/studio/map/{Guid.NewGuid():D}/export?format=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -1728,9 +1737,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     {
         var itemId = await CreateContentItemAsync(family, format);
 
-        var response = await _client.PostAsync(
-            $"/api/v1/studio/{kind}/{itemId:D}/export?format={exportFormat}",
-            EmptyJson());
+        var response = await PostEmptyJsonAsync(_client,
+            $"/api/v1/studio/{kind}/{itemId:D}/export?format={exportFormat}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be(expectedContentType);
@@ -1795,8 +1803,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     {
         const string bodyJson = """
             {
-              "mapPackageId": "deliverable-map",
-              "format": "honua_map_package.v1",
+              "mapId": "deliverable-map",
+              "format": "honua_map.v1",
               "status": "Ready",
               "createdAt": "2026-01-01T00:00:00Z",
               "title": "Parcels Overview",
@@ -1811,7 +1819,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         {
             Family = StudioPackageFamily.Map,
             SchemaVersion = "1.0",
-            Format = "honua_map_package.v1",
+            Format = "honua_map.v1",
             Body = body.RootElement.Clone(),
         };
     }
@@ -2039,9 +2047,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
 
     private async Task<StudioContentVersion> SaveNextVersionAsync(StudioContentVersion basis, string where)
     {
-        var reopenResponse = await _client.PostAsync(
-            $"/api/v1/studio/content-items/{basis.ItemId:D}/versions/{basis.VersionId:D}/reopen",
-            EmptyJson());
+        var reopenResponse = await PostEmptyJsonAsync(_client,
+            $"/api/v1/studio/content-items/{basis.ItemId:D}/versions/{basis.VersionId:D}/reopen");
         reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var reopened = await ReadAsync<StudioPackageDraft>(
             reopenResponse,
@@ -2116,8 +2123,11 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     private static StringContent JsonContent<T>(T body, JsonTypeInfo<T> typeInfo)
         => new(JsonSerializer.Serialize(body, typeInfo), Encoding.UTF8, "application/json");
 
-    private static StringContent EmptyJson()
-        => new("{}", Encoding.UTF8, "application/json");
+    private static async Task<HttpResponseMessage> PostEmptyJsonAsync(HttpClient client, string path)
+    {
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        return await client.PostAsync(path, content);
+    }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<ApiResponse<T>> typeInfo)
     {

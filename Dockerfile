@@ -22,7 +22,7 @@ FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-publisher
 # the same Chisel cut. The native/managed runtime gates below validate the result.
 FROM ${DOTNET_SDK_IMAGE} AS chiseled-rootfs
 WORKDIR /src
-COPY docker/runtime/cut-rootfs.sh docker/runtime/
+COPY docker/runtime/cut-rootfs*.sh docker/runtime/
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates file && \
     sh docker/runtime/cut-rootfs.sh /rootfs && rm -rf /var/lib/apt/lists/*
@@ -198,10 +198,8 @@ LABEL security.non-root="true" \
       security.read-only-root="true" \
       security.user="1001" \
       security.group="1001" \
-      maintainer="Honua Development Team" \
-      version="1.0" \
       description="Honua Geospatial Feature Server" \
-      org.opencontainers.image.source="https://github.com/honua/honua-server" \
+      org.opencontainers.image.source="https://github.com/honua-io/honua-server" \
       org.opencontainers.image.description="Chiseled JIT serving image; PostGIS by default, additional stores in the full variant" \
       org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
       honua.runtime.profile="web" \

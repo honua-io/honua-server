@@ -55,14 +55,14 @@ internal sealed class OperatorBearerAuthenticationHandler(
             return AuthenticateResult.Fail("The administrator password this operator bearer was issued from has changed.");
         }
 
-        return CreateResult(validation.Claims);
+        return CreateResult(validation, token);
     }
 
-    private AuthenticateResult CreateResult(IReadOnlyList<AdminAuthSessionClaim> claims)
+    private AuthenticateResult CreateResult(OperatorBearerValidation validation, string token)
     {
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name, "operator-bearer");
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(validation.Claims, Scheme.Name, "operator-bearer");
             if (principal.Identity is ClaimsIdentity identity)
             {
                 // Token transport claims are deliberately excluded from the admin-session
@@ -72,6 +72,8 @@ internal sealed class OperatorBearerAuthenticationHandler(
                 identity.AddClaim(new Claim("iss", _tokenService.ValidatedIssuer));
             }
 
+            var expiry = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(token).ValidTo;
+            Context.Features.Set(StreamCredential(token, validation.Binding, new DateTimeOffset(expiry)));
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException)
@@ -81,6 +83,15 @@ internal sealed class OperatorBearerAuthenticationHandler(
     }
 
     // Fails closed: a session-bound bearer is refused when no session store can confirm the session.
+    // A session-bound bearer ends with its session: sign-out deletes the bearer binding token,
+    // whose stored hash is the binding's SHA-256.
+    internal static LiveStreamCredentialFeature StreamCredential(string token, OperatorBearerBinding binding, DateTimeOffset expiresAt)
+        => LiveStreamCredentialFeature.ForSecret("OperatorBearer", token, expiresAt) with
+        {
+            BackingCredential = binding.Session is { } session
+                ? new("AdminSessionBearerBinding", LiveStreamInvalidation.Hash(session)) : null
+        };
+
     private async Task<bool> IsSessionLiveAsync(string binding)
     {
         var sessions = Context.RequestServices.GetService<AdminAuthSessionStore>();

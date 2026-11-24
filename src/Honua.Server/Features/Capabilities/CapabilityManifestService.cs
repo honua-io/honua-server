@@ -337,16 +337,16 @@ internal sealed class CapabilityManifestService(
                 },
                 new CapabilityManifestPackageFamily
                 {
-                    Id = "map-package",
+                    Id = "map",
                     Kind = "map",
-                    SchemaVersion = "honua_map_package.v1",
+                    SchemaVersion = "honua_map.v1",
                     Supported = true
                 },
                 new CapabilityManifestPackageFamily
                 {
-                    Id = "app-package",
+                    Id = "app",
                     Kind = "app",
-                    SchemaVersion = "honua_app_package.v1",
+                    SchemaVersion = "honua_app.v1",
                     Supported = true
                 }
             ],
@@ -398,8 +398,8 @@ internal sealed class CapabilityManifestService(
             CapabilityManifestConstants.SchemaVersion,
             MetadataV2Constants.ApiVersion,
             MetadataV2Constants.SchemaVersion,
-            "honua_map_package.v1",
-            "honua_app_package.v1"
+            "honua_map.v1",
+            "honua_app.v1"
         ];
 
     private static string[] BuildStorageFamilies()
@@ -422,8 +422,8 @@ internal sealed class CapabilityManifestService(
             ["package.metadata-v2"] = ("metadata-v2-graph", "metadata"),
             ["package.release-package"] = ("metadata-release-package", "publication"),
             ["package.gitops-manifest"] = ("gitops-metadata-release-manifest", "gitops"),
-            ["package.map"] = ("map-package", "map"),
-            ["package.app"] = ("app-package", "app"),
+            ["package.map"] = ("map", "map"),
+            ["package.app"] = ("app", "app"),
         };
 
     private CapabilityManifestCapability[] BuildCapabilities(

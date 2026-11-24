@@ -35,12 +35,12 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_clarify_intent"] = "clarify_intent",
             ["honua_validate_plan"] = "validate_plan",
             ["honua_dry_run_plan"] = "validate_plan",
-            ["honua_validate_package"] = "validate_package",
-            ["honua_preview_package"] = "preview_package",
+            ["honua_validate_package"] = "validate_content",
+            ["honua_preview_package"] = "preview_content",
             ["honua_execute_plan"] = "execute_plan",
             ["honua_cancel_job"] = "cancel_job",
-            ["honua_create_map_package"] = "create_map_package",
-            ["honua_create_app_package"] = "create_app_package",
+            ["honua_create_map"] = "create_map",
+            ["honua_create_app"] = "create_app",
             ["honua_geocode_address"] = "geocode_address",
             ["honua_geocode_addresses"] = "geocode_addresses",
             ["honua_ingest_dataset"] = "ingest_dataset",
@@ -104,10 +104,10 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     private static readonly string[] KnownGapStandardTools =
     {
-        "refine_map_package",
+        "refine_map",
         "compose_mixed_protocol_map",
-        "preview_map_package",
-        "preview_app_package",
+        "preview_map",
+        "preview_app",
         // edit_features is the sole member of the standard's optional 'mutation'
         // profile. Honua deliberately does NOT implement it: the MCP surface
         // exposes no AI-facing feature-mutation tool per ADR-0028 (AI operational
@@ -716,7 +716,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         var standardResourceFamilies = new HashSet<string>(StringComparer.Ordinal)
         {
             "result-package", "artifact", "provenance", "workspace",
-            "map-package", "app-package", "style", "theme",
+            "map", "app", "style", "theme",
             "map-template", "published-service", "deployment",
             "ops-health", "ops-findings",
         };
@@ -738,7 +738,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     // standard resource family must match the vendored index.json uriForm
     // (Decision A grammar), and every standard family the index marks
     // 'implemented' must be served by a live template. This makes any URI
-    // drift — e.g. reverting honua://map-packages/{id} to honua://maps/{id} —
+    // drift — e.g. reverting honua://maps/{id} to honua://maps/{id} —
     // a build failure rather than a silent spec/server divergence.
     // -------------------------------------------------------------------
 
@@ -877,15 +877,12 @@ public sealed partial class McpTaxonomyAlignmentTests
                 StringComparer.Ordinal);
         var indexResources = ReadIndexResourceUriForms();
 
-        // Every advertised tool maps onto a standard name.
-        var advertisedStd = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var tool in manifest.Tools)
-        {
-            indexTools.ContainsKey(tool.StandardName).Should().BeTrue(
-                $"advertised tool '{tool.AdvertisedName}' maps to standardName '{tool.StandardName}' "
-                + "which must exist in the vendored index.json");
-            advertisedStd.Add(tool.StandardName);
-        }
+        // Match geospatial-mcp's project_reference_manifest.py: the STANDARD
+        // artifact contains index-defined tools. Implementation extensions remain
+        // in the full live manifest, whose roster is checked independently above.
+        var standardTools = manifest.Tools.Where(tool => indexTools.ContainsKey(tool.StandardName)).ToArray();
+        standardTools.Should().NotBeEmpty("the standard projection must advertise standard tools");
+        var advertisedStd = standardTools.Select(tool => tool.StandardName).ToHashSet(StringComparer.Ordinal);
 
         // Every 'implemented' index tool is advertised (FULL tool coverage).
         var implementedIndexTools = indexTools.Where(kvp => kvp.Value == "implemented").Select(kvp => kvp.Key);

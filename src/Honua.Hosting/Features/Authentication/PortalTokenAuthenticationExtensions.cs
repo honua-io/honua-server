@@ -163,6 +163,9 @@ public static class PortalTokenAuthenticationExtensions
         // durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
         services.TryAddSingleton<IOAuthClientStore>(sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton(sp => new PortalOAuthClientBinding(
+            sp.GetRequiredService<IOAuthClientStore>(),
+            sp.GetService<TimeProvider>() ?? TimeProvider.System));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
         // Process-local defaults for non-Postgres providers. The server's Postgres
@@ -236,6 +239,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             if (result.Succeeded && result.Principal is not null)
             {
                 context.User = result.Principal;
+                context.Features.Set(new LiveStreamAdmissionFeature(PortalTokenAuthenticationExtensions.PortalTokenScheme, result.Properties?.ExpiresUtc));
                 if (context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey))
                 {
                     // RFC 6750 §2.3: a response to a request whose credential was in the URI

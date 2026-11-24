@@ -228,6 +228,7 @@ public sealed partial class CapabilityManifestEndpointTests
         }).ToArray();
         await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
             edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ShareSchemaWith(_fixture)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFeatureOutputFormatRegistry>();
@@ -654,15 +655,15 @@ public sealed partial class CapabilityManifestEndpointTests
                     "analytics.buffer-aggregate",
                     "analytics.density");
 
-            var mapPackage = GetCapability(document.RootElement, "package.map");
-            mapPackage.GetProperty("available").GetBoolean().Should().BeTrue();
-            mapPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
-            mapPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+            var map = GetCapability(document.RootElement, "package.map");
+            map.GetProperty("available").GetBoolean().Should().BeTrue();
+            map.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            map.TryGetProperty("entitlementKey", out _).Should().BeFalse();
 
-            var appPackage = GetCapability(document.RootElement, "package.app");
-            appPackage.GetProperty("available").GetBoolean().Should().BeTrue();
-            appPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
-            appPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+            var app = GetCapability(document.RootElement, "package.app");
+            app.GetProperty("available").GetBoolean().Should().BeTrue();
+            app.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            app.TryGetProperty("entitlementKey", out _).Should().BeFalse();
         }
         finally
         {
@@ -1138,6 +1139,8 @@ public sealed partial class CapabilityManifestEndpointTests
         var legacyFamilies = legacyDocument.RootElement
             .GetProperty("packages").GetProperty("families").GetRawText();
         derivedFamilies.Should().Be(legacyFamilies);
+        derivedFamilies.Should().Contain("\"id\":\"map\"").And.Contain("\"id\":\"app\"");
+        derivedFamilies.Should().NotContain("map-package").And.NotContain("app-package");
     }
 
     [IntegrationTest]

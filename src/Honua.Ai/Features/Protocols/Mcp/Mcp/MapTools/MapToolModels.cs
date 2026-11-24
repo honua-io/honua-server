@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
@@ -155,6 +156,12 @@ internal sealed class McpQueryFeaturesArgument
 
     [JsonPropertyName("bboxSrid")]
     public int? BboxSrid { get; set; }
+
+    [JsonPropertyName("geometry")]
+    public JsonElement? Geometry { get; set; }
+
+    [JsonPropertyName("geometrySrid")]
+    public int? GeometrySrid { get; set; }
 
     [JsonPropertyName("outFields")]
     public IReadOnlyList<string>? OutFields { get; set; }

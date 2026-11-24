@@ -11,6 +11,11 @@ public sealed record OperationRequest
     [JsonIgnore]
     public string? VerifiedStudioDraftOwnerId { get; init; }
 
+    // Set only by the canonical Studio runtime: every owner the call touches (the draft, a requested
+    // owner and the parent item) is the Studio actor bound to the call.
+    [JsonIgnore]
+    public bool VerifiedStudioDraftWithinActor { get; init; }
+
     [JsonIgnore]
     public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
     public required string OperationId { get; init; }

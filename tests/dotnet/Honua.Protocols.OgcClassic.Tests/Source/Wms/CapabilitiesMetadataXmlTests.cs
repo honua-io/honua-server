@@ -118,13 +118,11 @@ public sealed class CapabilitiesMetadataXmlTests
             .Where(element => element.Elements().Any(child => child.Name.LocalName is "Name" or "Identifier"))
             .ToArray();
         Assert.Equal(2, layers.Length);
+        // Layer titles come from the metadata crosswalk, which trims surrounding whitespace; abstracts keep it.
         Assert.All(layers, layer =>
         {
-            Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Title").Value);
-            if (request.LayerType != MetadataV2LayerType.WmtsLayer)
-            {
-                Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Abstract").Value);
-            }
+            Assert.Equal(expected.Trim(), layer.Elements().Single(child => child.Name.LocalName == "Title").Value);
+            Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Abstract").Value);
         });
     }
 

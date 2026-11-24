@@ -16,6 +16,7 @@ Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess,
 | Capability key | `serve.wps` |
 | Category | Serve |
 | Edition | Community |
+| Status | preview |
 | Surface maturity | 3 preview |
 | Registry entries | 3 |
 | Proving tests | 31 |
@@ -25,3 +26,8 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Protocols](../../concepts/protocols.md)
+
+## Availability
+
+Status is **preview**.
+This capability has no runtime manifest ID in the published crosswalk. Do not infer a per-capability experimental switch from its licensing key.

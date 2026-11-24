@@ -47,14 +47,24 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
+        var guardrail = ResolveGuardrail(gatewayRequest);
+
+        // An agent authors its own unpublished draft directly; publishing it stays a human decision.
+        if (AgentApprovalRule.IsAgent(context.Roles)
+            && AgentApprovalRule.IsAgentDraftAuthoring(descriptor.OperationId)
+            && IsBuiltInPrivateDraftPolicy(guardrail, gatewayRequest, descriptor.OperationId)
+            && IsAgentOwnedDraft(request, context))
+        {
+            return PolicyDecision.Allowed;
+        }
+
         if (AgentApprovalRule.Applies(descriptor, context.Roles))
         {
-            var agentGuardrail = ResolveGuardrail(gatewayRequest);
-            return agentGuardrail.Tier == GuardrailTier.Blocked
+            return guardrail.Tier == GuardrailTier.Blocked
                 ? new PolicyDecision
                 {
                     Kind = PolicyDecisionKind.Deny,
-                    Reason = agentGuardrail.Source,
+                    Reason = guardrail.Source,
                 }
                 : AgentApprovalRule.Decision;
         }
@@ -67,7 +77,6 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        var guardrail = ResolveGuardrail(gatewayRequest);
         if (IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
             && IsOwnedDraftMutation(request, context)
             && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
@@ -107,6 +116,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         || (!string.IsNullOrWhiteSpace(context.PrincipalId)
             && string.Equals(request.VerifiedStudioDraftOwnerId, context.PrincipalId, StringComparison.Ordinal));
 
+    // Stricter than the human rule: the Studio runtime verified that every owner the call touches is
+    // the actor bound to it, and an agent without a principal id never qualifies.
+    private static bool IsAgentOwnedDraft(OperationRequest request, OperationPolicyContext context) =>
+        !string.IsNullOrWhiteSpace(context.PrincipalId) && request.VerifiedStudioDraftWithinActor;
+
     private async Task<bool> IsInteractiveHumanAsync(CancellationToken cancellationToken)
     {
         if (_resolveInitiation is null) return false;
@@ -114,6 +128,14 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         return initiation is (OperationInitiationKind.Human,
             OperationInitiationChannel.InteractiveOidc or OperationInitiationChannel.InteractivePassword);
     }
+
+    // The built-in draft policy on every edition and licensing mode; an operator override never qualifies.
+    private static bool IsBuiltInPrivateDraftPolicy(
+        GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>
+        guardrail.Tier != GuardrailTier.Blocked
+        && guardrail.Source is DefaultGuardrailLadder.DefaultPolicySource or DefaultGuardrailLadder.LicensingDisabledStudioCompositionSource
+        && request is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
+        && StudioDraftMutationContext.IsPrivateDraftOperation(operationId);
 
     private static bool IsDefaultPrivateDraftApproval(
         GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>

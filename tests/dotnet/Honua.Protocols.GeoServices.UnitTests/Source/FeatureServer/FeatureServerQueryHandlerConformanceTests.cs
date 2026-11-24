@@ -92,6 +92,22 @@ public sealed class FeatureServerQueryHandlerConformanceTests
         definitions[0].OutStatisticFieldName.Should().Be(alias);
     }
 
+    [Theory]
+    [InlineData("件数")]
+    [InlineData("länge_count")]
+    [InlineData("\U00020BB7_count")]
+    public void TryParseStatisticsDefinitions_UnicodeIdentifierAlias_IsAccepted(string alias)
+    {
+        var accepted = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            $$"""[{"statisticType":"count","onStatisticField":"fid","outStatisticFieldName":"{{alias}}"}]""",
+            CreateCustomOidResource("fid"),
+            out var definitions,
+            out var error);
+
+        accepted.Should().BeTrue(error);
+        definitions[0].OutStatisticFieldName.Should().Be(alias);
+    }
+
     private static MetadataV2Object CreateCustomOidResource(string objectIdFieldName) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "custom-oid", Name = "custom-oid" },

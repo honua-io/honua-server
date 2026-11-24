@@ -3,8 +3,10 @@
 
 namespace Honua.Core.Features.Infrastructure.Domain;
 
-public sealed record UploadProgress : IOperationProgress, ICancellableOperationProgress
+public sealed record UploadProgress : IOperationProgress, ICancellableOperationProgress, ITenantOwnedProgress
 {
+    public string? TenantId { get; init; }
+
     public required string UploadId { get; init; }
 
     public required OperationStatus Status { get; init; }

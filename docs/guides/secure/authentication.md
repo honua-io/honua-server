@@ -242,10 +242,14 @@ The operator bearer carries the administrator session's claims and reaches the
 same data routes as the session cookie, including MCP (send `Mcp-Session-Id`
 back on follow-up calls). Without a tenant claim it resolves the configured
 `MultiTenancy:DefaultTenantId`, as the cookie does; with no default tenant it is
-limited to tenant-independent administration routes. The bearer is stateless:
-signing out ends the cookie session but not a bearer already issued, which stays
-valid until it expires. The tenant is resolved on each request, so changing
-`MultiTenancy:DefaultTenantId` also moves bearers that are still valid. Keep
+limited to tenant-independent administration routes. A Console signed in with
+the session cookie can exchange it for a bearer with `POST /api/v1/admin/auth/bearer`
+(same origin, with the CSRF header). That bearer is bound to the session: it
+expires with it and stops working once the session signs out. A bearer from
+`password-token` has no session, so signing out does not end it; it stays valid
+until it expires or the administrator password is rotated. The tenant is
+resolved on each request, so changing `MultiTenancy:DefaultTenantId` also moves
+bearers that are still valid. Keep
 `Authentication:OperatorBearer:MaxLifetimeMinutes` short and rotate the signing
 key to revoke every outstanding bearer.
 
@@ -378,7 +382,9 @@ creation of the authorization URL and authorization-code exchange; request bodie
 cannot choose a redirect. Without the setting, the existing `Public:BaseUrl` plus
 `/admin/auth/callback` behavior is retained, including an existing public path prefix.
 This setting does not alter API links, ASP.NET OIDC middleware callback paths, or
-post-logout URLs. State, pending-session cookies and PKCE remain required.
+the emitted post-logout URL. The `/admin` post-logout landing does use it: it sends the
+browser to the sign-in page on the callback's origin. State, pending-session cookies and
+PKCE remain required.
 
 The authorization URL request accepts an optional `returnTo` field. The exact
 allowed paths are `/console/` (the default) and `/console/operate/connections`.
@@ -420,10 +426,19 @@ require an audience. See the [Cognito access-token format](https://docs.aws.amaz
 The broker logout URL uses `client_id` and `logout_uri` in Cognito mode, including
 when discovery omits `end_session_endpoint`. Register the public `/admin` URL
 (in this example, `https://api.example.com/honua/admin`) as an allowed sign-out
-URL on the Cognito app client. `LogoutEndpoint` must be an absolute HTTPS URL
+URL on the Cognito app client. After sign-out the provider returns the browser to
+that URL, and `GET /admin` redirects it to the Console sign-in page,
+`/console/auth/signin`. With `Oidc__AdminAuthCallbackUri` set, the redirect goes to
+the sign-in page on that callback's origin. `LogoutEndpoint` must be an absolute HTTPS URL
 without user information, query or fragment. Without Cognito mode, logout retains
 standard `post_logout_redirect_uri` and optional `id_token_hint` parameters.
 See [Cognito logout](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html).
+
+The OIDC middleware's own paths take no part in browser sign-in. A request to
+`/signout-oidc` (provider front-channel logout) gets an empty `200`, since there is
+no middleware session to end. A request to `/signin-oidc*` without a valid
+authorization response gets `400` and a logged warning, for example from a stale
+bookmark or a replayed callback.
 
 The browser must navigate the generated logout URL to clear the Cognito session.
 Clearing Console's local/operator sessions and upstream cookie jar alone does
@@ -528,7 +543,7 @@ they remain valid until revoked or expired. Revoke tokens that may have been iss
 from constrained keys and require affected clients to authenticate again. Upgrade
 all token-issuance nodes before resuming those exchanges.
 
-The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side, and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the GIS client SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. Every token restore re-reads the credential authority (including cloud-backed admin-password secrets, without using cached secret values), including when a token moves between server instances. An unavailable credential store refuses restoration. The legacy `Authentication__PortalToken__SourceRevalidationSeconds` setting no longer affects validation. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
+The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side, and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the GIS client SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. Every token restore re-reads the credential authority (including cloud-backed admin-password secrets, without using cached secret values), including when a token moves between server instances. An unavailable credential store refuses restoration. The legacy `Authentication__PortalToken__SourceRevalidationSeconds` setting no longer affects validation. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback. When `client_id` names a client registered under `/api/v1/admin/oauth-clients`, the bridge also holds it to that registration: `redirect_uri` must exactly match one of the client's redirect URIs, its grant types (when listed) must include `authorization_code` (a refresh also accepts `refresh_token`), and a deleted or expired client is refused at authorize, code exchange and refresh. Other `client_id` values, such as the app ids desktop and mobile clients send, keep the deployment allow-list alone.
 
 Named-user OAuth authorization-code tokens for registered native redirects (loopback
 HTTP URLs or custom app schemes) work with `Authorization: Bearer` without a

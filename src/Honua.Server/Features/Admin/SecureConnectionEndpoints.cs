@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -742,6 +744,11 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
             }
 
+            if (FindUnchangeableDatabaseField(request, existing) is { } unchangeable)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"{unchangeable} cannot change on a database connection."));
+            }
+
             var host = request.Host ?? existing.Host;
             var port = request.Port ?? existing.Port;
             var databaseName = request.DatabaseName ?? existing.DatabaseName;
@@ -911,6 +918,10 @@ internal static partial class SecureConnectionEndpoints
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(DataStoreProviderPolicy.RefusalMessage));
         }
+        catch (ResourceNotFoundException)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SecureConnectionLog.UpdateSecureConnectionFailed(logger, id, ex);
@@ -919,6 +930,38 @@ internal static partial class SecureConnectionEndpoints
                 detail: "An internal error occurred while updating the secure connection.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    // The update request also carries object-storage fields; a database connection cannot take them or a new name.
+    private static string? FindUnchangeableDatabaseField(UpdateSecureConnectionRequest request, DataConnection existing)
+    {
+        if (request.Name is not null && !string.Equals(request.Name, existing.Name, StringComparison.Ordinal))
+        {
+            return "name";
+        }
+
+        (string Field, string? Value)[] objectStorageFields =
+        [
+            ("bucket", request.Bucket), ("prefix", request.Prefix), ("region", request.Region),
+            ("roleArn", request.RoleArn), ("externalId", request.ExternalId),
+        ];
+        return objectStorageFields.FirstOrDefault(field => field.Value is not null).Field;
+    }
+
+    // Published layers name their connection in the metadata storage bindings; services.connection_id
+    // is only set when the publish created the service, so the foreign key alone misses the rest.
+    private static async Task<int> CountBoundLayersAsync(HttpContext context, Guid connectionId)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is null)
+        {
+            return 0;
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var connectionKey = connectionId.ToString("D");
+        return snapshot.Graph.StorageBindings.Count(binding =>
+            string.Equals(binding.ConnectionId, connectionKey, StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
@@ -933,6 +976,12 @@ internal static partial class SecureConnectionEndpoints
         {
             // Capture metadata before deletion so the audit record carries the target.
             var existing = await registry.GetConnectionAsync(id, context.RequestAborted);
+
+            if (await CountBoundLayersAsync(context, id) is > 0 and var boundLayers)
+            {
+                return TypedResults.Conflict(ApiResponse<object>.Failure(
+                    $"Connection is in use by {boundLayers} published layer(s)."));
+            }
 
             var deleted = await registry.DeleteConnectionAsync(id, context.RequestAborted);
             if (!deleted)
@@ -958,7 +1007,8 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Connection deleted"));
         }
-        catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
+        // Migration 008's RESTRICT key raises restrict_violation on PostgreSQL 18 and foreign_key_violation before it.
+        catch (Npgsql.PostgresException ex) when (ex.SqlState is Npgsql.PostgresErrorCodes.RestrictViolation or Npgsql.PostgresErrorCodes.ForeignKeyViolation)
         {
             SecureConnectionLog.SecureConnectionInUse(logger, id, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));

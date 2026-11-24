@@ -293,12 +293,12 @@ public sealed class StudioCompositionControlsTests
         // Same projection-overlay regression the interactions block guards against: a
         // controls block authored via add_control must survive every later
         // add-layer/set-view/add-widget edit AND leave the document's unmodelled members
-        // (mapPackageId, format, sourceBindings, ...) untouched.
+        // (mapId, format, sourceBindings, ...) untouched.
         using var stored = JsonDocument.Parse(
             """
             {
-              "mapPackageId": "map_maui_parcels",
-              "format": "honua_map_package.v1",
+              "mapId": "map_maui_parcels",
+              "format": "honua_map.v1",
               "sourceBindings": [{ "bindingId": "b1", "datasetId": "parcels" }],
               "layers": [{ "id": "parcels", "type": "fill" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }]
@@ -324,7 +324,7 @@ public sealed class StudioCompositionControlsTests
         Assert.Equal("yearBuilt", surviving.Config!.Value.GetProperty("field").GetString());
 
         var body = envelope.Body!.Value;
-        Assert.Equal("map_maui_parcels", body.GetProperty("mapPackageId").GetString());
+        Assert.Equal("map_maui_parcels", body.GetProperty("mapId").GetString());
         Assert.Equal(1, body.GetProperty("sourceBindings").GetArrayLength());
         Assert.Equal(["parcels", "zoning"], final.Layers.Select(l => l.Id));
         Assert.Equal(["area-chart", "legend"], final.Widgets.Select(w => w.Id));
@@ -336,7 +336,7 @@ public sealed class StudioCompositionControlsTests
     {
         // Null (rather than empty) is what keeps every unrelated map/app package from
         // growing a `"controls": []` member on its first unrelated edit.
-        using var stored = JsonDocument.Parse("""{"format":"honua_map_package.v1","layers":[]}""");
+        using var stored = JsonDocument.Parse("""{"format":"honua_map.v1","layers":[]}""");
         var envelope = BuildEnvelope(StudioPackageFamily.Map, stored.RootElement.Clone());
 
         var written = StudioCompositionBodyEditor.WriteBody(

@@ -14,144 +14,49 @@ merged Server commit.
 
 ## Provenance
 
-- `geospatial-mcp/` is byte-identical to `spec/schemas/` of `geospatial-mcp`
-  trunk commit **`eb53989cc61c856261cf017b4b5a8e721317dc41`**
-  ("feat: direct geoprocessing verbs (analysis profile) +
-  geometryPrecision/maxInlineBytes (#55)", 2026-07-06), re-vendored wholesale
-  per honua-server#2496. Verify with
-  `diff -r <geospatial-mcp>/spec/schemas geospatial-mcp/` (compare LF blob
-  content; this repo normalizes to LF).
-- `fixtures/` mirrors the standard's own conformance fixture tree
-  (`conformance/fixtures/` at the same commit), minus the upstream `README.md`
-  and `validate.py` (not test inputs), plus the two Honua-extension fixture
-  directories noted below.
-- The pin is deliberately held at `eb53989` (pre geospatial-mcp#58): the #58
-  platform-ops schemas are marked implemented in the manifest but honua-server
-  does not serve those tools yet, so re-vendoring past #58 would introduce
-  conformance failures. The post-#58 bump is owned by #2555/#2566, which
-  implement the new tools and vendor their schemas together.
-- Do not hand-edit. Re-vendor the whole tree from a single pinned upstream
-  commit when the schemas change, and update this note with the new commit.
+The base schema tree and upstream JSON fixtures are refreshed from geospatial-mcp
+commit **`417d6a111f7a28b7f5405170b4b2923f0572e111`** on `fix/s-vocab-map-app-wire-contract`. This is a pre-merge
+pin for the coordinated Map/App contract migration. Its standard reference
+manifest was regenerated from server producer commit
+`23a0a9c243bdcdc261ee0e8db7cf9c10a7f3f130`, with implementation extensions
+reported separately; strict conformance and all 71 upstream fixtures pass. The
+pinned changes rename identifiers and resource references without compatibility
+aliases and align control identifiers with runtime validation.
 
-### ADR-0030 composition-interaction schemas (PRE-MERGE pin)
+The base schema files come from `spec/schemas/`, fixtures from
+`conformance/fixtures/`, and the skills catalog and live-surface contract from
+`skills/`. Do not hand-edit upstream files. Refresh upstream files from a
+pinned commit and record the pin here; retain the scoped pins below.
 
-Three files are pinned to an **unmerged** upstream branch rather than to the
-`eb53989` trunk commit above:
+Existing server input-validation constraints and the scoped upstream updates
+below remain layered over the base snapshot. These include closed input
+objects, paired service selectors and the server catalog declarations.
 
-- `geospatial-mcp/tools/bind_interaction.schema.json`
-- `geospatial-mcp/tools/remove_interaction.schema.json`
-- `geospatial-mcp/common/interactions.schema.json`
-
-They are byte-identical to `spec/schemas/` on geospatial-mcp branch
-`feat/adr-0030-interactions` (commit `9cbc35e`, "feat(spec): declarative
-interactions and layout for composition documents (composition profile)"),
-proposed in **geospatial-mcp PR #67** and **not yet merged to that repo's
-trunk**. Honua ships the server-side reference implementation of ADR-0030
-(`honua_studio_bind_interaction` / `honua_studio_remove_interaction`), so the
-schemas are vendored ahead of the upstream merge to keep the conformance suite
-binding.
-
-Two honest consequences, recorded here rather than papered over:
-
-- The upstream `index.json` marks both tools `implementationStatus:
-  "known-gap"` with `referenceToolName: null` (the ADR was written before this
-  implementation landed). The vendored `index.json` copy marks them
-  `implemented` with the reference tool names, which is what is true of the
-  live surface. **When PR #67 merges, the upstream index flips to match and
-  these entries must be re-vendored rather than kept hand-edited.**
-- The upstream fixtures under `conformance/fixtures/tools/{bind,remove}_interaction/`
-  address a composition document by `mapPackageId`. Honua addresses the
-  optimistic-concurrency draft the composition lives in, a spelling ADR-0030
-  admits as `x-honua-reference-shape` and the tool schemas declare
-  (`draftId` + `generation`). The vendored fixtures are therefore the
-  reference-shape variant of the upstream instances — they validate against
-  both the standard schema and Honua's live `inputSchema`, which is the
-  property the conformance suite actually asserts.
-- Files are copied to the test output directory (`CopyToOutputDirectory`) and
-  loaded at test time.
-
-### ADR-0031 composition-control schemas (PRE-MERGE pin)
-
-Three more files are pinned to an **unmerged** upstream branch:
-
-- `geospatial-mcp/tools/add_control.schema.json`
-- `geospatial-mcp/tools/remove_control.schema.json`
-- `geospatial-mcp/common/controls.schema.json`
-
-They are byte-identical to `spec/schemas/` on geospatial-mcp branch
-`feat/adr-0031-controls` (commit `589c8bf`, "feat(spec): controls collection and
-add_control/remove_control (composition profile)"), proposed in **geospatial-mcp
-PR #69** and **not yet merged to that repo's trunk**. Honua ships the
-server-side reference implementation of ADR-0031
-(`honua_studio_add_control` / `honua_studio_remove_control`, honua-server#3193),
-so the schemas are vendored ahead of the upstream merge for the same reason the
-ADR-0030 pair is.
-
-The same two consequences apply verbatim: the upstream `index.json` marks both
-tools `implementationStatus: "known-gap"` with `referenceToolName: null`, while
-the vendored copy marks them `implemented` with the live reference tool names —
-**re-vendor rather than hand-edit once PR #69 merges** — and the vendored
-fixtures under `fixtures/tools/{add,remove}_control/` are the
-`draftId` + `generation` reference-shape variants of the upstream
-`mapPackageId` instances, which is exactly what the conformance suite asserts
-against both schemas.
-
-The conformance tests validate representative valid argument/payload instances
-against both Honua's live schema and the vendored standard schema, and assert
-structural alignment (required fields, enum values) for the tools Honua
-implements today. Standard tools Honua does not yet implement as discrete MCP
-tools (the map/app composition and publish families, the `mutation` profile's
-`edit_features` per ADR-0028, and the `analysis` profile's direct
-geoprocessing verbs) are tracked as **known-gaps**: their absence does not
-fail the suite; only NON-CONFORMANCE of an implemented tool fails.
+Server-only tool and result schemas remain Honua extensions. Composition
+control and interaction fixtures retain the documented Honua draft reference
+shape (`draftId` and `generation`) rather than the standard's Map identity;
+these variants are validated against both the standard and live tool schemas.
+The server-owned `ops-parity-map.yaml` remains separate from upstream schemas.
 
 ## Service-local selectors (pre-merge pin)
 
 The `query_features`, `render_map`, `get_style`, `apply_style_preset`,
 `list_layers` and `resolve_entity` input/result schema files and fixture
-directories, plus `common/service-layer-reference.schema.json`, are copied
-byte for byte from geospatial-mcp commit
+directories, plus `common/service-layer-reference.schema.json`, retain the selector contract from geospatial-mcp commit
 **`7a6132ef66393139fe03648ac4670c7db18cec5e`**, reviewed in
 [PR #187](https://github.com/honua-io/geospatial-mcp/pull/187).
 They use `serviceLayerIndex` and reject the obsolete `layerId` selector.
-The existing index and other schema families retain their separately documented
-pins; this scoped refresh does not change their implementation declarations.
+The Map/App snapshot and existing server validation constraints layer over
+these selectors; the obsolete selector remains rejected.
 Refresh this pin to the merged upstream commit after certification against the
 matching server candidate passes.
 
-## Skills live-surface contract provenance
+## Honua catalog extensions
 
-- `geospatial-mcp/skills/` vendors `skills/catalog.json`,
-  `skills/catalog.schema.json` from
-  the reviewed service-local selector commit **`7a6132ef66393139fe03648ac4670c7db18cec5e`**.
-- `skills/contracts/live-surface.json` is copied byte for byte from the
-  reviewed service-local selector commit above.
-- The MCP conformance suite resolves the contract's canonical tool names to
-  Honua's production descriptors and checks their advertised input schemas.
-- Skill prose and evaluation artifacts remain owned by geospatial-mcp and are
-  not vendored into honua-server.
-
-## Honua extensions (`x-honua-extension`)
-
-A few schemas under `geospatial-mcp/tools/` are **documented Honua extensions**
-over the bare standard taxonomy rather than copies of an upstream schema. They
-carry `"x-honua-extension": true` in the schema body:
-
-- `resolve_entity.schema.json` — `honua_resolve_entity` (#1949): natural-language
-  text → ranked service/layer references grounded in the live catalog.
-- `list_capabilities.schema.json` — `honua_list_capabilities` (#1949): a
-  self-describing manifest of the live tool/resource surface for a cold client
-  LLM.
-
-These are exposed as first-class reference-implementation tools while the
-`geospatial-mcp` standard formalizes capability discovery / entity resolution
-(the standard currently models them as `CapabilityCatalog` reads). When the
-upstream standard publishes canonical schemas for them, re-vendor and drop the
-extension marker. They participate in the full conformance assertions (required
-fields + fixture validation) because their live and vendored shapes are authored
-together; their fixtures under `fixtures/tools/resolve_entity/` and
-`fixtures/tools/list_capabilities/` are maintained here (the upstream fixture
-tree does not carry them yet).
+The vendored `index.json` includes the upstream catalog plus server-only tools
+and results. Those entries preserve reference-implementation coverage while the
+upstream catalog owns standard names and resource families. `resolve_entity`
+and `list_capabilities` now use their upstream schemas and fixtures.
 
 ## Platform-operation result contracts (scoped upstream pin)
 
@@ -165,9 +70,10 @@ copied byte for byte from geospatial-mcp commit
 This scoped refresh accepts canonical evidence posture and nullable release-plane
 runtime/artifact fields; other schema families retain their documented pins.
 
+## Server-only operation result contract
+
 `supported_operation_kinds.result.schema.json` is a server-authored Honua
-extension, marked `x-honua-extension`, rather than an upstream copy. Its enum
-tracks supported canonical executor kinds, including `Geoprocess`. The runtime
-response remains a projection of registered executors; the schema does not add
-executors. Result tests validate fixtures against live and reference schemas and
-preserve JSON text/structured-content parity.
+extension, marked `x-honua-extension`. Its enum tracks supported canonical
+executor kinds, including `Geoprocess`. The runtime response remains a
+projection of registered executors. Result tests validate fixtures against live
+and reference schemas and preserve JSON text/structured-content parity.

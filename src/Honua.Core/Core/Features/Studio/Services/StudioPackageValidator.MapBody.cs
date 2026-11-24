@@ -9,9 +9,9 @@ namespace Honua.Core.Features.Studio.Services;
 
 public sealed partial class StudioPackageValidator
 {
-    private const string MapPackageFormat = "honua_map_package.v1";
+    private const string MapFormat = "honua_map.v1";
 
-    private static readonly string[] MapPackageStatuses = ["Draft", "Composing", "Ready", "Failed", "Expired"];
+    private static readonly string[] MapStatuses = ["Draft", "Composing", "Ready", "Failed", "Expired"];
 
     private static readonly string[] MapSourceProtocols =
     [
@@ -34,14 +34,14 @@ public sealed partial class StudioPackageValidator
     {
         const string path = "/body";
 
-        MapRequiredIdentifier(body, "mapPackageId", path, diagnostics);
+        MapRequiredIdentifier(body, "mapId", path, diagnostics);
         var format = MapString(body, "format", path, required: true, diagnostics);
-        if (format is not null && !string.Equals(format, MapPackageFormat, StringComparison.Ordinal))
+        if (format is not null && !string.Equals(format, MapFormat, StringComparison.Ordinal))
         {
-            diagnostics.Add(Error("studio.map.format.invalid", $"{path}/format", "map body format must be honua_map_package.v1."));
+            diagnostics.Add(Error("studio.map.format.invalid", $"{path}/format", "map body format must be honua_map.v1."));
         }
 
-        MapEnum(body, "status", path, MapPackageStatuses, required: false, diagnostics);
+        MapEnum(body, "status", path, MapStatuses, required: false, diagnostics);
         MapTimestamp(body, "createdAt", path, diagnostics);
         MapTimestamp(body, "updatedAt", path, diagnostics);
         MapString(body, "templateId", path, required: false, diagnostics);

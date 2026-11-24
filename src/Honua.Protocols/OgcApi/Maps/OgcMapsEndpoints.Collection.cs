@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -131,9 +132,7 @@ public static partial class OgcMapsEndpoints
         bool preserveQuery,
         CancellationToken cancellationToken)
     {
-        var title = publication.TitleOverride
-            ?? resource.Metadata.Title
-            ?? resource.Metadata.Name;
+        var title = DescriptiveMetadataResolver.DatasetTitle(resource, publication) ?? resource.Metadata.Name;
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var collectionPath = $"{baseUrl}/ogc/maps/collections/{Uri.EscapeDataString(canonicalId)}";
@@ -176,7 +175,7 @@ public static partial class OgcMapsEndpoints
         {
             Id = canonicalId,
             Title = title,
-            Description = resource.Metadata.Description,
+            Description = DescriptiveMetadataResolver.DatasetDescription(resource, publication),
             Links = links,
             Extent = await BuildCollectionExtentAsync(resource, coordinateTransformService, cancellationToken)
         };

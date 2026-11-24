@@ -311,7 +311,14 @@ internal static class WorkflowPackageEndpoints
         PublishWorkflowPackageRequest request,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-        => await ExecuteVersionMutationAsync(
+    {
+        if (!WorkflowPackageRequestLimits.IsDefined(request.Target))
+        {
+            SetNoStore(context);
+            return BadRequest(context, $"target value '{(int)request.Target}' is not defined.");
+        }
+
+        return await ExecuteVersionMutationAsync(
             context,
             async () =>
             {
@@ -320,6 +327,7 @@ internal static class WorkflowPackageEndpoints
                     .ConfigureAwait(false);
                 return TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(publication));
             }).ConfigureAwait(false);
+    }
 
     private static async Task<IResult> HandleDeletePublication(
         HttpContext context,
@@ -342,6 +350,11 @@ internal static class WorkflowPackageEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (!WorkflowPackageRequestLimits.IsDefined(request.Status))
+        {
+            return BadRequest(context, $"status value '{(int)request.Status}' is not defined.");
+        }
+
         var updated = await service.SetPublicationStatusAsync(publicationId, request.Status, cancellationToken).ConfigureAwait(false);
         return updated is null
             ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")

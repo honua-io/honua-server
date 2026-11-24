@@ -97,6 +97,25 @@ The default `honua` schema skips this migration. With a custom schema, readiness
 requires this migration even when startup migrations are disabled. Optional raster
 provisioning uses the registry location when enabled after the move.
 
+Migration `231_AdoptConfiguredFeatureStoreSchema.sql` moves the shared managed
+`features` table into the configured schema from `public`, where migration 001
+creates it (or `honua` on older hand-built databases). Rows, the table identity,
+indexes and the object ID sequence move with it, and managed-layer registry rows
+that recorded the old location are updated. A vector-only database with
+`Database:Schema=public` already has the table in place. Choose a separate Honua
+schema when PostGIS Raster is installed in `public`, where its
+`raster_overviews` view conflicts with Honua's raster table. Migration 231 looks
+for the Honua managed feature table, using its column types and generated
+`objectid` primary key to identify it. The migration stops without changes when
+the configured schema already has a `features` table and a shared one also exists
+elsewhere, or when no shared table is found. The migration and readiness both
+require the managed table's columns and generated primary key. The default
+`honua` schema skips migration 231. With a custom schema, readiness requires it,
+as it does 227, even when startup migrations are disabled.
+Switching an existing install from the default schema to a custom one is not
+covered: metadata snapshots taken before the switch can still name
+`public.features`.
+
 For an existing database, back up the database and stop all older server and worker
 instances before running migrate-only. Review the migration plan and apply its
 one-shot contract approval nonce, then start the new instances with identical
@@ -267,7 +286,7 @@ Standard output carries one JSON line; logs go to standard error. The summary (`
 | `outcome` | `completed`, `refused` (a safety gate or the configuration stopped the run) or `failed`. |
 | `code`, `exitCode` | The typed reason and the process exit code, as in the table below. |
 | `message` | The reason in words. Connection details are never included. |
-| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current. |
+| `appliedScripts` | Scripts this run applied, in order. Empty when the journal was already current, and empty on a failed run. When a script fails, the whole batch rolls back; when the check after applying fails, the scripts stay applied. After a failure, `public.schema_versions` is the record of what is applied. |
 | `schemaNumber` | The highest migration number the journal now holds. Set only on success. |
 | `binarySchemaNumber` | The highest migration number this image ships. |
 | `schemaVerified` | `true` once the runner has reconciled the journal with the physical schema. |

@@ -76,8 +76,8 @@ manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
 The full-matrix contract is the complete set enumerated by `expected-pairs.json`: 4 `js-cesium`, 6 `js`, 2
-`desktop-qgis`, 2 `cli`, 3 `geoservices-rest-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
-`py-pystac` envelopes — 27 pairs in total. A
+`desktop-qgis`, 4 `cli`, 3 `geoservices-rest-stub`, 2 `py-geopandas`, 4 `py-owslib`, 1 `duckdb`, 2 `r-sf`, and 1
+`py-pystac` envelopes — 29 pairs in total. A
 `workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
 only the requested `client_lane` values; the scheduled nightly run evaluates the
 entire manifest.
@@ -133,6 +133,16 @@ special handling.
 The baseline-bump cadence is scheduled quarterly via `/schedule`. Don't bump
 baselines as part of an unrelated feature PR — that hides regressions inside
 unrelated review.
+
+### Reviewed Maps discovery count reconciliation (2026-11-23)
+
+Nightly run [45244434631](https://github.com/honua-io/honua-server/actions/runs/45244434631)
+at `5ffad99dabb6615f6b8021ac312bb0c989ead543` reported 15 conformance
+classes for OpenLayers `js/ogc-maps` `CERT-DISC-01`, up from 11.
+Commit `2389b8b59d` added the four OGC API Common Part 1 declarations
+(`core`, `landing-page`, `json`, `oas30`) to Maps discovery. Only this
+case's measured count and descriptive note are reconciled; its passing
+status and the strict measurement comparison remain unchanged.
 
 ### Reviewed measured-count reconciliation (2026-10-26)
 

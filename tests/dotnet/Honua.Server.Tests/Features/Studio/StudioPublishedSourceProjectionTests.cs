@@ -334,8 +334,8 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
     private static JsonElement PackageBody<TLayers>(TLayers layers)
         => JsonSerializer.SerializeToElement(new
         {
-            mapPackageId = $"audience-{Guid.NewGuid():N}",
-            format = "honua_map_package.v1",
+            mapId = $"audience-{Guid.NewGuid():N}",
+            format = "honua_map.v1",
             status = "Ready",
             createdAt = "2026-10-20T00:00:00Z",
             layers,
@@ -344,8 +344,8 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
     private static JsonElement PackageBody<TLayers, TBindings>(TLayers layers, TBindings sourceBindings)
         => JsonSerializer.SerializeToElement(new
         {
-            mapPackageId = $"audience-{Guid.NewGuid():N}",
-            format = "honua_map_package.v1",
+            mapId = $"audience-{Guid.NewGuid():N}",
+            format = "honua_map.v1",
             status = "Ready",
             createdAt = "2026-10-20T00:00:00Z",
             layers,
@@ -359,7 +359,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
 
     private async Task<string> PublishBodyAsync(JsonElement body, string visibility)
     {
-        var key = body.GetProperty("mapPackageId").GetString()!;
+        var key = body.GetProperty("mapId").GetString()!;
         var request = new CreateStudioPackageDraftRequest
         {
             PackageKey = key,
@@ -367,7 +367,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             {
                 Family = StudioPackageFamily.Map,
                 SchemaVersion = "1.0",
-                Format = "honua_map_package.v1",
+                Format = "honua_map.v1",
                 Body = body,
             },
         };

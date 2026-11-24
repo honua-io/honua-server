@@ -88,11 +88,19 @@ internal static class TemporalExtentHelpers
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(featureReader);
 
-        var fields = resource.ReadTemporalFields();
-        if (string.IsNullOrWhiteSpace(fields.StartTimeField))
+        var configured = resource.ReadTemporalFields();
+        if (string.IsNullOrWhiteSpace(configured.StartTimeField))
         {
             return null;
         }
+
+        // Query the extent under the schema's spelling of each field, as the time filter already does:
+        // attribute keys and storage columns are case-sensitive, the configured names are not.
+        var fields = (
+            StartTimeField: ResolveSchemaFieldName(resource, configured.StartTimeField),
+            EndTimeField: string.IsNullOrWhiteSpace(configured.EndTimeField)
+                ? configured.EndTimeField
+                : ResolveSchemaFieldName(resource, configured.EndTimeField));
 
         var startPropertyType = ResolveSchemaPropertyType(resource, fields.StartTimeField);
         TemporalExtentResult? startExtent;
@@ -135,12 +143,15 @@ internal static class TemporalExtentHelpers
 
         var hasExtent = startExtent != null || endExtent != null;
         return new MetadataV2TemporalRange(
-            fields.StartTimeField!,
+            fields.StartTimeField,
             fields.EndTimeField,
             min,
             max,
             hasExtent);
     }
+
+    private static string ResolveSchemaFieldName(MetadataV2Object resource, string fieldName)
+        => TryFindSchemaTemporalField(resource, fieldName, out var resolvedName) ? resolvedName! : fieldName;
 
     private static TemporalPropertyType ResolveSchemaPropertyType(MetadataV2Object resource, string fieldName)
     {

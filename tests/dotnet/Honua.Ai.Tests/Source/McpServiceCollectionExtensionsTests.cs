@@ -33,8 +33,8 @@ public sealed partial class McpServiceCollectionExtensionsTests
             {
                 typeof(PublishedServiceResource),
                 typeof(DeploymentResource),
-                typeof(MapPackageResource),
-                typeof(AppPackageResource),
+                typeof(MapResource),
+                typeof(AppResource),
                 typeof(PromotionSurfaceIndexResource)
             }, "the default server composition cannot advertise promotion URIs backed only by empty state");
 
@@ -58,8 +58,8 @@ public sealed partial class McpServiceCollectionExtensionsTests
             {
                 typeof(PublishedServiceResource),
                 typeof(DeploymentResource),
-                typeof(MapPackageResource),
-                typeof(AppPackageResource),
+                typeof(MapResource),
+                typeof(AppResource),
                 typeof(PromotionSurfaceIndexResource)
             }, "the default composition opts the promotion surface in once canonical publishing + deployment persistence is present (#1951)");
     }

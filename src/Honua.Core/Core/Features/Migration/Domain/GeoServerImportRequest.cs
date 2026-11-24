@@ -32,6 +32,9 @@ public sealed record GeoServerImportRequest
 {
     public string? JobId { get; init; }
 
+    // The tenant that accepted the import; server-assigned, never read from the client request.
+    public string? TenantId { get; init; }
+
     public required string GeoServerRestUrl { get; init; }
 
     public string? Username { get; init; }

@@ -289,6 +289,14 @@ internal static class OperationsEndpoints
         }
     }
 
+    // Layer publishes queued as background jobs are read live: hosts without the background
+    // reconciler would otherwise report the stored Queued handle after the job has finished.
+    private static readonly HashSet<string> LiveJobStatusOperations = new(StringComparer.Ordinal)
+    {
+        ServicePublishOperation.OperationId,
+        AdminApiOperationExecutor.LayerPublishOperationId,
+    };
+
     private static async Task<IResult> HandleGetHandleStatus(
         HttpContext context,
         string handleId,
@@ -311,13 +319,13 @@ internal static class OperationsEndpoints
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }
 
-        if (string.Equals(handle.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal)
+        if (LiveJobStatusOperations.Contains(handle.OperationId)
             && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
             && !string.IsNullOrWhiteSpace(handle.JobId))
         {
             var executor = context.RequestServices.GetServices<IOperationExecutor>()
                 .FirstOrDefault(candidate => string.Equals(
-                    candidate.OperationId, ServicePublishOperation.OperationId, StringComparison.Ordinal));
+                    candidate.OperationId, handle.OperationId, StringComparison.Ordinal));
             if (executor is not null)
             {
                 var live = await executor.GetStatusAsync(handle, cancellationToken).ConfigureAwait(false);

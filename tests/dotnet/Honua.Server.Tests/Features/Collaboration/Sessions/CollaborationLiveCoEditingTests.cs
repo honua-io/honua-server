@@ -1415,13 +1415,13 @@ public sealed class CollaborationLiveCoEditingTests(CollaborationLiveCoEditingTe
     }
 
     private static Task<StudioPackageDraft> CreateMapDraftAsync(HttpClient client) =>
-        CreateDraftAsync(client, StudioPackageFamily.Map, "honua_map_package.v1");
+        CreateDraftAsync(client, StudioPackageFamily.Map, "honua_map.v1");
 
     private static Task<StudioPackageDraft> CreateTwoLayerMapDraftAsync(HttpClient client) =>
         CreateDraftAsync(
             client,
             StudioPackageFamily.Map,
-            "honua_map_package.v1",
+            "honua_map.v1",
             """
             {"layers":[{"id":"parcels","title":"Parcels","visible":true},
                        {"id":"roads","title":"Roads","visible":true}]}

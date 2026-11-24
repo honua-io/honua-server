@@ -99,6 +99,10 @@
       "description": "Package validation and read-only preview planning"
     },
     {
+      "name": "Maps",
+      "description": "Map publication as an immutable version and publication request"
+    },
+    {
       "name": "Compliance",
       "description": "Compliance posture dashboard, evidence export, data-residency policy evaluation, and encryption key rotation."
     },
@@ -5168,14 +5172,14 @@
         }
       }
     },
-    "/packages": {
+    "/maps": {
       "post": {
         "tags": [
-          "Packages"
+          "Maps"
         ],
-        "summary": "Publish Map Package",
-        "description": "Creates a Studio map-package draft, saves an immutable version, and creates its publication request.",
-        "operationId": "publishMapPackage",
+        "summary": "Publish Map",
+        "description": "Creates a Studio Map draft, saves an immutable version, and creates its publication request.",
+        "operationId": "publishMap",
         "requestBody": {
           "required": true,
           "content": {
@@ -5183,11 +5187,28 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "package"
+                  "map"
                 ],
                 "properties": {
-                  "package": {
+                  "map": {
                     "type": "object",
+                    "required": [
+                      "mapId",
+                      "format"
+                    ],
+                    "properties": {
+                      "mapId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "honua_map.v1"
+                        ]
+                      }
+                    },
                     "additionalProperties": true
                   },
                   "workspaceId": {
@@ -5209,13 +5230,79 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Map package published as a version and publication request.",
+          "202": {
+            "description": "Map saved as an immutable version and its publication proposed for approval.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "mapId",
+                    "itemId",
+                    "versionId",
+                    "contentHash",
+                    "map",
+                    "publicationStatus",
+                    "proposalId",
+                    "operationInstanceId",
+                    "correlationId"
+                  ],
+                  "properties": {
+                    "mapId": {
+                      "type": "string"
+                    },
+                    "itemId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "map": {
+                      "type": "object",
+                      "required": [
+                        "mapId",
+                        "format"
+                      ],
+                      "properties": {
+                        "mapId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "format": {
+                          "type": "string",
+                          "enum": [
+                            "honua_map.v1"
+                          ]
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "publicationStatus": {
+                      "type": "string",
+                      "enum": [
+                        "AwaitingApproval"
+                      ]
+                    },
+                    "proposalId": {
+                      "type": "string"
+                    },
+                    "operationInstanceId": {
+                      "type": "string"
+                    },
+                    "auditId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "correlationId": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -19833,6 +19920,9 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
@@ -20747,6 +20837,9 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
@@ -20847,6 +20940,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
@@ -20890,6 +20986,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -22178,6 +22277,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
@@ -22221,6 +22323,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"

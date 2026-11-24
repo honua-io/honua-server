@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
@@ -527,14 +528,15 @@ internal static class ODataUtilityService
 
     public static Dictionary<string, object?> BuildLayerPayload(
         MetadataV2Object resource,
-        int layerIndex)
+        int layerIndex,
+        MetadataV2Layer? publication)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
             ["Id"] = layerIndex,
             ["Name"] = resource.Metadata.Name,
-            ["Description"] = resource.Metadata.Description,
+            ["Description"] = DescriptiveMetadataResolver.DatasetDescription(resource, publication),
             ["GeometryType"] = resource.ReadGeometryType().ToString(),
             ["Srid"] = resource.ReadSrid() ?? 0
         };
