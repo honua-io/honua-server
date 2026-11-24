@@ -155,7 +155,7 @@ internal static class JobResultFeatureSummary
                 FeatureCount = _count,
                 Fields = _fields,
                 GeometryTypes = [.. _geometryTypes],
-                MatchedFeatureCount = _hasJoinCount ? _matched : null,
+                MatchedFeatureCount = _hasJoinCount || (kind == ResultKind.SpatialJoin && _count == 0) ? _matched : null,
                 RowOffset = window.Offset,
                 Rows = _rows,
                 OmittedRowOffsets = _omittedRowOffsets.Count > 0 ? _omittedRowOffsets : null,

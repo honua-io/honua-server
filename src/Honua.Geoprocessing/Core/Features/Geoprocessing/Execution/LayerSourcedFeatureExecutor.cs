@@ -549,14 +549,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         {
             return;
         }
-        var metadata = services.GetService<IMetadataV2GraphProvider>();
-        if (metadata is null || ResolveFieldLayerId(inputs, request) is not { } layerId)
+        if (ResolveFieldLayerId(inputs, request) is not { } layerId)
         {
             return;
         }
 
-        var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+        var metadata = services.GetService<IMetadataV2GraphProvider>();
+        var snapshot = metadata is null ? null : await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null || !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
             || resource.SchemaFields.Count == 0)
         {
             if (references.Any(reference => reference.Parameter == "carryFields"))

@@ -145,6 +145,24 @@ public sealed class McpGetJobResultsToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_get_job_results")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_EmptyInlineGeoJsonJoin_ReturnsZeroMatchedFeatures()
+    {
+        var uri = JoinResultUri(joinCounts: [], padding: 0);
+        _jobService.GetJobResultsAsync("gp-empty", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var result = (await Dispatch(ToolCall("results-empty", """{"jobId":"gp-empty"}""")))!.Result!.Value;
+        var summary = result.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("featureCount").GetInt32().Should().Be(0);
+        summary.GetProperty("matchedFeatureCount").GetInt32().Should().Be(0);
+        result.GetProperty("content")[0].GetProperty("text").GetString().Should().Contain("0 features, 0 matched");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_IncludeUriAndLastPage_KeepsTheUriAndEndsPaging()
     {
         var uri = JoinResultUri(joinCounts: [1, 0, 2], padding: 1200);

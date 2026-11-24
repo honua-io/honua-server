@@ -97,20 +97,23 @@ public sealed partial class LayerSourcedExecutorTests
     }
 
     [UnitTheory]
-    [InlineData("missing", "not a field of layer 2", 2)]
-    [InlineData("NAME", "did you mean 'name'", 2)]
-    [InlineData("name", "requires a known schema for layer 2", null)]
-    [InlineData("name", "requires a known schema for layer 2", 3)]
+    [InlineData("missing", "not a field of layer 2", 2, true)]
+    [InlineData("NAME", "did you mean 'name'", 2, true)]
+    [InlineData("name", "requires a known schema for layer 2", null, true)]
+    [InlineData("name", "requires a known schema for layer 2", 3, true)]
+    [InlineData("name", "requires a known schema for layer 2", null, false)]
     public async Task SpatialJoin_InvalidCarryField_RefusesInsteadOfPublishingNullValues(
-        string field, string error, int? layerWithKnownFields)
+        string field, string error, int? layerWithKnownFields, bool registerMetadata)
     {
         var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
         {
             [1] = [PointFeature(0, 0)],
             [2] = [BoxFeature(-1, -1, 1, 1, ("name", "Flood zone"))],
         });
-        var scopeFactory = BufferScopeFactory(source, layerWithKnownFields ?? 2, 3857, false,
-            schemaFields: layerWithKnownFields.HasValue ? [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }] : []);
+        var scopeFactory = registerMetadata
+            ? BufferScopeFactory(source, layerWithKnownFields ?? 2, 3857, false,
+                schemaFields: layerWithKnownFields.HasValue ? [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }] : [])
+            : ScopeFactory(source);
 
         var (status, uri, _) = await RunAsync(
             new LayerSpatialJoinExecutor(scopeFactory, Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
