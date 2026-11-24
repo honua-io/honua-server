@@ -19,7 +19,7 @@ Serve coverage data through WCS 2.0.1.
 | Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
-| Proving tests | 33 |
+| Proving tests | 34 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
