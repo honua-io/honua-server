@@ -10,8 +10,8 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-[Protocol(TestProtocols.Health)]
-[Operation(Operations.ReadinessCheck)]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class QualificationWedgeMarkerTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
