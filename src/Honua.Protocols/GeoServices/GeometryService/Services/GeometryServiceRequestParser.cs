@@ -347,6 +347,7 @@ internal static class GeometryServiceRequestParser
             using var doc = JsonDocument.Parse(raw);
             if (doc.RootElement.ValueKind == JsonValueKind.Object &&
                 doc.RootElement.TryGetProperty("wkid", out var wkidElement) &&
+                wkidElement.ValueKind == JsonValueKind.Number &&
                 wkidElement.TryGetInt32(out var wkid) &&
                 wkid > 0)
             {
@@ -406,7 +407,7 @@ internal static class GeometryServiceRequestParser
                     var i = 0;
                     foreach (var item in doc.RootElement.EnumerateArray())
                     {
-                        if (!item.TryGetDouble(out var d) || !double.IsFinite(d))
+                        if (item.ValueKind != JsonValueKind.Number || !item.TryGetDouble(out var d) || !double.IsFinite(d))
                         {
                             return ([], $"Invalid number in distances array at index {i}.");
                         }

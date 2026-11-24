@@ -2295,7 +2295,8 @@ internal sealed class GeometryServiceHandler(
                     return ([], "Each entry in 'coordinates' must be an [x, y] array with at least two numbers.");
                 }
 
-                if (!pair[0].TryGetDouble(out var x) || !pair[1].TryGetDouble(out var y)
+                if (pair[0].ValueKind != JsonValueKind.Number || pair[1].ValueKind != JsonValueKind.Number
+                    || !pair[0].TryGetDouble(out var x) || !pair[1].TryGetDouble(out var y)
                     || !double.IsFinite(x) || !double.IsFinite(y))
                 {
                     return ([], "Each coordinate in 'coordinates' must contain finite numeric x and y values.");
