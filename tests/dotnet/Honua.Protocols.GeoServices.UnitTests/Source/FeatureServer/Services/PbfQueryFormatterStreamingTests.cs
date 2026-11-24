@@ -369,6 +369,58 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
+    public async Task StreamAsPbfAsync_SourceCancelledAfterSpill_ReleasesSourceAndScratchFile()
+    {
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('x', 200_000)));
+        PbfFeatureSpool? spool = null;
+        string? scratchPath = null;
+        var sourceReleased = false;
+
+        using var cts = new CancellationTokenSource();
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext { RequestAborted = cts.Token };
+        context.Response.Body = body;
+
+        var act = async () => await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ReadFeaturesAsync(),
+                HasMoreResults = static () => false,
+                Resource = CreateLayerWithStringField(),
+                Options = new PbfStreamEncodingOptions { ReturnGeometry = false },
+                SpoolFactory = () => spool = new PbfFeatureSpool()
+            },
+            context,
+            context.RequestAborted);
+
+        await act.Should().ThrowAsync<OperationCanceledException>()
+            .Where(ex => ex.CancellationToken == cts.Token);
+        sourceReleased.Should().BeTrue();
+        body.Length.Should().Be(0);
+        File.Exists(scratchPath).Should().BeFalse();
+
+        async IAsyncEnumerable<Feature> ReadFeaturesAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                yield return feature;
+                scratchPath = spool!.ScratchPath;
+                scratchPath.Should().NotBeNullOrWhiteSpace();
+                File.Exists(scratchPath).Should().BeTrue();
+                cancellationToken.Should().Be(cts.Token);
+                await cts.CancelAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            finally
+            {
+                sourceReleased = true;
+            }
+        }
+    }
+
+    [Fact]
     public async Task StreamAsPbfAsync_ScratchFullOnFinalFlush_ThrowsServiceUnavailableWithZeroBytesWritten()
     {
         var layer = CreateLayerWithStringField();
