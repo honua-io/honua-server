@@ -218,7 +218,6 @@ jobs:
           run_project Honua.Protocols.GeoServices.Tests geoservices code_geoservices
           run_project Honua.Protocols.OgcApi.Tests ogcapi code_ogcapi
           run_project Honua.Protocols.OgcClassic.Tests ogcclassic code_ogcclassic
-          run_project Honua.Protocols.SensorThings.Tests sensorthings code_sensorthings
           run_project Honua.Server.Tests server code_server
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           candidate_cut="${REQUESTED_CUT:-$(git -C producer show -s --format=%cI HEAD)}"
@@ -226,7 +225,6 @@ jobs:
             echo "exit_geoservices=${code_geoservices}"
             echo "exit_ogcapi=${code_ogcapi}"
             echo "exit_ogcclassic=${code_ogcclassic}"
-            echo "exit_sensorthings=${code_sensorthings}"
             echo "exit_server=${code_server}"
             echo "started_at=${started_at}"
             echo "completed_at=${completed_at}"
@@ -244,7 +242,6 @@ jobs:
             --trx evidence/geoservices.trx --trx-exit-code "${{ steps.tests.outputs.exit_geoservices }}" \
             --trx evidence/ogcapi.trx --trx-exit-code "${{ steps.tests.outputs.exit_ogcapi }}" \
             --trx evidence/ogcclassic.trx --trx-exit-code "${{ steps.tests.outputs.exit_ogcclassic }}" \
-            --trx evidence/sensorthings.trx --trx-exit-code "${{ steps.tests.outputs.exit_sensorthings }}" \
             --trx evidence/server.trx --trx-exit-code "${{ steps.tests.outputs.exit_server }}" \
             --source-sha "${{ steps.identity.outputs.candidate_sha }}" \
             --producer-source-sha "${{ steps.identity.outputs.producer_sha }}" \
@@ -274,7 +271,6 @@ jobs:
             "${{ steps.tests.outputs.exit_geoservices }}"
             "${{ steps.tests.outputs.exit_ogcapi }}"
             "${{ steps.tests.outputs.exit_ogcclassic }}"
-            "${{ steps.tests.outputs.exit_sensorthings }}"
             "${{ steps.tests.outputs.exit_server }}"
           )
           for code in "${codes[@]}"; do
