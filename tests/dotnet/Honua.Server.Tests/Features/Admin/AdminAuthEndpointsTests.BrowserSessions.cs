@@ -307,6 +307,9 @@ public sealed partial class AdminAuthEndpointsTests
             using var callback = await browser.GetAsync("/admin/auth/callback?code=code-123&state=" + state);
             callback.StatusCode.Should().Be(HttpStatusCode.Redirect);
             callback.Headers.Location!.OriginalString.Should().Be(returnTo);
+            using var identity = await browser.GetAsync("/api/v1/admin/auth/session");
+            var session = await identity.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session!.IsAuthenticated.Should().BeTrue();
         }
 
         [IntegrationTheory]
