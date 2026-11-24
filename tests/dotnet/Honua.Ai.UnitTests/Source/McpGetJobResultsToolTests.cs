@@ -232,12 +232,29 @@ public sealed class McpGetJobResultsToolTests
         summary.GetProperty("nextRowOffset").GetInt32().Should().Be(1);
     }
 
-    private static string JoinResultUri(int[] joinCounts, int padding)
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_BufferWithJoinCountAttribute_DoesNotReportMatchedFeatures()
+    {
+        var uri = JoinResultUri([1], 0, "analytics.buffer");
+        _jobService.GetJobResultsAsync("gp-buffer", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var summary = (await Dispatch(ToolCall("results-buffer", """{"jobId":"gp-buffer"}""")))!
+            .Result!.Value.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("rows")[0].GetProperty("JOIN_COUNT").GetInt32().Should().Be(1);
+        summary.TryGetProperty("matchedFeatureCount", out _).Should().BeFalse();
+    }
+
+    private static string JoinResultUri(int[] joinCounts, int padding, string processId = "analytics.spatial-join")
     {
         var note = new string('n', padding);
         var features = joinCounts.Select((count, index) =>
             $$$"""{"type":"Feature","geometry":{"type":"Point","coordinates":[{{{index}}},{{{index}}}]},"properties":{"id":{{{index + 1}}},"note":"{{{note}}}","JOIN_COUNT":{{{count}}}}}""");
-        var json = $$"""{"type":"FeatureCollection","features":[{{string.Join(",", features)}}]}""";
+        var json = $$"""{"type":"FeatureCollection","processId":"{{processId}}","features":[{{string.Join(",", features)}}]}""";
         return "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -69,11 +70,11 @@ internal static class JobResultFeatureSummary
                 return null;
             }
 
-            var accumulator = new SummaryAccumulator(request.Window, request.Bytes);
+            var accumulator = new SummaryAccumulator(request.Window, request.Bytes, IsSpatialJoin(document.RootElement));
             foreach (var feature in features.EnumerateArray())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                accumulator.Add(feature);
+                accumulator.Add(feature, cancellationToken);
             }
 
             return accumulator.Build();
@@ -84,7 +85,13 @@ internal static class JobResultFeatureSummary
         }
     }
 
-    private sealed class SummaryAccumulator(RowWindow window, int previewBytes)
+    private static bool IsSpatialJoin(JsonElement root) =>
+        root.TryGetProperty("processId", out var processId)
+        && processId.ValueKind == JsonValueKind.String
+        && (processId.ValueEquals("analytics.spatial-join"u8)
+            || processId.ValueEquals("analytics.spatial-join-managed"u8));
+
+    private sealed class SummaryAccumulator(RowWindow window, int previewBytes, bool spatialJoin)
     {
         private const string JoinCountField = "JOIN_COUNT";
         private static readonly JsonElement EmptyRow = CreateEmptyRow();
@@ -102,7 +109,7 @@ internal static class JobResultFeatureSummary
         private int _matched;
         private bool _hasJoinCount;
 
-        public void Add(JsonElement feature)
+        public void Add(JsonElement feature, CancellationToken cancellationToken)
         {
             var properties = feature.ValueKind == JsonValueKind.Object
                 && feature.TryGetProperty("properties", out var found)
@@ -111,7 +118,7 @@ internal static class JobResultFeatureSummary
                     : default;
             if (properties.ValueKind == JsonValueKind.Object)
             {
-                CountProperties(properties);
+                CountProperties(properties, cancellationToken);
             }
 
             if (feature.ValueKind == JsonValueKind.Object
@@ -127,7 +134,7 @@ internal static class JobResultFeatureSummary
 
             if (!_pageFull && _count >= window.Offset && _count - window.Offset < window.Limit)
             {
-                AddPageRow(properties);
+                AddPageRow(properties, cancellationToken);
             }
 
             _count++;
@@ -148,13 +155,19 @@ internal static class JobResultFeatureSummary
             };
         }
 
-        private void CountProperties(JsonElement properties)
+        private void CountProperties(JsonElement properties, CancellationToken cancellationToken)
         {
             foreach (var property in properties.EnumerateObject())
             {
                 if (_fields.Count >= MaxFields || _remainingMetadataBytes == 0)
                 {
                     break;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (JsonMarshal.GetRawUtf8PropertyName(property).Length > _remainingMetadataBytes)
+                {
+                    continue;
                 }
 
                 var name = property.Name;
@@ -165,7 +178,7 @@ internal static class JobResultFeatureSummary
                 }
             }
 
-            if (properties.TryGetProperty(JoinCountField, out var joinCount))
+            if (spatialJoin && properties.TryGetProperty(JoinCountField, out var joinCount))
             {
                 _hasJoinCount = true;
                 _matched += joinCount.ValueKind == JsonValueKind.Number && joinCount.GetDouble() > 0 ? 1 : 0;
@@ -190,11 +203,15 @@ internal static class JobResultFeatureSummary
             return document.RootElement.Clone();
         }
 
-        private void AddPageRow(JsonElement properties)
+        private void AddPageRow(JsonElement properties, CancellationToken cancellationToken)
         {
             var row = properties.ValueKind == JsonValueKind.Object ? properties : EmptyRow;
-            var rowBytes = JsonSerializer.SerializeToUtf8Bytes(row, McpJsonContext.Default.JsonElement).Length + 1;
-            var omitRow = rowBytes > previewBytes / 2;
+            cancellationToken.ThrowIfCancellationRequested();
+            var rowByteLimit = previewBytes / 2;
+            var rowBytes = JsonMarshal.GetRawUtf8Value(row).Length >= rowByteLimit
+                ? rowByteLimit + 1
+                : JsonSerializer.SerializeToUtf8Bytes(row, McpJsonContext.Default.JsonElement).Length + 1;
+            var omitRow = rowBytes > rowByteLimit;
             var requiredBytes = omitRow ? OmittedOffsetBytes : rowBytes;
             if (requiredBytes > _remainingRowBytes)
             {
