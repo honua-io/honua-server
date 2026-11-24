@@ -97,7 +97,7 @@ public sealed partial class StreamingFileImportStagingTableTests
             });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("require GeoJSON", "non-GeoJSON create-only is refused before staging");
+            result.ErrorMessage.Should().Contain("GeoJSON or CSV", "other create-only formats are refused before staging");
             receiptWritten.Should().BeFalse();
             (await TableExistsAsync(schema, OverwriteGuardPhysicalTable)).Should().BeFalse();
             (await StagingRelationsAsync(schema)).Should().BeEmpty();
