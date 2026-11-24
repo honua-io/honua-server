@@ -138,6 +138,25 @@ def check_publication(tags_by_repository, release_version, expected_version, *, 
     return complete, partial
 
 
+def report_publication(args):
+    select_tags = ecs_publication_tags if args.ecs_only else publication_tags
+    tags_by_repository = [select_tags(repository, args.sha) for repository in args.already_imaged]
+    release_version = args.release_version
+    if args.ecs_only and not release_version:
+        release_version = args.expected_version
+    try:
+        complete, partial = check_publication(tags_by_repository, release_version, args.expected_version,
+                                              revision=args.sha if args.ecs_only else '')
+    except ReleaseVersionMismatch as error:
+        if not args.scheduled or args.ecs_only or args.release_version:
+            raise
+        print(f'::notice::Skipping scheduled publication for {args.sha}: {error}', file=sys.stderr)
+        print('skip_publish=1')
+        return
+    print(f'imaged={int(complete)}')
+    print(f'partial={int(partial)}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sha', required=True)
@@ -154,22 +173,7 @@ def main():
         parser.error('--ecs-only requires --already-imaged or --tag')
     try:
         if args.already_imaged:
-            select_tags = ecs_publication_tags if args.ecs_only else publication_tags
-            tags_by_repository = [select_tags(repository, args.sha) for repository in args.already_imaged]
-            release_version = args.release_version
-            if args.ecs_only and not release_version:
-                release_version = args.expected_version
-            try:
-                complete, partial = check_publication(tags_by_repository, release_version, args.expected_version,
-                                                      revision=args.sha if args.ecs_only else '')
-            except ReleaseVersionMismatch as error:
-                if not args.scheduled or args.ecs_only or args.release_version:
-                    raise
-                print(f'::notice::Skipping scheduled publication for {args.sha}: {error}', file=sys.stderr)
-                print('skip_publish=1')
-                return 0
-            print(f'imaged={int(complete)}')
-            print(f'partial={int(partial)}')
+            report_publication(args)
         elif args.tag:
             if not is_immutable(args.tag, args.sha):
                 raise ValueError('Expected a per-SHA tag')
