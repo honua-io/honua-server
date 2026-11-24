@@ -2639,3 +2639,19 @@ one runner before and after. On scheduled full run 45038465540 the shard spent
 Every case remains in the same selected PR shard and twice-daily full trunk runs.
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
+
+### MCP LLM smoke credential admission
+
+The advisory full-CI `MCP LLM Smoke Tests` job checks the configured Bedrock role
+before checkout, server setup or SDK builds. Without
+`HONUA_BEDROCK_SMOKE_ROLE_ARN`, PostgreSQL is not started and the job reports an
+explicit skip in its log and summary. With a role, the existing authenticated
+server, SDK smoke command, OIDC credentials and transcript upload remain active.
+The job retains its certification dependency, advisory status and ten-minute
+limit; required MCP certification is unchanged.
+
+Run 45159280398/job 137667996720 spent 572 seconds in MCP setup and 22 seconds
+starting PostgreSQL before discovering the smoke script was absent; post-action
+cleanup was cancelled at the ten-minute job cap. Credential admission removes
+those setup stages when no role is configured. The job still occupies one runner;
+a hosted after-change duration must be recorded from the next qualifying run.

@@ -98,3 +98,63 @@ assert f"node-version: '{SDK_NODE}'" in named_job(focused, "certification"), (
     "focused MCP certification must build the SDK on Node " + SDK_NODE
 )
 print("PASS: MCP SDK build uses Node 22.23.3 and a 4 GiB heap")
+
+
+def check_smoke_admission(workflow):
+    job = named_job(workflow, "mcp-llm-smoke")
+    steps = re.split(r"(?m)^      - ", job)[1:]
+    admission = steps[0]
+    assert admission.startswith("name: Detect Bedrock smoke credentials\n"), "Admit credentials before checkout or setup"
+    assert "HONUA_BEDROCK_SMOKE_ROLE_ARN != '' &&" in job, "Do not start PostgreSQL without credentials"
+    assert re.search(r"(?m)^        id: bedrock$", admission), "Smoke steps must reference the admission ID"
+    assert (
+        "        env:\n          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}\n" in admission
+    ), "Admission must read the repository's Bedrock role"
+    credential_guard = "steps.bedrock.outputs.available == 'true'"
+    script_guard = "steps.setup.outputs.smoke-available"
+    expected_guards = {
+        "uses: actions/checkout@": credential_guard,
+        "name: Configure PostgreSQL connection": credential_guard,
+        "name: Setup Honua MCP environment": credential_guard,
+        "name: Report skipped smoke tests": f"{credential_guard} && {script_guard} != 'true'",
+        "name: Configure AWS credentials for Bedrock smoke": f"{credential_guard} && {script_guard} == 'true'",
+        "name: Run MCP LLM Smoke Tests": f"{credential_guard} && {script_guard} == 'true'",
+        "name: Upload LLM smoke transcripts": f"always() && {credential_guard} && {script_guard} == 'true'",
+    }
+    for step_name, guard in expected_guards.items():
+        matching_steps = [step for step in steps[1:] if step.startswith(step_name)]
+        assert len(matching_steps) == 1, f"Expected one smoke step beginning with {step_name}"
+        assert f"        if: {guard}" in matching_steps[0].splitlines(), f"Unexpected guard for {step_name}"
+    for step in steps[1:]:
+        assert re.search(rf"(?m)^        if: .*{re.escape(credential_guard)}", step), (
+            "Every expensive smoke step must require credentials"
+        )
+    assert "npm run test:llm-smoke" in job, "Preserve the credentialed smoke command"
+    assert "needs: mcp-certification" in job, "Keep certification dependency"
+    assert "timeout-minutes: 10" in job, "Keep the bounded advisory job"
+    return admission.split("        run: |\n", 1)[1]
+
+
+def exercise_smoke_admission(script):
+    import os
+    import subprocess
+    import tempfile
+    import textwrap
+
+    for role, expected in (("", "false"), ("arn:aws:iam::123456789012:role/smoke", "true")):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            summary = Path(directory) / "summary"
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", textwrap.dedent(script)],
+                env={**os.environ, "BEDROCK_ROLE_ARN": role, "GITHUB_OUTPUT": str(output),
+                     "GITHUB_STEP_SUMMARY": str(summary)}, capture_output=True, text=True, check=True)
+            assert output.read_text().strip() == "available=" + expected
+            if not role:
+                assert "skipped" in summary.read_text().lower(), "Explain absent credentials in the job summary"
+                assert "::notice::" in result.stdout, "Explain absent credentials in the log"
+            else:
+                assert not summary.exists(), "Credentialed smoke must proceed without a skip report"
+
+
+exercise_smoke_admission(check_smoke_admission(WORKFLOW))
+print("PASS: smoke admission handles absent and configured credentials before expensive setup")

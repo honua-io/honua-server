@@ -102,7 +102,7 @@ annotations instead of failing before the server starts.
 - **Depends on:** `mcp-certification` (only runs when `cert_ran == 'true'` — skipped entirely when certification scripts are absent).
 - **`continue-on-error: true`** — failures annotate but do not gate.
 - **Live model driver:** when repository variable `HONUA_BEDROCK_SMOKE_ROLE_ARN` is set, the smoke job (environment `bedrock-smoke`) assumes that role through OIDC and enables the SDK Bedrock driver with `HONUA_EVAL_BEDROCK=1`. No stored AWS key is used. The default model is `us.anthropic.claude-sonnet-4-5-20250929-v1:0` in `us-west-2`; override with repository variables `HONUA_MCP_SMOKE_BEDROCK_MODEL` and `HONUA_MCP_SMOKE_AWS_REGION`.
-- **Fallback:** when `HONUA_BEDROCK_SMOKE_ROLE_ARN` is not set, the smoke lane runs without the live Bedrock driver and emits a notice. The job remains best-effort.
+- **Credential absent:** when `HONUA_BEDROCK_SMOKE_ROLE_ARN` is unset, the advisory smoke job skips PostgreSQL provisioning and MCP server and SDK setup, then records the skip in the job summary.
 - **Artifact:** `mcp-llm-smoke-transcripts`, 30-day retention.
 
 ## How the seed is applied in CI

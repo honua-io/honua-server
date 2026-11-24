@@ -2707,7 +2707,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        image: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN != '' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2721,14 +2721,32 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Detect Bedrock smoke credentials
+        id: bedrock
+        shell: bash
+        env:
+          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
+        run: |
+          if [[ -n "$BEDROCK_ROLE_ARN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke skipped before server and SDK setup."
+            echo "## MCP LLM Smoke Tests skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "HONUA_BEDROCK_SMOKE_ROLE_ARN is not configured. No server, SDK, or live Bedrock smoke was started; MCP Certification remains independent." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.bedrock.outputs.available == 'true'
 
       - name: Configure PostgreSQL connection
+        if: steps.bedrock.outputs.available == 'true'
         uses: ./.github/actions/configure-postgres-connection
         with:
           port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Honua MCP environment
+        if: steps.bedrock.outputs.available == 'true'
         id: setup
         uses: ./.github/actions/setup-honua-mcp
         with:
@@ -2738,7 +2756,7 @@ jobs:
           sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
 
       - name: Report skipped smoke tests
-        if: steps.setup.outputs.smoke-available != 'true'
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available != 'true'
         shell: bash
         run: |
           echo "::warning::test:llm-smoke script not found in honua-sdk-js/mcp — smoke tests skipped"
@@ -2747,22 +2765,8 @@ jobs:
           echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}\`)." >> "$GITHUB_STEP_SUMMARY"
           echo "Land the smoke test scripts in \`honua-sdk-js\` to activate this lane." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Detect Bedrock smoke credentials
-        id: bedrock
-        if: steps.setup.outputs.smoke-available == 'true'
-        shell: bash
-        env:
-          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
-        run: |
-          if [[ -n "$BEDROCK_ROLE_ARN" ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke will run without the live Bedrock driver."
-          fi
-
       - name: Configure AWS credentials for Bedrock smoke
-        if: steps.bedrock.outputs.available == 'true'
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
@@ -2770,7 +2774,7 @@ jobs:
           aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Run MCP LLM Smoke Tests
-        if: steps.setup.outputs.smoke-available == 'true'
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
         run: npm run test:llm-smoke
         working-directory: honua-sdk-js/mcp
         env:
@@ -2784,7 +2788,7 @@ jobs:
           AWS_REGION: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Upload LLM smoke transcripts
-        if: always() && steps.setup.outputs.smoke-available == 'true'
+        if: always() && steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-llm-smoke-transcripts
