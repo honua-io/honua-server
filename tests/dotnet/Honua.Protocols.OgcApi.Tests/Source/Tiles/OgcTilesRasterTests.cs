@@ -82,6 +82,36 @@ public sealed class OgcTilesRasterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetCollectionTile_WithConcurrentPngAndMvtRequests_ReturnsRequestedRepresentations()
+    {
+        const string path = "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0";
+        using var pngRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        pngRequest.Headers.Accept.ParseAdd(MediaTypes.Png);
+        using var mvtRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        mvtRequest.Headers.Accept.ParseAdd(MediaTypes.Mvt);
+
+        var pngTask = _fixture.Client.SendAsync(pngRequest);
+        var mvtTask = _fixture.Client.SendAsync(mvtRequest);
+        await Task.WhenAll(pngTask, mvtTask);
+        using var pngResponse = await pngTask;
+        using var mvtResponse = await mvtTask;
+
+        pngResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        pngResponse.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Png);
+        var png = await pngResponse.Content.ReadAsByteArrayAsync();
+        byte[] pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+        png.Take(pngSignature.Length).Should().Equal(pngSignature);
+
+        mvtResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        mvtResponse.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
+        var mvt = await mvtResponse.Content.ReadAsByteArrayAsync();
+        mvt.Should().NotBeEmpty();
+        mvt.Take(pngSignature.Length).Should().NotEqual(pngSignature);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetCollectionTile_WithPngPreferredOverVector_ReturnsRasterImage()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
