@@ -191,6 +191,26 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Pagination)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetItems_ConcurrentPages_MatchCatalogOrder()
+    {
+        var expectedIds = await GetRecordIdsAsync("limit=2");
+        expectedIds.Should().HaveCount(2).And.OnlyHaveUniqueItems();
+
+        var pages = await Task.WhenAll(
+            GetRecordIdsAsync("limit=1&offset=0"),
+            GetRecordIdsAsync("limit=1&offset=1"),
+            GetRecordIdsAsync("limit=1&offset=0"),
+            GetRecordIdsAsync("limit=1&offset=1"));
+
+        pages[0].Should().Equal(expectedIds[0]);
+        pages[1].Should().Equal(expectedIds[1]);
+        pages[2].Should().Equal(expectedIds[0]);
+        pages[3].Should().Equal(expectedIds[1]);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     [Endpoint("GET /ogc/records/collections")]
@@ -317,7 +337,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
 
     private async Task<string[]> GetRecordIdsAsync(string query)
     {
-        var response = await _fixture.Client.GetAsync($"/ogc/records/collections/{CatalogId}/items?{query}");
+        using var response = await _fixture.Client.GetAsync($"/ogc/records/collections/{CatalogId}/items?{query}");
 
         await AssertOkAsync(response);
 
