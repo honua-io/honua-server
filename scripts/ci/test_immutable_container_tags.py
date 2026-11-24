@@ -266,6 +266,13 @@ class EcsOnlyWorkflowTests(unittest.TestCase):
         subprocess.run(['bash', 'scripts/ci/base-image-mirrors.sh', '--verify', self.workflow_path],
                        cwd=self.root, check=True, capture_output=True)
 
+    def test_quickstart_can_publish_after_aot_manifest_reuse(self):
+        executor = self.workflow.split('\n  compose-executor:\n', 1)[1]
+        executor = re.split(r'\n  [a-z][a-z0-9-]*:', executor, maxsplit=1)[0]
+        condition = re.search(r'(?m)^    if: (.+)$', executor).group(1)
+        self.assertIn('!cancelled()', condition)
+        self.assertIn("needs.manifest-aot.result == 'success'", condition)
+
     def test_redirect_rejects_commits_without_the_input(self):
         script = self.step_script('Verify the selected commit supports ECS-only publication')
         with tempfile.TemporaryDirectory() as directory:

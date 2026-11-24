@@ -249,7 +249,7 @@ jobs:
             done
             if [ "$evidence" = false ]; then
               echo '::notice::Candidate tags exist without a successful quickstart artifact. Reusing immutable tags and repairing release evidence.'
-              state=$'imaged=0\npartial=1\nreuse_aot=1'
+              state="$(printf '%s\n' imaged=0 partial=1 reuse_aot=1)"
             fi
           fi
           printf '%s\n' "$state" >> "$GITHUB_OUTPUT"
@@ -1229,7 +1229,7 @@ jobs:
     environment: publish-images
     timeout-minutes: 30
     needs: [select-candidate, manifest-aot]
-    if: needs.select-candidate.outputs.publish == 'true'
+    if: ${{ !cancelled() && needs.select-candidate.outputs.publish == 'true' && needs.manifest-aot.result == 'success' }}
     permissions:
       contents: read
       packages: write
