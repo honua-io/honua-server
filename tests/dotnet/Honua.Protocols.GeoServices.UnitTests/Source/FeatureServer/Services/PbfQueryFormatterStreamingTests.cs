@@ -166,7 +166,7 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsPbfStream_CancelledDuringDrain_DeletesScratchFile()
+    public async Task FormatAsPbfStream_CancelledBeforeDrain_DeletesScratchFile()
     {
         var layer = CreatePointLayer();
         var feature = Feature.Create(5, null, ImmutableDictionary<string, object?>.Empty
@@ -191,6 +191,43 @@ public sealed partial class PbfQueryFormatterTests
 
         var act = async () => await response.ExecuteAsync(context);
         await act.Should().ThrowAsync<OperationCanceledException>();
+        File.Exists(scratchPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StreamAsPbfAsync_CancelledDuringScratchWrite_DeletesScratchFile()
+    {
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('c', 200_000)));
+        PbfFeatureSpool? spool = null;
+        string? scratchPath = null;
+
+        using var cts = new CancellationTokenSource();
+        using var body = new DisconnectOnSpoolChunkStream(() =>
+        {
+            scratchPath = spool!.ScratchPath;
+            scratchPath.Should().NotBeNullOrWhiteSpace();
+            File.Exists(scratchPath).Should().BeTrue();
+            cts.Cancel();
+        });
+        var context = new DefaultHttpContext { RequestAborted = cts.Token };
+        context.Response.Body = body;
+
+        var act = async () => await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ToAsyncEnumerable([feature]),
+                HasMoreResults = static () => false,
+                Resource = CreateLayerWithStringField(),
+                Options = new PbfStreamEncodingOptions { ReturnGeometry = false },
+                SpoolFactory = () => spool = new PbfFeatureSpool()
+            },
+            context,
+            context.RequestAborted);
+
+        await act.Should().ThrowAsync<OperationCanceledException>()
+            .Where(ex => ex.CancellationToken == cts.Token);
+        body.Length.Should().BePositive();
         File.Exists(scratchPath).Should().BeFalse();
     }
 
@@ -379,6 +416,20 @@ public sealed partial class PbfQueryFormatterTests
     private sealed class FailingFlushStream(int hresult) : MemoryStream
     {
         public override void Flush() => throw new IOException("No space left on device", hresult);
+    }
+
+    private sealed class DisconnectOnSpoolChunkStream(Action disconnect) : MemoryStream
+    {
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (buffer.Length == PbfFeatureSpool.StreamChunkBytes)
+            {
+                disconnect();
+                return ValueTask.FromCanceled(cancellationToken);
+            }
+
+            return base.WriteAsync(buffer, cancellationToken);
+        }
     }
 
     private sealed class BinaryWriteDigest : Stream
