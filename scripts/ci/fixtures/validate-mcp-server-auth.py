@@ -141,15 +141,19 @@ def check_smoke_admission(workflow):
     skip = selected["name: Report skipped smoke tests"]
     smoke = selected["name: Run MCP LLM Smoke Tests"]
     assert "sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}" in setup
+    check_smoke_only_setup(setup)
+    assert "npm run test:llm-smoke" in smoke, "Preserve the credentialed smoke command"
+    assert "needs: mcp-certification" in job and "continue-on-error: true" in job
+    check_smoke_timeouts(job, selected, [step for step in steps if step != skip])
+    return admission, skip, smoke
+
+
+def check_smoke_only_setup(setup):
     assert "          smoke-only: 'true'" in setup.splitlines(), "Skip heavy setup when only certification is available"
     heavy_steps = MCP.split("    - name: Setup Python\n", 1)[1]
     guard = "steps.check-scripts.outputs.smoke == 'true' || (inputs.smoke-only != 'true' && steps.check-scripts.outputs.cert == 'true')"
     for step in re.split(r"(?m)^    - name: ", heavy_steps):
         assert f"      if: {guard}" in step.splitlines(), "Every heavy step must honor smoke-only admission"
-    assert "npm run test:llm-smoke" in smoke, "Preserve the credentialed smoke command"
-    assert "needs: mcp-certification" in job and "continue-on-error: true" in job
-    check_smoke_timeouts(job, selected, [step for step in steps if step != skip])
-    return admission, skip, smoke
 
 
 def check_smoke_timeouts(job, selected, credentialed_steps):
@@ -233,17 +237,26 @@ def exercise_smoke_script(skip, smoke):
             assert "smoke-started" in result.stdout.splitlines(), result.stderr
             assert result.returncode == expected, (result.returncode, result.stderr)
 
-        # Model a stuck npm process that ignores SIGTERM, using the real workflow timeout.
-        stubborn_npm = root / "npm"
-        stubborn_npm.write_text("#!/bin/sh\ntrap '' TERM\necho smoke-started\nexec sleep 60\n")
-        stubborn_npm.chmod(0o755)
-        grace = re.search(r"--kill-after=(\d+)s\b", smoke_command)
-        assert grace and int(grace[1]) == 10, "Preserve the smoke command's 10-second termination grace"
-        start = time.monotonic()
-        result = run_script(smoke_command, mcp, {"MCP_SMOKE_TIMEOUT": "1s", "PATH": f"{root}:{os.environ['PATH']}"})
-        assert "smoke-started" in result.stdout.splitlines()
-        assert result.returncode in (-9, 137), (result.returncode, result.stderr)
-        assert time.monotonic() - start >= 1 + int(grace[1]), "SIGKILL fired before the grace period elapsed"
+        exercise_forced_smoke_termination(smoke_command, root, mcp)
+
+
+def exercise_forced_smoke_termination(smoke_command, root, mcp):
+    smoke_timeout_seconds = 1
+    termination_grace_seconds = 10
+    stubborn_npm = root / "npm"
+    stubborn_npm.write_text("#!/bin/sh\ntrap '' TERM\necho smoke-started\nexec sleep 60\n")
+    stubborn_npm.chmod(0o755)
+    grace = re.search(r"--kill-after=(\d+)s\b", smoke_command)
+    assert grace and int(grace[1]) == termination_grace_seconds, "Preserve the smoke command's termination grace"
+    start = time.monotonic()
+    result = run_script(smoke_command, mcp, {
+        "MCP_SMOKE_TIMEOUT": f"{smoke_timeout_seconds}s", "PATH": f"{root}:{os.environ['PATH']}",
+    })
+    assert "smoke-started" in result.stdout.splitlines()
+    assert result.returncode in (-9, 137), (result.returncode, result.stderr)
+    assert time.monotonic() - start >= smoke_timeout_seconds + termination_grace_seconds, (
+        "SIGKILL fired before the grace period elapsed"
+    )
 
 
 admission_step, skip_step, smoke_step = check_smoke_admission(WORKFLOW)

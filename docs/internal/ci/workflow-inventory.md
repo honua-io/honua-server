@@ -2657,8 +2657,10 @@ before forced termination, and transcript upload two minutes. The smoke step has
 a seven-minute runner limit. The configured-role path reserves four minutes
 outside its step limits for runner and service startup and post-job cleanup.
 With a role and an SDK ref that lacks the smoke script, the job reports the skip
-without assuming the role or uploading transcripts. A hosted after-change
-duration still requires a qualifying run.
+after checking the SDK manifest. It skips the Python, Honua Server and SDK build
+setup, role assumption and transcript upload. Certification mode still uses the
+SDK certification script. A hosted after-change duration still requires a
+qualifying run.
 
 ## Additional workflows
 
