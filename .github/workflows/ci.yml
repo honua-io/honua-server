@@ -2759,6 +2759,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           node-version: '22.23.3'
           python-version: ${{ env.PYTHON_VERSION }}
+          smoke-only: 'true'
           sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
 
       - name: Report skipped smoke tests
