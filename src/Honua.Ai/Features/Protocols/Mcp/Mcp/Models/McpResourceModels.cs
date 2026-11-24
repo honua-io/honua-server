@@ -201,6 +201,9 @@ internal sealed class McpArtifactFeatureSummary
     [JsonPropertyName("fields")]
     public IReadOnlyList<string> Fields { get; set; } = [];
 
+    [JsonPropertyName("fieldsTruncated")]
+    public bool FieldsTruncated { get; set; }
+
     [JsonPropertyName("geometryTypes")]
     public IReadOnlyList<string> GeometryTypes { get; set; } = [];
 

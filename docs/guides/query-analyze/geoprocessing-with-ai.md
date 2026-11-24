@@ -116,10 +116,11 @@ supplement polling when supported by the client session.
 
 On success, inspect the `artifacts` from `honua_get_job_results` (or the result resource)
 and retain their actual identifiers and references. An inline GeoJSON artifact comes
-back as a `featureSummary`: `featureCount`, the field names, `matchedFeatureCount` for a
+back as a `featureSummary`: `featureCount`, a preview of up to 100 field names, `matchedFeatureCount` for a
 spatial join (features with `JOIN_COUNT > 0`) and a page of attribute rows (`rowOffset`,
 `rowLimit` up to 50, `nextRowOffset`). The preview reports oversized attribute rows
-in `omittedRowOffsets`. Artifacts that exceed the preview inspection budget remain
+in `omittedRowOffsets` and sets `fieldsTruncated` when the field limit or preview
+budget omits a field name. Artifacts that exceed the preview inspection budget remain
 available in the results resource. The tool leaves out a data URI longer than 2,048
 characters unless you pass `includeUri: true`; the result resource always carries it.
 Check the geometry: this

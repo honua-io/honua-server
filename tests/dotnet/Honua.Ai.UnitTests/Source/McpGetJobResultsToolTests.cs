@@ -267,6 +267,29 @@ public sealed class McpGetJobResultsToolTests
         summary.TryGetProperty("matchedFeatureCount", out _).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData(100)]
+    [InlineData(101)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_FieldPreview_ReportsWhetherNamesWereOmitted(int fieldCount)
+    {
+        var properties = string.Join(",", Enumerable.Range(0, fieldCount).Select(index => $"""
+            "f{index}":1
+            """));
+        var json = $$$"""{"type":"FeatureCollection","features":[{"type":"Feature","properties":{ {{{properties}}} }},{"type":"Feature","properties":{"f0":2}}]}""";
+        var uri = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+        _jobService.GetJobResultsAsync("gp-wide", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var summary = (await Dispatch(ToolCall("results-wide", """{"jobId":"gp-wide","rowLimit":0}""")))!
+            .Result!.Value.GetProperty("structuredContent").GetProperty("artifacts")[0].GetProperty("featureSummary");
+
+        summary.GetProperty("fields").GetArrayLength().Should().Be(100);
+        summary.GetProperty("fieldsTruncated").GetBoolean().Should().Be(fieldCount > 100);
+    }
+
     private static string JoinResultUri(int[] joinCounts, int padding, string processId = "analytics.spatial-join")
     {
         var note = new string('n', padding);

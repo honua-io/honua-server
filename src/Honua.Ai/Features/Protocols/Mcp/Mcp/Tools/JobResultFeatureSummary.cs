@@ -112,6 +112,7 @@ internal static class JobResultFeatureSummary
         private int _remainingMetadataBytes = previewBytes - (previewBytes / 2);
         private int _pageEnd = window.Offset;
         private bool _pageFull;
+        private bool _fieldsTruncated;
         private int _count;
         private int _matched;
         private bool _hasJoinCount;
@@ -154,6 +155,7 @@ internal static class JobResultFeatureSummary
             {
                 FeatureCount = _count,
                 Fields = _fields,
+                FieldsTruncated = _fieldsTruncated,
                 GeometryTypes = [.. _geometryTypes],
                 MatchedFeatureCount = _hasJoinCount || (kind == ResultKind.SpatialJoin && _count == 0) ? _matched : null,
                 RowOffset = window.Offset,
@@ -167,23 +169,28 @@ internal static class JobResultFeatureSummary
         {
             foreach (var property in properties.EnumerateObject())
             {
-                if (_fields.Count >= MaxFields || _remainingMetadataBytes == 0)
-                {
-                    break;
-                }
-
                 cancellationToken.ThrowIfCancellationRequested();
-                if (JsonMarshal.GetRawUtf8PropertyName(property).Length > _remainingMetadataBytes)
+                // A name longer than the initial budget could never have been added.
+                if (JsonMarshal.GetRawUtf8PropertyName(property).Length > previewBytes)
                 {
+                    _fieldsTruncated = true;
                     continue;
                 }
 
                 var name = property.Name;
-                if (!_seenFields.Contains(name) && TryReserveMetadata(name))
+                if (_seenFields.Contains(name))
                 {
-                    _seenFields.Add(name);
-                    _fields.Add(name);
+                    continue;
                 }
+
+                if (_fields.Count >= MaxFields || !TryReserveMetadata(name))
+                {
+                    _fieldsTruncated = true;
+                    continue;
+                }
+
+                _seenFields.Add(name);
+                _fields.Add(name);
             }
 
             if (kind == ResultKind.SpatialJoin && properties.TryGetProperty(JoinCountField, out var joinCount))
