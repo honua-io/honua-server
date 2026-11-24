@@ -166,11 +166,21 @@ def check_smoke_timeouts(job, selected, credentialed_steps):
     assert minutes(setup, 8) * 60 > observed_setup_and_service_seconds, (
         "Setup must fit the measured setup plus service startup"
     )
-    smoke_duration = environment(smoke, 8)["MCP_SMOKE_TIMEOUT"]
-    assert int(smoke_duration.removesuffix("m")) < minutes(smoke, 8), "Allow the command to exit before the step deadline"
+    check_smoke_command_budget(smoke)
     assert minutes(upload, 8) <= upload_limit_minutes, "Bound transcript upload"
     credentialed_minutes = sum(minutes(step, 8) for step in credentialed_steps)
     assert minutes(job, 4) - credentialed_minutes >= minimum_reserve_minutes, "Reserve time for services and cleanup"
+
+
+def check_smoke_command_budget(smoke):
+    smoke_duration = environment(smoke, 8)["MCP_SMOKE_TIMEOUT"]
+    duration = re.fullmatch(r"([1-9][0-9]*)m", smoke_duration)
+    assert duration, "Require a positive smoke command timeout in minutes"
+    grace = re.search(r"--kill-after=([1-9][0-9]*)s\b", smoke)
+    assert grace, "Require a positive termination grace in seconds"
+    assert int(duration[1]) * 60 + int(grace[1]) < minutes(smoke, 8) * 60, (
+        "Allow forced termination before the step deadline"
+    )
 
 
 def minutes(block, indent):
