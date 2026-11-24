@@ -32,9 +32,6 @@ on:
       - 'docs/gis/data/operation-capability.v1.json'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
-      - 'scripts/ci/*nightly-capability-evidence.py'
-      - 'tests/python/unit/test_nightly_capability_evidence.py'
-      - 'docs/gis/data/nightly-capability-evidence.v1.json'
       - 'scripts/certification/build-client-checklist.py'
       - 'scripts/certification/test_build_client_checklist.py'
       # generate-capability-matrix.py imports parse_timestamp/is_green/
@@ -73,7 +70,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 concurrency:
@@ -95,15 +91,6 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
-
-      - name: Test nightly evidence collection and joins
-        run: python3 -m unittest discover -s tests/python/unit -p 'test_nightly_capability_evidence.py'
-
-      - name: Collect latest nightly evidence for scheduled diagnostics
-        if: github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/collect-nightly-capability-evidence.py
 
       - name: Regenerate capability-matrix.v1.json
         run: python3 scripts/ci/generate-capability-matrix.py

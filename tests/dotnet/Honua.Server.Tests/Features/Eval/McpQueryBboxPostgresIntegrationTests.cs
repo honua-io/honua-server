@@ -69,14 +69,108 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
     public async Task QueryFeatures_Bbox_MatchesFeatureGeometryNotItsEnvelope(double[] bbox, int expectedCount)
     {
         using var provider = BuildServices();
-        var result = await CallQueryFeaturesAsync(provider, bbox);
+        var result = await CallQueryFeaturesAsync(provider, new Dictionary<string, object> { ["bbox"] = bbox });
 
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
         result.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32()
             .Should().Be(expectedCount);
     }
 
-    private ServiceProvider BuildServices()
+    // The line from (2,9) to (9,2) runs outside the triangle (x + y = 11 > 10), but its rectangle
+    // [2,2,9,9] covers (2,2), which is inside: a bbox hit that the geometry filter must not report.
+    [IntegrationTheory]
+    [InlineData("""{"type":"LineString","coordinates":[[2,9],[9,2]]}""", 0)]
+    [InlineData("""{"type":"Polygon","coordinates":[[[1,1],[2,1],[2,2],[1,2],[1,1]]]}""", 1)]
+    [InlineData("""{"type":"MultiPoint","coordinates":[[8,8],[1,1]]}""", 1)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_Geometry_MatchesFeatureGeometryNotTheFilterRectangle(string geometry, int expectedCount)
+    {
+        using var provider = BuildServices();
+        var result = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
+        {
+            ["geometry"] = JsonElement.Parse(geometry),
+        });
+
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
+        result.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32()
+            .Should().Be(expectedCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_LineRectangle_HitsWhereTheLineItselfMisses()
+    {
+        using var provider = BuildServices();
+
+        var byRectangle = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
+        {
+            ["bbox"] = new[] { 2.0, 2.0, 9.0, 9.0 },
+        });
+        var byLine = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
+        {
+            ["geometry"] = JsonElement.Parse("""{"type":"LineString","coordinates":[[2,9],[9,2]]}"""),
+        });
+
+        byRectangle.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32().Should().Be(1,
+            "the rectangle around the line covers part of the triangle");
+        byLine.GetProperty("structuredContent").GetProperty("returnedCount").GetInt32().Should().Be(0,
+            "the line itself never enters the triangle");
+    }
+
+    [IntegrationTheory]
+    [InlineData("""{"bbox":[0,0,1,1],"geometry":{"type":"Point","coordinates":[1,1]}}""", "not both")]
+    [InlineData("""{"geometry":{"type":"Feature","geometry":{"type":"Point","coordinates":[1,1]}}}""", "not supported")]
+    [InlineData("""{"geometry":{"type":"GeometryCollection","geometries":[]}}""", "not supported")]
+    [InlineData("""{"geometry":{"type":"Point","coordinates":[1,1]},"geometrySrid":0}""", "geometrySrid")]
+    [InlineData("""{"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1]]]}}""", "refused")]
+    [InlineData("""{"geometry":{"type":"Point","coordinates":"x"}}""", "refused")]
+    [InlineData("""{"geometry":{"type":"LineString","coordinates":[["a","b"],[1,1]]}}""", "refused")]
+    [InlineData("""{"geometry":{"type":"Polygon","coordinates":[]}}""", "refused")]
+    [InlineData("""{"geometry":{"type":"Polygon","coordinates":[1,2]}}""", "refused")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_InvalidGeometryFilter_IsAnInvalidArgument(string extraArguments, string messageFragment)
+    {
+        using var provider = BuildServices();
+        var extra = JsonElement.Parse(extraArguments).EnumerateObject()
+            .ToDictionary(property => property.Name, property => (object)property.Value.Clone());
+
+        var result = await CallQueryFeaturesAsync(provider, extra);
+
+        AssertInvalidArgument(result, messageFragment);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_OverLimitGeometry_IsRefusedWithSimplifyGuidanceNotAnInternalError()
+    {
+        using var provider = BuildServices(new LimitsOptions { Geometry = new GeometryLimits { MaxVerticesPerGeometry = 1_000 } });
+        var coordinates = Enumerable.Range(0, 1_001).Select(i => new[] { i * 0.001, 1.0 }).ToArray();
+
+        var result = await CallQueryFeaturesAsync(provider, new Dictionary<string, object>
+        {
+            ["geometry"] = new Dictionary<string, object> { ["type"] = "LineString", ["coordinates"] = coordinates },
+        });
+
+        AssertInvalidArgument(result, "simplify it or split it");
+    }
+
+    private static void AssertInvalidArgument(JsonElement result, string messageFragment)
+    {
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(result.GetRawText());
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument", result.GetRawText());
+        structured.GetProperty("message").GetString().Should().Contain(messageFragment);
+    }
+
+    private ServiceProvider BuildServices(LimitsOptions? limits = null)
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("res-zones", "Zones", fields:
@@ -101,7 +195,7 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddOptions<RbacOptions>();
         services.AddSingleton<IFeatureReader>(CreateReader(graph.Resources[0]));
-        services.AddSingleton<IGeometryService>(new GeometryService(Options.Create(new LimitsOptions())));
+        services.AddSingleton<IGeometryService>(new GeometryService(Options.Create(limits ?? new LimitsOptions())));
         services.AddSingleton(Substitute.For<IFilterExpressionService>());
         return services.BuildServiceProvider();
     }
@@ -121,7 +215,9 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
             connectionEncryptionService: null);
     }
 
-    private static async Task<JsonElement> CallQueryFeaturesAsync(IServiceProvider provider, double[] bbox)
+    private static async Task<JsonElement> CallQueryFeaturesAsync(
+        IServiceProvider provider,
+        IReadOnlyDictionary<string, object> filter)
     {
         var context = new DefaultHttpContext
         {
@@ -132,13 +228,18 @@ public sealed class McpQueryBboxPostgresIntegrationTests(DatabaseFixtureAdapter 
             [new QueryFeaturesTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<QueryFeaturesTool>.Instance)],
             [],
             NullLogger<McpDataAccessSurface>.Instance);
-        var arguments = JsonSerializer.SerializeToElement(new Dictionary<string, object>
+        var argumentBag = new Dictionary<string, object>
         {
             ["serviceId"] = "svc-zones",
             ["serviceLayerIndex"] = 13,
-            ["bbox"] = bbox,
             ["returnGeometry"] = false
-        });
+        };
+        foreach (var (name, value) in filter)
+        {
+            argumentBag[name] = value;
+        }
+
+        var arguments = JsonSerializer.SerializeToElement(argumentBag);
 
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {

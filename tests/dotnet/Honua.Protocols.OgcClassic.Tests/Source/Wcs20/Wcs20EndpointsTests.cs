@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
-public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.RasterApplication>
+public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.RasterApplication>
 {
     private const long TestRasterId = 377;
     private readonly IRasterStore _rasterStore;
@@ -480,23 +480,6 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_WithScaleExtent_SetsOutputGridSpan()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEEXTENT=x(0,99),y(0,199)");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        _exportQueries.Should().ContainSingle();
-        var query = _exportQueries.Single();
-        // Interval span high-low+1 => 100x200.
-        query.OutputWidth.Should().Be(100);
-        query.OutputHeight.Should().Be(200);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_WithMatchingPhenomenonTime_ReturnsCoverage()
     {
         var response = await _fixture.Client.GetAsync(
@@ -622,6 +605,36 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTheory]
+    [InlineData("SUBSET=phenomenonTime(\"2023-12-01\",\"9999-12-31\")")]
+    [InlineData("DATETIME=2023-12-01/9999-12-31")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WindowEndingOnFinalCalendarDay_ReturnsCoverage(string window)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&{window}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_TimeOnFinalCalendarDay_ReturnsInvalidSubsetting()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&TIME=9999-12-31");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"").And.Contain("locator=\"TIME\"");
+        _exportQueries.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -945,6 +958,23 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
         content.Should().Contain("exceptionCode=\"InvalidAxisLabel\"");
         content.Should().Contain("locator=\"SUBSET\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("SUBSET=phenomenonTime(\"2024-01-01\")&SUBSET=phenomenonTime(\"2023-12-01\",\"2024-02-01\")")]
+    [InlineData("SUBSET=phenomenonTime(\"2024-01-01\")&SUBSET=time(\"2024-01-01\")")]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_RepeatedTemporalSubsetAxis_ReturnsInvalidAxisLabel(string subsets)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&{subsets}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidAxisLabel\"").And.Contain("locator=\"SUBSET\"");
         _exportQueries.Should().BeEmpty();
     }
 

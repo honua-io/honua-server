@@ -253,6 +253,44 @@
         "table",
         "targetSrid"
       ]
+    },
+    {
+      "toolName": "honua_admin_exports_list",
+      "operationId": "admin.exports.list",
+      "mode": "read",
+      "inputFields": [
+        "limit",
+        "offset"
+      ]
+    },
+    {
+      "toolName": "honua_admin_exports_get",
+      "operationId": "admin.exports.get",
+      "mode": "read",
+      "inputFields": [
+        "exportId"
+      ]
+    },
+    {
+      "toolName": "honua_admin_exports_create",
+      "operationId": "admin.exports.create",
+      "mode": "execute",
+      "inputFields": [
+        "exportId",
+        "identityField",
+        "maxTiles",
+        "maxZoom",
+        "minZoom",
+        "source"
+      ]
+    },
+    {
+      "toolName": "honua_admin_exports_delete",
+      "operationId": "admin.exports.delete",
+      "mode": "execute",
+      "inputFields": [
+        "exportId"
+      ]
     }
   ]
 }

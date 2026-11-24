@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -125,7 +126,8 @@ internal static partial class ImageServerSoapEndpoints
             format = mapped;
         }
 
-        if (!TileMetadata(request.HttpContext).Enabled)
+        var tileMetadata = TileMetadata(request.HttpContext);
+        if (!tileMetadata.Enabled)
         {
             return CreateSoapFault(
                 NotFixedScaleMessage,
@@ -140,9 +142,9 @@ internal static partial class ImageServerSoapEndpoints
             AuthorizationOperation.Export,
             request.SoapNamespace,
             cancellationToken).ConfigureAwait(false);
-        if (revalidation.ErrorResult is not null)
+        if ((revalidation.ErrorResult ?? RefuseLevelOutsideScheme(tileMetadata, level, request.SoapNamespace)) is { } refused)
         {
-            return revalidation.ErrorResult;
+            return refused;
         }
 
         var current = revalidation.Resolution;
@@ -249,6 +251,15 @@ internal static partial class ImageServerSoapEndpoints
             new XElement("WKID", wkid),
             new XElement("LatestWKID", latestWkid));
     }
+
+    // GetCacheTileInfo advertises levels 0..MaxLevel; after the access check, GetImageTile serves only those.
+    private static IResult? RefuseLevelOutsideScheme(ImageServerTileMetadataOptions tileMetadata, int level, XNamespace soapNamespace)
+        => level <= tileMetadata.MaxLevel
+            ? null
+            : CreateSoapFault(
+                $"Tile level {level.ToString(CultureInfo.InvariantCulture)} is outside the cache tiling scheme (0-{tileMetadata.MaxLevel.ToString(CultureInfo.InvariantCulture)}).",
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
 
     private static ImageServerTileMetadataOptions TileMetadata(HttpContext context)
         => context.RequestServices.GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value;

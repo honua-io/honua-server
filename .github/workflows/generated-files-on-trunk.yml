@@ -38,14 +38,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Collect latest completed nightly capability evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 scripts/ci/collect-nightly-capability-evidence.py
-          # Include the first snapshot in the publisher's tracked drift set.
-          git add --intent-to-add docs/gis/data/nightly-capability-evidence.v1.json
-
       # PR Gate already enforces analyzers. Match the trailing foundation
       # rebuild: compiler errors and generator/input validation remain hard.
       - name: Regenerate repository projections
