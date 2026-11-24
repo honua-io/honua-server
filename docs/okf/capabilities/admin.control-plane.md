@@ -19,12 +19,13 @@ General administrative CRUD surfaces (connections, metadata, services, users, ro
 | Status | ga |
 | Surface maturity | 2 experimental, 438 implemented |
 | Registry entries | 440 |
-| Proving tests | 2046 |
+| Proving tests | 2081 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
 ## Documented in
 
 - [Connections and layers](../../reference/admin-api/connections-and-layers.md)
+- [Discovery metadata](../../reference/admin-api/discovery-metadata.md)
 - [Admin API overview](../../reference/admin-api/overview.md)
 - [Users, roles, and licensing](../../reference/admin-api/users-roles-licensing.md)
