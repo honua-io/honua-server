@@ -29,7 +29,7 @@ internal sealed class DryRunPlanTool : IMcpTool
     {
         Name = ToolName,
         Title = "Dry-run plan",
-        Description = "Read-only pre-flight over the same analysis plan object as honua_validate_plan: returns estimatedDurationSeconds, estimatedArtifacts (artifact kinds), and sideEffects without executing. Prefer it to gauge a plan's cost and impact; prefer honua_validate_plan to check structural/policy validity. Neither executes the plan — honua_execute_plan does.",
+        Description = "Estimate estimatedDurationSeconds, estimatedArtifacts, and sideEffects without executing. Use honua_validate_plan for structural and policy checks.",
         InputSchema = McpToolSchemas.PlanArgumentSchema,
         OutputSchema = McpToolOutputSchemas.DryRunOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Dry-run plan")

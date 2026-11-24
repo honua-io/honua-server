@@ -285,6 +285,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("joinWhere", "Join Where", "ArcGIS SQL filter applied to the join layer before matching and before the vertex and topology budgets are charged (for example \"sfha_tf = 'T'\"). 'where' filters the target layer only.", ProcessParameterValueType.Text),
                 Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (the join geometry contains the target — point-in-polygon), within (the target contains the join geometry), dwithin.", ProcessParameterValueType.Text,
                     allowedValues: ProcessValueDomains.SpatialJoinPredicate),
                 Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the threshold is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),

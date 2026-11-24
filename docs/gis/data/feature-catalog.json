@@ -13,6 +13,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.DeregisterDataset_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentAccessTests.Deregister_WrongKey_IsUnauthorizedAndKeepsTheDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_RemovesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_UnknownDataset_ReturnsNotFound"
       ],
@@ -8588,6 +8589,7 @@
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.ExternalEditOnTaskA_RetiresTaskBCachedCollectionAndTileBeforePurgeWorkerRuns",
         "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.LayerMadePrivateOnTaskA_TaskBStopsReplayingItsCachedCollectionAndTile",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_AgreesWithTheOgcFeaturesCollectionExtent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesClientDiscoveryTests.Wgs84Collection_AdvertisesLongitudeFirstStorage_AndHonorsExplicitAxisOrder",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCollectionMetadataTests.GetCollection_EditedKeywordsThemesAndLanguage_AppearInCollection",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCollectionMetadataTests.GetCollection_WithStandaloneLicenseScalar_DerivesCanonicalLicenseLink",
@@ -12784,13 +12786,23 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentAccessTests.TemporalExtent_SecuredLayerAdminKey_ReturnsTheRange",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentAccessTests.TemporalExtent_SecuredLayerAnonymous_IsDeniedWithoutTheRange",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentAccessTests.TemporalExtent_SecuredLayerWrongKey_IsDeniedWithoutTheRange",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_DisallowedQueryParameter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_EpochMillisStoredValues_ReturnsExtent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_LayerWithoutTimeInfo_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_NonexistentLayer_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_NonexistentService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_TimeAwareLayer_ReturnsExtentWithFields",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_UnsupportedFormat_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.TemporalExtent_UnsupportedFormat_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_AgreesWithTheOgcFeaturesCollectionExtent",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_ConfiguredFieldDiffersInCase_ReadsTheSchemaField",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_IntervalLayer_TakesTheMaximumFromTheEndField",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_RowHiddenByPermanentFilter_DoesNotLeakItsTime",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_RowsAtBothEnds_ReportsTheirExactInstants",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_StartFieldIsNotATimeField_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentHardeningTests.TemporalExtent_UnknownIdentifiers_ReturnNotFound"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -17818,7 +17830,8 @@
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithAggregates_ReturnsAggregateProperty",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds",
-        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentSyncLimitTests.Enrich_OverLimit_ReturnsPayloadTooLarge"
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentSyncLimitTests.Enrich_OverLimit_ReturnsPayloadTooLarge",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentAccessTests.Enrich_SecuredSourceLayerAnonymous_IsDeniedWithoutFeatures"
       ],
       "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented",
@@ -17833,6 +17846,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.RegisterDataset_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetAdminHardeningTests.Register_InvalidDistance_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetAdminHardeningTests.Register_NumericMinimumEdition_ReturnsBadRequest",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_DuplicateId_ReturnsConflict",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_InvalidCategory_ReturnsBadRequest",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_ValidDataset_ReturnsCreatedWithAttribution",
@@ -18451,6 +18466,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerNearestNeighbor_OrdersSourceBackedRows",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStoreDeclaringCreate_AcceptsOgcInsertAndReadsItBack",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStoreFromAnotherDatabase_IsRejectedBeforePublishing",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStoreOverPublishedTable_CopiesWithoutSourceKeyAndScopesExtents",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStore_AcceptsWfsTransactionThroughTheAdvertisedType",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ListAndToggle_ReturnsExpectedResults",
@@ -24897,6 +24913,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_InvalidCalcExpression_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_MissingCalcExpression_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_MixedCaseSourceField_WritesMatchedValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_NullSourceField_LeavesNullRowAndUpdatesOthers",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_PostFormBody_ReturnsSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_SourceExpressionReferencingHiddenField_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_UnknownSourceField_ReturnsBadRequestAndLeavesRowsUnchanged",
@@ -25268,7 +25285,8 @@
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithValidFile_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithoutFile_Returns400",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
+        "Honua.Server.Tests.Features.Security.FeatureServerAttachmentRbacTests.AddAttachment_WithoutDataEditorGrant_IsRefused"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -25322,7 +25340,8 @@
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithValidIds_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithoutAttachmentIds_Returns400",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
+        "Honua.Server.Tests.Features.Security.FeatureServerAttachmentRbacTests.DeleteAttachments_WithoutDataEditorGrant_IsRefused"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -25343,7 +25362,8 @@
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithReplacementFile_ReplacesStoredContent",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithValidData_ReturnsSuccess",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
+        "Honua.Server.Tests.Features.Security.FeatureServerAttachmentRbacTests.UpdateAttachment_WithoutDataEditorGrant_IsRefused"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -27658,6 +27678,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.UpdateDataset_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentAccessTests.Update_Anonymous_IsUnauthorizedAndChangesNothing",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetAdminHardeningTests.Update_InvalidDistance_IsRefusedAndKeepsTheStoredDistance",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetAdminHardeningTests.Update_ToDWithin_ValidatesTheRetainedDistanceAgainstTheConfiguredLimit",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetAdminHardeningTests.Update_WithLegacyOverLimitDistance_RequiresCorrectingTheDefault",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_ModifiesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_UnknownDataset_ReturnsNotFound"
       ],
