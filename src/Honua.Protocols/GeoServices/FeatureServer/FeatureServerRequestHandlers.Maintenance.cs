@@ -1274,13 +1274,16 @@ internal static partial class FeatureServerEndpoints
     }
 
     // The calculate evaluator accepts only value-producing SQL, so the operation cannot become a general SQL execution surface.
-    private sealed class CalcSqlExpressionParser
+    private sealed partial class CalcSqlExpressionParser
     {
+        internal const int MaxNestingDepth = 64;
+
         private readonly string _expression;
         private readonly IReadOnlyDictionary<string, object?> _attributes;
         private readonly bool _validationOnly;
         private readonly HashSet<string> _sourceFields = new(StringComparer.OrdinalIgnoreCase);
         private int _position;
+        private int _depth;
         private Token _current;
 
         public IReadOnlyCollection<string> SourceFields => _sourceFields;
@@ -1311,14 +1314,30 @@ internal static partial class FeatureServerEndpoints
 
         private bool TryParseConcat(out object? value, out string? error)
         {
-            if (!TryParseAdditive(out value, out error)) return false;
-            while (_current.Kind == TokenKind.Concat)
+            // Every nested level (top level, parentheses, function arguments) passes through here.
+            if (_depth >= MaxNestingDepth)
             {
-                Advance();
-                if (!TryParseAdditive(out var right, out error)) return false;
-                value = $"{value ?? string.Empty}{right ?? string.Empty}";
+                value = null;
+                error = $"Expression nesting exceeds the maximum depth of {MaxNestingDepth}.";
+                return false;
             }
-            return true;
+
+            _depth++;
+            try
+            {
+                if (!TryParseAdditive(out value, out error)) return false;
+                while (_current.Kind == TokenKind.Concat)
+                {
+                    Advance();
+                    if (!TryParseAdditive(out var right, out error)) return false;
+                    value = $"{value ?? string.Empty}{right ?? string.Empty}";
+                }
+                return true;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private bool TryParseAdditive(out object? value, out string? error)
@@ -1349,26 +1368,31 @@ internal static partial class FeatureServerEndpoints
 
         private bool TryParseUnary(out object? value, out string? error)
         {
-            if (_current.Kind == TokenKind.Minus)
+            // Consecutive unary minus signs are folded iteratively, so they add no nesting.
+            var negations = 0;
+            while (_current.Kind == TokenKind.Minus)
             {
+                negations++;
                 Advance();
-                if (!TryParseUnary(out var inner, out error) || !TryGetDecimal(inner, out var number))
-                {
-                    if (_validationOnly && inner is null)
-                    {
-                        value = null;
-                        error = null;
-                        return true;
-                    }
-                    value = null;
-                    error ??= "Unary minus requires a numeric value.";
-                    return false;
-                }
-                value = -number;
-                return true;
             }
 
-            return TryParsePrimary(out value, out error);
+            var parsed = TryParsePrimary(out var inner, out error);
+            if (!parsed || negations == 0 || inner is null)
+            {
+                // SQL semantics: negating NULL yields NULL rather than failing the row.
+                value = parsed ? inner : null;
+                return parsed;
+            }
+
+            if (!TryGetDecimal(inner, out var number))
+            {
+                value = null;
+                error = "Unary minus requires a numeric value.";
+                return false;
+            }
+
+            value = negations % 2 == 0 ? number : -number;
+            return true;
         }
 
         private bool TryParsePrimary(out object? value, out string? error)
@@ -1450,8 +1474,9 @@ internal static partial class FeatureServerEndpoints
                                      name.Equals("NVL", StringComparison.OrdinalIgnoreCase);
             var isConcatFunction = name.Equals("CONCAT", StringComparison.OrdinalIgnoreCase);
 
-            if (_validationOnly &&
-                (isTextFunction || isLengthFunction) &&
+            // SQL semantics: UPPER/LOWER/TRIM/LENGTH of NULL is NULL, so a partially populated
+            // source field leaves those rows NULL instead of failing the whole calculate.
+            if ((isTextFunction || isLengthFunction) &&
                 arguments.Count == 1 && arguments[0] is null)
             {
                 return true;
@@ -1517,10 +1542,18 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            if (!TryGetDecimal(left, out var leftNumber) || !TryGetDecimal(right, out var rightNumber))
+            decimal leftNumber = 0;
+            decimal rightNumber = 0;
+            if ((left is not null && !TryGetDecimal(left, out leftNumber)) ||
+                (right is not null && !TryGetDecimal(right, out rightNumber)))
             {
                 error = "Arithmetic operators require numeric values.";
                 return false;
+            }
+
+            if (left is null || right is null)
+            {
+                return true;
             }
 
             if ((operation == TokenKind.Slash || operation == TokenKind.Percent) && rightNumber == 0)
@@ -1529,15 +1562,14 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            value = operation switch
+            var result = ComputeWithinRange(operation, leftNumber, rightNumber);
+            if (!result.HasValue)
             {
-                TokenKind.Plus => leftNumber + rightNumber,
-                TokenKind.Minus => leftNumber - rightNumber,
-                TokenKind.Star => leftNumber * rightNumber,
-                TokenKind.Slash => leftNumber / rightNumber,
-                TokenKind.Percent => leftNumber % rightNumber,
-                _ => null
-            };
+                error = "Arithmetic result is outside the supported numeric range.";
+                return false;
+            }
+
+            value = result.Value;
             return true;
         }
 

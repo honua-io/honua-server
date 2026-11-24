@@ -37,9 +37,9 @@ duplicate or altered rows fail closed. The receipt uses
 `honua.certification-evidence-receipt/v2` and binds that context and the actual
 workflow run and attempt into its digest.
 
-All 51 declared operations still execute across all five owning test projects.
-Only the 42 operations whose capabilities are implemented in the source matrix
-emit governed observations; the nine Preview operations remain runtime checks.
+All 52 declared operations still execute across all five owning test projects.
+Only the 38 operations whose capabilities are implemented in the source matrix
+emit governed observations; the 14 Preview operations remain runtime checks.
 Source-host observations and receipt identities retain a null image digest; the
 outer candidate tuple records the separately verified candidate image.
 

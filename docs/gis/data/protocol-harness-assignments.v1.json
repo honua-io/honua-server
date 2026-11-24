@@ -1,6 +1,6 @@
 {
   "schema": "honua.server-protocol-harness-assignments/v1",
-  "revision": "2026-08-26.1",
+  "revision": "2026-11-23.1",
   "tracking_issue": "https://github.com/honua-io/honua-server/issues/3388",
   "canonical_client": "Honua server public protocol integration harness",
   "client_lane": "server-protocol-harness",
@@ -219,6 +219,16 @@
       "test_ids": [
         "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
+      "test_ids": [
+        "FeatureServerMaintenanceTests.Calculate_ValidRequest_ReturnsSuccess",
+        "FeatureServerMaintenanceTests.Calculate_InvalidCalcExpression_ReturnsBadRequest"
       ],
       "scenario_facets": ["mutation"]
     },

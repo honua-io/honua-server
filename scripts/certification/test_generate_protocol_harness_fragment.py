@@ -240,6 +240,19 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             self.assertEqual(row["test_ids"], row["evidence_receipt"]["identity"]["test_ids"])
             self.assertIsNone(row["image_digest"])
 
+    def test_calculate_contract_routes_to_the_owning_project(self):
+        value = module.load_contract(CONTRACT)
+        rows = [row for row in value["assignments"]
+                if row["operation"] == "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate"]
+        self.assertEqual(1, len(rows))
+        selected = module.test_filter(value, "Honua.Protocols.GeoServices.Tests").split("|")
+        for test_id in rows[0]["test_ids"]:
+            self.assertEqual("Honua.Protocols.GeoServices.Tests", module.test_project(test_id))
+            self.assertIn("FullyQualifiedName~" + test_id, selected)
+            class_name, method = test_id.split(".")
+            path = REPOSITORY_ROOT / "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer" / (class_name + ".cs")
+            self.assertIn("public async Task " + method + "()", path.read_text())
+
     def test_h3_contract_covers_only_adapter_facets_in_the_owning_project(self):
         value = module.load_contract(CONTRACT)
         rows = [row for row in value["assignments"] if row["capability_key"] == "analytics.h3"]
