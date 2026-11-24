@@ -994,48 +994,41 @@ public sealed class StacSearchTests : IAsyncLifetime
         await SetFeatureAttributeAsync(firstFeatureId, "stac_id", firstId);
         await SetFeatureAttributeAsync(secondFeatureId, "stac_id", secondId);
 
-        // Request page 1 with limit=1 so a next-link is generated.
-        var page1Response = await _fixture.Client.GetAsync(
+        using var page1Response = await _fixture.Client.GetAsync(
             $"/stac/search?collections={collectionId}&ids={Uri.EscapeDataString(firstId)},{Uri.EscapeDataString(secondId)}&sortby=name&limit=1");
 
         var page1Content = await page1Response.Content.ReadAsStringAsync();
         page1Response.StatusCode.Should().Be(HttpStatusCode.OK, page1Content);
 
-        var page1Json = JsonDocument.Parse(page1Content);
+        using var page1Json = JsonDocument.Parse(page1Content);
         page1Json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(2);
         page1Json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+        page1Json.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString()).Should().Equal(firstId);
 
-        // The GET next-link must be a plain URL (not a POST merge body).
         var nextLink = page1Json.RootElement.GetProperty("links")
             .EnumerateArray()
             .Should().Contain(link => link.GetProperty("rel").GetString() == "next")
             .Subject;
 
-        // the next-link URL should contain `collections=N` with a literal comma
-        // as the ID separator (not %2C). The href must be followable as a GET request.
         var href = nextLink.GetProperty("href").GetString();
         href.Should().NotBeNull();
+        var nextPagePath = new Uri(href!).PathAndQuery;
 
-        // Follow the next-link directly to verify page 2 is returned correctly.
-        var page2Response = await _fixture.Client.GetAsync(new Uri(href!).PathAndQuery);
+        await Task.WhenAll(AssertFinalPageAsync(), AssertFinalPageAsync());
 
-        var page2Content = await page2Response.Content.ReadAsStringAsync();
-        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+        async Task AssertFinalPageAsync()
+        {
+            using var response = await _fixture.Client.GetAsync(nextPagePath);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
-        var page2Json = JsonDocument.Parse(page2Content);
-        var page2Ids = page2Json.RootElement.GetProperty("features")
-            .EnumerateArray()
-            .Select(f => f.GetProperty("id").GetString())
-            .ToArray();
-        page2Ids.Should().HaveCount(1);
-
-        // Page 2 must contain the second item, not a repeat of page 1.
-        var page1Ids = page1Json.RootElement.GetProperty("features")
-            .EnumerateArray()
-            .Select(f => f.GetProperty("id").GetString())
-            .ToArray();
-        page2Ids[0].Should().NotBe(page1Ids[0]);
-        new[] { page1Ids[0], page2Ids[0] }.Should().BeEquivalentTo(new[] { firstId, secondId });
+            using var page = JsonDocument.Parse(content);
+            page.RootElement.GetProperty("features").EnumerateArray()
+                .Select(feature => feature.GetProperty("id").GetString()).Should().Equal(secondId);
+            page.RootElement.GetProperty("links").EnumerateArray()
+                .Should().NotContain(link => link.GetProperty("rel").GetString() == "next");
+        }
     }
 
     private static double[][] BuildSquareRing((double X, double Y) point, double halfSize = 1d)
