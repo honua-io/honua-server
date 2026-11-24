@@ -328,6 +328,47 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
+    public async Task StreamAsPbfAsync_SourceFailsAfterSpill_DeletesScratchFileWithZeroBytesWritten()
+    {
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('x', 200_000)));
+        var sourceFailure = new IOException("Feature source interrupted.");
+        PbfFeatureSpool? spool = null;
+        string? scratchPath = null;
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+
+        var act = async () => await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ReadFeaturesAsync(),
+                HasMoreResults = static () => false,
+                Resource = CreateLayerWithStringField(),
+                Options = new PbfStreamEncodingOptions { ReturnGeometry = false },
+                SpoolFactory = () => spool = new PbfFeatureSpool()
+            },
+            context,
+            CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<IOException>();
+        failure.Which.Should().BeSameAs(sourceFailure);
+        body.Length.Should().Be(0);
+        File.Exists(scratchPath).Should().BeFalse();
+
+        async IAsyncEnumerable<Feature> ReadFeaturesAsync()
+        {
+            await Task.CompletedTask;
+            yield return feature;
+            scratchPath = spool!.ScratchPath;
+            scratchPath.Should().NotBeNullOrWhiteSpace();
+            File.Exists(scratchPath).Should().BeTrue();
+            throw sourceFailure;
+        }
+    }
+
+    [Fact]
     public async Task StreamAsPbfAsync_ScratchFullOnFinalFlush_ThrowsServiceUnavailableWithZeroBytesWritten()
     {
         var layer = CreateLayerWithStringField();
