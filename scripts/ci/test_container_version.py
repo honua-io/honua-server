@@ -13,6 +13,22 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name('container-version.py')
 
+HANDOFF_GH_STUB = r'''gh() {
+          case "$*" in
+            "api repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag} --jq .object.sha")
+              printf '%s\n' "$CANDIDATE_SHA" ;;
+            "api --paginate repos/${GITHUB_REPOSITORY}/actions/workflows/nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&per_page=100")
+              printf '%s\n' "$RUN_PAGES" ;;
+            "workflow run nightly-container-build.yml --repo ${GITHUB_REPOSITORY} --ref ${tag}"*)
+              printf 'DISPATCH:'
+              printf '<%s>' "$@"
+              printf '\n' ;;
+            *)
+              printf 'Unexpected gh call: %s\n' "$*" >&2
+              return 1 ;;
+          esac
+        }
+'''
 
 class ContainerVersionTests(unittest.TestCase):
     @classmethod
@@ -62,29 +78,16 @@ class ContainerVersionTests(unittest.TestCase):
         self.assertIn('--version "$PLATFORM_VERSION"', step)
         self.assertNotIn('nightly-${CANDIDATE_SHA7}', step)
 
-    def test_handoff_skips_duplicate_publications_and_preserves_dispatch_inputs(self):
+    def handoff_script(self):
         workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
         step = workflow.split('      - name: Tag the selected sha and re-dispatch this workflow at it\n', 1)[1]
         config, script = step.split('        run: |\n', 1)
         self.assertIn('          RELEASE_VERSION: ${{ inputs.release_version }}\n', config)
         self.assertIn('          ECS_ONLY: ${{ inputs.ecs_only }}\n', config)
-        handoff = textwrap.dedent(re.split(r'\n(?= {0,9}\S)', script, maxsplit=1)[0])
-        mock = r'''gh() {
-          case "$*" in
-            "api repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag} --jq .object.sha")
-              printf '%s\n' "$CANDIDATE_SHA" ;;
-            "api --paginate repos/${GITHUB_REPOSITORY}/actions/workflows/nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&per_page=100")
-              printf '%s\n' "$RUN_PAGES" ;;
-            "workflow run nightly-container-build.yml --repo ${GITHUB_REPOSITORY} --ref ${tag}"*)
-              printf 'DISPATCH:'
-              printf '<%s>' "$@"
-              printf '\n' ;;
-            *)
-              printf 'Unexpected gh call: %s\n' "$*" >&2
-              return 1 ;;
-          esac
-        }
-'''
+        return textwrap.dedent(re.split(r'\n(?= {0,9}\S)', script, maxsplit=1)[0])
+
+    def test_handoff_skips_duplicate_publications_and_preserves_dispatch_inputs(self):
+        handoff = self.handoff_script()
         repository = 'honua-io/honua-server'
         tag = 'nightly-candidate-aaaaaaa'
         full = {
@@ -117,27 +120,31 @@ class ContainerVersionTests(unittest.TestCase):
             ('active build cannot accept ECS input', [[full]], '', 'true', 'error'),
         )
         for name, pages, release, ecs_only, expected in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                result = subprocess.run(
-                    ['bash', '-c', mock + handoff], text=True, capture_output=True,
-                    env={'PATH': os.environ.get('PATH', os.defpath),
-                         'RELEASE_VERSION': release, 'ECS_ONLY': ecs_only, 'PARTIAL_PUBLICATION': '0',
-                         'RUN_PAGES': '\n'.join(json.dumps({'workflow_runs': page}) for page in pages),
-                         'RUNNER_TEMP': temp,
-                         'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md'),
-                         'GITHUB_REPOSITORY': repository, 'HANDOFF_TOKEN': 'test',
-                         'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40})
-                output = result.stdout + result.stderr
-                self.assertEqual(result.returncode, 1 if expected == 'error' else 0, output)
-                dispatches = [line for line in result.stdout.splitlines() if line.startswith('DISPATCH:')]
-                if expected == 'error':
-                    self.assertIn('is already active', output)
-                    self.assertEqual(dispatches, [])
-                elif expected is None:
-                    self.assertIn('is already queued or running', output)
-                    self.assertEqual(dispatches, [])
-                else:
-                    self.assertEqual(dispatches, [expected])
+            with self.subTest(name=name):
+                self.assert_handoff(handoff, repository, pages, release, ecs_only, expected)
+
+    def assert_handoff(self, handoff, repository, pages, release, ecs_only, expected):
+        with tempfile.TemporaryDirectory() as temp:
+            result = subprocess.run(
+                ['bash', '-c', HANDOFF_GH_STUB + handoff], text=True, capture_output=True,
+                env={'PATH': os.environ.get('PATH', os.defpath),
+                     'RELEASE_VERSION': release, 'ECS_ONLY': ecs_only, 'PARTIAL_PUBLICATION': '0',
+                     'RUN_PAGES': '\n'.join(json.dumps({'workflow_runs': page}) for page in pages),
+                     'RUNNER_TEMP': temp,
+                     'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md'),
+                     'GITHUB_REPOSITORY': repository, 'HANDOFF_TOKEN': 'test',
+                     'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40})
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1 if expected == 'error' else 0, output)
+        dispatches = [line for line in result.stdout.splitlines() if line.startswith('DISPATCH:')]
+        if expected == 'error':
+            self.assertIn('is already active', output)
+            self.assertEqual(dispatches, [])
+        elif expected is None:
+            self.assertIn('is already queued or running', output)
+            self.assertEqual(dispatches, [])
+        else:
+            self.assertEqual(dispatches, [expected])
 
     def test_dockerfiles_stamp_publish_and_runtime_label(self):
         for name in ('Dockerfile', 'docker/Dockerfile.aot', 'docker/Dockerfile.lambda',
