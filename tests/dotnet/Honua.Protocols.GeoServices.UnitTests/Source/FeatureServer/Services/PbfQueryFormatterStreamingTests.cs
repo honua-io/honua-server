@@ -232,6 +232,44 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
+    public async Task StreamAsPbfAsync_BlockedScratchWrite_ResumesWithIdenticalBytes()
+    {
+        var layer = CreateLayerWithStringField();
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('b', 4 * PbfFeatureSpool.StreamChunkBytes)));
+        var query = QueryResult<Feature>.Create(1, [feature]);
+        var (expected, _) = _sut.FormatAsPbf(query, layer, false, null, false, false, null, null, null);
+        using var body = new PauseOnSpoolChunkStream();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+
+        var response = _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ToAsyncEnumerable([feature]),
+                HasMoreResults = static () => false,
+                Resource = layer,
+                Options = new PbfStreamEncodingOptions { ReturnGeometry = false }
+            },
+            context,
+            CancellationToken.None);
+
+        try
+        {
+            await body.FirstChunkStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            response.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            body.Resume.TrySetResult();
+        }
+
+        await response;
+        context.Response.ContentLength.Should().Be(expected.Length);
+        body.ToArray().Should().Equal(expected);
+    }
+
+    [Fact]
     public Task StreamAsPbfAsync_WithNoMoreResults_MatchesFormatAsPbfByteForByte()
     {
         var items = CreateParityItems();
@@ -522,6 +560,31 @@ public sealed partial class PbfQueryFormatterTests
             }
 
             return base.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
+    private sealed class PauseOnSpoolChunkStream : MemoryStream
+    {
+        public TaskCompletionSource FirstChunkStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _firstChunkWritten;
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (FirstChunkStarted.Task.IsCompleted)
+            {
+                _firstChunkWritten.Should().BeTrue("the scratch drain must await each response write");
+            }
+            else if (buffer.Length == PbfFeatureSpool.StreamChunkBytes)
+            {
+                FirstChunkStarted.SetResult();
+                await Resume.Task.WaitAsync(cancellationToken);
+                await base.WriteAsync(buffer, cancellationToken);
+                _firstChunkWritten = true;
+                return;
+            }
+
+            await base.WriteAsync(buffer, cancellationToken);
         }
     }
 
