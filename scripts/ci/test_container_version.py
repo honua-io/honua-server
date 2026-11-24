@@ -2,6 +2,7 @@
 """Offline regression tests for container release identity."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -64,7 +65,10 @@ class ContainerVersionTests(unittest.TestCase):
     def test_handoff_skips_duplicate_publications_and_preserves_dispatch_inputs(self):
         workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
         step = workflow.split('      - name: Tag the selected sha and re-dispatch this workflow at it\n', 1)[1]
-        handoff = textwrap.dedent(re.split(r'\n(?= {0,9}\S)', step.split('        run: |\n', 1)[1], maxsplit=1)[0])
+        config, script = step.split('        run: |\n', 1)
+        self.assertIn('          RELEASE_VERSION: ${{ inputs.release_version }}\n', config)
+        self.assertIn('          ECS_ONLY: ${{ inputs.ecs_only }}\n', config)
+        handoff = textwrap.dedent(re.split(r'\n(?= {0,9}\S)', script, maxsplit=1)[0])
         mock = r'''gh() {
           case "$*" in
             "api repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag} --jq .object.sha")
@@ -100,24 +104,26 @@ class ContainerVersionTests(unittest.TestCase):
         version = '2026.1.0-rc.2'
         dispatch = f'DISPATCH:<workflow><run><nightly-container-build.yml><--repo><{repository}><--ref><{tag}>'
         cases = (
-            ('legacy inputs', unrelated, '', 'false', dispatch),
-            ('release version', [], version, 'false', f'{dispatch}<-f><release_version={version}>'),
-            ('ECS only', [], '', 'true', f'{dispatch}<-f><ecs_only=true>'),
-            ('versioned ECS', [], version, 'true', f'{dispatch}<-f><release_version={version}><-f><ecs_only=true>'),
-            ('queued tagged build', [full], '', 'false', None),
-            ('scheduled trunk build', [scheduled], '', '', None),
-            ('active legacy build', [legacy], '', 'false', None),
-            ('active ECS cannot cover full publication', [ecs], '', 'false', 'error'),
-            ('active build cannot accept a release version', [full], version, 'false', 'error'),
-            ('active build cannot accept ECS input', [full], '', 'true', 'error'),
+            ('legacy inputs', [unrelated], '', 'false', dispatch),
+            ('release version', [[]], version, 'false', f'{dispatch}<-f><release_version={version}>'),
+            ('ECS only', [[]], '', 'true', f'{dispatch}<-f><ecs_only=true>'),
+            ('versioned ECS', [[]], version, 'true', f'{dispatch}<-f><release_version={version}><-f><ecs_only=true>'),
+            ('queued tagged build on first page', [[full], unrelated], '', 'false', None),
+            ('queued tagged build on second page', [unrelated, [full]], '', 'false', None),
+            ('scheduled trunk build', [[scheduled]], '', '', None),
+            ('active legacy build', [[legacy]], '', 'false', None),
+            ('active ECS cannot cover full publication', [[ecs]], '', 'false', 'error'),
+            ('active build cannot accept a release version', [[full]], version, 'false', 'error'),
+            ('active build cannot accept ECS input', [[full]], '', 'true', 'error'),
         )
-        for name, runs, release, ecs_only, expected in cases:
+        for name, pages, release, ecs_only, expected in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                pages = [json.dumps({'workflow_runs': page}) for page in ([], runs)]
                 result = subprocess.run(
                     ['bash', '-c', mock + handoff], text=True, capture_output=True,
-                    env={'RELEASE_VERSION': release, 'ECS_ONLY': ecs_only, 'PARTIAL_PUBLICATION': '0',
-                         'RUN_PAGES': '\n'.join(pages), 'RUNNER_TEMP': temp,
+                    env={'PATH': os.environ.get('PATH', os.defpath),
+                         'RELEASE_VERSION': release, 'ECS_ONLY': ecs_only, 'PARTIAL_PUBLICATION': '0',
+                         'RUN_PAGES': '\n'.join(json.dumps({'workflow_runs': page}) for page in pages),
+                         'RUNNER_TEMP': temp,
                          'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md'),
                          'GITHUB_REPOSITORY': repository, 'HANDOFF_TOKEN': 'test',
                          'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40})

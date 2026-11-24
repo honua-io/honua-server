@@ -199,9 +199,11 @@ public sealed partial class NightlyImageCertificationTests
             steps.Should().Contain("if [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then", job);
         }
 
-        IfOf(Job(nightly, "mirror-base-images")).Should().StartWith(
-            "needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
-            "mirror-base-images must not build in a run that handed the candidate off or already has images");
+        IfOf(Job(nightly, "mirror-base-images")).Should().Be(
+            "needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1' && " +
+            "needs.select-candidate.outputs.skip_publish != '1' && needs.select-candidate.outputs.reuse_aot != '1' && " +
+            "(!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')",
+            "mirroring runs only when this workflow can publish new images");
     }
 
     [ArchitectureTest]
