@@ -36,6 +36,16 @@ public sealed partial class ComposeProposalExecutorTests
         }
     }
 
+    [UnitTest]
+    public void ComposeExecutorRules_ValueEndingInLineFeed_IsRejected()
+    {
+        Assert.False(ComposeExecutorRules.IsImmutableImage(Digest('a') + "\n"));
+        Assert.DoesNotMatch(ComposeExecutorRules.ComposeName(), "honua\n");
+        Assert.DoesNotMatch(ComposeExecutorRules.SqlIdentifier(), "honua\n");
+        Assert.DoesNotMatch(ComposeExecutorRules.BackupId(), "backup-" + new string('a', 32) + "\n");
+        Assert.DoesNotMatch(ComposeExecutorRules.ScriptName(), "restore.sh\n");
+    }
+
     [UnitTheory]
     [InlineData("compose.yaml", "missing-array.yaml", "missing-scalar.yaml")]
     [InlineData("", "compose.yaml", "missing-scalar.yaml")]

@@ -87,7 +87,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         try
         {
             var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
-            var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
+            var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType) with { TenantId = request.TenantId };
 
             // Store initial progress
             await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
@@ -161,6 +161,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                     progressWriter = writer;
                     var progressTracker = new Progress<UploadProgress>(progress =>
                     {
+                        progress = progress with { TenantId = request.TenantId };
                         writer.Report(progress);
                         ReportProgressToCaller(request.Progress, uploadId, progress);
                     });
@@ -221,6 +222,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             // Report completion
             var completedProgress = new UploadProgress
             {
+                TenantId = request.TenantId,
                 UploadId = uploadId,
                 Status = OperationStatus.Completed,
                 BytesUploaded = sizeBytes,

@@ -37,7 +37,10 @@ cannot tell an agent using them over the REST API from you, so none of these
 rules apply. An API key created from a proposal an agent made is an agent key even
 after you approve it. An agent key cannot manage API keys or client-certificate credentials, or exchange its credentials
 for a portal token. Studio rollback requests also require approval because they
-can change the published version. See
+can change the published version. Under the default policy an agent edits and saves
+versions of its own unpublished Studio drafts without a proposal per edit; deleting a
+draft, reopening a saved version or working on another principal's draft still needs
+approval, and publishing the result always does. See
 [AI agents over MCP](../connect/ai-agents-mcp.md#agent-changes-need-one-human-approval).
 
 ## Review and approve in Console

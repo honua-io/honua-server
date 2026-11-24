@@ -41,7 +41,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         _fixture = fixture;
     }
 
-    // Default provider responses depend only on each request, so response cases can share the application.
+    // Serial cases clear captured inputs before inspecting the shared default provider.
     public sealed class Fixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = CreateDefaultFactory();
@@ -940,8 +940,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_WhenGeocodingDisabled_Returns404()
     {
-        using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        using var factory = ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1058,8 +1059,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         var nominatimOverride = new FailingGeocodeProvider("nominatim");
         var azureOverride = new FailingGeocodeProvider("azuremaps");
         var amazonOverride = new FailingGeocodeProvider("amazonlocation");
-        using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        using var factory = ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1095,9 +1097,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithSearchExtent_PassesSearchBoundsToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         // GET path accepts the Esri JSON envelope form of searchExtent.
         var envelope = """{"xmin":-90.0,"ymin":39.0,"xmax":-89.0,"ymax":40.0,"spatialReference":{"wkid":4326}}""";
@@ -1147,9 +1148,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_WithLangCode_PassesLanguageCodeToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=2.3522,48.8566&langCode=fr&f=json");
@@ -1167,9 +1167,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_WithDistance_PassesDistanceMetersToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=250&f=json");
@@ -1202,9 +1201,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_WithFeatureTypes_PassesFeatureTypesToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&featureTypes=PointAddress,StreetAddress&f=json");
@@ -1221,9 +1219,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_WithSearchExtentAndLocation_PassesBoundsAndBiasToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         var envelope = """{"xmin":-1.0,"ymin":50.0,"xmax":1.0,"ymax":52.0}""";
         using var response = await client.GetAsync(
@@ -1287,9 +1284,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task SuggestThenFindAddressCandidates_WithMagicKey_RoundTripsDeterministically()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         // 1) suggest issues an opaque magicKey for the picked suggestion.
         using var suggestResponse = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
@@ -1340,7 +1336,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithCategory_NarrowsCandidates()
     {
-        using var factory = CreateDefaultFactory();
+        var factory = _fixture.Application;
+        ResetDefaultProvider();
         using var client = factory.CreateClient();
 
         // No filter: both the PointAddress and POI candidates are returned.
@@ -1515,9 +1512,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithLocationAndDistance_PassesBiasToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Pennsylvania&location=-77.0,38.9&distance=500&f=json");
@@ -1538,9 +1534,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithProximityBias_RanksNearbyCandidateFirst()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         // Unbiased: the address candidate (higher score) is first.
         using var unbiased = await client.GetAsync(
@@ -1625,9 +1620,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_WithLocationAndDistance_PassesBiasDistanceToProvider()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/suggest?text=Vic&location=-0.12,51.5&distance=1000&f=json");
@@ -1643,9 +1637,8 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithWebMercatorBiasLocation_TransformsToWgs84()
     {
-        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
-        using var factory = CreateFactory(fakeProvider);
-        using var client = factory.CreateClient();
+        var fakeProvider = ResetDefaultProvider();
+        using var client = _fixture.Application.CreateClient();
 
         var (mercX, mercY) = WebMercatorMath.LonLatToWebMercator(-157.8583, 21.3069);
         var locationJson = $"{{\"x\":{mercX.ToString("R", System.Globalization.CultureInfo.InvariantCulture)},\"y\":{mercY.ToString("R", System.Globalization.CultureInfo.InvariantCulture)},\"spatialReference\":{{\"wkid\":3857}}}}";
@@ -1660,13 +1653,20 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(4326, fakeProvider.LastForwardRequest.BiasLocation.SpatialReferenceWkid);
     }
 
-    private static string? GetLastForwardCategory(WebApplicationFactory<Program> factory)
+    private FakeGeocodeProvider ResetDefaultProvider()
     {
-        var provider = (FakeGeocodeProvider)factory.Services
+        var provider = GetDefaultProvider(_fixture.Application);
+        provider.ClearCapturedRequests();
+        return provider;
+    }
+
+    private static FakeGeocodeProvider GetDefaultProvider(WebApplicationFactory<Program> factory)
+        => (FakeGeocodeProvider)factory.Services
             .GetServices<CoreGeocodeProvider>()
             .First(static p => p.Name == "fake");
-        return provider.LastForwardRequest?.CategoryFilter;
-    }
+
+    private static string? GetLastForwardCategory(WebApplicationFactory<Program> factory)
+        => GetDefaultProvider(factory).LastForwardRequest?.CategoryFilter;
 
     private static readonly CoreGeocodeProviderCapabilities DefaultCapabilities = new(
         SupportsSuggest: true,
@@ -1684,8 +1684,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     // Community and need no license at all.
     private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider, bool grantEnterpriseForBatch = false)
     {
-        return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        return ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1727,8 +1728,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
             SupportsStructuredInput: false,
             SupportsBiasing: true));
 
-        return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        return ConfiguredWebApplicationFactory.Create(builder =>
         {
+            TestWebApplicationFactory.ConfigureForTests(builder);
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -1773,6 +1775,14 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         public CoreReverseGeocodeRequest? LastReverseRequest { get; private set; }
 
         public CoreSuggestGeocodeRequest? LastSuggestRequest { get; private set; }
+
+        public void ClearCapturedRequests()
+        {
+            LastForwardRequest = null;
+            LastBatchRequest = null;
+            LastReverseRequest = null;
+            LastSuggestRequest = null;
+        }
 
         public Task<IReadOnlyList<CoreGeocodeCandidate>> ForwardGeocodeAsync(CoreForwardGeocodeRequest request, CancellationToken cancellationToken)
         {

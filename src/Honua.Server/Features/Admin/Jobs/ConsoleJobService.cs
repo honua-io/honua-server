@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.ControlPlane;
@@ -15,6 +16,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Io.Export;
 using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
@@ -65,7 +67,7 @@ internal sealed partial class ConsoleJobService(
 
         foreach (var job in page.Items)
         {
-            if (!await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
+            if (!await CanReadAsync(context, job, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -540,7 +542,7 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var job = await RequireJobStore().GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null || !await CanReadAsync(context, job.OperationId, cancellationToken).ConfigureAwait(false))
+        if (job == null || !await CanReadAsync(context, job, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -552,18 +554,31 @@ internal sealed partial class ConsoleJobService(
         => serviceProvider.GetService<IExecutionJobStore>()
             ?? throw new ConsoleJobServiceUnavailableException("Execution job store is unavailable.");
 
-    private async Task<bool> CanReadAsync(
+    private Task<bool> CanReadAsync(
         HttpContext context,
-        string jobId,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+        => CanReadAsync(context.User, job, cancellationToken);
+
+    // Operator read permission alone is not enough: the job must also belong to the caller's tenant
+    // unless the caller administers every tenant.
+    private async Task<bool> CanReadAsync(
+        ClaimsPrincipal user,
+        ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
+        if (!OperationTenantAuthorization.CanAccess(user, serviceProvider, OperationTenantAuthorization.OwnerTenantOf(job)))
+        {
+            return false;
+        }
+
         var decision = await approvalGate.CheckAuthorizationAsync(
-            context.User,
+            user,
             new OperatorAuthorizationRequest
             {
                 ResourceType = OperatorResourceType.Job,
                 Operation = OperatorOperation.Read,
-                ResourceId = jobId
+                ResourceId = job.OperationId
             },
             cancellationToken).ConfigureAwait(false);
         return decision.IsAllowed;

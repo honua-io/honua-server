@@ -40,5 +40,16 @@ internal static class CatalogCapabilitiesXml
     }
 
     public static IEnumerable<XElement> Keywords(MetadataV2ObjectMetadata metadata, XNamespace ows) =>
-        metadata.Keywords.Count == 0 ? [] : [new XElement(ows + "Keywords", metadata.Keywords.Select(keyword => new XElement(ows + "Keyword", keyword)))];
+        Keywords(metadata.Keywords, ows);
+
+    public static IEnumerable<XElement> Keywords(IReadOnlyList<string> keywords, XNamespace ows) =>
+        keywords.Count == 0 ? [] : [new XElement(ows + "Keywords", keywords.Select(keyword => new XElement(ows + "Keyword", keyword)))];
+
+    // For writers that append serialized fragments to a hand-written document that binds the "ows" prefix.
+    public static IEnumerable<XElement> PrefixedKeywords(IReadOnlyList<string> keywords, XNamespace ows) =>
+        Keywords(keywords, ows).Select(element =>
+        {
+            element.SetAttributeValue(XNamespace.Xmlns + "ows", ows.NamespaceName);
+            return element;
+        });
 }

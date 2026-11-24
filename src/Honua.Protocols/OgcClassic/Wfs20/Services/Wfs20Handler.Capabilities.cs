@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Services;
 using System.Collections;
 using System.Collections.Immutable;
@@ -350,6 +351,45 @@ internal sealed partial class Wfs20Handler
         return masked.MoveToImmutable();
     }
 
+    // A request without type names whose every resource id names a published type reads only those
+    // types. The other types would match no id, so the result is unchanged and each skipped type saves a
+    // count. Callers pass no ids when a filter is present: its ids are merged later.
+    private static ImmutableArray<WfsFeatureTypeDescriptor> SelectRequestedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        string[] requestedTypes,
+        string? typeSelectingResourceId)
+    {
+        var selected = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+        if (requestedTypes.Length > 0 || typeSelectingResourceId is not { } resourceId || string.IsNullOrWhiteSpace(resourceId))
+        {
+            return selected;
+        }
+
+        var namedTypes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in resourceId.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var lastDot = id.LastIndexOf('.');
+            if (lastDot <= 0 || lastDot == id.Length - 1)
+            {
+                return selected;
+            }
+
+            namedTypes.Add(FilterExpressionHelpers.NormalizeIdentifier(id[..lastDot]));
+        }
+
+        // A list with no ids (such as ",") is no id filter, so every type stays selected.
+        if (namedTypes.Count == 0)
+        {
+            return selected;
+        }
+
+        var named = selected.Where(featureType => namedTypes.Contains(featureType.LocalName)).ToImmutableArray();
+        return namedTypes.All(name => named.Any(featureType => featureType.LocalName == name)) ? named : selected;
+    }
+
+    private static string? ResourceIdSelectingTypes(string? resourceId, string? filter)
+        => string.IsNullOrWhiteSpace(filter) ? resourceId : null;
+
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
         string[] requestedTypes)
@@ -422,13 +462,15 @@ internal sealed partial class Wfs20Handler
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var otherCrs = BuildOtherCrsIdentifiers(srid, _dataSourceProvider);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(
+            featureType.Snapshot.Graph, new(resource, featureType.Service, featureType.Publication));
 
         return new FeatureType
         {
             Name = featureType.QualifiedName,
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Abstract = resource.Metadata.Description,
-            Keywords = BuildKeywords(resource),
+            Title = descriptive.Title,
+            Abstract = descriptive.Description,
+            Keywords = BuildKeywords(resource, descriptive.Keywords),
             DefaultCRS = FormatCrs(srid),
             OtherCRS = otherCrs.Length == 0 ? null : otherCrs,
             OutputFormats = new OutputFormats
@@ -455,31 +497,18 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
         CancellationToken cancellationToken)
     {
-        const int MaxConcurrentExtentTransforms = 8;
-
-        using var throttler = new SemaphoreSlim(MaxConcurrentExtentTransforms);
-        var tasks = featureTypes.Select(async featureType =>
-        {
-            await throttler.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                return await CapabilitiesLayerBuilder.TryBuildAsync(
-                    () => BuildFeatureTypeAsync(featureType, cancellationToken),
-                    featureType.Publication.Metadata.Id,
-                    _logger).ConfigureAwait(false);
-            }
-            finally
-            {
-                throttler.Release();
-            }
-        });
-
-        var built = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var built = await RequestFanOut.SelectAsync(
+            featureTypes,
+            (featureType, typeCancellation) => CapabilitiesLayerBuilder.TryBuildAsync(
+                () => BuildFeatureTypeAsync(featureType, typeCancellation),
+                featureType.Publication.Metadata.Id,
+                _logger),
+            cancellationToken).ConfigureAwait(false);
         return built.OfType<FeatureType>().ToArray();
     }
 
 
-    private static string[] BuildKeywords(MetadataV2Object resource)
+    private static string[] BuildKeywords(MetadataV2Object resource, IReadOnlyList<string> describedKeywords)
     {
         var keywords = new List<string>
         {
@@ -487,7 +516,7 @@ internal sealed partial class Wfs20Handler
             "feature"
         };
 
-        keywords.AddRange(resource.Metadata.Keywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)));
+        keywords.AddRange(describedKeywords);
 
         if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {

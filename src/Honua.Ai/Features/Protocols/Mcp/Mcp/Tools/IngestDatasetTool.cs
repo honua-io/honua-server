@@ -375,7 +375,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     private static string? NormalizeOption(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
     private static partial Regex DatasetNameRegex();
 
     private sealed record ValidatedIngestArguments(

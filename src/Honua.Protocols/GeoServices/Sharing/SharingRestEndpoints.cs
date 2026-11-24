@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
@@ -194,7 +193,9 @@ public static class SharingRestEndpoints
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .DisableAntiforgery()
-            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType);
+            .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapGet("/sharing/rest/content/items/{id}", HandleContentItemAsync)
             .WithDisplayName("ArcGIS Portal Content Item")
@@ -658,6 +659,11 @@ public static class SharingRestEndpoints
 
         IFormCollection? form = context.Request.HasFormContentType ? await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false) : null;
         var query = ReadFirst(context.Request.Query["q"]) ?? (form is null ? null : ReadFirst(form["q"])) ?? string.Empty;
+        if (!PortalSearchQueryLimits.IsAdmissible(query))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, PortalSearchQueryLimits.RefusalMessage);
+        }
+
         var parameters = form is null
             ? context.Request.Query
             : new QueryCollection(form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase));
@@ -787,6 +793,11 @@ public static class SharingRestEndpoints
             return items.ToList();
         }
 
+        if (!PortalSearchQueryLimits.IsAdmissible(query))
+        {
+            throw new ArgumentException("Search query exceeds the length or nesting limit.", nameof(query));
+        }
+
         return items.Where(item => MatchesExpression(item, query, unmappedOwnerIds)).ToList();
     }
 
@@ -819,8 +830,7 @@ public static class SharingRestEndpoints
 
     private static bool MatchesLeaf(PortalItem item, string query, HashSet<string> unmappedOwnerIds)
     {
-        const string qualifiedTermPattern = """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""";
-        var terms = Regex.Matches(query, qualifiedTermPattern)
+        var terms = PortalSearchQueryLimits.QualifiedTerm.Matches(query)
             .Select(match => new SearchTerm(
                 match.Groups["field"].Value,
                 match.Groups["group"].Success ? match.Groups["group"].Value : match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["value"].Value,
@@ -834,7 +844,7 @@ public static class SharingRestEndpoints
             return unqualifiedTerms.Count > 0 && unqualifiedTerms.All(term => MatchesTerm(item, term));
         }
 
-        var freeTextTerms = TokenizeQuery(Regex.Replace(query, qualifiedTermPattern, " "))
+        var freeTextTerms = TokenizeQuery(PortalSearchQueryLimits.QualifiedTerm.Replace(query, " "))
             .Select(term => term.Trim('(', ')'))
             .Where(static term => term.Length > 0 && !IsBooleanKeyword(term))
             .ToList();
@@ -977,7 +987,7 @@ public static class SharingRestEndpoints
 
     private static bool MatchesQualifiedTerm(PortalItem item, string field, string value)
     {
-        var alternatives = Regex.Split(value, @"\s+OR\s+", RegexOptions.IgnoreCase)
+        var alternatives = PortalSearchQueryLimits.AlternativeSeparator.Split(value)
             .Select(candidate => candidate.Trim(' ', '"', '(', ')'));
         return alternatives.Any(candidate => field.ToLowerInvariant() switch
         {

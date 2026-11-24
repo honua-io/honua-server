@@ -291,6 +291,31 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp")]
+    public async Task AgentDraftAuthoring_OwnDraft_RunsWithoutPerEditApproval()
+    {
+        var packageKey = $"agent-draft-{Guid.NewGuid():N}";
+        var created = DirectResult(await RpcAsync("create_draft",
+            $$"""{"packageKey":"{{packageKey}}","family":"dashboard","schemaVersion":"1.0"}"""), "create_draft");
+        var draftId = created.GetProperty("draftId").GetGuid();
+
+        var added = DirectResult(await RpcAsync("add_layer",
+            $$$"""{"draftId":"{{{draftId}}}","generation":1,"layer":{"id":"parcels","type":"fill"}}"""), "add_layer");
+        var widget = DirectResult(await RpcAsync("add_widget",
+            $$$"""{"draftId":"{{{draftId}}}","generation":2,"widget":{"id":"legend","kind":"legend"}}"""), "add_widget");
+
+        added.GetProperty("generation").GetInt64().Should().Be(2);
+        widget.GetProperty("generation").GetInt64().Should().Be(3);
+    }
+
+    private static JsonElement DirectResult(JsonElement response, string verb)
+    {
+        ApprovedStudioDraftCall.GetProposalId(response).Should().BeNull($"an agent edits its own draft directly: {response.GetRawText()}");
+        return ApprovedStudioDraftCall.ReadResult(response, verb);
+    }
+
     private async Task AssertHumanApprovedPublicationAsync(
         IStudioPackageLifecycleService lifecycle, StudioContentVersion version, string expectedHash)
     {

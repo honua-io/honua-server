@@ -33,17 +33,26 @@ def changed_existing_pins(ancestor, head, trunk):
     # Ignore pins added only on newer trunk, which a stale branch need not carry.
     # Any trunk pin present on the branch must retain its trusted contents.
     changed = git_paths("diff", "--no-renames", "--diff-filter=MDTT", "--name-only", "-z", trunk, head, "--", root)
+    # A licence notice update is admitted when the branch applies it, or when
+    # trunk applied it after the branch forked and the branch left both files alone.
     return sorted(path for path in changed if path and path in inherited | candidate
-                  and not is_license_notice_update(trunk, head, path))
+                  and not is_license_notice_update(trunk, head, path)
+                  and not (is_license_notice_update(head, trunk, path)
+                           and unchanged_since_fork(ancestor, head, path)))
 
 
-def is_license_notice_update(trunk, head, pin):
+def unchanged_since_fork(ancestor, head, pin):
+    sql = pin.removeprefix("eng/schema/migration-hashes/").removesuffix(".sha256")
+    return subprocess.run(["git", "diff", "--quiet", ancestor, head, "--", sql, pin]).returncode == 0
+
+
+def is_license_notice_update(older, newer, pin):
     root = "eng/schema/migration-hashes/"
     sql = pin.removeprefix(root).removesuffix(".sha256")
     if not pin.startswith(root) or not pin.endswith(".sha256") or str(PurePosixPath(sql).parent) not in DIRECTORIES:
         return False
     contents = []
-    for ref in (trunk, head):
+    for ref in (older, newer):
         for path in (sql, pin):
             entry = subprocess.check_output(["git", "ls-tree", ref, "--", path], text=True)
             if not entry.startswith("100644 blob "):

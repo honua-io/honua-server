@@ -1238,9 +1238,31 @@ Full trunk runs include every case; PR routing selects affected ImageServer shar
 ### Geocoding response fixture lifetime
 
 `GeocodingEndpointTests` uses one class-lifetime Community application for
-request-derived default-provider responses. Each case owns its HTTP client.
-Request-capture, custom-provider and Enterprise configurations own separate
-applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
+request-derived default-provider responses and eleven default-provider capture
+cases. Each case owns its HTTP client. Capture cases clear all four recorded
+provider requests before sending a request; the serial class owns the singleton
+provider and its application until all cases finish. Custom providers, failover,
+disabled settings, alternate limits and Enterprise configurations retain their
+separate applications. Configured factories are owned directly so disposal also
+releases the application, without an undisposed parent factory.
+
+All 272 assertion lines, 278 metadata lines and 68 test methods are preserved.
+Every case remains in the Geocoding shard on selected PR runs and twice-daily
+full trunk runs. No workflow, shard definition, runner count, required check
+name or aggregate dependency changes.
+
+
+Four interleaved baseline/candidate Release runs of the complete owning Geocoding
+shard passed the identical 96 cases (68 in this class), with no failures or skips.
+Summed class seconds were 33.164670 / 32.455203 at baseline and 22.150305 /
+23.219949 at candidate: medians 32.809937 to 22.685127 seconds. Fixture-inclusive
+TRX session seconds were 58.891089 / 59.785530 at baseline and 44.361440 /
+50.036544 at candidate: medians 59.338310 to 47.198992 seconds, saving 12.139318
+seconds (0.202322 runner-minutes). Both pairs improved; one runner before and after.
+Both external measurement variants include the same factory ownership correction.
+Process times, including compilation, were 201.761 / 176.196 seconds at baseline
+and 165.060 / 171.671 at candidate and are excluded from shard timing. These are
+owning-shard measurements on a shared build host, not a PR critical-path claim.
 
 ### Governance capacity split
 
@@ -1279,6 +1301,14 @@ Remove a child's estimate once measured; the estimate-sum conservation rule
 applies only while every child is estimated. The one remaining estimate is the
 packed GeoServices GPServer SOAP job (5.0, `soap-packing-contract.json`), which
 has no passing full-run sample at its new definition yet.
+Live drift (#9545, #9546, #9547): `shard-rank-drift.yml` runs after each completed
+"CI full" trunk run and compares every rank with the median passing job minutes
+of the latest three full runs (`scripts/ci/shard-rank-drift.py`). It keeps one
+`area/ci` tracking issue (owner s-ci-shards) open while the total rank/measured
+ratio is outside 0.77-1.30, a shard's median is at least 1.5x and 3 minutes over
+its rank, or a shard absent from the measured record has two or more samples; it
+closes the issue when none remain. Under 80% of shards measured, it changes
+nothing. It is report-only and never gates a PR or trunk.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
@@ -1885,6 +1915,28 @@ skipping or missing results fail the shell check. The required name and both
 `needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+A cancelled run can also be the newest check suite of a head: two events in the
+same second (opened + labeled, opened + edited) start two runs in one
+concurrency group, and GitHub orders that queue independently of suite order.
+The cancelled required context then outranks the success in the older suite and
+the armed PR stays blocked until a manual rerun (#9533, #9610). `Clean code` has
+the same shape (#9611). `cancelled-check-rerun.yml` reruns such a run of either
+workflow once, with its own event payload, when it is the newest suite of that
+workflow for a head that is still an open PR's head. Older-suite cancellations,
+superseded heads and later attempts are left alone; every job of the rerun
+workflow still runs, so no check is relaxed. A newest-suite run cancelled by hand
+is rerun once as well, and that rerun may cancel an older-suite run still in
+progress; the attempt filter bounds both.
+
+Both workflows cancel a running run only on `synchronize` (#9615). A new head
+makes the running result obsolete, so it is still cancelled and no runner time
+is added for superseded heads. Other events (opened, edited, labeled,
+unlabeled, reopened) re-judge the same head: they queue behind the running run
+in the same group, both finish, and the newest suite reports a real result.
+Before this, 90 of 450 PR heads in 48 h carried a same-head cancelled hygiene
+run. A burst of three or more events can still replace the pending run, which
+the rerun workflow above repairs.
 
 Repository hygiene also runs on `labeled` and `unlabeled`. The shared bundle
 policy reads the PR's labels from the event payload, so a `bundle-exception`
@@ -3582,3 +3634,161 @@ This saves 3.012446 seconds, or 0.050207 runner-minutes, with one runner before 
 after. Both pairs improved, by 3.211714 and 2.813178 seconds. Compilation is excluded;
 these small local shard measurements do not establish parallel PR Gate critical-path
 savings. The other WPS shard selections and their private hosts remain unchanged.
+
+### Capability plugin discovery schema lifetime
+
+The six `CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery`
+theory cases retain separate applications, service registries, license editions
+and fresh clients. Each application borrows the initialized class fixture's seeded
+schema rather than creating and seeding another schema. The fixture owner outlives
+all serial class cases; borrowers never drop its schema. Requests only read the
+capability manifest. Per-host metadata and plugin registries remain separate.
+The schema-reuse change preserves every assertion. Both measured variants
+include the GeoParquet manifest assertion correction that trunk now carries;
+their only difference is the six plugin hosts borrowing the initialized schema.
+
+Four interleaved base/head Release runs of the complete Server Features
+Capabilities shard passed the identical 103 cases with no skips on one runner
+before and after. Fixture-inclusive TRX session seconds were 88.657 / 67.712
+at base and 65.149 / 74.636 at head: median 78.184 to 69.893 seconds,
+a measured saving of 8.292 seconds (0.138 runner-minutes). The first pair
+improved by 23.508 seconds; the second regressed by 6.925 seconds, so these
+runs show substantial variability rather than a consistent per-run saving.
+The target class's 43 cases summed to 56.155 / 39.371 seconds at base and
+42.806 / 45.035 at head: median 47.763 to 43.920 seconds. Compilation and
+process startup are excluded from the shard measurement; process durations
+were 205.689 / 151.173 seconds at base and 158.666 / 164.087 at head.
+No end-to-end PR Gate critical-path reduction is claimed.
+
+### Experimental capability manifest schema lifetime
+
+The thirteen separately configured manifest GET cases in
+`ExperimentalCapabilityGatingIntegrationTests` borrow the seeded schema from the
+existing eager `DisabledPostureHost` class fixture. Each case still starts its
+own application with the same global/per-capability flags, registry composition,
+Pro edition, tenant, services and fresh client. Per-host metadata stays separate.
+The owner outlives the serial cases; borrowers do not create, seed or drop another
+schema. The mTLS-enabled admin case retains its private schema and application.
+All 32 assertion lines, four assertion-helper calls, 55 test metadata lines and
+14 test methods are unchanged. No parallel collection or polling changes apply.
+
+Four interleaved base/head Release runs of the unchanged Server Features
+Capabilities shard passed the same 103 cases with zero skips, including 34 target
+class cases, on one runner before and after. Target class summed case seconds
+were 34.685 / 27.959 at base and 28.704 / 24.533 at head: median 31.322 to
+26.618 seconds. Fixture-inclusive TRX session seconds were 85.201 / 60.185 at
+base and 72.939 / 62.115 at head: median 72.693 to 67.527 seconds, saving
+5.166 seconds (0.086 runner-minutes). The first shard pair improved by 12.262
+seconds; the second regressed by 1.930 seconds, so variability remains substantial.
+Both external benchmark variants include the same neighboring GeoParquet manifest
+assertion correction required after trunk added the writer; that correction is
+only a common measurement precondition and is not committed in this suite change.
+Process durations were 646.397 / 179.941 seconds at base and 198.986 / 154.497
+at head, including compilation (the first run was cold). They are separate from
+the fixture-inclusive session figures. No PR Gate critical-path saving is claimed.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
+### Deployment profile folder schema lifetime
+
+`DeploymentCapabilityProfileIntegrationTests.FolderApplications` retains one
+private application per configured capability. The first initialized application
+owns the common feature-data seed; the other three borrow its schema. Each host
+still installs its own deployment profile, metadata graph and clients. Folder-path
+cases only read the seed. Borrowers stop before the owner drops the schema.
+The three standalone profile cases retain their private schemas and hosts.
+
+Four interleaved complete Capabilities shard runs passed the same 103 cases,
+including all 11 class cases, with zero skips. Class test-duration median changed
+from 32.864138 to 30.715827 seconds. Fixture-inclusive shard median changed from
+62.444438 to 60.571979 seconds, saving 1.872459 seconds / 0.031208 runner-minutes
+on one runner before and after. Individual shard pairs were 63.240212/56.698306
+and 61.648663/64.445651 seconds: the second pair regressed 2.796988 seconds, so
+the modest median saving is subject to shared-host variability. Cold compilation
+and process time are separate; no PR critical-path saving is established.
+
+All test methods, assertions, theory rows and endpoint metadata remain unchanged.
+Every case remains in the Capabilities shard on selected PRs and full trunk runs.
+No workflow, shard filter, runner count, required check name or aggregate `needs`
+contract changes.
+
+### Durable GPServer feature schema lifetime
+
+Six read-only geometry and unavailable-workspace cases in
+`GPServerDurableRuntimeTests` borrow the feature schema seeded by their class
+fixture. Each case still starts and disposes its own production job host,
+clears the global job tables through `PostgresJobHost.StartAsync`, and asserts
+that the Postgres job store, queue and execution service are registered. The
+schema owner uses the default test composition without production job workers.
+The job-substrate collection remains serial. Restart, migration, ownership,
+authentication, scoped-key and node-local cases retain their existing lifetimes.
+Every assertion, request and endpoint/operation attribute is unchanged.
+
+All cases remain in the complete GeoServices GPServer Durable and Aliases shard
+on selected PR runs and full trunk runs. No workflow, shard filter, required
+check name or aggregate dependency changes.
+
+Two interleaved base/head Release pairs of that complete shard passed the same
+50 cases in every run, with zero failures or skips (17 cases in the target class).
+Summed class seconds were 29.661 / 29.573 at base and 28.799 / 28.241 at head:
+median 29.617 to 28.520 seconds. Fixture-inclusive TRX session seconds were
+52.821 / 52.634 at base and 52.385 / 50.043 at head: median 52.727 to 51.214
+seconds, saving 1.513 seconds (0.025 runner-minutes). Both pairs improved, by
+0.435 and 2.591 seconds. Runner count stays one. These are small shared-host
+measurements; compilation is excluded, and no parallel PR Gate critical-path
+improvement is claimed.
+
+### FeatureServer unsupported-control host lifetime
+
+The nine `ApplyEdits_UnsupportedEsriControl_IsRejectedInsteadOfDropped` rows use
+the existing class application. Validation rejects these controls before invoking
+the edit handler. Each row retains its unique feature name, HTTP error and message
+assertions, and a separate query proving that the rejected edit created no feature.
+Successful mutation cases retain their private applications and schemas. The class
+collection remains serial and all assertions and test attributes are preserved.
+
+Shard filters, selected cases, workflows, required check names and the aggregate
+`needs` contract are unchanged. Every case continues in its selected PR shard and
+full trunk runs; no coverage moves to another schedule.
+
+Four interleaved baseline/candidate runs of the complete unchanged Core Endpoint
+Mutations shard passed the same 61 cases, with zero failures or skips. Median
+class-body time fell from 51.067914s to 45.244433s. Median fixture-inclusive TRX
+`Times` interval fell from 68.107526s to 62.059710s, saving 6.047816s
+(0.100797 runner-minutes). Both pairs improved: 66.604309s to 62.258366s and
+69.610743s to 61.861054s. Runner count remains one; compilation and process startup
+are excluded. These are paired shard measurements, not an aggregate critical-path
+claim or a sum with other independently measured candidates.
+
+### GeoServer container idle grace
+
+`GeoServerFixture` holds the shared GeoServer container for a two-minute idle
+grace after its last release, the same pattern the shared web host uses.
+`GeoServerCuratedImportIntegrationTests` (Database collection) and
+`GeoServerLiveImportIntegrationTests` (job substrate collection) run in
+different serial collections, so the reference count reached zero between them
+and each class booted its own container (about 30 to 55 seconds each on CI and
+the build host). A later class now reuses the running container; curated seed
+state is kept with it. The live cases assert only positive discovery counts and
+a completed dry run, so the curated resources do not change what they check.
+No test file or assertion changes. When the test host exits without raising
+ProcessExit, the Testcontainers reaper (enabled in every workflow) removed the
+idle container within 15 seconds in the build-host measurement.
+
+Build-host runs of the complete unchanged Migration Source Imports shard filter
+(88 passed, 4 skipped per run): the curated class's fixture-inclusive span was
+44.202 / 58.267 seconds on the base and 4.141 / 4.346 seconds on the candidate,
+which is the removed container boot. TRX shard walls were 343.845 / 263.147
+seconds (base) and 252.611 / 186.485 seconds (candidate); the first base run
+also had one unrelated failure (`GeoServerImportEndpointTests`, a disposed
+CancellationTokenSource in a class that does not use this fixture). The shared
+build host was loaded, so the wall pairs are noisy; the dependable saving is one
+GeoServer boot, about 40 seconds (0.67 runner-minutes) per run of the shard, with
+one runner before and after. On scheduled full run 45038465540 the shard spent
+136 of its 229 job seconds running tests.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.

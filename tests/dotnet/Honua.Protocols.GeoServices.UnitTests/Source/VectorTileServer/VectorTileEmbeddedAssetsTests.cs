@@ -37,7 +37,7 @@ public sealed class VectorTileEmbeddedAssetsTests
     }
 
     [UnitTheory]
-    [InlineData("256-511")]
+    [InlineData("1024-1279")]
     [InlineData("99-1234")]
     [InlineData("0-255.pbf")]
     public void Issue5535_UnbundledRange_IsNotServed(string range)
@@ -91,6 +91,30 @@ public sealed class VectorTileEmbeddedAssetsTests
         range.Should().Be("0-255");
         var printable = Enumerable.Range(0x20, 0x7F - 0x20).Concat(Enumerable.Range(0xA0, 0x100 - 0xA0));
         glyphIds.Should().BeEquivalentTo(printable);
+    }
+
+    // Place names and labels outside Latin-1: Polish, Romanian, a curly apostrophe, the euro sign.
+    [UnitTheory]
+    [InlineData("256-511", 0x0142)]
+    [InlineData("512-767", 0x0219)]
+    [InlineData("8192-8447", 0x2019)]
+    [InlineData("8192-8447", 0x20AC)]
+    public void ExtendedRange_IsServedWithInkedGlyphs(string range, int codepoint)
+    {
+        VectorTileEmbeddedAssets.TryGetGlyphPbf("Open Sans Regular", range, out var glyphPbf).Should().BeTrue();
+
+        ReadGlyphMetrics(glyphPbf!, codepoint).Width.Should().BePositive();
+    }
+
+    [UnitTest]
+    public void ExtendedRange_LeavesOutCodepointsTheFaceDoesNotMap()
+    {
+        // U+2065 is unassigned: a glyph for it would be the face's missing-glyph box.
+        VectorTileEmbeddedAssets.TryGetGlyphPbf("Arial Regular", "8192-8447", out var glyphPbf).Should().BeTrue();
+
+        var read = () => ReadGlyphMetrics(glyphPbf!, 0x2065);
+
+        read.Should().Throw<InvalidDataException>();
     }
 
     [UnitTest]

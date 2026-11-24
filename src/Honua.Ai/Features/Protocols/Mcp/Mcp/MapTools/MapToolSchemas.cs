@@ -84,6 +84,15 @@ internal static class MapToolSchemas
               "default": 4326,
               "description": "Spatial reference (SRID/WKID) of the bbox ordinates."
             },
+            "geometry": {
+              "type": "object",
+              "description": "Optional GeoJSON geometry object; returns features that intersect it. Use instead of bbox, not both."
+            },
+            "geometrySrid": {
+              "type": "integer",
+              "default": 4326,
+              "description": "SRID/WKID of the geometry."
+            },
             "outFields": {
               "type": "array",
               "items": { "type": "string" },

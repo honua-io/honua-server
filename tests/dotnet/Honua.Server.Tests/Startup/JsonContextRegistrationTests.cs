@@ -4,6 +4,9 @@
 using FluentAssertions;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.DataEnrichment.Models;
+using Honua.Server.Features.Protocols.Terrain;
+using Honua.Server.Features.Protocols.Terrain.QuantizedMesh;
+using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +51,18 @@ public sealed class JsonContextRegistrationTests
         serializerOptions.GetTypeInfo<LocalProcessSourceWrite>().Should().NotBeNull();
         serializerOptions.GetTypeInfo<LocalProcessSnapshotRequest>().Should().NotBeNull();
         serializerOptions.GetTypeInfo<LocalProcessRunRequest>().Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void AddHonuaJsonContexts_ResolvesTileAndTerrainMetadataResponses()
+    {
+        // ETagEndpointFilter hashes the response through these options; an unresolvable
+        // type makes a WithETag route silently send no ETag.
+        var serializerOptions = BuildConfiguredHttpJsonOptions().SerializerOptions;
+
+        serializerOptions.TryGetTypeInfo(typeof(TileJsonResponse), out _).Should().BeTrue();
+        serializerOptions.TryGetTypeInfo(typeof(TerrainMetadataResponse), out _).Should().BeTrue();
+        serializerOptions.TryGetTypeInfo(typeof(QuantizedMeshLayerMetadataResponse), out _).Should().BeTrue();
     }
 
     [UnitTest]

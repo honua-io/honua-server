@@ -10,8 +10,13 @@ public sealed class ImageServerTileMetadataOptions
 {
     public const string SectionName = "GeoServices:ImageServer:TileMetadata";
 
+    // WebMercatorQuad tile addressing in the shared tile handler stops at level 28.
+    public const int HighestServableLevel = 28;
+
     public bool Enabled { get; set; }
 
-    [Range(0, 28)]
+    [Range(0, HighestServableLevel)]
     public int MaxLevel { get; set; } = 23;
+
+    internal bool HasServableMaxLevel => MaxLevel is >= 0 and <= HighestServableLevel;
 }

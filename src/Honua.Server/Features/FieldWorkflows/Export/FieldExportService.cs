@@ -78,6 +78,11 @@ internal sealed class FieldExportService
             SubmittedTo = request.SubmittedTo
         };
 
+        if (FieldWorkflowInputRules.FindFilterError(normalized) is { } filterError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, filterError);
+        }
+
         var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var package = await _store.CreateExportAsync(normalized, actor, context.RequestAborted).ConfigureAwait(false);
         var payload = FieldExportSerializer.Serialize(format, package.Items, package.Truncated);

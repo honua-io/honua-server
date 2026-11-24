@@ -145,12 +145,31 @@ class Verdicts(unittest.TestCase):
 
     def test_refuses_a_scan_of_a_different_image(self):
         for key, value in (("image", OTHER), ("platform", "linux/arm64"), ("sourceRevision", "e" * 40)):
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "does not match the inventory entry"):
                 ri.verdict(dict(IDENTITY, **{key: value}), ENTRY, trivy([]))
         mismatched = trivy([])
         mismatched["Metadata"]["RepoDigests"] = [OTHER]
         with self.assertRaises(ValueError):
             ri.verdict(IDENTITY, ENTRY, mismatched)
+
+    def test_an_index_entry_binds_to_its_scanned_platform_manifest(self):
+        scanned = dict(IDENTITY, image=OTHER, requestedImage=IMAGE)
+        pulled = trivy([]) | {"Metadata": {"RepoDigests": [OTHER], "ImageID": IDENTITY["imageId"]}}
+        result = ri.verdict(scanned, ENTRY, pulled)
+        self.assertEqual((IMAGE, OTHER), (result["image"], result["scannedImage"]))
+        self.assertEqual(ri.scan_key(ENTRY), result["key"])
+        stranger = "ghcr.io/honua-io/honua-server@sha256:" + "f" * 64
+        with self.assertRaisesRegex(ValueError, "does not match the inventory entry"):
+            ri.verdict(dict(scanned, requestedImage=stranger), ENTRY, pulled)
+
+    def test_a_scan_binds_only_the_entry_it_was_asked_for(self):
+        manifest_entry = dict(ENTRY, image=OTHER)
+        both = inventory(ENTRY, manifest_entry)
+        from_index = dict(IDENTITY, image=OTHER, requestedImage=IMAGE)
+        from_manifest = dict(IDENTITY, image=OTHER)
+        self.assertEqual([ENTRY], ri.registered_entries(both, from_index, ENTRY["release"]))
+        self.assertEqual([manifest_entry], ri.registered_entries(both, from_manifest, ENTRY["release"]))
+        self.assertEqual([], ri.registered_entries(both, from_index, "2026.1"))
 
     def test_report_sets_deadlines_and_keeps_details_out_of_the_public_summary(self):
         result = ri.verdict(IDENTITY, ENTRY, trivy([finding("CVE-2026-1", "CRITICAL", "2"),
