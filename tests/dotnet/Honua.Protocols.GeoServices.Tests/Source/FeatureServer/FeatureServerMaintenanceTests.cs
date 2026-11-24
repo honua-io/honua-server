@@ -428,7 +428,9 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var error = document.RootElement.GetProperty("error");
 
         error.GetProperty("code").GetInt32().Should().Be(400);
-        error.GetProperty("message").GetString().Should().Contain("calcExpression");
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("calcExpression must be a valid JSON array of {field, sqlExpression} or {field, value} objects.");
     }
 
     [IntegrationTest]
@@ -440,25 +442,23 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var populatedId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Ada");
         var blankId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "to-be-null");
         var schema = fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        await using (var connection = await fixture.Postgres.GetConnectionAsync(schema))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                UPDATE features
-                SET attributes = jsonb_set(attributes, '{name}', 'null'::jsonb)
-                WHERE layer_id = @layerId AND objectid = @objectId
-                """;
-            command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-            command.Parameters.AddWithValue("objectId", blankId);
-            (await command.ExecuteNonQueryAsync()).Should().Be(1);
-        }
+        await using var connection = await fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE features
+            SET attributes = jsonb_set(attributes, '{name}', 'null'::jsonb)
+            WHERE layer_id = @layerId AND objectid = @objectId
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("objectId", blankId);
+        (await command.ExecuteNonQueryAsync()).Should().Be(1);
 
         var calcExpression = JsonSerializer.Serialize(new[]
         {
             new { field = "name", sqlExpression = "UPPER(name)" }
         });
 
-        var response = await PostCalculateAsync(
+        using var response = await PostCalculateAsync(
             fixture, calcExpression, $"objectid IN ({populatedId}, {blankId})");
         var body = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(body);
@@ -466,8 +466,13 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
         (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, populatedId))
             .Should().Be("ADA");
-        (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, blankId))
-            .Should().BeNull("UPPER of a NULL source value is NULL, as in SQL");
+
+        command.CommandText = """
+            SELECT attributes->>'name' IS NULL
+            FROM features
+            WHERE layer_id = @layerId AND objectid = @objectId
+            """;
+        (await command.ExecuteScalarAsync()).Should().Be(true, "the original row should still exist with a NULL name");
     }
 
     private static async Task<HttpResponseMessage> PostCalculateAsync(WebAppFixture fixture, string calcExpression, string? where = null)
