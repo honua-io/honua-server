@@ -70,7 +70,8 @@ internal static class JobResultFeatureSummary
                 return null;
             }
 
-            var accumulator = new SummaryAccumulator(request.Window, request.Bytes, IsSpatialJoin(document.RootElement));
+            var kind = IsSpatialJoin(document.RootElement) ? ResultKind.SpatialJoin : ResultKind.General;
+            var accumulator = new SummaryAccumulator(request.Window, request.Bytes, kind);
             foreach (var feature in features.EnumerateArray())
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -91,7 +92,13 @@ internal static class JobResultFeatureSummary
         && (processId.ValueEquals("analytics.spatial-join"u8)
             || processId.ValueEquals("analytics.spatial-join-managed"u8));
 
-    private sealed class SummaryAccumulator(RowWindow window, int previewBytes, bool spatialJoin)
+    private enum ResultKind
+    {
+        General,
+        SpatialJoin
+    }
+
+    private sealed class SummaryAccumulator(RowWindow window, int previewBytes, ResultKind kind)
     {
         private const string JoinCountField = "JOIN_COUNT";
         private static readonly JsonElement EmptyRow = CreateEmptyRow();
@@ -123,7 +130,8 @@ internal static class JobResultFeatureSummary
 
             if (feature.ValueKind == JsonValueKind.Object
                 && feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind == JsonValueKind.Object
-                && geometry.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String)
+                && geometry.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String
+                && JsonMarshal.GetRawUtf8Value(type).Length <= _remainingMetadataBytes)
             {
                 var name = type.GetString()!;
                 if (!_geometryTypes.Contains(name) && TryReserveMetadata(name))
@@ -178,7 +186,7 @@ internal static class JobResultFeatureSummary
                 }
             }
 
-            if (spatialJoin && properties.TryGetProperty(JoinCountField, out var joinCount))
+            if (kind == ResultKind.SpatialJoin && properties.TryGetProperty(JoinCountField, out var joinCount))
             {
                 _hasJoinCount = true;
                 _matched += joinCount.ValueKind == JsonValueKind.Number && joinCount.GetDouble() > 0 ? 1 : 0;
