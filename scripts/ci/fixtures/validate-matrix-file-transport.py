@@ -36,10 +36,33 @@ class MatrixTransportTests(unittest.TestCase):
             scheduled = json.loads(values['matrix_include'])
             artifact = json.loads((folder / 'managed-matrix.json').read_text())
             source = json.loads((ROOT / '.github/ci-shards.json').read_text())['shards']
-            self.assertEqual({s['shard_name']: s['filter'] for s in source},
+            self.assertEqual({s['shard_name']: s['filter'] for s in source if not s.get('advisory')},
                              {s['shard_name']: s['filter'] for s in artifact})
             self.assertEqual([{k: v for k, v in s.items() if k != 'filter'}
                               for s in artifact], scheduled)
+
+    def test_preview_projects_are_advisory_and_only_preview_selection_uses_smoke(self):
+        catalog = json.loads((ROOT / '.github/ci-shards.json').read_text())
+        preview = []
+        for shard in catalog['shards']:
+            projects = shard.get('csprojs') or [shard.get('csproj', '')]
+            if any('.SensorThings.' in project for project in projects):
+                self.assertTrue(shard.get('advisory'), shard['name'])
+                self.assertTrue(all('.SensorThings.' in project for project in projects))
+                preview.append(shard['name'])
+        self.assertIn('SensorThings 5', preview)
+        required = 'Protocol Units'
+        for names, expected, reason in [
+                (preview, catalog['default_shards_when_no_match'], 'no_path_match'),
+                (preview + [required], [required], 'paths'),
+                ([], [], 'paths')]:
+            result = subprocess.check_output([
+                'jq', '--argjson', 'selection', json.dumps(dict(shards=names, reason='paths')),
+                '-f', 'scripts/ci/required-shard-descriptor.jq', '.github/ci-shards.json'],
+                cwd=ROOT)
+            descriptor = json.loads(result)
+            self.assertEqual(expected, descriptor['shards'])
+            self.assertEqual(reason, descriptor['reason'])
 
     def test_shard_loads_exact_filter_and_rejects_missing_or_ambiguous_selection(self):
         run = step('server-tests', 'Run server test shard')['run']

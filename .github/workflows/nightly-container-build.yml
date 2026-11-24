@@ -1,4 +1,5 @@
 name: Nightly Container Build
+run-name: ${{ format('{0} · {1}', inputs.ecs_only && 'ECS-only candidate' || 'Nightly Container Build', github.ref) }}
 
 on:
   schedule:
@@ -13,6 +14,10 @@ on:
         description: 'Full 40-hex trunk sha to image instead of the newest certified one. It must itself be certified (completed full-matrix ci.yml run, every certification lane successful). Empty = newest certified trunk sha. When it is not trunk head, the build re-dispatches itself at tag nightly-candidate-<sha7>. Ignored on branch proofs.'
         required: false
         default: ''
+      ecs_only:
+        description: 'Publish the ECS AOT serving image and its Compose release evidence. Skip Lambda and JIT.'
+        type: boolean
+        default: false
 
 env:
   DOTNET_VERSION: '11.0.x'
@@ -93,11 +98,13 @@ jobs:
       sha7: ${{ steps.select.outputs.sha7 }}
       version: ${{ steps.version.outputs.version }}
       imaged: ${{ steps.existing.outputs.imaged }}
+      skip_publish: ${{ steps.existing.outputs.skip_publish }}
+      reuse_aot: ${{ steps.existing.outputs.reuse_aot }}
       certifying_run_id: ${{ steps.select.outputs.run_id }}
       # build-trunk | build-candidate | redirect | proof
       mode: ${{ steps.route.outputs.mode }}
       # 'true' only when this run may move channel tags (build-trunk, build-candidate).
-      publish: ${{ steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1' }}
+      publish: ${{ steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,6 +195,16 @@ jobs:
             echo "publish=${publish}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Verify the selected commit supports ECS-only publication
+        if: inputs.ecs_only && steps.route.outputs.mode == 'redirect'
+        env:
+          CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          if ! git grep -q -e '^      ecs_only:$' "${CANDIDATE_SHA}" -- .github/workflows/nightly-container-build.yml; then
+            echo "::error::candidate ${CANDIDATE_SHA} predates ECS-only publication; choose a certified commit that supports it."
+            exit 1
+          fi
+
       - name: Authenticate registry reads for immutable-tag detection
         if: steps.route.outputs.mode != 'proof'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -199,20 +216,51 @@ jobs:
         id: existing
         if: steps.route.outputs.mode != 'proof'
         env:
+          GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
           RELEASE_VERSION: ${{ inputs.release_version }}
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          ECS_ONLY: ${{ inputs.ecs_only }}
         run: |
+          set -euo pipefail
           python3 scripts/ci/test_immutable_container_tags.py
-          python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" --expected-version "$EXPECTED_VERSION" \
-            --already-imaged "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
-            --already-imaged "docker.io/${IMAGE_NAME_DOCKERHUB}" >> "$GITHUB_OUTPUT"
+          scope=()
+          if [ "$ECS_ONLY" = true ]; then scope+=(--ecs-only); fi
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then scope+=(--scheduled); fi
+          state="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" --expected-version "$EXPECTED_VERSION" \
+            "${scope[@]}" --already-imaged "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
+            --already-imaged "docker.io/${IMAGE_NAME_DOCKERHUB}")"
+          if [ "$ECS_ONLY" = true ] && grep -qx 'imaged=1' <<< "$state"; then
+            # Tags can exist before attestation and artifact upload finish. A successful
+            # official run with an available archive proves those steps completed.
+            tag="nightly-candidate-${CANDIDATE_SHA:0:7}"
+            artifact="honua-compose-quickstart-${CANDIDATE_SHA:0:7}"
+            runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/workflows/nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&status=success&per_page=100" \
+              | jq -r --arg repo "$GITHUB_REPOSITORY" --arg ref "refs/tags/$tag" '
+                .workflow_runs[] | select(.head_repository.full_name == $repo and
+                  ((.event == "schedule" and .head_branch == "trunk") or
+                    (.display_title | endswith(" · refs/heads/trunk") or endswith(" · " + $ref))) and
+                  (.event == "schedule" or .event == "workflow_dispatch")) | .id')"
+            evidence=false
+            for run in $runs; do
+              artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/artifacts?name=${artifact}")"
+              if jq -e --arg name "$artifact" 'any(.artifacts[]; .name == $name and .expired == false)' <<< "$artifacts" >/dev/null; then
+                evidence=true
+                break
+              fi
+            done
+            if [ "$evidence" = false ]; then
+              echo '::notice::Candidate tags exist without a successful quickstart artifact. Reusing immutable tags and repairing release evidence.'
+              state="$(printf '%s\n' imaged=0 partial=1 reuse_aot=1)"
+            fi
+          fi
+          printf '%s\n' "$state" >> "$GITHUB_OUTPUT"
 
       # A hand-off needs the honua-release GitHub App. Its absence is a setup defect, so
       # the run fails here and names it; there is no fallback to the Actions token, which
       # is the 403 this replaces (honua-io/honua-server#6613).
       - name: Require the release GitHub App for the candidate hand-off
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         env:
           HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}
           HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
@@ -230,7 +278,7 @@ jobs:
       # The token is revoked when the job ends.
       - name: Mint the release GitHub App token for the candidate hand-off
         id: handoff-token
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
@@ -244,13 +292,14 @@ jobs:
           permission-actions: write
 
       - name: Tag the selected sha and re-dispatch this workflow at it
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         env:
           # Reads use the Actions token; only the tag create and the dispatch use the App token.
           GH_TOKEN: ${{ github.token }}
           HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
           PARTIAL_PUBLICATION: ${{ steps.existing.outputs.partial }}
+          ECS_ONLY: ${{ inputs.ecs_only }}
           CANDIDATE_SHA: ${{ steps.select.outputs.sha }}
         run: |
           set -euo pipefail
@@ -277,12 +326,19 @@ jobs:
             echo "::error::could not read tag ${tag}."
             exit 1
           fi
-          # One build per candidate: inspect every ref, including trunk-head builds.
-          active="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow nightly-container-build.yml \
-            --commit "${CANDIDATE_SHA}" --limit 100 --json status --jq '[.[] | select(.status != "completed")] | length')"
-          if [ "${active}" != 0 ]; then
-            if [ -n "${RELEASE_VERSION}" ]; then
-              echo "::error::a candidate build on ${tag} is already active; wait for it to finish, then re-dispatch with release_version=${RELEASE_VERSION}."
+          # Current titles distinguish tags from branch proofs. Older runs only
+          # expose the short ref, so count an ambiguous legacy run as active.
+          active="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/workflows/nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&per_page=100" \
+            | jq -sc --arg repo "$GITHUB_REPOSITORY" --arg tag "$tag" '
+              [.[].workflow_runs[] | select(.status != "completed" and .head_repository.full_name == $repo and
+                ((.event == "schedule" and .head_branch == "trunk") or
+                  (.display_title == "Nightly Container Build" and (.head_branch == "trunk" or .head_branch == $tag)) or
+                  (.display_title | endswith(" · refs/heads/trunk") or endswith(" · refs/tags/" + $tag))) and
+                (.event == "schedule" or .event == "workflow_dispatch")) | .display_title]')"
+          if [ "$(jq 'length' <<< "$active")" != 0 ]; then
+            if [ -n "${RELEASE_VERSION}" ] || [ "$ECS_ONLY" = true ] || \
+                jq -e 'all(.[]; startswith("ECS-only candidate · "))' <<< "$active" >/dev/null; then
+              echo "::error::a candidate build at ${CANDIDATE_SHA} is already active; wait for it to finish, then re-dispatch with the requested inputs."
               exit 1
             fi
             echo "::notice::a Nightly Container Build run on ${tag} is already queued or running; not dispatching another."
@@ -293,6 +349,9 @@ jobs:
             if [ -n "${RELEASE_VERSION}" ]; then
               dispatch_args+=(-f release_version="${RELEASE_VERSION}")
             fi
+            if [ "$ECS_ONLY" = true ]; then
+              dispatch_args+=(-f ecs_only=true)
+            fi
             GH_TOKEN="${HANDOFF_TOKEN}" gh workflow run nightly-container-build.yml --repo "${GITHUB_REPOSITORY}" --ref "${tag}" "${dispatch_args[@]}"
             echo "::notice::trunk head ${GITHUB_SHA} is not the newest certified sha ${CANDIDATE_SHA}; re-dispatched this workflow at ${tag} so the image, labels and provenance all name ${CANDIDATE_SHA}."
           fi
@@ -301,6 +360,7 @@ jobs:
             echo
             echo "Trunk head \`${GITHUB_SHA}\` is not the selected certified sha \`${CANDIDATE_SHA}\`."
             echo "The build runs in a separate Nightly Container Build run on tag \`${tag}\`; this run publishes nothing."
+            echo "ECS-only publication: ${ECS_ONLY:-false}."
           } >> "${GITHUB_STEP_SUMMARY}"
 
   mirror-base-images:
@@ -308,7 +368,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: select-candidate
-    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'
+    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1' && needs.select-candidate.outputs.skip_publish != '1' && needs.select-candidate.outputs.reuse_aot != '1' && (!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')
     permissions:
       contents: read
       packages: write
@@ -370,6 +430,8 @@ jobs:
           scripts/ci/base-image-mirrors.sh --verify "${RUNNER_TEMP}/nightly-container-build.yml"
 
       - name: Mirror digest-pinned base images to GHCR (with retries)
+        env:
+          ECS_ONLY: ${{ inputs.ecs_only }}
         run: |
           set -euo pipefail
           mirror() {
@@ -409,7 +471,9 @@ jobs:
           # failed on a missing or malformed pin left the step green after mirroring only part
           # of the map — and the build jobs then pulled the previous run's stale GHCR tags,
           # silently publishing images on old security pins.
-          mirror_map="$(scripts/ci/base-image-mirrors.sh)"
+          scope=()
+          if [ "$ECS_ONLY" = true ]; then scope+=(--ecs-only); fi
+          mirror_map="$(scripts/ci/base-image-mirrors.sh "${scope[@]}")"
 
           while IFS="${tab}" read -r tag src; do
             [ -n "$tag" ] || continue
@@ -590,6 +654,7 @@ jobs:
             --authfile "$HOME/.docker/config.json"
 
   build-lambda-aot:
+    if: ${{ !inputs.ecs_only }}
     name: Build & Push Lambda AOT (${{ matrix.arch }})
     concurrency:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-lambda-${{ matrix.arch }}
@@ -821,7 +886,7 @@ jobs:
     environment: publish-images
     timeout-minutes: 15
     needs: [select-candidate, build-lambda-aot, mirror-base-images]
-    if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-lambda-aot.result == 'success' }}
+    if: ${{ !inputs.ecs_only && needs.select-candidate.outputs.publish == 'true' && needs.build-lambda-aot.result == 'success' }}
     permissions:
       attestations: write
       contents: read
@@ -909,7 +974,7 @@ jobs:
           push-to-registry: true
 
   build-jit:
-    if: needs.select-candidate.outputs.publish == 'true'
+    if: ${{ !inputs.ecs_only && needs.select-candidate.outputs.publish == 'true' }}
     name: Build & Push JIT (${{ matrix.arch }}${{ matrix.store_suffix }})
     concurrency:
       group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit${{ matrix.store_suffix }}-${{ matrix.arch }}
@@ -1051,7 +1116,7 @@ jobs:
     needs: [select-candidate, build-aot, mirror-base-images]
     outputs:
       image: ${{ steps.manifest.outputs.subject_name }}@${{ steps.manifest.outputs.subject_digest }}
-    if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-aot.result == 'success' }}
+    if: ${{ !cancelled() && needs.select-candidate.outputs.publish == 'true' && (needs.build-aot.result == 'success' || needs.select-candidate.outputs.reuse_aot == '1') }}
     permissions:
       attestations: write
       contents: read
@@ -1095,6 +1160,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata
+        if: needs.select-candidate.outputs.reuse_aot != '1'
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
@@ -1114,6 +1180,7 @@ jobs:
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
           RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
+          ECS_ONLY: ${{ inputs.ecs_only }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
@@ -1138,7 +1205,13 @@ jobs:
           done
           subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
           subject_ref="${subject_name}:nightly-aot-${{ needs.select-candidate.outputs.sha7 }}"
-          subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
+          if [ "$ECS_ONLY" = true ]; then
+            subject_digest="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" \
+              --release-version "$RELEASE_VERSION" --ecs-only --tag "$subject_ref")"
+            test -n "$subject_digest"
+          else
+            subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
+          fi
           echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
           echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
 
@@ -1158,7 +1231,7 @@ jobs:
     environment: publish-images
     timeout-minutes: 30
     needs: [select-candidate, manifest-aot]
-    if: needs.select-candidate.outputs.publish == 'true'
+    if: ${{ !cancelled() && needs.select-candidate.outputs.publish == 'true' && needs.manifest-aot.result == 'success' }}
     permissions:
       contents: read
       packages: write
@@ -1209,9 +1282,15 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
           RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
+          ECS_ONLY: ${{ inputs.ecs_only }}
+          REUSE_AOT: ${{ needs.select-candidate.outputs.reuse_aot }}
         run: |
+          set -euo pipefail
+          scope=()
+          if [ "$ECS_ONLY" = true ]; then scope+=(--ecs-only); fi
           digest="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
-            --tag "ghcr.io/honua-io/honua-server:nightly-compose-executor-${CANDIDATE_SHA:0:7}")"
+            "${scope[@]}" --tag "ghcr.io/honua-io/honua-server:nightly-compose-executor-${CANDIDATE_SHA:0:7}")"
+          if [ "$REUSE_AOT" = 1 ]; then test -n "$digest"; fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Build executor candidate by digest from the serving candidate digest
         if: steps.existing_executor.outputs.digest == ''
@@ -1347,7 +1426,7 @@ jobs:
     environment: publish-images
     timeout-minutes: 15
     needs: [select-candidate, build-jit, mirror-base-images]
-    if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-jit.result == 'success' }}
+    if: ${{ !inputs.ecs_only && needs.select-candidate.outputs.publish == 'true' && needs.build-jit.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
