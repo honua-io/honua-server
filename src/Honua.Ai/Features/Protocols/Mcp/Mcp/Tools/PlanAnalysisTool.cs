@@ -37,7 +37,7 @@ internal sealed class PlanAnalysisTool : IMcpTool
     {
         Name = ToolName,
         Title = "Plan analysis",
-        Description = "Routing: a fully-formed INTENT -> an executable plan; use it when you already know what you want done (contrast honua_ground_candidates, which explores options). Compiles a natural-language intent into an executable analysis plan or canonical spec draft. The output's engine field reports whether the plan was compiled by a live model (\"live\") or replayed from a canned deterministic fixture template (\"fixture\", returned when no LLM provider is configured); an engine:\"fixture\" plan is a capability demo, not compiled from your intent, so do not treat its steps as tailored to your request.",
+        Description = "Compile an INTENT into a plan or spec draft when you already know what you want done. Explore first with honua_ground_candidates. An engine of fixture denotes a capability demo using a template. A live engine uses an LLM.",
         InputSchema = InputSchemaElement,
         OutputSchema = McpToolOutputSchemas.PlanAnalysisOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Plan analysis")

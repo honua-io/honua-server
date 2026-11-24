@@ -999,7 +999,10 @@ public sealed partial class LayerSourcedExecutorTests
         });
 
         var (status, uri, _) = await RunAsync(
-            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            new LayerSpatialJoinExecutor(
+                BufferScopeFactory(source, 8, 3857, false,
+                    schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]),
+                Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
             LayerSpatialJoinExecutor.HandledProcessId,
             ("layerId", "7"),
             ("joinLayerId", "8"),
@@ -1036,7 +1039,10 @@ public sealed partial class LayerSourcedExecutorTests
         });
 
         var (status, uri, _) = await RunAsync(
-            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            new LayerSpatialJoinExecutor(
+                BufferScopeFactory(source, 2, 3857, false,
+                    schemaFields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]),
+                Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
             LayerSpatialJoinExecutor.HandledProcessId,
             ("layerId", "1"),
             ("joinLayerId", "2"),
@@ -1118,7 +1124,7 @@ public sealed partial class LayerSourcedExecutorTests
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["analytics.buffer-aggregate"] = ["layerId", "distance", "unit", "dissolve", "groupByFields", "outStatistics", .. SharedSelectors],
-            ["analytics.spatial-join"] = ["layerId", "joinLayerId", "predicate", "distance", "carryFields", "outStatistics", .. SharedSelectors],
+            ["analytics.spatial-join"] = ["layerId", "joinLayerId", "joinWhere", "predicate", "distance", "carryFields", "outStatistics", .. SharedSelectors],
             ["generalization.dissolve"] = ["layerId", "groupByFields", "dissolve", "outStatistics", .. SharedSelectors],
             ["generalization.simplify-layer"] = ["layerId", "tolerance", "preserveTopology", .. SharedSelectors],
         };
