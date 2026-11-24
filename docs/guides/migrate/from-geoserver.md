@@ -10,7 +10,7 @@ GeoServer import is a Preview capability in Honua 2026.1.
 
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 
-**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), a Honua Enterprise license with the `import.geoserver` entitlement, the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
 which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
 with `honua-sdk`'s legacy launcher), durable jobs, and GeoServer REST credentials.
 
@@ -62,7 +62,7 @@ honua-migrate plan verify geoserver-plan.json
 
 Review the classifications (`applied`, `already-applied`, `manual-review`, and `unsupported`), mappings, style diagnostics, overwrite policy, target SRID, auto-publish choice, batch size, and default workspace. Existing output files are rejected unless you intentionally pass `--force`.
 
-GeoServer catalog apply does not copy feature data. Load required source tables into the target PostGIS database through your approved data-transfer process before apply; missing tables remain manual-review items.
+Before apply, use your approved data-transfer process to load any required tables from external PostGIS databases into Honua’s PostGIS database. During apply, Honua can copy eligible tables already present in its database into the `honua_data` schema before publishing. Missing source tables remain manual-review items.
 
 ## 3. Apply the reviewed plan
 
