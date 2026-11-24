@@ -153,6 +153,32 @@ internal static class McpToolOutputSchemas
         return Parse(root.ToJsonString());
     }
 
+    private static JsonElement IncludeApprovalStatus(JsonElement completedSchema) => Parse($$"""
+        {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string" },
+            "studioAuthorizationCode": { "type": ["string", "null"] },
+            "currentGeneration": { "type": ["integer", "null"], "minimum": 1 }
+          },
+          "oneOf": [
+            {
+              "not": {{ToolErrorBranch}},
+              "anyOf": [{{completedSchema.GetRawText()}}, {
+                "required": ["status", "operationId", "proposalId"],
+                "properties": {
+                  "status": { "enum": ["RequiresApproval", "Running", "Rejected", "Cancelled", "Failed", "Indeterminate"] },
+                  "operationId": { "type": "string" },
+                  "proposalId": { "type": "string" },
+                  "jobId": { "type": ["string", "null"] }
+                }
+              }]
+            },
+            {{ToolErrorSchema}}
+          ]
+        }
+        """);
+
     private static bool AcceptsErrorEnvelope(JsonElement schema)
     {
         if (!schema.TryGetProperty("oneOf", out var branches)
@@ -892,7 +918,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    public static readonly JsonElement ApplyStylePresetOutputSchema = Parse(
+    private static readonly JsonElement ApplyStylePresetResultSchema = Parse(
         """
         {
           "type": "object",
@@ -982,6 +1008,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    public static readonly JsonElement ApplyStylePresetOutputSchema = IncludeApprovalStatus(ApplyStylePresetResultSchema);
     public static readonly JsonElement StudioDraftOutputSchema = Parse(
         """
         {

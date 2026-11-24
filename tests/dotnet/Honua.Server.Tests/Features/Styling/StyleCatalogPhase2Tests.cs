@@ -30,6 +30,33 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    public async Task AssociatePrimaryLayer_ReturnsCommittedRevisionAndDemotesPreviousPrimary()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var previousId = $"previous-{Guid.NewGuid():N}";
+        var styleId = $"primary-{Guid.NewGuid():N}";
+        await catalog.CreateStyleAsync(previousId, BuildDefaultStyleJson());
+        await catalog.CreateStyleAsync(styleId, BuildDefaultStyleJson(), title: "Original");
+        await catalog.AssociatePrimaryLayerAsync(WebAppFixture.TestLayerId, previousId);
+        var updated = await catalog.UpdateStyleAsync(styleId, BuildDefaultStyleJson(), title: "Revised");
+
+        var associated = await catalog.AssociatePrimaryLayerAsync(WebAppFixture.TestLayerId, styleId);
+
+        associated.Should().BeEquivalentTo(updated);
+        associated!.Title.Should().Be("Revised");
+        var references = await catalog.ListAssociationsAsync();
+        var primary = references.Where(reference => reference.LayerId == WebAppFixture.TestLayerId && reference.Ordinal == 0);
+        primary.Should().ContainSingle().Which.StyleId.Should().Be(styleId);
+        references.Should().Contain(reference => reference.LayerId == WebAppFixture.TestLayerId
+            && reference.StyleId == previousId && reference.Ordinal > 0);
+        (await catalog.AssociatePrimaryLayerAsync(WebAppFixture.TestLayerId, $"missing-{Guid.NewGuid():N}")).Should().BeNull();
+        (await catalog.AssociatePrimaryLayerAsync(int.MaxValue, styleId)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UpdatingLayerStyle_PopulatesStyleResourceIdsWithTypeStyleResource()
     {

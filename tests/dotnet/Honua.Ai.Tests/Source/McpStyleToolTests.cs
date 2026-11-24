@@ -150,7 +150,7 @@ public sealed partial class McpStyleToolTests
     {
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
-        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        catalog.AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset() with { Title = "Revised preset", StyleVersion = 2 });
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
 
         var response = await DispatchAsync(
@@ -163,10 +163,12 @@ public sealed partial class McpStyleToolTests
         var structured = response.Result!.Value.GetProperty("structuredContent");
         structured.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
         structured.GetProperty("applied").GetBoolean().Should().BeTrue();
+        structured.GetProperty("title").GetString().Should().Be("Revised preset");
+        structured.GetProperty("styleVersion").GetInt32().Should().Be(2);
         structured.GetProperty("serviceLayerIndex").GetInt32().Should().Be(LayerIndex);
 
         // The preset was bound as the layer's primary style and the graph reconciled.
-        await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
+        await catalog.Received(1).AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>());
         await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
     }
 
@@ -197,7 +199,7 @@ public sealed partial class McpStyleToolTests
             .Contain("style_missing").And.Contain(PresetStyleId).And.Contain("style_parcels");
 
         // No binding or graph mutation happened for an unknown preset.
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -233,7 +235,7 @@ public sealed partial class McpStyleToolTests
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("permission_denied");
 
         // Authorization is enforced before any style binding is written.
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -268,7 +270,7 @@ public sealed partial class McpStyleToolTests
         {
             result.GetProperty("structuredContent").TryGetProperty("proposalId", out _).Should().BeFalse();
         }
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -294,7 +296,7 @@ public sealed partial class McpStyleToolTests
 
         response!.Error.Should().BeNull();
         response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -358,7 +360,7 @@ public sealed partial class McpStyleToolTests
         structured.GetProperty("proposalId").GetString().Should().Be("style-proposal");
         await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
             Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>());
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -381,7 +383,7 @@ public sealed partial class McpStyleToolTests
         var output = result.GetProperty("structuredContent");
         output.GetProperty("dryRun").GetBoolean().Should().BeTrue();
         output.GetProperty("applied").GetBoolean().Should().BeFalse();
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -410,7 +412,7 @@ public sealed partial class McpStyleToolTests
         var result = response.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("unavailable");
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -426,7 +428,7 @@ public sealed partial class McpStyleToolTests
     {
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
-        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        catalog.AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         graphSync.SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>())
             .Returns(Task.FromException(cancelled ? new OperationCanceledException() : new InvalidOperationException("projection failed")));
@@ -494,7 +496,7 @@ public sealed partial class McpStyleToolTests
         await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
             Arg.Is<OperationPolicyContext>(context => context.Tier == "pro"),
             Arg.Is<PolicyDecision>(decision => decision.Kind == PolicyDecisionKind.RequireApproval), Arg.Any<CancellationToken>());
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -516,7 +518,7 @@ public sealed partial class McpStyleToolTests
         output.GetProperty("code").GetString().Should().Be("unavailable");
         output.GetProperty("missingDependency").GetString().Should().Be("system-database");
         output.GetProperty("retryable").GetBoolean().Should().BeFalse();
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -531,7 +533,7 @@ public sealed partial class McpStyleToolTests
         // with the canonical handle marked durable=false (honua-release run 38249563601).
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
-        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        catalog.AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var instanceStore = OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(
             new UnavailableOperationInstanceStore());
@@ -553,7 +555,7 @@ public sealed partial class McpStyleToolTests
         output.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
         output.GetProperty("durable").GetBoolean().Should().BeFalse();
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ApplyStylePresetOutputSchema);
-        await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
+        await catalog.Received(1).AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>());
         await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
     }
 
@@ -576,7 +578,7 @@ public sealed partial class McpStyleToolTests
         var graph = BuildGraphProvider(useFallbackBinding: fallback, publicationBindingId: publicationBindingId);
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
-        catalog.AssociateLayerAsync(Arg.Any<int>(), PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        catalog.AssociatePrimaryLayerAsync(Arg.Any<int>(), PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         OperationRequest? capturedReplay = null;
         var bridge = Substitute.For<IOperationApprovalBridge>();
@@ -646,14 +648,14 @@ public sealed partial class McpStyleToolTests
         if (mutation == "unchanged")
         {
             (await ReplayAsync()).Status.Should().Be(OperationHandleStatus.Completed);
-            await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
+            await catalog.Received(1).AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>());
             await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, CancellationToken.None);
         }
         else
         {
             Func<Task> act = async () => { _ = await ReplayAsync(); };
             await act.Should().ThrowAsync<ArgumentException>();
-            await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+            await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
             await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
         }
     }
@@ -685,8 +687,9 @@ public sealed partial class McpStyleToolTests
         };
         ActivitySource.AddActivityListener(listener);
         var catalog = Substitute.For<IStyleCatalog>();
-        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>())
-            .Returns(outcome != "failed");
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        catalog.AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>())
+            .Returns(outcome != "failed" ? Preset() : null);
         var sync = Substitute.For<IMetadataV2StyleGraphSync>();
         if (outcome == "reconciliation-pending")
         {
@@ -782,7 +785,7 @@ public sealed partial class McpStyleToolTests
         // honua_publish_service does (operationInstanceId / correlationId / auditId).
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
-        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        catalog.AssociatePrimaryLayerAsync(StorageLayerId, PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,

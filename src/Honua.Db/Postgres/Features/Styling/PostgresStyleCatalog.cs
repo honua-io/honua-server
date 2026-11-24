@@ -350,14 +350,20 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
     }
 
     public async Task<bool> AssociateLayerAsync(int layerId, string styleId, int ordinal = 0, CancellationToken cancellationToken = default)
+        => await AssociateAndReadAsync((layerId, styleId, ordinal), cancellationToken).ConfigureAwait(false) is not null;
+
+    public Task<StyleCatalogRecord?> AssociatePrimaryLayerAsync(int layerId, string styleId, CancellationToken cancellationToken = default)
+        => AssociateAndReadAsync((layerId, styleId, 0), cancellationToken);
+
+    private async Task<StyleCatalogRecord?> AssociateAndReadAsync(
+        (int LayerId, string StyleId, int Ordinal) reference, CancellationToken cancellationToken)
     {
+        var (layerId, styleId, ordinal) = reference;
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
 
         var sql = $"""
             INSERT INTO {_refsTable} (layer_id, style_id, ordinal)
-            SELECT @layerId, @styleId, @ordinal
-            WHERE EXISTS (SELECT 1 FROM {_stylesTable} WHERE style_id = @styleId)
-              AND EXISTS (SELECT 1 FROM {_layersTable} WHERE layer_id = @layerId)
+            VALUES (@layerId, @styleId, @ordinal)
             ON CONFLICT (layer_id, style_id) DO UPDATE SET ordinal = EXCLUDED.ordinal
             """;
 
@@ -374,8 +380,15 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             if (await lockCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return false;
+                return null;
             }
+        }
+
+        var preset = await ReadLockedStyleAsync((connection, transaction), styleId, cancellationToken).ConfigureAwait(false);
+        if (preset is null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -409,7 +422,18 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         }
 
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        return affected > 0;
+        return affected > 0 ? preset : null;
+    }
+
+    private async Task<StyleCatalogRecord?> ReadLockedStyleAsync(
+        (NpgsqlConnection Connection, NpgsqlTransaction Transaction) database, string styleId, CancellationToken cancellationToken)
+    {
+        // Hold the style revision until the association and its recorded result agree.
+        await using var command = new NpgsqlCommand(
+            $"SELECT {SelectColumns} FROM {_stylesTable} WHERE style_id = @styleId FOR UPDATE", database.Connection, database.Transaction);
+        _ = command.Parameters.AddWithValue("@styleId", styleId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadStyle(reader) : null;
     }
 
     private static string QualifiedSelectColumns(string alias) =>

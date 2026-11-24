@@ -58,6 +58,10 @@ public interface IStyleCatalog
         int? protectedLayerId = null,
         CancellationToken cancellationToken = default);
 
+    // Returns the revision metadata captured in the same transaction as the primary association.
+    // Null when the style or layer is missing.
+    Task<StyleCatalogRecord?> AssociatePrimaryLayerAsync(int layerId, string styleId, CancellationToken cancellationToken = default);
+
     Task<bool> AssociateLayerAsync(int layerId, string styleId, int ordinal = 0, CancellationToken cancellationToken = default);
 }
 

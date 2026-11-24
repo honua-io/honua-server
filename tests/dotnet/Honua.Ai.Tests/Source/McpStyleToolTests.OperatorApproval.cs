@@ -47,7 +47,7 @@ public sealed partial class McpStyleToolTests
             result.GetProperty("code").GetString().Should().Be("permission_denied");
             await bridge.DidNotReceiveWithAnyArgs().CreateProposalAsync(default!, default!, default!, default!, default);
         }
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await sync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
@@ -66,7 +66,7 @@ public sealed partial class McpStyleToolTests
             catalog: catalog, graphSync: sync, approvalRequired: true);
 
         response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse();
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
         await sync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 

@@ -48,14 +48,15 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(new StyleCatalogRecord
+        var preset = new StyleCatalogRecord
         {
             StyleId = StyleId,
             Title = "Flood depth",
             MapLibreStyleJson = "{\"version\":8,\"layers\":[]}",
             StyleVersion = 1,
-        });
-        _catalog.AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        };
+        _catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(preset);
+        _catalog.AssociatePrimaryLayerAsync(StorageLayerId, StyleId, Arg.Any<CancellationToken>()).Returns(preset);
 
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("res-redis-off-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
@@ -114,7 +115,13 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
         handle.GetProperty("policyDecision").GetString().Should().Be("Allow");
         handle.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        await _catalog.Received(1).AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>());
+        var details = handle.GetProperty("result").GetProperty("details");
+        details.GetProperty("styleId").GetString().Should().Be(StyleId);
+        details.GetProperty("styleTitle").GetString().Should().Be("Flood depth");
+        details.GetProperty("styleVersion").GetString().Should().Be("1");
+        details.GetProperty("expectedPublicationId").GetString().Should().Be("pub-redis-off-style");
+        details.GetProperty("expectedStorageLayerId").GetString().Should().Be(StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await _catalog.Received(1).AssociatePrimaryLayerAsync(StorageLayerId, StyleId, Arg.Any<CancellationToken>());
         await _graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
     }
 
