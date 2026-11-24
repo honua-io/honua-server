@@ -92,4 +92,34 @@ public sealed class EnrichmentDatasetValidationTests
     [InlineData(null, false)]
     public void TryValidateLayerId_RequiresNonNegative(int? layerId, bool expectedValid)
         => EnrichmentDatasetValidation.TryValidateLayerId(layerId, out _).Should().Be(expectedValid);
+
+    [UnitTheory]
+    [InlineData("5")]
+    [InlineData("-1")]
+    [InlineData("1")]
+    [InlineData("Pro,Enterprise")]
+    [InlineData("Community,Enterprise")]
+    public void TryValidateMinimumEdition_NumericOrCombinedValue_IsRejected(string minimumEdition)
+    {
+        var valid = EnrichmentDatasetValidation.TryValidateMinimumEdition(minimumEdition, out var edition, out var error);
+
+        valid.Should().BeFalse();
+        error.Should().NotBeNullOrEmpty();
+        edition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData(250.5)]
+    public void DistanceMetersError_AbsentOrPositive_IsNull(double? distanceMeters)
+        => EnrichmentDatasetValidation.DistanceMetersError(distanceMeters).Should().BeNull();
+
+    [UnitTheory]
+    [InlineData(0d)]
+    [InlineData(-10d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void DistanceMetersError_ZeroNegativeOrNotFinite_NamesTheRule(double distanceMeters)
+        => EnrichmentDatasetValidation.DistanceMetersError(distanceMeters)
+            .Should().Be("distanceMeters must be a positive number of meters.");
 }
