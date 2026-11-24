@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name('container-version.py')
 
+HANDOFF_REPOSITORY = 'honua-io/honua-server'
 HANDOFF_GH_STUB = r'''gh() {
           case "$*" in
             "api repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag} --jq .object.sha")
@@ -88,11 +89,10 @@ class ContainerVersionTests(unittest.TestCase):
 
     def test_handoff_skips_duplicate_publications_and_preserves_dispatch_inputs(self):
         handoff = self.handoff_script()
-        repository = 'honua-io/honua-server'
         tag = 'nightly-candidate-aaaaaaa'
         full = {
             'status': 'queued', 'event': 'workflow_dispatch', 'head_branch': tag,
-            'head_repository': {'full_name': repository},
+            'head_repository': {'full_name': HANDOFF_REPOSITORY},
             'display_title': f'Nightly Container Build · refs/tags/{tag}',
         }
         ecs = dict(full, status='in_progress', display_title=f'ECS-only candidate · refs/tags/{tag}')
@@ -105,7 +105,7 @@ class ContainerVersionTests(unittest.TestCase):
             dict(full, head_repository={'full_name': 'fork/honua-server'}),
         ]
         version = '2026.1.0-rc.2'
-        dispatch = f'DISPATCH:<workflow><run><nightly-container-build.yml><--repo><{repository}><--ref><{tag}>'
+        dispatch = f'DISPATCH:<workflow><run><nightly-container-build.yml><--repo><{HANDOFF_REPOSITORY}><--ref><{tag}>'
         cases = (
             ('legacy inputs', [unrelated], '', 'false', dispatch),
             ('release version', [[]], version, 'false', f'{dispatch}<-f><release_version={version}>'),
@@ -119,11 +119,12 @@ class ContainerVersionTests(unittest.TestCase):
             ('active build cannot accept a release version', [[full]], version, 'false', 'error'),
             ('active build cannot accept ECS input', [[full]], '', 'true', 'error'),
         )
-        for name, pages, release, ecs_only, expected in cases:
+        for name, *case in cases:
             with self.subTest(name=name):
-                self.assert_handoff(handoff, repository, pages, release, ecs_only, expected)
+                self.assert_handoff(handoff, case)
 
-    def assert_handoff(self, handoff, repository, pages, release, ecs_only, expected):
+    def assert_handoff(self, handoff, case):
+        pages, release, ecs_only, expected = case
         with tempfile.TemporaryDirectory() as temp:
             result = subprocess.run(
                 ['bash', '-c', HANDOFF_GH_STUB + handoff], text=True, capture_output=True,
@@ -132,7 +133,7 @@ class ContainerVersionTests(unittest.TestCase):
                      'RUN_PAGES': '\n'.join(json.dumps({'workflow_runs': page}) for page in pages),
                      'RUNNER_TEMP': temp,
                      'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md'),
-                     'GITHUB_REPOSITORY': repository, 'HANDOFF_TOKEN': 'test',
+                     'GITHUB_REPOSITORY': HANDOFF_REPOSITORY, 'HANDOFF_TOKEN': 'test',
                      'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40})
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 1 if expected == 'error' else 0, output)
