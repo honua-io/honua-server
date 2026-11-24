@@ -5,11 +5,14 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.EnrichmentCatalog.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
@@ -27,7 +30,13 @@ public sealed class EnrichmentDatasetAdminHardeningTests(EnrichmentDatasetAdminH
     // One host for the class: each case uses its own dataset id.
     public sealed class Host : IAsyncLifetime
     {
-        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Limits:Analytics:MaxDWithinDistanceMeters"] = "1000",
+                })));
 
         public Task InitializeAsync() => Fixture.InitializeAsync();
 
@@ -39,14 +48,17 @@ public sealed class EnrichmentDatasetAdminHardeningTests(EnrichmentDatasetAdminH
     [Endpoint("POST /api/enrich/datasets")]
     [InlineData("reg-zero-distance", 0d)]
     [InlineData("reg-negative-distance", -5d)]
-    public async Task Register_NonPositiveDistance_ReturnsBadRequest(string id, double distanceMeters)
+    [InlineData("reg-over-limit-distance", 1001d)]
+    public async Task Register_InvalidDistance_ReturnsBadRequest(string id, double distanceMeters)
     {
-        var admin = _fixture.CreateAdminClient();
+        using var admin = _fixture.CreateAdminClient();
 
-        using var response = await admin.PostAsync("/api/enrich/datasets", Body(Dataset(id) with { DistanceMeters = distanceMeters }));
+        using var content = Body(Dataset(id) with { DistanceMeters = distanceMeters });
+        using var response = await admin.PostAsync("/api/enrich/datasets", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await admin.GetAsync($"/api/enrich/datasets/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var stored = await admin.GetAsync($"/api/enrich/datasets/{id}");
+        stored.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -54,29 +66,87 @@ public sealed class EnrichmentDatasetAdminHardeningTests(EnrichmentDatasetAdminH
     [Endpoint("POST /api/enrich/datasets")]
     public async Task Register_NumericMinimumEdition_ReturnsBadRequest()
     {
-        var admin = _fixture.CreateAdminClient();
+        using var admin = _fixture.CreateAdminClient();
 
-        using var response = await admin.PostAsync(
-            "/api/enrich/datasets", Body(Dataset("reg-numeric-edition") with { MinimumEdition = "5" }));
+        using var content = Body(Dataset("reg-numeric-edition") with { MinimumEdition = "5" });
+        using var response = await admin.PostAsync("/api/enrich/datasets", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.UpdateEnrichmentDataset)]
+    [Endpoint("PUT /api/enrich/datasets/{id}")]
+    [InlineData(-1d)]
+    [InlineData(1001d)]
+    public async Task Update_InvalidDistance_IsRefusedAndKeepsTheStoredDistance(double distanceMeters)
+    {
+        using var admin = _fixture.CreateAdminClient();
+        var id = $"upd-distance-{Guid.NewGuid():N}";
+        var path = $"/api/enrich/datasets/{id}";
+        using var createContent = Body(Dataset(id) with { DistanceMeters = 1000d });
+        using var created = await admin.PostAsync("/api/enrich/datasets", createContent);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var updateContent = Body(new { distanceMeters });
+        using var response = await admin.PutAsync(path, updateContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var stored = JsonDocument.Parse(await admin.GetStringAsync(path));
+        stored.RootElement.GetProperty("distanceMeters").GetDouble().Should().Be(1000d);
     }
 
     [IntegrationTest]
     [Operation(Operations.UpdateEnrichmentDataset)]
     [Endpoint("PUT /api/enrich/datasets/{id}")]
-    public async Task Update_NonPositiveDistance_IsRefusedAndKeepsTheStoredDistance()
+    public async Task Update_ToDWithin_ValidatesTheRetainedDistanceAgainstTheConfiguredLimit()
     {
-        var admin = _fixture.CreateAdminClient();
-        (await admin.PostAsync("/api/enrich/datasets", Body(Dataset("upd-distance") with { DistanceMeters = 100d })))
-            .StatusCode.Should().Be(HttpStatusCode.Created);
+        using var admin = _fixture.CreateAdminClient();
+        var id = $"upd-predicate-{Guid.NewGuid():N}";
+        var path = $"/api/enrich/datasets/{id}";
+        using var createContent = Body(Dataset(id) with { DefaultPredicate = "intersects", DistanceMeters = 1001d });
+        using var created = await admin.PostAsync("/api/enrich/datasets", createContent);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        using var response = await admin.PutAsync(
-            "/api/enrich/datasets/upd-distance", Body(new { distanceMeters = -1d }));
+        using var updateContent = Body(new { defaultPredicate = "dwithin" });
+        using var response = await admin.PutAsync(path, updateContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        using var stored = JsonDocument.Parse(await admin.GetStringAsync("/api/enrich/datasets/upd-distance"));
-        stored.RootElement.GetProperty("distanceMeters").GetDouble().Should().Be(100d);
+        using var stored = JsonDocument.Parse(await admin.GetStringAsync(path));
+        stored.RootElement.GetProperty("defaultPredicate").GetString().Should().Be("intersects");
+        stored.RootElement.GetProperty("distanceMeters").GetDouble().Should().Be(1001d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.UpdateEnrichmentDataset)]
+    [Endpoint("PUT /api/enrich/datasets/{id}")]
+    public async Task Update_WithLegacyOverLimitDistance_RequiresCorrectingTheDefault()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        var id = $"upd-legacy-distance-{Guid.NewGuid():N}";
+        var dataset = Dataset(id) with { DistanceMeters = 1000d };
+        var path = $"/api/enrich/datasets/{id}";
+
+        using var createContent = Body(dataset);
+        using var created = await admin.PostAsync("/api/enrich/datasets", createContent);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IEnrichmentDatasetCatalogStore>();
+        var original = await store.GetAsync(id);
+        original.Should().NotBeNull();
+        await store.UpdateAsync(original! with { DistanceMeters = 1001d });
+
+        using var titleOnly = Body(new { title = "Updated title" });
+        using var refused = await admin.PutAsync(path, titleOnly);
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var stored = JsonDocument.Parse(await admin.GetStringAsync(path));
+        stored.RootElement.GetProperty("title").GetString().Should().Be(dataset.Title);
+        stored.RootElement.GetProperty("distanceMeters").GetDouble().Should().Be(1001d);
+
+        using var corrected = Body(new { title = "Updated title", distanceMeters = 1000d });
+        using var updated = await admin.PutAsync(path, corrected);
+        updated.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     internal static DatasetRequest Dataset(string id) => new() { Id = id, Title = $"Dataset {id}" };

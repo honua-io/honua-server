@@ -38,8 +38,8 @@ public sealed class OgcTemporalFieldSpellingTests
             "2024-01-01T00:00:00Z/2024-12-31T00:00:00Z", Resource, out var filter, out var error);
 
         parsed.Should().BeTrue(error);
-        filter!.PropertyName.Should().Be("Observed_At");
-        filter.EndPropertyName.Should().Be("Closed_At");
+        filter!.Value.PropertyName.Should().Be("Observed_At");
+        filter.Value.EndPropertyName.Should().Be("Closed_At");
     }
 
     [UnitTest]
