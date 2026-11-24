@@ -129,6 +129,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainMetadata_WithCollectionName_ResolvesDataset()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(12.3);
@@ -143,6 +145,17 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         source.GetProperty("datasetId").GetString().Should().Be("Test Layer");
         source.GetProperty("layerId").GetInt32().Should().Be(WebAppFixture.TestLayerId);
         json.RootElement.GetProperty("tiles")[0].GetString().Should().Contain("/terrain/Test%20Layer/{z}/{x}/{y}.png");
+
+        using var meshMetadata = await _fixture.Client.GetAsync("/terrain/Test%20Layer/layer.json");
+        meshMetadata.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var meshJson = JsonDocument.Parse(await meshMetadata.Content.ReadAsStringAsync());
+        meshJson.RootElement.GetProperty("tiles")[0].GetString()
+            .Should().Contain("/terrain/Test%20Layer/{z}/{x}/{y}.terrain");
+
+        using var meshResponse = await _fixture.Client.GetAsync("/terrain/Test%20Layer/0/0/0.terrain");
+        meshResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var mesh = QuantizedMeshTileReader.Read(await meshResponse.Content.ReadAsByteArrayAsync());
+        mesh.Header.MaximumHeight.Should().BeApproximately(12.3f, 0.5f);
     }
 
     [IntegrationTest]
@@ -176,6 +189,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainTile_OutsideCoverage_ReturnsAllNoDataPng()
     {
         await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
@@ -204,6 +218,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
             bitmap.Height.Should().Be(TerrainRgbEncoding.TileSize);
             AssertTransparentNoDataPixel(bitmap, 128, 128);
         }
+
+        await AssertFlatZeroMeshAsync("/terrain/0/1/0/1.terrain");
     }
 
     [IntegrationTest]
@@ -241,6 +257,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainTile_WithSourceNoData_ReturnsTransparentPixels()
     {
         await using var heldRasters = await HoldRasterSqlAsync("""
@@ -262,6 +279,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
                 AssertTransparentNoDataPixel(bitmap, column, row);
             }
         }
+
+        await AssertFlatZeroMeshAsync("/terrain/0/0/0/0.terrain");
     }
 
     [IntegrationTest]
@@ -294,6 +313,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainTile_WithZoomAboveLimit_ReturnsBadRequest()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
@@ -302,6 +322,10 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var meshResponse = await _fixture.Client.GetAsync("/terrain/0/23/0/0.terrain");
+        meshResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await meshResponse.Content.ReadAsStringAsync()).Should().Contain("outside the configured range");
     }
 
     [IntegrationTest]
@@ -320,6 +344,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
+    [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainMetadata_WhenTerrainProtocolDisabled_ReturnsNotFound()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
@@ -337,6 +363,11 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
             var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            using var meshMetadata = await _fixture.Client.GetAsync("/terrain/0/layer.json");
+            meshMetadata.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var meshResponse = await _fixture.Client.GetAsync("/terrain/0/0/0/0.terrain");
+            meshResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
         finally
         {
@@ -398,6 +429,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainTile_WithUnknownSourceCrs_ReturnsUnprocessableEntity()
     {
         await using var heldRasters = await HoldUnknownCrsRasterAsync();
@@ -407,11 +439,16 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("CRS");
+
+        using var meshResponse = await _fixture.Client.GetAsync("/terrain/0/0/0/0.terrain");
+        meshResponse.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await meshResponse.Content.ReadAsStringAsync()).Should().Contain("CRS");
     }
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainTile_WithUnregisteredPositiveSourceCrs_ReturnsUnprocessableEntity()
     {
         await using var heldRasters = await HoldUnregisteredCrsRasterAsync();
@@ -421,6 +458,10 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("CRS");
+
+        using var meshResponse = await _fixture.Client.GetAsync("/terrain/0/0/0/0.terrain");
+        meshResponse.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await meshResponse.Content.ReadAsStringAsync()).Should().Contain("CRS");
     }
 
     [IntegrationTest]
@@ -478,6 +519,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /terrain/{datasetId}/layer.json")]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.terrain")]
     public async Task GetTerrainLayerJson_WithUnknownDataset_ReturnsNotFound()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
@@ -486,6 +528,13 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var unknownName = await _fixture.Client.GetAsync("/terrain/unknown-dem/layer.json");
+        unknownName.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var unknownMeshId = await _fixture.Client.GetAsync("/terrain/999999/0/0/0.terrain");
+        unknownMeshId.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var unknownMeshName = await _fixture.Client.GetAsync("/terrain/unknown-dem/0/0/0.terrain");
+        unknownMeshName.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -548,6 +597,18 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var tile = QuantizedMeshTileReader.Read(bytes);
         tile.OctEncodedNormals.Should().NotBeNull();
         tile.OctEncodedNormals!.Length.Should().Be(tile.U.Length * 2);
+
+        using var queryResponse = await _fixture.Client.GetAsync("/terrain/0/1/0/1.terrain?extensions=octvertexnormals");
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var queryTile = QuantizedMeshTileReader.Read(await queryResponse.Content.ReadAsByteArrayAsync());
+        queryTile.OctEncodedNormals.Should().Equal(tile.OctEncodedNormals);
+
+        using var refusal = new HttpRequestMessage(HttpMethod.Get, "/terrain/0/1/0/1.terrain");
+        refusal.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/vnd.quantized-mesh;extensions=octvertexnormals;q=0"));
+        using var refusedResponse = await _fixture.Client.SendAsync(refusal);
+        refusedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var refusedTile = QuantizedMeshTileReader.Read(await refusedResponse.Content.ReadAsByteArrayAsync());
+        refusedTile.OctEncodedNormals.Should().BeNull();
     }
 
     [IntegrationTest]
@@ -561,6 +622,10 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var meshResponse = await _fixture.Client.GetAsync("/terrain/0/0/-1/0.terrain");
+        meshResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await meshResponse.Content.ReadAsStringAsync()).Should().Contain("outside the EPSG:4326 TMS tile matrix bounds");
     }
 
     [IntegrationTest]
@@ -585,6 +650,15 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("single numeric elevation band");
+    }
+
+    private async Task AssertFlatZeroMeshAsync(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var tile = QuantizedMeshTileReader.Read(await response.Content.ReadAsByteArrayAsync());
+        tile.Header.MinimumHeight.Should().Be(0);
+        tile.Header.MaximumHeight.Should().Be(0);
     }
 
     private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
