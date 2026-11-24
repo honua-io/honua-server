@@ -10,13 +10,13 @@ using NpgsqlTypes;
 namespace Honua.Server.Features.Infrastructure.SecurityState;
 
 // One row per source. A window is over when expires_at has passed; a refusal in force ignores further failures,
-// matching the per-instance limiter. Times come from the caller's clock so every instance judges windows alike.
+// matching the per-instance limiter. Writes and retention use the same database clock.
 internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase database, IOptions<AuthenticationFailureLimiterOptions> options)
     : IAuthenticationFailureLedger, IExpiredRowSweep
 {
-    private const string Refused = "stored.refused_until > @now";
-    private const string KeepExisting = $"({Refused} OR stored.window_started > @now)";
-    private const string Over = "stored.expires_at <= @now";
+    private const string WriteTime = "statement_timestamp()";
+    private const string RefusedAtWrite = $"stored.refused_until > {WriteTime}";
+    private const string Over = $"stored.expires_at <= {WriteTime}";
     private const string NextFailures = $"(CASE WHEN {Over} THEN 1 ELSE stored.failures + 1 END)";
     private const string ReachesThreshold = $"{NextFailures} >= @threshold";
 
@@ -29,23 +29,24 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                 await using var command = new NpgsqlCommand(
                     $"""
                     INSERT INTO {_windows} AS stored (source_digest, window_started, failures, refused_until, expires_at)
-                    VALUES (@digest, @now, 1,
-                        CASE WHEN @threshold <= 1 THEN @now + @block END,
-                        CASE WHEN @threshold <= 1 THEN @now + @block ELSE @now + @window END)
+                    VALUES (@digest, {WriteTime}, 1,
+                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block END,
+                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block ELSE {WriteTime} + @window END)
                     ON CONFLICT (source_digest) DO UPDATE SET
-                        window_started = CASE WHEN {KeepExisting} THEN stored.window_started WHEN {Over} THEN @now ELSE stored.window_started END,
-                        failures = CASE WHEN {KeepExisting} THEN stored.failures ELSE {NextFailures} END,
-                        refused_until = CASE WHEN {KeepExisting} THEN stored.refused_until WHEN {ReachesThreshold} THEN @now + @block END,
+                        window_started = CASE WHEN {Over} THEN {WriteTime} ELSE stored.window_started END,
+                        failures = CASE WHEN {RefusedAtWrite} THEN stored.failures ELSE {NextFailures} END,
+                        refused_until = CASE
+                            WHEN {RefusedAtWrite} THEN stored.refused_until
+                            WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block END,
                         expires_at = CASE
-                            WHEN {KeepExisting} THEN stored.expires_at
-                            WHEN {ReachesThreshold} THEN @now + @block
-                            WHEN {Over} THEN @now + @window
+                            WHEN {RefusedAtWrite} THEN stored.expires_at
+                            WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block
+                            WHEN {Over} THEN {WriteTime} + @window
                             ELSE stored.expires_at END
                     RETURNING failures, refused_until, expires_at
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("digest", NpgsqlDbType.Bytea) { Value = failure.SourceDigest });
-                command.Parameters.Add(new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = failure.At.ToUniversalTime() });
                 command.Parameters.Add(new NpgsqlParameter("threshold", NpgsqlDbType.Integer) { Value = failure.Policy.Threshold });
                 command.Parameters.Add(new NpgsqlParameter("window", NpgsqlDbType.Interval) { Value = failure.Policy.Window });
                 command.Parameters.Add(new NpgsqlParameter("block", NpgsqlDbType.Interval) { Value = failure.Policy.BlockDuration });
@@ -64,7 +65,7 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT source_digest, failures, refused_until, expires_at FROM {_windows} AS stored
-                    WHERE {Refused}
+                    WHERE stored.refused_until > @now
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = now.ToUniversalTime() });
@@ -90,14 +91,14 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                     $"""
                     WITH expired AS (
                         SELECT ctid FROM {_windows}
-                        WHERE expires_at <= now()
+                        WHERE expires_at <= {WriteTime}
                         ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED),
                     overflow AS (
                         SELECT ctid FROM {_windows}
-                        WHERE expires_at > now() AND (refused_until IS NULL OR refused_until <= now())
+                        WHERE expires_at > {WriteTime} AND (refused_until IS NULL OR refused_until <= {WriteTime})
                         ORDER BY window_started DESC, source_digest
                         OFFSET GREATEST(0, @max_sources - (
-                            SELECT count(*) FROM {_windows} WHERE refused_until > now()))
+                            SELECT count(*) FROM {_windows} WHERE refused_until > {WriteTime}))
                         LIMIT (@batch_size - (SELECT count(*) FROM expired))),
                     doomed AS (
                         SELECT ctid FROM expired

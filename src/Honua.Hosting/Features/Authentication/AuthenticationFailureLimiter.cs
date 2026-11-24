@@ -69,16 +69,17 @@ internal sealed class AuthenticationFailureLimiter(
     public AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key)
     {
         var now = timeProvider.GetUtcNow();
-        var sharedWindow = Shared?.For(key.Source, now);
         lock (_gate)
         {
+            var pendingSharedFailures = 0;
+            var sharedWindow = Shared?.For(key.Source, now, out pendingSharedFailures);
             var window = Track(key.Source, now);
             if (Later(window.RefusedUntil, sharedWindow?.RefusedUntil) is { } until && until > now)
             {
                 return AuthenticationAttemptAdmission.Refuse(until - now);
             }
 
-            var failures = Math.Max(window.Failures, sharedWindow?.Failures ?? 0);
+            var failures = Math.Max(window.Failures, (long)(sharedWindow?.Failures ?? 0) + pendingSharedFailures);
             if (!window.Pending.ContainsKey(key.Credential) && failures + window.Pending.Count >= _options.Threshold)
             {
                 return AuthenticationAttemptAdmission.Refuse(InFlightRetryAfter);
@@ -101,20 +102,21 @@ internal sealed class AuthenticationFailureLimiter(
         bool blocked;
         lock (_gate)
         {
-            if (!_sources.TryGetValue(key.Source, out var window))
+            _sources.TryGetValue(key.Source, out var window);
+            window?.Release(key.Credential);
+            if (outcome != AuthenticationAttemptOutcome.Failed || window?.IsRefused(now) is true)
             {
+                if (window is not null)
+                {
+                    ForgetIfIdle(key.Source, window, now);
+                }
+
                 return;
             }
 
-            window.Release(key.Credential);
-            if (outcome != AuthenticationAttemptOutcome.Failed || window.IsRefused(now))
-            {
-                ForgetIfIdle(key.Source, window, now);
-                return;
-            }
-
+            // The source entry can be evicted while an admitted check is in flight.
             sharedWriteDropped = Shared?.Record(key.Source, now) is false;
-            blocked = window.RecordFailure(now, _options);
+            blocked = window?.RecordFailure(now, _options) is true;
         }
 
         if (sharedWriteDropped)

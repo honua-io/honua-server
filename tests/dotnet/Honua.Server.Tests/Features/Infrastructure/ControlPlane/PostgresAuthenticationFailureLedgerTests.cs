@@ -119,7 +119,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         {
             var policy = new AuthenticationFailurePolicy(10, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
             await node.Shared.Ledger.RecordFailureAsync(
-                new(SharedAuthenticationFailures.Digest(other), DateTimeOffset.UtcNow, policy), CancellationToken.None);
+                new(SharedAuthenticationFailures.Digest(other), policy), CancellationToken.None);
         }
 
         await harness.CreateAuthenticationFailureLedger(options).DeleteExpiredAsync(100, CancellationToken.None);
@@ -139,10 +139,14 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         var now = DateTimeOffset.UtcNow;
         var refusal = new AuthenticationFailurePolicy(1, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         var unrefused = refusal with { Threshold = 2 };
-        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.1"), now, refusal), CancellationToken.None);
-        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.2"), now, refusal), CancellationToken.None);
-        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.3"), now, unrefused), CancellationToken.None);
-        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.4"), now.AddHours(-1), unrefused), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.1"), refusal), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.2"), refusal), CancellationToken.None);
+        await ledger.RecordFailureAsync(new(SharedAuthenticationFailures.Digest("203.0.113.3"), unrefused), CancellationToken.None);
+        await harness.ExecuteAsync(
+            $"""
+            INSERT INTO {harness.Table("authentication_failure_windows")} (source_digest, window_started, failures, expires_at)
+            VALUES (decode(repeat('01', 32), 'hex'), now() - interval '1 hour', 1, now() - interval '55 minutes')
+            """);
 
         (await ledger.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
         (await ledger.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
@@ -151,18 +155,17 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_IgnoresAnEventOlderThanTheStoredWindow()
+    public async Task Ledger_KeepsTheSameExpiryForWritesInAnActiveCountingWindow()
     {
         await using var harness = await CreateHarnessAsync();
         var ledger = harness.CreateAuthenticationFailureLedger(Policy(threshold: 2));
         var digest = SharedAuthenticationFailures.Digest(Source);
-        var now = DateTimeOffset.UtcNow;
-        var policy = new AuthenticationFailurePolicy(2, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
-        var current = await ledger.RecordFailureAsync(new(digest, now, policy), CancellationToken.None);
+        var policy = new AuthenticationFailurePolicy(3, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        var first = await ledger.RecordFailureAsync(new(digest, policy), CancellationToken.None);
 
-        var afterOlderEvent = await ledger.RecordFailureAsync(new(digest, now.AddMinutes(-10), policy), CancellationToken.None);
+        var second = await ledger.RecordFailureAsync(new(digest, policy), CancellationToken.None);
 
-        afterOlderEvent.Should().Be(current);
+        second.Should().Be(first with { Failures = 2 });
     }
 
     private static IOptions<AuthenticationFailureLimiterOptions> Policy(int threshold, TimeSpan? pollInterval = null)

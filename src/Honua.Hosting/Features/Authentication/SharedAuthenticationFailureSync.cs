@@ -48,17 +48,26 @@ internal sealed class SharedAuthenticationFailureSync(
     internal async Task RecordAsync(PendingAuthenticationFailure recorded, CancellationToken cancellationToken)
     {
         var digest = SharedAuthenticationFailures.Digest(recorded.Source);
+        SharedFailureWindow? window = null;
         try
         {
+            if (timeProvider.GetUtcNow() - recorded.At >= _options.Window)
+            {
+                return;
+            }
+
             var policy = new AuthenticationFailurePolicy(_options.Threshold, _options.Window, _options.BlockDuration);
-            var window = await shared!.Ledger
-                .RecordFailureAsync(new(digest, recorded.At, policy), cancellationToken)
+            window = await shared!.Ledger
+                .RecordFailureAsync(new(digest, policy), cancellationToken)
                 .ConfigureAwait(false);
-            shared.Apply(digest, window, timeProvider.GetUtcNow());
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             AuthenticationLog.SharedFailureStoreUnavailable(logger, exception);
+        }
+        finally
+        {
+            shared!.Acknowledge(recorded.Source, digest, window, timeProvider.GetUtcNow());
         }
     }
 

@@ -297,8 +297,10 @@ client address is not counted.
 
 With a system database, every server instance counts into one window per source
 in PostgreSQL, so a source is refused after `Threshold` failures in total across
-all instances, and a refusal survives a restart. A failed attempt writes one row
-update; successful and uncounted requests write nothing. Another instance applies
+all instances, and a refusal survives a restart. A failed attempt queues one row
+update. PostgreSQL starts and expires shared windows using its own clock.
+The worker skips failures that have spent a full counting window in the queue.
+Successful and uncounted requests write nothing. Another instance applies
 a refusal within `SharedPollInterval`. If the database cannot be reached, each
 instance keeps counting on its own until it recovers. The same local counting
 continues when the shared write queue is full. The

@@ -114,7 +114,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Shutdown_DrainsQueuedFailuresWithTheirOriginalTimestamps()
+    public async Task Shutdown_DrainsQueuedFailures()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options);
         var recordedAt = _clock.GetUtcNow().AddSeconds(-10);
@@ -126,7 +126,8 @@ public sealed class SharedAuthenticationFailuresTests
         await sync.StopAsync(deadline.Token);
 
         await _ledger.Received(1).RecordFailureAsync(
-            Arg.Is<AuthenticationFailure>(failure => failure.At == recordedAt), Arg.Any<CancellationToken>());
+            Arg.Is<AuthenticationFailure>(failure => failure.SourceDigest.SequenceEqual(SharedAuthenticationFailures.Digest(Source))),
+            Arg.Any<CancellationToken>());
         shared.Record(Source, recordedAt).Should().BeFalse();
     }
 
