@@ -263,6 +263,7 @@ public sealed partial class AdminAuthEndpointsTests
         [InlineData(null, "/console/")]
         [InlineData("/console/", "/console/")]
         [InlineData("/console/operate/connections", "/console/operate/connections")]
+        [InlineData("/console/operate/settings", "/console/operate/settings")]
         [Endpoint("GET /admin/auth/callback")]
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath(string? returnTo, string expected)
@@ -288,28 +289,6 @@ public sealed partial class AdminAuthEndpointsTests
             session!.IsAuthenticated.Should().BeTrue();
             using var replay = await browser.GetAsync("/admin/auth/callback?code=code-123&state=" + state);
             replay.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        }
-
-        [IntegrationTest]
-        [Endpoint("GET /admin/auth/callback")]
-        [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
-        public async Task BrowserCallback_ConsoleSettings_ReturnsToSettings()
-        {
-            const string returnTo = "/console/operate/settings";
-            using var browser = _oidcHost.CreateBrowserWithoutRedirects();
-            browser.BaseAddress = new Uri("https://localhost");
-            using var authorize = await browser.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
-            authorize.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var state = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
-
-            using var callback = await browser.GetAsync("/admin/auth/callback?code=code-123&state=" + state);
-            callback.StatusCode.Should().Be(HttpStatusCode.Redirect);
-            callback.Headers.Location!.OriginalString.Should().Be(returnTo);
-            using var identity = await browser.GetAsync("/api/v1/admin/auth/session");
-            var session = await identity.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeTrue();
         }
 
         [IntegrationTheory]
