@@ -199,6 +199,24 @@ class ImmutableTagsTests(unittest.TestCase):
                 'linux/arm64': {'config': {'Labels': {}}}})
             self.assertEqual(self.module.image_labels('image@digest', self.module.VERSION_LABEL), {'2026.1.0-rc.2', None})
 
+    def test_cron_skips_a_sha_with_only_ecs_rc_tags(self):
+        sha = 'abcdef0' + 'a' * 33
+        repository = 'ghcr.io/honua/server'
+        ecs_tags = self.module.ecs_publication_tags(repository, sha)
+        args = ['immutable-container-tags.py', '--sha', sha, '--already-imaged', repository,
+                '--expected-version', '2026.1.0-nightly.gabcdef0']
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: 'sha256:' + 'a' * 64 if tag in ecs_tags else None), \
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-rc.2'}):
+            for flags, code in ((['--scheduled'], 0), ([], 1),
+                                (['--scheduled', '--release-version', '2026.1.0-rc.3'], 1)):
+                with self.subTest(flags=flags), patch.object(sys, 'argv', args + flags), \
+                     patch('builtins.print') as output:
+                    self.assertEqual(self.module.main(), code)
+                    if code == 0:
+                        output.assert_any_call('skip_publish=1')
+                    else:
+                        self.assertTrue(all(call.args != ('skip_publish=1',) for call in output.call_args_list))
+
     def test_every_job_that_runs_the_guard_has_the_guard_on_disk(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/nightly-container-build.yml').read_text()
         jobs = re.split(r'\n  (?=[a-z][a-z0-9-]*:\n)', workflow.split('\njobs:\n', 1)[1])
@@ -374,6 +392,7 @@ esac
             output = Path(directory, 'output')
             environment = {**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH'],
                            'GITHUB_OUTPUT': str(output), 'GITHUB_REPOSITORY': 'honua-io/honua-server',
+                           'GITHUB_EVENT_NAME': 'workflow_dispatch',
                            'CANDIDATE_SHA': 'a' * 40, 'RELEASE_VERSION': '', 'EXPECTED_VERSION': '',
                            'ECS_ONLY': 'true', 'REGISTRY_GHCR': 'ghcr.io', 'IMAGE_NAME_GHCR': 'honua-io/honua-server',
                            'IMAGE_NAME_DOCKERHUB': 'honuaio/honua-server'}

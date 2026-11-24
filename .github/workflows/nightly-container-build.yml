@@ -98,12 +98,13 @@ jobs:
       sha7: ${{ steps.select.outputs.sha7 }}
       version: ${{ steps.version.outputs.version }}
       imaged: ${{ steps.existing.outputs.imaged }}
+      skip_publish: ${{ steps.existing.outputs.skip_publish }}
       reuse_aot: ${{ steps.existing.outputs.reuse_aot }}
       certifying_run_id: ${{ steps.select.outputs.run_id }}
       # build-trunk | build-candidate | redirect | proof
       mode: ${{ steps.route.outputs.mode }}
       # 'true' only when this run may move channel tags (build-trunk, build-candidate).
-      publish: ${{ steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1' }}
+      publish: ${{ steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -225,6 +226,7 @@ jobs:
           python3 scripts/ci/test_immutable_container_tags.py
           scope=()
           if [ "$ECS_ONLY" = true ]; then scope+=(--ecs-only); fi
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then scope+=(--scheduled); fi
           state="$(python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" --expected-version "$EXPECTED_VERSION" \
             "${scope[@]}" --already-imaged "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
             --already-imaged "docker.io/${IMAGE_NAME_DOCKERHUB}")"
@@ -258,7 +260,7 @@ jobs:
       # the run fails here and names it; there is no fallback to the Actions token, which
       # is the 403 this replaces (honua-io/honua-server#6613).
       - name: Require the release GitHub App for the candidate hand-off
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         env:
           HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}
           HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
@@ -276,7 +278,7 @@ jobs:
       # The token is revoked when the job ends.
       - name: Mint the release GitHub App token for the candidate hand-off
         id: handoff-token
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
@@ -290,7 +292,7 @@ jobs:
           permission-actions: write
 
       - name: Tag the selected sha and re-dispatch this workflow at it
-        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'
+        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'
         env:
           # Reads use the Actions token; only the tag create and the dispatch use the App token.
           GH_TOKEN: ${{ github.token }}
@@ -366,7 +368,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: select-candidate
-    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1' && needs.select-candidate.outputs.reuse_aot != '1' && (!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')
+    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1' && needs.select-candidate.outputs.skip_publish != '1' && needs.select-candidate.outputs.reuse_aot != '1' && (!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')
     permissions:
       contents: read
       packages: write
