@@ -67,7 +67,7 @@ internal sealed class SharedAuthenticationFailureSync(
         }
         finally
         {
-            shared!.Acknowledge(recorded.Source, digest, window, timeProvider.GetUtcNow());
+            shared!.Acknowledge(recorded.Source, window is { } persisted ? (digest, persisted) : null, timeProvider.GetUtcNow());
         }
     }
 

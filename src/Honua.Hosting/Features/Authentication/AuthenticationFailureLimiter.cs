@@ -71,8 +71,7 @@ internal sealed class AuthenticationFailureLimiter(
         var now = timeProvider.GetUtcNow();
         lock (_gate)
         {
-            var pendingSharedFailures = 0;
-            var sharedWindow = Shared?.For(key.Source, now, out pendingSharedFailures);
+            var (sharedWindow, pendingSharedFailures) = Shared?.ForAdmission(key.Source, now) ?? default;
             var window = Track(key.Source, now);
             if (Later(window.RefusedUntil, sharedWindow?.RefusedUntil) is { } until && until > now)
             {

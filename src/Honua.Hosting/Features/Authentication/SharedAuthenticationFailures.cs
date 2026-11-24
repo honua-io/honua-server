@@ -68,20 +68,20 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
     public SharedFailureWindow? For(string source, DateTimeOffset now)
         => FindWindow(Key(Digest(source)), now);
 
-    internal SharedFailureWindow? For(string source, DateTimeOffset now, out int pendingFailures)
+    internal (SharedFailureWindow? Window, int PendingFailures) ForAdmission(string source, DateTimeOffset now)
     {
         var key = Key(Digest(source));
         lock (_gate)
         {
-            pendingFailures = _pendingFailures.GetValueOrDefault(source);
-            return FindWindow(key, now);
+            return (FindWindow(key, now), _pendingFailures.GetValueOrDefault(source));
         }
     }
 
     private SharedFailureWindow? FindWindow(string key, DateTimeOffset now)
         => _windows.TryGetValue(key, out var window) && window.ExpiresAt > now ? window : null;
 
-    internal void Acknowledge(string source, byte[] digest, SharedFailureWindow? window, DateTimeOffset now)
+    internal void Acknowledge(
+        string source, (byte[] Digest, SharedFailureWindow Window)? persisted, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -94,9 +94,9 @@ internal sealed class SharedAuthenticationFailures(IAuthenticationFailureLedger 
                 _pendingFailures.Remove(source);
             }
 
-            if (window is { } persisted)
+            if (persisted is { } result)
             {
-                ApplyWindow(Key(digest), persisted, now);
+                ApplyWindow(Key(result.Digest), result.Window, now);
             }
         }
     }
