@@ -5,8 +5,13 @@ No server, database, credentials, or network is accessed. The regression compose
 the workflow/job/action environment scopes that caused both live certification
 transports to exit before migrations. Production authentication stays unchanged.
 """
+import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
+import textwrap
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -121,33 +126,68 @@ def check_smoke_admission(workflow):
         "name: Run MCP LLM Smoke Tests": f"{credential_guard} && {script_guard} == 'true'",
         "name: Upload LLM smoke transcripts": f"always() && {credential_guard} && {script_guard} == 'true'",
     }
+    selected = {}
     for step_name, guard in expected_guards.items():
         matching_steps = [step for step in steps[1:] if step.startswith(step_name)]
         assert len(matching_steps) == 1, f"Expected one smoke step beginning with {step_name}"
         assert f"        if: {guard}" in matching_steps[0].splitlines(), f"Unexpected guard for {step_name}"
+        selected[step_name] = matching_steps[0]
     for step in steps[1:]:
         assert re.search(rf"(?m)^        if: .*{re.escape(credential_guard)}", step), (
             "Every expensive smoke step must require credentials"
         )
-    assert "npm run test:llm-smoke" in job, "Preserve the credentialed smoke command"
-    assert "needs: mcp-certification" in job, "Keep certification dependency"
-    assert "timeout-minutes: 10" in job, "Keep the bounded advisory job"
-    return admission.split("        run: |\n", 1)[1]
+    setup = selected["name: Setup Honua MCP environment"]
+    skip = selected["name: Report skipped smoke tests"]
+    smoke = selected["name: Run MCP LLM Smoke Tests"]
+    assert "sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}" in setup
+    assert "npm run test:llm-smoke" in smoke, "Preserve the credentialed smoke command"
+    assert "needs: mcp-certification" in job and "continue-on-error: true" in job
+    check_smoke_timeouts(job, selected, [step for step in steps if step != skip])
+    return admission, skip, smoke
 
 
-def exercise_smoke_admission(script):
-    import os
-    import subprocess
-    import tempfile
-    import textwrap
+def check_smoke_timeouts(job, selected, credentialed_steps):
+    setup = selected["name: Setup Honua MCP environment"]
+    smoke = selected["name: Run MCP LLM Smoke Tests"]
+    upload = selected["name: Upload LLM smoke transcripts"]
+    observed_setup_and_service_seconds = 594
+    upload_limit_minutes = 2
+    minimum_reserve_minutes = 4
+    assert minutes(setup, 8) * 60 > observed_setup_and_service_seconds, (
+        "Setup must fit the measured setup plus service startup"
+    )
+    smoke_duration = environment(smoke, 8)["MCP_SMOKE_TIMEOUT"]
+    assert int(smoke_duration.removesuffix("m")) < minutes(smoke, 8), "Allow the command to exit before the step deadline"
+    assert minutes(upload, 8) <= upload_limit_minutes, "Bound transcript upload"
+    credentialed_minutes = sum(minutes(step, 8) for step in credentialed_steps)
+    assert minutes(job, 4) - credentialed_minutes >= minimum_reserve_minutes, "Reserve time for services and cleanup"
 
+
+def minutes(block, indent):
+    match = re.search(rf"(?m)^ {{{indent}}}timeout-minutes: ([1-9][0-9]*)$", block)
+    assert match, "Expected a positive workflow timeout"
+    return int(match[1])
+
+
+def run_script(script, directory, variables):
+    return subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", textwrap.dedent(script)],
+        cwd=directory,
+        env={"PATH": os.environ["PATH"], "HOME": str(directory), **variables},
+        capture_output=True, text=True, timeout=15,
+    )
+
+
+def exercise_smoke_admission(admission):
+    script = admission.split("        run: |\n", 1)[1]
     for role, expected in (("", "false"), ("arn:aws:iam::123456789012:role/smoke", "true")):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
             summary = Path(directory) / "summary"
-            result = subprocess.run(["bash", "-euo", "pipefail", "-c", textwrap.dedent(script)],
-                env={**os.environ, "BEDROCK_ROLE_ARN": role, "GITHUB_OUTPUT": str(output),
-                     "GITHUB_STEP_SUMMARY": str(summary)}, capture_output=True, text=True, check=True)
+            result = run_script(script, directory, {
+                "BEDROCK_ROLE_ARN": role, "GITHUB_OUTPUT": str(output), "GITHUB_STEP_SUMMARY": str(summary),
+            })
+            result.check_returncode()
             assert output.read_text().strip() == "available=" + expected
             if not role:
                 assert "skipped" in summary.read_text().lower(), "Explain absent credentials in the job summary"
@@ -156,5 +196,39 @@ def exercise_smoke_admission(script):
                 assert not summary.exists(), "Credentialed smoke must proceed without a skip report"
 
 
-exercise_smoke_admission(check_smoke_admission(WORKFLOW))
-print("PASS: smoke admission handles absent and configured credentials before expensive setup")
+def exercise_smoke_script(skip, smoke):
+    detect = re.search(r"(?ms)^    - name: Check SDK MCP scripts\n(.*?)(?=^    - )", MCP)
+    assert detect, "Missing SDK MCP script detection"
+    detect_command = detect[1].split("      run: |\n", 1)[1]
+    skip_command = skip.split("        run: |\n", 1)[1]
+    smoke_command = re.search(r"(?m)^        run: (.+)$", smoke)[1]
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        mcp = root / "honua-sdk-js/mcp"
+        mcp.mkdir(parents=True)
+        package = mcp / "package.json"
+        output = root / "output"
+        summary = root / "summary"
+
+        package.write_text(json.dumps({"scripts": {"test:certification": "true"}}))
+        run_script(detect_command, root, {"GITHUB_OUTPUT": str(output)}).check_returncode()
+        assert "smoke=false" in output.read_text().splitlines()
+        run_script(skip_command, root, {
+            "SDK_REF": "fixture-sdk-override", "GITHUB_STEP_SUMMARY": str(summary),
+        }).check_returncode()
+        assert "fixture-sdk-override" in summary.read_text()
+
+        for script, expected in (("echo smoke-started", 0), ("echo smoke-started && sleep 60", 124)):
+            package.write_text(json.dumps({"scripts": {"test:llm-smoke": script}}))
+            output.unlink()
+            run_script(detect_command, root, {"GITHUB_OUTPUT": str(output)}).check_returncode()
+            assert "smoke=true" in output.read_text().splitlines()
+            result = run_script(smoke_command, mcp, {"MCP_SMOKE_TIMEOUT": "2s"})
+            assert "smoke-started" in result.stdout.splitlines(), result.stderr
+            assert result.returncode == expected, (result.returncode, result.stderr)
+
+
+admission_step, skip_step, smoke_step = check_smoke_admission(WORKFLOW)
+exercise_smoke_admission(admission_step)
+exercise_smoke_script(skip_step, smoke_step)
+print("PASS: MCP smoke handles absent role, absent script, successful command, and command timeout offline")

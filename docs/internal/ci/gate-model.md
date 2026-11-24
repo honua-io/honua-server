@@ -3800,11 +3800,15 @@ before checkout, server setup or SDK builds. Without
 `HONUA_BEDROCK_SMOKE_ROLE_ARN`, PostgreSQL is not started and the job reports an
 explicit skip in its log and summary. With a role, the existing authenticated
 server, SDK smoke command, OIDC credentials and transcript upload remain active.
-The job retains its certification dependency, advisory status and ten-minute
-limit; required MCP certification is unchanged.
+The job retains its certification dependency and advisory status.
 
 Run 45159280398/job 137667996720 spent 572 seconds in MCP setup and 22 seconds
-starting PostgreSQL before discovering the smoke script was absent; post-action
-cleanup was cancelled at the ten-minute job cap. Credential admission removes
-those setup stages when no role is configured. The job still occupies one runner;
-a hosted after-change duration must be recorded from the next qualifying run.
+starting PostgreSQL before discovering the smoke script was absent. The previous
+ten-minute cap cancelled post-action cleanup. The 33-minute job limit now gives
+MCP setup 14 minutes, the smoke command six minutes with ten seconds to exit
+before forced termination, and transcript upload two minutes. The smoke step has
+a seven-minute runner limit. The configured-role path reserves four minutes
+outside its step limits for runner and service startup and post-job cleanup.
+With a role and an SDK ref that lacks the smoke script, the job reports the skip
+without assuming the role or uploading transcripts. A hosted after-change
+duration still requires a qualifying run.

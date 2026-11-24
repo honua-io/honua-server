@@ -2698,7 +2698,9 @@ jobs:
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: mcp-certification
     continue-on-error: true
-    timeout-minutes: 10
+    # Setup and PostgreSQL startup took 594 seconds in run 45159280398.
+    # The step limits leave four minutes for runner/service startup and post-job cleanup.
+    timeout-minutes: 33
     # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
     environment: bedrock-smoke
     permissions:
@@ -2722,6 +2724,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Detect Bedrock smoke credentials
+        timeout-minutes: 1
         id: bedrock
         shell: bash
         env:
@@ -2737,16 +2740,19 @@ jobs:
           fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
         if: steps.bedrock.outputs.available == 'true'
 
       - name: Configure PostgreSQL connection
         if: steps.bedrock.outputs.available == 'true'
+        timeout-minutes: 1
         uses: ./.github/actions/configure-postgres-connection
         with:
           port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Honua MCP environment
         if: steps.bedrock.outputs.available == 'true'
+        timeout-minutes: 14
         id: setup
         uses: ./.github/actions/setup-honua-mcp
         with:
@@ -2756,17 +2762,21 @@ jobs:
           sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
 
       - name: Report skipped smoke tests
+        timeout-minutes: 1
         if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available != 'true'
         shell: bash
+        env:
+          SDK_REF: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
         run: |
           echo "::warning::test:llm-smoke script not found in honua-sdk-js/mcp — smoke tests skipped"
           echo "## ⚠️ MCP LLM Smoke Tests Skipped" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}\`)." >> "$GITHUB_STEP_SUMMARY"
+          echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`$SDK_REF\`)." >> "$GITHUB_STEP_SUMMARY"
           echo "Land the smoke test scripts in \`honua-sdk-js\` to activate this lane." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials for Bedrock smoke
         if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
+        timeout-minutes: 2
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
@@ -2775,7 +2785,8 @@ jobs:
 
       - name: Run MCP LLM Smoke Tests
         if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
-        run: npm run test:llm-smoke
+        run: timeout --kill-after=10s "$MCP_SMOKE_TIMEOUT" npm run test:llm-smoke
+        timeout-minutes: 7
         working-directory: honua-sdk-js/mcp
         env:
           HONUA_BASE_URL: http://localhost:5000
@@ -2783,12 +2794,14 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
+          MCP_SMOKE_TIMEOUT: 6m
           HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
           HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
           AWS_REGION: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
+        timeout-minutes: 2
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-llm-smoke-transcripts
