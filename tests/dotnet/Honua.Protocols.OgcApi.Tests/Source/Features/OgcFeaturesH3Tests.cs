@@ -55,6 +55,9 @@ public sealed class OgcFeaturesH3Tests : IAsyncLifetime
             $"/ogc/features/collections/{WebAppFixture.TestLayerId}/h3");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("detail").GetString().Should()
+            .Be("resolution parameter is required. resolution must be an integer between 0 and 15.");
     }
 
     [IntegrationTest]

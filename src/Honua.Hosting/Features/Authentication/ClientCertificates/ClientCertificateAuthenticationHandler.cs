@@ -66,6 +66,7 @@ internal sealed class ClientCertificateAuthenticationHandler(
 
         var ticket = new AuthenticationTicket(
             validation.Principal,
+            new AuthenticationProperties { ExpiresUtc = new DateTimeOffset(extraction.Certificate!.NotAfter.ToUniversalTime()) },
             ClientCertificateAuthenticationDefaults.AuthenticationScheme);
         return AuthenticateResult.Success(ticket);
     }

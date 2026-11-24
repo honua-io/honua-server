@@ -3479,9 +3479,9 @@ internal static class ImageServerEndpoints
         CancellationToken cancellationToken = default)
     {
         var resolution = await ResolveImageLayerAsync(id, context, cancellationToken);
-        if (resolution.ErrorResult is not null)
+        if ((resolution.ErrorResult ?? ImageServerTileHandler.RefuseLevelOutsideTileInfo(context, level)) is { } error)
         {
-            return resolution.ErrorResult;
+            return error;
         }
 
         return await handler.GetImageTileAsync(
@@ -3507,7 +3507,7 @@ internal static class ImageServerEndpoints
         CancellationToken cancellationToken = default)
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
-        return resolution.ErrorResult ?? await handler.GetImageTileAsync(
+        return resolution.ErrorResult ?? ImageServerTileHandler.RefuseLevelOutsideTileInfo(context, level) ?? await handler.GetImageTileAsync(
             context,
             resolution.LayerId,
             level,

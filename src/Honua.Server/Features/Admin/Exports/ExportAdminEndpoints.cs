@@ -5,7 +5,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Operations;
@@ -80,8 +79,7 @@ internal static class ExportAdminEndpoints
             return Failure($"An export job is already running for Export '{start.ExportId}'.", StatusCodes.Status409Conflict);
         }
 
-        var submission = new TileOperationSubmission(
-            start, JobOwnershipSecurity.ResolveOwner(context.User), services.GetService<ISchemaContext>()?.CurrentSchema);
+        var submission = TileOperationSubmission.FromRequest(context, start);
         var jobId = await services.GetRequiredService<ITileCacheJobService>().SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
         var export = new ExportResponse
         {

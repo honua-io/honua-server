@@ -85,6 +85,11 @@ internal sealed class FormSubmissionService
         }
 
         var request = ApplyHeaderClientId(parseResult.Request, context);
+        if (FormSubmissionInputLimits.FindIdentifierError(request) is { } identifierError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, identifierError);
+        }
+
         var packageVersion = await ResolvePackageVersionAsync(formId, request, context.RequestAborted).ConfigureAwait(false);
         if (packageVersion is null)
         {
@@ -513,15 +518,7 @@ internal sealed class FormSubmissionService
         {
             if (context.Request.HasFormContentType)
             {
-                var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-                var submissionJson = form["submission"].ToString();
-                if (string.IsNullOrWhiteSpace(submissionJson))
-                {
-                    return new SubmissionParseResult(null, "Multipart submissions must include a 'submission' JSON part.", string.Empty, new FormFileCollection());
-                }
-
-                var request = JsonSerializer.Deserialize(submissionJson, FormPackageJsonContext.Default.FormSubmissionRequest);
-                return new SubmissionParseResult(request, null, submissionJson, form.Files);
+                return await ReadMultipartSubmissionAsync(context).ConfigureAwait(false);
             }
 
             if (context.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true)
@@ -538,6 +535,28 @@ internal sealed class FormSubmissionService
         {
             return new SubmissionParseResult(null, "Submission JSON was invalid.", string.Empty, new FormFileCollection());
         }
+        // A missing multipart boundary (InvalidDataException) or a body that ends before its
+        // closing boundary (IOException) is a client fault. Form size limits and request-body
+        // limits (BadHttpRequestException) still reach the shared exception mapper for 413.
+        catch (Exception ex) when (
+            (ex is InvalidDataException && !ex.Message.Contains("limit", StringComparison.OrdinalIgnoreCase))
+            || (ex is IOException && ex is not BadHttpRequestException))
+        {
+            return new SubmissionParseResult(null, "Multipart submission could not be read.", string.Empty, new FormFileCollection());
+        }
+    }
+
+    private static async Task<SubmissionParseResult> ReadMultipartSubmissionAsync(HttpContext context)
+    {
+        var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        var submissionJson = form["submission"].ToString();
+        if (string.IsNullOrWhiteSpace(submissionJson))
+        {
+            return new SubmissionParseResult(null, "Multipart submissions must include a 'submission' JSON part.", string.Empty, new FormFileCollection());
+        }
+
+        var request = JsonSerializer.Deserialize(submissionJson, FormPackageJsonContext.Default.FormSubmissionRequest);
+        return new SubmissionParseResult(request, null, submissionJson, form.Files);
     }
 
     private static FormSubmissionRequest ApplyHeaderClientId(FormSubmissionRequest request, HttpContext context)

@@ -215,6 +215,19 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithUnparseableCqlFilter_DoesNotNameInternalParameter()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?filter-lang=cql2-text&filter={Uri.EscapeDataString("name = = 'x'")}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        problem.RootElement.GetProperty("detail").GetString().Should()
+            .Be("Invalid CQL filter: Failed to parse CQL2 expression.");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithMalformedCqlFilter_DoesNotLeakParserDetails()
     {
         const string sentinel = "CQL_SENTINEL";

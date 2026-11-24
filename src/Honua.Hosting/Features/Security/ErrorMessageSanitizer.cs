@@ -26,6 +26,14 @@ internal static class ErrorMessageSanitizer
             sanitized = sanitized[..stackTraceIndex].Trim();
         }
 
+        // ArgumentException appends " (Parameter 'name')" to its message; the name is an internal
+        // method parameter, not something the caller sent.
+        var parameterSuffixIndex = sanitized.LastIndexOf(" (Parameter '", StringComparison.Ordinal);
+        if (parameterSuffixIndex > 0 && sanitized.EndsWith("')", StringComparison.Ordinal))
+        {
+            sanitized = sanitized[..parameterSuffixIndex].TrimEnd();
+        }
+
         if (ContainsUnsafePattern(sanitized))
         {
             return fallback;

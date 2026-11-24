@@ -51,6 +51,7 @@ public sealed class NetworkDatasetValidationTests
     [InlineData("a.b.c")]
     [InlineData("\"Quoted\"")]
     [InlineData("")]
+    [InlineData("public.ways\n")]
     public void TryValidateTableIdentifier_RejectsUnsafe(string identifier)
     {
         Assert.False(NetworkDatasetValidation.TryValidateTableIdentifier(identifier, "edgeTable", out _));
@@ -67,6 +68,10 @@ public sealed class NetworkDatasetValidationTests
     {
         Assert.Equal(expected, NetworkDatasetValidation.IsValidColumnIdentifier(identifier));
     }
+
+    [Fact]
+    public void IsValidColumnIdentifier_TrailingLineFeed_IsRejected()
+        => Assert.False(NetworkDatasetValidation.IsValidColumnIdentifier("cost\n"));
 
     [Theory]
     [InlineData("driving", true)]

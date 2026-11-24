@@ -198,6 +198,7 @@ public sealed partial class FeatureStreamEndpointsTests
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["FeatureStreaming:SubscriberPolicyRefreshInterval"] = PolicyRefreshInterval.ToString()
+                    ["FeatureStreaming:SubscriberPolicyRefreshInterval"] = PolicyRefreshInterval.ToString(),
+                    ["Realtime:SecurityBackstopInterval"] = PolicyRefreshInterval.ToString()
                 })));
 }

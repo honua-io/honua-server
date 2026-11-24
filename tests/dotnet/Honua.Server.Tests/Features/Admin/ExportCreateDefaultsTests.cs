@@ -24,6 +24,13 @@ public sealed class ExportCreateDefaultsTests
         ExportRequestRules.IsExportId(slug).Should().BeTrue();
     }
 
+    [UnitTest]
+    public void Rules_ValueEndingInLineFeed_IsRejected()
+    {
+        ExportRequestRules.IsExportId("parcels\n").Should().BeFalse();
+        ExportRequestRules.IsPortableFieldName("parcel_id\n").Should().BeFalse();
+    }
+
     [UnitTheory]
     [InlineData(0, 30, "0,14")]
     [InlineData(20, 22, "14,14")]

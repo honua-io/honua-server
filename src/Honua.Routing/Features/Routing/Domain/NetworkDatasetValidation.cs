@@ -21,10 +21,10 @@ public static partial class NetworkDatasetValidation
     // Schema-qualified or bare lowercase SQL identifier: optional "schema." prefix, each
     // part starting with a letter/underscore and limited to [a-z0-9_]. Conservative by
     // design because the value is interpolated into SQL text, not bound.
-    [GeneratedRegex(@"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?\z", RegexOptions.CultureInvariant)]
     private static partial Regex SqlIdentifierPattern();
 
-    [GeneratedRegex(@"^[a-z_][a-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z_][a-z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex SqlColumnPattern();
 
     [GeneratedRegex(@"^[a-z][a-z0-9_-]*$", RegexOptions.CultureInvariant)]

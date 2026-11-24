@@ -41,6 +41,7 @@ internal static class FileImportJobSubmission
             auditId: request.AuditId,
             proposalId: request.ProposalId) with
         {
+            TenantId = request.TenantId,
             Runner = runner,
             InstanceId = instanceId,
         };

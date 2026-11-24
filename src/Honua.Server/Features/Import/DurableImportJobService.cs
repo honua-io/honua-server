@@ -316,6 +316,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
             {
                 OperationInstanceId = request.OperationInstanceId,
+                TenantId = request.TenantId,
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
                 ProposalId = request.ProposalId,
