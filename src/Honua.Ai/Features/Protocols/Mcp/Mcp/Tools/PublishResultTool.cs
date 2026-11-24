@@ -10,11 +10,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishResultTool : IMcpTool
+internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
 {
     public const string ToolName = "honua_publish_result";
 
@@ -47,6 +48,8 @@ internal sealed class PublishResultTool : IMcpTool
     public string Name => ToolName;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval;
 
     public McpToolDescriptor Describe() => new()
     {
@@ -87,6 +90,17 @@ internal sealed class PublishResultTool : IMcpTool
         var authorizationOutcome = await ServicePublishMcpAuthorization
             .EnsureAuthorizedAndApprovedAsync(httpContext, principal, cancellationToken)
             .ConfigureAwait(false);
+
+        var requester = new ApprovalRequester(PublishOperationId, McpAuthorizationHelper.ResolveActorId(principal))
+        {
+            OnCompleted = (operation, _) => Task.FromResult(StoredApprovalResult(operation)
+                ?? throw new GeoprocessingPreconditionFailedException("The completed publish result attribution is unavailable.")),
+            OnRunning = StoredApprovalResult,
+        };
+        if (await ApprovalContinuation.TryResumeAsync(httpContext, requester, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
 
         var sourceId = argument.SourceId;
         if (string.IsNullOrWhiteSpace(sourceId))
@@ -131,7 +145,20 @@ internal sealed class PublishResultTool : IMcpTool
         }
 
         var request = BuildRequest(argument, artifact, sourceId, connectionId, schema, table);
-        var context = new OperationPolicyContext
+        var context = PolicyContext(httpContext, authorizationOutcome);
+
+        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+
+        return ApprovalContinuation.TryRequest(httpContext, handle)
+            ?? McpToolHelpers.SuccessResult(
+                Project(handle, sourceId, artifact.ArtifactId),
+                McpJsonContext.Default.McpPublishResultOutput);
+    }
+
+    private static OperationPolicyContext PolicyContext(HttpContext httpContext, string authorizationOutcome)
+    {
+        var principal = httpContext.User;
+        return new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
@@ -142,12 +169,6 @@ internal sealed class PublishResultTool : IMcpTool
             RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
                 .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
-
-        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
-
-        return McpToolHelpers.SuccessResult(
-            Project(handle, sourceId, artifact.ArtifactId),
-            McpJsonContext.Default.McpPublishResultOutput);
     }
 
     private static ArtifactRef SelectArtifact(AnalysisResultPackage package, string? artifactId)
@@ -273,7 +294,19 @@ internal sealed class PublishResultTool : IMcpTool
             ServiceName = argument.ServiceName,
             Fields = [],
             Parameters = parameters,
+            VerifiedPublishResultAttribution = new PublishResultAttribution(sourceJobId, artifact.ArtifactId),
         };
+    }
+
+    private static McpToolsCallResult? StoredApprovalResult(OperationHandle operation)
+    {
+        if (operation.Result?.Details is not { } details
+            || !details.TryGetValue(PublishResultAttribution.SourceJobDetailKey, out var jobId)
+            || !details.TryGetValue(PublishResultAttribution.ArtifactDetailKey, out var artifactId))
+        {
+            return null;
+        }
+        return McpToolHelpers.SuccessResult(Project(operation, jobId, artifactId), McpJsonContext.Default.McpPublishResultOutput);
     }
 
     private static McpPublishResultOutput Project(OperationHandle handle, string sourceJobId, string artifactId)

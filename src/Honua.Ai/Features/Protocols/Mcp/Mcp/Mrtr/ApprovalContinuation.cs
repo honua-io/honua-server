@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -14,7 +15,12 @@ using Honua.Geoprocessing;
 namespace Honua.Ai.Protocols.Mcp.Mrtr;
 
 // The operation and actor a resumed approval must belong to.
-internal sealed record ApprovalRequester(string OperationId, string? ActorId);
+internal sealed record ApprovalRequester(string OperationId, string? ActorId)
+{
+    public Func<OperationHandle, CancellationToken, Task<McpToolsCallResult>>? OnCompleted { get; init; }
+    public Func<OperationHandle, McpToolsCallResult?>? OnRunning { get; init; }
+    public Func<OperationProposal, OperationHandle, CancellationToken, Task>? OnFailed { get; init; }
+}
 
 // In-client approval over MRTR. The agent's call files the proposal as before; a client that declared
 // URL-mode elicitation is sent to the Console approval page for that proposal, where the human-session
@@ -77,6 +83,63 @@ internal static class ApprovalContinuation
         var store = httpContext.RequestServices.GetService<IOperationProposalStore>()
             ?? throw new InvalidOperationException("The proposal store is unavailable.");
         var proposal = await store.GetAsync(continuation.State!.Reference, cancellationToken).ConfigureAwait(false);
+        RequireProposalAccess(httpContext, requester, proposal);
+
+        var operation = await ReadOperationAsync(httpContext, proposal, cancellationToken).ConfigureAwait(false);
+        return await ProjectRetryAsync(requester, (proposal, operation), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<McpToolsCallResult> ProjectRetryAsync(
+        ApprovalRequester requester, (OperationProposal Proposal, OperationHandle? Operation) execution,
+        CancellationToken cancellationToken)
+    {
+        var (proposal, operation) = execution;
+        var output = Project(proposal, OperationProposalExecutionView.From(proposal, operation));
+        if (requester.OnCompleted is { } onCompleted && output.Status == nameof(OperationHandleStatus.Completed))
+        {
+            if (operation?.Status != OperationHandleStatus.Completed || !MatchesOperation(proposal, operation))
+            {
+                throw new GeoprocessingPreconditionFailedException("The completed approval result is unavailable.");
+            }
+
+            return await onCompleted(operation, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (requester.OnRunning is { } onRunning && output.Status == nameof(OperationHandleStatus.Running)
+            && operation is { Status: OperationHandleStatus.Queued or OperationHandleStatus.Running }
+            && !string.IsNullOrWhiteSpace(output.JobId) && operation.JobId == output.JobId
+            && MatchesOperation(proposal, operation)
+            && onRunning(operation with { Status = OperationHandleStatus.Running }) is { } running)
+        {
+            return running;
+        }
+
+        if (requester.OnFailed is { } onFailed && output.Status == nameof(OperationHandleStatus.Failed)
+            && operation?.Status == OperationHandleStatus.Failed && MatchesOperation(proposal, operation))
+        {
+            await onFailed(proposal, operation, cancellationToken).ConfigureAwait(false);
+        }
+
+        return StatusResult(output);
+    }
+
+    private static McpToolsCallResult StatusResult(McpOperationToolOutput output)
+    {
+        var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+        result.IsError = output.Status == nameof(OperationHandleStatus.Failed);
+        return result;
+    }
+
+    private static async Task<OperationHandle?> ReadOperationAsync(
+        HttpContext httpContext, OperationProposal proposal, CancellationToken cancellationToken)
+        => proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
+            ? await (httpContext.RequestServices.GetService<IOperationInstanceStore>()
+                ?? throw new InvalidOperationException("The canonical operation instance store is unavailable."))
+                .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
+            : null;
+
+    private static void RequireProposalAccess(HttpContext httpContext, ApprovalRequester requester, [NotNull] OperationProposal? proposal)
+    {
         var tenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId;
         if (proposal is null
             || !string.Equals(proposal.OperationId, requester.OperationId, StringComparison.Ordinal)
@@ -87,18 +150,14 @@ internal static class ApprovalContinuation
             // Same answer for missing and foreign proposals, so the retry reveals nothing.
             throw new GeoprocessingValidationException("The proposal for this approval is not available.");
         }
-
-        var operation = proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
-            ? await (httpContext.RequestServices.GetService<IOperationInstanceStore>()
-                ?? throw new InvalidOperationException("The canonical operation instance store is unavailable."))
-                .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
-            : null;
-        var execution = OperationProposalExecutionView.From(proposal, operation);
-        var output = Project(proposal, execution);
-        var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
-        result.IsError = output.Status == OperationHandleStatus.Failed.ToString();
-        return result;
     }
+
+    private static bool MatchesOperation(OperationProposal proposal, [NotNullWhen(true)] OperationHandle? operation)
+        => operation is not null
+            && operation.OperationInstanceId == proposal.Audit.OperationInstanceId
+            && operation.OperationId == proposal.OperationId
+            && operation.ProposalId == proposal.ProposalId
+            && operation.TenantId == proposal.TenantId;
 
     internal static OperationHandleStatus Map(OperationProposalStatus status) => status switch
     {
@@ -135,12 +194,14 @@ internal static class ApprovalContinuation
         var status = execution.Status == proposal.Status.ToString()
             ? Map(proposal.Status)
             : Enum.Parse<OperationHandleStatus>(execution.Status);
+        var instanceId = proposal.Audit.OperationInstanceId ?? string.Empty;
         return new McpOperationToolOutput
         {
             Status = status.ToString(),
             RequiresApproval = status == OperationHandleStatus.RequiresApproval,
             OperationId = proposal.OperationId ?? string.Empty,
-            OperationInstanceId = proposal.Audit.OperationInstanceId ?? string.Empty,
+            HandleId = instanceId,
+            OperationInstanceId = instanceId,
             ProposalId = proposal.ProposalId,
             CorrelationId = proposal.Audit.CorrelationId ?? string.Empty,
             CreatedAt = proposal.CreatedAt,
