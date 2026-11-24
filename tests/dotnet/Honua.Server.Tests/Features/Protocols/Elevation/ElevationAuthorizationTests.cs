@@ -18,6 +18,7 @@ public sealed class ElevationAuthorizationTests : IAsyncLifetime
     private const string ValuePath = "/elevation/0/value?x=10&y=10";
     private const string ProfilePath = "/elevation/0/profile?line=LINESTRING(0%200%2C%2010%2010)&sampleCount=5";
     private const string CollectionValuePath = "/elevation/Test%20Layer/value?x=10&y=10";
+    private const string CollectionProfilePath = "/elevation/Test%20Layer/profile?line=LINESTRING(0%200%2C%2010%2010)&sampleCount=5";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
     {
@@ -34,6 +35,7 @@ public sealed class ElevationAuthorizationTests : IAsyncLifetime
     [InlineData(ValuePath)]
     [InlineData(ProfilePath)]
     [InlineData(CollectionValuePath)]
+    [InlineData(CollectionProfilePath)]
     [Operation(Operations.Security)]
     [Endpoint("GET /elevation/{datasetId}/value")]
     [Endpoint("GET /elevation/{datasetId}/profile")]
