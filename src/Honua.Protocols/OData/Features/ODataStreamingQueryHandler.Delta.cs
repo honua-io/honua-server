@@ -129,6 +129,7 @@ internal sealed partial class ODataStreamingQueryHandler
             }
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, resource.ReadSrid() ?? 4326, cancellationToken).ConfigureAwait(false);
             var selected = ODataUtilityService.ParseSelect(query.Select);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
             var items = new List<JsonElement>(result.Items.Length);
             var bytes = 0L;
             foreach (var feature in result.Items)
@@ -136,8 +137,8 @@ internal sealed partial class ODataStreamingQueryHandler
                 using var buffer = new MemoryStream();
                 await using (var writer = new Utf8JsonWriter(buffer))
                 {
-                    await WriteODataFeatureAsync(writer, feature, query.LayerId, resource.ReadSrid() ?? 4326,
-                        axisOrder, selected, compute, _geometryService, cancellationToken).ConfigureAwait(false);
+                    WriteODataFeature(writer, feature, query.LayerId, resource.ReadSrid() ?? 4326,
+                        axisOrder, selected, hiddenFields, compute, _geometryService, cancellationToken);
                     await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
                 }
                 bytes += buffer.Length;

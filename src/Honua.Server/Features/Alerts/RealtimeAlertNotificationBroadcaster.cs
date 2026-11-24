@@ -100,15 +100,17 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
     [LoggerMessage(Level = LogLevel.Warning, Message = "An alert realtime subscription closed after a delivery failure.")]
     private static partial void LogSubscriptionFailure(ILogger logger, Exception exception);
 
-    internal sealed class Subscription : IDisposable
+    internal sealed class Subscription : IDisposable, IAsyncDisposable
     {
         private const int DeliveryCapacity = 64;
         private readonly RealtimeAlertNotificationBroadcaster _owner;
         private readonly Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> _handler;
         private readonly CancellationTokenSource _cancellation = new();
+        private readonly Lock _cancellationGate = new();
         private readonly Channel<RealtimeDelivery> _deliveries = Channel.CreateBounded<RealtimeDelivery>(DeliveryCapacity);
         private readonly TaskCompletionSource _sourceClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _disposed;
+        private bool _cancellationRequested;
+        private bool _cancellationDisposed;
 
         public Subscription(RealtimeAlertNotificationBroadcaster owner,
             Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> handler, SubscriptionOptions? options)
@@ -134,10 +136,33 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            var shouldCancel = false;
+            lock (_cancellationGate)
             {
-                _cancellation.Cancel();
+                if (!_cancellationRequested && !_cancellationDisposed)
+                {
+                    _cancellationRequested = true;
+                    shouldCancel = true;
+                }
             }
+
+            if (shouldCancel)
+            {
+                try
+                {
+                    _cancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Disposed concurrently as the delivery pump exited.
+                }
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Dispose();
+            await Completion.ConfigureAwait(false);
         }
 
         private async Task ObserveSourceClosureAsync()
@@ -189,7 +214,11 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
                 Dispose();
                 _owner._subscriptions.TryRemove(SubscriberId, out _);
                 await observeClosure.ConfigureAwait(false);
-                _cancellation.Dispose();
+                lock (_cancellationGate)
+                {
+                    _cancellationDisposed = true;
+                    _cancellation.Dispose();
+                }
             }
         }
         // Reader.Completion waits for buffered deliveries to drain. Observe the

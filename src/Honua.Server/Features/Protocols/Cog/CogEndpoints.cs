@@ -29,7 +29,8 @@ internal static class CogEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Cloud Rasters")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         group.MapPost("/", HandleRegister)
             .WithDisplayName("Register COG")
@@ -54,6 +55,7 @@ internal static class CogEndpoints
 
     private static async Task<IResult> HandleRegister(
         RegisterCogRequest request,
+        HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ICogStore store,
         ILogger<CogEndpointsLog> logger,
@@ -68,7 +70,8 @@ internal static class CogEndpoints
             return TypedResults.BadRequest(error);
         }
 
-        if (!await LayerPublicationExistsAsync(graphProvider, request.LayerId, cancellationToken).ConfigureAwait(false))
+        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
+        if (!await LayerPublicationExistsAsync(graphProvider, request.LayerId, tenantId, cancellationToken).ConfigureAwait(false))
         {
             return TypedResults.NotFound("Layer not found.");
         }
@@ -232,10 +235,11 @@ internal static class CogEndpoints
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
         int layerId,
+        string? tenantId,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return CogPublicationBinding.Resolve(snapshot, layerId) is not null;
+        return CogPublicationBinding.Resolve(snapshot, layerId, tenantId) is not null;
     }
 
     private static CogRegistrationResponse ToResponse(CogRegistration reg) => new()

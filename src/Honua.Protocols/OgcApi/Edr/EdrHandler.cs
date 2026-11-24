@@ -69,9 +69,9 @@ internal sealed partial class EdrHandler
     private static readonly ImmutableArray<string> OutputFormats = ImmutableArray.Create(CoverageJsonFormat);
     private static readonly ImmutableArray<string> SupportedCrs = ImmutableArray.Create(Crs84Code);
 
-    // Bound the cube sampling grid so an unbounded bbox cannot fan out into a huge
-    // number of point-sample reads; EDR cube here is a sampled subset, not a full export.
-    private const int MaxCubeAxisSamples = 50;
+    // Bound position and cube sampling so a single request cannot fan out into excessive point-sample queries.
+    internal const int MaxPositionPoints = 100;
+    internal const int MaxCubeAxisSamples = 20;
     private const int DefaultCubeAxisSamples = 8;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -193,11 +193,13 @@ internal sealed partial class EdrHandler
         }
 
         var coords = context.Request.Query["coords"].ToString();
-        if (!TryParsePositions(coords, out var positions, out var isMultiPoint))
+        if (!TryParsePositions(coords, out var positions, out var isMultiPoint, out var exceededMaxPositions))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                "Query parameter 'coords' must be a WKT POINT or MULTIPOINT, e.g. coords=POINT(-122.4 37.8) or coords=MULTIPOINT((-122.4 37.8),(-122.3 37.7)).");
+                exceededMaxPositions
+                    ? $"Query parameter 'coords' MULTIPOINT may contain at most {MaxPositionPoints} positions."
+                    : "Query parameter 'coords' must be a WKT POINT or MULTIPOINT, e.g. coords=POINT(-122.4 37.8) or coords=MULTIPOINT((-122.4 37.8),(-122.3 37.7)).");
         }
 
         // coords are CRS84 lon/lat while RasterInfo.Extent is in the raster's storage CRS, so the
@@ -720,10 +722,15 @@ internal sealed partial class EdrHandler
 
     // ---- parsing helpers ----
 
-    private static bool TryParsePositions(string coords, out (double Lon, double Lat)[] positions, out bool isMultiPoint)
+    private static bool TryParsePositions(
+        string coords,
+        out (double Lon, double Lat)[] positions,
+        out bool isMultiPoint,
+        out bool exceededMaxPositions)
     {
         positions = [];
         isMultiPoint = false;
+        exceededMaxPositions = false;
         if (string.IsNullOrWhiteSpace(coords))
         {
             return false;
@@ -761,6 +768,11 @@ internal sealed partial class EdrHandler
         }
 
         var rawMembers = body[1..^1].Split(',', StringSplitOptions.TrimEntries);
+        if (rawMembers.Length > MaxPositionPoints)
+        {
+            exceededMaxPositions = true;
+            return false;
+        }
         var parsed = new List<(double Lon, double Lat)>();
         foreach (var rawMember in rawMembers)
         {

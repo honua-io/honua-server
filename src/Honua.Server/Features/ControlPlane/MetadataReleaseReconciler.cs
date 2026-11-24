@@ -21,9 +21,13 @@ internal sealed partial class MetadataReleaseReconciler(
 {
     internal const int MaxRebaseAttempts = 3;
     private const int MaxRevertAttempts = 5;
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
+
+    internal TimeSpan LeaseDuration { get; init; } = DefaultLeaseDuration;
+
+    internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
     public async Task ReconcileMetadataReleaseAsync(string operationId, CancellationToken cancellationToken = default)
     {
@@ -39,11 +43,18 @@ internal sealed partial class MetadataReleaseReconciler(
         }
 
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
+            operationId,
+            LeaseRenewInterval,
+            reconciliationCancellation,
+            ct => workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, ct),
+            logger);
 
+        WorkflowOperationRecord? reconciledVersion = null;
         try
         {
             var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            reconciledVersion = operation;
             if (operation is null ||
                 operation.Kind != WorkflowOperationKind.MetadataRelease ||
                 operation.MetadataRelease is null ||
@@ -78,30 +89,28 @@ internal sealed partial class MetadataReleaseReconciler(
                 Log.MetadataReleaseReconciled(logger, operationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
             }
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
         {
             Log.MetadataReleaseLeaseLost(logger, operationId);
             return;
         }
         catch (Exception ex)
         {
-            await MarkFailedAsync(operationId, ex, cancellationToken).ConfigureAwait(false);
+            await MarkFailedAsync(reconciledVersion, ex, reconciliationCancellation).ConfigureAwait(false);
             throw;
         }
         finally
         {
-            reconciliationCancellation.Cancel();
-            try
-            {
-                await renewalTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                // Expected: the Cancel() call above is what stops the lease-renewal loop,
-                // so its resulting OperationCanceledException is normal shutdown, not an error.
-            }
-
-            await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
+                operationId,
+                reconciliationCancellation,
+                renewalTask,
+                ct => workflowStore.ReleaseLeaseAsync(operationId, _ownerId, ct),
+                logger).ConfigureAwait(false);
         }
     }
 
@@ -576,30 +585,17 @@ internal sealed partial class MetadataReleaseReconciler(
             resource.SchemaFields.Any(field => string.Equals(field.Name, plan.NewFieldName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
+    private async Task MarkFailedAsync(
+        WorkflowOperationRecord? operation,
+        Exception ex,
+        CancellationTokenSource reconciliationCancellation)
     {
-        while (!reconciliationCancellation.IsCancellationRequested)
+        if (reconciliationCancellation.IsCancellationRequested)
         {
-            try
-            {
-                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
-                var renewed = await workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, reconciliationCancellation.Token).ConfigureAwait(false);
-                if (!renewed)
-                {
-                    reconciliationCancellation.Cancel();
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                return;
-            }
+            return;
         }
-    }
 
-    private async Task MarkFailedAsync(string operationId, Exception ex, CancellationToken cancellationToken)
-    {
-        var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        // Use the version observed under this lease rather than re-reading and adopting a new lease owner's Version.
         if (operation is { Kind: WorkflowOperationKind.MetadataRelease, MetadataRelease: not null } && !IsTerminal(operation.Status))
         {
             var failedAt = DateTimeOffset.UtcNow;
@@ -615,7 +611,14 @@ internal sealed partial class MetadataReleaseReconciler(
                 MetadataRelease = operation.MetadataRelease with { CurrentStage = MetadataReleaseStage.Failed }
             };
 
-            await workflowStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await workflowStore.TrySetAsync(failed, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            {
+                // Lease or caller cancellation won the race; skip writing stale failure state.
+            }
         }
     }
 
@@ -795,6 +798,10 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                     try
                     {
                         await reconciler.ReconcileMetadataReleaseAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {

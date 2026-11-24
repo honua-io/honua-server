@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -135,24 +136,12 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
 
         var output = await ApplyAsync(source, inputs, context, cancellationToken).ConfigureAwait(false);
         return await FeatureStreamPublisher.PublishAsync(
-            ToAsync(output, cancellationToken),
+            FeatureStreamArtifact.ToAsync(output, cancellationToken),
             ProcessId,
             inputCount: source.Count,
             outputRoot,
             job.OperationId,
             cancellationToken, executionContext: context).ConfigureAwait(false);
-    }
-
-    private static async IAsyncEnumerable<IFeature> ToAsync(
-        IReadOnlyList<IFeature> features,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        foreach (var feature in features)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return feature;
-            await Task.CompletedTask.ConfigureAwait(false);
-        }
     }
 
     protected virtual IAsyncEnumerable<IFeature>? ApplyStream(
@@ -232,4 +221,58 @@ internal readonly struct StepInputReader(IReadOnlyDictionary<string, string> par
 
     public string GetOrDefault(string name, string defaultValue)
         => TryGet(name, out var value) ? value! : defaultValue;
+
+    public int RequireSrid(string key)
+    {
+        if (!TryGet(key, out var raw)
+            || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            || value <= 0)
+        {
+            throw new TransformInputException($"requires a positive integer '{key}' option.");
+        }
+
+        return value;
+    }
+
+    public bool ReadBool(string name, bool defaultValue)
+    {
+        if (!TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return defaultValue;
+        }
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "true" or "1" or "yes" => true,
+            "false" or "0" or "no" => false,
+            _ => throw new TransformInputException($"'{name}' must be a boolean (true|false)"),
+        };
+    }
+
+    public double ReadDistance()
+    {
+        if (!TryGet("distance", out var raw) || string.IsNullOrWhiteSpace(raw)
+            || !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            || !double.IsFinite(value)
+            || value < 0)
+        {
+            throw new TransformInputException("'distance' must be a finite non-negative number");
+        }
+
+        return value;
+    }
+
+    public double ReadUnitFactor()
+    {
+        var raw = GetOrDefault("unit", "meters").Trim().ToLowerInvariant();
+        return raw switch
+        {
+            "" or "meters" or "meter" or "m" => 1.0,
+            "kilometers" or "kilometer" or "km" => 1000.0,
+            "feet" or "foot" or "ft" => 0.3048,
+            "miles" or "mile" or "mi" => 1609.344,
+            _ => throw new TransformInputException(
+                $"unit '{raw}' is not supported (allowed: meters, kilometers, feet, miles)"),
+        };
+    }
 }

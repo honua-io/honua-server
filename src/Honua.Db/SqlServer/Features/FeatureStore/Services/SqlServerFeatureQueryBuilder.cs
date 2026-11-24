@@ -274,14 +274,25 @@ internal static partial class SqlServerFeatureQueryBuilder
         FeatureQuery query,
         List<object> parameters)
     {
+        if (query.EnforcedSqlFilter is not null)
+        {
+            throw new NotSupportedException(
+                "SQL Server provider does not support EnforcedSqlFilter. Layers with server-enforced " +
+                "definition or security filters cannot be served by this provider in this slice.");
+        }
+
         if (query.TextSearch is { } search)
         {
-            var predicate = FeatureTextSearchSql.Build(search, SqlServerIdentifier.QuoteAttribute, text =>
-            {
-                var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-                parameters.Add(text);
-                return marker;
-            }, (column, value) => $"CHARINDEX({value}, {column})");
+            var predicate = FeatureTextSearchSql.Build(
+                search,
+                field => SqlServerIdentifier.QuoteAttribute(ResolveTextSearchField(mapping, attributeColumns, field)),
+                text =>
+                {
+                    var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                    parameters.Add(text);
+                    return marker;
+                },
+                (column, value) => $"CHARINDEX({value}, {column})");
             sb.Append(" AND ").Append(predicate);
         }
 
@@ -594,11 +605,11 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} IS {notClause}NULL");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -606,7 +617,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = inMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
                 foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
@@ -614,7 +625,7 @@ internal static partial class SqlServerFeatureQueryBuilder
                     placeholders.Add("@p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
                     parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value));
                 }
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
@@ -622,14 +633,14 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
                 var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value);
 
                 var paramName = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} {op} {paramName}");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} {op} {paramName}");
                 continue;
             }
 
@@ -663,6 +674,18 @@ internal static partial class SqlServerFeatureQueryBuilder
         var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
         return declared ?? throw new ArgumentException(
             $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
+    }
+
+    private static string ResolveTextSearchField(
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        string field)
+    {
+        _ = SqlServerIdentifier.QuoteAttribute(field);
+        var declared = attributeColumns.FirstOrDefault(
+            column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"Text search field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
 }

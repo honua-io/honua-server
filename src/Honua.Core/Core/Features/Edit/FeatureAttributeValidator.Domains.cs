@@ -13,7 +13,8 @@ public static partial class FeatureAttributeValidator
     private static string? ValidateAgainstDomain(
         MetadataV2Field field,
         object value,
-        MetadataV2FieldDomain domain)
+        MetadataV2FieldDomain domain,
+        CompiledResourceFieldIndex index)
     {
         if (string.Equals(domain.Type, "codedValue", StringComparison.OrdinalIgnoreCase))
         {
@@ -21,7 +22,10 @@ public static partial class FeatureAttributeValidator
             {
                 return null;
             }
-            if (domain.CodedValues.Any(coded => CodedValueMatches(coded.Code, value)))
+
+            if (index.CodedValueDomainsByFieldName is not null &&
+                index.CodedValueDomainsByFieldName.TryGetValue(field.Name, out var compiled) &&
+                compiled.Matches(value))
             {
                 return null;
             }
@@ -86,40 +90,6 @@ public static partial class FeatureAttributeValidator
             }
         }
         return null;
-    }
-
-    private static bool CodedValueMatches(JsonElement code, object value)
-    {
-        switch (code.ValueKind)
-        {
-            case JsonValueKind.String:
-                {
-                    var coded = code.GetString();
-                    if (value is string s)
-                    {
-                        return string.Equals(coded, s, StringComparison.Ordinal);
-                    }
-                    return string.Equals(coded, value.ToString(), StringComparison.Ordinal);
-                }
-            case JsonValueKind.Number:
-                if (code.TryGetInt64(out var codedLong) && ReadInt64(value) is { } valueLong)
-                {
-                    return codedLong == valueLong;
-                }
-                if (code.TryGetDouble(out var codedDouble) && ReadDouble(value) is { } valueDouble)
-                {
-                    return Math.Abs(codedDouble - valueDouble) < double.Epsilon;
-                }
-                return false;
-            case JsonValueKind.True:
-                return value is bool b && b;
-            case JsonValueKind.False:
-                return value is bool fb && !fb;
-            case JsonValueKind.Null:
-                return false;
-            default:
-                return false;
-        }
     }
 
     private static double? ReadRangeBound(JsonElement bound)

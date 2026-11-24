@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData.Models;
 
@@ -23,7 +24,8 @@ internal sealed partial class ODataBatchHandler
             layer.Srid,
             axisOrder);
         var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
-        var payload = ODataUtilityService.BuildFeaturePayload(layer.PublicLayerId, feature, geometry, attributes);
+        var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
+        var payload = ODataUtilityService.BuildFeaturePayload(layer.PublicLayerId, feature, geometry, attributes, hiddenFields);
         etag = ComputeFeatureEtag(payload);
         payload["@odata.etag"] = etag;
         payload["@odata.context"] = ODataUtilityService.BuildContextUrl(baseUrl, "Features", isSingle: true);

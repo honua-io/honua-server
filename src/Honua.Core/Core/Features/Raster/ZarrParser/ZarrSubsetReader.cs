@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -8,13 +9,34 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
+public sealed record ZarrSubsetReadLimits(
+    long MaxOutputBytes = ZarrSubsetReader.DefaultMaxOutputBytes,
+    long MaxChunkBytes = ZarrSubsetReader.DefaultMaxChunkBytes,
+    long MaxWorkingSetBytes = ZarrSubsetReader.DefaultMaxWorkingSetBytes);
+
 public sealed class ZarrSubsetReader
 {
+    public const long DefaultMaxOutputBytes = 256L * 1024L * 1024L; // 256 MiB
+    public const long DefaultMaxChunkBytes = 32L * 1024L * 1024L; // 32 MiB
+    public const long DefaultMaxWorkingSetBytes = 64L * 1024L * 1024L; // 64 MiB
+
     private const int MaxChunksPerRequest = 4096;
-    private const long MaxBytesPerRequest = 256L * 1024L * 1024L; // 256 MiB
-    // DEFLATE may expand incompressible input slightly. Keep the decoded cap
-    // independent from a bounded compressed-read allowance.
-    private const long MaxCompressedChunkBytes = MaxBytesPerRequest + (1L * 1024L * 1024L);
+    private const int MaxParallelChunkReads = 8;
+    private const int StackAllocMaxRank = 16;
+    // DEFLATE may expand incompressible input slightly beyond the decoded chunk size.
+    private const long MaxCompressedChunkOverheadBytes = 1L * 1024L * 1024L;
+
+    private static readonly ZarrSubsetReadLimits DefaultLimits = new();
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
+    public Task<ZarrSubsetResult> ReadSubsetAsync(
+        ICloudRangeReader reader,
+        string bucket,
+        string rootPath,
+        ZarrStoreMetadata metadata,
+        ZarrSubsetRequest request,
+        CancellationToken cancellationToken = default)
+        => ReadSubsetAsync(reader, bucket, rootPath, metadata, request, DefaultLimits, cancellationToken);
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public async Task<ZarrSubsetResult> ReadSubsetAsync(
@@ -23,11 +45,17 @@ public sealed class ZarrSubsetReader
         string rootPath,
         ZarrStoreMetadata metadata,
         ZarrSubsetRequest request,
+        ZarrSubsetReadLimits limits,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(limits);
+
+        var maxOutputBytes = Math.Clamp(limits.MaxOutputBytes, 1L, DefaultMaxOutputBytes);
+        var maxChunkBytes = Math.Clamp(limits.MaxChunkBytes, 1L, DefaultMaxOutputBytes);
+        var maxWorkingSetBytes = Math.Clamp(limits.MaxWorkingSetBytes, 1L, DefaultMaxOutputBytes);
 
         var array = ResolveArray(metadata, request.Variable);
         ValidateRequest(array, request);
@@ -48,10 +76,18 @@ public sealed class ZarrSubsetReader
         }
 
         var totalBytes = checked(totalElements * elementSize);
-        if (totalBytes > MaxBytesPerRequest)
+        if (totalBytes > maxOutputBytes)
         {
-            throw new InvalidOperationException(
-                $"Zarr subset would require {totalBytes:N0} bytes, exceeding the {MaxBytesPerRequest:N0} byte cap.");
+            throw new ZarrSubsetValidationException(
+                $"Zarr subset would require {totalBytes:N0} bytes, exceeding the {maxOutputBytes:N0} byte cap.");
+        }
+
+        var chunkBytes = ComputeChunkBytes(array, elementSize);
+        if (chunkBytes > maxChunkBytes)
+        {
+            throw new ZarrSubsetValidationException(
+                $"Zarr chunk size of {chunkBytes:N0} bytes exceeds the per-chunk cap of {maxChunkBytes:N0} bytes. " +
+                $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
         }
 
         var startChunk = new int[rank];
@@ -64,10 +100,18 @@ public sealed class ZarrSubsetReader
             chunkCount = checked(chunkCount * (stopChunk[i] - startChunk[i]));
             if (chunkCount > MaxChunksPerRequest)
             {
-                throw new InvalidOperationException(
+                throw new ZarrSubsetValidationException(
                     $"Zarr subset would span more than {MaxChunksPerRequest} chunks; reduce the request bounds.");
             }
         }
+
+        // Throttle concurrent chunk decodes so peak compressed + decoded buffers stay within the working-set budget.
+        var compressedOverhead = array.Compressor is null ? 0L : Math.Min(chunkBytes, MaxCompressedChunkOverheadBytes);
+        var perWorkerBytes = checked((chunkBytes * 2L) + compressedOverhead);
+        var maxParallelism = (int)Math.Clamp(
+            maxWorkingSetBytes / Math.Max(1L, perWorkerBytes),
+            1L,
+            MaxParallelChunkReads);
 
         var output = new byte[totalBytes];
         var arrayPath = JoinKey(rootPath, array.RelativePath);
@@ -88,7 +132,7 @@ public sealed class ZarrSubsetReader
 
         await Parallel.ForEachAsync(
             chunkIndices,
-            new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
+            new ParallelOptions { MaxDegreeOfParallelism = maxParallelism, CancellationToken = cancellationToken },
             (chunkIndex, ct) => new ValueTask(CopyChunkIntoSubsetAsync(
                 reader,
                 bucket,
@@ -97,6 +141,7 @@ public sealed class ZarrSubsetReader
                 request,
                 subsetShape,
                 elementSize,
+                chunkBytes,
                 chunkIndex,
                 output,
                 ct)))
@@ -112,7 +157,7 @@ public sealed class ZarrSubsetReader
     private static ZarrArrayMetadata ResolveArray(ZarrStoreMetadata metadata, string variable)
     {
         return metadata.Arrays.FirstOrDefault(candidate => string.Equals(candidate.Name, variable, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException($"Variable '{variable}' was not discovered in the Zarr store.");
+            ?? throw new ZarrSubsetValidationException($"Variable '{variable}' was not discovered in the Zarr store.");
     }
 
     private static void ValidateRequest(ZarrArrayMetadata array, ZarrSubsetRequest request)
@@ -149,7 +194,7 @@ public sealed class ZarrSubsetReader
             return;
         }
 
-        throw new InvalidOperationException(
+        throw new ZarrSubsetValidationException(
             $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed, zlib, or gzip chunks.");
     }
 
@@ -169,7 +214,7 @@ public sealed class ZarrSubsetReader
         }
         if (endian == '>')
         {
-            throw new InvalidOperationException($"Zarr dtype '{dtype}' is big-endian; only little-endian dtypes are supported by the MVP reader.");
+            throw new ZarrSubsetValidationException($"Zarr dtype '{dtype}' is big-endian; only little-endian dtypes are supported by the MVP reader.");
         }
 
         if (span.Length < 3)
@@ -180,7 +225,7 @@ public sealed class ZarrSubsetReader
         var kind = span[1];
         if (kind is not ('f' or 'i' or 'u' or 'b'))
         {
-            throw new InvalidOperationException($"Zarr dtype kind '{kind}' is not supported by the MVP reader (use f, i, u, or b).");
+            throw new ZarrSubsetValidationException($"Zarr dtype kind '{kind}' is not supported by the MVP reader (use f, i, u, or b).");
         }
 
         if (!int.TryParse(span[2..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) || bytes <= 0)
@@ -208,21 +253,12 @@ public sealed class ZarrSubsetReader
         ZarrSubsetRequest request,
         int[] subsetShape,
         int elementSize,
+        long chunkBytes,
         int[] chunkIndex,
         byte[] output,
         CancellationToken cancellationToken)
     {
-        var rank = array.Shape.Length;
         var chunkPath = JoinKey(arrayPath, BuildChunkKey(chunkIndex, array.ChunkKeyEncoding));
-
-        // Validate the declared decoded chunk size before issuing any cloud read.
-        var chunkBytes = ComputeChunkBytes(array, elementSize);
-        if (chunkBytes > MaxBytesPerRequest)
-        {
-            throw new InvalidOperationException(
-                $"Zarr chunk size of {chunkBytes:N0} bytes exceeds the per-chunk cap of {MaxBytesPerRequest:N0} bytes. " +
-                $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
-        }
 
         byte[]? raw;
         try
@@ -235,10 +271,11 @@ public sealed class ZarrSubsetReader
             else
             {
                 // Uncompressed chunks are bounded by their decoded size. Compressed
-                // chunks are read using the object size so incompressible DEFLATE
-                // streams are not truncated, while the larger compressed cap keeps
-                // attacker-controlled objects bounded.
-                var readLimit = array.Compressor is null ? chunkBytes : MaxCompressedChunkBytes;
+                // chunks allow a bounded overhead above chunkBytes for incompressible
+                // DEFLATE streams rather than permitting multi-hundred-MiB reads.
+                var readLimit = array.Compressor is null
+                    ? chunkBytes
+                    : checked(chunkBytes + MaxCompressedChunkOverheadBytes);
                 if (objectSize > readLimit || array.Compressor is null && objectSize != chunkBytes)
                     throw new InvalidDataException("Zarr chunk object length exceeds its encoded limit or does not match its declared shape.");
                 raw = await reader.ReadRangeAsync(
@@ -257,55 +294,105 @@ public sealed class ZarrSubsetReader
             raw = null;
         }
 
-        var chunkBuffer = new byte[chunkBytes];
-        if (raw is null)
+        var chunkByteCount = checked((int)chunkBytes);
+        var chunkBuffer = ArrayPool<byte>.Shared.Rent(chunkByteCount);
+        try
         {
-            FillWithFillValue(chunkBuffer, array, elementSize, cancellationToken);
+            if (raw is null)
+            {
+                if (array.FillValue is null)
+                {
+                    chunkBuffer.AsSpan(0, chunkByteCount).Clear();
+                }
+                else
+                {
+                    FillWithFillValue(chunkBuffer.AsSpan(0, chunkByteCount), array, elementSize, cancellationToken);
+                }
+            }
+            else
+            {
+                ZarrChunkDecoder.Decode(raw, array.Compressor, chunkBuffer, chunkByteCount, cancellationToken);
+            }
+
+            CopyChunkRegion(chunkBuffer, output, array, request, subsetShape, chunkIndex, elementSize);
         }
-        else
+        finally
         {
-            ZarrChunkDecoder.Decode(raw, array.Compressor, chunkBuffer, cancellationToken);
+            ArrayPool<byte>.Shared.Return(chunkBuffer);
+        }
+    }
+
+    private static void CopyChunkRegion(
+        byte[] chunkBuffer,
+        byte[] output,
+        ZarrArrayMetadata array,
+        ZarrSubsetRequest request,
+        int[] subsetShape,
+        int[] chunkIndex,
+        int elementSize)
+    {
+        var rank = array.Shape.Length;
+        if (rank == 0)
+        {
+            Buffer.BlockCopy(chunkBuffer, 0, output, 0, elementSize);
+            return;
         }
 
         // For each cell in the chunk intersected with the request bounds, copy
-        // it to the appropriate output offset.
-        var chunkStart = new int[rank];
-        var chunkStop = new int[rank];
-        for (var i = 0; i < rank; i++)
-        {
-            chunkStart[i] = chunkIndex[i] * array.Chunks[i];
-            chunkStop[i] = Math.Min(chunkStart[i] + array.Chunks[i], array.Shape[i]);
-        }
+        // it to the appropriate output offset using stack-allocated coordinate and stride vectors.
+        Span<int> chunkStart = rank <= StackAllocMaxRank ? stackalloc int[rank] : new int[rank];
+        Span<int> intersectStart = rank <= StackAllocMaxRank ? stackalloc int[rank] : new int[rank];
+        Span<int> intersectStop = rank <= StackAllocMaxRank ? stackalloc int[rank] : new int[rank];
+        Span<int> cursor = rank <= StackAllocMaxRank ? stackalloc int[rank] : new int[rank];
+        Span<long> chunkStrides = rank <= StackAllocMaxRank ? stackalloc long[rank] : new long[rank];
+        Span<long> subsetStrides = rank <= StackAllocMaxRank ? stackalloc long[rank] : new long[rank];
 
-        var intersectStart = new int[rank];
-        var intersectStop = new int[rank];
         for (var i = 0; i < rank; i++)
         {
-            intersectStart[i] = Math.Max(chunkStart[i], request.Start[i]);
-            intersectStop[i] = Math.Min(chunkStop[i], request.Stop[i]);
-            if (intersectStop[i] <= intersectStart[i])
+            var cStart = chunkIndex[i] * array.Chunks[i];
+            var cStop = Math.Min(cStart + array.Chunks[i], array.Shape[i]);
+            chunkStart[i] = cStart;
+
+            var iStart = Math.Max(cStart, request.Start[i]);
+            var iStop = Math.Min(cStop, request.Stop[i]);
+            if (iStop <= iStart)
             {
                 return;
             }
+
+            intersectStart[i] = iStart;
+            intersectStop[i] = iStop;
+            cursor[i] = iStart;
+        }
+
+        long chunkStride = 1;
+        long subsetStride = 1;
+        for (var i = rank - 1; i >= 0; i--)
+        {
+            chunkStrides[i] = chunkStride;
+            subsetStrides[i] = subsetStride;
+            chunkStride *= array.Chunks[i];
+            subsetStride *= subsetShape[i];
         }
 
         // Iterate over all cells in the intersected region using row-major coordinates
         // and copy contiguous innermost runs at a time.
-        var cursor = (int[])intersectStart.Clone();
-        var done = false;
-        while (!done)
+        var innerStart = intersectStart[rank - 1];
+        var innerStop = intersectStop[rank - 1];
+        var runBytes = checked((innerStop - innerStart) * elementSize);
+
+        while (true)
         {
-            // Copy a run on the last axis from cursor[rank-1] to intersectStop[rank-1].
-            var innerStart = intersectStart[rank - 1];
-            var innerStop = intersectStop[rank - 1];
-            var runLength = innerStop - innerStart;
             cursor[rank - 1] = innerStart;
 
-            var srcOffset = checked((int)(ComputeChunkOffset(cursor, chunkStart, array.Chunks) * elementSize));
-            var dstOffset = checked((int)(ComputeSubsetOffset(cursor, request.Start, subsetShape) * elementSize));
-            Buffer.BlockCopy(chunkBuffer, srcOffset, output, dstOffset, runLength * elementSize);
+            var srcOffset = checked((int)(ComputeStridedOffset(cursor, chunkStart, chunkStrides) * elementSize));
+            var dstOffset = checked((int)(ComputeStridedOffset(cursor, request.Start, subsetStrides) * elementSize));
+            Buffer.BlockCopy(chunkBuffer, srcOffset, output, dstOffset, runBytes);
 
-            done = !TryIncrementOuter(cursor, intersectStart, intersectStop);
+            if (!TryIncrementOuter(cursor, intersectStart, intersectStop))
+            {
+                break;
+            }
         }
     }
 
@@ -319,31 +406,18 @@ public sealed class ZarrSubsetReader
         return bytes;
     }
 
-    private static void FillWithFillValue(byte[] buffer, ZarrArrayMetadata array, int elementSize, CancellationToken cancellationToken)
+    private static void FillWithFillValue(Span<byte> buffer, ZarrArrayMetadata array, int elementSize, CancellationToken cancellationToken)
         => ZarrFillValueCodec.Fill(buffer, array.DataType, elementSize, array.FillValue, cancellationToken);
 
-    private static long ComputeChunkOffset(int[] cell, int[] chunkStart, int[] chunkShape)
+    private static long ComputeStridedOffset(
+        ReadOnlySpan<int> cell,
+        ReadOnlySpan<int> origin,
+        ReadOnlySpan<long> strides)
     {
         long offset = 0;
-        long stride = 1;
-        for (var i = cell.Length - 1; i >= 0; i--)
+        for (var i = 0; i < cell.Length; i++)
         {
-            var local = cell[i] - chunkStart[i];
-            offset += local * stride;
-            stride *= chunkShape[i];
-        }
-        return offset;
-    }
-
-    private static long ComputeSubsetOffset(int[] cell, int[] requestStart, int[] subsetShape)
-    {
-        long offset = 0;
-        long stride = 1;
-        for (var i = cell.Length - 1; i >= 0; i--)
-        {
-            var local = cell[i] - requestStart[i];
-            offset += local * stride;
-            stride *= subsetShape[i];
+            offset += (cell[i] - origin[i]) * strides[i];
         }
         return offset;
     }
@@ -362,7 +436,7 @@ public sealed class ZarrSubsetReader
         return false;
     }
 
-    private static bool TryIncrementOuter(int[] cursor, int[] start, int[] stop)
+    private static bool TryIncrementOuter(Span<int> cursor, ReadOnlySpan<int> start, ReadOnlySpan<int> stop)
     {
         // Increment all axes except the innermost (which the caller handled via run length).
         for (var i = cursor.Length - 2; i >= 0; i--)

@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Frozen;
 using System.Data.Common;
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -14,7 +16,7 @@ namespace Honua.Db.Postgres.Features.Raster;
 
 internal sealed partial class PostgresTerrainTileService : ITerrainTileService
 {
-    private static readonly HashSet<string> NumericPixelTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> NumericPixelTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "1BB",
         "2BUI",
@@ -27,7 +29,12 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
         "32BUI",
         "32BF",
         "64BF"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    internal static readonly byte[] EmptyTerrainRgbPng = PngEncoder.EncodeRgba(
+        new byte[TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 4],
+        TerrainRgbEncoding.TileSize,
+        TerrainRgbEncoding.TileSize);
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
@@ -63,9 +70,9 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
         var candidateSourceSrid = ResolveSourceSrid(rasters);
         var sourceSrid = await ResolveSupportedSourceSridAsync(candidateSourceSrid, cancellationToken).ConfigureAwait(false);
         var unsupportedReasons = GetUnsupportedReasons(rasters, candidateSourceSrid, sourceSrid);
-        var bandCount = ResolveSingleValue(rasters.Select(static raster => (int?)raster.BandCount));
-        var pixelType = ResolveSingleValue(rasters.Select(static raster => raster.PixelType));
-        var noDataValue = ResolveSingleValue(rasters.Select(static raster => raster.NoDataValue));
+        var bandCount = RasterMetadataHelpers.ResolveSingleValue(rasters.Select(static raster => (int?)raster.BandCount));
+        var pixelType = RasterMetadataHelpers.ResolveSingleString(rasters.Select(static raster => raster.PixelType));
+        var noDataValue = RasterMetadataHelpers.ResolveSingleValue(rasters.Select(static raster => raster.NoDataValue));
         var sourceExtent = sourceSrid.HasValue ? ComputeAggregateExtent(rasters, sourceSrid.Value) : null;
         var wgs84Bounds = sourceSrid.HasValue
             ? await GetWgs84BoundsAsync(layerId, cancellationToken).ConfigureAwait(false)
@@ -103,7 +110,7 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
                 $"Terrain-RGB tiles must be {TerrainRgbEncoding.TileSize}x{TerrainRgbEncoding.TileSize} pixels.");
         }
 
-        _ = await ValidateSupportedMetadataAsync(
+        await ValidateSupportedMetadataAsync(
             request.LayerId,
             request.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
@@ -115,10 +122,8 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             request.Y,
             cancellationToken).ConfigureAwait(false);
 
-        var rgba = new byte[TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 4];
         if (rasterIds.Length == 0)
         {
-            var emptyPng = PngEncoder.EncodeRgba(rgba, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
             PostgresTerrainLog.TerrainTileGenerated(
                 _logger,
                 request.LayerId,
@@ -126,39 +131,51 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
                 request.X,
                 request.Y,
                 rasterCount: 0,
-                emptyPng.Length,
+                EmptyTerrainRgbPng.Length,
                 allNoData: true);
             return new TerrainTileResult
             {
-                Data = emptyPng,
+                Data = EmptyTerrainRgbPng,
                 SelectedRasterCount = 0,
                 IsAllNoData = true
             };
         }
 
-        var hasData = await PopulateTerrainRgbAsync(
-            request,
-            rasterIds,
-            rgba,
-            cancellationToken).ConfigureAwait(false);
-        var png = PngEncoder.EncodeRgba(rgba, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
-
-        PostgresTerrainLog.TerrainTileGenerated(
-            _logger,
-            request.LayerId,
-            request.Z,
-            request.X,
-            request.Y,
-            rasterIds.Length,
-            png.Length,
-            allNoData: !hasData);
-
-        return new TerrainTileResult
+        var rgbaLength = TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 4;
+        var rgba = ArrayPool<byte>.Shared.Rent(rgbaLength);
+        try
         {
-            Data = png,
-            SelectedRasterCount = rasterIds.Length,
-            IsAllNoData = !hasData
-        };
+            rgba.AsSpan(0, rgbaLength).Clear();
+            var hasData = await PopulateTerrainRgbAsync(
+                request,
+                rasterIds,
+                rgba,
+                cancellationToken).ConfigureAwait(false);
+            var png = hasData
+                ? PngEncoder.EncodeRgba(rgba.AsSpan(0, rgbaLength), TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize)
+                : EmptyTerrainRgbPng;
+
+            PostgresTerrainLog.TerrainTileGenerated(
+                _logger,
+                request.LayerId,
+                request.Z,
+                request.X,
+                request.Y,
+                rasterIds.Length,
+                png.Length,
+                allNoData: !hasData);
+
+            return new TerrainTileResult
+            {
+                Data = png,
+                SelectedRasterCount = rasterIds.Length,
+                IsAllNoData = !hasData
+            };
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rgba);
+        }
     }
 
     private async Task<long[]> GetIntersectingRasterIdsAsync(
@@ -393,26 +410,6 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
         return [.. reasons];
     }
 
-    private static T? ResolveSingleValue<T>(IEnumerable<T?> values)
-        where T : struct
-    {
-        var distinct = values
-            .Where(static value => value.HasValue)
-            .Select(static value => value!.Value)
-            .Distinct()
-            .ToArray();
-        return distinct.Length == 1 ? distinct[0] : null;
-    }
-
-    private static string? ResolveSingleValue(IEnumerable<string> values)
-    {
-        var distinct = values
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return distinct.Length == 1 ? distinct[0] : null;
-    }
-
     private static int? ResolveSourceSrid(RasterInfo[] rasters)
     {
         if (rasters.Any(static raster => raster.Srid is not > 0))
@@ -420,7 +417,7 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             return null;
         }
 
-        return ResolveSingleValue(rasters.Select(static raster => raster.Srid));
+        return RasterMetadataHelpers.ResolveSingleValue(rasters.Select(static raster => raster.Srid));
     }
 
     private static RasterExtent? ComputeAggregateExtent(RasterInfo[] rasters, int sourceSrid)
@@ -468,6 +465,9 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
         private static readonly uint[] CrcTable = CreateCrcTable();
 
         internal static byte[] EncodeRgba(byte[] rgba, int width, int height)
+            => EncodeRgba(rgba.AsSpan(), width, height);
+
+        internal static byte[] EncodeRgba(ReadOnlySpan<byte> rgba, int width, int height)
         {
             if (rgba.Length != checked(width * height * 4))
             {
@@ -488,21 +488,30 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             WriteChunk(png, "IHDR", ihdr);
 
             var stride = width * 4;
-            var raw = new byte[(stride + 1) * height];
-            for (var row = 0; row < height; row++)
+            var rawLength = (stride + 1) * height;
+            var raw = ArrayPool<byte>.Shared.Rent(rawLength);
+            try
             {
-                var rawOffset = row * (stride + 1);
-                raw[rawOffset] = 0;
-                Buffer.BlockCopy(rgba, row * stride, raw, rawOffset + 1, stride);
+                for (var row = 0; row < height; row++)
+                {
+                    var rawOffset = row * (stride + 1);
+                    raw[rawOffset] = 0;
+                    rgba.Slice(row * stride, stride).CopyTo(raw.AsSpan(rawOffset + 1, stride));
+                }
+
+                using var compressed = new MemoryStream();
+                using (var zlib = new ZLibStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
+                {
+                    zlib.Write(raw, 0, rawLength);
+                }
+
+                WriteChunk(png, "IDAT", compressed.GetBuffer().AsSpan(0, (int)compressed.Length));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(raw);
             }
 
-            using var compressed = new MemoryStream();
-            using (var zlib = new ZLibStream(compressed, CompressionLevel.Fastest, leaveOpen: true))
-            {
-                zlib.Write(raw);
-            }
-
-            WriteChunk(png, "IDAT", compressed.ToArray());
             WriteChunk(png, "IEND", ReadOnlySpan<byte>.Empty);
             return png.ToArray();
         }

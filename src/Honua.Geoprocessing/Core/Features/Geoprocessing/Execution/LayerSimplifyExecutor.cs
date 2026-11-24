@@ -32,7 +32,7 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
         CancellationToken cancellationToken)
     {
         var tolerance = ReadTolerance(inputs);
-        var preserveTopology = ReadBool(inputs, "preserveTopology", defaultValue: true);
+        var preserveTopology = inputs.ReadBool("preserveTopology", defaultValue: true);
 
         var vertices = LayerComputationBudget.CountVertices(source);
         LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
@@ -72,20 +72,5 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
         }
 
         return value;
-    }
-
-    private static bool ReadBool(StepInputReader inputs, string name, bool defaultValue)
-    {
-        if (!inputs.TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
-        {
-            return defaultValue;
-        }
-
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "true" or "1" or "yes" => true,
-            "false" or "0" or "no" => false,
-            _ => throw new TransformInputException($"'{name}' must be a boolean (true|false)"),
-        };
     }
 }

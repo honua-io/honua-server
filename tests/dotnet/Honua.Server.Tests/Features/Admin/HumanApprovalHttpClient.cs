@@ -92,8 +92,6 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
         Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, HumanApprovalIdentity identity)
     {
-        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(
-            identity.Subject, identity.Subject, identity.Roles, identity.TenantId);
         var client = createClient();
         if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
             client.BaseAddress = new Uri("https://localhost");
@@ -102,7 +100,14 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
             using var authorize = await client.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/authorize-url", new { });
             authorize.StatusCode.Should().Be(HttpStatusCode.OK);
             var authorization = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var state = QueryHelpers.ParseQuery(new Uri(authorization!.AuthorizeUrl).Query)["state"].ToString();
+            var authorizeQuery = QueryHelpers.ParseQuery(new Uri(authorization!.AuthorizeUrl).Query);
+            var state = authorizeQuery["state"].ToString();
+            provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(
+                identity.Subject,
+                identity.Subject,
+                identity.Roles,
+                identity.TenantId,
+                nonce: authorizeQuery["nonce"].ToString());
             using var token = await client.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/token", new
             {
                 grantType = "authorization_code",

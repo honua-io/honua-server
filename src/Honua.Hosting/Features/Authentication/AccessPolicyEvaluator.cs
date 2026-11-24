@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Validation;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
@@ -109,6 +110,7 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         return scope switch
         {
             null => false,
+            AccessScope accessScope => accessScope == AccessScope.Write,
             int numeric => numeric != 0,
             string text => string.Equals(text, "write", StringComparison.OrdinalIgnoreCase),
             _ => string.Equals(scope.ToString(), "Write", StringComparison.OrdinalIgnoreCase)
@@ -124,15 +126,18 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
                 continue;
             }
 
-            var trimmedRole = allowedRole.Trim();
-            if (principal.Claims.Any(claim =>
-                    claim.Type == ClaimTypes.Role &&
-                    string.Equals(claim.Value, trimmedRole, StringComparison.OrdinalIgnoreCase)))
+            var trimmedRole = allowedRole.AsSpan().Trim();
+            foreach (var claim in principal.Claims)
             {
-                return true;
+                if (claim.Type == ClaimTypes.Role &&
+                    claim.Value.AsSpan().Equals(trimmedRole, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
             }
 
-            if (principal.IsInRole(trimmedRole))
+            var roleName = trimmedRole.Length == allowedRole.Length ? allowedRole : trimmedRole.ToString();
+            if (principal.IsInRole(roleName))
             {
                 return true;
             }

@@ -104,53 +104,20 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         return affected > 0;
     }
 
-    public async Task<IReadOnlyList<FieldMaskPolicy>> GetEffectivePoliciesAsync(
+    public Task<IReadOnlyList<FieldMaskPolicy>> GetEffectivePoliciesAsync(
         IReadOnlyList<string> roles,
         string service,
         string layer,
         CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(roles);
-        ArgumentException.ThrowIfNullOrWhiteSpace(service);
-        ArgumentException.ThrowIfNullOrWhiteSpace(layer);
-
-        // Resolve every policy whose scope matches the (service, layer) — including
-        // "*" wildcards — and whose role is "*" or one of the principal's roles
-        // (case-insensitive). A single set-based query keeps this cheap and correct
-        // under concurrent writes; role filtering uses a lowered-name ANY match.
-        var sql = $"""
-            SELECT policy_id, role, service, layer, attribute, description, created_at, updated_at
-            FROM {_table}
-            WHERE (service = '*' OR LOWER(service) = LOWER(@service))
-              AND (layer = '*' OR LOWER(layer) = LOWER(@layer))
-              AND (role = '*' OR LOWER(role) = ANY(@role_names))
-            ORDER BY created_at
-            """;
-
-        var loweredNames = roles
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .Select(static name => name.Trim().ToLowerInvariant())
-            .Distinct()
-            .ToArray();
-
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("service", NpgsqlDbType.Varchar, service);
-        command.Parameters.AddWithValue("layer", NpgsqlDbType.Varchar, layer);
-        command.Parameters.AddWithValue("role_names", NpgsqlDbType.Array | NpgsqlDbType.Text, loweredNames);
-
-        try
-        {
-            return await ReadPoliciesAsync(command, cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
-        {
-            // Fresh/legacy DB where migration 068 has not created the table: treat
-            // as "no field-mask policies" so query paths behave exactly as before
-            // (no masking), matching the rbac_* graceful-degradation pattern.
-            return [];
-        }
-    }
+        => PostgresPolicyStoreHelpers.GetEffectivePoliciesAsync(
+            _connectionProvider,
+            _table,
+            "policy_id, role, service, layer, attribute, description, created_at, updated_at",
+            roles,
+            service,
+            layer,
+            ReadPoliciesAsync,
+            cancellationToken);
 
     private static async Task<IReadOnlyList<FieldMaskPolicy>> ReadPoliciesAsync(
         NpgsqlCommand command,

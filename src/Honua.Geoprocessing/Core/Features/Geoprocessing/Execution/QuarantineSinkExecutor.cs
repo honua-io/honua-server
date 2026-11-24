@@ -133,7 +133,7 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
             // cancellation). Cancellation still propagates as OperationCanceledException.
             if (!committed)
             {
-                TryDeleteTempFile(tempPath);
+                FileSinkInputReader.TryDeleteTempFile(tempPath);
             }
         }
 
@@ -181,21 +181,6 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
             { reasonField, $"serialization-failed: {detail}" }
         };
         return new Feature(null, attributes);
-    }
-
-    private static void TryDeleteTempFile(string tempPath)
-    {
-        try
-        {
-            if (File.Exists(tempPath))
-            {
-                File.Delete(tempPath);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            // Best-effort cleanup; never mask the original failure/cancellation.
-        }
     }
 
     private static partial class Log

@@ -22,20 +22,17 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 public sealed class PortalResourceReadAuthorizerTests
 {
     [UnitTest]
-    public async Task LiveServiceAudience_AlignsSyncAsyncAndProjectorReadDecision_AndRevokes()
+    public async Task LiveServiceAudience_AlignsAsyncAndProjectorReadDecision_AndRevokes()
     {
         using var harness = await Harness.CreateAsync();
         var authorizer = harness.Services.GetRequiredService<IPortalResourceReadAuthorizer>();
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service).IsAllowed.Should().BeTrue();
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource,
             harness.Service, AuthorizationOperation.Query)).IsAllowed.Should().BeTrue();
-        AccessPolicyHelpers.RequireServiceAccess(harness.Context, harness.Service).Should().BeNull();
         (await AccessPolicyHelpers.RequireServiceAccessAsync(harness.Context, harness.Service,
             AuthorizationOperation.Metadata)).Should().BeNull();
         authorizer.Evaluate(harness.Context.User, harness.Resource, harness.Service).IsAllowed.Should().BeTrue();
 
         await harness.Groups.RemoveUsersAsync(harness.GroupId, ["member"], CancellationToken.None);
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service).IsAllowed.Should().BeFalse();
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource,
             harness.Service, AuthorizationOperation.Query)).IsAllowed.Should().BeFalse();
         authorizer.Evaluate(harness.Context.User, harness.Resource, harness.Service).IsAllowed.Should().BeFalse();
@@ -67,7 +64,7 @@ public sealed class PortalResourceReadAuthorizerTests
         await harness.Sharing.UnshareAsync(harness.Service.Metadata.Id,
             new PortalItemShareRequest(false, false, [harness.GroupId]), CancellationToken.None);
         harness.Groups.GetGroupIdsForUser("member").Should().Contain(harness.GroupId);
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service).IsAllowed.Should().BeFalse();
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource, harness.Service, AuthorizationOperation.Query)).IsAllowed.Should().BeFalse();
     }
 
     [Theory]
@@ -114,7 +111,6 @@ public sealed class PortalResourceReadAuthorizerTests
             harness.Context.User = new ClaimsPrincipal(new ClaimsIdentity());
         }
 
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, resource, service).IsAllowed.Should().Be(expected);
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, resource, service,
             AuthorizationOperation.Query)).IsAllowed.Should().Be(expected);
         harness.Services.GetRequiredService<IPortalResourceReadAuthorizer>()
@@ -125,12 +121,11 @@ public sealed class PortalResourceReadAuthorizerTests
     public async Task ServiceAudience_DoesNotAuthorizeWritesOrAnotherServiceOrForeignPublication()
     {
         using var harness = await Harness.CreateAsync();
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service, AccessScope.Write)
-            .IsAllowed.Should().BeFalse();
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource, harness.Service,
             AuthorizationOperation.Update)).IsAllowed.Should().BeFalse();
         var other = harness.Service with { Metadata = harness.Service.Metadata with { Id = "other-service" } };
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, other).IsAllowed.Should().BeFalse();
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource, other,
+            AuthorizationOperation.Query)).IsAllowed.Should().BeFalse();
         var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -148,7 +143,8 @@ public sealed class PortalResourceReadAuthorizerTests
             new PortalItemShareRequest(false, false, [harness.GroupId]), CancellationToken.None);
         await harness.Sharing.ShareAsync(harness.Service.Metadata.Id, "owner",
             new PortalItemShareRequest(true, true, []), CancellationToken.None);
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service).IsAllowed.Should().BeFalse();
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource, harness.Service,
+            AuthorizationOperation.Query)).IsAllowed.Should().BeFalse();
     }
 
     [Theory]
@@ -225,7 +221,8 @@ public sealed class PortalResourceReadAuthorizerTests
     public async Task LiveGroupReadAudience_DoesNotGrantOperatorProcessExecution()
     {
         using var harness = await Harness.CreateAsync();
-        AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, harness.Service).IsAllowed.Should().BeTrue();
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource, harness.Service,
+            AuthorizationOperation.Query)).IsAllowed.Should().BeTrue();
         var evaluator = new OperatorAuthorizationEvaluator(
             harness.Services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new RbacOptions()),
             NullLogger<OperatorAuthorizationEvaluator>.Instance);

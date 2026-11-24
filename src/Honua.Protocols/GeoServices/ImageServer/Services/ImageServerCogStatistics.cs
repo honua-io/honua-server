@@ -2,9 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
@@ -58,7 +62,7 @@ internal static class ImageServerCogStatistics
         }
 
         var cache = context.RequestServices.GetService<IMemoryCache>();
-        var key = CacheKey(registrations, bands, request.BinCount);
+        var key = CacheKey(context, registrations, bands, request.BinCount);
         if (cache?.TryGetValue(key, out ImageServerCogStatisticsResult? cached) == true && cached is not null)
         {
             return cached;
@@ -135,9 +139,16 @@ internal static class ImageServerCogStatistics
             : Enumerable.Range(1, shared).ToArray();
     }
 
-    private static string CacheKey(CogRegistration[] registrations, int[] bands, int binCount)
-        => string.Create(CultureInfo.InvariantCulture, $"imageserver-cog-statistics:{string.Join(',', registrations.Select(
-            registration => $"{registration.Id}@{registration.MetadataScannedAt?.UtcTicks}"))}|{string.Join(',', bands)}|{binCount}");
+    internal static string CacheKey(HttpContext context, CogRegistration[] registrations, int[] bands, int binCount)
+    {
+        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>";
+        var schema = SchemaContext.AmbientCurrentSchema
+            ?? context.RequestServices?.GetService<ISchemaContext>()?.CurrentSchema
+            ?? "default";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"imageserver-cog-statistics:t={Uri.EscapeDataString(tenantId)}|s={Uri.EscapeDataString(schema)}|{string.Join(',', registrations.Select(static registration => $"{registration.Id}@{registration.MetadataScannedAt?.UtcTicks}:{Uri.EscapeDataString(registration.Bucket ?? string.Empty)}:{Uri.EscapeDataString(registration.ObjectKey ?? string.Empty)}"))}|{string.Join(',', bands)}|{binCount}");
+    }
 
     private static List<ImageServerCogExport.TileAddress> OverviewTiles(CogRegistration registration)
     {

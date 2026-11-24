@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
@@ -17,6 +18,9 @@ internal sealed class TenantContextMiddleware(
     IOptions<TenantContextOptions> options,
     ILogger<TenantContextMiddleware> logger)
 {
+    private static readonly SearchValues<char> SafeTenantIdChars = SearchValues.Create(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.:@");
+
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ILogger<TenantContextMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly TenantContextOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
@@ -61,9 +65,25 @@ internal sealed class TenantContextMiddleware(
         // claim-name configuration and the anonymous default must never replace it.
         if (isAuthenticated && principal!.Identity?.AuthenticationType == ScopedJobAuthentication.Scheme)
         {
-            var frozenTenants = principal.FindAll(ScopedJobTokenIssuer.TenantClaimType).ToArray();
-            var frozenTenant = frozenTenants.Length == 1 ? frozenTenants[0].Value : null;
-            if (frozenTenants.Length > 1 || (frozenTenant is not null &&
+            string? frozenTenant = null;
+            var multipleFrozenTenants = false;
+            foreach (var claim in principal.Claims)
+            {
+                if (!string.Equals(claim.Type, ScopedJobTokenIssuer.TenantClaimType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (frozenTenant is not null)
+                {
+                    multipleFrozenTenants = true;
+                    break;
+                }
+
+                frozenTenant = claim.Value;
+            }
+
+            if (multipleFrozenTenants || (frozenTenant is not null &&
                 (string.IsNullOrWhiteSpace(frozenTenant) || frozenTenant.Length > _options.MaxTenantIdLength ||
                  !IsSafeTenantId(frozenTenant))))
             {
@@ -277,13 +297,15 @@ internal sealed class TenantContextMiddleware(
 
     private bool PrincipalHasMultiTenantAdminRole(ClaimsPrincipal principal)
     {
-        if (_options.MultiTenantAdminRoles.Length == 0)
+        foreach (var role in _options.MultiTenantAdminRoles)
         {
-            return false;
+            if (!string.IsNullOrWhiteSpace(role) && principal.IsInRole(role))
+            {
+                return true;
+            }
         }
 
-        return _options.MultiTenantAdminRoles.Any(
-            role => !string.IsNullOrWhiteSpace(role) && principal.IsInRole(role));
+        return false;
     }
 
     private static string? GetPrincipalIdentifier(ClaimsPrincipal? principal)
@@ -305,20 +327,5 @@ internal sealed class TenantContextMiddleware(
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,
     // colon, plus '@' to accommodate common tenant naming patterns (e.g. email-style).
     private static bool IsSafeTenantId(string value)
-    {
-        for (int i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            var ok = (c >= 'A' && c <= 'Z')
-                || (c >= 'a' && c <= 'z')
-                || (c >= '0' && c <= '9')
-                || c == '-' || c == '_' || c == '.' || c == ':' || c == '@';
-            if (!ok)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        => value.AsSpan().IndexOfAnyExcept(SafeTenantIdChars) < 0;
 }

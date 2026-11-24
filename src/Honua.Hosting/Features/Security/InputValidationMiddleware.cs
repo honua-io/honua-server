@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -11,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
 
-internal sealed class InputValidationMiddleware
+internal sealed partial class InputValidationMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<InputValidationMiddleware> _logger;
@@ -38,9 +40,8 @@ internal sealed class InputValidationMiddleware
     // filter expressions before SQL-injection inspection so harmless in-literal
     // sequences ("--", "/* */", ";") are not flagged. Unbalanced quotes (the actual
     // injection vector) do not match and stay visible to the injection pattern.
-    private static readonly Regex _quotedStringLiteralPattern = new(
-        @"'(?:[^']|'')*'",
-        RegexOptions.Compiled);
+    [GeneratedRegex(@"'(?:[^']|'')*'")]
+    private static partial Regex QuotedStringLiteralPattern();
 
     private static readonly Regex _xssPattern = new(
         @"<script[^>]*>.*?</script>|<iframe[^>]*>.*?</iframe>|javascript:|vbscript:|onload\s*=|onclick\s*=|onerror\s*=" +
@@ -62,16 +63,34 @@ internal sealed class InputValidationMiddleware
 
     // A WKT POINT/MULTIPOINT built only from numbers and WKT punctuation. No LDAP filter operator
     // (| & ! * =) can appear in a value this matches.
-    private static readonly Regex _edrWktCoordsPattern = new(
-        @"^\s*(?:MULTI)?POINT\s*(?:Z\s*)?\(\s*[-+0-9.e\s,()]+\)\s*$",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    [GeneratedRegex(@"^\s*(?:MULTI)?POINT\s*(?:Z\s*)?\(\s*[-+0-9.e\s,()]+\)\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex EdrWktCoordsPattern();
 
-    private static readonly Regex _odataSystemOptionPattern = new(
-        @"\$(select|filter|orderby|top|skip|count|expand|levels|search|compute|apply|deltatoken|format)\b",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    [GeneratedRegex(@"\$(select|filter|orderby|top|skip|count|expand|levels|search|compute|apply|deltatoken|format)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex ODataSystemOptionPattern();
+
+    private static readonly SearchValues<string> _ldapSuspiciousTokens = SearchValues.Create(
+        [
+            "(|",
+            "(&",
+            "(!",
+            "|(",
+            "&(",
+            "!(",
+            "*(",
+            "*)",
+            "*=",
+            ")=",
+            "(=",
+            "))",
+            "(("
+        ],
+        StringComparison.Ordinal);
+
+    private static readonly SearchValues<char> _disallowedControlChars = CreateDisallowedControlChars();
 
     // Suspicious header patterns
-    private static readonly HashSet<string> _dangerousHeaders = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _dangerousHeaders = new[]
     {
         "X-Forwarded-For", // Can be spoofed
         "X-Real-IP",      // Can be spoofed
@@ -79,22 +98,22 @@ internal sealed class InputValidationMiddleware
         "CF-Connecting-IP",
         "True-Client-IP",
         "X-Cluster-Client-IP"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> _securitySensitiveHeaders = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _securitySensitiveHeaders = new[]
     {
         "X-API-Key",
         "Authorization",
         "X-Correlation-ID",
         "X-Forwarded-Proto",
         "X-Forwarded-Host"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> _opaqueCredentialHeaders = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _opaqueCredentialHeaders = new[]
     {
         "Authorization",
         "X-API-Key"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public InputValidationMiddleware(
         RequestDelegate next,
@@ -130,7 +149,8 @@ internal sealed class InputValidationMiddleware
         // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
         // An unmatched route has no handler that needs form fields. Parsing it
         // would buffer an anonymous body before authentication.
-        if (context.GetEndpoint() is not null
+        var endpoint = context.GetEndpoint();
+        if (endpoint is not null
             && context.Request.HasFormContentType
             && !IsMultipartFormData(context.Request.ContentType))
         {
@@ -149,8 +169,8 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate request inputs
-        var validationResult = ValidateRequest(context.Request);
-        var geometryMetadata = context.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>();
+        var geometryMetadata = endpoint?.Metadata.GetMetadata<GeometryParameterMetadata>();
+        var validationResult = ValidateRequest(context.Request, endpoint is not null, geometryMetadata);
         if (validationResult.IsValid && geometryMetadata != null)
         {
             var body = await geometryMetadata.ReadBodyParametersAsync(context.Request, context.RequestAborted);
@@ -164,7 +184,7 @@ internal sealed class InputValidationMiddleware
                 {
                     // The protocol parser uses the same conversions for JSON and form
                     // values. Apply the existing form-parameter security semantics to both.
-                    validationResult = ValidateParameter(context.Request, "form", parameter.Key, parameter.Value);
+                    validationResult = ValidateParameter(context.Request, "form", parameter.Key, parameter.Value, geometryMetadata);
                     if (!validationResult.IsValid)
                     {
                         break;
@@ -194,49 +214,80 @@ internal sealed class InputValidationMiddleware
 
     private bool ShouldSkipValidation(PathString path)
     {
-        var pathValue = path.Value?.ToLowerInvariant();
-        return pathValue?.StartsWith("/health", StringComparison.Ordinal) == true ||
-               pathValue?.StartsWith("/metrics", StringComparison.Ordinal) == true ||
-               pathValue?.StartsWith("/ready", StringComparison.Ordinal) == true ||
-               _options.ExcludedPaths.Any(excluded =>
-                   pathValue?.StartsWith(excluded, StringComparison.OrdinalIgnoreCase) == true);
+        var pathValue = path.Value;
+        if (string.IsNullOrEmpty(pathValue))
+        {
+            return false;
+        }
+
+        var pathSpan = pathValue.AsSpan();
+        if (pathSpan.StartsWith("/health", StringComparison.OrdinalIgnoreCase) ||
+            pathSpan.StartsWith("/metrics", StringComparison.OrdinalIgnoreCase) ||
+            pathSpan.StartsWith("/ready", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var excludedPaths = _options.ExcludedPaths;
+        for (var i = 0; i < excludedPaths.Length; i++)
+        {
+            var excluded = excludedPaths[i];
+            if (!string.IsNullOrEmpty(excluded) && pathSpan.StartsWith(excluded.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    private InputValidationResult ValidateRequest(HttpRequest request)
+    private InputValidationResult ValidateRequest(
+        HttpRequest request,
+        bool hasEndpoint,
+        GeometryParameterMetadata? geometryMetadata)
     {
         // Validate query parameters
-        // Not a pure filter: returns the first invalid ValidateParameter result immediately
-        // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
-        foreach (var param in (request.Query).Where(param => !(string.IsNullOrEmpty(param.Key))))
+        foreach (var param in request.Query)
         {
-            var result = ValidateParameter(request, "query", param.Key, param.Value);
+            if (string.IsNullOrEmpty(param.Key))
+            {
+                continue;
+            }
+
+            var result = ValidateParameter(request, "query", param.Key, param.Value, geometryMetadata);
             if (!result.IsValid)
                 return result;
         }
 
         // Validate form data if applicable. An unmatched route has no handler that
         // reads fields; touching Request.Form would buffer the body.
-        if (request.HttpContext.GetEndpoint() is not null
+        if (hasEndpoint
             && request.HasFormContentType
             && !IsMultipartFormData(request.ContentType)
-            && !(HttpMethods.IsPost(request.Method) && request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>() != null)
+            && !(HttpMethods.IsPost(request.Method) && geometryMetadata != null)
             && request.Form != null)
         {
-            // Not a pure filter: returns the first invalid ValidateParameter result immediately
-            // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
-            foreach (var param in (request.Form).Where(param => !(string.IsNullOrEmpty(param.Key))))
+            foreach (var param in request.Form)
             {
-                var result = ValidateParameter(request, "form", param.Key, param.Value);
+                if (string.IsNullOrEmpty(param.Key))
+                {
+                    continue;
+                }
+
+                var result = ValidateParameter(request, "form", param.Key, param.Value, geometryMetadata);
                 if (!result.IsValid)
                     return result;
             }
         }
 
         // Validate headers for suspicious patterns
-        // Not a pure filter: returns the first invalid validation result immediately
-        // (short-circuiting the remaining headers), so this doesn't reduce to '.Where(...)'.
-        foreach (var header in (request.Headers).Where(header => !(string.IsNullOrEmpty(header.Key))))
+        foreach (var header in request.Headers)
         {
+            if (string.IsNullOrEmpty(header.Key))
+            {
+                continue;
+            }
+
             // Check for dangerous headers that can be spoofed
             if (_dangerousHeaders.Contains(header.Key) && _options.ValidateSuspiciousHeaders)
             {
@@ -250,7 +301,7 @@ internal sealed class InputValidationMiddleware
             {
                 var result = IsOpaqueCredentialHeader(header.Key)
                     ? ValidateOpaqueCredentialHeaderValue(header.Key, header.Value)
-                    : ValidateParameter(request, "header", header.Key, header.Value);
+                    : ValidateParameter(request, "header", header.Key, header.Value, geometryMetadata: null);
                 if (!result.IsValid)
                     return result;
             }
@@ -263,16 +314,19 @@ internal sealed class InputValidationMiddleware
         string headerName,
         Microsoft.Extensions.Primitives.StringValues values)
     {
-        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
-        // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
+        foreach (var value in values)
         {
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
             if (value.Length > _options.MaxParameterLength)
             {
                 return InputValidationResult.Invalid($"Header '{headerName}' exceeds maximum length of {_options.MaxParameterLength}");
             }
 
-            if (value.Contains('\r') || value.Contains('\n'))
+            if (value.AsSpan().ContainsAny('\r', '\n'))
             {
                 return InputValidationResult.Invalid($"Header injection attempt detected in '{headerName}'");
             }
@@ -295,15 +349,16 @@ internal sealed class InputValidationMiddleware
         HttpRequest request,
         string paramType,
         string name,
-        Microsoft.Extensions.Primitives.StringValues values)
+        Microsoft.Extensions.Primitives.StringValues values,
+        GeometryParameterMetadata? geometryMetadata)
     {
-        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
-        // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
+        foreach (var value in values)
         {
-            var geometryMetadata = paramType is "query" or "form"
-                ? request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>()
-                : null;
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
             if (geometryMetadata != null && name.Equals(geometryMetadata.ParameterName, StringComparison.OrdinalIgnoreCase))
             {
                 if (CheckGeometrySize(name, value) is { } sizeError)
@@ -408,14 +463,14 @@ internal sealed class InputValidationMiddleware
     // SQL-injection heuristics over their contents produce false positives (e.g. attribute
     // values containing "--", "/* */", ";", or quotes). These cover the GeoServices
     // applyEdits / addFeatures / updateFeatures / deleteFeatures form parameters.
-    private static readonly HashSet<string> _featureEditPayloadFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _featureEditPayloadFields = new[]
     {
         "adds",
         "updates",
         "deletes",
         "features",
         "edits"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // OAuth2 credential parameters (RFC 7662 introspection, RFC 7009 revocation, and the
     // token-exchange grant) carry opaque access/refresh tokens — including signed JWTs whose
@@ -425,7 +480,7 @@ internal sealed class InputValidationMiddleware
     // tokens (e.g. a JWT signature containing "--" → 400 on /sharing/rest/oauth2/introspect).
     // This mirrors the opaque-credential handling for the Authorization / X-API-Key headers.
     // "token" is also exempt on every route; see IsOpaqueTokenCredentialParameter.
-    private static readonly HashSet<string> _oauth2CredentialFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _oauth2CredentialFields = new[]
     {
         "token",
         "token_type_hint",
@@ -440,7 +495,7 @@ internal sealed class InputValidationMiddleware
         "state",
         "code_challenge",
         "code_verifier",
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
         => IsFeatureEditPayloadField(request, paramType, name)
@@ -491,7 +546,7 @@ internal sealed class InputValidationMiddleware
         return request.Path.Value?.Contains("/sharing/rest/oauth2/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    private static readonly HashSet<string> _geoServicesQueryPayloadFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _geoServicesQueryPayloadFields = new[]
     {
         "objectIds",
         "outFields",
@@ -504,9 +559,9 @@ internal sealed class InputValidationMiddleware
         "outStatistics",
         "groupByFieldsForStatistics",
         "having"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> _geometryServiceGeometryFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _geometryServiceGeometryFields = new[]
     {
         "geometries",
         "geometries1",
@@ -523,7 +578,7 @@ internal sealed class InputValidationMiddleware
         "envelope",
         "coordinates",
         "strings"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private static bool IsGeometryServiceGeometryField(HttpRequest request, string paramType, string name)
         => paramType is "form" or "query"
@@ -583,7 +638,7 @@ internal sealed class InputValidationMiddleware
     {
         if (IsODataSystemQueryOption(request, paramType, name))
         {
-            return _odataSystemOptionPattern.Replace(value, string.Empty);
+            return ODataSystemOptionPattern().Replace(value, string.Empty);
         }
 
         if (Cql2JsonLiteralMask.AppliesTo(request, paramType, name))
@@ -601,7 +656,7 @@ internal sealed class InputValidationMiddleware
         // and remains visible to the pattern after masking (bug hunt).
         if (IsSqlFilterExpressionParameter(paramType, name))
         {
-            return _quotedStringLiteralPattern.Replace(value, "''");
+            return QuotedStringLiteralPattern().Replace(value, "''");
         }
 
         return value;
@@ -642,7 +697,7 @@ internal sealed class InputValidationMiddleware
         return paramType.Equals("query", StringComparison.Ordinal) &&
                name.Equals("coords", StringComparison.OrdinalIgnoreCase) &&
                request.Path.Value?.StartsWith("/edr/", StringComparison.OrdinalIgnoreCase) == true &&
-               _edrWktCoordsPattern.IsMatch(value);
+               EdrWktCoordsPattern().IsMatch(value);
     }
 
     private static bool ShouldSkipPathTraversalInspection(HttpRequest request, string paramType, string name, string value)
@@ -654,10 +709,13 @@ internal sealed class InputValidationMiddleware
         // OGC API and STAC datetime use "../end" for an open-start interval.
         // Keep this exception narrower than the full datetime grammar so generic
         // path values such as "../etc/passwd" are still rejected before endpoint dispatch.
-        var parts = value.Split('/', StringSplitOptions.TrimEntries);
-        return parts is ["..", var end] &&
+        var span = value.AsSpan();
+        Span<Range> parts = stackalloc Range[3];
+        var count = span.Split(parts, '/', StringSplitOptions.TrimEntries);
+        return count == 2 &&
+               span[parts[0]].SequenceEqual("..") &&
                DateTimeOffset.TryParse(
-                   end,
+                   span[parts[1]],
                    CultureInfo.InvariantCulture,
                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
                    out _);
@@ -726,10 +784,13 @@ internal sealed class InputValidationMiddleware
 
     private static InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
     {
-        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
-        // remaining values across two distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
+        foreach (var value in values)
         {
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
             // Validate IP address format for IP-related headers
             if ((headerName.Contains("IP", StringComparison.OrdinalIgnoreCase) ||
                  headerName.Contains("For", StringComparison.OrdinalIgnoreCase))
@@ -739,7 +800,7 @@ internal sealed class InputValidationMiddleware
             }
 
             // Check for header injection attempts
-            if (value.Contains('\r') || value.Contains('\n'))
+            if (value.AsSpan().ContainsAny('\r', '\n'))
             {
                 return InputValidationResult.Invalid($"Header injection attempt detected in '{headerName}'");
             }
@@ -760,46 +821,60 @@ internal sealed class InputValidationMiddleware
 
     private static bool ContainsControlCharacters(string value)
     {
-        return value.Any(c => char.IsControl(c) && c != '\t' && c != '\r' && c != '\n');
+        return value.AsSpan().ContainsAny(_disallowedControlChars);
+    }
+
+    private static SearchValues<char> CreateDisallowedControlChars()
+    {
+        Span<char> chars = stackalloc char[0x20 + 0x21];
+        var count = 0;
+        for (var codePoint = 0; codePoint <= 0x1F; codePoint++)
+        {
+            var ch = (char)codePoint;
+            if (ch is not ('\t' or '\r' or '\n'))
+            {
+                chars[count++] = ch;
+            }
+        }
+
+        for (var codePoint = 0x7F; codePoint <= 0x9F; codePoint++)
+        {
+            chars[count++] = (char)codePoint;
+        }
+
+        return SearchValues.Create(chars[..count]);
     }
 
     private static bool ContainsPotentialLdapInjection(string value)
     {
-        ReadOnlySpan<string> suspiciousTokens =
-        [
-            "(|",
-            "(&",
-            "(!",
-            "|(",
-            "&(",
-            "!(",
-            "*(",
-            "*)",
-            "*=",
-            ")=",
-            "(=",
-            "))",
-            "(("
-        ];
-
-        foreach (var token in suspiciousTokens)
-        {
-            if (value.Contains(token, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return value.AsSpan().ContainsAny(_ldapSuspiciousTokens);
     }
 
     private static bool IsValidIpAddressList(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
+        {
             return false;
+        }
 
-        var ips = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        return ips.All(ip => System.Net.IPAddress.TryParse(ip.Trim(), out _));
+        var span = value.AsSpan();
+        var hasAny = false;
+        foreach (var range in span.Split(','))
+        {
+            var segment = span[range];
+            if (segment.IsEmpty)
+            {
+                continue;
+            }
+
+            hasAny = true;
+            if (!System.Net.IPAddress.TryParse(segment.Trim(), out _))
+            {
+                return false;
+            }
+        }
+
+        return hasAny;
     }
 
     private static bool IsMultipartFormData(string? contentType)
@@ -810,7 +885,7 @@ internal sealed class InputValidationMiddleware
 
     private static async Task CreateSecurityErrorResponse(HttpContext context, string message)
     {
-        context.Response.Clear();
+        HttpResponseClearHelper.ClearPreservingCorsHeaders(context.Response);
         await StandardErrorResponseFormatter.WriteErrorAsync(
             context,
             StandardErrorResponse.BadRequest(message));
@@ -845,19 +920,8 @@ public sealed class InputValidationOptions
     public string[] ExcludedPaths { get; set; } = Array.Empty<string>();
 }
 
-internal sealed class InputValidationResult
+internal readonly record struct InputValidationResult(bool IsValid, string? ErrorMessage = null, bool IsSuspicious = false)
 {
-    public bool IsValid { get; }
-    public string? ErrorMessage { get; }
-    public bool IsSuspicious { get; }
-
-    private InputValidationResult(bool isValid, string? errorMessage = null, bool isSuspicious = false)
-    {
-        IsValid = isValid;
-        ErrorMessage = errorMessage;
-        IsSuspicious = isSuspicious;
-    }
-
     public static InputValidationResult Valid() => new(true);
     public static InputValidationResult Invalid(string errorMessage, bool isSuspicious = true) => new(false, errorMessage, isSuspicious);
 }

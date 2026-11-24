@@ -3,7 +3,9 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 
@@ -175,6 +177,62 @@ public sealed class OperatorBearerTokenServiceTests
         service.IsOperatorBearerCandidate(issuance!.Token).Should().BeTrue();
         service.IsOperatorBearerCandidate("not-a-jwt").Should().BeFalse();
         service.IsOperatorBearerCandidate(null).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task IssueThenValidate_PreservesUpstreamIssuerAndRevalidatesManagedMembership()
+    {
+        const string upstreamIssuer = "https://idp.example.com";
+        var service = CreateService();
+        var claimsWithIssuer = SampleClaims
+            .Append(new AdminAuthSessionClaim { Type = "iss", Value = upstreamIssuer })
+            .Append(new AdminAuthSessionClaim { Type = OperatorBearerTokenService.SubjectIssuerClaimType, Value = "https://spoofed.example" })
+            .Append(new AdminAuthSessionClaim { Type = OwnerIdentityScope.SubjectIssuerClaim, Value = "https://spoofed-framework.example" })
+            .ToArray();
+
+        var issuance = service.Issue(claimsWithIssuer, DateTimeOffset.UtcNow.AddMinutes(10));
+        issuance.Should().NotBeNull();
+
+        var validation = await service.TryValidateAsync(issuance!.Token);
+        validation.Should().NotBeNull();
+        validation!.SubjectIssuer.Should().Be(upstreamIssuer);
+        validation.Claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.SubjectIssuerClaimType);
+        validation.Claims.Should().NotContain(c => c.Type == OwnerIdentityScope.SubjectIssuerClaim);
+
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(validation.Claims, "OperatorBearer", "operator-bearer");
+        var identity = (ClaimsIdentity)principal.Identity!;
+        identity.AddClaim(new Claim("iss", service.ValidatedIssuer));
+        CanonicalSecurityActor.StampFrameworkClaim(identity, OwnerIdentityScope.SubjectIssuerClaim, validation.SubjectIssuer);
+
+        var deprovisionedSource = new IssuerScopedMembershipSource("operator-1", upstreamIssuer, new PrincipalMembership(false, []));
+        var deprovisioned = await ManagedMembershipRevalidation.ApplyAsync(principal, deprovisionedSource);
+        deprovisioned.Identity!.IsAuthenticated.Should().BeFalse("SCIM/user deprovisioning must revoke active operator bearer tokens");
+        deprovisioned.IsInRole("admin").Should().BeFalse();
+
+        var demotedSource = new IssuerScopedMembershipSource("operator-1", upstreamIssuer, new PrincipalMembership(true, ["viewer"]));
+        var demoted = await ManagedMembershipRevalidation.ApplyAsync(principal, demotedSource);
+        demoted.Identity!.IsAuthenticated.Should().BeTrue();
+        demoted.IsInRole("admin").Should().BeFalse("removed admin role must not persist on an active operator bearer");
+        demoted.IsInRole("viewer").Should().BeTrue();
+    }
+
+    private sealed class IssuerScopedMembershipSource(
+        string expectedPrincipalId,
+        string expectedIssuer,
+        PrincipalMembership membership) : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+            => ResolveMembershipAsync(principalId, issuer: null, cancellationToken);
+
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            string? issuer,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                string.Equals(principalId, expectedPrincipalId, StringComparison.Ordinal)
+                && string.Equals(issuer, expectedIssuer, StringComparison.Ordinal)
+                    ? membership
+                    : null);
     }
 
     private static OperatorBearerTokenService CreateService(

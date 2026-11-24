@@ -1,13 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -51,36 +48,34 @@ internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing convex-hull inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        if (!GeometryExecutorSupport.TryReadSingleGeometryInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {inputError}");
         }
 
-        Geometry geometry;
-        try
+        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
+            inputs.WkbBytes,
+            inputs.Srid,
+            out var geometry,
+            out var wkbError,
+            out var isEmpty,
+            out var sridError))
         {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(inputs.WkbBytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: WKB payload could not be decoded.");
-        }
+            if (wkbError is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, wkbError);
+                return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: WKB payload could not be decoded.");
+            }
 
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: geometry is empty.");
-        }
+            if (isEmpty)
+            {
+                return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: geometry is empty.");
+            }
 
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
-        {
-            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            Log.InvalidInputs(_logger, job.OperationId, sridError!);
             return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {sridError}.");
         }
-
-        geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing convex hull", cancellationToken).ConfigureAwait(false);
@@ -135,52 +130,6 @@ internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
 
         return JobExecutionResult.Succeeded();
     }
-
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out HullInputs inputs,
-        out string error)
-    {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "wkb", out var wkb) || string.IsNullOrWhiteSpace(wkb))
-        {
-            error = "missing required input 'wkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
-        {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
-        }
-
-        byte[] wkbBytes;
-        try
-        {
-            wkbBytes = Convert.FromBase64String(wkb);
-        }
-        catch (FormatException)
-        {
-            error = "input 'wkb' is not valid base64";
-            return false;
-        }
-
-        if (wkbBytes.Length == 0)
-        {
-            error = "input 'wkb' decoded to zero bytes";
-            return false;
-        }
-
-        inputs = new HullInputs(wkbBytes, srid);
-        error = "";
-        return true;
-    }
-
-    private readonly record struct HullInputs(byte[] WkbBytes, int Srid);
 
     private static partial class Log
     {

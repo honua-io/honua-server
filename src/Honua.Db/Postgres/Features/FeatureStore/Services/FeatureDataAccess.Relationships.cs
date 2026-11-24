@@ -164,6 +164,10 @@ internal sealed partial class FeatureDataAccess
         var features = new List<Feature>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var maskedFieldSet = relatedEnforcedMaskedFields.IsDefaultOrEmpty
+            ? null
+            : new HashSet<string>(relatedEnforcedMaskedFields, StringComparer.OrdinalIgnoreCase);
+
         var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -201,12 +205,12 @@ internal sealed partial class FeatureDataAccess
                 };
             }
 
-            if (!relatedEnforcedMaskedFields.IsDefaultOrEmpty)
+            if (maskedFieldSet is not null)
             {
-                foreach (var maskedField in relatedEnforcedMaskedFields)
+                feature = feature with
                 {
-                    feature = feature with { Attributes = feature.Attributes.Remove(maskedField) };
-                }
+                    Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(maskedFieldSet.Contains))
+                };
             }
 
             features.Add(feature);

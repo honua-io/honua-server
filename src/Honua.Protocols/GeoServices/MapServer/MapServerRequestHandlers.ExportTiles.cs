@@ -375,7 +375,7 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, levelsError ?? "Invalid levels parameter."));
         }
 
-        if (!TryParseExportTilesMaxTiles(GetValue(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        if (!GeoServicesExportTilesExtentParser.TryParseMaxTiles(GetValue(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
@@ -451,30 +451,6 @@ internal static partial class MapServerEndpoints
     }
 
 
-    private static bool TryParseExportTilesMaxTiles(
-        string? value,
-        TileLimits limits,
-        out int maxTiles,
-        out string? error)
-    {
-        maxTiles = Math.Max(1, limits.MaxTilesPerRequest);
-        error = null;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requested) ||
-            requested <= 0)
-        {
-            error = "maxTiles must be a positive integer.";
-            return false;
-        }
-
-        maxTiles = Math.Min(requested, Math.Max(1, limits.MaxTilesPerRequest));
-        return true;
-    }
-
     private static bool TryParseExportTilesExtent(
         string? extentValue,
         string? fallbackSridValue,
@@ -498,7 +474,7 @@ internal static partial class MapServerEndpoints
         var trimmed = extentValue.Trim();
         if (trimmed.StartsWith('{'))
         {
-            return TryParseExportTilesJsonExtent(trimmed, fallbackSridValue, out extent, out srid, out error);
+            return GeoServicesExportTilesExtentParser.TryParseJsonExtent(trimmed, fallbackSridValue, out extent, out srid, out error);
         }
 
         var parsedSrid = SpatialReferenceHelpers.TryParseSrid(fallbackSridValue);
@@ -517,99 +493,6 @@ internal static partial class MapServerEndpoints
         }
 
         return true;
-    }
-
-    private static bool TryParseExportTilesJsonExtent(
-        string value,
-        string? fallbackSridValue,
-        out SkiaMapRenderer.RenderExtent extent,
-        out int srid,
-        out string? error)
-    {
-        extent = default;
-        srid = SpatialReference.WGS84.Wkid;
-        error = null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(value);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !TryGetJsonDouble(root, "xmin", out var xmin) ||
-                !TryGetJsonDouble(root, "ymin", out var ymin) ||
-                !TryGetJsonDouble(root, "xmax", out var xmax) ||
-                !TryGetJsonDouble(root, "ymax", out var ymax))
-            {
-                error = "exportExtent JSON must include xmin, ymin, xmax, and ymax.";
-                return false;
-            }
-
-            if (!TryResolveExportTilesExtentSrid(root, fallbackSridValue, out srid, out error))
-            {
-                return false;
-            }
-
-            extent = new SkiaMapRenderer.RenderExtent(xmin, ymin, xmax, ymax);
-            return ymin < ymax && (xmin < xmax || CoordinateTransformer.IsWrappedGeographicExtent(extent));
-        }
-        catch (JsonException)
-        {
-            error = "exportExtent contains invalid JSON.";
-            return false;
-        }
-    }
-
-    private static bool TryResolveExportTilesExtentSrid(
-        JsonElement root,
-        string? fallbackSridValue,
-        out int srid,
-        out string? error)
-    {
-        srid = SpatialReference.WGS84.Wkid;
-        error = null;
-
-        if (root.TryGetProperty("spatialReference", out var srElement) &&
-            srElement.ValueKind == JsonValueKind.Object)
-        {
-            if (TryGetJsonInt(srElement, "latestWkid", out var latestWkid))
-            {
-                srid = latestWkid;
-                return true;
-            }
-
-            if (TryGetJsonInt(srElement, "wkid", out var wkid))
-            {
-                srid = wkid;
-                return true;
-            }
-        }
-
-        var parsedSrid = SpatialReferenceHelpers.TryParseSrid(fallbackSridValue);
-        if (!string.IsNullOrWhiteSpace(fallbackSridValue) && !parsedSrid.HasValue)
-        {
-            error = "Invalid exportExtentSR parameter.";
-            return false;
-        }
-
-        srid = parsedSrid ?? SpatialReference.WGS84.Wkid;
-        return true;
-    }
-
-    private static bool TryGetJsonDouble(JsonElement element, string propertyName, out double value)
-    {
-        value = default;
-        if (!element.TryGetProperty(propertyName, out var property))
-        {
-            return false;
-        }
-
-        if (property.ValueKind == JsonValueKind.Number && property.TryGetDouble(out value))
-        {
-            return true;
-        }
-
-        return property.ValueKind == JsonValueKind.String &&
-               double.TryParse(property.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     private static double[] NormalizeExportTilesBounds(SkiaMapRenderer.RenderExtent extent)

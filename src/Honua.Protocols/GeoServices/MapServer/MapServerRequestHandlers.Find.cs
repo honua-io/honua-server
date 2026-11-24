@@ -639,7 +639,7 @@ internal static partial class MapServerEndpoints
         public string? Error { get; init; }
     }
 
-    private static FindFilterTranslation TranslateFindFilter(
+    internal static FindFilterTranslation TranslateFindFilter(
         IFilterExpressionService filterExpressionService,
         MetadataV2Object resource,
         string whereClause)
@@ -663,7 +663,9 @@ internal static partial class MapServerEndpoints
             };
         }
 
-        var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
+        var translationResult = filterExpressionService.Translate(
+            parseResult.Expression,
+            resource.WithoutHiddenSchemaFields());
         if (!translationResult.IsSuccess)
         {
             return new FindFilterTranslation
@@ -680,7 +682,7 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private readonly record struct FindFilterTranslation
+    internal readonly record struct FindFilterTranslation
     {
         public bool IsSuccess { get; init; }
         public SqlFragment? SqlFilter { get; init; }

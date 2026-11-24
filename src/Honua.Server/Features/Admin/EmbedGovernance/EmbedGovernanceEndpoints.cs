@@ -6,6 +6,7 @@ using Honua.Core.Features.EmbedGovernance;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -24,10 +25,12 @@ internal static partial class EmbedGovernanceEndpoints
     public static void MapEmbedGovernanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var keys = endpoints.MapGroup("/api/v{version:apiVersion}/admin/embed/keys")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Embed Governance")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         keys.MapGet("/", HandleListKeys)
             .WithDisplayName("List Embed Keys")
@@ -36,7 +39,8 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/", HandleCreateKey)
             .WithDisplayName("Create Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
         keys.MapGet("/{id:guid}", HandleGetKey)
             .WithDisplayName("Get Embed Key")
@@ -45,17 +49,21 @@ internal static partial class EmbedGovernanceEndpoints
         keys.MapPost("/{id:guid}/rotate", HandleRotateKey)
             .WithDisplayName("Rotate Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
         keys.MapPost("/{id:guid}/revoke", HandleRevokeKey)
             .WithDisplayName("Revoke Embed Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         var usage = endpoints.MapGroup("/api/v{version:apiVersion}/admin/embed/usage")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Embed Governance")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         usage.MapGet("/", HandleUsage)
             .WithDisplayName("Query Embed Usage")

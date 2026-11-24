@@ -574,6 +574,15 @@ internal sealed partial class FeatureDataAccess
             connection,
             transaction,
             cancellationToken).ConfigureAwait(false);
+        return ValidatePreconditionAgainstRow(layerId, objectId, current, precondition);
+    }
+
+    internal static Feature? ValidatePreconditionAgainstRow(
+        int layerId,
+        long objectId,
+        Feature? current,
+        FeatureEditPrecondition precondition)
+    {
         if (!current.HasValue)
         {
             if (precondition.ExpectedRowAbsent)

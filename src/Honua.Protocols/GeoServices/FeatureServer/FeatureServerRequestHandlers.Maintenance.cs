@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -597,7 +598,8 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
+                // Reject predicates naming publisher-hidden fields so /calculate cannot act as a count/boolean oracle.
+                var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
                 if (!translationResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -615,9 +617,19 @@ internal static partial class FeatureServerEndpoints
         // rejected up front instead of silently calculating only the first page.
         query = query with { Limit = maxRecordCount + 1 };
 
-        // Query features to update
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var queryResult = await featureReader.QueryAsync(storageLayerId.Value, query, cancellationToken);
+        // Query features to update via the routed feature reader so bound providers and
+        // read security policies apply consistently with FeatureServer query/analytics paths.
+        var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+            context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        QueryResult<Feature> queryResult;
+        try
+        {
+            queryResult = await featureReader.QueryAsync(storageLayerId.Value, query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (MaskedFieldReferenceException ex)
+        {
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "Failed to query calculate candidates.");
+        }
 
         if (queryResult.Items.Length == 0)
         {

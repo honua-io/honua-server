@@ -11,16 +11,15 @@ internal sealed partial class CdnInvalidationService
 {
     private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
     {
-        var delay = windowClosesAt - _timeProvider.GetUtcNow();
-        if (delay > TimeSpan.Zero)
+        if (!await WaitUntilDueOrShutdownAsync(windowClosesAt - _timeProvider.GetUtcNow()).ConfigureAwait(false))
         {
-            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
+            return;
         }
 
         PurgeBatch[] pending;
         lock (_gate)
         {
-            if (_windowClosesAt != windowClosesAt)
+            if (_stopping || _windowClosesAt != windowClosesAt)
             {
                 return;
             }
@@ -33,12 +32,29 @@ internal sealed partial class CdnInvalidationService
 
         foreach (var batch in pending)
         {
-            var result = await SendAfterEditAsync(batch.Paths, batch.Cause, CancellationToken.None)
-                .ConfigureAwait(false);
-            // A busy CDN has already been handed the paths again for the next window.
-            if (result is { Outcome: CdnInvalidationOutcome.Failed })
+            if (_stopping || _applicationStopping.IsCancellationRequested)
             {
-                Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+                return;
+            }
+
+            try
+            {
+                var result = await SendAfterEditAsync(batch.Paths, batch.Cause, _applicationStopping)
+                    .ConfigureAwait(false);
+                // A busy CDN has already been handed the paths again for the next window.
+                if (result is { Outcome: CdnInvalidationOutcome.Failed })
+                {
+                    Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+                }
+            }
+            catch (OperationCanceledException) when (_stopping || _applicationStopping.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.BackgroundPurgeFailed(logger, ex);
+                _reliability?.RecordFailedPurge();
             }
         }
     }

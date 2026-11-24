@@ -1,23 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
 internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.length";
-
-    private const string ScalarDataUriPrefix = "data:application/json;base64,";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<GeometryLengthJobExecutor> _logger;
@@ -55,36 +47,34 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing length inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        if (!GeometryExecutorSupport.TryReadMeasuredGeometryInputs(parameters, isArea: false, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.InvalidInput($"Invalid length inputs: {inputError}");
         }
 
-        Geometry geometry;
-        try
+        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
+            inputs.WkbBytes,
+            inputs.Srid,
+            out var geometry,
+            out var wkbError,
+            out var isEmpty,
+            out var sridError))
         {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(inputs.WkbBytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.InvalidInput("Invalid length inputs: WKB payload could not be decoded.");
-        }
+            if (wkbError is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, wkbError);
+                return JobExecutionResult.InvalidInput("Invalid length inputs: WKB payload could not be decoded.");
+            }
 
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return JobExecutionResult.InvalidInput("Invalid length inputs: geometry is empty.");
-        }
+            if (isEmpty)
+            {
+                return JobExecutionResult.InvalidInput("Invalid length inputs: geometry is empty.");
+            }
 
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
-        {
-            Log.InvalidInputs(_logger, job.OperationId, sridError);
+            Log.InvalidInputs(_logger, job.OperationId, sridError!);
             return JobExecutionResult.InvalidInput($"Invalid length inputs: {sridError}.");
         }
-
-        geometry.SRID = inputs.Srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing length", cancellationToken).ConfigureAwait(false);
@@ -120,7 +110,13 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding length artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = BuildMeasurePayload(length, geometry, inputs);
+        var payload = GeometryExecutorSupport.BuildMeasurePayload(
+            HandledProcessId,
+            "length",
+            length,
+            inputs.Geodesic ? inputs.Unit : "input-crs-units",
+            inputs.Srid,
+            geometry.GeometryType);
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -129,7 +125,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
                 $"Length artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
         }
 
-        var artifactUri = BuildDataUri(payload);
+        var artifactUri = GeometryExecutorSupport.BuildJsonDataUri(payload);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
@@ -137,96 +133,6 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
 
         return JobExecutionResult.Succeeded();
     }
-
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out LengthInputs inputs,
-        out string error)
-    {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "wkb", out var wkb) || string.IsNullOrWhiteSpace(wkb))
-        {
-            error = "missing required input 'wkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
-        {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
-        }
-
-        var geodesic = false;
-        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
-            && !string.IsNullOrWhiteSpace(geodesicRaw)
-            && !bool.TryParse(geodesicRaw, out geodesic))
-        {
-            error = "invalid input 'geodesic'; expected boolean";
-            return false;
-        }
-
-        var unitRaw = parameters.TryGetValue(prefix + "unit", out var rawUnit) ? rawUnit : null;
-        if (!GeodesicGeometryOperations.TryNormalizeLinearUnit(unitRaw, out var unitName, out var metersPerUnit))
-        {
-            error = $"invalid input 'unit' '{unitRaw}'; expected meters, kilometers, feet, yards, miles, or nautical-miles";
-            return false;
-        }
-
-        byte[] wkbBytes;
-        try
-        {
-            wkbBytes = Convert.FromBase64String(wkb);
-        }
-        catch (FormatException)
-        {
-            error = "input 'wkb' is not valid base64";
-            return false;
-        }
-
-        if (wkbBytes.Length == 0)
-        {
-            error = "input 'wkb' decoded to zero bytes";
-            return false;
-        }
-
-        inputs = new LengthInputs(wkbBytes, srid, geodesic, unitName, metersPerUnit);
-        error = "";
-        return true;
-    }
-
-    private static byte[] BuildMeasurePayload(double length, Geometry geometry, LengthInputs inputs)
-    {
-        using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("type", "MeasureResult");
-            writer.WriteString("processId", HandledProcessId);
-            writer.WriteString("measure", "length");
-            writer.WriteNumber("value", length);
-            writer.WriteString("unit", inputs.Geodesic ? inputs.Unit : "input-crs-units");
-            writer.WriteNumber("inputSrid", inputs.Srid);
-            writer.WriteString("inputGeometryType", geometry.GeometryType);
-            writer.WriteEndObject();
-        }
-
-        return buffer.ToArray();
-    }
-
-    private static string BuildDataUri(byte[] payload)
-    {
-        ArgumentNullException.ThrowIfNull(payload);
-        var sb = new StringBuilder(payload.Length * 2 + ScalarDataUriPrefix.Length);
-        sb.Append(ScalarDataUriPrefix);
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
-    }
-
-    private readonly record struct LengthInputs(byte[] WkbBytes, int Srid, bool Geodesic, string Unit, double MetersPerUnit);
 
     private static partial class Log
     {

@@ -1036,6 +1036,43 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildQueries_EnforcedSqlFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            EnforcedSqlFilter = new SqlFragment("tenant_id = @p0", [42])
+        };
+        var mapping = BuildMapping();
+
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_TextSearchUndeclaredField_ThrowsAndDeclaredFieldQuotesCanonicalCase()
+    {
+        var mapping = BuildMapping();
+        var undeclaredQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["secret_col"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        Assert.Throws<ArgumentException>(() => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, undeclaredQuery, _attributeColumns));
+
+        var mixedCaseQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["NAME"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, mixedCaseQuery, _attributeColumns);
+        Assert.Contains("[name]", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[NAME]", result.Sql, StringComparison.Ordinal);
+    }
+
     private static void AssertObjectIdParameters(ParameterizedQuery result, string inClause)
     {
         Assert.Contains(inClause, result.Sql, StringComparison.Ordinal);

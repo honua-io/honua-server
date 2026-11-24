@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
@@ -44,10 +45,11 @@ internal static partial class WmsRequestHandlers
         return [.. tenantVisibleLayers.Where(layer => !accessible.Contains(layer.Identifier))];
     }
 
-    private static IResult? ChallengeRequestedProtectedLayers(
+    private static async Task<IResult?> ChallengeRequestedProtectedLayersAsync(
         HttpContext context,
         MetadataV2Service service,
-        IReadOnlyList<WmsLayer> challengeLayers)
+        IReadOnlyList<WmsLayer> challengeLayers,
+        CancellationToken cancellationToken)
     {
         var requestType = NormalizeWmsRequestType(GetQueryValue(context.Request.Query, "REQUEST"));
         if (challengeLayers.Count == 0 || requestType is null
@@ -61,13 +63,22 @@ internal static partial class WmsRequestHandlers
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .SelectMany(static value => value!.Split(',', StringSplitOptions.TrimEntries))
             .ToHashSet(StringComparer.Ordinal);
-        var denial = challengeLayers
-            .Where(layer => requested.Contains(layer.Identifier))
-            .Select(layer => AccessPolicyHelpers.EvaluateResourceAccess(context, layer.Resource, service))
-            .Where(static decision => !decision.IsAllowed)
-            .OrderByDescending(static decision => decision.RequiresAuthentication)
-            .Select(static decision => (AccessDecision?)decision)
-            .FirstOrDefault();
+        AccessDecision? denial = null;
+        foreach (var layer in challengeLayers)
+        {
+            if (!requested.Contains(layer.Identifier))
+            {
+                continue;
+            }
+
+            var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                context, layer.Resource, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+            if (!decision.IsAllowed && (denial is null || (decision.RequiresAuthentication && !denial.Value.RequiresAuthentication)))
+            {
+                denial = decision;
+            }
+        }
+
         return denial is { } refused ? CreateWmsAccessDenied(context, refused) : null;
     }
 

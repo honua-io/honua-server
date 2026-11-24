@@ -34,6 +34,10 @@ internal interface IZarrTileService
 internal sealed class ZarrTileService : IZarrTileService
 {
     private const long MaxTileSliceBytes = 4L * 1024L * 1024L;
+    private static readonly ZarrSubsetReadLimits TileSubsetLimits = new(
+        MaxOutputBytes: MaxTileSliceBytes,
+        MaxChunkBytes: 16L * 1024L * 1024L,
+        MaxWorkingSetBytes: 32L * 1024L * 1024L);
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
@@ -158,6 +162,7 @@ internal sealed class ZarrTileService : IZarrTileService
                     servable.RootPath,
                     metadata,
                     slice!.Plan.Request,
+                    TileSubsetLimits,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -165,7 +170,7 @@ internal sealed class ZarrTileService : IZarrTileService
         {
             throw;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        catch (ZarrSubsetValidationException ex)
         {
             return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
         }
@@ -182,19 +187,18 @@ internal sealed class ZarrTileService : IZarrTileService
         return Results.Bytes(png, "image/png");
     }
 
-    // The route id is a service-local publication index that several services can share,
-    // and Zarr registrations are keyed by that index alone. Every routable publication with
-    // the index must allow the caller, so a public layer cannot vouch for a private one.
+    // The route id is a service-local publication index that several services or tenants
+    // can share, and Zarr registrations are keyed by that index alone. Every routable
+    // publication with the index must allow the caller, so a public or same-tenant layer
+    // cannot vouch for a private or foreign-tenant one.
     private async Task<IResult?> AuthorizeLayerIndexAsync(
         HttpContext context,
         int layerId,
         CancellationToken cancellationToken)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var publications = snapshot.Graph.Publications
-            .Where(candidate => candidate.LayerIndex == layerId && snapshot.IsRoutable(candidate))
-            .ToList();
-        if (publications.Count == 0)
+        if (!snapshot.Index.RoutablePublicationsByLayerIndex.TryGetValue(layerId, out var publications)
+            || publications.IsDefaultOrEmpty)
         {
             return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
         }

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
@@ -123,21 +124,21 @@ public class DatabricksFeatureStoreReadPolicyTests
         public List<string> Statements { get; } = [];
 
         public Task<ImmutableArray<Feature>> ExecuteSelectAsync(
-            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken)
+            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
             => Record(statement, ImmutableArray<Feature>.Empty);
 
-        public Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken)
+        public Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
             => Record(statement, 0L);
 
         public Task<FeatureExtent?> ExecuteExtentAsync(
-            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken)
+            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
             => Record<FeatureExtent?>(statement, null);
 
-        public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken)
+        public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
             => Record(statement, ImmutableArray<long>.Empty);
 
         public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
-            DatabricksSqlStatement statement, CancellationToken cancellationToken)
+            DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
             => Record(statement, ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty);
 
         private Task<T> Record<T>(DatabricksSqlStatement statement, T result)

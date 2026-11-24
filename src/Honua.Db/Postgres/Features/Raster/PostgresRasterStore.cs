@@ -244,9 +244,10 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using (reader)
         {
+            var ordinals = RasterInfoOrdinals.Resolve(reader);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                rasters.Add(ReadRasterInfo(reader));
+                rasters.Add(ReadRasterInfo(reader, in ordinals));
             }
 
             totalCount = rasters.Count;
@@ -1580,7 +1581,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var renderExtraParams = new List<(string Name, object Value)>();
         var renderedMergedExpr = await BuildRenderedStatsExpressionAsync(
             rendering, "merged.rast", "merged.rast",
-            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, bands: null, cancellationToken),
             renderExtraParams, cancellationToken).ConfigureAwait(false);
 
         var rastCte = $"""
@@ -1636,7 +1637,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var renderExtraParams = new List<(string Name, object Value)>();
         var renderedMergedExpr = await BuildRenderedStatsExpressionAsync(
             rendering, "merged.rast", "merged.rast",
-            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, bands: null, cancellationToken),
             renderExtraParams, cancellationToken).ConfigureAwait(false);
 
         var rastCte = $"""
@@ -1860,9 +1861,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         int layerId,
         long[] rasterIds,
         RasterMergeStrategy mergeStrategy,
-        CancellationToken cancellationToken)
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
     {
-        var stats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var stats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, bands, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (stats.Length == 0)
         {
             return null;
@@ -1870,7 +1872,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         var histograms = await ResolveStretchHistogramsAsync(
             stretch,
-            () => GetMosaicHistogramsAsync(layerId, rasterIds, mergeStrategy, null, StretchHistogramBins, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            () => GetMosaicHistogramsAsync(layerId, rasterIds, mergeStrategy, bands, StretchHistogramBins, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return BuildStretchBounds(stretch, stats, histograms);
     }
 
@@ -1987,7 +1989,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveMosaicStretchBoundsAsync(
-                stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+                stretch, layerId, rasterIds, mergeStrategy, query.Bands, cancellationToken).ConfigureAwait(false);
             if (stretchBounds is { Count: > 0 })
             {
                 postMergeRasterExpr = BuildStretchedRasterExpression(postMergeRasterExpr, stretchBounds);
@@ -2267,7 +2269,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             renderedExpr = await BuildIdentifyRenderingExpressionAsync(
                 rule, "rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, bands: null, cancellationToken),
                 extraParams, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2818,7 +2820,9 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (bands != null)
         {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+            var ordered = OrderStatisticsByRequestedBands(stats, bands);
+            PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, ordered.Length);
+            return ordered;
         }
 
         PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
@@ -2866,10 +2870,32 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (bands != null)
         {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+            return OrderStatisticsByRequestedBands(stats, bands);
         }
 
         return stats.ToArray();
+    }
+
+    internal static RasterStatistics[] OrderStatisticsByRequestedBands(
+        IReadOnlyList<RasterStatistics> stats,
+        int[] bands)
+    {
+        var byBand = new Dictionary<int, RasterStatistics>(stats.Count);
+        foreach (var stat in stats)
+        {
+            byBand.TryAdd(stat.Band, stat);
+        }
+
+        var ordered = new List<RasterStatistics>(bands.Length);
+        foreach (var band in bands)
+        {
+            if (byBand.TryGetValue(band, out var match))
+            {
+                ordered.Add(match);
+            }
+        }
+
+        return ordered.ToArray();
     }
 
     // =============================================================================
@@ -3779,7 +3805,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var renderedMergedExpr = rendering is { HasRendering: true } rule
             ? await BuildRenderedStatsExpressionAsync(
                 rule, "merged.rast", "merged.rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, bands: null, cancellationToken),
                 renderExtraParams, cancellationToken).ConfigureAwait(false)
             : "merged.rast";
 
@@ -3882,7 +3908,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var renderedMergedExpr = rendering is { HasRendering: true } rule
             ? await BuildRenderedStatsExpressionAsync(
                 rule, "merged.rast", "merged.rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, bands: null, cancellationToken),
                 renderExtraParams, cancellationToken).ConfigureAwait(false)
             : "merged.rast";
 
@@ -4298,6 +4324,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         try
         {
+            var distinctBands = effectiveBands.Distinct().ToArray();
+
             await using var batchCommand = connection.CreateCommand();
             batchCommand.CommandText = $"""
                 SELECT b.band,
@@ -4315,12 +4343,12 @@ internal sealed class PostgresRasterStore : IRasterStore
                 """;
             AddParameter(batchCommand, "@layerId", layerId);
             AddParameter(batchCommand, "@rasterId", rasterId);
-            AddParameter(batchCommand, "@bands", effectiveBands);
+            AddParameter(batchCommand, "@bands", distinctBands);
             AddParameter(batchCommand, "@binCount", binCount);
 
             // Each band collects its bins as it streams from the reader. We key by band
             // so we cope with PostGIS returning rows in the LATERAL-join order.
-            var bandBuckets = new Dictionary<int, (List<long> Counts, double Min, double Max)>(effectiveBands.Length);
+            var bandBuckets = new Dictionary<int, (List<long> Counts, double Min, double Max)>(distinctBands.Length);
 
             await using var batchReader = await batchCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await batchReader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -4584,9 +4612,10 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         var rasters = new List<RasterInfo>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var ordinals = RasterInfoOrdinals.Resolve(reader);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rasters.Add(ReadRasterInfo(reader));
+            rasters.Add(ReadRasterInfo(reader, in ordinals));
         }
 
         return rasters.ToArray();
@@ -4767,66 +4796,95 @@ internal sealed class PostgresRasterStore : IRasterStore
     // Private helpers
     // =============================================================================
 
-    private static RasterInfo ReadRasterInfo(DbDataReader reader)
+    private readonly record struct RasterInfoOrdinals(
+        int Id,
+        int LayerId,
+        int Name,
+        int Width,
+        int Height,
+        int BandCount,
+        int PixelType,
+        int Srid,
+        int NoData,
+        int UniformNoData,
+        int UpperLeftX,
+        int ScaleX,
+        int SkewX,
+        int UpperLeftY,
+        int SkewY,
+        int ScaleY,
+        int XMin,
+        int YMin,
+        int XMax,
+        int YMax,
+        int AcquisitionDate,
+        int CreatedAt,
+        int UpdatedAt)
     {
-        // Cache ordinals once (avoids 19 repeated column-name lookups per row)
-        var idOrd = reader.GetOrdinal("id");
-        var layerIdOrd = reader.GetOrdinal("layer_id");
-        var nameOrd = reader.GetOrdinal("name");
-        var widthOrd = reader.GetOrdinal("width");
-        var heightOrd = reader.GetOrdinal("height");
-        var bandCountOrd = reader.GetOrdinal("band_count");
-        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
-        var sridOrd = reader.GetOrdinal("srid");
-        var noDataOrd = reader.GetOrdinal("nodata_value");
-        var upperLeftXOrd = reader.GetOrdinal("upper_left_x");
-        var scaleXOrd = reader.GetOrdinal("scale_x");
-        var skewXOrd = reader.GetOrdinal("skew_x");
-        var upperLeftYOrd = reader.GetOrdinal("upper_left_y");
-        var skewYOrd = reader.GetOrdinal("skew_y");
-        var scaleYOrd = reader.GetOrdinal("scale_y");
-        var xminOrd = reader.GetOrdinal("xmin");
-        var yminOrd = reader.GetOrdinal("ymin");
-        var xmaxOrd = reader.GetOrdinal("xmax");
-        var ymaxOrd = reader.GetOrdinal("ymax");
-        var acquisitionDateOrd = reader.GetOrdinal("acquisition_date");
-        var createdAtOrd = reader.GetOrdinal("created_at");
-        var updatedOrd = reader.GetOrdinal("updated_at");
+        public static RasterInfoOrdinals Resolve(DbDataReader reader) => new(
+            reader.GetOrdinal("id"),
+            reader.GetOrdinal("layer_id"),
+            reader.GetOrdinal("name"),
+            reader.GetOrdinal("width"),
+            reader.GetOrdinal("height"),
+            reader.GetOrdinal("band_count"),
+            reader.GetOrdinal("pixel_type"),
+            reader.GetOrdinal("srid"),
+            reader.GetOrdinal("nodata_value"),
+            reader.GetOrdinal("uniform_nodata"),
+            reader.GetOrdinal("upper_left_x"),
+            reader.GetOrdinal("scale_x"),
+            reader.GetOrdinal("skew_x"),
+            reader.GetOrdinal("upper_left_y"),
+            reader.GetOrdinal("skew_y"),
+            reader.GetOrdinal("scale_y"),
+            reader.GetOrdinal("xmin"),
+            reader.GetOrdinal("ymin"),
+            reader.GetOrdinal("xmax"),
+            reader.GetOrdinal("ymax"),
+            reader.GetOrdinal("acquisition_date"),
+            reader.GetOrdinal("created_at"),
+            reader.GetOrdinal("updated_at"));
+    }
 
+    private static RasterInfo ReadRasterInfo(DbDataReader reader, in RasterInfoOrdinals ordinals)
+    {
         var geoTransform = new[]
         {
-            reader.GetDouble(upperLeftXOrd),
-            reader.GetDouble(scaleXOrd),
-            reader.GetDouble(skewXOrd),
-            reader.GetDouble(upperLeftYOrd),
-            reader.GetDouble(skewYOrd),
-            reader.GetDouble(scaleYOrd)
+            reader.GetDouble(ordinals.UpperLeftX),
+            reader.GetDouble(ordinals.ScaleX),
+            reader.GetDouble(ordinals.SkewX),
+            reader.GetDouble(ordinals.UpperLeftY),
+            reader.GetDouble(ordinals.SkewY),
+            reader.GetDouble(ordinals.ScaleY)
         };
+
+        var srid = reader.GetInt32(ordinals.Srid);
 
         return new RasterInfo
         {
-            Id = reader.GetInt64(idOrd),
-            LayerId = reader.GetInt32(layerIdOrd),
-            Name = reader.GetString(nameOrd),
-            Width = reader.GetInt32(widthOrd),
-            Height = reader.GetInt32(heightOrd),
-            BandCount = reader.GetInt32(bandCountOrd),
-            PixelType = reader.GetString(pixelTypeOrd),
-            Srid = reader.GetInt32(sridOrd),
-            NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
-            HasUniformNoDataValue = reader.GetBoolean(reader.GetOrdinal("uniform_nodata")),
+            Id = reader.GetInt64(ordinals.Id),
+            LayerId = reader.GetInt32(ordinals.LayerId),
+            Name = reader.GetString(ordinals.Name),
+            Width = reader.GetInt32(ordinals.Width),
+            Height = reader.GetInt32(ordinals.Height),
+            BandCount = reader.GetInt32(ordinals.BandCount),
+            PixelType = reader.GetString(ordinals.PixelType),
+            Srid = srid,
+            NoDataValue = reader.IsDBNull(ordinals.NoData) ? null : reader.GetDouble(ordinals.NoData),
+            HasUniformNoDataValue = reader.GetBoolean(ordinals.UniformNoData),
             GeoTransform = geoTransform,
             Extent = new RasterExtent
             {
-                XMin = reader.GetDouble(xminOrd),
-                YMin = reader.GetDouble(yminOrd),
-                XMax = reader.GetDouble(xmaxOrd),
-                YMax = reader.GetDouble(ymaxOrd),
-                Srid = reader.GetInt32(sridOrd)
+                XMin = reader.GetDouble(ordinals.XMin),
+                YMin = reader.GetDouble(ordinals.YMin),
+                XMax = reader.GetDouble(ordinals.XMax),
+                YMax = reader.GetDouble(ordinals.YMax),
+                Srid = srid
             },
-            AcquisitionDate = reader.IsDBNull(acquisitionDateOrd) ? null : reader.GetDateTime(acquisitionDateOrd),
-            CreatedAt = reader.GetDateTime(createdAtOrd),
-            ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
+            AcquisitionDate = reader.IsDBNull(ordinals.AcquisitionDate) ? null : reader.GetDateTime(ordinals.AcquisitionDate),
+            CreatedAt = reader.GetDateTime(ordinals.CreatedAt),
+            ModifiedAt = reader.IsDBNull(ordinals.UpdatedAt) ? null : reader.GetDateTime(ordinals.UpdatedAt)
         };
     }
 

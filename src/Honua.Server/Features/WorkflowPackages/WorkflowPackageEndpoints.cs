@@ -172,6 +172,21 @@ internal static class WorkflowPackageEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (ValidateSaveRequest(request) is { } validationError)
+        {
+            return BadRequest(context, validationError);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PackageId))
+        {
+            var trimmedId = request.PackageId.Trim();
+            if (!WorkflowPackageRequestLimits.IsValidIdentifier(trimmedId)
+                && await service.GetPackageAsync(trimmedId, cancellationToken).ConfigureAwait(false) is null)
+            {
+                return BadRequest(context, WorkflowPackageRequestLimits.IdentifierRule("packageId"));
+            }
+        }
+
         try
         {
             var package = await service.SavePackageAsync(request, context.User, cancellationToken).ConfigureAwait(false);
@@ -181,7 +196,8 @@ internal static class WorkflowPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            LogEndpointFailure(context, "package.save", ex);
+            return BadRequest(context, "The workflow package request is invalid.");
         }
     }
 
@@ -212,6 +228,11 @@ internal static class WorkflowPackageEndpoints
             return BadRequest(context, "Route packageId must match request packageId.");
         }
 
+        if (ValidateSaveRequest(request) is { } validationError)
+        {
+            return BadRequest(context, validationError);
+        }
+
         var existing = await service.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
         if (existing == null)
         {
@@ -227,7 +248,8 @@ internal static class WorkflowPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            LogEndpointFailure(context, "package.update", ex);
+            return BadRequest(context, "The workflow package request is invalid.");
         }
     }
 
@@ -413,9 +435,9 @@ internal static class WorkflowPackageEndpoints
                 ApiResponse<WorkflowPackageValidationResult>.Failure("Workflow package validation failed.", ex.Result),
                 statusCode: StatusCodes.Status400BadRequest);
         }
-        catch (KeyNotFoundException ex)
+        catch (KeyNotFoundException)
         {
-            return NotFound(context, ex.Message);
+            return NotFound(context, "The requested workflow package, version, or publication was not found.");
         }
         catch (GeoprocessingAuthorizationException ex)
         {
@@ -459,15 +481,92 @@ internal static class WorkflowPackageEndpoints
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
                 ex.Message);
         }
+        catch (WorkflowPublicationConflictException)
+        {
+            return Conflict(context, "A workflow publication with that identifier already exists.");
+        }
+        catch (WorkflowPackageGraphConflictException)
+        {
+            return Conflict(context, "The workflow package graph conflicts with an existing version.");
+        }
         catch (InvalidOperationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status409Conflict,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                ex.Message);
+            return MapWorkflowInvalidOperationException(context, ex);
         }
     }
+
+    internal static IResult MapWorkflowInvalidOperationException(HttpContext context, InvalidOperationException ex)
+    {
+        if (TryMapKnownWorkflowConflict(ex, out var safeDetail))
+        {
+            return Conflict(context, safeDetail);
+        }
+
+        LogEndpointFailure(context, "workflow.mutation", ex);
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            context,
+            StatusCodes.Status500InternalServerError,
+            ProblemDetailsHelpers.GetTitle(StatusCodes.Status500InternalServerError),
+            "The workflow package operation could not be completed.");
+    }
+
+    private static bool TryMapKnownWorkflowConflict(InvalidOperationException ex, out string safeDetail)
+    {
+        var message = ex.Message;
+        if (string.Equals(message, "Schedule publication requires a schedule declaration.", StringComparison.Ordinal))
+        {
+            safeDetail = "Schedule publication requires a schedule declaration.";
+            return true;
+        }
+
+        if (message.StartsWith("Workflow publication '", StringComparison.Ordinal)
+            && message.EndsWith("' is disabled.", StringComparison.Ordinal))
+        {
+            safeDetail = "The workflow publication is disabled.";
+            return true;
+        }
+
+        if (message.StartsWith("Workflow publication '", StringComparison.Ordinal)
+            && message.EndsWith("' was removed before its schedule could be armed.", StringComparison.Ordinal))
+        {
+            safeDetail = "The workflow publication was removed before its schedule could be armed.";
+            return true;
+        }
+
+        safeDetail = string.Empty;
+        return false;
+    }
+
+    private static string? ValidateSaveRequest(SaveWorkflowPackageRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return "Workflow package name is required.";
+        }
+
+        if (request.Graph is null)
+        {
+            return "Workflow package graph is required.";
+        }
+
+        return WorkflowPackageRequestLimits.FindExceededLimit(request);
+    }
+
+    private static void LogEndpointFailure(HttpContext context, string operation, Exception ex)
+    {
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Server.Features.WorkflowPackages");
+        if (logger is not null)
+        {
+            WorkflowPackageEndpointsLog.OperationFailed(logger, operation, ex);
+        }
+    }
+
+    private static IResult Conflict(HttpContext context, string detail)
+        => ProblemDetailsHelpers.CreateAdminProblem(
+            context,
+            StatusCodes.Status409Conflict,
+            ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+            detail);
 
     private static IResult WorkflowPublicationUnavailable(HttpContext context)
         => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
@@ -494,4 +593,10 @@ internal static class WorkflowPackageEndpoints
 
     private static void SetNoStore(HttpContext context)
         => context.Response.Headers.CacheControl = "no-store";
+}
+
+internal static partial class WorkflowPackageEndpointsLog
+{
+    [LoggerMessage(EventId = 118520, Level = LogLevel.Error, Message = "Workflow package endpoint {Operation} failed.")]
+    public static partial void OperationFailed(ILogger logger, string operation, Exception exception);
 }

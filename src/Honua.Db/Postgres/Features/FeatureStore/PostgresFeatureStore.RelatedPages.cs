@@ -20,16 +20,42 @@ internal sealed partial class PostgresFeatureStoreRefactored
             throw new NotSupportedException("The provider does not support bounded relationship pages.");
         }
         var relatedLayerId = query.Relationship.RelatedLayerId!.Value;
-        var originMasks = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var relatedMasks = await ResolveMaskedFieldsAsync(relatedLayerId, cancellationToken).ConfigureAwait(false);
-        RejectMaskedRelationshipKey(originMasks, query.Relationship.OriginForeignKeyField!);
-        RejectMaskedRelationshipKey(relatedMasks, query.Relationship.DestinationForeignKeyField!);
-        var security = new RelatedPageReadSecurity(
-            await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false),
-            await ResolveEnforcedSqlFilterAsync(relatedLayerId, cancellationToken).ConfigureAwait(false),
-            relatedMasks);
+        var security = await ResolveRelatedReadSecurityAsync(
+            layerId,
+            relatedLayerId,
+            query.Relationship.OriginForeignKeyField,
+            query.Relationship.DestinationForeignKeyField,
+            cancellationToken).ConfigureAwait(false);
         return await postgres.QueryRelatedPageAsync(new RelatedPageReadRequest(layerId, query, security), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<RelatedPageReadSecurity> ResolveRelatedReadSecurityAsync(
+        int originLayerId,
+        int? relatedLayerId,
+        string? originForeignKeyField,
+        string? destinationForeignKeyField,
+        CancellationToken cancellationToken)
+    {
+        var originMasks = await ResolveMaskedFieldsAsync(originLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedMasks = relatedLayerId is int targetLayerId
+            ? await ResolveMaskedFieldsAsync(targetLayerId, cancellationToken).ConfigureAwait(false)
+            : ImmutableArray<string>.Empty;
+        if (!string.IsNullOrWhiteSpace(originForeignKeyField))
+        {
+            RejectMaskedRelationshipKey(originMasks, originForeignKeyField);
+        }
+
+        if (!string.IsNullOrWhiteSpace(destinationForeignKeyField))
+        {
+            RejectMaskedRelationshipKey(relatedMasks, destinationForeignKeyField);
+        }
+
+        var originFilter = await ResolveEnforcedSqlFilterAsync(originLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedFilter = relatedLayerId is int filterLayerId
+            ? await ResolveEnforcedSqlFilterAsync(filterLayerId, cancellationToken).ConfigureAwait(false)
+            : null;
+        return new RelatedPageReadSecurity(originFilter, relatedFilter, relatedMasks);
     }
 
     private static string NormalizeRelationshipKey(string field) =>

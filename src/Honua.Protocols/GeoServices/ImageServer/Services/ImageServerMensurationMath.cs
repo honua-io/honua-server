@@ -343,7 +343,7 @@ internal static class ImageServerMensurationMath
         var centroidY = cy / (6d * signedArea);
         if (unwrapLongitudes)
         {
-            centroidX = WrapLongitude(centroidX);
+            centroidX = Wgs84Vincenty.WrapLongitude(centroidX);
         }
 
         return (centroidX, centroidY);
@@ -371,39 +371,9 @@ internal static class ImageServerMensurationMath
     {
         for (var i = 1; i < lons.Length; i++)
         {
-            var delta = NormalizeLongitudeDelta(lons[i] - lons[i - 1]);
+            var delta = Wgs84Vincenty.NormalizeLongitudeDelta(lons[i] - lons[i - 1]);
             lons[i] = lons[i - 1] + delta;
         }
-    }
-
-    private static double NormalizeLongitudeDelta(double delta)
-    {
-        delta %= 360d;
-        if (delta >= 180d)
-        {
-            delta -= 360d;
-        }
-        else if (delta < -180d)
-        {
-            delta += 360d;
-        }
-
-        return delta;
-    }
-
-    private static double WrapLongitude(double lon)
-    {
-        lon %= 360d;
-        if (lon >= 180d)
-        {
-            lon -= 360d;
-        }
-        else if (lon < -180d)
-        {
-            lon += 360d;
-        }
-
-        return lon;
     }
 
     private static double NormalizeBearing(double degrees)

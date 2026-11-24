@@ -39,8 +39,6 @@ internal sealed partial class PointCloudScenePublishExecutor
         _storage = storage;
     }
 
-    private const int DefaultCacheMaxAgeSeconds = 3600;
-
     public async Task<PointCloudSceneIngestOutcome> IngestAsync(
         PointCloudSceneIngestRequest request,
         CancellationToken cancellationToken)
@@ -100,10 +98,10 @@ internal sealed partial class PointCloudScenePublishExecutor
         // 2. Resolve + validate the registry-bound identifiers and options.
         var sceneId = ResolveSceneId(request.SceneId, intentId);
         var displayName = ResolveDisplayName(request.DisplayName, sceneId);
-        ValidateOptions(displayName, request.EditionGate, request.CacheMaxAgeSeconds);
-        var cacheMaxAge = request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds;
+        CityGmlScenePublishExecutor.ValidateOptions(displayName, request.EditionGate, request.CacheMaxAgeSeconds);
+        var cacheMaxAge = request.CacheMaxAgeSeconds ?? ScenePublishHelper.DefaultCacheMaxAgeSeconds;
 
-        await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        await ScenePublishHelper.PreflightConflictAsync(_registration, sceneId, cancellationToken).ConfigureAwait(false);
 
         // 3. Stage → register → promote, reusing the shared durability mechanics.
         var outputDirectory = SceneTilesetStaging.ResolveOutputDirectory(
@@ -144,13 +142,15 @@ internal sealed partial class PointCloudScenePublishExecutor
                     cancellationToken).ConfigureAwait(false);
             }
 
-            var registeredDatasetId = await TryRegisterSceneAsync(
+            var registeredDatasetId = await CityGmlScenePublishExecutor.TryRegisterSceneAsync(
+                _registration,
                 newDatasetId,
                 sceneId,
                 displayName,
                 request.Description,
                 outputDirectory,
                 storagePrefix,
+                SceneContentKind.PointCloud,
                 tileset.BoundsDegrees,
                 cacheMaxAge,
                 request.EditionGate,
@@ -268,106 +268,6 @@ internal sealed partial class PointCloudScenePublishExecutor
         }
         var trimmed = baseName.Length > available ? baseName[..available] : baseName;
         return trimmed + suffix;
-    }
-
-    private static void ValidateOptions(string displayName, string? editionGate, int? cacheMaxAgeSeconds)
-    {
-        if (!SceneDatasetValidator.TryValidateName(displayName, out var nameError))
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: displayName is invalid: {nameError}");
-        }
-
-        if (!SceneDatasetValidator.TryValidateEditionGate(editionGate, out var editionError))
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: editionGate is invalid: {editionError}");
-        }
-
-        if (cacheMaxAgeSeconds is { } cache)
-        {
-            var policy = new SceneCachePolicy(cache, NoStore: false);
-            if (!SceneDatasetValidator.TryValidateCachePolicy(policy, out var cacheError))
-            {
-                throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.OptionsInvalid}: cacheMaxAgeSeconds is invalid: {cacheError}");
-            }
-        }
-    }
-
-    private async Task PreflightSceneRegistrationConflictAsync(string sceneId, CancellationToken cancellationToken)
-    {
-        if (_registration is null)
-        {
-            return;
-        }
-        var existing = await _registration.GetBySceneIdAsync(sceneId, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' already exists.");
-        }
-    }
-
-    private async Task<Guid?> TryRegisterSceneAsync(
-        Guid datasetId,
-        string sceneId,
-        string displayName,
-        string? description,
-        string outputDirectory,
-        string? assetStoragePrefix,
-        double[] bounds,
-        int cacheMaxAgeSeconds,
-        string? editionGate,
-        bool requiresAuth,
-        string createdBy,
-        CancellationToken cancellationToken)
-    {
-        if (_registration is null)
-        {
-            return null;
-        }
-
-        var record = new SceneDatasetRecord
-        {
-            DatasetId = datasetId,
-            Id = sceneId,
-            Name = displayName,
-            Description = description,
-            AssetRoot = outputDirectory,
-            AssetStoragePrefix = assetStoragePrefix,
-            TilesetFileName = "tileset.json",
-            DatasetType = SceneDatasetType.HostedTiles,
-            ServingFormat = SceneServingFormat.ThreeDTiles,
-            ContentKind = SceneContentKind.PointCloud,
-            Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
-            // Point-cloud positions are placed on the WGS-84 ellipsoid with
-            // ellipsoidal height in meters, so the registered CRS is 4979.
-            Crs = "EPSG:4979",
-            CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
-            EditionGate = editionGate,
-            RequiresAuth = requiresAuth,
-            IsPublic = !requiresAuth,
-            AllowedRoles = null,
-            Status = SceneDatasetStatus.Active,
-            ValidationMessage = null,
-            Revision = 1,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = createdBy,
-            UpdatedAt = null
-        };
-
-        try
-        {
-            var saved = await _registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
-            return saved?.DatasetId is { } id && id != Guid.Empty ? id : record.DatasetId;
-        }
-        catch (SceneDatasetAlreadyExistsException ex)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' or name '{displayName}' already exists.",
-                ex);
-        }
     }
 
     private async Task CompensateRegistrationAsync(Guid datasetId, string sceneId)

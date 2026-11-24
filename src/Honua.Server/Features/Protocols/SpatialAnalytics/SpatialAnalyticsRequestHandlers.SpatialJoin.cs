@@ -136,15 +136,6 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["joinLayerId must be an integer layer identifier."]);
         }
 
-        if (joinLayerId == targetLayerId)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid joinLayerId",
-                ["joinLayerId must differ from the target layerId."]);
-        }
-
-        activity?.SetTag("spatialJoin.joinLayerId", joinLayerId);
-
         // Resolve and authorize the join layer through the same shared pipeline
         // used by the target. This pulls in the join layer's parent service so
         // both the layer + service access policy AND the protocol-enabled gate
@@ -163,6 +154,25 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             return joinLayerValidation.ErrorResult!;
         }
+
+        var joinStorageLayerId = joinLayerValidation.Snapshot is not null && joinLayerValidation.Publication is not null
+            ? joinLayerValidation.Snapshot.ResolveStorageLayerId(joinLayerValidation.Publication, joinLayerValidation.Resource)
+            : null;
+        if (!joinStorageLayerId.HasValue)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer {joinLayerId} is not available for spatial analytics.");
+        }
+
+        if (joinStorageLayerId.Value == targetLayerId)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid joinLayerId",
+                ["joinLayerId must differ from the target layerId."]);
+        }
+
+        activity?.SetTag("spatialJoin.joinLayerId", joinStorageLayerId.Value);
 
         // Capture the join layer's stored SRID so the SQL builder can tag the
         // join geometry column (Bytea storage) and wrap it with ST_Transform when
@@ -250,7 +260,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parsed.Length > 0)
             {
-                var fieldError = ValidateFieldNameList(context, "carryFields", parsed);
+                var fieldError = ValidateFieldNameList(context, "carryFields", parsed)
+                    ?? ValidateFieldsVisible(context, "carryFields", parsed, joinLayerValidation.Resource!);
                 if (fieldError != null)
                 {
                     return fieldError;
@@ -266,6 +277,12 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
+        var outStatsVisibilityError = ValidateOutStatisticsVisible(context, outStatistics, joinLayerValidation.Resource!);
+        if (outStatsVisibilityError != null)
+        {
+            return outStatsVisibilityError;
+        }
+
         outStatistics = AnalyticsFeatureQueryFactory.ApplyStatisticFieldTypes(outStatistics, joinLayerValidation.Resource!);
 
         // Feature query for the target layer (where + SQL filter + objectIds + spatial + temporal).
@@ -278,7 +295,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
         var joinQuery = new SpatialJoinQuery
         {
-            JoinLayerId = joinLayerId,
+            JoinLayerId = joinStorageLayerId.Value,
             JoinLayerSrid = joinLayerSrid,
             Predicate = predicate,
             DistanceMeters = distanceMeters,
@@ -350,5 +367,49 @@ internal static partial class SpatialAnalyticsRequestHandlers
         };
 
         return WriteAnalyticsResponse(response);
+    }
+
+    private static IResult? ValidateFieldsVisible(
+        HttpContext context,
+        string parameterName,
+        string[] fields,
+        MetadataV2Object resource)
+    {
+        for (var i = 0; i < fields.Length; i++)
+        {
+            if (resource.IsHiddenSchemaField(fields[i]))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Invalid {parameterName}",
+                    [$"Unknown field '{fields[i]}' in {parameterName}."]);
+            }
+        }
+
+        return null;
+    }
+
+    private static IResult? ValidateOutStatisticsVisible(
+        HttpContext context,
+        ImmutableArray<StatisticDefinition>? outStatistics,
+        MetadataV2Object resource)
+    {
+        if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        foreach (var statistic in outStatistics.Value)
+        {
+            if (resource.IsHiddenSchemaField(statistic.OnStatisticField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid outStatistics",
+                    [$"Unknown field '{statistic.OnStatisticField}' in outStatistics."]);
+            }
+        }
+
+        return null;
     }
 }

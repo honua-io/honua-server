@@ -33,16 +33,19 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
+        AppendOrderByClause(sb, mapping, attributeColumns, query);
         AppendPagination(sb, mapping, query);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    public static ParameterizedQuery BuildCountQuery(SnowflakeLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildCountQuery(
+        SnowflakeLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
@@ -53,14 +56,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    public static ParameterizedQuery BuildObjectIdsQuery(SnowflakeLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildObjectIdsQuery(
+        SnowflakeLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
@@ -72,16 +78,19 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
+        AppendOrderByClause(sb, mapping, attributeColumns, query);
         AppendPagination(sb, mapping, query);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    public static ParameterizedQuery BuildExtentQuery(SnowflakeLayerMapping mapping, FeatureQuery? query)
+    public static ParameterizedQuery BuildExtentQuery(
+        SnowflakeLayerMapping mapping,
+        FeatureQuery? query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
 
@@ -106,14 +115,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         var effective = query ?? new FeatureQuery();
         GuardUnsupportedTemporalFilter(effective);
         GuardUnsupportedOutputSrid(mapping, effective);
-        AppendWhereClause(sb, effective, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    public static ParameterizedQuery BuildStatistics(SnowflakeLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildStatistics(
+        SnowflakeLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
@@ -126,7 +138,8 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
-        var groupByColumns = QuoteGroupByColumns(query);
+        var resolvedGroupByColumns = ResolveGroupByColumns(mapping, attributeColumns, query);
+        var groupByColumns = resolvedGroupByColumns.Select(SnowflakeIdentifier.QuoteAttribute).ToList();
 
         sb.Append("SELECT ");
         if (groupByColumns.Count > 0)
@@ -134,11 +147,11 @@ internal static partial class SnowflakeFeatureQueryBuilder
             sb.Append(string.Join(", ", groupByColumns)).Append(", ");
         }
 
-        sb.Append(BuildStatisticColumns(statistics));
+        sb.Append(BuildStatisticColumns(mapping, attributeColumns, statistics));
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
 
@@ -147,16 +160,21 @@ internal static partial class SnowflakeFeatureQueryBuilder
             sb.Append(" GROUP BY ").Append(string.Join(", ", groupByColumns));
         }
 
-        AppendStatisticsHaving(sb, query, parameters);
+        AppendStatisticsHaving(sb, mapping, attributeColumns, query, parameters);
         var hasOrderBy = query.OrderBy is { IsDefaultOrEmpty: false };
-        AppendStatisticsOrderBy(sb, statistics, query);
+        RelationalFeatureStoreHelpers.AppendStatisticsOrderBy(
+            sb,
+            statistics,
+            resolvedGroupByColumns,
+            query,
+            SnowflakeIdentifier.QuoteAttribute);
         // LIMIT / OFFSET are inline integer literals, matching SELECT, so positional ? binds
         // stay aligned with WhereParameters. OFFSET without ORDER BY is rejected by Snowflake,
         // and the primary key is not in the grouped projection, so fall back to the first
         // aggregate output column.
         var fallbackOrder = groupByColumns.Count > 0
             ? groupByColumns[0]
-            : SnowflakeIdentifier.Quote(statistics[0].OutStatisticFieldName);
+            : SnowflakeIdentifier.QuoteAttribute(statistics[0].OutStatisticFieldName);
         AppendStatisticsPagination(sb, query, fallbackOrder, hasOrderBy);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -165,7 +183,8 @@ internal static partial class SnowflakeFeatureQueryBuilder
     public static ParameterizedQuery BuildH3AggregationQuery(
         SnowflakeLayerMapping mapping,
         FeatureQuery query,
-        H3AggregationQuery h3Query)
+        H3AggregationQuery h3Query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         h3Query.RejectSummaryDefinitions();
 
@@ -227,7 +246,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append("SELECT _h3cell AS \"cellIndex\", ST_ASGEOJSON(H3_CELL_TO_BOUNDARY(_h3cell)) AS \"cellGeometry\"");
         if (h3Query.OutStatistics is { IsDefaultOrEmpty: false } stats)
         {
-            sb.Append(", ").Append(BuildStatisticColumns(stats));
+            sb.Append(", ").Append(BuildStatisticColumns(mapping, attributeColumns, stats));
         }
         else
         {
@@ -236,7 +255,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         sb.Append(" FROM (SELECT *, ").Append(cellExpr).Append(" AS _h3cell FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geomCol).Append(" IS NOT NULL");
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         sb.Append(") _src");
@@ -292,7 +311,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         foreach (var stat in stats)
         {
-            var alias = SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
+            var alias = SnowflakeIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
             var agg = stat.StatisticType switch
             {
                 StatisticType.Count or StatisticType.Sum => $"SUM(a.{alias})",
@@ -304,7 +323,10 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
-    private static List<string> QuoteGroupByColumns(FeatureQuery query)
+    private static List<string> ResolveGroupByColumns(
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query)
     {
         if (query.GroupByFields is not { IsDefaultOrEmpty: false } groupBy)
         {
@@ -314,26 +336,37 @@ internal static partial class SnowflakeFeatureQueryBuilder
         var columns = new List<string>(groupBy.Length);
         foreach (var field in groupBy)
         {
-            columns.Add(SnowflakeIdentifier.Quote(field));
+            _ = SnowflakeIdentifier.QuoteAttribute(field);
+            columns.Add(ResolveDeclaredField(mapping, attributeColumns, field, "GROUP BY"));
         }
 
         return columns;
     }
 
-    private static string BuildStatisticColumns(ImmutableArray<StatisticDefinition> statistics)
+    private static string BuildStatisticColumns(
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        ImmutableArray<StatisticDefinition> statistics)
     {
         var columns = new List<string>(statistics.Length);
         foreach (var stat in statistics)
         {
-            var fieldExpr = SnowflakeIdentifier.Quote(stat.OnStatisticField);
-            var alias = SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
+            _ = SnowflakeIdentifier.QuoteAttribute(stat.OnStatisticField);
+            var resolved = ResolveDeclaredField(mapping, attributeColumns, stat.OnStatisticField, "OutStatistics");
+            var fieldExpr = SnowflakeIdentifier.QuoteAttribute(resolved);
+            var alias = SnowflakeIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
             columns.Add($"{StatisticExpression(stat.StatisticType, fieldExpr)} AS {alias}");
         }
 
         return string.Join(", ", columns);
     }
 
-    private static void AppendStatisticsHaving(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    private static void AppendStatisticsHaving(
+        StringBuilder sb,
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query,
+        List<object> parameters)
     {
         if (query.Having is not { IsDefaultOrEmpty: false } having)
         {
@@ -349,33 +382,15 @@ internal static partial class SnowflakeFeatureQueryBuilder
             }
 
             var condition = having[i];
-            var fieldExpr = SnowflakeIdentifier.Quote(condition.OnStatisticField);
+            _ = SnowflakeIdentifier.QuoteAttribute(condition.OnStatisticField);
+            var resolved = ResolveDeclaredField(mapping, attributeColumns, condition.OnStatisticField, "HAVING");
+            var fieldExpr = SnowflakeIdentifier.QuoteAttribute(resolved);
             parameters.Add(condition.BoundValue());
             sb.Append(StatisticExpression(condition.StatisticType, fieldExpr))
                 .Append(' ')
                 .Append(HavingOperator(condition.Operator))
                 .Append(" ?");
         }
-    }
-
-    private static void AppendStatisticsOrderBy(
-        StringBuilder sb,
-        ImmutableArray<StatisticDefinition> statistics,
-        FeatureQuery query)
-    {
-        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
-        {
-            return;
-        }
-
-        var terms = new List<string>(orderBy.Length);
-        foreach (var clause in orderBy)
-        {
-            var expression = ResolveStatisticsOrderBy(clause.Field, statistics, query.GroupByFields);
-            terms.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}");
-        }
-
-        sb.Append(" ORDER BY ").Append(string.Join(", ", terms));
     }
 
     private static void AppendStatisticsPagination(
@@ -404,34 +419,6 @@ internal static partial class SnowflakeFeatureQueryBuilder
         {
             sb.Append(" OFFSET ").Append(offset.ToString(CultureInfo.InvariantCulture));
         }
-    }
-
-    private static string ResolveStatisticsOrderBy(
-        string field,
-        ImmutableArray<StatisticDefinition> statistics,
-        ImmutableArray<string>? groupByFields)
-    {
-        foreach (var stat in statistics)
-        {
-            if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
-            {
-                return SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
-            }
-        }
-
-        if (groupByFields is { IsDefaultOrEmpty: false } groupBy)
-        {
-            foreach (var groupField in groupBy)
-            {
-                if (groupField.Equals(field, StringComparison.OrdinalIgnoreCase))
-                {
-                    return SnowflakeIdentifier.Quote(groupField);
-                }
-            }
-        }
-
-        throw new ArgumentException(
-            $"Invalid statistics order-by field name: {field}. Aggregate ordering must name a declared statistic alias or group-by field.");
     }
 
     private static string StatisticExpression(StatisticType statisticType, string fieldExpr)
@@ -521,16 +508,32 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            SnowflakeIdentifier.EnsureValid(column, "attribute column");
-            sb.Append(", ").Append(SnowflakeIdentifier.Quote(column));
+            sb.Append(", ").Append(SnowflakeIdentifier.QuoteAttribute(column));
         }
     }
 
-    private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    private static void AppendWhereClause(
+        StringBuilder sb,
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query,
+        List<object> parameters)
     {
+        if (query.EnforcedSqlFilter is not null)
+        {
+            throw new NotSupportedException(
+                "Snowflake provider does not support EnforcedSqlFilter. Layers with server-enforced " +
+                "definition or security filters cannot be served by this provider in this slice.");
+        }
+
         if (query.TextSearch is { } search)
         {
-            var predicate = FeatureTextSearchSql.Build(search, SnowflakeIdentifier.Quote, text =>
+            var predicate = FeatureTextSearchSql.Build(search, field =>
+            {
+                _ = SnowflakeIdentifier.QuoteAttribute(field);
+                var resolved = ResolveDeclaredField(mapping, attributeColumns, field, "TextSearch");
+                return SnowflakeIdentifier.QuoteAttribute(resolved);
+            }, text =>
             {
                 var marker = "?";
                 parameters.Add(text);
@@ -556,7 +559,7 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
+            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), mapping, attributeColumns, parameters);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
@@ -666,7 +669,11 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return $"{mapping.SpatialConstructor}(?, TRUE)";
     }
 
-    private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query)
+    private static void AppendOrderByClause(
+        StringBuilder sb,
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query)
     {
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
@@ -676,9 +683,10 @@ internal static partial class SnowflakeFeatureQueryBuilder
         var clauses = new List<string>(query.OrderBy.Value.Length);
         foreach (var orderBy in query.OrderBy.Value)
         {
-            SnowflakeIdentifier.EnsureValid(orderBy.Field, "order-by column");
+            _ = SnowflakeIdentifier.QuoteAttribute(orderBy.Field);
+            var resolved = ResolveDeclaredField(mapping, attributeColumns, orderBy.Field, "ORDER BY");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{SnowflakeIdentifier.Quote(orderBy.Field)} {direction}");
+            clauses.Add($"{SnowflakeIdentifier.QuoteAttribute(resolved)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
@@ -712,7 +720,11 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
-    private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
+    private static string ParseAndParameterizeWhereClause(
+        string whereClause,
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        List<object> parameters)
     {
         var rendered = new List<string>();
         foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
@@ -727,10 +739,11 @@ internal static partial class SnowflakeFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
-                SnowflakeIdentifier.EnsureValid(field, "WHERE column");
+                _ = SnowflakeIdentifier.QuoteAttribute(field);
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{SnowflakeIdentifier.Quote(field)} IS {notClause}NULL");
+                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -738,14 +751,15 @@ internal static partial class SnowflakeFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = inMatch.Groups["field"].Value;
-                SnowflakeIdentifier.EnsureValid(field, "WHERE column");
+                _ = SnowflakeIdentifier.QuoteAttribute(field);
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
                 foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
                 {
                     placeholders.Add("?");
                     parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
                 }
-                rendered.Add($"{SnowflakeIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
@@ -753,12 +767,13 @@ internal static partial class SnowflakeFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
-                SnowflakeIdentifier.EnsureValid(field, "WHERE column");
+                _ = SnowflakeIdentifier.QuoteAttribute(field);
+                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
                 var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value, LegacyWhereValuePolicy.NumericRequired);
 
                 parameters.Add(value);
-                rendered.Add($"{SnowflakeIdentifier.Quote(field)} {op} ?");
+                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} {op} ?");
                 continue;
             }
 
@@ -766,6 +781,33 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
 
         return string.Join(" AND ", rendered);
+    }
+
+    private static string ResolveDeclaredField(
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        string field,
+        string clause)
+    {
+        if (mapping.PrimaryKeyColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
+        {
+            return mapping.PrimaryKeyColumn;
+        }
+
+        if (mapping.GeometryColumn is { } geometryColumn &&
+            geometryColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
+        {
+            return geometryColumn;
+        }
+
+        if (attributeColumns is null)
+        {
+            return field;
+        }
+
+        var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
 }

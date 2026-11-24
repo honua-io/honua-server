@@ -11,6 +11,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Studio.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -140,15 +141,16 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(scope.Context, ex.Message);
+            return MapStudioArgumentException(scope.Context, scope.Logger, "draft.revision.restore", ex);
         }
-        catch (KeyNotFoundException ex)
+        catch (KeyNotFoundException)
         {
-            return NotFound(scope.Context, ex.Message);
+            return NotFound(scope.Context, "Studio package draft revision was not found.");
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(scope.Context, ex.Message);
+            return MapStudioInvalidOperationException(
+                scope.Context, scope.Logger, "draft.revision.restore", "Studio package draft revision could not be restored.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -193,14 +195,22 @@ internal static partial class StudioPackageEndpoints
             restore,
             BuildMutationContext(context, actor) with { IdempotencyRequestHash = RestoreRequestHash(restore) },
             context.RequestAborted).ConfigureAwait(false);
-        SetOperationHeaders(context, receipt.Operation);
+        OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
         if (receipt.Operation.Status != OperationHandleStatus.Completed)
         {
             return MutationDecision(context, receipt.Operation);
         }
 
-        var restored = receipt.Value
-            ?? throw new InvalidOperationException("Completed Studio draft revision restore has no durable result projection.");
+        var restored = receipt.Value;
+        if (restored is null)
+        {
+            StudioEndpointsLog.EndpointFailed(
+                scope.Logger,
+                "draft.revision.restore",
+                new InvalidOperationException("Completed Studio draft revision restore has no durable result projection."));
+            return ServerError(scope.Context, "Studio package draft revision could not be restored.");
+        }
+
         StudioEndpointsLog.DraftUpdated(scope.Logger, restored.DraftId, restored.Generation);
         return Results.Json(
             ApiResponse<StudioPackageDraft>.CreateSuccess(restored),

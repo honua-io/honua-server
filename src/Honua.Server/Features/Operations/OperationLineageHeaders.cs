@@ -54,9 +54,17 @@ internal sealed record OperationLoopbackHop(OperationPolicyContext Policy, HttpC
 
 internal sealed class OperationLineageAttestationStore(TimeProvider clock)
 {
+    private const int PruneInterval = 64;
+    private const int PruneThreshold = 256;
+    private const int DefaultMaxPendingEntries = 4096;
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Entry> _pending =
         new(StringComparer.Ordinal);
+    private int _issueCount;
+
+    internal int MaxEntries { get; init; } = DefaultMaxPendingEntries;
+
+    internal int PendingCount => _pending.Count;
 
     internal static OperationLineageAttestation Describe(OperationPolicyContext context)
     {
@@ -74,9 +82,38 @@ internal sealed class OperationLineageAttestationStore(TimeProvider clock)
 
     internal string Issue(OperationLineageAttestation attestation)
     {
+        var now = clock.GetUtcNow();
+        var count = Interlocked.Increment(ref _issueCount);
+        if (_pending.Count >= PruneThreshold || _pending.Count >= MaxEntries || count % PruneInterval == 0)
+        {
+            PruneExpiredAndBoundCapacity(now);
+        }
+
         var token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
-        _pending[token] = new Entry(attestation, clock.GetUtcNow().Add(Lifetime));
+        _pending[token] = new Entry(attestation, now.Add(Lifetime));
         return token;
+    }
+
+    private void PruneExpiredAndBoundCapacity(DateTimeOffset now)
+    {
+        foreach (var pair in _pending)
+        {
+            if (pair.Value.ExpiresAt <= now)
+            {
+                _pending.TryRemove(pair.Key, out _);
+            }
+        }
+
+        if (_pending.Count < MaxEntries)
+        {
+            return;
+        }
+
+        var excess = _pending.Count - MaxEntries + 1;
+        foreach (var oldest in _pending.OrderBy(static pair => pair.Value.ExpiresAt).Take(excess))
+        {
+            _pending.TryRemove(oldest.Key, out _);
+        }
     }
 
     internal bool TryConsume(string token, out OperationLineageAttestation value)

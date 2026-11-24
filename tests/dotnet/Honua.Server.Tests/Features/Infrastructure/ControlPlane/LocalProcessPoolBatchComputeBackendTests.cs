@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -24,7 +25,15 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     [Fact]
     public async Task BuildEnvironment_WorkloadCannotOverrideContractVersionGate()
     {
-        using var backend = CreateBackend();
+        using var backend = CreateBackend(workerContracts:
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = ShPath,
+                ArgumentPrefix = ["-c"],
+                MaxSupportedContractVersion = 1
+            }
+        ]);
         var outFile = Path.Join(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
         try
         {
@@ -73,7 +82,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         var result = await backend.StartAsync(job);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.Message.Should().Contain(ShPath).And.Contain("version 1").And.Contain("requires version 2");
+        result.Message.Should().Contain(ShPath).And.Contain("not registered").And.Contain("requires version 2");
     }
 
     [Fact]
@@ -390,6 +399,150 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Failed);
         observation.Message.Should().Contain("no longer tracked");
+    }
+
+    [UnitTest]
+    public async Task StartAsync_UnattestedExecutableWithVersionOne_FailsClosed()
+    {
+        using var backend = CreateBackend(workerContracts: []);
+        var job = CreateJob("job-unattested-v1", new Dictionary<string, string>
+        {
+            [LocalProcessParameterKeys.Executable] = ShPath,
+            [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "-c",
+            [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "exit 0"
+        }, contractVersion: 1);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("not registered");
+    }
+
+    [UnitTest]
+    public async Task StartAsync_WorkingDirectoryOutsideWorkingRoot_RejectsLaunch()
+    {
+        var workingRoot = Directory.CreateTempSubdirectory("honua-lpp-root").FullName;
+        var outsideDir = Path.Join(Path.GetTempPath(), $"honua-outside-{Guid.NewGuid():N}");
+        try
+        {
+            using var backend = new LocalProcessPoolBatchComputeBackend(
+                Options.Create(new LocalProcessPoolOptions
+                {
+                    MaxConcurrentProcesses = 1,
+                    WorkingRoot = workingRoot,
+                    WorkerContracts =
+                    [
+                        new LocalProcessWorkerContractOptions
+                        {
+                            Executable = SleepPath,
+                            IsSelfContained = true,
+                            MaxSupportedContractVersion = 1
+                        }
+                    ]
+                }),
+                NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
+
+            var job = CreateJob("job-escape-wd", new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = SleepPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "0",
+                [LocalProcessParameterKeys.WorkingDirectory] = outsideDir
+            });
+
+            var result = await backend.StartAsync(job);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.Message.Should().Contain(LocalProcessParameterKeys.WorkingDirectory);
+            Directory.Exists(outsideDir).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(workingRoot))
+            {
+                Directory.Delete(workingRoot, recursive: true);
+            }
+        }
+    }
+
+    [UnitTest]
+    public async Task StartAsync_BlockedEnvironmentInjectionVariable_RejectsLaunch()
+    {
+        using var backend = CreateBackend();
+        var job = CreateJob("job-blocked-env", new Dictionary<string, string>
+        {
+            [LocalProcessParameterKeys.Executable] = SleepPath,
+            [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "0",
+            [LocalProcessParameterKeys.EnvironmentPrefix + "LD_PRELOAD"] = "/tmp/evil.so"
+        });
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("LD_PRELOAD");
+    }
+
+    [UnitTest]
+    public async Task CancelAsync_UnobservedCancelledJob_EvictsTrackingAndDeletesScratchDirectory()
+    {
+        var workingRoot = Directory.CreateTempSubdirectory("honua-lpp-evict").FullName;
+        try
+        {
+            using var backend = new LocalProcessPoolBatchComputeBackend(
+                Options.Create(new LocalProcessPoolOptions
+                {
+                    MaxConcurrentProcesses = 2,
+                    WorkingRoot = workingRoot,
+                    WorkerContracts =
+                    [
+                        new LocalProcessWorkerContractOptions
+                        {
+                            Executable = SleepPath,
+                            IsSelfContained = true,
+                            MaxSupportedContractVersion = 1
+                        }
+                    ]
+                }),
+                NullLogger<LocalProcessPoolBatchComputeBackend>.Instance)
+            {
+                TerminalRetentionTtl = TimeSpan.FromMilliseconds(50)
+            };
+
+            var job = CreateJob("job-cancel-evict", new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = SleepPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "30"
+            });
+
+            var start = await backend.StartAsync(job);
+            start.Status.Should().Be(ExecutionJobStatus.Running);
+            var scratchDir = Path.Join(workingRoot, "job-cancel-evict");
+            Directory.Exists(scratchDir).Should().BeTrue();
+
+            var cancel = await backend.CancelAsync(job with
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = start.ProviderOperationId
+            });
+            cancel.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+            // Never call ObserveAsync: deferred TTL eviction must clean up both _executions and scratch dir.
+            var deadline = Stopwatch.StartNew();
+            while (deadline.Elapsed < TimeSpan.FromSeconds(5)
+                && (backend.TrackedExecutionCount > 0 || Directory.Exists(scratchDir)))
+            {
+                await Task.Delay(25);
+            }
+
+            backend.TrackedExecutionCount.Should().Be(0);
+            Directory.Exists(scratchDir).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(workingRoot))
+            {
+                Directory.Delete(workingRoot, recursive: true);
+            }
+        }
     }
 
     private static async Task<BatchComputeObservation> WaitForTerminalAsync(

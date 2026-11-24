@@ -1,13 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -51,19 +48,19 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing intersect inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        if (!GeometryExecutorSupport.TryReadPairGeometryInputs(parameters, "targetWkb", "intersectorWkb", out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.InvalidInput($"Invalid intersect inputs: {inputError}");
         }
 
-        if (!TryDecodeGeometry(inputs.TargetWkb, out var target, out var decodeError))
+        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.FirstWkb, out var target, out var decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
             return JobExecutionResult.InvalidInput($"Invalid intersect inputs: targetWkb {decodeError}");
         }
 
-        if (!TryDecodeGeometry(inputs.IntersectorWkb, out var intersector, out decodeError))
+        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.SecondWkb, out var intersector, out decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", decodeError);
             return JobExecutionResult.InvalidInput($"Invalid intersect inputs: intersectorWkb {decodeError}");
@@ -134,82 +131,6 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
 
         return JobExecutionResult.Succeeded();
     }
-
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out IntersectInputs inputs,
-        out string error)
-    {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "targetWkb", out var target) || string.IsNullOrWhiteSpace(target))
-        {
-            error = "missing required input 'targetWkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "intersectorWkb", out var intersector) || string.IsNullOrWhiteSpace(intersector))
-        {
-            error = "missing required input 'intersectorWkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
-        {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
-        }
-
-        inputs = new IntersectInputs(target, intersector, srid);
-        error = "";
-        return true;
-    }
-
-    private static bool TryDecodeGeometry(string base64Wkb, out Geometry geometry, out string error)
-    {
-        geometry = null!;
-        byte[] bytes;
-        try
-        {
-            bytes = Convert.FromBase64String(base64Wkb);
-        }
-        catch (FormatException)
-        {
-            error = "is not valid base64";
-            return false;
-        }
-
-        if (bytes.Length == 0)
-        {
-            error = "decoded to zero bytes";
-            return false;
-        }
-
-        try
-        {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(bytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            error = $"could not be decoded ({ex.GetType().Name})";
-            return false;
-        }
-
-        if (geometry == null || geometry.IsEmpty)
-        {
-            error = "decoded to an empty geometry";
-            return false;
-        }
-
-        error = "";
-        return true;
-    }
-
-    private readonly record struct IntersectInputs(string TargetWkb, string IntersectorWkb, int Srid);
 
     private static partial class Log
     {

@@ -120,6 +120,12 @@ internal static class WkbToSkiaConverter
             throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
         }
 
+        var (geometryType, dimensions) = ReadGeometryHeader(ref reader);
+        return ReadGeometryBody(ref reader, geometryType, dimensions, transform, depth);
+    }
+
+    private static (int GeometryType, int Dimensions) ReadGeometryHeader(ref WkbReader reader)
+    {
         var byteOrder = reader.ReadByte();
         reader.IsLittleEndian = byteOrder == 1;
 
@@ -157,15 +163,24 @@ internal static class WkbToSkiaConverter
         }
 
         var dimensions = 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0);
+        return (geometryType, dimensions);
+    }
 
+    private static GeometryConversionResult ReadGeometryBody(
+        ref WkbReader reader,
+        int geometryType,
+        int dimensions,
+        Func<double, double, SKPoint> transform,
+        int depth)
+    {
         return geometryType switch
         {
             WkbPoint => ReadPoint(ref reader, transform, dimensions),
             WkbLineString => ReadLineString(ref reader, transform, dimensions),
             WkbPolygon => ReadPolygon(ref reader, transform, dimensions),
-            WkbMultiPoint => ReadMultiPoint(ref reader, transform, dimensions, depth),
-            WkbMultiLineString => ReadMultiLineString(ref reader, transform, dimensions, depth),
-            WkbMultiPolygon => ReadMultiPolygon(ref reader, transform, dimensions, depth),
+            WkbMultiPoint => ReadMultiPoint(ref reader, transform, depth),
+            WkbMultiLineString => ReadMultiLineString(ref reader, transform, depth),
+            WkbMultiPolygon => ReadMultiPolygon(ref reader, transform, depth),
             WkbGeometryCollection => ReadGeometryCollection(ref reader, transform, depth),
             _ => default
         };
@@ -207,30 +222,52 @@ internal static class WkbToSkiaConverter
         var path = new SKPath();
         try
         {
-            var first = true;
-            for (int i = 0; i < numPoints; i++)
-            {
-                var (x, y) = reader.ReadCoordinate();
-                SkipExtraDimensions(ref reader, dimensions);
-
-                var point = transform(x, y);
-                if (first)
-                {
-                    path.MoveTo(point);
-                    first = false;
-                }
-                else
-                {
-                    path.LineTo(point);
-                }
-            }
-
+            AppendLineStringPointsToPath(ref reader, path, numPoints, transform, dimensions);
             return new GeometryConversionResult { Path = path };
         }
         catch
         {
             path.Dispose();
             throw;
+        }
+    }
+
+    private static void AppendLineStringToPath(
+        ref WkbReader reader,
+        SKPath path,
+        Func<double, double, SKPoint> transform,
+        int dimensions)
+    {
+        var numPoints = ReadElementCount(ref reader);
+        if (numPoints == 0)
+        {
+            return;
+        }
+
+        AppendLineStringPointsToPath(ref reader, path, numPoints, transform, dimensions);
+    }
+
+    private static void AppendLineStringPointsToPath(
+        ref WkbReader reader,
+        SKPath path,
+        int numPoints,
+        Func<double, double, SKPoint> transform,
+        int dimensions)
+    {
+        for (int i = 0; i < numPoints; i++)
+        {
+            var (x, y) = reader.ReadCoordinate();
+            SkipExtraDimensions(ref reader, dimensions);
+
+            var point = transform(x, y);
+            if (i == 0)
+            {
+                path.MoveTo(point);
+            }
+            else
+            {
+                path.LineTo(point);
+            }
         }
     }
 
@@ -245,35 +282,7 @@ internal static class WkbToSkiaConverter
         var path = new SKPath { FillType = SKPathFillType.EvenOdd };
         try
         {
-            for (int ring = 0; ring < numRings; ring++)
-            {
-                var numPoints = ReadElementCount(ref reader);
-                if (numPoints == 0)
-                {
-                    continue;
-                }
-
-                var first = true;
-                for (int i = 0; i < numPoints; i++)
-                {
-                    var (x, y) = reader.ReadCoordinate();
-                    SkipExtraDimensions(ref reader, dimensions);
-
-                    var point = transform(x, y);
-                    if (first)
-                    {
-                        path.MoveTo(point);
-                        first = false;
-                    }
-                    else
-                    {
-                        path.LineTo(point);
-                    }
-                }
-
-                path.Close();
-            }
-
+            AppendPolygonRingsToPath(ref reader, path, numRings, transform, dimensions);
             return new GeometryConversionResult { Path = path, IsPolygon = true };
         }
         catch
@@ -283,7 +292,58 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadMultiPoint(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static bool AppendPolygonToPath(
+        ref WkbReader reader,
+        SKPath path,
+        Func<double, double, SKPoint> transform,
+        int dimensions)
+    {
+        var numRings = ReadElementCount(ref reader);
+        if (numRings == 0)
+        {
+            return false;
+        }
+
+        AppendPolygonRingsToPath(ref reader, path, numRings, transform, dimensions);
+        return true;
+    }
+
+    private static void AppendPolygonRingsToPath(
+        ref WkbReader reader,
+        SKPath path,
+        int numRings,
+        Func<double, double, SKPoint> transform,
+        int dimensions)
+    {
+        for (int ring = 0; ring < numRings; ring++)
+        {
+            var numPoints = ReadElementCount(ref reader);
+            if (numPoints == 0)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < numPoints; i++)
+            {
+                var (x, y) = reader.ReadCoordinate();
+                SkipExtraDimensions(ref reader, dimensions);
+
+                var point = transform(x, y);
+                if (i == 0)
+                {
+                    path.MoveTo(point);
+                }
+                else
+                {
+                    path.LineTo(point);
+                }
+            }
+
+            path.Close();
+        }
+    }
+
+    private static GeometryConversionResult ReadMultiPoint(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth)
     {
         var numGeometries = ReadElementCount(ref reader);
         // Clamp list preallocation: a hostile payload can declare a huge count but only carry
@@ -295,14 +355,7 @@ internal static class WkbToSkiaConverter
             : numGeometries;
         var points = new List<SKPoint>(safeCapacity);
 
-        for (int i = 0; i < numGeometries; i++)
-        {
-            var result = ReadGeometry(ref reader, transform, depth + 1);
-            if (result.Points != null)
-            {
-                points.AddRange(result.Points);
-            }
-        }
+        AppendMultiPointToList(ref reader, points, numGeometries, transform, depth);
 
         return new GeometryConversionResult
         {
@@ -311,7 +364,39 @@ internal static class WkbToSkiaConverter
         };
     }
 
-    private static GeometryConversionResult ReadMultiLineString(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static void AppendMultiPointToList(
+        ref WkbReader reader,
+        List<SKPoint> points,
+        int numGeometries,
+        Func<double, double, SKPoint> transform,
+        int depth)
+    {
+        for (int i = 0; i < numGeometries; i++)
+        {
+            if (depth + 1 > MaxGeometryNestingDepth)
+            {
+                throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
+            }
+
+            var (childType, childDimensions) = ReadGeometryHeader(ref reader);
+            if (childType == WkbPoint)
+            {
+                var (x, y) = reader.ReadCoordinate();
+                SkipExtraDimensions(ref reader, childDimensions);
+                points.Add(transform(x, y));
+                continue;
+            }
+
+            var result = ReadGeometryBody(ref reader, childType, childDimensions, transform, depth + 1);
+            using var unusedPath = result.Path;
+            if (result.Points != null)
+            {
+                points.AddRange(result.Points);
+            }
+        }
+    }
+
+    private static GeometryConversionResult ReadMultiLineString(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth)
     {
         var numGeometries = ReadElementCount(ref reader);
         var combinedPath = new SKPath();
@@ -319,7 +404,19 @@ internal static class WkbToSkiaConverter
         {
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(ref reader, transform, depth + 1);
+                if (depth + 1 > MaxGeometryNestingDepth)
+                {
+                    throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
+                }
+
+                var (childType, childDimensions) = ReadGeometryHeader(ref reader);
+                if (childType == WkbLineString)
+                {
+                    AppendLineStringToPath(ref reader, combinedPath, transform, childDimensions);
+                    continue;
+                }
+
+                var result = ReadGeometryBody(ref reader, childType, childDimensions, transform, depth + 1);
                 using var resultPath = result.Path;
                 if (resultPath != null)
                 {
@@ -336,7 +433,7 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadMultiPolygon(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static GeometryConversionResult ReadMultiPolygon(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth)
     {
         var numGeometries = ReadElementCount(ref reader);
         var combinedPath = new SKPath { FillType = SKPathFillType.EvenOdd };
@@ -344,7 +441,19 @@ internal static class WkbToSkiaConverter
         {
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(ref reader, transform, depth + 1);
+                if (depth + 1 > MaxGeometryNestingDepth)
+                {
+                    throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
+                }
+
+                var (childType, childDimensions) = ReadGeometryHeader(ref reader);
+                if (childType == WkbPolygon)
+                {
+                    AppendPolygonToPath(ref reader, combinedPath, transform, childDimensions);
+                    continue;
+                }
+
+                var result = ReadGeometryBody(ref reader, childType, childDimensions, transform, depth + 1);
                 using var resultPath = result.Path;
                 if (resultPath != null)
                 {
@@ -373,27 +482,114 @@ internal static class WkbToSkiaConverter
 
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(ref reader, transform, depth + 1);
-                using var resultPath = result.Path;
-                if (resultPath != null)
+                if (depth + 1 > MaxGeometryNestingDepth)
                 {
-                    combinedPath.AddPath(resultPath);
-                    isPoint = false;
+                    throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
                 }
 
-                if (result.Points != null)
+                var (childType, childDimensions) = ReadGeometryHeader(ref reader);
+                switch (childType)
                 {
-                    allPoints.AddRange(result.Points);
-                }
+                    case WkbPoint:
+                        var (x, y) = reader.ReadCoordinate();
+                        SkipExtraDimensions(ref reader, childDimensions);
+                        allPoints.Add(transform(x, y));
+                        break;
+                    case WkbLineString:
+                        AppendLineStringToPath(ref reader, combinedPath, transform, childDimensions);
+                        isPoint = false;
+                        break;
+                    case WkbPolygon:
+                        if (AppendPolygonToPath(ref reader, combinedPath, transform, childDimensions))
+                        {
+                            isPolygon = true;
+                        }
+                        isPoint = false;
+                        break;
+                    case WkbMultiPoint:
+                        AppendMultiPointToList(ref reader, allPoints, ReadElementCount(ref reader), transform, depth + 1);
+                        break;
+                    case WkbMultiLineString:
+                        {
+                            var childCount = ReadElementCount(ref reader);
+                            for (int j = 0; j < childCount; j++)
+                            {
+                                if (depth + 2 > MaxGeometryNestingDepth)
+                                {
+                                    throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
+                                }
+                                var (grandType, grandDim) = ReadGeometryHeader(ref reader);
+                                if (grandType == WkbLineString)
+                                {
+                                    AppendLineStringToPath(ref reader, combinedPath, transform, grandDim);
+                                }
+                                else
+                                {
+                                    var grand = ReadGeometryBody(ref reader, grandType, grandDim, transform, depth + 2);
+                                    using var grandPath = grand.Path;
+                                    if (grandPath != null)
+                                    {
+                                        combinedPath.AddPath(grandPath);
+                                    }
+                                }
+                            }
+                            isPoint = false;
+                            break;
+                        }
+                    case WkbMultiPolygon:
+                        {
+                            var childCount = ReadElementCount(ref reader);
+                            for (int j = 0; j < childCount; j++)
+                            {
+                                if (depth + 2 > MaxGeometryNestingDepth)
+                                {
+                                    throw new InvalidDataException("WKB geometry nesting exceeds the supported depth.");
+                                }
+                                var (grandType, grandDim) = ReadGeometryHeader(ref reader);
+                                if (grandType == WkbPolygon)
+                                {
+                                    AppendPolygonToPath(ref reader, combinedPath, transform, grandDim);
+                                }
+                                else
+                                {
+                                    var grand = ReadGeometryBody(ref reader, grandType, grandDim, transform, depth + 2);
+                                    using var grandPath = grand.Path;
+                                    if (grandPath != null)
+                                    {
+                                        combinedPath.AddPath(grandPath);
+                                    }
+                                }
+                            }
+                            isPolygon = true;
+                            isPoint = false;
+                            break;
+                        }
+                    default:
+                        {
+                            var result = ReadGeometryBody(ref reader, childType, childDimensions, transform, depth + 1);
+                            using var resultPath = result.Path;
+                            if (resultPath != null)
+                            {
+                                combinedPath.AddPath(resultPath);
+                                isPoint = false;
+                            }
 
-                if (result.IsPolygon)
-                {
-                    isPolygon = true;
-                }
+                            if (result.Points != null)
+                            {
+                                allPoints.AddRange(result.Points);
+                            }
 
-                if (!result.IsPoint)
-                {
-                    isPoint = false;
+                            if (result.IsPolygon)
+                            {
+                                isPolygon = true;
+                            }
+
+                            if (!result.IsPoint)
+                            {
+                                isPoint = false;
+                            }
+                            break;
+                        }
                 }
             }
 

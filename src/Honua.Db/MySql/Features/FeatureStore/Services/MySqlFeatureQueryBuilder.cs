@@ -161,8 +161,24 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
             ? $"ST_Latitude({pointExpression})"
             : $"ST_Y({pointExpression})";
         var geometryColumn = mapping.QuotedGeometryColumn;
-        var envelopeCorner1 = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), 1)";
-        var envelopeCorner3 = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), 3)";
+        string EnvelopeCorner(int cornerIndex)
+        {
+            // MariaDB only supports 1-arg ST_SRID(geom) and computes ST_Envelope directly in
+            // stored X/Y order. MySQL 8.0+ rejects ST_Envelope on geographic SRSes, so drop to
+            // SRID 0 for the bounding box and re-tag the corner back to the geographic SRID
+            // before passing it to ST_Longitude/ST_Latitude (which reject SRID 0).
+            if (_engineFlavor == MySqlEngineFlavor.MariaDb)
+            {
+                return $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), {cornerIndex.ToString(CultureInfo.InvariantCulture)})";
+            }
+
+            var cartesianCorner = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), {cornerIndex.ToString(CultureInfo.InvariantCulture)})";
+            return useGeographicAxes
+                ? $"ST_SRID({cartesianCorner}, {mapping.Srid.ToString(CultureInfo.InvariantCulture)})"
+                : cartesianCorner;
+        }
+        var envelopeCorner1 = EnvelopeCorner(1);
+        var envelopeCorner3 = EnvelopeCorner(3);
         var extentSelect = mapping.GeometryType switch
         {
             GeometryType.Point => $"""

@@ -8,6 +8,7 @@ using System.Text;
 using Google.Protobuf;
 using Grpc.Core;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Proto = Geospatial.V1;
 
@@ -79,9 +80,10 @@ internal sealed partial class HonuaFeatureService
             GeometryType = GrpcConversionHelpers.ToProtoGeometryType(related.GeometryType),
             SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(query.ResponseSpatialReference)
         };
+        var exactFieldTypes = GrpcTypedValues.BuildExactFieldTypeMap(related.AttributeFields);
         response.Fields.AddRange(selected.Select(GrpcConversionHelpers.ToProtoField));
         response.Groups.AddRange(page.Positions.GroupBy(position => position.OriginId)
-            .Select(group => BuildRelatedGroup(plan, group, names)));
+            .Select(group => BuildRelatedGroup(plan, group, names, exactFieldTypes)));
         if (page.HasMore)
         {
             if (page.Positions.IsDefaultOrEmpty)
@@ -95,7 +97,8 @@ internal sealed partial class HonuaFeatureService
         return response;
     }
     private static Proto.RelatedRecordGroup BuildRelatedGroup(RelatedReadPlan plan,
-        IGrouping<long, RelatedFeaturePosition> positions, HashSet<string> selectedNames)
+        IGrouping<long, RelatedFeaturePosition> positions, HashSet<string> selectedNames,
+        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes)
     {
         var output = new Proto.RelatedRecordGroup { ObjectId = positions.Key };
         foreach (var position in positions)
@@ -111,7 +114,7 @@ internal sealed partial class HonuaFeatureService
             var query = plan.Query;
             output.Features.Add(WithGlobalId(GrpcConversionHelpers.ToProtoFeature(projected, query.ReturnGeometry,
                 query.GeometryLimits, plan.Related.ObjectIdFieldName, query.AttributeHiddenFields,
-                plan.Related.AttributeFields), feature, query.GlobalIdField));
+                exactFieldTypes), feature, query.GlobalIdField));
         }
         return output;
     }

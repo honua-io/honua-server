@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Licensing;
 
@@ -82,7 +83,7 @@ internal sealed class LicenseOperationMiddleware(RequestDelegate next)
             context.Abort();
             return;
         }
-        context.Response.Clear();
+        HttpResponseClearHelper.ClearPreservingCorsHeaders(context.Response);
         if (context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true)
         {
             context.Response.StatusCode = StatusCodes.Status200OK;

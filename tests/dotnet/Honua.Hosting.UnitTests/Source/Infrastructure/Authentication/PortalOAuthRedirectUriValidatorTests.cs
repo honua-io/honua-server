@@ -84,4 +84,19 @@ public sealed class PortalOAuthRedirectUriValidatorTests
         PortalOAuthRedirectUriValidator.IsAllowed(oob, [oob])
             .Should().BeTrue();
     }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    public void IsAllowed_UserInfoInRedirectUriOrAllowList_Rejects()
+    {
+        var originList = new[] { "https://allowed.example.com/" };
+        var exactList = new[] { "https://allowed.example.com/cb" };
+
+        PortalOAuthRedirectUriValidator.IsAllowed("https://evil.example@allowed.example.com/cb", originList)
+            .Should().BeFalse();
+        PortalOAuthRedirectUriValidator.IsAllowed("https://user:pass@allowed.example.com/cb", exactList)
+            .Should().BeFalse();
+        PortalOAuthRedirectUriValidator.IsAllowed("https://allowed.example.com/cb", ["https://user@allowed.example.com/"])
+            .Should().BeFalse();
+    }
 }

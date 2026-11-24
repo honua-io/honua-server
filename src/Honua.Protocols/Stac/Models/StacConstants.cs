@@ -13,6 +13,8 @@ internal static class StacConstants
 
     public const int MaxSearchLimit = 10_000;
 
+    public const int MaxOmitCountSearchOffset = 10_000;
+
     internal static class Extensions
     {
         public const string Language = "https://stac-extensions.github.io/language/v1.0.0/schema.json";

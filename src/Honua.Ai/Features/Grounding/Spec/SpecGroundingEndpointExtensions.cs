@@ -12,7 +12,7 @@ using Honua.Infrastructure.Licensing;
 
 namespace Honua.Ai.Grounding.Spec;
 
-internal static class SpecGroundingEndpointExtensions
+internal static partial class SpecGroundingEndpointExtensions
 {
     private static readonly string[] ArraySections = ["sources", "scope", "compute", "outputs"];
 
@@ -69,7 +69,10 @@ internal static class SpecGroundingEndpointExtensions
             return InvalidRequest($"turn must be at most {MaxTurnLength} characters.");
         }
 
-        if (!TryReadSpecDocument(request.Spec, out var currentSpec, out var specError))
+        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()
+            ?.CreateLogger(typeof(SpecGroundingEndpointExtensions));
+
+        if (!TryReadSpecDocument(request.Spec, logger, out var currentSpec, out var specError))
         {
             return InvalidRequest(specError);
         }
@@ -118,7 +121,10 @@ internal static class SpecGroundingEndpointExtensions
             return InvalidRequest("Request body must be a JSON object.");
         }
 
-        if (!TryReadSpecDocument(request.Spec, out var document, out var specError))
+        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()
+            ?.CreateLogger(typeof(SpecGroundingEndpointExtensions));
+
+        if (!TryReadSpecDocument(request.Spec, logger, out var document, out var specError))
         {
             return InvalidRequest(specError);
         }
@@ -354,6 +360,7 @@ internal static class SpecGroundingEndpointExtensions
 
     private static bool TryReadSpecDocument(
         JsonElement spec,
+        ILogger? logger,
         out SpecDocument document,
         out string error)
     {
@@ -388,20 +395,35 @@ internal static class SpecGroundingEndpointExtensions
         }
         catch (JsonException ex)
         {
+            if (logger is not null)
+            {
+                Log.InvalidSpecJson(logger, ex);
+            }
+
             document = CreateEmptySpecDocument();
-            error = $"spec is not valid canonical JSON: {ex.Message}";
+            error = "spec is not valid canonical JSON.";
             return false;
         }
         catch (InvalidOperationException ex)
         {
+            if (logger is not null)
+            {
+                Log.SpecReadFailed(logger, ex);
+            }
+
             document = CreateEmptySpecDocument();
-            error = $"spec could not be read: {ex.Message}";
+            error = "spec could not be read.";
             return false;
         }
         catch (FormatException ex)
         {
+            if (logger is not null)
+            {
+                Log.SpecReadFailed(logger, ex);
+            }
+
             document = CreateEmptySpecDocument();
-            error = $"spec could not be read: {ex.Message}";
+            error = "spec could not be read.";
             return false;
         }
     }
@@ -505,4 +527,13 @@ internal static class SpecGroundingEndpointExtensions
         SpecMutationKind.RenameReference => "rename-reference",
         _ => kind.ToString()
     };
+
+    private static partial class Log
+    {
+        [LoggerMessage(8225, LogLevel.Warning, "Spec grounding request contained invalid canonical JSON.")]
+        public static partial void InvalidSpecJson(ILogger logger, Exception exception);
+
+        [LoggerMessage(8226, LogLevel.Warning, "Spec grounding request spec could not be read.")]
+        public static partial void SpecReadFailed(ILogger logger, Exception exception);
+    }
 }

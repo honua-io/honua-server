@@ -236,7 +236,7 @@ internal static partial class ScimEndpoints
                 new ScimUserProvisioning
                 {
                     UserName = input.UserName.Trim(),
-                    ExternalId = input.ExternalId,
+                    ExternalId = string.IsNullOrWhiteSpace(input.ExternalId) ? null : input.ExternalId.Trim(),
                     ExternalIssuer = options.Value.OidcIssuer,
                     DisplayName = input.DisplayName,
                     Email = email,
@@ -256,6 +256,22 @@ internal static partial class ScimEndpoints
         if (replaced is null)
         {
             return ScimErrorResult(StatusCodes.Status404NotFound, "User not found.");
+        }
+
+        var identityChanged = existing is not null
+            && (!string.Equals(existing.ExternalId, replaced.ExternalId, StringComparison.Ordinal)
+                || !string.Equals(existing.ExternalIssuer, replaced.ExternalIssuer, StringComparison.Ordinal));
+        if (!replaced.IsActive || identityChanged)
+        {
+            var oauthStore = context.RequestServices.GetService<PortalOAuthStore>();
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                oauthStore,
+                existing,
+                context.RequestAborted).ConfigureAwait(false);
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                oauthStore,
+                replaced,
+                context.RequestAborted).ConfigureAwait(false);
         }
 
         ScimLog.UserReplaced(logger, replaced.UserId);

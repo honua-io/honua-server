@@ -15,6 +15,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Server.Features.Admin;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -27,6 +28,7 @@ internal static class ProductionMonitoringEndpoints
             .WithTags("Monitoring")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             .ExcludeFromDescription();
 
         // Production health dashboard endpoint

@@ -85,7 +85,7 @@ internal static class TerrainEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource);
         var metadata = await terrainTileService.GetDatasetMetadataAsync(
             layerId,
@@ -127,7 +127,7 @@ internal static class TerrainEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         using var activity = HonuaTelemetry.StartActivity(HonuaTelemetry.Activities.TileGeneration);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Terrain);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "terrain.tile");
@@ -164,7 +164,13 @@ internal static class TerrainEndpoints
         }
     }
 
-    internal static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
+    internal readonly record struct ValidatedTerrainDataset(
+        bool IsValid,
+        int StorageLayerId,
+        MetadataV2Object? Resource,
+        IResult? ErrorResult);
+
+    internal static async Task<ValidatedTerrainDataset> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
@@ -183,22 +189,29 @@ internal static class TerrainEndpoints
                 TerrainProtocolName,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        if (validation.IsValid && !RequestAnonymity.IsAnonymous(context))
+        if (!validation.IsValid)
+        {
+            return new ValidatedTerrainDataset(false, 0, null, validation.ErrorResult);
+        }
+
+        var storageLayerId = validation.Snapshot is not null && validation.Publication is not null
+            ? validation.Snapshot.ResolveStorageLayerId(validation.Publication, validation.Resource)
+            : validation.Publication?.LayerIndex;
+        if (!storageLayerId.HasValue)
+        {
+            return new ValidatedTerrainDataset(
+                false,
+                0,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
+        }
+
+        if (!RequestAnonymity.IsAnonymous(context))
         {
             context.Response.Headers.Append(HeaderNames.Vary, "Authorization, X-API-Key");
         }
 
-        if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
-        {
-            return validation;
-        }
-
-        return new LayerValidationHelpers.MetadataV2ValidationResult(
-            false,
-            validation.Publication,
-            validation.Resource,
-            validation.Service,
-            StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
+        return new ValidatedTerrainDataset(true, storageLayerId.Value, validation.Resource, null);
     }
 
     internal static (int MinZoom, int MaxZoom) ResolveZoomLimits(TileLimits tileLimits)

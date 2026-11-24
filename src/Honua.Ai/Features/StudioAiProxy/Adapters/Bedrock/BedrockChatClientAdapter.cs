@@ -499,7 +499,9 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             null => string.Empty,
             string s => s,
             JsonElement json => json.ValueKind == JsonValueKind.String ? json.GetString() ?? string.Empty : json.GetRawText(),
-            _ => JsonSerializer.Serialize(result)
+            System.Text.Json.Nodes.JsonNode node => node.ToJsonString(),
+            IFormattable formattable => formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+            _ => result.ToString() ?? string.Empty
         };
     }
 

@@ -16,6 +16,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Studio.Export;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -524,14 +525,21 @@ internal static partial class StudioPackageEndpoints
                     ActorId = actor,
                 }, BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
             }
 
-            var draft = receipt.Value
-                ?? throw new InvalidOperationException("Completed Studio draft creation has no durable result projection.");
+            var draft = receipt.Value;
+            if (draft is null)
+            {
+                StudioEndpointsLog.EndpointFailed(
+                    logger,
+                    "draft.create",
+                    new InvalidOperationException("Completed Studio draft creation has no durable result projection."));
+                return ServerError(context, "Studio package draft could not be created.");
+            }
 
             StudioEndpointsLog.DraftCreated(logger, draft.DraftId, draft.ItemId, draft.Family);
             return Results.Json(
@@ -545,11 +553,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            return MapStudioArgumentException(context, logger, "draft.create", ex);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "draft.create", "Studio package draft could not be created.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -725,14 +734,21 @@ internal static partial class StudioPackageEndpoints
                 },
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
             }
 
-            var draft = receipt.Value
-                ?? throw new InvalidOperationException("Completed Studio draft update has no durable result projection.");
+            var draft = receipt.Value;
+            if (draft is null)
+            {
+                StudioEndpointsLog.EndpointFailed(
+                    logger,
+                    "draft.update",
+                    new InvalidOperationException("Completed Studio draft update has no durable result projection."));
+                return ServerError(context, "Studio package draft could not be updated.");
+            }
 
             StudioEndpointsLog.DraftUpdated(logger, draft.DraftId, draft.Generation);
             return Results.Json(
@@ -745,11 +761,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            return MapStudioArgumentException(context, logger, "draft.update", ex);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "draft.update", "Studio package draft could not be updated.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -791,7 +808,7 @@ internal static partial class StudioPackageEndpoints
                 draftId,
                 BuildMutationContext(context, authorization.ResolveCallerId(context.User)),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
@@ -833,16 +850,6 @@ internal static partial class StudioPackageEndpoints
             .OrderBy(static scope => scope, StringComparer.Ordinal)
             .ToArray(),
     };
-
-    private static void SetOperationHeaders(HttpContext context, OperationHandle operation)
-    {
-        context.Response.Headers["X-Honua-Operation-Instance-Id"] = operation.OperationInstanceId;
-        context.Response.Headers["X-Honua-Operation-Correlation-Id"] = operation.CorrelationId;
-        if (!string.IsNullOrWhiteSpace(operation.AuditId))
-        {
-            context.Response.Headers["X-Honua-Operation-Audit-Id"] = operation.AuditId;
-        }
-    }
 
     private static IResult MutationDecision(HttpContext context, OperationHandle operation)
     {
@@ -912,14 +919,22 @@ internal static partial class StudioPackageEndpoints
                 actor,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
             }
 
-            var validation = receipt.Value
-                ?? throw new InvalidOperationException("Completed Studio validation has no durable result projection.");
+            var validation = receipt.Value;
+            if (validation is null)
+            {
+                StudioEndpointsLog.EndpointFailed(
+                    logger,
+                    "draft.validate",
+                    new InvalidOperationException("Completed Studio validation has no durable result projection."));
+                return ServerError(context, "Studio package draft could not be validated.");
+            }
+
             return Results.Json(
                 ApiResponse<StudioValidationSummary>.CreateSuccess(validation),
                 StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
@@ -930,7 +945,8 @@ internal static partial class StudioPackageEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "draft.validate", "Studio package draft could not be validated.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -974,14 +990,22 @@ internal static partial class StudioPackageEndpoints
                 actor,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
             }
 
-            var plan = receipt.Value
-                ?? throw new InvalidOperationException("Completed Studio preview plan has no durable result projection.");
+            var plan = receipt.Value;
+            if (plan is null)
+            {
+                StudioEndpointsLog.EndpointFailed(
+                    logger,
+                    "draft.preview",
+                    new InvalidOperationException("Completed Studio preview plan has no durable result projection."));
+                return ServerError(context, "Studio package preview plan could not be created.");
+            }
+
             return Results.Json(
                 ApiResponse<StudioPreviewPlan>.CreateSuccess(plan),
                 StudioApiJsonContext.Default.ApiResponseStudioPreviewPlan);
@@ -992,7 +1016,8 @@ internal static partial class StudioPackageEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "draft.preview", "Studio package preview plan could not be created.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1068,7 +1093,7 @@ internal static partial class StudioPackageEndpoints
                 actor,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
@@ -1092,13 +1117,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            // ADR-0069: a bridged family (form/analysis) rejects an envelope body that is not a
-            // valid native document before anything is persisted.
-            return BadRequest(context, ex.Message);
+            return MapStudioArgumentException(context, logger, "version.create", ex);
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "version.create", "Studio content version could not be created.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1642,7 +1666,7 @@ internal static partial class StudioPackageEndpoints
                 actor,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
@@ -1670,7 +1694,7 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            return MapStudioArgumentException(context, logger, "publish-request.create", ex);
         }
         catch (KeyNotFoundException)
         {
@@ -1678,9 +1702,8 @@ internal static partial class StudioPackageEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            // ADR-0069: bridged families surface unsupported or natively-refused publication
-            // (analysis has no publish concept; a form version must be a native draft) as 409.
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "publish-request.create", "Studio publication request could not be created.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1772,7 +1795,7 @@ internal static partial class StudioPackageEndpoints
                 actor,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
@@ -1795,7 +1818,8 @@ internal static partial class StudioPackageEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "version.reopen", "Studio content version could not be reopened.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1870,7 +1894,7 @@ internal static partial class StudioPackageEndpoints
                 request.Reason,
                 BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            SetOperationHeaders(context, receipt.Operation);
+            OperationHandleResponseHeaders.SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 return MutationDecision(context, receipt.Operation);
@@ -1898,19 +1922,88 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(context, ex.Message);
+            return MapStudioArgumentException(context, logger, "rollback.create", ex);
         }
         catch (InvalidOperationException ex)
         {
-            // ADR-0069: rollback is not supported for bridged families (forms' published rows
-            // are DB-immutable; analysis versions are append-only).
-            return Conflict(context, ex.Message);
+            return MapStudioInvalidOperationException(
+                context, logger, "rollback.create", "Studio rollback request could not be created.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             StudioEndpointsLog.EndpointFailed(logger, "rollback.create", ex);
             return ServerError(context, "Studio rollback request could not be created.");
         }
+    }
+
+    internal static IResult MapStudioArgumentException(
+        HttpContext context,
+        ILogger logger,
+        string operation,
+        ArgumentException ex)
+    {
+        if (ex is ArgumentNullException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, operation, ex);
+            return ServerError(context, "The Studio package operation could not be completed.");
+        }
+
+        if (ex.Message.StartsWith("Publication intent is invalid", StringComparison.Ordinal))
+        {
+            return BadRequest(context, ex.Message);
+        }
+
+        StudioEndpointsLog.EndpointFailed(logger, operation, ex);
+        return BadRequest(context, "The Studio package request is invalid.");
+    }
+
+    internal static IResult MapStudioInvalidOperationException(
+        HttpContext context,
+        ILogger logger,
+        string operation,
+        string serverErrorDetail,
+        InvalidOperationException ex)
+    {
+        if (TryMapKnownStudioConflict(ex, out var conflictDetail))
+        {
+            return Conflict(context, conflictDetail);
+        }
+
+        StudioEndpointsLog.EndpointFailed(logger, operation, ex);
+        return ServerError(context, serverErrorDetail);
+    }
+
+    private static bool TryMapKnownStudioConflict(InvalidOperationException ex, out string safeDetail)
+    {
+        var message = ex.Message;
+        if (string.Equals(message, "Stale draft generation; refresh and retry.", StringComparison.Ordinal)
+            || (message.Contains("stale", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("generation", StringComparison.OrdinalIgnoreCase)))
+        {
+            safeDetail = "Stale draft generation; refresh and retry.";
+            return true;
+        }
+
+        if (message.Contains("idempotency", StringComparison.OrdinalIgnoreCase))
+        {
+            safeDetail = "Idempotency-Key was already used with a different request.";
+            return true;
+        }
+
+        if (message.Contains("bridged", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("does not support", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("native draft", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot be published", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot be rolled back", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            safeDetail = "The Studio package operation conflicts with the current resource state.";
+            return true;
+        }
+
+        safeDetail = string.Empty;
+        return false;
     }
 
     private static Task<IResult?> EnsureGenerateAuthorizedAsync(

@@ -7,6 +7,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Subprocesses;
 
 namespace Honua.ControlPlane;
 
@@ -31,6 +32,47 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     internal const string LaunchedMarkerPrefix = "local-process:";
 
     private const int MaxTailLines = 50;
+
+    private static readonly TimeSpan DefaultTerminalRetentionTtl = TimeSpan.FromMinutes(5);
+
+    private static readonly HashSet<string> BlockedWorkloadEnvironmentNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DOTNET_STARTUP_HOOKS",
+        "DOTNET_ADDITIONAL_DEPS",
+        "DOTNET_SHARED_STORE",
+        "DOTNET_ROOT",
+        "DOTNET_HOST_PATH",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "PYTHONHOME",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "RUBYOPT",
+        "RUBYLIB",
+        "PERL5OPT",
+        "PERL5LIB",
+        "JAVA_TOOL_OPTIONS",
+        "_JAVA_OPTIONS",
+        "CLASSPATH",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+        "IFS",
+        "SHELLOPTS",
+        "PS4",
+        "PATH",
+        "PATHEXT",
+        "COMSPEC",
+        "SYSTEMROOT"
+    };
+
+    private static readonly string[] BlockedWorkloadEnvironmentPrefixes =
+    [
+        "LD_",
+        "DYLD_",
+        "CORECLR_",
+        "COMPLUS_"
+    ];
 
     private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
@@ -57,7 +99,12 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     private readonly LocalProcessPoolOptions _options;
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, ProcessExecution> _executions = new(StringComparer.Ordinal);
+    private readonly CancellationTokenSource _disposeCts = new();
     private volatile bool _disposed;
+
+    internal TimeSpan TerminalRetentionTtl { get; init; } = DefaultTerminalRetentionTtl;
+
+    internal int TrackedExecutionCount => _executions.Count;
 
     public LocalProcessPoolBatchComputeBackend(
         IOptions<LocalProcessPoolOptions> options,
@@ -83,11 +130,13 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
+        EvictExpiredTerminalExecutions();
 
         string executable;
         try
         {
             executable = ResolveExecutable(job.Spec.Parameters);
+            ValidateLaunchParameters(job);
         }
         catch (InvalidOperationException ex)
         {
@@ -152,6 +201,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
+        EvictExpiredTerminalExecutions();
 
         if (_executions.TryGetValue(job.OperationId, out var execution))
         {
@@ -166,7 +216,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             // the not-tracked branch below, which echoes the persisted terminal status on the job record.
             if (snapshot.Status.IsTerminal())
             {
-                EvictExecution(job.OperationId);
+                EvictExecution(job.OperationId, execution);
             }
 
             return Task.FromResult(new BatchComputeObservation
@@ -214,6 +264,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
+        EvictExpiredTerminalExecutions();
 
         if (_executions.TryGetValue(job.OperationId, out var execution))
         {
@@ -248,9 +299,11 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         try
         {
             executable = ResolveExecutable(job.Spec.Parameters);
+            ValidateLaunchParameters(job);
         }
         catch (InvalidOperationException ex)
         {
+            Log.LaunchRejected(_logger, job.OperationId, ex.Message);
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Failed,
@@ -309,49 +362,60 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         var arguments = ResolveArguments(job.Spec.Parameters);
         var (workingDirectory, ownedScratch) = ResolveWorkingDirectory(job);
+        var ownedScratchDirectory = ownedScratch ? workingDirectory : null;
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = executable,
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        foreach (var variable in BuildEnvironment(job, executionAttempt))
-        {
-            startInfo.Environment[variable.Key] = variable.Value;
-        }
-
-        var execution = new ProcessExecution(job.OperationId, ownedScratch ? workingDirectory : null);
-        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        process.OutputDataReceived += (_, e) => execution.AppendTail(e.Data);
-        process.ErrorDataReceived += (_, e) => execution.AppendTail(e.Data);
-
-        // A previous attempt for this OperationId that already finished may still be tracked (for
-        // example when a reconciler requeue lands before the terminal status was observed and evicted).
-        // Evict a stale terminal entry so the retry launches cleanly; a still-running entry is a genuine
-        // double-launch and must fail.
-        if (_executions.TryGetValue(job.OperationId, out var existing) && existing.Snapshot().Status.IsTerminal())
-        {
-            EvictExecution(job.OperationId);
-        }
-
-        // Register before Start so a fast-exiting process cannot complete before it is observable.
-        if (!_executions.TryAdd(job.OperationId, execution))
-        {
-            throw new InvalidOperationException($"A local process for job '{job.OperationId}' is already tracked.");
-        }
-
+        ProcessStartInfo startInfo;
         try
         {
+            startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            foreach (var argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            SubprocessEnvironmentScrubber.Scrub(startInfo.Environment);
+            foreach (var variable in BuildEnvironment(job, executionAttempt))
+            {
+                startInfo.Environment[variable.Key] = variable.Value;
+            }
+        }
+        catch
+        {
+            DeleteScratchDirectoryBestEffort(job.OperationId, ownedScratchDirectory);
+            throw;
+        }
+
+        var execution = new ProcessExecution(job.OperationId, ownedScratchDirectory);
+        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        try
+        {
+            process.OutputDataReceived += (_, e) => execution.AppendTail(e.Data);
+            process.ErrorDataReceived += (_, e) => execution.AppendTail(e.Data);
+
+            // A previous attempt for this OperationId that already finished may still be tracked (for
+            // example when a reconciler requeue lands before the terminal status was observed and evicted).
+            // Evict a stale terminal entry so the retry launches cleanly; a still-running entry is a genuine
+            // double-launch and must fail.
+            if (_executions.TryGetValue(job.OperationId, out var existing) && existing.Snapshot().Status.IsTerminal())
+            {
+                EvictExecution(job.OperationId, existing);
+            }
+
+            // Register before Start so a fast-exiting process cannot complete before it is observable.
+            if (!_executions.TryAdd(job.OperationId, execution))
+            {
+                throw new InvalidOperationException($"A local process for job '{job.OperationId}' is already tracked.");
+            }
+
             if (!process.Start())
             {
                 throw new InvalidOperationException($"Failed to start local process '{executable}'.");
@@ -359,8 +423,10 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
         catch
         {
-            _executions.TryRemove(job.OperationId, out _);
+            _executions.TryRemove(KeyValuePair.Create(job.OperationId, execution));
+            execution.Dispose();
             process.Dispose();
+            DeleteScratchDirectoryBestEffort(job.OperationId, ownedScratchDirectory);
             throw;
         }
 
@@ -368,7 +434,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         process.BeginErrorReadLine();
         Log.ProcessLaunched(_logger, job.OperationId, executable, process.Id);
 
-        // Fire-and-forget monitor: awaits exit, records terminal status, and releases the pool slot.
         _ = MonitorAsync(execution, process);
 
         return LaunchedMarkerPrefix + job.OperationId;
@@ -391,21 +456,67 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             }
             catch (OperationCanceledException)
             {
-                TryKill(process);
+                SubprocessEnvironmentScrubber.TryKill(process);
                 execution.CompleteCancelled();
                 Log.ProcessCancelled(_logger, execution.OperationId);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                // Deliberately broad: this is the terminal handler for a fire-and-forget
-                // monitor task: any unexpected failure must still mark the execution
-                // Failed and release the pool slot rather than crash unobserved.
+                // Deliberately broad: this is the terminal handler for a tracked monitor task:
+                // any unexpected failure must still mark the execution Failed and release the pool slot.
                 execution.CompleteFailed();
                 Log.ProcessMonitorFailed(_logger, execution.OperationId, ex.Message);
             }
             finally
             {
                 ReleaseSlot();
+                ScheduleDeferredEviction(execution);
+            }
+        }
+    }
+
+    private void ScheduleDeferredEviction(ProcessExecution execution)
+    {
+        if (_disposed)
+        {
+            EvictExecution(execution.OperationId, execution);
+            return;
+        }
+
+        _ = EvictAfterRetentionAsync(execution);
+    }
+
+    private async Task EvictAfterRetentionAsync(ProcessExecution execution)
+    {
+        try
+        {
+            if (TerminalRetentionTtl > TimeSpan.Zero)
+            {
+                await Task.Delay(TerminalRetentionTtl, _disposeCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Backend is disposing; Dispose() handles final cleanup.
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            // Backend already disposed.
+            return;
+        }
+
+        EvictExecution(execution.OperationId, execution);
+    }
+
+    private void EvictExpiredTerminalExecutions()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var entry in _executions)
+        {
+            if (entry.Value.IsExpired(now, TerminalRetentionTtl))
+            {
+                EvictExecution(entry.Key, entry.Value);
             }
         }
     }
@@ -427,15 +538,30 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
     }
 
-    private void EvictExecution(string operationId)
+    private void EvictExecution(string operationId, ProcessExecution? expected = null)
     {
-        if (!_executions.TryRemove(operationId, out var execution))
+        ProcessExecution? execution;
+        if (expected is not null)
+        {
+            if (!_executions.TryRemove(KeyValuePair.Create(operationId, expected)))
+            {
+                return;
+            }
+
+            execution = expected;
+        }
+        else if (!_executions.TryRemove(operationId, out execution))
         {
             return;
         }
 
         var scratch = execution.ScratchDirectory;
         execution.Dispose();
+        DeleteScratchDirectoryBestEffort(operationId, scratch);
+    }
+
+    private void DeleteScratchDirectoryBestEffort(string operationId, string? scratch)
+    {
         if (string.IsNullOrEmpty(scratch))
         {
             return;
@@ -455,20 +581,55 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
     }
 
+    private void ValidateLaunchParameters(ExecutionJobRecord job)
+    {
+        _ = ResolveWorkingDirectoryPath(job);
+        ValidateWorkloadEnvironmentParameters(job.Spec.Parameters);
+    }
+
     private (string Directory, bool OwnedScratch) ResolveWorkingDirectory(ExecutionJobRecord job)
     {
-        if (job.Spec.Parameters.TryGetValue(LocalProcessParameterKeys.WorkingDirectory, out var configured)
-            && !string.IsNullOrWhiteSpace(configured))
-        {
-            Directory.CreateDirectory(configured);
-            return (configured, false);
-        }
+        var (directory, ownedScratch) = ResolveWorkingDirectoryPath(job);
+        Directory.CreateDirectory(directory);
+        return (directory, ownedScratch);
+    }
 
+    private (string Directory, bool OwnedScratch) ResolveWorkingDirectoryPath(ExecutionJobRecord job)
+    {
         var root = string.IsNullOrWhiteSpace(_options.WorkingRoot)
             ? Path.Join(Path.GetTempPath(), "honua-local-process")
             : _options.WorkingRoot;
-        var jobDirectory = Path.Join(root, SanitizeDirectorySegment(job.OperationId));
-        Directory.CreateDirectory(jobDirectory);
+        var fullRoot = Path.GetFullPath(root);
+        var rootWithSeparator = fullRoot.EndsWith(Path.DirectorySeparatorChar) || fullRoot.EndsWith(Path.AltDirectorySeparatorChar)
+            ? fullRoot
+            : fullRoot + Path.DirectorySeparatorChar;
+
+        if (job.Spec.Parameters.TryGetValue(LocalProcessParameterKeys.WorkingDirectory, out var configured)
+            && !string.IsNullOrWhiteSpace(configured))
+        {
+            var trimmed = configured.Trim();
+            if (trimmed.Contains('\0', StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Parameter '{LocalProcessParameterKeys.WorkingDirectory}' contains an invalid path.");
+            }
+
+            var candidate = Path.IsPathRooted(trimmed)
+                ? Path.GetFullPath(trimmed)
+                : Path.GetFullPath(Path.Join(fullRoot, trimmed));
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            var withinRoot = string.Equals(candidate, fullRoot, comparison)
+                || candidate.StartsWith(rootWithSeparator, comparison);
+            if (!withinRoot)
+            {
+                throw new InvalidOperationException(
+                    $"Parameter '{LocalProcessParameterKeys.WorkingDirectory}' must resolve within the configured working root.");
+            }
+
+            return (candidate, false);
+        }
+
+        var jobDirectory = Path.Join(fullRoot, SanitizeDirectorySegment(job.OperationId));
         return (jobDirectory, true);
     }
 
@@ -487,12 +648,18 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     private string? ValidateExecutableContract(ExecutionJobRecord job, string executable)
     {
         var arguments = ResolveArguments(job.Spec.Parameters);
-        var supportedVersion = _options.WorkerContracts
+        var matchingVersions = _options.WorkerContracts
             .Where(contract => string.Equals(contract.Executable, executable, StringComparison.Ordinal))
             .Where(contract => ContractMatchesSelectedWorker(contract, arguments))
             .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
-            .DefaultIfEmpty(1)
-            .Max();
+            .ToArray();
+        if (matchingVersions.Length == 0)
+        {
+            return $"Local process worker '{executable}' with the selected argument prefix is not registered in "
+                + $"{LocalProcessPoolOptions.SectionName}:WorkerContracts; it cannot run a job that requires version {job.Spec.ContractVersion}.";
+        }
+
+        var supportedVersion = matchingVersions.Max();
         return job.Spec.ContractVersion <= supportedVersion
             ? null
             : $"Local process worker '{executable}' with the selected argument prefix supports execution contract "
@@ -540,6 +707,47 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         return ordered.Count == 0 ? Array.Empty<string>() : ordered.Values.ToArray();
     }
 
+    private static void ValidateWorkloadEnvironmentParameters(IReadOnlyDictionary<string, string> parameters)
+    {
+        foreach (var entry in parameters)
+        {
+            if (!entry.Key.StartsWith(LocalProcessParameterKeys.EnvironmentPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var name = entry.Key[LocalProcessParameterKeys.EnvironmentPrefix.Length..];
+            if (string.IsNullOrWhiteSpace(name) || ExecutionWorkerLaunchEnvironment.IsReserved(name))
+            {
+                continue;
+            }
+
+            if (IsBlockedWorkloadEnvironmentName(name))
+            {
+                throw new InvalidOperationException(
+                    $"Workload environment variable '{name}' is blocked for local process execution.");
+            }
+        }
+    }
+
+    private static bool IsBlockedWorkloadEnvironmentName(string name)
+    {
+        if (BlockedWorkloadEnvironmentNames.Contains(name))
+        {
+            return true;
+        }
+
+        foreach (var prefix in BlockedWorkloadEnvironmentPrefixes)
+        {
+            if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static List<KeyValuePair<string, string>> BuildEnvironment(ExecutionJobRecord job, int executionAttempt)
     {
         // Same launch contract as the cloud backends (ExecutionWorkerLaunchEnvironment) so a workload
@@ -557,6 +765,12 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             {
                 // Never let a workload passthrough shadow a launch variable; they are stamped last.
                 continue;
+            }
+
+            if (IsBlockedWorkloadEnvironmentName(name))
+            {
+                throw new InvalidOperationException(
+                    $"Workload environment variable '{name}' is blocked for local process execution.");
             }
 
             variables.Add(new(name, entry.Value ?? string.Empty));
@@ -586,35 +800,36 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         => !string.IsNullOrEmpty(providerOperationId)
             && providerOperationId.StartsWith(PendingSubmissionMarkerPrefix, StringComparison.Ordinal);
 
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // Process already exited between the check and the kill.
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            // Permission/race killing the process; nothing more we can do.
-        }
-    }
-
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         // Signal disposal before cancelling monitors so a monitor draining concurrently can skip its
         // slot release fast-path; the release itself is still guarded against the disposal race.
         _disposed = true;
-        foreach (var execution in _executions.Values)
+        try
         {
-            execution.RequestCancel();
+            _disposeCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed.
         }
 
+        foreach (var entry in _executions)
+        {
+            entry.Value.RequestCancel();
+        }
+
+        foreach (var entry in _executions.ToArray())
+        {
+            EvictExecution(entry.Key, entry.Value);
+        }
+
+        _disposeCts.Dispose();
         _slots.Dispose();
     }
 
@@ -625,6 +840,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         private readonly CancellationTokenSource _cts = new();
         private ExecutionJobStatus _status = ExecutionJobStatus.Running;
         private string? _message;
+        private DateTimeOffset? _completedAt;
 
         public string OperationId { get; } = operationId;
 
@@ -669,6 +885,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                 _message = exitCode == 0
                     ? "Local process completed successfully."
                     : $"Local process exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.{FormatTail()}";
+                _completedAt = DateTimeOffset.UtcNow;
             }
 
             DisposeToken();
@@ -680,6 +897,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             {
                 _status = ExecutionJobStatus.Cancelled;
                 _message = "Local process was cancelled.";
+                _completedAt = DateTimeOffset.UtcNow;
             }
 
             DisposeToken();
@@ -691,9 +909,20 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             {
                 _status = ExecutionJobStatus.Failed;
                 _message = "Local process monitoring failed.";
+                _completedAt = DateTimeOffset.UtcNow;
             }
 
             DisposeToken();
+        }
+
+        public bool IsExpired(DateTimeOffset now, TimeSpan retentionTtl)
+        {
+            lock (_sync)
+            {
+                return _status.IsTerminal()
+                    && _completedAt is { } completedAt
+                    && now - completedAt >= retentionTtl;
+            }
         }
 
         public (ExecutionJobStatus Status, string? Message) Snapshot()

@@ -625,6 +625,7 @@ internal sealed partial class ODataQueryHandler(
 
             var layerSrid = resource.ReadSrid() ?? 4326;
             var axisOrder = await ResolveAxisOrderAsync(layerSrid, effectiveToken);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
 
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f =>
@@ -634,7 +635,7 @@ internal sealed partial class ODataQueryHandler(
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry);
+                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, hiddenFields);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))

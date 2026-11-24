@@ -10,11 +10,18 @@ namespace Honua.FileStorage;
 
 internal abstract class CloudFileStorageBase : ICloudFileStorage
 {
+    private const int DefaultMaxTrackedBatches = 1024;
+    private static readonly TimeSpan DefaultBatchIndexRetention = TimeSpan.FromHours(1);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _batchTrackedAt = new(StringComparer.Ordinal);
+
     protected CloudFileStorageBase(ILogger logger, IUploadProgressStore progressStore)
     {
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ProgressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
     }
+
+    internal int MaxTrackedBatches { get; init; } = DefaultMaxTrackedBatches;
+    internal TimeSpan BatchIndexRetention { get; init; } = DefaultBatchIndexRetention;
 
     protected ILogger Logger { get; }
     protected IUploadProgressStore ProgressStore { get; }
@@ -171,44 +178,61 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         var uploadedFiles = new List<CloudFile>();
         var failedFiles = new Dictionary<string, string>();
 
-        BatchIndex[batchId] = new ConcurrentDictionary<string, byte>();
+        PruneBatchIndex();
+        var batchFiles = new ConcurrentDictionary<string, byte>();
+        BatchIndex[batchId] = batchFiles;
+        _batchTrackedAt[batchId] = DateTimeOffset.UtcNow;
 
-        foreach (var file in request.Files)
+        var completedNormally = false;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var metadata = file.Metadata.Add("BatchId", batchId);
-            var result = await UploadAsync(new FileUploadRequest
+            foreach (var file in request.Files)
             {
-                Content = file.Content,
-                FileName = file.FileName,
-                ContentType = file.ContentType,
-                CachePolicy = request.CachePolicy,
-                SizeBytes = file.SizeBytes,
-                TimeToLive = request.TimeToLive,
-                Metadata = metadata,
-                Folder = request.Folder ?? batchId
-            }, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
 
-            if (result.Success && result.File is not null)
-            {
-                uploadedFiles.Add(result.File);
-                _ = BatchIndex[batchId].TryAdd(result.File.FileId, 0);
-            }
-            else
-            {
-                failedFiles[file.FileName] = "File upload failed.";
-
-                if (!request.ContinueOnError)
+                var metadata = file.Metadata.Add("BatchId", batchId);
+                var result = await UploadAsync(new FileUploadRequest
                 {
-                    foreach (var uploaded in uploadedFiles)
-                    {
-                        await DeleteBatchFileAsync(uploaded.FileId, cancellationToken);
-                    }
+                    Content = file.Content,
+                    FileName = file.FileName,
+                    ContentType = file.ContentType,
+                    CachePolicy = request.CachePolicy,
+                    SizeBytes = file.SizeBytes,
+                    TimeToLive = request.TimeToLive,
+                    Metadata = metadata,
+                    Folder = request.Folder ?? batchId
+                }, cancellationToken);
 
-                    stopwatch.Stop();
-                    return BatchUploadResult.CreateFailure(batchId, failedFiles, stopwatch.Elapsed);
+                if (result.Success && result.File is not null)
+                {
+                    uploadedFiles.Add(result.File);
+                    _ = batchFiles.TryAdd(result.File.FileId, 0);
                 }
+                else
+                {
+                    failedFiles[file.FileName] = "File upload failed.";
+
+                    if (!request.ContinueOnError)
+                    {
+                        foreach (var uploaded in uploadedFiles)
+                        {
+                            await DeleteBatchFileAsync(uploaded.FileId, cancellationToken);
+                        }
+
+                        RemoveBatchIndexEntry(batchId);
+                        stopwatch.Stop();
+                        return BatchUploadResult.CreateFailure(batchId, failedFiles, stopwatch.Elapsed);
+                    }
+                }
+            }
+
+            completedNormally = true;
+        }
+        finally
+        {
+            if (!completedNormally || uploadedFiles.Count == 0)
+            {
+                RemoveBatchIndexEntry(batchId);
             }
         }
 
@@ -226,6 +250,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
 
+        _batchTrackedAt.TryRemove(batchId, out _);
         if (BatchIndex.TryRemove(batchId, out var fileIds))
         {
             var deletedCount = 0;
@@ -246,6 +271,46 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         }
 
         return await DeleteByPrefixAsync(batchId, cancellationToken);
+    }
+
+    private void RemoveBatchIndexEntry(string batchId)
+    {
+        BatchIndex.TryRemove(batchId, out _);
+        _batchTrackedAt.TryRemove(batchId, out _);
+    }
+
+    private void PruneBatchIndex()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - BatchIndexRetention;
+        foreach (var entry in _batchTrackedAt)
+        {
+            if (entry.Value <= cutoff)
+            {
+                RemoveBatchIndexEntry(entry.Key);
+            }
+        }
+
+        if (BatchIndex.Count < MaxTrackedBatches)
+        {
+            return;
+        }
+
+        var excess = BatchIndex.Count - MaxTrackedBatches + 1;
+        foreach (var oldest in _batchTrackedAt.OrderBy(static pair => pair.Value).Take(excess))
+        {
+            RemoveBatchIndexEntry(oldest.Key);
+        }
+
+        // Also bound entries added directly by subclasses without going through UploadBatchAsync.
+        if (BatchIndex.Count >= MaxTrackedBatches)
+        {
+            var remainingExcess = BatchIndex.Count - MaxTrackedBatches + 1;
+            foreach (var key in BatchIndex.Keys.Take(remainingExcess))
+            {
+                RemoveBatchIndexEntry(key);
+            }
+        }
     }
 
     public abstract Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default);

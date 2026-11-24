@@ -127,7 +127,7 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
             // cancellation). Cancellation still propagates as OperationCanceledException.
             if (!committed)
             {
-                TryDeleteTempFile(tempPath);
+                FileSinkInputReader.TryDeleteTempFile(tempPath);
             }
         }
 
@@ -141,21 +141,6 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
-    }
-
-    private static void TryDeleteTempFile(string tempPath)
-    {
-        try
-        {
-            if (File.Exists(tempPath))
-            {
-                File.Delete(tempPath);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            // Best-effort cleanup; never mask the original failure/cancellation.
-        }
     }
 
     private static partial class Log

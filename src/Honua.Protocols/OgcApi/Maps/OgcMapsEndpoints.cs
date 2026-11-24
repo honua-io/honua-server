@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -288,12 +289,20 @@ public static partial class OgcMapsEndpoints
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger(typeof(OgcMapsEndpoints));
 
-        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger, TenantScopeHelpers.ResolveRequestTenantId(context))
-            .Where(entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, OgcApiMapsProtocol)
-                && AccessPolicyHelpers.RequireResourceAccess(context, entry.Resource, entry.Service) is null)
-            .OrderBy(entry => entry.LayerId)
-            .Select(entry => entry.Resource)
-            .ToArray();
+        var accessibleResources = new List<MetadataV2Object>();
+        foreach (var entry in OgcMapsResourceResolver
+            .EnumerateDatasetEntries(snapshot, logger, TenantScopeHelpers.ResolveRequestTenantId(context))
+            .Where(static entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, OgcApiMapsProtocol))
+            .OrderBy(static entry => entry.LayerId))
+        {
+            if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, entry.Resource, entry.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
+            {
+                accessibleResources.Add(entry.Resource);
+            }
+        }
+
+        var resources = accessibleResources.ToArray();
         if (resources.Length == 0)
         {
             return (null, null, null);

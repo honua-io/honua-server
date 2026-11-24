@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 
@@ -23,7 +24,7 @@ public sealed class GeoServicesSqlParser
     // distinct EXTRACT_<FIELD> FunctionCall the translator re-emits as EXTRACT(<FIELD> FROM x).
     // Every entry here is a fixed SQL keyword chosen by the parser, never user text, so the
     // field token can be interpolated by the translator while operands stay parameterized.
-    private static readonly HashSet<string> _extractFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _extractFields = new[]
     {
         "YEAR",
         "MONTH",
@@ -31,24 +32,24 @@ public sealed class GeoServicesSqlParser
         "HOUR",
         "MINUTE",
         "SECOND"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept.
     // Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator owns the
     // (allowlisted) field -> SQL mapping.
-    private static readonly HashSet<string> _extendedExtractFields = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _extendedExtractFields = new[]
     {
         "DOW",
         "DOY",
         "QUARTER",
         "WEEK",
         "EPOCH"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> _intervalUnits = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _intervalUnits = new[]
     {
         "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // Allowlist of function names accepted by ParseIdentifierOrFunction for arbitrary
     // call-syntax (i.e. not already handled as a dedicated keyword: CAST, EXTRACT,
@@ -57,7 +58,7 @@ public sealed class GeoServicesSqlParser
     // silently producing an AST node that a future provider might execute without vetting.
     // CURRENT_DATE / CURRENT_TIMESTAMP / CURRENT_TIME are handled as dedicated keywords
     // (TokenType) and do not reach this path.
-    private static readonly HashSet<string> _allowedFunctions = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> _allowedFunctions = new[]
     {
         // String functions
         "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "LENGTH", "LEN",
@@ -84,7 +85,7 @@ public sealed class GeoServicesSqlParser
         "ST_CONTAINS", "ST_WITHIN", "ST_INTERSECTS", "ST_DISJOINT",
         "ST_TOUCHES", "ST_CROSSES", "ST_OVERLAPS", "ST_EQUALS",
         "ST_DISTANCE", "ST_LENGTH", "ST_AREA", "ST_X", "ST_Y",
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public FilterExpression Parse(string whereClause) => Parse(whereClause, null);
 
@@ -984,30 +985,31 @@ public sealed class GeoServicesSqlParser
         private int _start;
         private int _current;
 
-        private static readonly Dictionary<string, TokenType> _keywords = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["AND"] = TokenType.And,
-            ["OR"] = TokenType.Or,
-            ["NOT"] = TokenType.Not,
-            ["LIKE"] = TokenType.Like,
-            ["IN"] = TokenType.In,
-            ["BETWEEN"] = TokenType.Between,
-            ["IS"] = TokenType.Is,
-            ["NULL"] = TokenType.Null,
-            ["TRUE"] = TokenType.True,
-            ["FALSE"] = TokenType.False,
-            ["DATE"] = TokenType.Date,
-            ["TIMESTAMP"] = TokenType.Timestamp,
-            ["CURRENT_DATE"] = TokenType.CurrentDate,
-            ["CURRENT_TIMESTAMP"] = TokenType.CurrentTimestamp,
-            ["CURRENT_TIME"] = TokenType.CurrentTime,
-            ["INTERVAL"] = TokenType.Interval,
-            ["CASE"] = TokenType.Case,
-            ["WHEN"] = TokenType.When,
-            ["THEN"] = TokenType.Then,
-            ["ELSE"] = TokenType.Else,
-            ["END"] = TokenType.End
-        };
+        private static readonly FrozenDictionary<string, TokenType> _keywords =
+            new Dictionary<string, TokenType>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["AND"] = TokenType.And,
+                ["OR"] = TokenType.Or,
+                ["NOT"] = TokenType.Not,
+                ["LIKE"] = TokenType.Like,
+                ["IN"] = TokenType.In,
+                ["BETWEEN"] = TokenType.Between,
+                ["IS"] = TokenType.Is,
+                ["NULL"] = TokenType.Null,
+                ["TRUE"] = TokenType.True,
+                ["FALSE"] = TokenType.False,
+                ["DATE"] = TokenType.Date,
+                ["TIMESTAMP"] = TokenType.Timestamp,
+                ["CURRENT_DATE"] = TokenType.CurrentDate,
+                ["CURRENT_TIMESTAMP"] = TokenType.CurrentTimestamp,
+                ["CURRENT_TIME"] = TokenType.CurrentTime,
+                ["INTERVAL"] = TokenType.Interval,
+                ["CASE"] = TokenType.Case,
+                ["WHEN"] = TokenType.When,
+                ["THEN"] = TokenType.Then,
+                ["ELSE"] = TokenType.Else,
+                ["END"] = TokenType.End
+            }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
         public Lexer(string source, Func<string, object>? parseNumber)
         {
@@ -1111,7 +1113,7 @@ public sealed class GeoServicesSqlParser
                         return;
                     }
 
-                    var startWidth = IdentifierRuneWidth(_start, SqlIdentifier.IsIdentifierStart);
+                    var startWidth = IdentifierRuneWidth(_start, isStart: true);
                     if (startWidth > 0)
                     {
                         _current = _start + startWidth;
@@ -1126,7 +1128,7 @@ public sealed class GeoServicesSqlParser
         private void ScanIdentifier()
         {
             int width;
-            while ((width = IdentifierRuneWidth(_current, SqlIdentifier.IsIdentifierPart)) > 0)
+            while ((width = IdentifierRuneWidth(_current, isStart: false)) > 0)
             {
                 _current += width;
             }
@@ -1305,15 +1307,31 @@ public sealed class GeoServicesSqlParser
         // supplementary-plane letter (a surrogate pair) is one identifier character, exactly
         // as SqlIdentifier.IsUnicodeIdentifier judges the column name.
         // Returns the UTF-16 width of the accepted scalar at index, or 0 when none is accepted.
-        private int IdentifierRuneWidth(int index, Func<Rune, bool> accepts)
+        private int IdentifierRuneWidth(int index, bool isStart)
         {
-            if (index >= _source.Length
-                || Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) != OperationStatus.Done)
+            if (index >= _source.Length)
             {
                 return 0;
             }
 
-            return accepts(rune) ? consumed : 0;
+            var c = _source[index];
+            if (c <= 0x7F)
+            {
+                var accepted = isStart
+                    ? c == '_' || char.IsAsciiLetter(c)
+                    : c == '_' || char.IsAsciiLetterOrDigit(c);
+                return accepted ? 1 : 0;
+            }
+
+            if (Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) != OperationStatus.Done)
+            {
+                return 0;
+            }
+
+            var unicodeAccepted = isStart
+                ? SqlIdentifier.IsIdentifierStart(rune)
+                : SqlIdentifier.IsIdentifierPart(rune);
+            return unicodeAccepted ? consumed : 0;
         }
 
         private void AddToken(TokenType type) => AddToken(type, null);

@@ -16,6 +16,7 @@ internal static partial class CollaborationSessionStreamEndpoint
 {
     private const int MaxControlFrameBytes = 16 * 1024;
     private static readonly TimeSpan WriterIdleTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
 
     internal sealed class CollaborationStreamLogCategory;
 
@@ -88,11 +89,12 @@ internal static partial class CollaborationSessionStreamEndpoint
 
         var sessionId = join.Response.SessionId;
         var actorId = join.Response.ParticipantId;
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
+        WebSocket? webSocket = null;
         using var writeLock = new SemaphoreSlim(1, 1);
 
         try
         {
+            webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
             // Handshake frames: a live status envelope, an optional resync-required error when the
             // resume cursor fell out of the replay window, then the snapshot (presence plus the
             // operation tail) so the client can render without a separate REST round-trip.
@@ -266,33 +268,29 @@ internal static partial class CollaborationSessionStreamEndpoint
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
             var writerTask = WriteLoopAsync(webSocket, writeLock, sessions, sessionId, logger, linkedCts.Token);
-            await ReceiveLoopAsync(webSocket, sessions, sessionId, logger, linkedCts.Token).ConfigureAwait(false);
-
-            await linkedCts.CancelAsync().ConfigureAwait(false);
-            await writerTask.ConfigureAwait(false);
+            try
+            {
+                await ReceiveLoopAsync(webSocket, sessions, sessionId, logger, linkedCts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                await linkedCts.CancelAsync().ConfigureAwait(false);
+                await writerTask.ConfigureAwait(false);
+            }
         }
         finally
         {
-            // Always remove the participant so presence does not leak when the socket closes.
+            // Always remove the participant so presence does not leak when the socket closes or upgrade fails.
             sessions.Leave(sessionId, reason: "disconnected");
 
-            if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            if (webSocket is not null)
             {
-                try
-                {
-                    await webSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Collaboration session closed.",
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (WebSocketException)
-                {
-                    // Client already gone.
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Socket already disposed.
-                }
+                await CloseWebSocketBoundedAsync(
+                    webSocket,
+                    WebSocketCloseStatus.NormalClosure,
+                    "Collaboration session closed.",
+                    context.RequestAborted).ConfigureAwait(false);
+                webSocket.Dispose();
             }
         }
     }
@@ -349,9 +347,16 @@ internal static partial class CollaborationSessionStreamEndpoint
     }
 
     // The resync event ends the handshake without a snapshot the client could not trust.
-    private static async Task CloseWithErrorAsync(
+    private static Task CloseWithErrorAsync(
         WebSocket webSocket,
         string reason,
+        CancellationToken cancellationToken)
+        => CloseWebSocketBoundedAsync(webSocket, WebSocketCloseStatus.InternalServerError, reason, cancellationToken);
+
+    private static async Task CloseWebSocketBoundedAsync(
+        WebSocket webSocket,
+        WebSocketCloseStatus status,
+        string description,
         CancellationToken cancellationToken)
     {
         if (webSocket.State is not (WebSocketState.Open or WebSocketState.CloseReceived))
@@ -359,20 +364,16 @@ internal static partial class CollaborationSessionStreamEndpoint
             return;
         }
 
+        using var closeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        closeCts.CancelAfter(CloseTimeout);
         try
         {
-            await webSocket.CloseAsync(
-                WebSocketCloseStatus.InternalServerError,
-                reason,
-                cancellationToken).ConfigureAwait(false);
+            await webSocket.CloseOutputAsync(status, description, closeCts.Token).ConfigureAwait(false);
         }
-        catch (WebSocketException)
+        catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException or IOException)
         {
-            // Client already gone.
-        }
-        catch (OperationCanceledException)
-        {
-            // Shutting down or the client disconnected mid-close.
+            // Fall back to abort so half-open peers cannot pin the request indefinitely.
+            webSocket.Abort();
         }
     }
 
@@ -451,6 +452,10 @@ internal static partial class CollaborationSessionStreamEndpoint
         {
             // Client disconnected.
         }
+        catch (IOException)
+        {
+            // Underlying transport closed.
+        }
         catch (ObjectDisposedException)
         {
             // Socket disposed.
@@ -490,6 +495,10 @@ internal static partial class CollaborationSessionStreamEndpoint
         catch (WebSocketException)
         {
             // Client disconnected.
+        }
+        catch (IOException)
+        {
+            // Underlying transport closed.
         }
         catch (ObjectDisposedException)
         {

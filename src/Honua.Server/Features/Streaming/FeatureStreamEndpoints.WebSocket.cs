@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Realtime;
 using Honua.Core.Queries.Filters;
@@ -458,34 +459,56 @@ internal static partial class FeatureStreamEndpoints
         {
             FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
         }
+        catch (IOException ex)
+        {
+            FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
+        }
         catch (ObjectDisposedException ex)
         {
             FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
         }
-
-        // Signal writer to stop and wait for it.
-        await linkedCts.CancelAsync().ConfigureAwait(false);
-        await writerTask.ConfigureAwait(false);
-        await restartClose.ConfigureAwait(false);
-
-        // Graceful close.
-        if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+        finally
         {
+            // Always cancel and drain background writer/restart tasks independently before closing or disposing the socket.
+            await linkedCts.CancelAsync().ConfigureAwait(false);
             try
             {
-                var (status, description) = session.ServiceRestart
-                    ? (RealtimeStreamAdmission.ServiceRestart, RealtimeStreamAdmission.ServiceRestartDescription)
-                    : (WebSocketCloseStatus.NormalClosure,
-                        session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.");
-                await webSocket.CloseAsync(status, description, CancellationToken.None).ConfigureAwait(false);
+                await writerTask.ConfigureAwait(false);
             }
-            catch (WebSocketException ex)
+            // Broad catch ensures a fault in writerTask never prevents restartClose drain or socket cleanup.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
             }
-            catch (ObjectDisposedException ex)
+
+            try
+            {
+                await restartClose.ConfigureAwait(false);
+            }
+            // Broad catch ensures a fault in restartClose never prevents bounded socket cleanup.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
+            }
+
+            // Bounded graceful close so half-open peers or misbehaving clients cannot pin admission slots indefinitely.
+            if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                using var closeCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                closeCts.CancelAfter(TimeSpan.FromSeconds(5));
+                try
+                {
+                    var (status, description) = session.ServiceRestart
+                        ? (RealtimeStreamAdmission.ServiceRestart, RealtimeStreamAdmission.ServiceRestartDescription)
+                        : (WebSocketCloseStatus.NormalClosure,
+                            session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.");
+                    await webSocket.CloseOutputAsync(status, description, closeCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException or IOException)
+                {
+                    FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
+                    webSocket.Abort();
+                }
             }
         }
     }
@@ -702,6 +725,10 @@ internal static partial class FeatureStreamEndpoints
         catch (WebSocketException)
         {
             // Client gone.
+        }
+        catch (IOException)
+        {
+            // Transport disconnected.
         }
         catch (ObjectDisposedException)
         {
@@ -1240,7 +1267,12 @@ internal static partial class FeatureStreamEndpoints
                     authService = layer.Service;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, authService))
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context,
+                        layer.Resource,
+                        authService,
+                        AuthorizationOperation.Query,
+                        cancellationToken).ConfigureAwait(false))
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
                 }
@@ -1263,7 +1295,12 @@ internal static partial class FeatureStreamEndpoints
 
             foreach (var layer in serviceLayers)
             {
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context,
+                        layer.Resource,
+                        service,
+                        AuthorizationOperation.Query,
+                        cancellationToken).ConfigureAwait(false))
                 {
                     return (null, "Access to the requested stream service is forbidden.");
                 }

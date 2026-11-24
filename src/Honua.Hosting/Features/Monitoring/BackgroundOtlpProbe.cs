@@ -30,7 +30,7 @@ internal sealed record OtlpProbeSnapshot
     public string? LastError { get; init; }
 }
 
-internal sealed class BackgroundOtlpProbe : BackgroundService
+internal sealed partial class BackgroundOtlpProbe : BackgroundService
 {
     internal static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(60);
     private const int ProbeTimeoutSeconds = 5;
@@ -40,6 +40,7 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _interval;
+    private readonly ILogger<BackgroundOtlpProbe>? _logger;
 
     private OtlpProbeSnapshot _snapshot = new() { State = OtlpProbeState.Unknown };
 
@@ -47,8 +48,9 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
         IOptions<TracingOptions> tracingOptions,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
-        TimeProvider timeProvider)
-        : this(tracingOptions, configuration, httpClientFactory, timeProvider, DefaultInterval)
+        TimeProvider timeProvider,
+        ILogger<BackgroundOtlpProbe>? logger = null)
+        : this(tracingOptions, configuration, httpClientFactory, timeProvider, DefaultInterval, logger)
     {
     }
 
@@ -57,13 +59,15 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
         TimeProvider timeProvider,
-        TimeSpan interval)
+        TimeSpan interval,
+        ILogger<BackgroundOtlpProbe>? logger = null)
     {
         _tracingOptions = tracingOptions ?? throw new ArgumentNullException(nameof(tracingOptions));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _interval = interval > TimeSpan.Zero ? interval : DefaultInterval;
+        _logger = logger;
     }
 
     public const string HttpClientName = "honua-otlp-probe";
@@ -78,14 +82,41 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
             using var timer = new PeriodicTimer(_interval);
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                await RunProbeAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await RunProbeAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    if (_logger is not null)
+                    {
+                        LogProbeFailed(_logger, ex);
+                    }
+
+                    Volatile.Write(ref _snapshot, new OtlpProbeSnapshot
+                    {
+                        State = OtlpProbeState.Unreachable,
+                        ProbedAt = _timeProvider.GetUtcNow(),
+                        LastError = "OTLP endpoint probe failed."
+                    });
+                }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Normal shutdown.
         }
     }
+
+    [LoggerMessage(
+        EventId = 8620,
+        Level = LogLevel.Warning,
+        Message = "Background OTLP probe iteration failed; continuing on next interval.")]
+    private static partial void LogProbeFailed(ILogger logger, Exception exception);
 
     private async Task RunProbeAsync(CancellationToken cancellationToken)
     {
@@ -109,7 +140,7 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             Volatile.Write(ref _snapshot, MapResponseToSnapshot(response, now));
         }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Volatile.Write(ref _snapshot, new OtlpProbeSnapshot
             {

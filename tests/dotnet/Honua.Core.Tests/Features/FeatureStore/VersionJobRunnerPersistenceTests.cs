@@ -45,6 +45,84 @@ public sealed class VersionJobRunnerPersistenceTests
             Arg.Is<VersionJob>(job => job.Status == VersionJobStatus.Failed), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task StartPostAsync_PersistentTerminalSaveFailure_StopsAfterRetryCap()
+    {
+        var manager = Substitute.For<IVersionManager>();
+        manager.PostAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new VersionPostResult(true, 1, 1, false));
+        var store = Substitute.For<IVersionJobStore>();
+        var terminalAttempts = 0;
+        store.SaveAsync(Arg.Any<VersionJob>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var job = call.Arg<VersionJob>();
+            if (job.Status is VersionJobStatus.Pending or VersionJobStatus.Running)
+            {
+                return Task.CompletedTask;
+            }
+
+            Interlocked.Increment(ref terminalAttempts);
+            return Task.FromException(new InvalidOperationException("Persistent outage"));
+        });
+
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        services.AddSingleton(store);
+        await using var provider = services.BuildServiceProvider();
+        var runner = new VersionJobRunner(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            store,
+            NullLogger<VersionJobRunner>.Instance,
+            lifetime: null,
+            maxTerminalSaveAttempts: 3,
+            initialTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(5),
+            maxTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(20));
+
+        await runner.StartPostAsync("svc", Guid.NewGuid());
+        await runner.WaitForInFlightJobsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        terminalAttempts.Should().Be(3);
+    }
+
+    [UnitTest]
+    public async Task StartPostAsync_NonTransientTerminalSaveFailure_AbandonsOnFirstAttempt()
+    {
+        var manager = Substitute.For<IVersionManager>();
+        manager.PostAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new VersionPostResult(true, 1, 1, false));
+        var store = Substitute.For<IVersionJobStore>();
+        var terminalAttempts = 0;
+        store.SaveAsync(Arg.Any<VersionJob>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var job = call.Arg<VersionJob>();
+            if (job.Status is VersionJobStatus.Pending or VersionJobStatus.Running)
+            {
+                return Task.CompletedTask;
+            }
+
+            Interlocked.Increment(ref terminalAttempts);
+            return Task.FromException(new ArgumentException("Schema constraint violated"));
+        });
+
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        services.AddSingleton(store);
+        await using var provider = services.BuildServiceProvider();
+        var runner = new VersionJobRunner(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            store,
+            NullLogger<VersionJobRunner>.Instance,
+            lifetime: null,
+            maxTerminalSaveAttempts: 5,
+            initialTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(50),
+            maxTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(100));
+
+        await runner.StartPostAsync("svc", Guid.NewGuid());
+        await runner.WaitForInFlightJobsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        terminalAttempts.Should().Be(1);
+    }
+
     private static void FailFirstCompletionSave(
         IVersionJobStore store, TaskCompletionSource<VersionJob> completion)
     {

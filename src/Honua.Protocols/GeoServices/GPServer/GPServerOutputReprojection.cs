@@ -59,7 +59,11 @@ internal static class GPServerOutputReprojection
         return false;
     }
 
-    public static ReprojectionOutcome TryReprojectGeoJsonValue(string? value, int fromSrid, int outSrid)
+    public static ReprojectionOutcome TryReprojectGeoJsonValue(
+        string? value,
+        int fromSrid,
+        int outSrid,
+        ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(value) ||
             !value.StartsWith(GeoJsonDataUriPrefix, StringComparison.Ordinal))
@@ -120,10 +124,15 @@ internal static class GPServerOutputReprojection
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException)
         {
+            if (logger is not null)
+            {
+                GPServerLog.OutputReprojectionFailed(logger, fromSrid, outSrid, ex);
+            }
+
             return new ReprojectionOutcome(
                 Reprojected: false,
                 Value: value,
-                CapabilityMessage: $"env:outSR={outSrid} could not be applied: {ex.Message}");
+                CapabilityMessage: $"env:outSR={outSrid} could not be applied: output geometry could not be reprojected.");
         }
     }
 

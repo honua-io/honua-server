@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -17,7 +18,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
 {
     private readonly ControlPlaneTriggerOptions _options = options.Value;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = _options.BackstopInterval > TimeSpan.Zero
             ? _options.BackstopInterval
@@ -28,33 +29,11 @@ internal sealed partial class ExecutionJobBackstopSweepService(
 
         Log.BackstopStarted(logger, (int)interval.TotalSeconds, (int)staleThreshold.TotalSeconds);
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await SweepOnceAsync(staleThreshold, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            // Intentionally generic: this is a long-running background backstop-sweep
-            // loop. A single failed sweep iteration must not kill the host's
-            // background service; log and retry on the next interval.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.BackstopSweepFailed(logger, ex);
-            }
-
-            try
-            {
-                await Task.Delay(interval, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
+        return PeriodicBackgroundLoop.RunAsync(
+            interval,
+            ct => SweepOnceAsync(staleThreshold, ct),
+            ex => Log.BackstopSweepFailed(logger, ex),
+            stoppingToken);
     }
 
     internal async Task SweepOnceAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)

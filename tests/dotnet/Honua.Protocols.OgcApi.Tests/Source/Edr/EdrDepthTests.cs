@@ -315,8 +315,8 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=200");
 
         var range = doc.RootElement.GetProperty("ranges").GetProperty("band_1");
-        range.GetProperty("shape").EnumerateArray().Select(value => value.GetInt32()).Should().Equal(50, 50);
-        range.GetProperty("values").GetArrayLength().Should().Be(2500);
+        range.GetProperty("shape").EnumerateArray().Select(value => value.GetInt32()).Should().Equal(20, 20);
+        range.GetProperty("values").GetArrayLength().Should().Be(400);
     }
 
     [IntegrationTest]

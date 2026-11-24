@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -20,6 +21,9 @@ internal ref struct ProtobufWriter
     }
 
     public readonly int Position => _position;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Reset() => _position = 0;
 
     public byte[] ToArrayAndDispose()
     {
@@ -280,17 +284,29 @@ internal ref struct ProtobufWriter
         if (values.IsEmpty)
             return;
 
-        // Write to a temp buffer to get the byte length
-        var inner = new ProtobufWriter(values.Length * 5);
+        int totalBytes = 0;
         foreach (uint v in values)
-            inner.WriteRawVarint(v);
+        {
+            totalBytes += GetVarintByteCount(v);
+        }
 
         WriteTag(fieldNumber, 2);
-        WriteRawVarint((uint)inner.Position);
-        EnsureCapacity(inner.Position);
-        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
-        _position += inner.Position;
-        inner.Dispose();
+        WriteRawVarint((uint)totalBytes);
+        EnsureCapacity(totalBytes);
+
+        var buffer = _buffer;
+        var pos = _position;
+        foreach (uint v in values)
+        {
+            var value = v;
+            while (value > 0x7F)
+            {
+                buffer[pos++] = (byte)(value | 0x80);
+                value >>= 7;
+            }
+            buffer[pos++] = (byte)value;
+        }
+        _position = pos;
     }
 
     public void WritePackedUInt64(int fieldNumber, ReadOnlySpan<ulong> values)
@@ -298,16 +314,29 @@ internal ref struct ProtobufWriter
         if (values.IsEmpty)
             return;
 
-        var inner = new ProtobufWriter(values.Length * 10);
+        int totalBytes = 0;
         foreach (ulong v in values)
-            inner.WriteRawVarint(v);
+        {
+            totalBytes += GetVarintByteCount(v);
+        }
 
         WriteTag(fieldNumber, 2);
-        WriteRawVarint((uint)inner.Position);
-        EnsureCapacity(inner.Position);
-        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
-        _position += inner.Position;
-        inner.Dispose();
+        WriteRawVarint((uint)totalBytes);
+        EnsureCapacity(totalBytes);
+
+        var buffer = _buffer;
+        var pos = _position;
+        foreach (ulong v in values)
+        {
+            var value = v;
+            while (value > 0x7F)
+            {
+                buffer[pos++] = (byte)(value | 0x80);
+                value >>= 7;
+            }
+            buffer[pos++] = (byte)value;
+        }
+        _position = pos;
     }
 
     public void WritePackedSInt64(int fieldNumber, ReadOnlySpan<long> values)
@@ -315,16 +344,29 @@ internal ref struct ProtobufWriter
         if (values.IsEmpty)
             return;
 
-        var inner = new ProtobufWriter(values.Length * 10);
+        int totalBytes = 0;
         foreach (long v in values)
-            inner.WriteRawVarint(ZigZagEncode64(v));
+        {
+            totalBytes += GetVarintByteCount(ZigZagEncode64(v));
+        }
 
         WriteTag(fieldNumber, 2);
-        WriteRawVarint((uint)inner.Position);
-        EnsureCapacity(inner.Position);
-        inner.WrittenMemory.Span.CopyTo(_buffer.AsSpan(_position));
-        _position += inner.Position;
-        inner.Dispose();
+        WriteRawVarint((uint)totalBytes);
+        EnsureCapacity(totalBytes);
+
+        var buffer = _buffer;
+        var pos = _position;
+        foreach (long v in values)
+        {
+            var value = ZigZagEncode64(v);
+            while (value > 0x7F)
+            {
+                buffer[pos++] = (byte)(value | 0x80);
+                value >>= 7;
+            }
+            buffer[pos++] = (byte)value;
+        }
+        _position = pos;
     }
 
     // ── Sub-message support ───────────────────────────────────
@@ -361,6 +403,14 @@ internal ref struct ProtobufWriter
     }
 
     // ── Helpers ───────────────────────────────────────────────
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetVarintByteCount(uint value)
+        => (int)((31u - (uint)BitOperations.LeadingZeroCount(value | 1u)) / 7u) + 1;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetVarintByteCount(ulong value)
+        => (int)((63u - (uint)BitOperations.LeadingZeroCount(value | 1UL)) / 7u) + 1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint ZigZagEncode32(int value) => (uint)((value << 1) ^ (value >> 31));

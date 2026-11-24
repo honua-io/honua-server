@@ -116,4 +116,25 @@ public sealed class OperationLineageAttestationMiddlewareTests
         });
         await replayMiddleware.InvokeAsync(replay, store);
     }
+
+    [UnitTest]
+    public void Issue_WhenUnconsumedEntriesExpireOrExceedCapacity_PrunesAndBoundsStore()
+    {
+        var clock = new AdmissionClock();
+        var store = new OperationLineageAttestationStore(clock) { MaxEntries = 8 };
+        var policy = new OperationPolicyContext { OperationInstanceId = "opinst-bound" };
+
+        for (var i = 0; i < 12; i++)
+        {
+            _ = store.Issue(policy);
+            clock.Now = clock.Now.AddSeconds(1);
+        }
+
+        store.PendingCount.Should().BeLessThanOrEqualTo(8);
+
+        // Advance past expiration and verify expired entries are pruned on next issue.
+        clock.Now = clock.Now.AddMinutes(10);
+        _ = store.Issue(policy);
+        store.PendingCount.Should().Be(1);
+    }
 }

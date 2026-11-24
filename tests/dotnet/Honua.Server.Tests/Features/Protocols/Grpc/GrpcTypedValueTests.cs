@@ -294,6 +294,38 @@ public sealed class GrpcTypedValueTests
             .Attributes["n"].ValueCase.Should().Be(Proto.AttributeValue.ValueOneofCase.NullValue);
     }
 
+    [UnitTest]
+    public void BuildExactFieldTypeMap_WithoutExactFields_ReturnsNullAndWithExactFields_MapsCaseInsensitively()
+    {
+        var nonExactFields = new[]
+        {
+            new MetadataV2Field { Name = "name", TypeValue = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "count", TypeValue = MetadataV2FieldType.Integer }
+        };
+        GrpcTypedValues.BuildExactFieldTypeMap(nonExactFields).Should().BeNull();
+
+        var mixedFields = new[]
+        {
+            new MetadataV2Field { Name = "name", TypeValue = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "AMOUNT", TypeValue = MetadataV2FieldType.Decimal },
+            new MetadataV2Field { Name = "SignedAt", TypeValue = MetadataV2FieldType.TimestampOffset }
+        };
+        var map = GrpcTypedValues.BuildExactFieldTypeMap(mixedFields);
+        map.Should().NotBeNull();
+        map!.Count.Should().Be(2);
+        map["amount"].Should().Be(MetadataV2FieldType.Decimal);
+        map["signedat"].Should().Be(MetadataV2FieldType.TimestampOffset);
+
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("amount", "12.50")
+            .Add("signedat", "2026-11-14T08:30:00Z")
+            .Add("name", "ok"));
+        var wire = GrpcConversionHelpers.ToProtoFeature(feature, true, null, null, null, map);
+        wire.Attributes["amount"].DecimalValue.Should().Be("12.50");
+        wire.Attributes["signedat"].TimestampOffsetValue.Should().Be("2026-11-14T08:30:00Z");
+        wire.Attributes["name"].StringValue.Should().Be("ok");
+    }
+
     private static FeatureEditBatch Batch(ImmutableDictionary<string, object?> attributes)
         => FeatureEditBatch.Create(
             creates: [Feature.Create(0, null, attributes)],

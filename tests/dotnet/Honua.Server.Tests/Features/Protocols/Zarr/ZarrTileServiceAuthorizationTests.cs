@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -64,6 +65,106 @@ public sealed class ZarrTileServiceAuthorizationTests
         await service.HandleAsync(context, SharedLayerIndex, "WebMercatorQuad", 0, 0, 0, CancellationToken.None);
 
         await store.Received(1).ListByLayerAsync(SharedLayerIndex, Arg.Any<CancellationToken>());
+        await authorizer.Received(2).AuthorizePublicationAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<MetadataV2Layer>(),
+            Arg.Any<MetadataV2Object>(),
+            Arg.Any<MetadataV2Service?>(),
+            AuthorizationOperation.Query,
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task HandleAsync_OtherTenantPrivatePublicationSharingIndex_FailsClosedAndDoesNotReadStore()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var graph = new MetadataV2Graph
+        {
+            Resources =
+            [
+                new MetadataV2Object
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-a", Name = "a", Tenant = "tenant-a" },
+                    Status = active,
+                    Type = MetadataV2ObjectType.RasterDataset
+                },
+                new MetadataV2Object
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-b", Name = "b", Tenant = "tenant-b" },
+                    Status = active,
+                    Type = MetadataV2ObjectType.RasterDataset
+                }
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-a", Name = "svc-a", Tenant = "tenant-a" },
+                    Status = active
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-b", Name = "svc-b", Tenant = "tenant-b" },
+                    Status = active
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Layer
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = PublicPublicationId, Tenant = "tenant-a" },
+                    Status = active,
+                    ServiceId = "svc-a",
+                    ResourceId = "res-a",
+                    LayerIndex = SharedLayerIndex
+                },
+                new MetadataV2Layer
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = PrivatePublicationId, Tenant = "tenant-b" },
+                    Status = active,
+                    ServiceId = "svc-b",
+                    ResourceId = "res-b",
+                    LayerIndex = SharedLayerIndex
+                }
+            ]
+        };
+
+        var store = Substitute.For<IZarrStore>();
+        store.ListByLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<ZarrRegistration>());
+        var authorizer = Substitute.For<ILayerAccessAuthorizer>();
+        authorizer
+            .AuthorizePublicationAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<MetadataV2Layer>(),
+                Arg.Any<MetadataV2Object>(),
+                Arg.Any<MetadataV2Service?>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<MetadataV2Layer>(1).Metadata.Id == PublicPublicationId
+                ? AccessDecision.Allowed()
+                : AccessDecision.Forbidden());
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-a");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddScoped<IMetadataV2GraphProvider>(_ => new TestMetadataV2GraphProvider(graph));
+        services.AddSingleton(authorizer);
+        services.AddSingleton(Substitute.For<ITileMatrixSetRegistry>());
+        services.AddSingleton(tenant);
+        services.AddZarrServices();
+        services.AddSingleton(store);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IZarrTileService>();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+
+        var result = await service.HandleAsync(context, SharedLayerIndex, "WebMercatorQuad", 0, 0, 0, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        await store.DidNotReceive().ListByLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         await authorizer.Received(2).AuthorizePublicationAsync(
             Arg.Any<ClaimsPrincipal>(),
             Arg.Any<MetadataV2Layer>(),

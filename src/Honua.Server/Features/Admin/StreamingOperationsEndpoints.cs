@@ -25,7 +25,8 @@ internal static class StreamingOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/subscribers", HandleListSubscribers)
             .WithDisplayName("List Streaming Subscribers")
@@ -95,7 +96,7 @@ internal static class StreamingOperationsEndpoints
 
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var sendLock = new SemaphoreSlim(1, 1);
-        using var subscription = await broadcaster.SubscribeAsync(
+        await using var subscription = await broadcaster.SubscribeAsync(
             async (alertEvent, position, cancellationToken) =>
             {
                 if (webSocket.State != WebSocketState.Open)
@@ -122,6 +123,10 @@ internal static class StreamingOperationsEndpoints
                     throw;
                 }
                 catch (WebSocketException)
+                {
+                    // The receive loop will clean up disconnected clients.
+                }
+                catch (IOException)
                 {
                     // The receive loop will clean up disconnected clients.
                 }
@@ -160,16 +165,37 @@ internal static class StreamingOperationsEndpoints
         {
             // Expected: the subscription was disconnected or the client aborted the request.
         }
+        catch (WebSocketException)
+        {
+            // Client disconnected unexpectedly without completing a close handshake.
+        }
+        catch (IOException)
+        {
+            // Underlying transport disconnected.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Socket was already closed.
+        }
         finally
         {
-            await CloseAlertStreamAsync(webSocket, pendingReceive, subscription, context.RequestAborted).ConfigureAwait(false);
+            var wasDisconnected = subscription.DisconnectToken.IsCancellationRequested;
+            // Wait for any in-flight delivery callback to finish before closing the socket
+            // or exiting the scope where sendLock and webSocket are disposed.
+            await subscription.DisposeAsync().ConfigureAwait(false);
+            await CloseAlertStreamAsync(webSocket, sendLock, pendingReceive, subscription.Reset, wasDisconnected, context.RequestAborted).ConfigureAwait(false);
         }
 
         return Results.Empty;
     }
 
-    private static async Task CloseAlertStreamAsync(WebSocket socket, Task<WebSocketReceiveResult>? pendingReceive,
-        RealtimeAlertNotificationBroadcaster.Subscription subscription, CancellationToken requestAborted)
+    private static async Task CloseAlertStreamAsync(
+        WebSocket socket,
+        SemaphoreSlim sendLock,
+        Task<WebSocketReceiveResult>? pendingReceive,
+        Honua.Core.Features.Realtime.RealtimeDelivery.Reset? reset,
+        bool wasDisconnected,
+        CancellationToken requestAborted)
     {
         using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
         shutdown.CancelAfter(TimeSpan.FromSeconds(5));
@@ -177,9 +203,21 @@ internal static class StreamingOperationsEndpoints
         {
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
-                await SendResetAsync(socket, subscription.Reset, shutdown.Token).ConfigureAwait(false);
-                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
-                    subscription.DisconnectToken.IsCancellationRequested ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
+                await sendLock.WaitAsync(shutdown.Token).ConfigureAwait(false);
+                try
+                {
+                    if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                    {
+                        await SendResetAsync(socket, reset, shutdown.Token).ConfigureAwait(false);
+                        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
+                            wasDisconnected ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    sendLock.Release();
+                }
+
                 var buffer = new byte[1];
                 while (socket.State == WebSocketState.CloseSent)
                 {
@@ -189,7 +227,7 @@ internal static class StreamingOperationsEndpoints
                 }
             }
         }
-        catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+        catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException or IOException)
         {
             // A missing close acknowledgment must not retain the request indefinitely.
             socket.Abort();
@@ -203,7 +241,7 @@ internal static class StreamingOperationsEndpoints
                 {
                     await pendingReceive.ConfigureAwait(false);
                 }
-                catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+                catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException or IOException)
                 {
                     // Observe the receive canceled by the shutdown deadline or request abort.
                 }

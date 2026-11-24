@@ -85,9 +85,9 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
-        // without paying for a separate COUNT query. The probe row is trimmed before returning.
+        // without paying for a separate COUNT query. Guard against int.MaxValue overflow.
         var requestedLimit = query.Limit;
-        var probeQuery = requestedLimit.HasValue
+        var probeQuery = requestedLimit is > 0 and < int.MaxValue
             ? query with { Limit = requestedLimit.Value + 1 }
             : query;
 
@@ -105,7 +105,7 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         long exactMatchCount = features.Length;
         if (hasMore || offset > 0)
         {
-            var countSql = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query);
+            var countSql = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
             exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
         }
 
@@ -122,30 +122,30 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -155,11 +155,11 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
 
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
-        var countTask = _dataAccess.ExecuteCountAsync(mapping, SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
-        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
+        var countTask = _dataAccess.ExecuteCountAsync(mapping, SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery, attributeColumns), _boundConnection, cancellationToken);
+        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery, attributeColumns), _boundConnection, cancellationToken);
         await Task.WhenAll(countTask, extentTask).ConfigureAwait(false);
 
         return new EstimateResult
@@ -184,8 +184,8 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildH3AggregationQuery(mapping, query, h3Query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildH3AggregationQuery(mapping, query, h3Query, attributeColumns);
         return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

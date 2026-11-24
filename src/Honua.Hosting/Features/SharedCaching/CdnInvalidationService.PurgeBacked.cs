@@ -45,6 +45,8 @@ internal sealed partial class CdnInvalidationService
             _windowClosesAt = null;
         }
 
+        CancelBackgroundTimers();
+
         if (paths.Length == 0 || !CdnConfigured)
         {
             return;
@@ -55,10 +57,23 @@ internal sealed partial class CdnInvalidationService
         {
             foreach (var batch in pending)
             {
-                var batches = await SendWithinLimitsAsync(batch.Paths, batch.Cause.AsShutdown(), deadline.Token)
-                    .ConfigureAwait(false);
-                if (batches.Result.Failed)
+                try
                 {
+                    var batches = await SendWithinLimitsAsync(batch.Paths, batch.Cause.AsShutdown(), deadline.Token)
+                        .ConfigureAwait(false);
+                    if (batches.Result.Failed)
+                    {
+                        Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
+                    }
+                }
+                catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    Log.BackgroundPurgeFailed(logger, ex);
+                    _reliability?.RecordFailedPurge();
                     Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
                 }
             }
@@ -67,6 +82,44 @@ internal sealed partial class CdnInvalidationService
         {
             Log.ShutdownPurgesNotSent(logger, paths.Length, string.Join(' ', paths));
         }
+    }
+
+    private void CancelBackgroundTimers()
+    {
+        _shutdownSignal.TrySetResult();
+    }
+
+    private async Task<bool> WaitUntilDueOrShutdownAsync(TimeSpan delay)
+    {
+        if (_stopping || _applicationStopping.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (delay <= TimeSpan.Zero)
+        {
+            return true;
+        }
+
+        using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(_applicationStopping);
+        var delayTask = Task.Delay(delay, _timeProvider, delayCts.Token);
+        var winner = await Task.WhenAny(delayTask, _shutdownSignal.Task).ConfigureAwait(false);
+        if (winner == _shutdownSignal.Task || _stopping || _applicationStopping.IsCancellationRequested)
+        {
+            await delayCts.CancelAsync().ConfigureAwait(false);
+            return false;
+        }
+
+        try
+        {
+            await delayTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_stopping || _applicationStopping.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        return !_stopping && !_applicationStopping.IsCancellationRequested;
     }
 
     // Edits made while purge-backed lifetimes are on restart the give-up clock of a path that is failing.
@@ -140,25 +193,41 @@ internal sealed partial class CdnInvalidationService
 
     private async Task SettleWhenDueAsync(DateTimeOffset due)
     {
-        var delay = due - _timeProvider.GetUtcNow();
-        if (delay > TimeSpan.Zero)
+        if (!await WaitUntilDueOrShutdownAsync(due - _timeProvider.GetUtcNow()).ConfigureAwait(false))
         {
-            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
+            return;
         }
 
         var batch = _delivery.TakeDueSettles(due);
-        if (batch.Next is { } next)
+        if (batch.Next is { } next && !_stopping)
         {
             _ = SettleWhenDueAsync(next);
         }
 
         foreach (var repeat in batch.Batches)
         {
-            var result = await SendAfterEditAsync(repeat.Paths, repeat.Cause, CancellationToken.None)
-                .ConfigureAwait(false);
-            if (result is { Outcome: CdnInvalidationOutcome.Failed })
+            if (_stopping || _applicationStopping.IsCancellationRequested)
             {
-                Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+                return;
+            }
+
+            try
+            {
+                var result = await SendAfterEditAsync(repeat.Paths, repeat.Cause, _applicationStopping)
+                    .ConfigureAwait(false);
+                if (result is { Outcome: CdnInvalidationOutcome.Failed })
+                {
+                    Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+                }
+            }
+            catch (OperationCanceledException) when (_stopping || _applicationStopping.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.BackgroundPurgeFailed(logger, ex);
+                _reliability?.RecordFailedPurge();
             }
         }
     }

@@ -14,12 +14,20 @@ internal static class ZarrChunkDecoder
     private const int MaxGzipMembers = 4096;
 
     internal static void Decode(byte[] raw, string? compressor, byte[] destination, CancellationToken cancellationToken)
+        => Decode(raw, compressor, destination, destination.Length, cancellationToken);
+
+    internal static void Decode(
+        byte[] raw,
+        string? compressor,
+        byte[] destination,
+        int destinationLength,
+        CancellationToken cancellationToken)
     {
         if (compressor is null)
         {
-            if (raw.Length != destination.Length)
+            if (raw.Length != destinationLength)
                 throw new InvalidDataException("Zarr uncompressed chunk length does not match its declared shape.");
-            raw.CopyTo(destination, 0);
+            Buffer.BlockCopy(raw, 0, destination, 0, destinationLength);
             return;
         }
         if (raw.Length == 0)
@@ -29,7 +37,7 @@ internal static class ZarrChunkDecoder
             var written = 0;
             if (compressor == "zlib")
             {
-                var consumed = Inflate(raw, 0, new Inflater(), destination, ref written, cancellationToken);
+                var consumed = Inflate(raw, 0, new Inflater(), destination, destinationLength, ref written, cancellationToken);
                 if (consumed != raw.Length)
                     throw new InvalidDataException("Zarr zlib chunk contains trailing bytes.");
             }
@@ -42,11 +50,11 @@ internal static class ZarrChunkDecoder
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (++members > MaxGzipMembers)
-                        throw new InvalidOperationException($"Zarr gzip chunk exceeds the {MaxGzipMembers}-member decoding limit.");
+                        throw new ZarrSubsetValidationException($"Zarr gzip chunk exceeds the {MaxGzipMembers}-member decoding limit.");
                     position = ReadGzipHeader(raw, position, cancellationToken);
                     var memberStart = written;
                     inflater.Reset();
-                    position += Inflate(raw, position, inflater, destination, ref written, cancellationToken);
+                    position += Inflate(raw, position, inflater, destination, destinationLength, ref written, cancellationToken);
                     RequireAvailable(raw, position, 8);
                     var checksum = new Crc32();
                     UpdateChecksum(checksum, destination, memberStart, written - memberStart, cancellationToken);
@@ -59,10 +67,10 @@ internal static class ZarrChunkDecoder
             }
             else
             {
-                throw new InvalidOperationException($"Zarr compressor '{compressor}' is not supported.");
+                throw new ZarrSubsetValidationException($"Zarr compressor '{compressor}' is not supported.");
             }
-            if (written != destination.Length)
-                throw new InvalidDataException($"Zarr chunk decoded to {written} bytes; expected {destination.Length}.");
+            if (written != destinationLength)
+                throw new InvalidDataException($"Zarr chunk decoded to {written} bytes; expected {destinationLength}.");
         }
         catch (SharpZipBaseException exception)
         {
@@ -70,7 +78,7 @@ internal static class ZarrChunkDecoder
         }
     }
 
-    private static int Inflate(byte[] raw, int start, Inflater inflater, byte[] destination, ref int written,
+    private static int Inflate(byte[] raw, int start, Inflater inflater, byte[] destination, int destinationLength, ref int written,
         CancellationToken cancellationToken)
     {
         var supplied = start;
@@ -89,7 +97,7 @@ internal static class ZarrChunkDecoder
                 supplied += count;
             }
             var beforeInput = inflater.TotalIn;
-            var remaining = destination.Length - written;
+            var remaining = destinationLength - written;
             var emitted = remaining > 0
                 ? inflater.Inflate(destination, written, Math.Min(remaining, InflateBlockBytes))
                 : inflater.Inflate(probe, 0, 1);

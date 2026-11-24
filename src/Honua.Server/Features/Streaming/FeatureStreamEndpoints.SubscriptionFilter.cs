@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -82,12 +83,13 @@ internal static partial class FeatureStreamEndpoints
         bool hasExplicitLayerScope = !string.IsNullOrWhiteSpace(layerSource);
         if (!string.IsNullOrWhiteSpace(layerSource))
         {
-            var (parsedIds, layerError) = ParseAndAuthorizeLayerIds(
+            var (parsedIds, layerError) = await ParseAndAuthorizeLayerIdsAsync(
                 context,
                 logger,
                 service,
                 snapshot,
-                layerSource);
+                layerSource,
+                context.RequestAborted).ConfigureAwait(false);
             if (layerError is not null)
             {
                 return SubscriptionParseResult.Failed(layerError);
@@ -99,11 +101,12 @@ internal static partial class FeatureStreamEndpoints
 
         if (service is not null && layerIds is null)
         {
-            var (serviceLayerIds, accessError) = ResolveAndAuthorizeServiceLayerIds(
+            var (serviceLayerIds, accessError) = await ResolveAndAuthorizeServiceLayerIdsAsync(
                 context,
                 logger,
                 snapshot,
-                service);
+                service,
+                context.RequestAborted).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return SubscriptionParseResult.Failed(accessError);
@@ -465,7 +468,12 @@ internal static partial class FeatureStreamEndpoints
                 }
 
                 var nameKey = (service.Metadata.Name.ToUpperInvariant(), layer.LayerId);
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service) ||
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context,
+                        layer.Resource,
+                        service,
+                        AuthorizationOperation.Query,
+                        cancellationToken).ConfigureAwait(false) ||
                     !TenantScopeHelpers.IsTenantVisible(context, layer.Publication!, layer.Resource, service))
                 {
                     // Ambiguous display-name routes must not alias an inaccessible tenant.
@@ -600,12 +608,13 @@ internal static partial class FeatureStreamEndpoints
         return true;
     }
 
-    private static (int[]? Ids, IResult? Error) ParseAndAuthorizeLayerIds(
+    private static async Task<(int[]? Ids, IResult? Error)> ParseAndAuthorizeLayerIdsAsync(
         HttpContext context,
         ILogger logger,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
-        string layersValue)
+        string layersValue,
+        CancellationToken cancellationToken)
     {
         var ids = new List<int>();
         foreach (var part in layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -669,7 +678,11 @@ internal static partial class FeatureStreamEndpoints
                 authService = layer.Service;
             }
 
-            var accessError = RequireStreamLayerAccess(context, layer.Resource, authService);
+            var accessError = await RequireStreamLayerAccessAsync(
+                context,
+                layer.Resource,
+                authService,
+                cancellationToken).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return (null, accessError);
@@ -684,11 +697,12 @@ internal static partial class FeatureStreamEndpoints
         return (resolvedIds.ToArray(), null);
     }
 
-    private static (int[]? Ids, IResult? Error) ResolveAndAuthorizeServiceLayerIds(
+    private static async Task<(int[]? Ids, IResult? Error)> ResolveAndAuthorizeServiceLayerIdsAsync(
         HttpContext context,
         ILogger logger,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        CancellationToken cancellationToken)
     {
         var layers = ResolveServiceStreamLayers(snapshot, service).ToArray();
         if (layers.Length == 0)
@@ -700,7 +714,11 @@ internal static partial class FeatureStreamEndpoints
 
         foreach (var layer in layers)
         {
-            var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
+            var accessError = await RequireStreamLayerAccessAsync(
+                context,
+                layer.Resource,
+                service,
+                cancellationToken).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return (null, accessError);
@@ -710,11 +728,17 @@ internal static partial class FeatureStreamEndpoints
         return (layers.Select(static layer => layer.LayerId).Distinct().ToArray(), null);
     }
 
-    private static IResult? RequireStreamLayerAccess(
+    private static Task<IResult?> RequireStreamLayerAccessAsync(
         HttpContext context,
         MetadataV2Object resource,
-        MetadataV2Service? service)
-        => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        MetadataV2Service? service,
+        CancellationToken cancellationToken)
+        => AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            AuthorizationOperation.Query,
+            service,
+            cancellationToken);
 
     internal static MetadataV2Service? ResolveStreamService(
         MetadataV2GraphSnapshot snapshot,

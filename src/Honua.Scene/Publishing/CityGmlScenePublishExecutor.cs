@@ -81,9 +81,9 @@ internal sealed partial class CityGmlScenePublishExecutor
         var sceneId = ResolveSceneId(request.SceneId, model, intentId);
         var displayName = ResolveDisplayName(request.DisplayName, model, sceneId);
         ValidateOptions(displayName, request.EditionGate, request.CacheMaxAgeSeconds);
-        var cacheMaxAge = request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds;
+        var cacheMaxAge = request.CacheMaxAgeSeconds ?? ScenePublishHelper.DefaultCacheMaxAgeSeconds;
 
-        await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        await ScenePublishHelper.PreflightConflictAsync(_registration, sceneId, cancellationToken).ConfigureAwait(false);
 
         // 3. Stage → register → promote, reusing the shared durability mechanics.
         var outputDirectory = SceneTilesetStaging.ResolveOutputDirectory(
@@ -125,12 +125,14 @@ internal sealed partial class CityGmlScenePublishExecutor
             }
 
             var registeredDatasetId = await TryRegisterSceneAsync(
+                _registration,
                 newDatasetId,
                 sceneId,
                 displayName,
                 request.Description,
                 outputDirectory,
                 storagePrefix,
+                SceneContentKind.Buildings,
                 tileset.BoundsDegrees,
                 cacheMaxAge,
                 request.EditionGate,
@@ -183,8 +185,6 @@ internal sealed partial class CityGmlScenePublishExecutor
             }
         }
     }
-
-    private const int DefaultCacheMaxAgeSeconds = 3600;
 
     private static CityGmlGeoTransform BuildGeoTransform(CityGmlModel model)
     {
@@ -298,7 +298,7 @@ internal sealed partial class CityGmlScenePublishExecutor
         return baseName + suffix;
     }
 
-    private static void ValidateOptions(string displayName, string? editionGate, int? cacheMaxAgeSeconds)
+    internal static void ValidateOptions(string displayName, string? editionGate, int? cacheMaxAgeSeconds)
     {
         if (!SceneDatasetValidator.TryValidateName(displayName, out var nameError))
         {
@@ -323,27 +323,15 @@ internal sealed partial class CityGmlScenePublishExecutor
         }
     }
 
-    private async Task PreflightSceneRegistrationConflictAsync(string sceneId, CancellationToken cancellationToken)
-    {
-        if (_registration is null)
-        {
-            return;
-        }
-        var existing = await _registration.GetBySceneIdAsync(sceneId, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' already exists.");
-        }
-    }
-
-    private async Task<Guid?> TryRegisterSceneAsync(
+    internal static async Task<Guid?> TryRegisterSceneAsync(
+        ISceneRegistrationService? registration,
         Guid datasetId,
         string sceneId,
         string displayName,
         string? description,
         string outputDirectory,
         string? assetStoragePrefix,
+        SceneContentKind contentKind,
         double[] bounds,
         int cacheMaxAgeSeconds,
         string? editionGate,
@@ -351,7 +339,7 @@ internal sealed partial class CityGmlScenePublishExecutor
         string createdBy,
         CancellationToken cancellationToken)
     {
-        if (_registration is null)
+        if (registration is null)
         {
             return null;
         }
@@ -367,9 +355,9 @@ internal sealed partial class CityGmlScenePublishExecutor
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             ServingFormat = SceneServingFormat.ThreeDTiles,
-            ContentKind = SceneContentKind.Buildings,
+            ContentKind = contentKind,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
-            // BSL coordinates are placed on the WGS-84 ellipsoid with ellipsoidal
+            // Coordinates are placed on the WGS-84 ellipsoid with ellipsoidal
             // height in meters, so the registered CRS is the 3D geographic 4979.
             Crs = "EPSG:4979",
             CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
@@ -387,7 +375,7 @@ internal sealed partial class CityGmlScenePublishExecutor
 
         try
         {
-            var saved = await _registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
+            var saved = await registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
             return saved?.DatasetId is { } id && id != Guid.Empty ? id : record.DatasetId;
         }
         catch (SceneDatasetAlreadyExistsException ex)

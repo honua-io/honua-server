@@ -35,29 +35,53 @@ internal sealed partial class FeatureQueryBuilder
         };
     }
 
+    private static string BuildNullableBinNumericExpression(string fieldExpr)
+        => $"NULLIF(({fieldExpr})::text, '')::numeric";
+
     private CoreParameterizedQuery BuildFixedIntervalBinsQuery(
         int layerId,
         FeatureQuery query,
         BinDefinition bin,
         CoreGeometryStorageType geometryStorageType)
     {
+        var start = bin.IntervalStart ?? 0;
+        var end = bin.IntervalEnd ?? 0;
+        var intervalSize = bin.IntervalSize ?? 1;
+        if (!double.IsFinite(start))
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), start, "Interval start must be a finite number.");
+        }
+
+        if (!double.IsFinite(end))
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), end, "Interval end must be a finite number.");
+        }
+
+        if (!double.IsFinite(intervalSize) || intervalSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), intervalSize, "Interval size must be a finite positive number.");
+        }
+
+        if (end <= start)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), end, "Interval end must be greater than interval start.");
+        }
+
+        var rawBuckets = Math.Ceiling((end - start) / intervalSize);
+        if (!double.IsFinite(rawBuckets) || rawBuckets > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), intervalSize, "Interval range produces too many buckets.");
+        }
+
+        var numBuckets = Math.Max(1, (int)rawBuckets);
+
         var sql = _stringBuilderPool.Get();
         try
         {
             var paramIndex = 2;
             var parameters = new List<object>();
             var fieldExpr = GetFieldExpression(bin.Field);
-            var numericExpr = $"({fieldExpr})::numeric";
-
-            // Use width_bucket for fixed intervals
-            var start = bin.IntervalStart ?? 0;
-            var end = bin.IntervalEnd ?? 0;
-            var intervalSize = bin.IntervalSize ?? 1;
-            var numBuckets = (int)Math.Ceiling((end - start) / intervalSize);
-            if (numBuckets <= 0)
-            {
-                numBuckets = 1;
-            }
+            var numericExpr = BuildNullableBinNumericExpression(fieldExpr);
 
             sql.Append("SELECT ");
             sql.Append(CultureInfo.InvariantCulture,
@@ -93,14 +117,19 @@ internal sealed partial class FeatureQueryBuilder
         BinDefinition bin,
         CoreGeometryStorageType geometryStorageType)
     {
+        var numBins = bin.NumBins ?? 10;
+        if (numBins <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bin), numBins, "Number of bins must be greater than zero.");
+        }
+
         var sql = _stringBuilderPool.Get();
         try
         {
             var paramIndex = 2;
             var parameters = new List<object>();
             var fieldExpr = GetFieldExpression(bin.Field);
-            var numericExpr = $"({fieldExpr})::numeric";
-            var numBins = bin.NumBins ?? 10;
+            var numericExpr = BuildNullableBinNumericExpression(fieldExpr);
 
             // CTE to compute min/max, then width_bucket
             sql.Append("WITH range AS (");
@@ -156,14 +185,32 @@ internal sealed partial class FeatureQueryBuilder
         BinDefinition bin,
         CoreGeometryStorageType geometryStorageType)
     {
+        if (!bin.Boundaries.HasValue || bin.Boundaries.Value.IsDefault || bin.Boundaries.Value.Length < 2)
+        {
+            throw new ArgumentException("Fixed boundaries require at least two boundary values.", nameof(bin));
+        }
+
+        var boundaries = bin.Boundaries.Value;
+        for (var i = 0; i < boundaries.Length; i++)
+        {
+            if (!double.IsFinite(boundaries[i]))
+            {
+                throw new ArgumentOutOfRangeException(nameof(bin), boundaries[i], "Bin boundary values must be finite numbers.");
+            }
+
+            if (i > 0 && boundaries[i] <= boundaries[i - 1])
+            {
+                throw new ArgumentException("Bin boundary values must be strictly increasing.", nameof(bin));
+            }
+        }
+
         var sql = _stringBuilderPool.Get();
         try
         {
             var paramIndex = 2;
             var parameters = new List<object>();
             var fieldExpr = GetFieldExpression(bin.Field);
-            var numericExpr = $"({fieldExpr})::numeric";
-            var boundaries = bin.Boundaries!.Value;
+            var numericExpr = BuildNullableBinNumericExpression(fieldExpr);
 
             // Build CASE expression for bin assignment
             sql.Append("SELECT CASE ");
@@ -288,6 +335,11 @@ internal sealed partial class FeatureQueryBuilder
                 if (!IsValidFieldName(stat.OnStatisticField))
                 {
                     throw new ArgumentException($"Invalid statistic field name: {stat.OnStatisticField}");
+                }
+
+                if (!IsValidOutputAlias(stat.OutStatisticFieldName))
+                {
+                    throw new ArgumentException($"Invalid output statistic field name: {stat.OutStatisticFieldName}");
                 }
 
                 var statFieldExpr = GetFieldExpression(stat.OnStatisticField);

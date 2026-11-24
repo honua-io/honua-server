@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
@@ -94,39 +95,425 @@ public static class ZarrValueDecoder
     internal static bool TryDecodeWithFill(ReadOnlySpan<byte> data, string dtype, object? fillValue, out double? value)
     {
         value = null;
-        if (IsFillValue(data, dtype, fillValue)) return true;
-        if (!TryDecode(data, dtype, out var decoded)) return false;
-        if (double.IsFinite(decoded)) value = decoded;
-        return true;
+        var kind = NormalizeDataType(dtype);
+        switch (kind)
+        {
+            case "i1":
+                if (data.Length < 1) return false;
+                var i1 = (sbyte)data[0];
+                if (fillValue is not null && TrySignedFill(fillValue, out var i1Fill) && i1 == i1Fill) return true;
+                value = i1;
+                return true;
+            case "i2":
+                if (data.Length < 2) return false;
+                var i2 = BinaryPrimitives.ReadInt16LittleEndian(data);
+                if (fillValue is not null && TrySignedFill(fillValue, out var i2Fill) && i2 == i2Fill) return true;
+                value = i2;
+                return true;
+            case "i4":
+                if (data.Length < 4) return false;
+                var i4 = BinaryPrimitives.ReadInt32LittleEndian(data);
+                if (fillValue is not null && TrySignedFill(fillValue, out var i4Fill) && i4 == i4Fill) return true;
+                value = i4;
+                return true;
+            case "i8":
+                if (data.Length < 8) return false;
+                var i8 = BinaryPrimitives.ReadInt64LittleEndian(data);
+                if (fillValue is not null && TrySignedFill(fillValue, out var i8Fill) && i8 == i8Fill) return true;
+                value = i8;
+                return true;
+            case "b1":
+            case "u1":
+                if (data.Length < 1) return false;
+                var u1 = data[0];
+                if (fillValue is not null && TryUnsignedFill(fillValue, out var u1Fill) && u1 == u1Fill) return true;
+                value = u1;
+                return true;
+            case "u2":
+                if (data.Length < 2) return false;
+                var u2 = BinaryPrimitives.ReadUInt16LittleEndian(data);
+                if (fillValue is not null && TryUnsignedFill(fillValue, out var u2Fill) && u2 == u2Fill) return true;
+                value = u2;
+                return true;
+            case "u4":
+                if (data.Length < 4) return false;
+                var u4 = BinaryPrimitives.ReadUInt32LittleEndian(data);
+                if (fillValue is not null && TryUnsignedFill(fillValue, out var u4Fill) && u4 == u4Fill) return true;
+                value = u4;
+                return true;
+            case "u8":
+                if (data.Length < 8) return false;
+                var u8 = BinaryPrimitives.ReadUInt64LittleEndian(data);
+                if (fillValue is not null && TryUnsignedFill(fillValue, out var u8Fill) && u8 == u8Fill) return true;
+                value = u8;
+                return true;
+            case "f4":
+                if (data.Length < 4) return false;
+                double f4 = BinaryPrimitives.ReadSingleLittleEndian(data);
+                if (fillValue is not null && TryGetFiniteFillValue(fillValue, out var f4Fill) && f4.CompareTo(f4Fill) == 0) return true;
+                if (double.IsFinite(f4)) value = f4;
+                return true;
+            case "f8":
+                if (data.Length < 8) return false;
+                var f8 = BinaryPrimitives.ReadDoubleLittleEndian(data);
+                if (fillValue is not null && TryGetFiniteFillValue(fillValue, out var f8Fill) && f8.CompareTo(f8Fill) == 0) return true;
+                if (double.IsFinite(f8)) value = f8;
+                return true;
+            default:
+                return false;
+        }
     }
 
-    private static bool IsFillValue(ReadOnlySpan<byte> data, string dtype, object? fill)
+    internal static bool TryDecodeBufferWithFill(
+        ReadOnlySpan<byte> data,
+        string normalizedDtype,
+        object? fillValue,
+        Span<double> destination)
     {
-        if (fill is null) return false;
-        var kind = NormalizeDataType(dtype);
-        var size = kind switch
+        var count = destination.Length;
+        switch (normalizedDtype)
         {
-            "b1" or "i1" or "u1" => 1,
-            "i2" or "u2" => 2,
-            "i4" or "u4" or "f4" => 4,
-            "i8" or "u8" or "f8" => 8,
-            _ => 0
-        };
-        if (size == 0 || data.Length < size) return false;
-        return kind switch
+            case "i1":
+                if (data.Length < count) return false;
+                DecodeSignedByteBuffer(data[..count], fillValue, destination);
+                return true;
+            case "u1":
+            case "b1":
+                if (data.Length < count) return false;
+                DecodeUnsignedByteBuffer(data[..count], fillValue, destination);
+                return true;
+            case "i2":
+                if (data.Length < count * 2) return false;
+                DecodeInt16Buffer(data[..(count * 2)], fillValue, destination);
+                return true;
+            case "u2":
+                if (data.Length < count * 2) return false;
+                DecodeUInt16Buffer(data[..(count * 2)], fillValue, destination);
+                return true;
+            case "i4":
+                if (data.Length < count * 4) return false;
+                DecodeInt32Buffer(data[..(count * 4)], fillValue, destination);
+                return true;
+            case "u4":
+                if (data.Length < count * 4) return false;
+                DecodeUInt32Buffer(data[..(count * 4)], fillValue, destination);
+                return true;
+            case "i8":
+                if (data.Length < count * 8) return false;
+                DecodeInt64Buffer(data[..(count * 8)], fillValue, destination);
+                return true;
+            case "u8":
+                if (data.Length < count * 8) return false;
+                DecodeUInt64Buffer(data[..(count * 8)], fillValue, destination);
+                return true;
+            case "f4":
+                if (data.Length < count * 4) return false;
+                DecodeFloat32Buffer(data[..(count * 4)], fillValue, destination);
+                return true;
+            case "f8":
+                if (data.Length < count * 8) return false;
+                DecodeFloat64Buffer(data[..(count * 8)], fillValue, destination);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static void DecodeSignedByteBuffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        var src = MemoryMarshal.Cast<byte, sbyte>(bytes);
+        if (fillValue is not null && TrySignedFill(fillValue, out var fill))
         {
-            "i1" => TrySignedFill(fill, out var sentinel) && (sbyte)data[0] == sentinel,
-            "i2" => TrySignedFill(fill, out var sentinel) && BinaryPrimitives.ReadInt16LittleEndian(data) == sentinel,
-            "i4" => TrySignedFill(fill, out var sentinel) && BinaryPrimitives.ReadInt32LittleEndian(data) == sentinel,
-            "i8" => TrySignedFill(fill, out var sentinel) && BinaryPrimitives.ReadInt64LittleEndian(data) == sentinel,
-            "b1" or "u1" => TryUnsignedFill(fill, out var sentinel) && data[0] == sentinel,
-            "u2" => TryUnsignedFill(fill, out var sentinel) && BinaryPrimitives.ReadUInt16LittleEndian(data) == sentinel,
-            "u4" => TryUnsignedFill(fill, out var sentinel) && BinaryPrimitives.ReadUInt32LittleEndian(data) == sentinel,
-            "u8" => TryUnsignedFill(fill, out var sentinel) && BinaryPrimitives.ReadUInt64LittleEndian(data) == sentinel,
-            "f4" => TryGetFiniteFillValue(fill, out var sentinel) && ((double)BinaryPrimitives.ReadSingleLittleEndian(data)).Equals(sentinel),
-            "f8" => TryGetFiniteFillValue(fill, out var sentinel) && BinaryPrimitives.ReadDoubleLittleEndian(data).Equals(sentinel),
-            _ => false
-        };
+            for (var i = 0; i < destination.Length; i++)
+            {
+                var v = src[i];
+                destination[i] = v == fill ? double.NaN : v;
+            }
+        }
+        else
+        {
+            for (var i = 0; i < destination.Length; i++)
+            {
+                destination[i] = src[i];
+            }
+        }
+    }
+
+    private static void DecodeUnsignedByteBuffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        if (fillValue is not null && TryUnsignedFill(fillValue, out var fill))
+        {
+            for (var i = 0; i < destination.Length; i++)
+            {
+                var v = bytes[i];
+                destination[i] = v == fill ? double.NaN : v;
+            }
+        }
+        else
+        {
+            for (var i = 0; i < destination.Length; i++)
+            {
+                destination[i] = bytes[i];
+            }
+        }
+    }
+
+    private static void DecodeInt16Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        long fill = 0;
+        var hasFill = fillValue is not null && TrySignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, short>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeUInt16Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        ulong fill = 0;
+        var hasFill = fillValue is not null && TryUnsignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, ushort>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(i * 2, 2));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeInt32Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        long fill = 0;
+        var hasFill = fillValue is not null && TrySignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, int>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeUInt32Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        ulong fill = 0;
+        var hasFill = fillValue is not null && TryUnsignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, uint>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(i * 4, 4));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeInt64Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        long fill = 0;
+        var hasFill = fillValue is not null && TrySignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, long>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(i * 8, 8));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeUInt64Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        ulong fill = 0;
+        var hasFill = fillValue is not null && TryUnsignedFill(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, ulong>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v == fill ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    destination[i] = src[i];
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadUInt64LittleEndian(bytes.Slice(i * 8, 8));
+            destination[i] = hasFill && v == fill ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeFloat32Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        double fill = 0;
+        var hasFill = fillValue is not null && TryGetFiniteFillValue(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, float>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    double v = src[i];
+                    destination[i] = v.CompareTo(fill) == 0 || !double.IsFinite(v) ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    double v = src[i];
+                    destination[i] = double.IsFinite(v) ? v : double.NaN;
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            double v = BinaryPrimitives.ReadSingleLittleEndian(bytes.Slice(i * 4, 4));
+            destination[i] = (hasFill && v.CompareTo(fill) == 0) || !double.IsFinite(v) ? double.NaN : v;
+        }
+    }
+
+    private static void DecodeFloat64Buffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)
+    {
+        double fill = 0;
+        var hasFill = fillValue is not null && TryGetFiniteFillValue(fillValue, out fill);
+        if (BitConverter.IsLittleEndian)
+        {
+            var src = MemoryMarshal.Cast<byte, double>(bytes);
+            if (hasFill)
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = v.CompareTo(fill) == 0 || !double.IsFinite(v) ? double.NaN : v;
+                }
+            }
+            else
+            {
+                for (var i = 0; i < destination.Length; i++)
+                {
+                    var v = src[i];
+                    destination[i] = double.IsFinite(v) ? v : double.NaN;
+                }
+            }
+            return;
+        }
+
+        for (var i = 0; i < destination.Length; i++)
+        {
+            var v = BinaryPrimitives.ReadDoubleLittleEndian(bytes.Slice(i * 8, 8));
+            destination[i] = (hasFill && v.CompareTo(fill) == 0) || !double.IsFinite(v) ? double.NaN : v;
+        }
     }
 
     private static bool TrySignedFill(object fill, out long value)

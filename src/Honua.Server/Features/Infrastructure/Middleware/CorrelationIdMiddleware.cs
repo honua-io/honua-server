@@ -26,8 +26,14 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         // Set correlation ID in HttpContext for framework integration
         context.TraceIdentifier = correlationId;
 
-        // Add correlation ID to response headers
+        // Add correlation ID to response headers and re-apply in OnStarting so a cleared response keeps it.
         context.Response.Headers[CorrelationIdHeader] = correlationId;
+        context.Response.OnStarting(static state =>
+        {
+            var (httpContext, id) = ((HttpContext, string))state;
+            httpContext.Response.Headers.TryAdd(CorrelationIdHeader, id);
+            return Task.CompletedTask;
+        }, (context, correlationId));
 
         // Enrich current Activity with correlation ID early for tracing/log correlation.
         EnrichActivityWithCorrelationId(correlationId);

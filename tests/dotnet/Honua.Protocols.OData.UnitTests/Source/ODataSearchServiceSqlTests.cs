@@ -67,6 +67,58 @@ public sealed class ODataSearchServiceSqlTests
         result[903]["Children"].Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ProcessExpandAsync_StripsHiddenRelatedFields_AndRejectsHiddenExpandSelect()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var parent = new MetadataV2Object
+        {
+            Metadata = new() { Id = "parents" },
+            Status = active,
+            Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+        };
+        var child = new MetadataV2Object
+        {
+            Metadata = new() { Id = "children" },
+            Status = active,
+            StorageBindingIds = ["binding"],
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Hidden = false },
+                new MetadataV2Field { Name = "secret_note", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Resources = [parent, child],
+            Services = [new() { Metadata = new() { Id = "service" }, Status = active, Protocols = ["OData"] }],
+            Publications = [new() { Metadata = new() { Id = "pub" }, Status = active, ResourceId = "children", ServiceId = "service", LayerIndex = 14, StorageBindingId = "binding" }],
+            StorageBindings = [new() { Metadata = new() { Id = "binding" }, Status = active, ResourceId = "children", StorageLayerId = 14 }]
+        }, "test", DateTimeOffset.UtcNow));
+        var attributes = new Dictionary<string, object?>
+        {
+            ["join_id"] = 901L,
+            ["name"] = "visible",
+            ["secret_note"] = "confidential"
+        }.ToImmutableDictionary();
+        var relationships = Substitute.For<IRelationshipStore>();
+        relationships.QueryRelatedAsync(13, Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(81, null, attributes)]));
+        var service = new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), relationships, Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), graph, null!,
+            Options.Create(new ODataOptions())), null!);
+
+        var expanded = await service.ProcessExpandAsync("Children", parent, 13, [901], CancellationToken.None);
+        var payload = expanded[901]["Children"].Should().ContainSingle().Subject.Should().BeOfType<Dictionary<string, object?>>().Subject;
+        payload.Should().ContainKey("name");
+        payload.Should().NotContainKey("secret_note");
+
+        var selectHidden = () => service.ProcessExpandAsync("Children($select=secret_note)", parent, 13, [901], CancellationToken.None);
+        await selectHidden.Should().ThrowAsync<ArgumentException>();
+    }
+
     [Theory]
     [InlineData("NoSuchRelation", "Unknown navigation property")]
     [InlineData("Children($expand=Grandchildren)", "Nested $expand")]
@@ -138,5 +190,32 @@ public sealed class ODataSearchServiceSqlTests
 
         fragment.Sql.Should().Contain("attributes->>'O''Reilly'");
         fragment.Sql.Should().NotContain("attributes->>'O'Reilly'");
+    }
+
+    [Fact]
+    public void BuildTextSearchCondition_ExcludesHiddenStringFields()
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-hidden-search", Name = "HiddenSearch" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "public_name", Type = MetadataV2FieldType.String, Hidden = false },
+                new MetadataV2Field { Name = "hidden_secret", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+        var terms = new List<List<(string term, bool isNegated, bool isPhrase)>>
+        {
+            new() { ("needle", false, false) }
+        };
+        var method = typeof(ODataSearchService).GetMethod(
+            "BuildTextSearchCondition",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var fragment = (SqlFragment)method!.Invoke(null, new object[] { terms, resource })!;
+
+        fragment.Sql.Should().Contain("attributes->>'public_name'");
+        fragment.Sql.Should().NotContain("hidden_secret");
     }
 }

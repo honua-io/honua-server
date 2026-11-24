@@ -115,6 +115,23 @@ public sealed class MigrationRunCheckpointStoreTests
             Path.GetDirectoryName(path) == temp.Path);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task FileSystem_WithOversizedRunId_RejectsWithArgumentException()
+    {
+        using var temp = new TempDirectory();
+        using var store = new FileSystemMigrationRunCheckpointStore(temp.Path);
+        var oversizedRunId = new string('r', FileSystemMigrationRunCheckpointStore.MaxRunIdLength + 1);
+
+        var save = async () => await store.SaveAsync(NewCheckpoint(oversizedRunId, "apply", "marker", completed: 1));
+        var load = async () => await store.LoadAsync(oversizedRunId);
+        var delete = async () => await store.DeleteAsync(oversizedRunId);
+
+        await save.Should().ThrowAsync<ArgumentException>();
+        await load.Should().ThrowAsync<ArgumentException>();
+        await delete.Should().ThrowAsync<ArgumentException>();
+    }
+
     private static MigrationRunCheckpoint NewCheckpoint(
         string runId,
         string phase,

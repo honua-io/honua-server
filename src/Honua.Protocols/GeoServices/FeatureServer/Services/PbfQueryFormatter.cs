@@ -372,23 +372,47 @@ internal sealed partial class PbfQueryFormatter
             fieldMsg.Dispose();
         }
 
-        var fieldIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < queryFields.Length; i++)
-        {
-            fieldIndex[queryFields[i].Name] = i;
-        }
+        var fieldSpecs = BuildFieldSpecs(queryFields, objectIdFieldName);
 
         double scale = ComputeScale(geometryLimits, quantizationTransform);
-        return new FeatureEncoding(queryFields, fieldIndex, objectIdFieldName, returnGeometry,
+        return new FeatureEncoding(queryFields, fieldSpecs, objectIdFieldName, returnGeometry,
             effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform, srid);
+    }
+
+    private readonly record struct PbfFieldSpec(
+        string Name,
+        int Index,
+        bool IsObjectId,
+        MetadataV2FieldType? TemporalType);
+
+    private static PbfFieldSpec[] BuildFieldSpecs(GeoServicesFieldInfo[] fields, string objectIdFieldName)
+    {
+        var specs = new PbfFieldSpec[fields.Length];
+        for (int i = 0; i < fields.Length; i++)
+        {
+            var field = fields[i];
+            var temporalType = field.Type switch
+            {
+                "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
+                "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
+                // An exact Decimal field reads as canonical text; the PBF value is a double.
+                "esriFieldTypeDouble" => MetadataV2FieldType.Decimal,
+                _ => null
+            };
+            specs[i] = new PbfFieldSpec(
+                field.Name,
+                i,
+                field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase),
+                temporalType);
+        }
+
+        return specs;
     }
 
     private static void WriteFeature(
         ref ProtobufWriter writer,
         Feature feature,
-        GeoServicesFieldInfo[] fields,
-        Dictionary<string, int> fieldIndex,
-        string objectIdFieldName,
+        PbfFieldSpec[] fieldSpecs,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -398,7 +422,7 @@ internal sealed partial class PbfQueryFormatter
         int srid = 0)
     {
         // field 1: attributes (repeated Value messages)
-        WriteAttributes(ref writer, feature, fields, fieldIndex, objectIdFieldName);
+        WriteAttributes(ref writer, feature, fieldSpecs);
 
         // field 2: geometry
         if (returnGeometry && feature.Geometry != null)
@@ -410,56 +434,49 @@ internal sealed partial class PbfQueryFormatter
     private static void WriteAttributes(
         ref ProtobufWriter writer,
         Feature feature,
-        GeoServicesFieldInfo[] fields,
-        Dictionary<string, int> fieldIndex,
-        string objectIdFieldName)
+        PbfFieldSpec[] fieldSpecs)
     {
-        foreach (var field in fields)
+        var valueMsg = new ProtobufWriter(32);
+        try
         {
-            object? value;
-            if (field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) &&
-                !feature.Attributes.TryGetValue(field.Name, out value))
+            for (int i = 0; i < fieldSpecs.Length; i++)
             {
-                value = feature.Id;
-            }
-            else
-            {
-                feature.Attributes.TryGetValue(field.Name, out value);
-            }
-
-            var valueMsg = new ProtobufWriter(32);
-
-            if (value == null)
-            {
-                // null_value = field 10 (bool, true = null)
-                valueMsg.WriteBool(10, true);
-            }
-            else
-            {
-                var temporalType = field.Type switch
+                ref readonly var field = ref fieldSpecs[i];
+                if (!feature.Attributes.TryGetValue(field.Name, out var value) && field.IsObjectId)
                 {
-                    "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
-                    "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
-                    // An exact Decimal field reads as canonical text; the PBF value is a double.
-                    "esriFieldTypeDouble" when value is string => MetadataV2FieldType.Decimal,
-                    _ => null
-                };
-                if (temporalType.HasValue
-                    && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType.Value, out var converted))
-                    value = converted!;
-                WriteAttributeValue(ref valueMsg, value);
-            }
+                    value = feature.Id;
+                }
 
-            // index = field 11 (optional uint32)
-            if (fieldIndex.TryGetValue(field.Name, out int idx))
-            {
+                valueMsg.Reset();
+
+                if (value == null)
+                {
+                    // null_value = field 10 (bool, true = null)
+                    valueMsg.WriteBool(10, true);
+                }
+                else
+                {
+                    if (field.TemporalType is { } temporalType
+                        && (temporalType != MetadataV2FieldType.Decimal || value is string)
+                        && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType, out var converted))
+                    {
+                        value = converted!;
+                    }
+
+                    WriteAttributeValue(ref valueMsg, value);
+                }
+
+                // index = field 11 (optional uint32)
                 // WriteUInt32 skips zero, but field index 0 is valid;
                 // use WriteTag + WriteRawVarint directly
                 valueMsg.WriteTag(11, 0);
-                valueMsg.WriteRawVarint((uint)idx);
-            }
+                valueMsg.WriteRawVarint((uint)field.Index);
 
-            writer.WriteMessage(1, ref valueMsg);
+                writer.WriteMessage(1, ref valueMsg);
+            }
+        }
+        finally
+        {
             valueMsg.Dispose();
         }
     }
@@ -590,8 +607,9 @@ internal sealed partial class PbfQueryFormatter
         bool returnM,
         QuantizationTransform? quantizationTransform)
     {
+        var stride = 2 + (returnZ ? 1 : 0) + (returnM ? 1 : 0);
         var lengths = new List<uint>();
-        var coords = new List<long>();
+        var coords = new List<long>(geometry.NumPoints * stride);
         // A client quantization transform describes XY precision only. Esri's PBF
         // schema carries independent Z/M scales, so keep the established six-decimal
         // ordinate precision instead of accidentally reusing the XY tolerance.
@@ -701,7 +719,7 @@ internal sealed partial class PbfQueryFormatter
             return false;
         }
 
-        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
         return clockwise == isCcw;
     }
 

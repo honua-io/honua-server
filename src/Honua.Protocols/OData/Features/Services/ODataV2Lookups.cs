@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -23,8 +24,21 @@ internal static class ODataV2Lookups
         CancellationToken cancellationToken)
     {
         var publications = await ResolveAllODataPublicationsAsync(context, cancellationToken).ConfigureAwait(false);
-        return publications.Where(publication =>
-            AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource, publication.Service)).ToArray();
+        var visible = new List<ResolvedODataPublication>(publications.Length);
+        foreach (var publication in publications)
+        {
+            if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context,
+                    publication.Resource,
+                    publication.Service,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(publication);
+            }
+        }
+
+        return visible.ToArray();
     }
 
     public static async Task<ResolvedODataPublication[]> ResolveAllODataPublicationsAsync(

@@ -10,10 +10,40 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
+    private readonly record struct FeatureRowOrdinals(int TotalCountOrdinal, int DistanceOrdinal)
+    {
+        public static FeatureRowOrdinals Resolve(NpgsqlDataReader reader)
+        {
+            var totalCountOrdinal = -1;
+            var distanceOrdinal = -1;
+            for (var i = 3; i < reader.FieldCount; i++)
+            {
+                var fieldName = reader.GetName(i);
+                if (totalCountOrdinal < 0 &&
+                    fieldName.Equals(FeatureQueryEncoding.InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
+                {
+                    totalCountOrdinal = i;
+                }
+                else if (distanceOrdinal < 0 &&
+                         fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
+                {
+                    distanceOrdinal = i;
+                }
+            }
+
+            return new FeatureRowOrdinals(totalCountOrdinal, distanceOrdinal);
+        }
+    }
+
     // Row readers are synchronous: the row is already buffered once ReadAsync returns, so a
     // per-row Task would only add an allocation. Loops over a result set pass one
-    // FeatureAttributeReadContext so repeated attribute names are not re-allocated per row.
-    private Feature ReadFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
+    // FeatureAttributeReadContext and resolved FeatureRowOrdinals so repeated attribute names
+    // and trailing column ordinals are not re-scanned per row.
+    private Feature ReadFeature(
+        NpgsqlDataReader reader,
+        FeatureAttributeReadContext? attributesReader = null,
+        FeatureRowOrdinals? ordinals = null,
+        bool includeTotalCountAttribute = true)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -26,23 +56,31 @@ internal sealed partial class FeatureDataAccess
                 ImmutableDictionary<string, object?>.Empty.Add("objectid", id));
         }
 
-        var attributes = ReadAttributes(reader, id, attributesReader);
+        var attributes = ReadAttributes(reader, id, attributesReader, ordinals ?? FeatureRowOrdinals.Resolve(reader), includeTotalCountAttribute);
         return Feature.Create(id, geometry, attributes);
     }
 
-    private GmlFeature ReadGmlFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
+    private GmlFeature ReadGmlFeature(
+        NpgsqlDataReader reader,
+        FeatureAttributeReadContext? attributesReader = null,
+        FeatureRowOrdinals? ordinals = null,
+        bool includeTotalCountAttribute = true)
     {
         var id = reader.GetInt64(0);
         var geometryGml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, attributesReader);
+        var attributes = ReadAttributes(reader, id, attributesReader, ordinals ?? FeatureRowOrdinals.Resolve(reader), includeTotalCountAttribute);
         return GmlFeature.Create(id, geometryGml, attributes);
     }
 
-    private EncodedGeoJsonFeature ReadGeoJsonFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
+    private EncodedGeoJsonFeature ReadGeoJsonFeature(
+        NpgsqlDataReader reader,
+        FeatureAttributeReadContext? attributesReader = null,
+        FeatureRowOrdinals? ordinals = null,
+        bool includeTotalCountAttribute = true)
     {
         var id = reader.GetInt64(0);
         var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, attributesReader);
+        var attributes = ReadAttributes(reader, id, attributesReader, ordinals ?? FeatureRowOrdinals.Resolve(reader), includeTotalCountAttribute);
         return EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes);
     }
 
@@ -79,11 +117,15 @@ internal sealed partial class FeatureDataAccess
         return RawGeoServicesFeature.Create(id, legacyAttributesJson, legacyX, legacyY);
     }
 
-    private KmlFeature ReadKmlFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
+    private KmlFeature ReadKmlFeature(
+        NpgsqlDataReader reader,
+        FeatureAttributeReadContext? attributesReader = null,
+        FeatureRowOrdinals? ordinals = null,
+        bool includeTotalCountAttribute = true)
     {
         var id = reader.GetInt64(0);
         var geometryKml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, attributesReader);
+        var attributes = ReadAttributes(reader, id, attributesReader, ordinals ?? FeatureRowOrdinals.Resolve(reader), includeTotalCountAttribute);
         return KmlFeature.Create(id, geometryKml, attributes);
     }
 
@@ -116,7 +158,9 @@ internal sealed partial class FeatureDataAccess
     private ImmutableDictionary<string, object?> ReadAttributes(
         NpgsqlDataReader reader,
         long id,
-        FeatureAttributeReadContext? attributesReader)
+        FeatureAttributeReadContext? attributesReader,
+        FeatureRowOrdinals ordinals,
+        bool includeTotalCountAttribute)
     {
         var attributesDictionary = _dictionaryPool.Get();
 
@@ -126,26 +170,18 @@ internal sealed partial class FeatureDataAccess
 
             attributesDictionary["objectid"] = id;
 
-            if (reader.FieldCount > 3)
+            if (includeTotalCountAttribute && ordinals.TotalCountOrdinal >= 0)
             {
-                for (var i = 3; i < reader.FieldCount; i++)
-                {
-                    var fieldName = reader.GetName(i);
-                    if (fieldName.Equals(FeatureQueryEncoding.InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary[FeatureQueryEncoding.InternalTotalCountColumn] = reader.IsDBNull(i)
-                            ? null
-                            : reader.GetFieldValue<long>(i);
-                        continue;
-                    }
+                attributesDictionary[FeatureQueryEncoding.InternalTotalCountColumn] = reader.IsDBNull(ordinals.TotalCountOrdinal)
+                    ? null
+                    : reader.GetFieldValue<long>(ordinals.TotalCountOrdinal);
+            }
 
-                    if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(i)
-                            ? null
-                            : reader.GetFieldValue<double>(i);
-                    }
-                }
+            if (ordinals.DistanceOrdinal >= 0)
+            {
+                attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(ordinals.DistanceOrdinal)
+                    ? null
+                    : reader.GetFieldValue<double>(ordinals.DistanceOrdinal);
             }
 
             return attributesDictionary.ToImmutableDictionary();

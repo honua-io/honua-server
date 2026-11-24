@@ -202,6 +202,21 @@ internal static class GrpcConversionHelpers
         string? objectIdFieldName = null,
         IReadOnlySet<string>? hiddenFields = null,
         IReadOnlyList<MetadataV2Field>? fields = null)
+        => ToProtoFeature(
+            feature,
+            includeGeometry,
+            geometryLimits,
+            objectIdFieldName,
+            hiddenFields,
+            GrpcTypedValues.BuildExactFieldTypeMap(fields));
+
+    public static Proto.Feature ToProtoFeature(
+        Feature feature,
+        bool includeGeometry,
+        GeometryLimits? geometryLimits,
+        string? objectIdFieldName,
+        IReadOnlySet<string>? hiddenFields,
+        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes)
     {
         var proto = new Proto.Feature { Id = feature.Id };
 
@@ -217,8 +232,10 @@ internal static class GrpcConversionHelpers
                 continue;
             }
 
-            var field = fields?.FirstOrDefault(field => string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase));
-            proto.Attributes[key] = ToAttributeValue(value, field?.Type);
+            MetadataV2FieldType? fieldType = exactFieldTypes is not null && exactFieldTypes.TryGetValue(key, out var resolvedType)
+                ? resolvedType
+                : null;
+            proto.Attributes[key] = ToAttributeValue(value, fieldType);
         }
 
         if (includeGeometry && feature.Geometry is { Length: > 0 })

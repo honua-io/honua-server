@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Linq;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -56,15 +56,11 @@ public readonly struct FilterFieldSchema
             return true;
         }
 
-        if (_resource is not null)
+        if (_resource is not null &&
+            CompiledResourceFieldIndex.For(_resource).FieldsByName.TryGetValue(fieldName, out var schemaField))
         {
-            var schemaField = _resource.SchemaFields.FirstOrDefault(field =>
-                string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
-            if (schemaField is not null)
-            {
-                fieldType = NormalizeFieldType(schemaField.Type);
-                return true;
-            }
+            fieldType = NormalizeFieldType(schemaField.Type);
+            return true;
         }
 
         if (fieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))

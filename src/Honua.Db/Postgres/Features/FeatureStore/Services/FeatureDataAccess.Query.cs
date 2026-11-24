@@ -46,7 +46,88 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    private static int ResolveBuilderCapacity(FeatureQuery featureQuery)
+        => featureQuery.Limit is > 0 and < int.MaxValue
+            ? Math.Min(featureQuery.Limit.Value, 1024)
+            : 256;
+
     public async Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(CoreParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
+    {
+        var (items, _) = await ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select",
+            includeTotalCountAttribute: true,
+            ReadFeature,
+            cancellationToken).ConfigureAwait(false);
+        return items;
+    }
+
+    internal Task<(ImmutableArray<Feature> Items, long? TotalCount)> ExecuteOptimizedSelectQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+        => ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select",
+            includeTotalCountAttribute: false,
+            ReadFeature,
+            cancellationToken);
+
+    internal Task<(ImmutableArray<GmlFeature> Items, long? TotalCount)> ExecuteOptimizedSelectGmlQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+        => ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_gml",
+            includeTotalCountAttribute: false,
+            ReadGmlFeature,
+            cancellationToken);
+
+    internal Task<(ImmutableArray<EncodedGeoJsonFeature> Items, long? TotalCount)> ExecuteOptimizedSelectGeoJsonQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+        => ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_geojson",
+            includeTotalCountAttribute: false,
+            ReadGeoJsonFeature,
+            cancellationToken);
+
+    internal Task<(ImmutableArray<KmlFeature> Items, long? TotalCount)> ExecuteOptimizedSelectKmlQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+        => ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_kml",
+            includeTotalCountAttribute: false,
+            ReadKmlFeature,
+            cancellationToken);
+
+    private async Task<(ImmutableArray<T> Items, long? TotalCount)> ExecuteSelectWithTotalCountAsync<T>(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        string metricName,
+        bool includeTotalCountAttribute,
+        Func<NpgsqlDataReader, FeatureAttributeReadContext?, FeatureRowOrdinals?, bool, T> readRow,
+        CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         try
@@ -58,27 +139,35 @@ internal sealed partial class FeatureDataAccess
                 cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
 
-            var features = new List<Feature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var features = ImmutableArray.CreateBuilder<T>(ResolveBuilderCapacity(featureQuery));
+            long? totalCount = null;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
+            var ordinals = FeatureRowOrdinals.Resolve(reader);
             var attributesReader = new FeatureAttributeReadContext();
-            while (await reader.ReadAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var feature = ReadFeature(reader, attributesReader);
-                features.Add(feature);
+                if (!totalCount.HasValue &&
+                    ordinals.TotalCountOrdinal >= 0 &&
+                    !reader.IsDBNull(ordinals.TotalCountOrdinal))
+                {
+                    totalCount = reader.GetFieldValue<long>(ordinals.TotalCountOrdinal);
+                }
+
+                features.Add(readRow(reader, attributesReader, ordinals, includeTotalCountAttribute));
             }
 
             stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select", stopwatch.ElapsedMilliseconds, features.Count);
-            RecordPerformanceQuery("select", layerId, stopwatch.ElapsedMilliseconds, features.Count);
-            LogSlowQuery("select", stopwatch.ElapsedMilliseconds, layerId, features.Count);
+            _cacheManager.RecordQueryMetrics(metricName, stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery(metricName, layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery(metricName, stopwatch.ElapsedMilliseconds, layerId, features.Count);
 
-            return features.ToImmutableArray();
+            return (features.DrainToImmutable(), totalCount);
         }
         catch (Exception)
         {
             stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_error", stopwatch.ElapsedMilliseconds);
+            _cacheManager.RecordQueryMetrics(metricName + "_error", stopwatch.ElapsedMilliseconds);
             throw;
         }
     }
@@ -99,10 +188,7 @@ internal sealed partial class FeatureDataAccess
                 cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
 
-            var capacity = featureQuery.Limit is > 0 and < int.MaxValue
-                ? Math.Min(featureQuery.Limit.Value, 1024)
-                : 256;
-            var points = new List<ProjectedPoint>(capacity);
+            var points = ImmutableArray.CreateBuilder<ProjectedPoint>(ResolveBuilderCapacity(featureQuery));
             await using var reader = await command.ExecuteReaderAsync(
                 CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
                 cancellationToken).ConfigureAwait(false);
@@ -117,7 +203,7 @@ internal sealed partial class FeatureDataAccess
             RecordPerformanceQuery("select_points", layerId, stopwatch.ElapsedMilliseconds, points.Count);
             LogSlowQuery("select_points", stopwatch.ElapsedMilliseconds, layerId, points.Count);
 
-            return points.ToImmutableArray();
+            return points.DrainToImmutable();
         }
         catch (Exception)
         {
@@ -143,10 +229,7 @@ internal sealed partial class FeatureDataAccess
                 cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
 
-            var capacity = featureQuery.Limit is > 0 and < int.MaxValue
-                ? featureQuery.Limit.Value
-                : 256;
-            var features = new List<RawGeoServicesFeature>(capacity);
+            var features = ImmutableArray.CreateBuilder<RawGeoServicesFeature>(ResolveBuilderCapacity(featureQuery));
             await using var reader = await command.ExecuteReaderAsync(
                 CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
                 cancellationToken).ConfigureAwait(false);
@@ -161,7 +244,7 @@ internal sealed partial class FeatureDataAccess
             RecordPerformanceQuery("select_raw_geoservices", layerId, stopwatch.ElapsedMilliseconds, features.Count);
             LogSlowQuery("select_raw_geoservices", stopwatch.ElapsedMilliseconds, layerId, features.Count);
 
-            return features.ToImmutableArray();
+            return features.DrainToImmutable();
         }
         catch (Exception)
         {
@@ -173,39 +256,15 @@ internal sealed partial class FeatureDataAccess
 
     public async Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(CoreParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = await CreateCommandAsync(
-                connection,
-                query.Sql,
-                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
-                cancellationToken).ConfigureAwait(false);
-
-            var features = new List<GmlFeature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            var attributesReader = new FeatureAttributeReadContext();
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var feature = ReadGmlFeature(reader, attributesReader);
-                features.Add(feature);
-            }
-
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_gml", stopwatch.ElapsedMilliseconds, features.Count);
-            RecordPerformanceQuery("select_gml", layerId, stopwatch.ElapsedMilliseconds, features.Count);
-            LogSlowQuery("select_gml", stopwatch.ElapsedMilliseconds, layerId, features.Count);
-
-            return features.ToImmutableArray();
-        }
-        catch (Exception)
-        {
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_gml_error", stopwatch.ElapsedMilliseconds);
-            throw;
-        }
+        var (items, _) = await ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_gml",
+            includeTotalCountAttribute: true,
+            ReadGmlFeature,
+            cancellationToken).ConfigureAwait(false);
+        return items;
     }
 
     public async Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
@@ -214,39 +273,15 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = await CreateCommandAsync(
-                connection,
-                query.Sql,
-                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
-                cancellationToken).ConfigureAwait(false);
-
-            var features = new List<EncodedGeoJsonFeature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            var attributesReader = new FeatureAttributeReadContext();
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var feature = ReadGeoJsonFeature(reader, attributesReader);
-                features.Add(feature);
-            }
-
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_geojson", stopwatch.ElapsedMilliseconds, features.Count);
-            RecordPerformanceQuery("select_geojson", layerId, stopwatch.ElapsedMilliseconds, features.Count);
-            LogSlowQuery("select_geojson", stopwatch.ElapsedMilliseconds, layerId, features.Count);
-
-            return features.ToImmutableArray();
-        }
-        catch (Exception)
-        {
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_geojson_error", stopwatch.ElapsedMilliseconds);
-            throw;
-        }
+        var (items, _) = await ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_geojson",
+            includeTotalCountAttribute: true,
+            ReadGeoJsonFeature,
+            cancellationToken).ConfigureAwait(false);
+        return items;
     }
 
     public async Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
@@ -265,15 +300,14 @@ internal sealed partial class FeatureDataAccess
                 cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
 
-            var features = new List<RawGeoJsonFeature>();
+            var features = ImmutableArray.CreateBuilder<RawGeoJsonFeature>(ResolveBuilderCapacity(featureQuery));
             await using var reader = await command.ExecuteReaderAsync(
                 CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
                 cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var feature = ReadRawGeoJsonFeature(reader);
-                features.Add(feature);
+                features.Add(ReadRawGeoJsonFeature(reader));
             }
 
             stopwatch.Stop();
@@ -281,7 +315,7 @@ internal sealed partial class FeatureDataAccess
             RecordPerformanceQuery("select_raw_geojson", layerId, stopwatch.ElapsedMilliseconds, features.Count);
             LogSlowQuery("select_raw_geojson", stopwatch.ElapsedMilliseconds, layerId, features.Count);
 
-            return features.ToImmutableArray();
+            return features.DrainToImmutable();
         }
         catch (Exception)
         {
@@ -297,39 +331,15 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = await CreateCommandAsync(
-                connection,
-                query.Sql,
-                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
-                cancellationToken).ConfigureAwait(false);
-
-            var features = new List<KmlFeature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            var attributesReader = new FeatureAttributeReadContext();
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                var feature = ReadKmlFeature(reader, attributesReader);
-                features.Add(feature);
-            }
-
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_kml", stopwatch.ElapsedMilliseconds, features.Count);
-            RecordPerformanceQuery("select_kml", layerId, stopwatch.ElapsedMilliseconds, features.Count);
-            LogSlowQuery("select_kml", stopwatch.ElapsedMilliseconds, layerId, features.Count);
-
-            return features.ToImmutableArray();
-        }
-        catch (Exception)
-        {
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_kml_error", stopwatch.ElapsedMilliseconds);
-            throw;
-        }
+        var (items, _) = await ExecuteSelectWithTotalCountAsync(
+            query,
+            featureQuery,
+            layerId,
+            "select_kml",
+            includeTotalCountAttribute: true,
+            ReadKmlFeature,
+            cancellationToken).ConfigureAwait(false);
+        return items;
     }
 
     public async Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
@@ -598,10 +608,11 @@ internal sealed partial class FeatureDataAccess
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var ordinals = FeatureRowOrdinals.Resolve(reader);
         var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken))
         {
-            yield return ReadFeature(reader, attributesReader);
+            yield return ReadFeature(reader, attributesReader, ordinals);
         }
     }
 
@@ -620,10 +631,11 @@ internal sealed partial class FeatureDataAccess
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var ordinals = FeatureRowOrdinals.Resolve(reader);
         var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken))
         {
-            yield return ReadGmlFeature(reader, attributesReader);
+            yield return ReadGmlFeature(reader, attributesReader, ordinals);
         }
     }
 }

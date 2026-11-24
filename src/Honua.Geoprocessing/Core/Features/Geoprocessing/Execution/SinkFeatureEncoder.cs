@@ -4,13 +4,29 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-internal static class SinkFeatureEncoder
+internal static partial class SinkFeatureEncoder
 {
     public const string BatchIdPropertyKey = "__pipeline_batch_id";
+
+    public static string Identifier(string value)
+    {
+        if (!IdentifierRegex().IsMatch(value))
+        {
+            throw new TransformInputException(
+                $"identifier '{value}' is invalid; identifiers must match ^[A-Za-z_][A-Za-z0-9_]*$ " +
+                "(they cannot be parameterized in DDL/DML).");
+        }
+
+        return value;
+    }
+
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
+    private static partial Regex IdentifierRegex();
 
     public static string BuildAttributesJson(IFeature feature, string batchId)
     {
@@ -36,7 +52,11 @@ internal static class SinkFeatureEncoder
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static void WriteAttribute(Utf8JsonWriter writer, string name, object? value)
+    public static void WriteAttribute(
+        Utf8JsonWriter writer,
+        string name,
+        object? value,
+        bool writeNonFiniteAsNull = false)
     {
         writer.WritePropertyName(name);
         switch (value)
@@ -80,8 +100,15 @@ internal static class SinkFeatureEncoder
             case float floatValue when float.IsFinite(floatValue):
                 writer.WriteNumberValue(floatValue);
                 break;
+            case float when writeNonFiniteAsNull:
+                // NaN / +/-Infinity are not valid JSON numbers; write null to preserve numeric column typing.
+                writer.WriteNullValue();
+                break;
             case double doubleValue when double.IsFinite(doubleValue):
                 writer.WriteNumberValue(doubleValue);
+                break;
+            case double when writeNonFiniteAsNull:
+                writer.WriteNullValue();
                 break;
             case decimal decimalValue:
                 writer.WriteNumberValue(decimalValue);

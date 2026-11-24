@@ -571,6 +571,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             var selectedFields = ODataUtilityService.ParseSelect(select);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
 
             // Stream the OData response
             var featureStream = featureReader is IStreamingFeatureStore routedStreamingStore
@@ -587,6 +588,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 pagination,
                 topValue,
                 selectedFields,
+                hiddenFields,
                 filter,
                 select,
                 orderby,
@@ -660,6 +662,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         PaginationValues pagination,
         int? requestedTop,
         HashSet<string>? selectedFields,
+        IReadOnlySet<string> hiddenFields,
         string? filter,
         string? select,
         string? orderby,
@@ -720,13 +723,14 @@ internal sealed partial class ODataStreamingQueryHandler(
                     break;
                 }
 
-                await WriteODataFeatureAsync(
+                WriteODataFeature(
                     writer,
                     feature,
                     layerId,
                     layerSrid,
                     axisOrder,
                     selectedFields,
+                    hiddenFields,
                     computeExpressions,
                     geometryService,
                     cancellationToken);
@@ -840,13 +844,14 @@ internal sealed partial class ODataStreamingQueryHandler(
         return null;
     }
 
-    private static async Task WriteODataFeatureAsync(
+    private static void WriteODataFeature(
         Utf8JsonWriter writer,
         Feature feature,
         int layerId,
         int? layerSrid,
         AxisOrder axisOrder,
         HashSet<string>? select,
+        IReadOnlySet<string> hiddenFields,
         System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
         IGeometryService geometryService,
         CancellationToken cancellationToken)
@@ -888,33 +893,48 @@ internal sealed partial class ODataStreamingQueryHandler(
         Dictionary<string, object?>? computeSource = null;
         if (feature.Attributes != null)
         {
-            var normalized = ODataAttributeSerializer.NormalizeAttributes(feature.Attributes);
             if (requiresCompute)
             {
-                computeSource = new Dictionary<string, object?>(normalized, StringComparer.OrdinalIgnoreCase)
+                computeSource = new Dictionary<string, object?>(feature.Attributes.Count + 2, StringComparer.OrdinalIgnoreCase)
                 {
                     ["ObjectId"] = feature.Id,
                     ["LayerId"] = layerId
                 };
-            }
-
-            foreach (var kvp in normalized)
-            {
-                if (ODataUtilityService.IsReservedFeatureProperty(kvp.Key))
+                foreach (var kvp in feature.Attributes)
                 {
-                    continue;
+                    if (ODataUtilityService.IsReservedFeatureProperty(kvp.Key) || hiddenFields.Contains(kvp.Key))
+                    {
+                        continue;
+                    }
+
+                    var normalizedValue = ODataAttributeSerializer.NormalizeODataValue(kvp.Value);
+                    computeSource[kvp.Key] = normalizedValue;
+                    if ((select == null || select.Contains(kvp.Key)) &&
+                        writtenProperties!.Add(kvp.Key))
+                    {
+                        WriteODataJsonValue(writer, kvp.Key, normalizedValue);
+                    }
                 }
-
-                if ((select == null || select.Contains(kvp.Key)) &&
-                    (writtenProperties == null || writtenProperties.Add(kvp.Key)))
+            }
+            else
+            {
+                foreach (var kvp in feature.Attributes)
                 {
-                    await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
+                    if (ODataUtilityService.IsReservedFeatureProperty(kvp.Key) || hiddenFields.Contains(kvp.Key))
+                    {
+                        continue;
+                    }
+
+                    if (select == null || select.Contains(kvp.Key))
+                    {
+                        WriteODataJsonValue(writer, kvp.Key, ODataAttributeSerializer.NormalizeODataValue(kvp.Value));
+                    }
                 }
             }
         }
         else if (requiresCompute)
         {
-            computeSource = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            computeSource = new Dictionary<string, object?>(2, StringComparer.OrdinalIgnoreCase)
             {
                 ["ObjectId"] = feature.Id,
                 ["LayerId"] = layerId
@@ -942,7 +962,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 if (computeSource!.TryGetValue(expression.Alias, out var computedValue))
                 {
-                    await WriteODataJsonValueAsync(writer, expression.Alias, computedValue, cancellationToken);
+                    WriteODataJsonValue(writer, expression.Alias, computedValue);
                 }
                 else
                 {
@@ -953,18 +973,13 @@ internal sealed partial class ODataStreamingQueryHandler(
 
         writer.WriteEndObject(); // End feature
 
-        // Allow for cancellation during processing
-        if (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static async Task WriteODataJsonValueAsync(
+    private static void WriteODataJsonValue(
         Utf8JsonWriter writer,
         string propertyName,
-        object? value,
-        CancellationToken cancellationToken)
+        object? value)
     {
         switch (value)
         {
@@ -993,22 +1008,36 @@ internal sealed partial class ODataStreamingQueryHandler(
                 writer.WriteBoolean(propertyName, b);
                 break;
             case DateTime dt:
-                writer.WriteString(propertyName, dt.ToString("O")); // ISO 8601 format
-                break;
+                {
+                    Span<char> buffer = stackalloc char[33];
+                    if (dt.TryFormat(buffer, out var written, "O", CultureInfo.InvariantCulture))
+                    {
+                        writer.WriteString(propertyName, buffer[..written]);
+                    }
+                    else
+                    {
+                        writer.WriteString(propertyName, dt.ToString("O", CultureInfo.InvariantCulture));
+                    }
+                    break;
+                }
             case DateTimeOffset dto:
-                writer.WriteString(propertyName, dto.ToString("O")); // ISO 8601 format
-                break;
+                {
+                    Span<char> buffer = stackalloc char[33];
+                    if (dto.TryFormat(buffer, out var written, "O", CultureInfo.InvariantCulture))
+                    {
+                        writer.WriteString(propertyName, buffer[..written]);
+                    }
+                    else
+                    {
+                        writer.WriteString(propertyName, dto.ToString("O", CultureInfo.InvariantCulture));
+                    }
+                    break;
+                }
             default:
                 // For complex objects, serialize using OData JSON context
                 writer.WritePropertyName(propertyName);
                 JsonSerializer.Serialize(writer, value, ODataJsonContext.Default.Object);
                 break;
-        }
-
-        // Allow for cancellation during long attribute writing
-        if (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
         }
     }
 

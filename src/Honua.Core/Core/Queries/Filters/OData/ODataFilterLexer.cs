@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 
@@ -8,6 +9,29 @@ namespace Honua.Core.Queries.Filters.OData;
 
 internal sealed class ODataFilterLexer
 {
+    private static readonly FrozenDictionary<string, ODataFilterTokenType> Keywords =
+        new Dictionary<string, ODataFilterTokenType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["and"] = ODataFilterTokenType.And,
+            ["or"] = ODataFilterTokenType.Or,
+            ["not"] = ODataFilterTokenType.Not,
+            ["eq"] = ODataFilterTokenType.Eq,
+            ["ne"] = ODataFilterTokenType.Ne,
+            ["gt"] = ODataFilterTokenType.Gt,
+            ["ge"] = ODataFilterTokenType.Ge,
+            ["lt"] = ODataFilterTokenType.Lt,
+            ["le"] = ODataFilterTokenType.Le,
+            ["in"] = ODataFilterTokenType.In,
+            ["add"] = ODataFilterTokenType.Add,
+            ["sub"] = ODataFilterTokenType.Sub,
+            ["mul"] = ODataFilterTokenType.Mul,
+            ["div"] = ODataFilterTokenType.Div,
+            ["mod"] = ODataFilterTokenType.Mod,
+            ["true"] = ODataFilterTokenType.BooleanLiteral,
+            ["false"] = ODataFilterTokenType.BooleanLiteral,
+            ["null"] = ODataFilterTokenType.NullLiteral,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _input;
     private int _position;
 
@@ -273,35 +297,33 @@ internal sealed class ODataFilterLexer
             _position++;
         }
 
-        var value = _input[start.._position];
-        FilterParserGuard.EnsureIdentifierLength(value.Length, "OData identifier");
-        if (value.Contains('/', StringComparison.Ordinal) && value.Split('/').Any(segment => segment.Length == 0 || !IsIdentifierStart(segment[0])))
+        var span = _input.AsSpan(start, _position - start);
+        FilterParserGuard.EnsureIdentifierLength(span.Length, "OData identifier");
+        if (span.Contains('/'))
         {
-            throw new ODataFilterParseException("Property paths require non-empty identifier segments", start);
+            foreach (var range in span.Split('/'))
+            {
+                var segment = span[range];
+                if (segment.IsEmpty || !IsIdentifierStart(segment[0]))
+                {
+                    throw new ODataFilterParseException("Property paths require non-empty identifier segments", start);
+                }
+            }
         }
-        var normalized = value.ToLowerInvariant();
 
-        return normalized switch
+        var keywordLookup = Keywords.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (keywordLookup.TryGetValue(span, out var keywordType))
         {
-            "and" => new ODataFilterToken(ODataFilterTokenType.And, value, start),
-            "or" => new ODataFilterToken(ODataFilterTokenType.Or, value, start),
-            "not" => new ODataFilterToken(ODataFilterTokenType.Not, value, start),
-            "eq" => new ODataFilterToken(ODataFilterTokenType.Eq, value, start),
-            "ne" => new ODataFilterToken(ODataFilterTokenType.Ne, value, start),
-            "gt" => new ODataFilterToken(ODataFilterTokenType.Gt, value, start),
-            "ge" => new ODataFilterToken(ODataFilterTokenType.Ge, value, start),
-            "lt" => new ODataFilterToken(ODataFilterTokenType.Lt, value, start),
-            "le" => new ODataFilterToken(ODataFilterTokenType.Le, value, start),
-            "in" => new ODataFilterToken(ODataFilterTokenType.In, value, start),
-            "add" => new ODataFilterToken(ODataFilterTokenType.Add, value, start),
-            "sub" => new ODataFilterToken(ODataFilterTokenType.Sub, value, start),
-            "mul" => new ODataFilterToken(ODataFilterTokenType.Mul, value, start),
-            "div" => new ODataFilterToken(ODataFilterTokenType.Div, value, start),
-            "mod" => new ODataFilterToken(ODataFilterTokenType.Mod, value, start),
-            "true" or "false" => new ODataFilterToken(ODataFilterTokenType.BooleanLiteral, normalized, start),
-            "null" => new ODataFilterToken(ODataFilterTokenType.NullLiteral, normalized, start),
-            _ => new ODataFilterToken(ODataFilterTokenType.Identifier, value, start)
-        };
+            var tokenValue = keywordType switch
+            {
+                ODataFilterTokenType.BooleanLiteral => span.Length == 4 ? "true" : "false",
+                ODataFilterTokenType.NullLiteral => "null",
+                _ => _input[start.._position]
+            };
+            return new ODataFilterToken(keywordType, tokenValue, start);
+        }
+
+        return new ODataFilterToken(ODataFilterTokenType.Identifier, _input[start.._position], start);
     }
 
     private bool IsAtEnd() => _position >= _input.Length;

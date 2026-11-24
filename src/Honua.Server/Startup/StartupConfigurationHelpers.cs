@@ -32,6 +32,7 @@ internal static class StartupConfigurationHelpers
         }
 
         var knownNetworks = ParseKnownNetworks(configuration);
+        var knownProxies = ParseKnownProxies(configuration);
         var protoHeaderName = configuration["ForwardedHeaders:ProtoHeaderName"];
 
         services.Configure<ForwardedHeadersOptions>(options =>
@@ -53,19 +54,35 @@ internal static class StartupConfigurationHelpers
                 options.KnownIPNetworks.Add(network);
             }
 
-            var knownProxies = configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
-            // Not a simple .Where(): the filter condition depends on IPAddress.TryParse's
-            // `out` value, which the body also needs, so a LINQ predicate can't cleanly
-            // carry that state without re-parsing per candidate.
-            foreach (var ip in knownProxies
-                .Select(static proxy => IPAddress.TryParse(proxy, out var ip) ? ip : null)
-                .OfType<IPAddress>())
+            foreach (var ip in knownProxies)
             {
                 options.KnownProxies.Add(ip);
             }
         });
 
         return true;
+    }
+
+    private static List<IPAddress> ParseKnownProxies(IConfiguration configuration)
+    {
+        var proxies = new List<IPAddress>();
+        foreach (var entry in configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                continue;
+            }
+
+            if (!IPAddress.TryParse(entry.Trim(), out var ip))
+            {
+                throw new InvalidOperationException(
+                    $"ForwardedHeaders:KnownProxies entry '{entry}' is not a valid IP address such as 10.0.0.1.");
+            }
+
+            proxies.Add(ip);
+        }
+
+        return proxies;
     }
 
     private static List<System.Net.IPNetwork> ParseKnownNetworks(IConfiguration configuration)
@@ -254,18 +271,18 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        material = await ResolveKeyRingMaterialAsync(
+        var resolved = await ResolveKeyRingSettingAsync(
             material,
             OperationSecretKeyRingProtection.CertificateMaterialKey,
             cancellationToken).ConfigureAwait(false);
-        var written = OperationSecretKeyRingProtection.WritePkcs12Material(material);
-        SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, written.Path);
-        if (!string.IsNullOrEmpty(written.Password))
+        if (!string.IsNullOrWhiteSpace(path))
         {
-            SetResolvedSecretValue(
-                configuration,
-                OperationSecretKeyRingProtection.CertificatePasswordKey,
-                written.Password);
+            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, null);
+        }
+
+        if (!string.Equals(resolved, material, StringComparison.Ordinal))
+        {
+            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificateMaterialKey, resolved);
         }
     }
 
@@ -281,24 +298,31 @@ internal static class StartupConfigurationHelpers
             return;
         }
 
-        string resolved;
+        var resolved = await ResolveKeyRingSettingAsync(
+            secret,
+            OperationSecretKeyRingProtection.SecretKey,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!string.Equals(resolved, secret, StringComparison.Ordinal))
+        {
+            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.SecretKey, resolved);
+        }
+    }
+
+    private static async Task<string> ResolveKeyRingSettingAsync(
+        string value,
+        string key,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            resolved = await ResolveKeyRingMaterialAsync(
-                secret,
-                OperationSecretKeyRingProtection.SecretKey,
-                cancellationToken).ConfigureAwait(false);
+            return await ResolveKeyRingMaterialAsync(value, key, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not InvalidOperationException and not OperationCanceledException)
         {
             // The caller reports InvalidOperationException as a startup refusal; anything else would abort the runtime.
             throw new InvalidOperationException(
-                $"'{OperationSecretKeyRingProtection.SecretKey}' could not be resolved ({exception.GetType().Name}).");
-        }
-
-        if (!string.Equals(resolved, secret, StringComparison.Ordinal))
-        {
-            SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.SecretKey, resolved);
+                $"'{key}' could not be resolved ({exception.GetType().Name}).");
         }
     }
 

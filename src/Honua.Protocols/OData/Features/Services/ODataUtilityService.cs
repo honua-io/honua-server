@@ -479,7 +479,8 @@ internal static class ODataUtilityService
         int layerId,
         Feature feature,
         ODataSpatialGeometry? geometry,
-        IReadOnlyDictionary<string, object?> attributes)
+        IReadOnlyDictionary<string, object?> attributes,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -490,7 +491,7 @@ internal static class ODataUtilityService
 
         foreach (var (key, value) in attributes)
         {
-            if (IsReservedFeatureProperty(key))
+            if (IsReservedFeatureProperty(key) || (hiddenFields is not null && hiddenFields.Contains(key)))
             {
                 continue;
             }
@@ -506,7 +507,8 @@ internal static class ODataUtilityService
     public static Dictionary<string, object?> BuildFeaturePayload(
         int layerId,
         Feature feature,
-        ODataSpatialGeometry? geometry)
+        ODataSpatialGeometry? geometry,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var payload = new Dictionary<string, object?>(feature.Attributes.Count + 3, StringComparer.OrdinalIgnoreCase)
         {
@@ -517,7 +519,7 @@ internal static class ODataUtilityService
 
         foreach (var (key, value) in feature.Attributes)
         {
-            if (!IsReservedFeatureProperty(key))
+            if (!IsReservedFeatureProperty(key) && (hiddenFields is null || !hiddenFields.Contains(key)))
             {
                 payload[key] = ODataAttributeSerializer.NormalizeODataValue(value);
             }

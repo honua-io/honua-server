@@ -109,4 +109,33 @@ public class StyleDocumentWithheldFieldsTests
 
         result.Should().Contain("\"type\":\"vector\"").And.Contain("{x}").And.NotContain("promoteId");
     }
+
+    [UnitTest]
+    public void Sld_WithDtdDeclaration_FailsClosedWithEmptySld()
+    {
+        const string xxeSld = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE foo [ <!ENTITY xxe "secret"> ]>
+            <StyledLayerDescriptor xmlns="http://www.opengis.net/sld">
+              <NamedLayer><Name>&xxe;</Name></NamedLayer>
+            </StyledLayerDescriptor>
+            """;
+
+        var result = StyleDocumentWithheldFields.WithoutWithheldSld(xxeSld, Withheld);
+
+        result.Should().Be(StyleDocumentWithheldFields.EmptySldStyle);
+        result.Should().NotContain("secret");
+    }
+
+    [UnitTest]
+    public void Sld_WithExcessiveNestingDepth_FailsClosedWithEmptySld()
+    {
+        var openTags = string.Concat(Enumerable.Repeat("<a>", 70));
+        var closeTags = string.Concat(Enumerable.Repeat("</a>", 70));
+        var deepSld = $"""<?xml version="1.0" encoding="UTF-8"?>{openTags}notes{closeTags}""";
+
+        var result = StyleDocumentWithheldFields.WithoutWithheldSld(deepSld, Withheld);
+
+        result.Should().Be(StyleDocumentWithheldFields.EmptySldStyle);
+    }
 }

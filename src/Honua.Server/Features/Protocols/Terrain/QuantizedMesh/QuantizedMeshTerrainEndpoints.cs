@@ -72,7 +72,7 @@ internal static class QuantizedMeshTerrainEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource);
         var metadata = await terrainTileService.GetDatasetMetadataAsync(layerId, mergeStrategy, cancellationToken);
         if (metadata is null)
@@ -114,7 +114,7 @@ internal static class QuantizedMeshTerrainEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         var includeNormals = RequestsOctVertexNormals(context.Request);
 
         using var activity = HonuaTelemetry.StartActivity(HonuaTelemetry.Activities.TileGeneration);

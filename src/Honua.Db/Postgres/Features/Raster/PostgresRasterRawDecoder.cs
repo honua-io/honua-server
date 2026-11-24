@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
@@ -64,24 +65,36 @@ internal static class PostgresRasterRawDecoder
             }
             var bandLength = checked(pixels * sampleBytes);
             Require(wkb, offset, checked(sampleBytes + bandLength));
-            var noData = ReadSample(wkb.Slice(offset, sampleBytes), type, little);
+            var noDataSpan = wkb.Slice(offset, sampleBytes);
             offset += sampleBytes;
             var source = wkb.Slice(offset, bandLength);
             var target = data!.AsSpan(band * bandLength, bandLength);
-            masks[band] = new byte[(pixels + 7) / 8];
-            for (var pixel = 0; pixel < pixels; pixel++)
+            var mask = new byte[(pixels + 7) / 8];
+            masks[band] = mask;
+
+            if (little || sampleBytes == 1)
             {
-                var sample = source.Slice(pixel * sampleBytes, sampleBytes);
-                var destination = target.Slice(pixel * sampleBytes, sampleBytes);
-                sample.CopyTo(destination);
-                if (!little && sampleBytes > 1) destination.Reverse();
-                var value = ReadSample(sample, type, little);
-                // NoData is a stored sentinel, not a computed measurement. Match it exactly:
-                // a tolerance would mask adjacent valid samples. Equals also matches NaN sentinels.
-                var invalid = (flags & 0x20) != 0 || ((flags & 0x40) != 0 &&
-                    value.Equals(noData));
-                if (!invalid) masks[band][pixel / 8] |= (byte)(0x80 >> (pixel % 8));
+                source.CopyTo(target);
             }
+            else
+            {
+                CopyBigEndianToLittleEndian(source, target, sampleBytes, pixels);
+            }
+
+            var isNoDataBand = (flags & 0x20) != 0;
+            if (!isNoDataBand)
+            {
+                var hasNoData = (flags & 0x40) != 0;
+                if (!hasNoData)
+                {
+                    FillAllValidMask(mask, pixels);
+                }
+                else
+                {
+                    PopulateValidityMask(target, noDataSpan, type, little, pixels, mask);
+                }
+            }
+
             offset += bandLength;
         }
         if (offset != wkb.Length) throw new InvalidDataException("Unexpected trailing raster bytes.");
@@ -107,6 +120,164 @@ internal static class PostgresRasterRawDecoder
             GeoTransform = [x, scaleX, skewX, y, skewY, scaleY],
             Extent = new RasterExtent { XMin = xs.Min(), XMax = xs.Max(), YMin = ys.Min(), YMax = ys.Max(), Srid = srid }
         };
+    }
+
+    private static void CopyBigEndianToLittleEndian(
+        ReadOnlySpan<byte> source,
+        Span<byte> target,
+        int sampleBytes,
+        int pixels)
+    {
+        for (var pixel = 0; pixel < pixels; pixel++)
+        {
+            var offset = pixel * sampleBytes;
+            var destination = target.Slice(offset, sampleBytes);
+            source.Slice(offset, sampleBytes).CopyTo(destination);
+            destination.Reverse();
+        }
+    }
+
+    private static void FillAllValidMask(byte[] mask, int pixels)
+    {
+        mask.AsSpan().Fill(0xFF);
+        var remainder = pixels & 7;
+        if (remainder != 0)
+        {
+            mask[^1] = (byte)(0xFF << (8 - remainder));
+        }
+    }
+
+    // Target bytes are already normalized to little-endian; hoist the sample type switch outside
+    // the pixel loop and scan typed spans directly. NoData is a stored sentinel, so exact equality
+    // (including NaN matching NaN) is required.
+    private static void PopulateValidityMask(
+        ReadOnlySpan<byte> littleEndianTarget,
+        ReadOnlySpan<byte> noDataSpan,
+        int type,
+        bool sourceLittle,
+        int pixels,
+        byte[] mask)
+    {
+        if (!BitConverter.IsLittleEndian)
+        {
+            var noData = ReadSample(noDataSpan, type, sourceLittle);
+            var sampleBytes = littleEndianTarget.Length / pixels;
+            for (var pixel = 0; pixel < pixels; pixel++)
+            {
+                var value = ReadSample(littleEndianTarget.Slice(pixel * sampleBytes, sampleBytes), type, little: true);
+                if (value.CompareTo(noData) != 0)
+                {
+                    mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+                }
+            }
+
+            return;
+        }
+
+        switch (type)
+        {
+            case 0 or 1 or 2 or 3 or 4:
+                PopulateEqualityMask(littleEndianTarget, noDataSpan[0], mask);
+                break;
+            case 5:
+                PopulateEqualityMask(
+                    MemoryMarshal.Cast<byte, short>(littleEndianTarget),
+                    sourceLittle ? BinaryPrimitives.ReadInt16LittleEndian(noDataSpan) : BinaryPrimitives.ReadInt16BigEndian(noDataSpan),
+                    mask);
+                break;
+            case 6:
+                PopulateEqualityMask(
+                    MemoryMarshal.Cast<byte, ushort>(littleEndianTarget),
+                    ReadUInt16(noDataSpan, sourceLittle),
+                    mask);
+                break;
+            case 7:
+                PopulateEqualityMask(
+                    MemoryMarshal.Cast<byte, int>(littleEndianTarget),
+                    sourceLittle ? BinaryPrimitives.ReadInt32LittleEndian(noDataSpan) : BinaryPrimitives.ReadInt32BigEndian(noDataSpan),
+                    mask);
+                break;
+            case 8:
+                PopulateEqualityMask(
+                    MemoryMarshal.Cast<byte, uint>(littleEndianTarget),
+                    sourceLittle ? BinaryPrimitives.ReadUInt32LittleEndian(noDataSpan) : BinaryPrimitives.ReadUInt32BigEndian(noDataSpan),
+                    mask);
+                break;
+            case 10:
+                PopulateFloatMask(
+                    MemoryMarshal.Cast<byte, float>(littleEndianTarget),
+                    sourceLittle ? BinaryPrimitives.ReadSingleLittleEndian(noDataSpan) : BinaryPrimitives.ReadSingleBigEndian(noDataSpan),
+                    mask);
+                break;
+            case 11:
+                PopulateDoubleMask(
+                    MemoryMarshal.Cast<byte, double>(littleEndianTarget),
+                    ReadDouble(noDataSpan, sourceLittle),
+                    mask);
+                break;
+            default:
+                throw new NotSupportedException("Unsupported raster sample type.");
+        }
+    }
+
+    private static void PopulateEqualityMask<T>(ReadOnlySpan<T> samples, T noData, byte[] mask)
+        where T : unmanaged, IEquatable<T>
+    {
+        for (var pixel = 0; pixel < samples.Length; pixel++)
+        {
+            if (!samples[pixel].Equals(noData))
+            {
+                mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+            }
+        }
+    }
+
+    private static void PopulateFloatMask(ReadOnlySpan<float> samples, float noData, byte[] mask)
+    {
+        if (float.IsNaN(noData))
+        {
+            for (var pixel = 0; pixel < samples.Length; pixel++)
+            {
+                if (!float.IsNaN(samples[pixel]))
+                {
+                    mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+                }
+            }
+
+            return;
+        }
+
+        for (var pixel = 0; pixel < samples.Length; pixel++)
+        {
+            if (samples[pixel].CompareTo(noData) != 0)
+            {
+                mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+            }
+        }
+    }
+
+    private static void PopulateDoubleMask(ReadOnlySpan<double> samples, double noData, byte[] mask)
+    {
+        if (double.IsNaN(noData))
+        {
+            for (var pixel = 0; pixel < samples.Length; pixel++)
+            {
+                if (!double.IsNaN(samples[pixel]))
+                {
+                    mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+                }
+            }
+
+            return;
+        }
+
+        for (var pixel = 0; pixel < samples.Length; pixel++)
+        {
+            if (samples[pixel].CompareTo(noData) != 0)
+            {
+                mask[pixel >> 3] |= (byte)(0x80 >> (pixel & 7));
+            }
+        }
     }
 
     private static void Require(ReadOnlySpan<byte> data, int offset, int length)

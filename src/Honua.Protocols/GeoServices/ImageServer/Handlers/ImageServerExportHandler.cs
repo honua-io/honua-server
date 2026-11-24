@@ -162,6 +162,21 @@ internal sealed class ImageServerExportHandler
             // is Raw only when the format parsed as a layout, so the layout is read only then.
             _ = ImageServerPixelBlockEncoder.TryParseLayout(request.Format, out var pixelBlockLayout);
 
+            var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
+            await using var renderLease = limiter is null
+                ? null
+                : await limiter.TryAcquireAsync(
+                    Math.Max(1, exportQuery.OutputWidth ?? DefaultOutputDimension),
+                    Math.Max(1, exportQuery.OutputHeight ?? DefaultOutputDimension),
+                    cancellationToken).ConfigureAwait(false);
+            if (limiter is not null && renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
+
             if (dimensionConstraints.Count > 0)
             {
                 if (exportQuery.OutputFormat == RasterFormat.Raw)

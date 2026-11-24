@@ -23,7 +23,8 @@ internal static class FederationEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Federation")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleListSources)
             .WithDisplayName("List Federated Sources")

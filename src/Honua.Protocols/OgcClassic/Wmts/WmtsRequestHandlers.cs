@@ -8,12 +8,15 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -25,6 +28,7 @@ using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
@@ -180,23 +184,32 @@ internal static class WmtsRequestHandlers
             // sort by storage layer id so capabilities/themes order is stable.
             var layers = ResolveWmtsLayers(snapshot, svcDef, context);
 
-            var accessibleLayers = layers
-                .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
-                .ToArray();
-
             // Gate the request the same way the v1 path did: 401/403 when nothing on the
             // service is readable for this caller, including zero-layer secured services.
             var accessError = layers.Length == 0
                 ? await AccessPolicyHelpers.RequireServiceAccessAsync(
                     context, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false)
-                : AccessPolicyHelpers.RequireAnyResourceAccess(
+                : await AccessPolicyHelpers.RequireAnyResourceAccessAsync(
                     context,
                     layers.Select(l => l.Resource),
-                    svcDef);
+                    svcDef,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
+
+            var accessibleLayerList = new List<WmtsLayer>(layers.Length);
+            foreach (var layer in layers)
+            {
+                if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context, layer.Resource, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
+                {
+                    accessibleLayerList.Add(layer);
+                }
+            }
+            var accessibleLayers = accessibleLayerList.ToArray();
 
             var wmtsMaxZoom = ResolveWmtsMaxZoom(context);
             if (context.Request.Path.Value?.Contains("/MapServer/WMTS", StringComparison.OrdinalIgnoreCase) == true &&
@@ -295,7 +308,7 @@ internal static class WmtsRequestHandlers
                         "UPDATESEQUENCE parameter value is required.");
                 }
 
-                var updateComparison = CompareUpdateSequence(updateSequence, WmtsUpdateSequence);
+                var updateComparison = Wfs20Utilities.CompareUpdateSequence(updateSequence, WmtsUpdateSequence);
                 if (updateComparison > 0)
                 {
                     return CreateWmtsExceptionReport(context,
@@ -806,11 +819,15 @@ internal static class WmtsRequestHandlers
             return dimensionError;
         }
 
+        var fallbackFeatureReader = context.RequestServices.GetService<IFeatureReader>();
+        var temporalFeatureReader = fallbackFeatureReader is null
+            ? null
+            : await ResolveLayerReaderAsync(context, service, layer, fallbackFeatureReader, cancellationToken).ConfigureAwait(false);
         var (featureInfoTemporalFilter, featureInfoTemporalFilterError) = await TryBuildWmtsLayerTemporalFilterAsync(
             context,
             query,
             layer,
-            context.RequestServices.GetService<IFeatureReader>(),
+            temporalFeatureReader,
             cancellationToken).ConfigureAwait(false);
         if (featureInfoTemporalFilterError is not null)
         {
@@ -986,7 +1003,9 @@ internal static class WmtsRequestHandlers
             clickExtent = clickExtentTransform.Extent;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var defaultFeatureReader = fallbackFeatureReader ?? context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureReader = temporalFeatureReader
+            ?? await ResolveLayerReaderAsync(context, service, layer, defaultFeatureReader, cancellationToken).ConfigureAwait(false);
         var spatialFilter = CreateBboxSpatialFilter(clickExtent, serviceSrid);
         var remaining = Math.Min(featureCount, 1000);
 
@@ -995,14 +1014,43 @@ internal static class WmtsRequestHandlers
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
         var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
-        var featureQuery = new FeatureQuery
+        FeatureQuery featureQuery;
+        var queryProcessor = context.RequestServices.GetService<IQueryProcessor>();
+        if (queryProcessor is not null)
         {
-            SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = serviceSrid,
-            OutputSrid = serviceSrid,
-            Limit = remaining,
-            TemporalFilter = featureInfoTemporalFilter
-        };
+            var unifiedQuery = new UnifiedQuery
+            {
+                SpatialFilter = spatialFilter,
+                OutputCrs = QueryCrs.Create(serviceSrid),
+                Limit = remaining
+            };
+            var validation = queryProcessor.ValidateQuery(unifiedQuery, layer.Resource);
+            if (!validation.IsValid)
+            {
+                return CreateWmtsExceptionReport(context,
+                    "InvalidParameterValue",
+                    "GetFeatureInfo",
+                    validation.ErrorMessage ?? "Invalid feature query.");
+            }
+
+            featureQuery = queryProcessor.ToFeatureQuery(unifiedQuery, layer.Resource) with
+            {
+                SpatialReferenceSrid = serviceSrid,
+                OutputSrid = serviceSrid,
+                TemporalFilter = featureInfoTemporalFilter
+            };
+        }
+        else
+        {
+            featureQuery = new FeatureQuery
+            {
+                SpatialFilter = spatialFilter,
+                SpatialReferenceSrid = serviceSrid,
+                OutputSrid = serviceSrid,
+                Limit = remaining,
+                TemporalFilter = featureInfoTemporalFilter
+            };
+        }
 
         // IFeatureReader.QueryAsync is keyed by the int storage layer handle. The V2 graph
         // resolves that through the publication's storage binding; passing publication.LayerIndex
@@ -1100,18 +1148,59 @@ internal static class WmtsRequestHandlers
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static Task<(TemporalFilter? Filter, IResult? Error)> TryResolveWmtsTileTemporalFilterAsync(
+    private static async Task<(TemporalFilter? Filter, IResult? Error)> TryResolveWmtsTileTemporalFilterAsync(
         HttpContext context,
         (IQueryCollection Query, WmtsLayer Layer) target,
         CancellationToken cancellationToken)
-        => OgcClassicRasterSupport.IsRasterResource(target.Layer.Resource)
-            ? Task.FromResult<(TemporalFilter?, IResult?)>((null, null))
-            : TryBuildWmtsLayerTemporalFilterAsync(
-                context,
-                target.Query,
-                target.Layer,
-                context.RequestServices.GetService<IFeatureReader>(),
-                cancellationToken);
+    {
+        if (OgcClassicRasterSupport.IsRasterResource(target.Layer.Resource))
+        {
+            return (null, null);
+        }
+
+        var fallbackReader = context.RequestServices.GetService<IFeatureReader>();
+        IFeatureReader? reader = fallbackReader;
+        if (fallbackReader is not null &&
+            target.Layer.Snapshot is { } snapshot &&
+            snapshot.Index.ServicesById.TryGetValue(target.Layer.Publication.ServiceId, out var service))
+        {
+            reader = await ResolveLayerReaderAsync(context, service, target.Layer, fallbackReader, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await TryBuildWmtsLayerTemporalFilterAsync(
+            context,
+            target.Query,
+            target.Layer,
+            reader,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IFeatureReader> ResolveLayerReaderAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        WmtsLayer layer,
+        IFeatureReader fallback,
+        CancellationToken cancellationToken)
+    {
+        var router = context.RequestServices.GetService<FeatureProviderQueryRouter>();
+        if (router is null || layer.Snapshot is null)
+        {
+            return fallback;
+        }
+
+        var read = await StorageBoundFeatureReader.ResolveAsync(
+                fallback,
+                router,
+                layer.Snapshot,
+                service,
+                layer.Resource,
+                layer.Publication,
+                layer.StorageLayerId,
+                FeatureProviderReadOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return read.UseInjectedReader ? fallback : read.Reader;
+    }
 
     private static async Task<IResult> RenderWmtsRasterTileResultAsync(
         HttpContext context,
@@ -2162,22 +2251,6 @@ internal static class WmtsRequestHandlers
         return sb.ToString();
     }
 
-    private static int CompareUpdateSequence(string? requestedUpdateSequence, string currentUpdateSequence)
-    {
-        if (string.IsNullOrWhiteSpace(requestedUpdateSequence))
-        {
-            return -1;
-        }
-
-        if (long.TryParse(requestedUpdateSequence, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requestedLong) &&
-            long.TryParse(currentUpdateSequence, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentLong))
-        {
-            return requestedLong.CompareTo(currentLong);
-        }
-
-        return string.Compare(requestedUpdateSequence, currentUpdateSequence, StringComparison.Ordinal);
-    }
-
     private static string ResolveWmtsCapabilitiesMimeType(string acceptFormats)
     {
         var tokens = acceptFormats
@@ -2652,7 +2725,7 @@ internal static class WmtsRequestHandlers
     {
         decoded = string.Empty;
 
-        if (ContainsMalformedEscapeSequence(value))
+        if (UriEscapeValidation.ContainsMalformedEscapeSequence(value))
         {
             return false;
         }
@@ -2670,38 +2743,6 @@ internal static class WmtsRequestHandlers
         {
             return false;
         }
-    }
-
-    private static bool ContainsMalformedEscapeSequence(string value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            if (value[i] != '%')
-            {
-                continue;
-            }
-
-            if (i + 2 >= value.Length)
-            {
-                return true;
-            }
-
-            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
-            {
-                return true;
-            }
-
-            i += 2;
-        }
-
-        return false;
-    }
-
-    private static bool IsHexDigit(char c)
-    {
-        return (c >= '0' && c <= '9')
-            || (c >= 'A' && c <= 'F')
-            || (c >= 'a' && c <= 'f');
     }
 
     private static string ParseWmtsTileFormatFromExtension(string extension)

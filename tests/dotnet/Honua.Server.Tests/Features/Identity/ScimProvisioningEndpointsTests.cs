@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -279,6 +280,39 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var managed = await store.GetUserAsync(userName);
         Assert.False(managed!.IsActive);
         Assert.Empty(managed.Roles);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_DeactivationOrExternalIdChange_RevokesPortalOAuthRefreshTokens()
+    {
+        const string userName = "put-revoke-refresh@example.com";
+        await CreateUserAsync(userName);
+        var oauthStore = _fixture.Services.GetRequiredService<PortalOAuthStore>();
+        var issuedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var originalKey = $"{ScimOidcIssuer}|oidc|{userName}";
+
+        Assert.False(await oauthStore.IsPrincipalRefreshRevokedAsync(originalKey, issuedAt, CancellationToken.None));
+
+        var rebindResponse = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            externalId = "oidc|rebound-subject",
+            active = true,
+        });
+        Assert.Equal(HttpStatusCode.OK, rebindResponse.StatusCode);
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync(originalKey, issuedAt, CancellationToken.None));
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync($"{ScimOidcIssuer}|oidc|rebound-subject", issuedAt, CancellationToken.None));
+
+        var afterRebind = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var deactivateResponse = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            externalId = "oidc|rebound-subject",
+            active = false,
+        });
+        Assert.Equal(HttpStatusCode.OK, deactivateResponse.StatusCode);
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync($"{ScimOidcIssuer}|oidc|rebound-subject", afterRebind, CancellationToken.None));
     }
 
     [IntegrationTest]

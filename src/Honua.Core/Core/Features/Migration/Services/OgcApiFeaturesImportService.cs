@@ -757,7 +757,15 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return true;
     }
 
-    private async Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
+    private Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
+        => GetJsonDocumentAsync(_httpClient, uri, "application/geo+json", "application/json", cancellationToken);
+
+    internal static async Task<JsonDocument> GetJsonDocumentAsync(
+        HttpClient httpClient,
+        Uri uri,
+        string primaryAccept,
+        string secondaryAccept,
+        CancellationToken cancellationToken)
     {
         var requestUri = uri;
 
@@ -765,10 +773,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         {
             MigrationLinkedUrlPolicy.Current.EnsureAllows(requestUri);
             using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            message.Headers.Accept.ParseAdd("application/geo+json");
-            message.Headers.Accept.ParseAdd("application/json");
+            message.Headers.Accept.ParseAdd(primaryAccept);
+            message.Headers.Accept.ParseAdd(secondaryAccept);
 
-            using var response = await _httpClient
+            using var response = await httpClient
                 .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
 

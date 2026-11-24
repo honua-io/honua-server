@@ -63,6 +63,21 @@ internal sealed class FileSinkInputReader(string processId, GeoprocessingExecuto
         }, null);
     }
 
+    public static void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Best-effort cleanup; never mask the original failure/cancellation.
+        }
+    }
+
     private FileSinkRead Reject(string error)
         => new(null, JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {error}"));
 }

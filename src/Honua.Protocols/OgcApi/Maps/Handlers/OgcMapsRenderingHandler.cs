@@ -122,7 +122,19 @@ internal sealed class OgcMapsRenderingHandler
                 TemporalFiltersByResourceId = temporalFilters
             };
 
-            // Render the map
+            // Render the map under the shared raster render capacity limiter.
+            var limiter = context?.RequestServices.GetService<RasterRenderCapacityLimiter>();
+            await using var renderLease = limiter is null
+                ? null
+                : await limiter.TryAcquireAsync(renderRequest.Value.Width, renderRequest.Value.Height, cancellationToken).ConfigureAwait(false);
+            if (limiter is not null && renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context!,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
+
             var result = await _mapRenderer.RenderCollectionMapAsync(layerId, mapRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
@@ -374,7 +386,19 @@ internal sealed class OgcMapsRenderingHandler
                 TemporalFiltersByResourceId = temporalFilters
             };
 
-            // Render the dataset map
+            // Render the dataset map under the shared raster render capacity limiter.
+            var limiter = context?.RequestServices.GetService<RasterRenderCapacityLimiter>();
+            await using var renderLease = limiter is null
+                ? null
+                : await limiter.TryAcquireAsync(renderRequest.Value.Width, renderRequest.Value.Height, cancellationToken).ConfigureAwait(false);
+            if (limiter is not null && renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context!,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
+
             var result = await _mapRenderer.RenderDatasetMapAsync(resolvedLayerIds, datasetRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {

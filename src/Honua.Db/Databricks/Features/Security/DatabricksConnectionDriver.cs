@@ -130,6 +130,9 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
     [LoggerMessage(EventId = 7206, Level = LogLevel.Warning, Message = "Databricks connection probe timed out")]
     private partial void LogProbeTimedOut(Exception exception);
 
+    internal static (Uri Endpoint, string WarehouseId, string Token) ParseConnectionString(string connectionString)
+        => Parse(connectionString);
+
     private static (Uri Endpoint, string WarehouseId, string Token) Parse(string connectionString)
     {
         var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };

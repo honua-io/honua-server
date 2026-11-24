@@ -22,6 +22,7 @@ using Honua.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -517,27 +518,46 @@ internal sealed class OgcCoveragesHandler
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
                 .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster!.Value.BandCount);
 
-            var result = await _rasterStore.ExportImageAsync(
-                    resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value.Id,
-                    rasterQuery,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (result.Data.Length == 0)
+            var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
+            RasterRenderCapacityLimiter.Lease? renderLease = null;
+            if (limiter is not null)
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Coverage '{collectionId}' was not found.");
+                var renderWidth = Math.Max(1, rasterQuery.OutputWidth ?? resolution.Raster!.Value.Width);
+                var renderHeight = Math.Max(1, rasterQuery.OutputHeight ?? resolution.Raster!.Value.Height);
+                renderLease = await limiter.TryAcquireAsync(renderWidth, renderHeight, cancellationToken).ConfigureAwait(false);
+                if (renderLease is null)
+                {
+                    return StandardErrorHelpers.CreateServiceUnavailable(
+                        context,
+                        RasterRenderCapacityLimiter.CapacityExceededMessage,
+                        RasterRenderCapacityLimiter.RetryAfterSeconds);
+                }
             }
 
-            WriteCoverageHeaders(context, collectionId, negotiatedFormat, outputCrs, result);
+            await using (renderLease)
+            {
+                var result = await _rasterStore.ExportImageAsync(
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value.Id,
+                        rasterQuery,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
-            telemetry
-                .WithTag("honua.result.bytes", result.Data.Length)
-                .WithTag("honua.result.content_type", result.ContentType);
-            telemetry.SetSuccess(1);
-            OgcCoveragesLog.CoverageReturned(_logger, collectionId, result.Data.Length, result.ContentType);
+                if (result.Data.Length == 0)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Coverage '{collectionId}' was not found.");
+                }
 
-            return EncodedRasterResults.File(result.Data, negotiatedFormat.ContentType);
+                WriteCoverageHeaders(context, collectionId, negotiatedFormat, outputCrs, result);
+
+                telemetry
+                    .WithTag("honua.result.bytes", result.Data.Length)
+                    .WithTag("honua.result.content_type", result.ContentType);
+                telemetry.SetSuccess(1);
+                OgcCoveragesLog.CoverageReturned(_logger, collectionId, result.Data.Length, result.ContentType);
+
+                return EncodedRasterResults.File(result.Data, negotiatedFormat.ContentType);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

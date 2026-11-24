@@ -34,7 +34,7 @@ public sealed class QueuedOperationReconcilerTests
             .AddScoped<IAuditLog>(_ => audit)
             .AddScoped<IOperationExecutor>(_ => executor)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        var reconciler = new QueuedOperationReconciler(
+        using var reconciler = new QueuedOperationReconciler(
             store,
             services.GetRequiredService<IServiceScopeFactory>(),
             TimeProvider.System,
@@ -70,7 +70,7 @@ public sealed class QueuedOperationReconcilerTests
                 Arg.Any<CancellationToken>())
             .Returns(false);
         await using var services = new ServiceCollection().BuildServiceProvider();
-        var reconciler = new QueuedOperationReconciler(
+        using var reconciler = new QueuedOperationReconciler(
             store,
             services.GetRequiredService<IServiceScopeFactory>(),
             TimeProvider.System,
@@ -142,7 +142,7 @@ public sealed class QueuedOperationReconcilerTests
                 provider.GetRequiredService<ILayerPublishJobs>()))
             .AddScoped<IAuditLog>(_ => audit)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        var reconciler = new QueuedOperationReconciler(
+        using var reconciler = new QueuedOperationReconciler(
             store,
             services.GetRequiredService<IServiceScopeFactory>(),
             TimeProvider.System,
@@ -154,6 +154,49 @@ public sealed class QueuedOperationReconcilerTests
         (await store.GetAsync(tenantB.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Completed);
         (await store.GetAsync(wrongTenant.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Queued);
         audit.Events.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public async Task SweepOnceAsync_PoisonPillThrows_ContinuesReconcilingSubsequentItems()
+    {
+        var store = new VolatileOperationInstanceStore();
+        var poison = Handle() with { OperationInstanceId = "opinst-poison", JobId = "job-poison" };
+        var healthy = Handle() with { OperationInstanceId = "opinst-healthy", JobId = "job-healthy" };
+        (await store.TryCreateAsync(poison)).Should().BeTrue();
+        (await store.TryCreateAsync(healthy)).Should().BeTrue();
+
+        var audit = new RecordingAuditLog();
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationId.Returns("test.async-operation");
+        executor.GetStatusAsync(Arg.Is<OperationHandle>(h => h.OperationInstanceId == poison.OperationInstanceId), Arg.Any<CancellationToken>())
+            .Returns<Task<OperationStatus>>(_ => throw new InvalidOperationException("downstream failure"));
+        executor.GetStatusAsync(Arg.Is<OperationHandle>(h => h.OperationInstanceId == healthy.OperationInstanceId), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(new OperationStatus
+            {
+                OperationInstanceId = call.Arg<OperationHandle>().OperationInstanceId,
+                OperationId = call.Arg<OperationHandle>().OperationId,
+                CorrelationId = call.Arg<OperationHandle>().CorrelationId,
+                AuditId = call.Arg<OperationHandle>().AuditId,
+                CreatedAt = call.Arg<OperationHandle>().CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Status = OperationHandleStatus.Completed,
+                JobId = call.Arg<OperationHandle>().JobId,
+            }));
+
+        await using var services = new ServiceCollection()
+            .AddScoped<IAuditLog>(_ => audit)
+            .AddScoped<IOperationExecutor>(_ => executor)
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var reconciler = new QueuedOperationReconciler(
+            store,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System,
+            NullLogger<QueuedOperationReconciler>.Instance);
+
+        await reconciler.SweepOnceAsync();
+
+        (await store.GetAsync(poison.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Queued);
+        (await store.GetAsync(healthy.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Completed);
     }
 
     private static OperationHandle Handle() => new()

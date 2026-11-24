@@ -59,8 +59,8 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
         var store = context.RequestServices.GetRequiredService<IGeoServicesMigrationEvidenceStore>();
         var query = context.Request.Query;
 
-        var sourceUrl = TrimToNull(query["sourceUrl"]);
-        var status = TrimToNull(query["status"]);
+        var sourceUrl = MigrationStringHelpers.TrimToNull(query["sourceUrl"]);
+        var status = MigrationStringHelpers.TrimToNull(query["status"]);
 
         if (status != null && !IsKnownStatus(status))
         {
@@ -164,10 +164,10 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
         {
             RunId = runId,
             SourceUrl = request.SourceUrl.Trim(),
-            SourceDisplayName = TrimToNull(request.SourceDisplayName),
-            SourceVersion = TrimToNull(request.SourceVersion),
+            SourceDisplayName = MigrationStringHelpers.TrimToNull(request.SourceDisplayName),
+            SourceVersion = MigrationStringHelpers.TrimToNull(request.SourceVersion),
             CreatedAt = request.CreatedAt ?? DateTimeOffset.UtcNow,
-            Actor = TrimToNull(request.Actor)
+            Actor = MigrationStringHelpers.TrimToNull(request.Actor)
         };
 
         var store = context.RequestServices.GetRequiredService<IGeoServicesMigrationEvidenceStore>();
@@ -340,18 +340,6 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
             || string.Equals(classification, GeoServicesMigrationParityClassifications.Warn, StringComparison.OrdinalIgnoreCase)
             || string.Equals(classification, GeoServicesMigrationParityClassifications.Fail, StringComparison.OrdinalIgnoreCase);
 
-    private static string? TrimToNull(Microsoft.Extensions.Primitives.StringValues values)
-    {
-        var first = values.ToString();
-        if (string.IsNullOrWhiteSpace(first))
-        {
-            return null;
-        }
-
-        var trimmed = first.Trim();
-        return trimmed.Length == 0 ? null : trimmed;
-    }
-
     private static bool TryParseInt(
         Microsoft.Extensions.Primitives.StringValues values,
         int defaultValue,
@@ -365,17 +353,6 @@ internal static partial class GeoServicesMigrationEvidenceEndpoints
         }
 
         return int.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
-    }
-
-    private static string? TrimToNull(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        return trimmed.Length == 0 ? null : trimmed;
     }
 
     private static ILogger<GeoServicesMigrationEvidenceEndpointsLog> GetLogger(HttpContext context) =>

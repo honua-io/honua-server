@@ -91,6 +91,113 @@ public sealed class FeatureAttributeValidatorTests
         result.Value!["value"].Should().Be(1730000000000L);
     }
 
+    [UnitTheory]
+    [InlineData(AttributeValidationProfile.Strict)]
+    [InlineData(AttributeValidationProfile.GeoServices)]
+    public void Insert_RejectsClientSuppliedEditorTrackingFields(AttributeValidationProfile profile)
+    {
+        var resource = new MetadataV2Object
+        {
+            Editing = new()
+            {
+                CreatorField = "creator",
+                CreatedAtField = "created",
+                EditorField = "editor",
+                UpdatedAtField = "updated",
+            },
+            SchemaFields =
+            [
+                new() { Name = "creator", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
+                new() { Name = "created", Type = MetadataV2FieldType.DateTime, Editable = true, Nullable = true },
+                new() { Name = "editor", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
+                new() { Name = "updated", Type = MetadataV2FieldType.DateTime, Editable = true, Nullable = true },
+                new() { Name = "code", Type = MetadataV2FieldType.String, Editable = false, Nullable = true },
+            ],
+        };
+
+        var forged = FeatureAttributeValidator.Validate(
+            resource,
+            new Dictionary<string, object?> { ["CREATOR"] = "forged" },
+            new(profile, AttributeMutationOperation.Insert));
+        forged.IsValid.Should().BeFalse();
+        forged.ErrorMessage.Should().Be("Field 'creator' is not editable.");
+
+        var nonEditable = FeatureAttributeValidator.Validate(
+            resource,
+            new Dictionary<string, object?> { ["code"] = "A" },
+            new(profile, AttributeMutationOperation.Insert));
+        nonEditable.IsValid.Should().BeTrue(nonEditable.ErrorMessage);
+    }
+
+    [UnitTest]
+    public void CodedValueDomainAndBinaryValidation_EnforceAllowedCodesAndBase64()
+    {
+        var resource = new MetadataV2Object
+        {
+            SchemaFields =
+            [
+                new()
+                {
+                    Name = "status",
+                    Type = MetadataV2FieldType.String,
+                    Editable = true,
+                    Nullable = false,
+                    Domain = new MetadataV2FieldDomain
+                    {
+                        Type = "codedValue",
+                        CodedValues =
+                        [
+                            new() { Code = JsonSerializer.SerializeToElement("OPEN"), Name = "Open" },
+                            new() { Code = JsonSerializer.SerializeToElement("CLOSED"), Name = "Closed" },
+                        ]
+                    }
+                },
+                new()
+                {
+                    Name = "code",
+                    Type = MetadataV2FieldType.Integer,
+                    Editable = true,
+                    Nullable = false,
+                    Domain = new MetadataV2FieldDomain
+                    {
+                        Type = "codedValue",
+                        CodedValues =
+                        [
+                            new() { Code = JsonSerializer.SerializeToElement(1), Name = "One" },
+                            new() { Code = JsonSerializer.SerializeToElement(2), Name = "Two" },
+                        ]
+                    }
+                },
+                new()
+                {
+                    Name = "payload",
+                    Type = MetadataV2FieldType.Binary,
+                    Editable = true,
+                    Nullable = true,
+                }
+            ]
+        };
+
+        var valid = FeatureAttributeValidator.Validate(resource, new Dictionary<string, object?>
+        {
+            ["status"] = "OPEN",
+            ["code"] = 2,
+            ["payload"] = "SGVsbG8="
+        });
+        valid.IsValid.Should().BeTrue(valid.ErrorMessage);
+
+        var invalidCode = FeatureAttributeValidator.Validate(resource, new Dictionary<string, object?>
+        {
+            ["status"] = "PENDING",
+            ["code"] = 3,
+            ["payload"] = "not-valid-base64!!!"
+        });
+        invalidCode.IsValid.Should().BeFalse();
+        invalidCode.ErrorMessage.Should().Contain("status");
+        invalidCode.ErrorMessage.Should().Contain("code");
+        invalidCode.ErrorMessage.Should().Contain("Base64");
+    }
+
     private static MetadataV2Object Resource(MetadataV2FieldType type) => new()
     {
         SchemaFields = [new() { Name = "value", Type = type, Editable = true, Nullable = true }],

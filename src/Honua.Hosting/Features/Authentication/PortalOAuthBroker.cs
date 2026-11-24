@@ -1,14 +1,19 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -18,7 +23,8 @@ internal sealed class PortalOAuthBroker(
     PortalOAuthStore store,
     IHttpClientFactory httpClientFactory,
     ILogger<PortalOAuthBroker> logger,
-    IOidcRuntimeProviderSource? runtimeProviders = null)
+    IOidcRuntimeProviderSource? runtimeProviders = null,
+    IHostEnvironment? hostEnvironment = null)
 {
     internal const string HttpClientName = "PortalOAuthOidc";
 
@@ -30,6 +36,8 @@ internal sealed class PortalOAuthBroker(
     private readonly PortalOAuthStore _store = store;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ILogger<PortalOAuthBroker> _logger = logger;
+    private readonly bool _allowPrivateNetworks =
+        hostEnvironment is not null && (hostEnvironment.IsDevelopment() || hostEnvironment.IsEnvironment("Test"));
 
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
@@ -61,9 +69,9 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(discovery.AuthorizationEndpoint))
+        if (!IsValidBrowserRedirectEndpoint(discovery.AuthorizationEndpoint, _oidcOptions.RequireHttps))
         {
-            PortalOAuthLog.AuthorizeRejected(_logger, "provider has no authorization endpoint");
+            PortalOAuthLog.AuthorizeRejected(_logger, "provider has no valid authorization endpoint");
             return null;
         }
 
@@ -71,6 +79,7 @@ internal sealed class PortalOAuthBroker(
         // all 256 random bits without the SQL-comment punctuation (for example "--")
         // that the PKCE unreserved alphabet can generate by chance.
         var idpState = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        var idpNonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         var idpVerifier = GenerateRandomString(64);
         var idpChallenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(idpVerifier)));
 
@@ -85,6 +94,7 @@ internal sealed class PortalOAuthBroker(
             ExpirationMinutes = request.ExpirationMinutes,
             IdpState = idpState,
             IdpCodeVerifier = idpVerifier,
+            IdpNonce = idpNonce,
             ExpiresAt = DateTimeOffset.UtcNow.Add(BrokerSessionLifetime),
         };
 
@@ -108,7 +118,7 @@ internal sealed class PortalOAuthBroker(
         var combinedState = $"{idpState}.{brokerSessionId}";
         var callbackUri = callbackUriFactory(PortalOAuthRoutes.CallbackPath);
 
-        return BuildAuthorizeUrl(discovery.AuthorizationEndpoint, provider, callbackUri, combinedState, idpChallenge);
+        return BuildAuthorizeUrl(discovery.AuthorizationEndpoint, provider, callbackUri, combinedState, idpNonce, idpChallenge);
     }
 
     public async Task<PortalOAuthCallbackResult> CompleteCallbackAsync(
@@ -158,7 +168,11 @@ internal sealed class PortalOAuthBroker(
         try
         {
             discovery = await GetDiscoveryDocumentAsync(provider.Authority!, cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
+            if (!await IsValidDiscoveryEndpointAsync(
+                    discovery.TokenEndpoint,
+                    _oidcOptions.RequireHttps,
+                    _allowPrivateNetworks,
+                    cancellationToken).ConfigureAwait(false))
             {
                 return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
             }
@@ -183,11 +197,9 @@ internal sealed class PortalOAuthBroker(
             return ClientRedirectFailure(session, "access_denied", "Authentication failed with the identity provider.");
         }
 
-        // The bridge already exchanged an IdP code. Validate that token with the
-        // OIDC verifier directly. UseOidc selects the verifier only for password
-        // and generateToken checks, and leaving it false must not turn a configured
-        // bridge callback into an admin-password rejection.
-        var idpToken = idpTokens.IdToken ?? idpTokens.AccessToken;
+        // The bridge already exchanged an IdP code. Validate the ID token with the
+        // OIDC verifier directly and verify its nonce matches the broker session.
+        var idpToken = idpTokens.IdToken;
         if (string.IsNullOrWhiteSpace(idpToken))
         {
             return ClientRedirectFailure(session, "access_denied", "Identity provider returned no usable token.");
@@ -199,6 +211,14 @@ internal sealed class PortalOAuthBroker(
         if (verified is null)
         {
             PortalOAuthLog.CallbackRejected(_logger, "principal verification failed");
+            return ClientRedirectFailure(session, "access_denied", "Authentication failed.");
+        }
+
+        if (string.IsNullOrWhiteSpace(session.IdpNonce) ||
+            !TryReadSingleNonceClaim(idpToken, out var tokenNonce) ||
+            !CryptographicEquals(session.IdpNonce, tokenNonce))
+        {
+            PortalOAuthLog.CallbackRejected(_logger, "ID token nonce verification failed");
             return ClientRedirectFailure(session, "access_denied", "Authentication failed.");
         }
 
@@ -370,6 +390,7 @@ internal sealed class PortalOAuthBroker(
         OidcProviderRegistration provider,
         string redirectUri,
         string state,
+        string nonce,
         string codeChallenge)
     {
         var parameters = new Dictionary<string, string?>
@@ -379,11 +400,51 @@ internal sealed class PortalOAuthBroker(
             ["redirect_uri"] = redirectUri,
             ["scope"] = string.Join(' ', provider.Scopes),
             ["state"] = state,
+            ["nonce"] = nonce,
             ["code_challenge"] = codeChallenge,
             ["code_challenge_method"] = "S256",
         };
 
         return QueryHelpers.AddQueryString(authorizationEndpoint, parameters);
+    }
+
+    private static bool TryReadSingleNonceClaim(string token, out string? nonce)
+    {
+        nonce = null;
+        var handler = new JsonWebTokenHandler();
+        if (!handler.CanReadToken(token))
+        {
+            return false;
+        }
+
+        JsonWebToken jwt;
+        try
+        {
+            jwt = handler.ReadJsonWebToken(token);
+        }
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException)
+        {
+            return false;
+        }
+
+        string? found = null;
+        foreach (var claim in jwt.Claims)
+        {
+            if (!string.Equals(claim.Type, Microsoft.IdentityModel.JsonWebTokens.JwtRegisteredClaimNames.Nonce, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (found is not null)
+            {
+                return false;
+            }
+
+            found = claim.Value;
+        }
+
+        nonce = found;
+        return !string.IsNullOrWhiteSpace(nonce);
     }
 
     private static string GenerateRandomString(int length)
@@ -399,10 +460,41 @@ internal sealed class PortalOAuthBroker(
         return new string(result);
     }
 
-    private static bool CryptographicEquals(string a, string b)
-        => CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(a),
-            Encoding.UTF8.GetBytes(b));
+    internal static async Task<bool> IsValidDiscoveryEndpointAsync(
+        string? url,
+        bool requireHttps,
+        bool allowPrivateNetworks,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        var validation = await OutboundHttpUrlValidator
+            .ValidateAsync(url, allowPrivateNetworks, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validation.IsValid || validation.Uri is null)
+        {
+            return false;
+        }
+
+        return !requireHttps || string.Equals(validation.Uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsValidBrowserRedirectEndpoint(string? url, bool requireHttps)
+        => !string.IsNullOrWhiteSpace(url)
+            && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                || (!requireHttps && string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)));
+
+    internal static bool CryptographicEquals(string? a, string? b)
+        => a is not null
+            && b is not null
+            && CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(a),
+                Encoding.UTF8.GetBytes(b));
 
 }
 

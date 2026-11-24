@@ -251,6 +251,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             }
 
             await schemaGuard.VerifyAsync(connectionString, cancellationToken);
+            await RunDeferredRecoveryChecksAsync(cancellationToken).ConfigureAwait(false);
             _migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified after recovery.");
             return;
         }
@@ -273,7 +274,21 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             }
         }
 
+        await RunDeferredRecoveryChecksAsync(cancellationToken).ConfigureAwait(false);
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
+    }
+
+    private async Task RunDeferredRecoveryChecksAsync(CancellationToken cancellationToken)
+    {
+        if (_services.GetService(typeof(IEnumerable<DeferredDatabaseRecoveryCheck>)) is not IEnumerable<DeferredDatabaseRecoveryCheck> checks)
+        {
+            return;
+        }
+
+        foreach (var check in checks)
+        {
+            await check.ValidateAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     // A schema newer than this binary, or a schema that diverges from its journal, is not treated as a missing migration.
@@ -314,4 +329,26 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
     }
 
     private sealed class IncompatibleDatabaseException(string message) : InvalidOperationException(message);
+}
+
+internal sealed class DeferredDatabaseRecoveryCheck
+{
+    private readonly Func<CancellationToken, Task> _validateAsync;
+
+    public DeferredDatabaseRecoveryCheck(Action validate)
+    {
+        ArgumentNullException.ThrowIfNull(validate);
+        _validateAsync = _ =>
+        {
+            validate();
+            return Task.CompletedTask;
+        };
+    }
+
+    public DeferredDatabaseRecoveryCheck(Func<CancellationToken, Task> validateAsync)
+    {
+        _validateAsync = validateAsync ?? throw new ArgumentNullException(nameof(validateAsync));
+    }
+
+    internal Task ValidateAsync(CancellationToken cancellationToken) => _validateAsync(cancellationToken);
 }

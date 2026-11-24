@@ -152,7 +152,7 @@ internal sealed partial class ODataSearchService
             : query with
             {
                 TextSearch = new FeatureTextSearch(
-                    resource.SchemaFields.Where(field => field.Type == MetadataV2FieldType.String)
+                    resource.VisibleSchemaFields().Where(field => field.Type == MetadataV2FieldType.String)
                         .Select(field => field.Name).Take(MaxSearchableStringFields).ToArray(),
                     searchTerms.Select(group => (IReadOnlyList<FeatureSearchTerm>)group
                         .Select(term => new FeatureSearchTerm(term.term, term.isNegated)).ToArray()).ToArray())
@@ -182,6 +182,8 @@ internal sealed partial class ODataSearchService
             srid,
             cancellationToken).ConfigureAwait(false);
 
+        var hiddenFields = resource.HiddenSchemaFieldNames();
+
         // Convert features to OData format
         var featuresData = result.Items.Select(feature =>
         {
@@ -199,7 +201,7 @@ internal sealed partial class ODataSearchService
             var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
             foreach (var (key, value) in attributes)
             {
-                if (ODataUtilityService.IsReservedFeatureProperty(key))
+                if (ODataUtilityService.IsReservedFeatureProperty(key) || hiddenFields.Contains(key))
                 {
                     continue;
                 }
@@ -363,7 +365,7 @@ internal sealed partial class ODataSearchService
             return true;
         }
 
-        return resource.SchemaFields.Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return resource.VisibleSchemaFields().Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
     }
 
     private static List<List<(string term, bool isNegated, bool isPhrase)>> ParseSearchExpression(string search)
@@ -435,8 +437,8 @@ internal sealed partial class ODataSearchService
             return new SqlFragment("1=1", Array.Empty<object?>()); // No search terms, match all
         }
 
-        // Get text-searchable fields from the canonical resource schema.
-        var textFields = resource.SchemaFields
+        // Get visible text-searchable fields from the canonical resource schema.
+        var textFields = resource.VisibleSchemaFields()
             .Where(f => f.Type == MetadataV2FieldType.String)
             .Select(f => f.Name)
             .Take(MaxSearchableStringFields)
@@ -591,10 +593,11 @@ internal sealed partial class ODataSearchService
         throw new ResourceNotFoundException($"Layer {layerId} not found");
     }
 
-    private static ResolvedRelatedResource? ResolveRelatedResource(
+    private static async Task<ResolvedRelatedResource?> ResolveRelatedResourceAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Relationship relationship,
-        HttpContext? context)
+        HttpContext? context,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(relationship.RelatedResourceId) ||
             !snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var resource))
@@ -627,17 +630,14 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
-            if (context is not null)
-            {
-                var accessError = AccessPolicyHelpers.RequireResourceAccess(
+            if (context is not null && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     resource,
                     service,
-                    AccessScope.Read);
-                if (accessError is not null)
-                {
-                    continue;
-                }
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                continue;
             }
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
@@ -756,7 +756,8 @@ internal sealed partial class ODataSearchService
                 relationsDict.TryAdd(outputName, Array.Empty<object?>());
             }
 
-            var related = ResolveRelatedResource(snapshot, relationship, context);
+            var related = await ResolveRelatedResourceAsync(snapshot, relationship, context, cancellationToken)
+                .ConfigureAwait(false);
             if (related is null)
             {
                 continue;
@@ -789,6 +790,16 @@ internal sealed partial class ODataSearchService
                     $"The $expand result exceeds the OData:MaxPageSize related-row budget ({_maxExpandedRows}). Narrow the parent query or request related features separately.");
             }
 
+            var relatedHiddenFields = related.Resource.HiddenSchemaFieldNames();
+            if (expandOptions.SelectFields is { Count: > 0 } requestedRelatedSelect)
+            {
+                var forbiddenField = requestedRelatedSelect.FirstOrDefault(relatedHiddenFields.Contains);
+                if (forbiddenField is not null)
+                {
+                    throw new ArgumentException($"Unknown field in $expand $select: {forbiddenField}");
+                }
+            }
+
             remainingRows -= relatedResult.Items.Length;
             var childGroups = new Dictionary<long, List<object?>>();
 
@@ -818,7 +829,8 @@ internal sealed partial class ODataSearchService
                     related.PublicLayerId,
                     feature,
                     relatedGeometry,
-                    relatedAttributes);
+                    relatedAttributes,
+                    relatedHiddenFields);
                 if (expandOptions.SelectFields is { Count: > 0 } selectedFields)
                 {
                     relatedFeatureDict = ODataUtilityService.ApplySelect(

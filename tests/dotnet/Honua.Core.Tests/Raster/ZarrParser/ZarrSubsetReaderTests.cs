@@ -533,6 +533,54 @@ public class ZarrSubsetReaderTests
         subset.Data.Should().Equal(uncompressed);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadSubsetAsync_CustomPerChunkLimitExceeded_ThrowsZarrSubsetValidationException()
+    {
+        var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
+            root: "datasets/chunkcap",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => (float)r * 8 + c);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/chunkcap");
+
+        // 4x4 float32 chunk is 64 bytes; cap at 32 bytes to prove caller limits are enforced upfront.
+        var limits = new ZarrSubsetReadLimits(MaxOutputBytes: 4096, MaxChunkBytes: 32, MaxWorkingSetBytes: 128);
+        var request = new ZarrSubsetRequest { Variable = "chunkcap", Start = [0, 0], Stop = [4, 4] };
+
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/chunkcap", metadata, request, limits);
+
+        await act.Should().ThrowAsync<ZarrSubsetValidationException>()
+            .WithMessage("*chunk size*exceeds*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadSubsetAsync_TightWorkingSetBudget_StillDecodesMultiChunkSubsetSequentially()
+    {
+        var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
+            root: "datasets/workingset",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => (float)r * 10 + c);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/workingset");
+
+        // 64-byte chunks with 64-byte working-set budget forces MaxDegreeOfParallelism = 1.
+        var limits = new ZarrSubsetReadLimits(MaxOutputBytes: 1024, MaxChunkBytes: 128, MaxWorkingSetBytes: 64);
+        var request = new ZarrSubsetRequest { Variable = "workingset", Start = [0, 0], Stop = [8, 8] };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/workingset", metadata, request, limits);
+
+        subset.Shape.Should().Equal(8, 8);
+        BitConverter.ToSingle(subset.Data, (7 * 8 + 7) * sizeof(float)).Should().Be(77f);
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────────
 
     private sealed class TrackingZarrRangeReader(ICloudRangeReader inner) : ICloudRangeReader

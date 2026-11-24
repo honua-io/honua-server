@@ -24,12 +24,12 @@ internal sealed class ManagedBufferAggregateExecutor(
         StepInputReader inputs,
         CancellationToken cancellationToken)
     {
-        var distance = ReadDistance(inputs);
-        var unitFactor = ReadUnitFactor(inputs);
+        var distance = inputs.ReadDistance();
+        var unitFactor = inputs.ReadUnitFactor();
         var effectiveDistance = distance * unitFactor;
 
         var useGeodesicBuffer = ShouldUseGeodesicBuffer(inputs, distance);
-        var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
+        var dissolve = inputs.ReadBool("dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
 
         var buffered = new List<BufferedInput>(source.Count);
@@ -132,19 +132,6 @@ internal sealed class ManagedBufferAggregateExecutor(
         return string.Join("\u001f", parts);
     }
 
-    private static double ReadDistance(StepInputReader inputs)
-    {
-        if (!inputs.TryGet("distance", out var raw) || string.IsNullOrWhiteSpace(raw)
-            || !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            || !double.IsFinite(value)
-            || value < 0)
-        {
-            throw new TransformInputException("'distance' must be a finite non-negative number");
-        }
-
-        return value;
-    }
-
     private static bool ShouldUseGeodesicBuffer(StepInputReader inputs, double distance)
     {
         if (distance <= 0d)
@@ -152,7 +139,7 @@ internal sealed class ManagedBufferAggregateExecutor(
             return false;
         }
 
-        if (ReadBool(inputs, "geodesic", defaultValue: false))
+        if (inputs.ReadBool("geodesic", defaultValue: false))
         {
             return true;
         }
@@ -192,36 +179,6 @@ internal sealed class ManagedBufferAggregateExecutor(
         var separator = trimmed.LastIndexOfAny([':', '/']);
         var suffix = separator < 0 ? trimmed : trimmed[(separator + 1)..];
         return int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid);
-    }
-
-    private static double ReadUnitFactor(StepInputReader inputs)
-    {
-        var raw = inputs.GetOrDefault("unit", "meters").Trim().ToLowerInvariant();
-        return raw switch
-        {
-            "" or "meters" or "meter" or "m" => 1.0,
-            "kilometers" or "kilometer" or "km" => 1000.0,
-            "feet" or "foot" or "ft" => 0.3048,
-            "miles" or "mile" or "mi" => 1609.344,
-            _ => throw new TransformInputException(
-                $"unit '{raw}' is not supported (allowed: meters, kilometers, feet, miles)"),
-        };
-    }
-
-    private static bool ReadBool(StepInputReader inputs, string name, bool defaultValue)
-    {
-        if (!inputs.TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
-        {
-            return defaultValue;
-        }
-
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "true" or "1" or "yes" => true,
-            "false" or "0" or "no" => false,
-            _ => throw new TransformInputException(
-                $"'{name}' must be a boolean (true|false)"),
-        };
     }
 
     private static List<string> ReadGroupByFields(StepInputReader inputs)

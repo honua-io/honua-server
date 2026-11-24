@@ -11,6 +11,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Options;
 
@@ -56,7 +57,7 @@ public class DatabricksMetadataV2QueryTests
           "result": { "data_array": [ ["7", "0101000000000000000000F03F0000000000000040", "parcel-7"] ] }
         }
         """;
-        var handler = new BodyCapturingHandler();
+        using var handler = new BodyCapturingHandler();
         handler.EnqueueJson(json);
         var store = CreateStore(handler);
         var connectionId = Guid.NewGuid();
@@ -118,6 +119,217 @@ public class DatabricksMetadataV2QueryTests
         Assert.Equal("static_only", resolved.Table);
     }
 
+    [Fact]
+    public async Task Query_BoundDataConnectionWithDistinctCredentials_RoutesToBoundWorkspaceAndToken()
+    {
+        const string json = """
+        {
+          "statement_id": "q-bound",
+          "status": { "state": "SUCCEEDED" },
+          "manifest": { "schema": { "columns": [
+            { "name": "__honua_id", "type_name": "LONG", "position": 0 },
+            { "name": "__honua_geom_hex", "type_name": "STRING", "position": 1 },
+            { "name": "name", "type_name": "STRING", "position": 2 }
+          ] } },
+          "result": { "data_array": [ ["11", "0101000000000000000000F03F0000000000000040", "tenant-parcel"] ] }
+        }
+        """;
+        using var handler = new BodyCapturingHandler();
+        handler.EnqueueJson(json);
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "tenant-b",
+            ConnectionString = "Host=tenant-b.cloud.databricks.com;WarehouseId=wh-tenant-b;Token=dapi-tenant-b",
+            IsEncrypted = false
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        var result = await reader.QueryAsync(0, new FeatureQuery { Limit = 10 });
+
+        Assert.Single(result.Items);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("tenant-b.cloud.databricks.com", request.RequestUri!.Host);
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("dapi-tenant-b", request.Headers.Authorization?.Parameter);
+        using var document = JsonDocument.Parse(Assert.Single(handler.Bodies));
+        Assert.Equal("wh-tenant-b", document.RootElement.GetProperty("warehouse_id").GetString());
+    }
+
+    [Fact]
+    public async Task Query_BoundDataConnectionForDifferentWorkspaceWithoutCredentials_FailsClosed()
+    {
+        using var handler = new BodyCapturingHandler();
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "other-tenant",
+            Host = "other-tenant.cloud.databricks.com",
+            DatabaseName = "wh-other",
+            IsEncrypted = true
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.QueryAsync(0, new FeatureQuery { Limit = 10 }));
+        Assert.Empty(handler.Requests);
+    }
+
+    [UnitTest]
+    public async Task Query_BoundDataConnectionWithSecretRefMatchingDefaultWorkspace_FailsClosed()
+    {
+        using var handler = new BodyCapturingHandler();
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "secret-backed",
+            Host = "example.cloud.databricks.com",
+            DatabaseName = "wh-123",
+            SecretRef = "aws-secrets://prod/databricks-token",
+            IsEncrypted = true
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.QueryAsync(0, new FeatureQuery { Limit = 10 }));
+        Assert.Empty(handler.Requests);
+    }
+
+    [UnitTest]
+    public async Task Query_BoundDataConnectionWithEncryptedBytesMatchingDefaultWorkspace_FailsClosed()
+    {
+        using var handler = new BodyCapturingHandler();
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "encrypted-tenant",
+            Host = "example.cloud.databricks.com",
+            DatabaseName = "wh-123",
+            EncryptedConnectionString = [1, 2, 3, 4],
+            IsEncrypted = true
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.QueryAsync(0, new FeatureQuery { Limit = 10 }));
+        Assert.Empty(handler.Requests);
+    }
+
+    [UnitTest]
+    public async Task Query_BoundDataConnectionWithEmptyHostAndWarehouse_FailsClosed()
+    {
+        using var handler = new BodyCapturingHandler();
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "empty-target",
+            Host = string.Empty,
+            DatabaseName = string.Empty,
+            IsEncrypted = true
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.QueryAsync(0, new FeatureQuery { Limit = 10 }));
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Query_PastEndEmptyPageWithOffset_IssuesCountQueryInsteadOfFabricatingOffsetAsTotal()
+    {
+        const string emptyPageJson = """
+        {
+          "statement_id": "q-empty",
+          "status": { "state": "SUCCEEDED" },
+          "manifest": { "schema": { "columns": [
+            { "name": "__honua_id", "type_name": "LONG", "position": 0 },
+            { "name": "__honua_geom_hex", "type_name": "STRING", "position": 1 },
+            { "name": "name", "type_name": "STRING", "position": 2 }
+          ] } },
+          "result": { "data_array": [] }
+        }
+        """;
+        const string countJson = """
+        {
+          "statement_id": "q-count",
+          "status": { "state": "SUCCEEDED" },
+          "manifest": { "schema": { "columns": [
+            { "name": "count", "type_name": "LONG", "position": 0 }
+          ] } },
+          "result": { "data_array": [ ["5"] ] }
+        }
+        """;
+        using var handler = new BodyCapturingHandler();
+        handler.EnqueueJson(emptyPageJson);
+        handler.EnqueueJson(countJson);
+        var store = CreateStore(handler);
+        var connectionId = Guid.NewGuid();
+        var connection = new DataConnection
+        {
+            ConnectionId = connectionId,
+            Provider = "databricks",
+            Name = "warehouse",
+            Host = "example.cloud.databricks.com",
+            DatabaseName = "wh-123",
+            Username = "token"
+        };
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(connection),
+            new FeatureDataProviderRegistry([store]));
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
+
+        var reader = await router.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+
+        var result = await reader.QueryAsync(0, new FeatureQuery { Offset = 50, Limit = 10 });
+
+        Assert.Empty(result.Items);
+        Assert.Equal(5, result.TotalCount);
+        Assert.False(result.HasMoreResults);
+        Assert.Equal(2, handler.Bodies.Count);
+    }
+
     private static DatabricksFeatureStore CreateStore(BodyCapturingHandler handler)
     {
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.cloud.databricks.com") };
@@ -166,10 +378,13 @@ public class DatabricksMetadataV2QueryTests
     {
         public List<string> Bodies { get; } = [];
 
+        public new List<HttpRequestMessage> Requests { get; } = [];
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            Requests.Add(request);
             if (request.Content is not null)
             {
                 Bodies.Add(await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
@@ -14,20 +15,29 @@ internal interface IDatabricksFeatureDataAccess
     Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null);
 
-    Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
+    Task<long> ExecuteCountAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null);
 
     Task<FeatureExtent?> ExecuteExtentAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null);
 
-    Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken);
+    Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null);
 
     Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null);
 }
 
 internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
@@ -42,10 +52,11 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
     public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
 
         var idIndex = IndexOf(resultSet.Columns, DatabricksFeatureQueryBuilder.IdColumn);
         var geomIndex = IndexOf(resultSet.Columns, DatabricksFeatureQueryBuilder.GeometryHexColumn);
@@ -62,9 +73,12 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
         return builder.ToImmutable();
     }
 
-    public async Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken)
+    public async Task<long> ExecuteCountAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null)
     {
-        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
         if (resultSet.Rows.Count == 0 || resultSet.Rows[0].Length == 0)
         {
             return 0;
@@ -76,10 +90,11 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
     public async Task<FeatureExtent?> ExecuteExtentAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
         if (resultSet.Rows.Count == 0 || resultSet.Rows[0].Length < 4)
         {
             return null;
@@ -97,9 +112,12 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
         return null;
     }
 
-    public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken)
+    public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
+        DatabricksSqlStatement statement,
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null)
     {
-        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
         if (resultSet.Rows.Count == 0)
         {
             return ImmutableArray<long>.Empty;
@@ -113,9 +131,10 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
 
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DataConnection? dataConnection = null)
     {
-        var resultSet = await _client.ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
         if (resultSet.Rows.Count == 0)
         {
             return ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty;

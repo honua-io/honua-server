@@ -126,6 +126,94 @@ public sealed class ElevationSpatialReferenceTests
         elevation.ProfileSrid.Should().Be(3857);
     }
 
+    [UnitTest]
+    public async Task GetElevation_ProtectedLayerWithoutAuth_RejectsBeforeWktDetection()
+    {
+        var elevation = new RecordingElevationService();
+        var crsDetection = new WktCrsDetection();
+        var service = new HonuaElevationGrpcService(
+            elevation,
+            new SupportedCrsRegistry(),
+            crsDetection,
+            Options.Create(new LimitsOptions()),
+            NullLogger<HonuaElevationGrpcService>.Instance);
+
+        var act = () => service.GetElevation(
+            PointRequest(new Proto.SpatialReference { Wkt = "PROJCS[\"Web Mercator\", AUTHORITY[\"EPSG\",\"3857\"]]" }),
+            CreateCallContext(allowAnonymous: false));
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+        crsDetection.WktCalls.Should().Be(0);
+        elevation.PointCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task GetElevationProfile_ExceedingMaxVerticesPerGeometry_ThrowsInvalidArgument()
+    {
+        var elevation = new RecordingElevationService();
+        var limits = new LimitsOptions { Geometry = new GeometryLimits { MaxVerticesPerGeometry = 3 } };
+        var service = new HonuaElevationGrpcService(
+            elevation,
+            new SupportedCrsRegistry(),
+            new WktCrsDetection(),
+            Options.Create(limits),
+            NullLogger<HonuaElevationGrpcService>.Instance);
+        var path = new Proto.CoordinateSequence();
+        for (var i = 0; i < 4; i++)
+        {
+            path.Coords.Add(new Proto.Coordinate { X = i, Y = i });
+        }
+        var request = new Proto.GetElevationProfileRequest
+        {
+            LayerId = 1,
+            Line = new Proto.PolylineGeometry(),
+            SampleCount = 2,
+        };
+        request.Line.Paths.Add(path);
+
+        var act = () => service.GetElevationProfile(request, CreateCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        exception.Which.Status.Detail.Should().Contain("exceeds the configured maximum");
+    }
+
+    [UnitTest]
+    public async Task GetElevation_DistinctStorageBinding_QueriesResolvedStorageLayerId()
+    {
+        var elevation = new RecordingElevationService();
+        var service = CreateService(elevation);
+
+        await service.GetElevation(
+            PointRequest(new Proto.SpatialReference { LatestWkid = 4326 }),
+            CreateCallContext(storageLayerId: 42));
+
+        elevation.PointLayerId.Should().Be(42);
+    }
+
+    [UnitTest]
+    public async Task GetElevationProfile_DistinctStorageBinding_QueriesResolvedStorageLayerId()
+    {
+        var elevation = new RecordingElevationService();
+        var service = CreateService(elevation);
+        var request = new Proto.GetElevationProfileRequest
+        {
+            LayerId = 1,
+            SpatialReference = new Proto.SpatialReference { LatestWkid = 4326 },
+            SampleCount = 2,
+        };
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 1, Y = 2 });
+        path.Coords.Add(new Proto.Coordinate { X = 3, Y = 4 });
+        request.Line = new Proto.PolylineGeometry();
+        request.Line.Paths.Add(path);
+
+        await service.GetElevationProfile(request, CreateCallContext(storageLayerId: 42));
+
+        elevation.ProfileLayerId.Should().Be(42);
+    }
+
     private static HonuaElevationGrpcService CreateService(RecordingElevationService elevation)
         => new(
             elevation,
@@ -142,15 +230,15 @@ public sealed class ElevationSpatialReferenceTests
             SpatialReference = spatialReference,
         };
 
-    private static TestServerCallContext CreateCallContext()
+    private static TestServerCallContext CreateCallContext(bool allowAnonymous = true, int storageLayerId = 1)
     {
         var provider = new TestMetadataV2GraphBuilder()
             .AddResource(
                 "dem",
                 "dem",
                 MetadataV2ObjectType.RasterDataset,
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: 1)
+                accessPolicy: new AccessPolicy { AllowAnonymous = allowAnonymous })
+            .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: storageLayerId)
             .AddService("imagery", "imagery", protocols: [ServiceProtocols.Elevation])
             .AddPublication("dem-publication", "imagery", "dem", layerIndex: 1, isPrimary: true)
             .BuildProvider();
@@ -169,9 +257,13 @@ public sealed class ElevationSpatialReferenceTests
 
     private sealed class RecordingElevationService : IElevationService
     {
+        public int? PointLayerId { get; private set; }
+
         public int? PointSrid { get; private set; }
 
         public int PointCalls { get; private set; }
+
+        public int? ProfileLayerId { get; private set; }
 
         public int ProfileSrid { get; private set; }
 
@@ -184,6 +276,7 @@ public sealed class ElevationSpatialReferenceTests
             CancellationToken cancellationToken = default)
         {
             PointCalls++;
+            PointLayerId = layerId;
             PointSrid = srid;
             return Task.FromResult(new ElevationPointResult
             {
@@ -205,6 +298,7 @@ public sealed class ElevationSpatialReferenceTests
             RasterMergeStrategy mergeStrategy,
             CancellationToken cancellationToken = default)
         {
+            ProfileLayerId = layerId;
             ProfileSrid = lineSrid;
             return Task.FromResult(new ElevationProfileResult
             {
@@ -232,11 +326,16 @@ public sealed class ElevationSpatialReferenceTests
 
     private sealed class WktCrsDetection : ICrsDetectionService
     {
+        public int WktCalls { get; private set; }
+
         public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)
             => Task.FromResult<int?>(null);
 
         public Task<int?> DetectFromWktAsync(string wktContent, CancellationToken cancellationToken = default)
-            => Task.FromResult<int?>(wktContent.Contains("3857", StringComparison.Ordinal) ? 3857 : null);
+        {
+            WktCalls++;
+            return Task.FromResult<int?>(wktContent.Contains("3857", StringComparison.Ordinal) ? 3857 : null);
+        }
 
         public int? DetectFromEpsgCode(string epsgCode) => null;
 

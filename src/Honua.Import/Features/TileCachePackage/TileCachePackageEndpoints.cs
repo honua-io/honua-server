@@ -8,6 +8,7 @@ using Honua.Core.Features.TileCachePackage.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.TileCachePackage.Services;
@@ -126,19 +127,53 @@ internal static class TileCachePackageEndpoints
             }
             catch (ArgumentException ex)
             {
-                return Results.BadRequest(ex.Message);
+                var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+                if (logger is not null)
+                {
+                    TileCachePackageEndpointsLog.ImportRejected(logger, tilesetId, ex);
+                }
+
+                return Results.BadRequest("The tile-cache package import parameters are invalid.");
             }
             catch (NotSupportedException ex)
             {
-                return Results.BadRequest(ex.Message);
+                var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+                if (logger is not null)
+                {
+                    TileCachePackageEndpointsLog.ImportRejected(logger, tilesetId, ex);
+                }
+
+                return Results.BadRequest("The uploaded tile-cache package format is not supported.");
             }
             catch (InvalidDataException ex)
             {
-                return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
+                var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+                if (logger is not null)
+                {
+                    TileCachePackageEndpointsLog.ImportRejected(logger, tilesetId, ex);
+                }
+
+                return Results.BadRequest("The uploaded file is not a valid tile-cache package.");
+            }
+            catch (EndOfStreamException ex)
+            {
+                var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+                if (logger is not null)
+                {
+                    TileCachePackageEndpointsLog.ImportRejected(logger, tilesetId, ex);
+                }
+
+                return Results.BadRequest("The uploaded file is not a readable tile-cache package.");
             }
             catch (IOException ex)
             {
-                return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
+                var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+                if (logger is not null)
+                {
+                    TileCachePackageEndpointsLog.ImportIoFailed(logger, tilesetId, ex);
+                }
+
+                return Results.BadRequest("The uploaded file is not a readable tile-cache package.");
             }
 
             return Results.Json(ToApiResult(result), TileCachePackageJsonContext.Default.TileCachePackageImportApiResult);
@@ -377,4 +412,13 @@ internal sealed record TileCachePackageTileSetJson
 [JsonSerializable(typeof(TileCachePackageTileSetJson))]
 internal sealed partial class TileCachePackageJsonContext : JsonSerializerContext
 {
+}
+
+internal static partial class TileCachePackageEndpointsLog
+{
+    [LoggerMessage(EventId = 119100, Level = LogLevel.Warning, Message = "Tile-cache package import rejected for tileset {TilesetId}.")]
+    public static partial void ImportRejected(ILogger logger, string tilesetId, Exception exception);
+
+    [LoggerMessage(EventId = 119101, Level = LogLevel.Error, Message = "Tile-cache package import encountered an I/O error for tileset {TilesetId}.")]
+    public static partial void ImportIoFailed(ILogger logger, string tilesetId, Exception exception);
 }

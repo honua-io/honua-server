@@ -511,12 +511,7 @@ public sealed class RateLimitingMiddlewareTests
     [UnitTest]
     public async Task InvokeAsync_AnonymousIpv6_SharesASlash64AndLeavesIpv4Distinct()
     {
-        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
-        var previous = counters.Keys.Cast<object>()
-            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
-        counters.Clear();
+        RateLimitingMiddleware.ClearSharedMemoryCounters();
         try
         {
             var middleware = CreateMiddleware(limit: 1);
@@ -538,11 +533,7 @@ public sealed class RateLimitingMiddlewareTests
         }
         finally
         {
-            counters.Clear();
-            foreach (var entry in previous)
-            {
-                counters.Add(entry.Key, entry.Value);
-            }
+            RateLimitingMiddleware.ClearSharedMemoryCounters();
         }
     }
 
@@ -550,12 +541,7 @@ public sealed class RateLimitingMiddlewareTests
     public async Task InvokeAsync_AtCapacity_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.
-        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
-        var previous = counters.Keys.Cast<object>()
-            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
-        counters.Clear();
+        RateLimitingMiddleware.ClearSharedMemoryCounters();
         try
         {
             var policies = Substitute.For<IRateLimitPolicyStore>();
@@ -589,19 +575,146 @@ public sealed class RateLimitingMiddlewareTests
 
             Assert.Equal(128, burst.Count(status => status == StatusCodes.Status200OK));
             Assert.DoesNotContain(StatusCodes.Status429TooManyRequests, burst);
-            Assert.Equal(10_000, counters.Count);
+            Assert.InRange(RateLimitingMiddleware.SharedMemoryCounterCount, 1, RateLimitingMiddleware.MaxMemoryCounterEntries);
             // existing-9989 is the most recently used pre-burst subject, so eviction
             // must not have reset its one-request budget.
             Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-9989"));
         }
         finally
         {
-            counters.Clear();
-            foreach (var entry in previous)
-            {
-                counters.Add(entry.Key, entry.Value);
-            }
+            RateLimitingMiddleware.ClearSharedMemoryCounters();
         }
+    }
+
+    [UnitTheory]
+    [InlineData("/healthz")]
+    [InlineData("/healthz/live")]
+    [InlineData("/healthz/ready")]
+    [InlineData("/healthz/startup")]
+    public async Task InvokeAsync_HealthzProbes_AreExemptFromRateLimiting(string probePath)
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        for (var i = 0; i < 5; i++)
+        {
+            var context = CreateContext("198.51.100.240");
+            context.Request.Path = probePath;
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        }
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_WithNullRemoteIpAddress_StillRateLimitsAuthenticatedAndAnonymousCallers()
+    {
+        var middleware = CreateMiddleware(limit: 1);
+
+        var authFirst = CreateContext(remoteIp: null, subject: "uds-user-" + Guid.NewGuid().ToString("N"));
+        await middleware.InvokeAsync(authFirst);
+        var authSecond = CreateContext(remoteIp: null, subject: authFirst.User.FindFirst("sub")!.Value);
+        await middleware.InvokeAsync(authSecond);
+
+        authFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        authSecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        var anonTenant = "uds-anon-" + Guid.NewGuid().ToString("N");
+        var anonFirst = CreateContext(remoteIp: null, tenantId: anonTenant);
+        await middleware.InvokeAsync(anonFirst);
+        var anonSecond = CreateContext(remoteIp: null, tenantId: anonTenant);
+        await middleware.InvokeAsync(anonSecond);
+
+        anonFirst.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        anonSecond.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_CategoryCeilings_EnforceConfiguredUploadQueryAndMetadataLimits()
+    {
+        var nextCalls = 0;
+        var middleware = new RateLimitingMiddleware(
+            next: context =>
+            {
+                nextCalls++;
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            Substitute.For<IRateLimitPolicyStore>(),
+            Options.Create(new RateLimitingOptions
+            {
+                Enabled = true,
+                GlobalRequestsPerMinute = 1000,
+                UploadRequestsPerMinute = 1,
+                QueryRequestsPerMinute = 2,
+                MetadataRequestsPerMinute = 1,
+            }),
+            NullLogger<RateLimitingMiddleware>.Instance,
+            timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 10, TimeSpan.Zero)),
+            counterStore: new ShardedRateLimitCounterStore(1024));
+
+        var uploadIp = "198.51.100.161";
+        var upload1 = CreateContext(uploadIp, httpMethod: "POST");
+        upload1.Request.Path = "/api/v1/admin/import/upload";
+        await middleware.InvokeAsync(upload1);
+        var upload2 = CreateContext(uploadIp, httpMethod: "POST");
+        upload2.Request.Path = "/api/v1/admin/import/upload";
+        await middleware.InvokeAsync(upload2);
+
+        upload1.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        upload2.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        var metadata1 = CreateContext(uploadIp, httpMethod: "GET");
+        metadata1.Request.Path = "/openapi.json";
+        await middleware.InvokeAsync(metadata1);
+        var metadata2 = CreateContext(uploadIp, httpMethod: "GET");
+        metadata2.Request.Path = "/openapi.json";
+        await middleware.InvokeAsync(metadata2);
+
+        metadata1.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        metadata2.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        var query1 = CreateContext(uploadIp, httpMethod: "GET");
+        query1.Request.Path = "/ogc/collections/demo/items";
+        await middleware.InvokeAsync(query1);
+        var query2 = CreateContext(uploadIp, httpMethod: "GET");
+        query2.Request.Path = "/rest/services/demo/FeatureServer/0/query";
+        await middleware.InvokeAsync(query2);
+        var query3 = CreateContext(uploadIp, httpMethod: "GET");
+        query3.Request.Path = "/ogc/collections/demo/items";
+        await middleware.InvokeAsync(query3);
+
+        query1.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        query2.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        query3.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        nextCalls.Should().Be(4);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_WithCustomStatusCode_ReturnsConfiguredStatusCode()
+    {
+        var middleware = new RateLimitingMiddleware(
+            next: context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            Substitute.For<IRateLimitPolicyStore>(),
+            Options.Create(new RateLimitingOptions
+            {
+                Enabled = true,
+                GlobalRequestsPerMinute = 1,
+                StatusCode = StatusCodes.Status503ServiceUnavailable,
+            }),
+            NullLogger<RateLimitingMiddleware>.Instance,
+            timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 11, 24, 12, 0, 10, TimeSpan.Zero)),
+            counterStore: new ShardedRateLimitCounterStore(1024));
+
+        var first = CreateContext("198.51.100.169");
+        await middleware.InvokeAsync(first);
+        var second = CreateContext("198.51.100.169");
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static RateLimitingMiddleware CreateMiddleware(
@@ -627,7 +740,7 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     private static DefaultHttpContext CreateContext(
-        string remoteIp,
+        string? remoteIp,
         string? localIp = null,
         string? user = null,
         string? subject = null,
@@ -643,7 +756,10 @@ public sealed class RateLimitingMiddlewareTests
         context.Request.Method = httpMethod;
         context.Request.Path = "/native-contract";
         context.Response.Body = new MemoryStream();
-        context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        if (!string.IsNullOrWhiteSpace(remoteIp))
+        {
+            context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        }
         if (!string.IsNullOrWhiteSpace(localIp))
         {
             context.Connection.LocalIpAddress = IPAddress.Parse(localIp);
@@ -738,6 +854,11 @@ public sealed class RateLimitingMiddlewareTests
 
         public Task<RateLimitStatus?> GetStatusAsync(string key, CancellationToken cancellationToken = default)
             => Task.FromResult<RateLimitStatus?>(null);
+    }
+
+    private sealed class FrozenTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
 

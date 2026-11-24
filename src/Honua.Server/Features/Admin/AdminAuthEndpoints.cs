@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Helpers;
@@ -33,6 +34,21 @@ internal static class AdminAuthEndpoints
     private const string AdminPostLogoutRedirectPath = "/admin";
     private const int MaxStateLength = 512;
     private static readonly TimeSpan PendingSessionLifetime = TimeSpan.FromMinutes(15);
+
+    // Restrict JWKS-validated ID tokens to asymmetric OIDC algorithms so "none" and HMAC
+    // key-confusion attacks are rejected at validation time.
+    private static readonly string[] AllowedIdTokenAlgorithms =
+    [
+        SecurityAlgorithms.RsaSha256,
+        SecurityAlgorithms.RsaSha384,
+        SecurityAlgorithms.RsaSha512,
+        SecurityAlgorithms.RsaSsaPssSha256,
+        SecurityAlgorithms.RsaSsaPssSha384,
+        SecurityAlgorithms.RsaSsaPssSha512,
+        SecurityAlgorithms.EcdsaSha256,
+        SecurityAlgorithms.EcdsaSha384,
+        SecurityAlgorithms.EcdsaSha512,
+    ];
 
     internal sealed class AdminAuthEndpointsLog;
 
@@ -261,6 +277,15 @@ internal static class AdminAuthEndpoints
                 "An authenticated admin session is required to issue an operator bearer.");
         }
 
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
+            return StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "An authenticated admin session is required to issue an operator bearer.");
+        }
+
         if (!bearerTokenService.Enabled)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -323,7 +348,9 @@ internal static class AdminAuthEndpoints
                 provider.Authority!,
                 context.RequestAborted).ConfigureAwait(false);
 
-            if (string.IsNullOrWhiteSpace(discovery.AuthorizationEndpoint))
+            if (!PortalOAuthBroker.IsValidBrowserRedirectEndpoint(
+                    discovery.AuthorizationEndpoint,
+                    oidcOptions.Value.RequireHttps))
             {
                 AdminAuthLog.MissingAuthorizationEndpoint(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(
@@ -333,6 +360,7 @@ internal static class AdminAuthEndpoints
             }
 
             var state = GenerateRandomString(32);
+            var nonce = GenerateRandomString(32);
             var verifier = GenerateRandomString(64);
             var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
             var pendingSessionId = await sessionStore.CreatePendingSessionAsync(
@@ -340,6 +368,7 @@ internal static class AdminAuthEndpoints
                 {
                     ProviderKey = provider.Key,
                     State = state,
+                    Nonce = nonce,
                     CodeVerifier = verifier,
                     ExpiresAt = DateTimeOffset.UtcNow.Add(PendingSessionLifetime),
                     ReturnTo = returnTo
@@ -361,6 +390,7 @@ internal static class AdminAuthEndpoints
                 provider,
                 ResolveAdminCallbackUri(context, oidcOptions.Value),
                 state,
+                nonce,
                 challenge);
 
             return TypedResults.Ok(new AdminAuthAuthorizeUrlResponse
@@ -405,7 +435,7 @@ internal static class AdminAuthEndpoints
         var pendingSession = await sessionStore.GetPendingSessionAsync(pendingSessionId, context.RequestAborted).ConfigureAwait(false);
         if (pendingSession is null ||
             !string.Equals(pendingSession.ProviderKey, provider.Key, StringComparison.Ordinal) ||
-            !string.Equals(pendingSession.State, request.State, StringComparison.Ordinal) ||
+            !PortalOAuthBroker.CryptographicEquals(pendingSession.State, request.State) ||
             string.IsNullOrWhiteSpace(pendingSession.CodeVerifier))
         {
             DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
@@ -413,6 +443,7 @@ internal static class AdminAuthEndpoints
         }
 
         var codeVerifier = pendingSession.CodeVerifier;
+        var allowPrivateNetworks = AllowPrivateDiscoveryNetworks(context);
 
         var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
         if (baseUrlRequirement != null)
@@ -427,7 +458,11 @@ internal static class AdminAuthEndpoints
                 provider.Authority!,
                 context.RequestAborted).ConfigureAwait(false);
 
-            if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
+            if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
+                    discovery.TokenEndpoint,
+                    oidcOptions.Value.RequireHttps,
+                    allowPrivateNetworks,
+                    context.RequestAborted).ConfigureAwait(false))
             {
                 AdminAuthLog.MissingTokenEndpoint(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(
@@ -468,7 +503,10 @@ internal static class AdminAuthEndpoints
                 httpClientFactory,
                 discovery,
                 provider,
+                oidcOptions.Value,
                 tokenResponse.IdToken,
+                pendingSession.Nonce,
+                allowPrivateNetworks,
                 context.RequestAborted).ConfigureAwait(false);
             if (validatedClaims is null ||
                 !AdminAuthClaimsProjector.TryProjectValidatedClaims(validatedClaims, out var sessionClaims))
@@ -485,9 +523,8 @@ internal static class AdminAuthEndpoints
             var sessionExpiresAt = now.AddSeconds(expiresIn);
 
             // Clamp the session's effective lifetime to the earlier of the provider's
-            // declared ExpiresIn and the ID token's own `exp` claim. Without this, a
-            // session cookie can outlive the stored IdToken and every call that needs
-            // the token after expiry fails silently on a different replica.
+            // declared ExpiresIn and the ID token's own `exp` claim. Already-expired ID
+            // tokens are rejected rather than extended into a short-lived session.
             var idTokenExpiry = TryGetIdTokenExpiry(validatedClaims);
             if (idTokenExpiry.HasValue && idTokenExpiry.Value < sessionExpiresAt)
             {
@@ -497,8 +534,11 @@ internal static class AdminAuthEndpoints
             var cookieLifetime = sessionExpiresAt - now;
             if (cookieLifetime <= TimeSpan.Zero)
             {
-                cookieLifetime = TimeSpan.FromSeconds(30);
-                sessionExpiresAt = now + cookieLifetime;
+                AdminAuthLog.InvalidTokenProjection(logger, provider.Key);
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Identity provider is temporarily unavailable.",
+                    retryable: true);
             }
 
             var authSessionId = await sessionStore.CreateAuthenticatedSessionAsync(
@@ -592,6 +632,7 @@ internal static class AdminAuthEndpoints
         var logoutUrl = await TryBuildLogoutUrlAsync(
             provider,
             session.IdToken,
+            oidcOptions.Value.RequireHttps,
             context,
             httpClientFactory,
             logger).ConfigureAwait(false);
@@ -624,6 +665,7 @@ internal static class AdminAuthEndpoints
         var logoutUrl = await TryBuildLogoutUrlAsync(
             provider,
             idTokenHint,
+            oidcOptions.Value.RequireHttps,
             context,
             httpClientFactory,
             logger).ConfigureAwait(false);
@@ -710,13 +752,32 @@ internal static class AdminAuthEndpoints
         IHttpClientFactory httpClientFactory,
         AdminAuthOidcDiscoveryDocument discovery,
         OidcProviderRegistration provider,
+        OidcAuthenticationOptions oidcOptions,
         string? idToken,
+        string? expectedNonce,
+        bool allowPrivateNetworks,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(idToken) ||
+            string.IsNullOrWhiteSpace(expectedNonce) ||
             string.IsNullOrWhiteSpace(discovery.Issuer) ||
             string.IsNullOrWhiteSpace(discovery.JwksUri) ||
             string.IsNullOrWhiteSpace(provider.ClientId))
+        {
+            return null;
+        }
+
+        var discoveryIssuer = discovery.Issuer.Trim();
+        if (!IsAllowedDiscoveryIssuer(discoveryIssuer, provider, oidcOptions))
+        {
+            return null;
+        }
+
+        if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
+                discovery.JwksUri,
+                oidcOptions.RequireHttps,
+                allowPrivateNetworks,
+                cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -746,8 +807,9 @@ internal static class AdminAuthEndpoints
                     RequireExpirationTime = true,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKeys = signingKeys,
+                    ValidAlgorithms = AllowedIdTokenAlgorithms,
                     ValidateIssuer = true,
-                    ValidIssuer = discovery.Issuer,
+                    ValidIssuer = discoveryIssuer,
                     ValidateAudience = true,
                     ValidAudience = provider.ClientId,
                     ValidateLifetime = true,
@@ -755,7 +817,16 @@ internal static class AdminAuthEndpoints
                 },
                 out _);
 
-            return principal.Claims.ToArray();
+            var claims = principal.Claims.ToArray();
+            var tokenNonce = claims
+                .FirstOrDefault(static claim => string.Equals(claim.Type, JwtRegisteredClaimNames.Nonce, StringComparison.Ordinal))
+                ?.Value;
+            if (!PortalOAuthBroker.CryptographicEquals(expectedNonce, tokenNonce))
+            {
+                return null;
+            }
+
+            return claims;
         }
         catch (SecurityTokenException)
         {
@@ -766,6 +837,34 @@ internal static class AdminAuthEndpoints
             return null;
         }
     }
+
+    internal static bool IsAllowedDiscoveryIssuer(
+        string discoveryIssuer,
+        OidcProviderRegistration provider,
+        OidcAuthenticationOptions oidcOptions)
+    {
+        var normalizedDiscovery = discoveryIssuer.Trim().TrimEnd('/');
+        if (string.IsNullOrEmpty(normalizedDiscovery))
+        {
+            return false;
+        }
+
+        var baseParameters = OidcTokenValidationParametersFactory.Build(oidcOptions).Parameters;
+        var narrowed = OidcTokenValidationParametersFactory.NarrowToProvider(baseParameters, provider, oidcOptions);
+        var allowedIssuers = (narrowed.ValidIssuers ?? [])
+            .Where(static issuer => !string.IsNullOrWhiteSpace(issuer));
+        if (allowedIssuers.Any(candidate =>
+                string.Equals(candidate.Trim().TrimEnd('/'), normalizedDiscovery, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return OidcProviderDiscoveryProbe.IsExpectedIssuer(provider.Authority, provider.Type, discoveryIssuer);
+    }
+
+    private static bool AllowPrivateDiscoveryNetworks(HttpContext context)
+        => context.RequestServices.GetService<IHostEnvironment>() is { } environment
+            && (environment.IsDevelopment() || environment.IsEnvironment("Test"));
 
     private static async Task<IReadOnlyList<SecurityKey>> GetOidcSigningKeysAsync(
         IHttpClientFactory httpClientFactory,
@@ -825,6 +924,7 @@ internal static class AdminAuthEndpoints
         OidcProviderRegistration provider,
         string redirectUri,
         string state,
+        string nonce,
         string codeChallenge)
     {
         var parameters = new Dictionary<string, string?>
@@ -834,6 +934,7 @@ internal static class AdminAuthEndpoints
             ["redirect_uri"] = redirectUri,
             ["scope"] = string.Join(" ", provider.Scopes),
             ["state"] = state,
+            ["nonce"] = nonce,
             ["code_challenge"] = codeChallenge,
             ["code_challenge_method"] = "S256"
         };
@@ -918,6 +1019,7 @@ internal static class AdminAuthEndpoints
     private static async Task<string?> TryBuildLogoutUrlAsync(
         OidcProviderRegistration provider,
         string? idTokenHint,
+        bool requireHttps,
         HttpContext context,
         IHttpClientFactory httpClientFactory,
         ILogger<AdminAuthEndpointsLog> logger)
@@ -934,7 +1036,7 @@ internal static class AdminAuthEndpoints
                 logoutEndpoint = discovery.EndSessionEndpoint;
             }
 
-            if (string.IsNullOrWhiteSpace(logoutEndpoint))
+            if (!PortalOAuthBroker.IsValidBrowserRedirectEndpoint(logoutEndpoint, requireHttps))
             {
                 return null;
             }
@@ -956,7 +1058,7 @@ internal static class AdminAuthEndpoints
                 parameters["id_token_hint"] = idTokenHint;
             }
 
-            return QueryHelpers.AddQueryString(logoutEndpoint, parameters);
+            return QueryHelpers.AddQueryString(logoutEndpoint!, parameters);
         }
         catch (OperationCanceledException)
         {

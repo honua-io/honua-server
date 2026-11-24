@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -42,9 +43,9 @@ internal sealed partial class OgcFeaturesQueryHandler
         FeatureCollection response,
         CollectionCacheTarget target)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(response, OgcJsonContext.Default.FeatureCollection);
-        var contentETag = ComputeStableFeatureCollectionETag(response, _etagService);
-        return CreateCollectionBytesResultAsync(context, new TaggedPayload(payload, contentETag), target);
+        var payload = CreateMaterializedFeatureCollectionPayload(response);
+        var contentETag = ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], _etagService);
+        return CreateCollectionBytesResultAsync(context, new TaggedPayload(payload.Bytes, contentETag), target);
     }
 
     private async Task<IResult> CreateCollectionBytesResultAsync(
@@ -57,7 +58,13 @@ internal sealed partial class OgcFeaturesQueryHandler
             : MediaTypes.Json;
         if (target.CacheKey is not null && ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
         {
-            var cachedResponse = new CachedResponse(payload.Bytes.ToArray(), contentType, payload.ETag);
+            var bytes = MemoryMarshal.TryGetArray(payload.Bytes, out var seg)
+                && seg.Array is not null
+                && seg.Offset == 0
+                && seg.Count == seg.Array.Length
+                ? seg.Array
+                : payload.Bytes.ToArray();
+            var cachedResponse = new CachedResponse(bytes, contentType, payload.ETag);
             await _responseCache.SetAsync(target.CacheKey, cachedResponse, target.CacheTtl, context.RequestAborted);
             return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
         }
@@ -70,8 +77,46 @@ internal sealed partial class OgcFeaturesQueryHandler
 
     internal static string ComputeStableFeatureCollectionETag(FeatureCollection collection, IETagService etagService)
     {
-        var stable = collection.TimeStamp.HasValue ? collection with { TimeStamp = null } : collection;
-        return EnsureWeakETag(etagService.ComputeETag(stable, OgcJsonContext.Default.FeatureCollection));
+        var payload = CreateMaterializedFeatureCollectionPayload(collection);
+        return ComputeWeakETag(payload.Bytes.Span[..payload.StableHashLength], etagService);
+    }
+
+    internal static OgcCollectionPayload CreateMaterializedFeatureCollectionPayload(FeatureCollection response)
+    {
+        var estimatedCapacity = Math.Max(4096, (response.Features.Length * 256) + 512);
+        var buffer = new ArrayBufferWriter<byte>(estimatedCapacity);
+        using var writer = new Utf8JsonWriter(buffer);
+
+        writer.WriteStartObject();
+        writer.WriteString("type", response.Type);
+        writer.WritePropertyName("features");
+        JsonSerializer.Serialize(writer, response.Features, OgcJsonContext.Default.GeoJsonFeatureArray);
+
+        if (response.NumberMatched.HasValue)
+        {
+            writer.WriteNumber("numberMatched", response.NumberMatched.Value);
+        }
+
+        writer.WriteNumber("numberReturned", response.NumberReturned);
+
+        if (response.Links is { IsDefault: false } links)
+        {
+            writer.WritePropertyName("links");
+            JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
+        }
+
+        writer.Flush();
+        var stableHashLength = buffer.WrittenCount;
+
+        if (response.TimeStamp.HasValue)
+        {
+            writer.WriteString("timeStamp", OgcTimestampFormatter.Format(response.TimeStamp.Value));
+        }
+
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return new OgcCollectionPayload(buffer.WrittenMemory, stableHashLength);
     }
 
     private static string EnsureWeakETag(string tag)
@@ -82,6 +127,10 @@ internal sealed partial class OgcFeaturesQueryHandler
         RawPayloadContext context)
     {
         var propertyFields = ResolveRawPropertyFields(context.Resource);
+        var encodedPropertyFields = EncodePropertyNames(propertyFields);
+        var propertyLookup = propertyFields.Length > 0
+            ? new Dictionary<string, JsonElement>(propertyFields.Length, StringComparer.OrdinalIgnoreCase)
+            : null;
         var publicIdPropertyName = ResolveRawPublicIdPropertyName(context.Resource);
         var buffer = new ArrayBufferWriter<byte>(
             EstimateRawFeatureCollectionPayloadCapacity(features, propertyFields, context.Links));
@@ -101,7 +150,7 @@ internal sealed partial class OgcFeaturesQueryHandler
             writer.WritePropertyName("geometry");
             WriteValidatedRawGeometry(writer, feature.GeometryGeoJson);
             writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields);
+            WriteSchemaProperties(writer, propertiesElement, propertyFields, encodedPropertyFields, propertyLookup);
             writer.WriteEndObject();
         }
 
@@ -113,6 +162,10 @@ internal sealed partial class OgcFeaturesQueryHandler
         RawPayloadContext context)
     {
         var propertyFields = ResolveRawPropertyFields(context.Resource);
+        var encodedPropertyFields = EncodePropertyNames(propertyFields);
+        var propertyLookup = propertyFields.Length > 0
+            ? new Dictionary<string, JsonElement>(propertyFields.Length, StringComparer.OrdinalIgnoreCase)
+            : null;
         var publicIdPropertyName = ResolveRawPublicIdPropertyName(context.Resource);
         var buffer = new ArrayBufferWriter<byte>(
             EstimateRawPointFeatureCollectionPayloadCapacity(features, propertyFields, context.Links));
@@ -132,11 +185,27 @@ internal sealed partial class OgcFeaturesQueryHandler
             writer.WritePropertyName("geometry");
             WriteRawPointGeometry(writer, feature);
             writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields);
+            WriteSchemaProperties(writer, propertiesElement, propertyFields, encodedPropertyFields, propertyLookup);
             writer.WriteEndObject();
         }
 
         return CompleteCollectionPayload(writer, buffer, new CollectionFooter(features.Length, context.Links, context.NumberMatched));
+    }
+
+    private static JsonEncodedText[] EncodePropertyNames(string[] propertyFields)
+    {
+        if (propertyFields.Length == 0)
+        {
+            return [];
+        }
+
+        var encoded = new JsonEncodedText[propertyFields.Length];
+        for (var i = 0; i < propertyFields.Length; i++)
+        {
+            encoded[i] = JsonEncodedText.Encode(propertyFields[i]);
+        }
+
+        return encoded;
     }
 
     private readonly record struct CollectionFooter(

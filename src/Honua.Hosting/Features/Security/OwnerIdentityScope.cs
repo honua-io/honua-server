@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
@@ -82,6 +83,72 @@ internal sealed class OwnerIdentityScope
     // A short digest keeps editor-tracking fields narrow; the key is an operator-configured authority, not caller input.
     internal static string ProviderTag(string providerKey)
         => "idp-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(providerKey)).AsSpan(0, 6));
+
+    // Produces an issuer- and tenant-qualified binding key for resources owned by an authenticated principal.
+    internal static string? TryResolvePrincipalBindingKey(
+        ClaimsPrincipal? principal,
+        TenantContextOptions? tenantOptions = null)
+    {
+        if (principal?.Identity is not ClaimsIdentity { IsAuthenticated: true } identity)
+        {
+            return null;
+        }
+
+        var tenant = ResolveBindingTenantSegment(principal, tenantOptions);
+
+        if (CanonicalSecurityActor.Resolve(principal) is { } actor)
+        {
+            var subjectIssuer = CanonicalSecurityActor.FindStampedValue(principal, SubjectIssuerClaim);
+            if (!string.IsNullOrWhiteSpace(subjectIssuer) && !string.IsNullOrWhiteSpace(actor.SubjectId))
+            {
+                return $"{actor.AuthenticationScheme}:subject:{Uri.EscapeDataString(subjectIssuer.Trim())}:{Uri.EscapeDataString(actor.SubjectId)}:tenant:{tenant}";
+            }
+
+            return $"{actor.ActorId}:tenant:{tenant}";
+        }
+
+        var scheme = CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.AuthenticationSchemeClaim)?.Trim().ToLowerInvariant()
+            ?? identity.AuthenticationType?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(scheme))
+        {
+            return null;
+        }
+
+        var apiKeyId = identity.FindFirst("api_key_id")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(apiKeyId))
+        {
+            return $"{Uri.EscapeDataString(scheme)}:api-key:{Uri.EscapeDataString(apiKeyId)}:tenant:{tenant}";
+        }
+
+        // Bootstrap admin / dev-bypass keys carry no api_key_id; bind them by auth_type and name
+        // so they never collide with managed admin API keys or federated users named "admin".
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            var authType = identity.FindFirst("auth_type")?.Value?.Trim();
+            var name = identity.Name?.Trim();
+            if (!string.IsNullOrEmpty(authType) && !string.IsNullOrEmpty(name))
+            {
+                return $"{Uri.EscapeDataString(scheme)}:bootstrap:{Uri.EscapeDataString(authType)}:{Uri.EscapeDataString(name)}:tenant:{tenant}";
+            }
+        }
+
+        return null;
+    }
+
+    internal static string ResolveBindingTenantSegment(
+        ClaimsPrincipal principal,
+        TenantContextOptions? tenantOptions = null)
+    {
+        var tenant = CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim)
+            ?? (tenantOptions is not null
+                ? PlatformAdminAuthorization.ResolveTenantId(principal, tenantOptions)
+                : principal.FindFirstValue("honua:tenant_id")
+                  ?? principal.FindFirstValue("tenant_id")
+                  ?? principal.FindFirstValue("tid")
+                  ?? principal.FindFirstValue(AdminApiKeyPermission.ApprovedOperationTenantClaim));
+        var trimmed = tenant?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? "-" : Uri.EscapeDataString(trimmed);
+    }
 
     private string? ResolveProvider(
         ClaimsPrincipal principal,

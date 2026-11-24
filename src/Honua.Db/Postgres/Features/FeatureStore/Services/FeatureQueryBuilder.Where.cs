@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,6 +15,42 @@ internal sealed partial class FeatureQueryBuilder
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
+
+    private static readonly FrozenDictionary<string, string> PhysicalWhereColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [DatabaseSchema.ObjectIdColumn] = DatabaseSchema.ObjectIdColumn,
+            [DatabaseSchema.ObjectIdColumnAlt] = DatabaseSchema.ObjectIdColumn,
+            [DatabaseSchema.LayerIdColumnAlt] = DatabaseSchema.LayerIdColumn,
+            [DatabaseSchema.LayerIdColumn] = DatabaseSchema.LayerIdColumn,
+            [DatabaseSchema.GeometryColumn] = DatabaseSchema.GeometryColumn,
+            ["created_at"] = "created_at",
+            ["updated_at"] = "updated_at",
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly (string Pattern, bool IsWord)[] DangerousPatternEntries =
+    [
+        ("UNION", true), ("SELECT", true), ("INSERT", true), ("UPDATE", true), ("DELETE", true),
+        ("DROP", true), ("CREATE", true), ("ALTER", true),
+        ("EXEC", true), ("EXECUTE", true), ("xp_", true), ("sp_", true), ("INFORMATION_SCHEMA", true),
+        ("--", false), ("/*", false), ("*/", false), (";", false),
+        ("COPY", true), ("TRUNCATE", true), ("GRANT", true), ("REVOKE", true), ("VACUUM", true),
+        ("ANALYZE", true), ("EXPLAIN", true),
+        ("DO", true), ("RAISE", true), ("PERFORM", true), ("NOTIFY", true), ("LISTEN", true),
+        ("pg_read_file", true), ("pg_write_file", true), ("pg_ls_dir", true), ("pg_stat_file", true),
+        ("lo_import", true), ("lo_export", true), ("pg_sleep", true), ("current_setting", true), ("set_config", true),
+        ("pg_advisory_lock", true), ("pg_advisory_unlock", true),
+        ("dblink", true), ("dblink_connect", true),
+        ("pg_terminate_backend", true), ("pg_cancel_backend", true),
+        ("pg_reload_conf", true),
+        ("query_to_xml", true), ("xpath", true),
+        ("RETURNING", true),
+        ("chr", true), ("convert_from", true)
+    ];
+
+    private static readonly SearchValues<string> DangerousPatterns = SearchValues.Create(
+        DangerousPatternEntries.Select(static entry => entry.Pattern).ToArray(),
+        StringComparison.OrdinalIgnoreCase);
 
     private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
@@ -211,29 +249,14 @@ internal sealed partial class FeatureQueryBuilder
             return DatabaseSchema.BuildJsonPath(attributeName);
         }
 
-        isAttributeField = fieldName.ToLowerInvariant() switch
+        if (PhysicalWhereColumns.TryGetValue(fieldName, out var physicalColumn))
         {
-            DatabaseSchema.ObjectIdColumn => false,
-            DatabaseSchema.ObjectIdColumnAlt => false,
-            DatabaseSchema.LayerIdColumnAlt => false,
-            DatabaseSchema.LayerIdColumn => false,
-            DatabaseSchema.GeometryColumn => false,
-            "created_at" => false,
-            "updated_at" => false,
-            _ => true
-        };
+            isAttributeField = false;
+            return physicalColumn;
+        }
 
-        return fieldName.ToLowerInvariant() switch
-        {
-            DatabaseSchema.ObjectIdColumn => DatabaseSchema.ObjectIdColumn,
-            DatabaseSchema.ObjectIdColumnAlt => DatabaseSchema.ObjectIdColumn,
-            DatabaseSchema.LayerIdColumnAlt => DatabaseSchema.LayerIdColumn,
-            DatabaseSchema.LayerIdColumn => DatabaseSchema.LayerIdColumn,
-            DatabaseSchema.GeometryColumn => DatabaseSchema.GeometryColumn,
-            "created_at" => "created_at",
-            "updated_at" => "updated_at",
-            _ => $"({DatabaseSchema.BuildJsonPath(fieldName)})"
-        };
+        isAttributeField = true;
+        return $"({DatabaseSchema.BuildJsonPath(fieldName)})";
     }
 
     private static bool IsQuotedStringLiteral(string valueToken)
@@ -250,28 +273,95 @@ internal sealed partial class FeatureQueryBuilder
     private static bool IsIdentifierChar(char value) =>
         char.IsLetterOrDigit(value) || value == '_';
 
-    private static bool IsAllIdentifierChars(string value)
-        => value.Length > 0 && value.All(IsIdentifierChar);
-
-    private static string? FindDangerousPattern(string whereClause)
+    internal static string? FindDangerousPattern(string whereClause)
     {
-        var dangerousPatterns = new[]
-        {
-            "UNION", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
-            "EXEC", "EXECUTE", "xp_", "sp_", "INFORMATION_SCHEMA", "--", "/*", "*/", ";",
-            "COPY", "TRUNCATE", "GRANT", "REVOKE", "VACUUM", "ANALYZE", "EXPLAIN",
-            "DO", "RAISE", "PERFORM", "NOTIFY", "LISTEN",
-            "pg_read_file", "pg_write_file", "pg_ls_dir", "pg_stat_file",
-            "lo_import", "lo_export", "pg_sleep", "current_setting", "set_config",
-            "pg_advisory_lock", "pg_advisory_unlock",
-            "dblink", "dblink_connect",
-            "pg_terminate_backend", "pg_cancel_backend",
-            "pg_reload_conf",
-            "query_to_xml", "xpath",
-            "RETURNING",
-            "chr", "convert_from"
-        };
+        var span = whereClause.AsSpan();
+        var segmentStart = 0;
+        var inQuotes = false;
+        var quoteChar = '\0';
 
-        return dangerousPatterns.FirstOrDefault(pattern => ContainsOutsideQuotes(whereClause, pattern));
+        for (var i = 0; i < span.Length; i++)
+        {
+            var c = span[i];
+            if (!inQuotes && (c == '\'' || c == '"'))
+            {
+                if (i > segmentStart)
+                {
+                    var match = FindDangerousPatternInSegment(span, segmentStart, i - segmentStart);
+                    if (match is not null)
+                    {
+                        return match;
+                    }
+                }
+
+                inQuotes = true;
+                quoteChar = c;
+            }
+            else if (inQuotes && c == quoteChar)
+            {
+                if (i + 1 < span.Length && span[i + 1] == quoteChar)
+                {
+                    i++;
+                }
+                else
+                {
+                    inQuotes = false;
+                    quoteChar = '\0';
+                    segmentStart = i + 1;
+                }
+            }
+        }
+
+        if (!inQuotes && segmentStart < span.Length)
+        {
+            return FindDangerousPatternInSegment(span, segmentStart, span.Length - segmentStart);
+        }
+
+        return null;
+    }
+
+    private static string? FindDangerousPatternInSegment(
+        ReadOnlySpan<char> fullInput,
+        int segmentStart,
+        int segmentLength)
+    {
+        var segmentEnd = segmentStart + segmentLength;
+        var searchPos = segmentStart;
+
+        while (searchPos < segmentEnd)
+        {
+            var relativeHit = fullInput.Slice(searchPos, segmentEnd - searchPos).IndexOfAny(DangerousPatterns);
+            if (relativeHit < 0)
+            {
+                return null;
+            }
+
+            var hitPos = searchPos + relativeHit;
+            var remaining = fullInput.Slice(hitPos, segmentEnd - hitPos);
+            var beforeChar = hitPos > 0 ? fullInput[hitPos - 1] : ' ';
+
+            foreach (var (pattern, isWordPattern) in DangerousPatternEntries)
+            {
+                if (remaining.Length >= pattern.Length &&
+                    remaining.Slice(0, pattern.Length).Equals(pattern, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!isWordPattern)
+                    {
+                        return pattern;
+                    }
+
+                    var afterPos = hitPos + pattern.Length;
+                    var afterChar = afterPos < fullInput.Length ? fullInput[afterPos] : ' ';
+                    if (!IsIdentifierChar(beforeChar) && !IsIdentifierChar(afterChar))
+                    {
+                        return pattern;
+                    }
+                }
+            }
+
+            searchPos = hitPos + 1;
+        }
+
+        return null;
     }
 }

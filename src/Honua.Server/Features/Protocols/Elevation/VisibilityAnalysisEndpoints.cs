@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
@@ -26,6 +27,9 @@ internal static partial class VisibilityAnalysisEndpoints
     private const string ViewshedEntitlement = "analytics.viewshed";
 
     private const double CoordinateEqualityEpsilon = 1e-9;
+    private const int MaxViewshedRayCount = VisibilityAnalysisService.DefaultRayCount;
+    private const int MaxViewshedSampleBudgetMultiplier = 16;
+    private const double MaxViewshedRadiusMeters = 100_000.0;
 
     public static IEndpointRouteBuilder MapVisibilityAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -175,7 +179,7 @@ internal static partial class VisibilityAnalysisEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var layerId = validation.LayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.line_of_sight");
@@ -211,8 +215,10 @@ internal static partial class VisibilityAnalysisEndpoints
         string datasetId,
         HttpContext context,
         VisibilityAnalysisService visibilityService,
+        [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
+        var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var logger = context.RequestServices.GetService<ILoggerFactory>()?
             .CreateLogger("Honua.Elevation.Visibility");
 
@@ -227,7 +233,7 @@ internal static partial class VisibilityAnalysisEndpoints
         {
             request = await context.Request.ReadFromJsonAsync(
                 VisibilityJsonContext.Default.ViewshedRequest,
-                cancellationToken);
+                effectiveToken);
         }
         // Intentional broad catch: this is the request-body parse boundary for the viewshed
         // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
@@ -261,6 +267,13 @@ internal static partial class VisibilityAnalysisEndpoints
                 "'radiusMeters' is required and must be a positive finite distance in meters.");
         }
 
+        if (radius > MaxViewshedRadiusMeters)
+        {
+            return StandardErrorHelpers.CreateUnprocessableEntity(
+                context,
+                $"'radiusMeters' ({radius}) exceeds the configured maximum of {MaxViewshedRadiusMeters} meters.");
+        }
+
         var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
         var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
         if (!observerHeightValid || !targetHeightValid)
@@ -270,28 +283,61 @@ internal static partial class VisibilityAnalysisEndpoints
                 "Height offsets must be finite, non-negative values in meters.");
         }
 
-        if (request.RayCount is { } rayCount && rayCount < 1)
+        var maxSampleCount = limitsOptions.Value.Elevation.MaxSampleCount;
+        var maxTotalSamples = (long)maxSampleCount * MaxViewshedSampleBudgetMultiplier;
+
+        if (request.RayCount is { } rayCount)
+        {
+            if (rayCount < 1)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "'rayCount' must be at least 1 when supplied.");
+            }
+
+            if (rayCount > MaxViewshedRayCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    $"'rayCount' ({rayCount}) exceeds the configured maximum of {MaxViewshedRayCount}.");
+            }
+        }
+
+        if (request.SamplesPerRay is { } samplesPerRay)
+        {
+            if (samplesPerRay < 2)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "'samplesPerRay' must be at least 2 when supplied.");
+            }
+
+            if (samplesPerRay > maxSampleCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    $"'samplesPerRay' ({samplesPerRay}) exceeds the configured maximum of {maxSampleCount}.");
+            }
+        }
+
+        var effectiveRayCount = Math.Max(request.RayCount ?? VisibilityAnalysisService.DefaultRayCount, VisibilityAnalysisService.MinRayCount);
+        var effectiveSamplesPerRay = request.SamplesPerRay ?? Math.Min(VisibilityAnalysisService.DefaultSamplesPerRay, maxSampleCount);
+        var totalSamples = (long)effectiveRayCount * effectiveSamplesPerRay;
+        if (totalSamples > maxTotalSamples)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
-                "'rayCount' must be at least 1 when supplied.");
+                $"Total viewshed samples ({totalSamples}) exceeds the configured maximum of {maxTotalSamples}.");
         }
 
-        if (request.SamplesPerRay is { } samplesPerRay && samplesPerRay < 2)
-        {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "'samplesPerRay' must be at least 2 when supplied.");
-        }
-
-        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, cancellationToken);
+        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, effectiveToken);
         if (!validation.IsValid)
         {
             return validation.ErrorResult!;
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var layerId = validation.LayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.viewshed");
@@ -305,8 +351,8 @@ internal static partial class VisibilityAnalysisEndpoints
             var options = new ViewshedOptions
             {
                 RadiusMeters = radius,
-                RayCount = request.RayCount,
-                SamplesPerRay = request.SamplesPerRay,
+                RayCount = request.RayCount ?? effectiveRayCount,
+                SamplesPerRay = request.SamplesPerRay ?? effectiveSamplesPerRay,
                 ObserverHeightOffsetMeters = observerHeight,
                 TargetHeightOffsetMeters = targetHeight
             };
@@ -316,7 +362,7 @@ internal static partial class VisibilityAnalysisEndpoints
                 new VisibilityPoint { Longitude = observerLon, Latitude = observerLat, HeightOffsetMeters = observerHeight },
                 options,
                 mergeStrategy,
-                cancellationToken);
+                effectiveToken);
 
             activity?.SetTag("honua.elevation.ray_count", result.RayCount);
             activity?.SetTag("honua.elevation.visible_samples", result.VisibleSampleCount);

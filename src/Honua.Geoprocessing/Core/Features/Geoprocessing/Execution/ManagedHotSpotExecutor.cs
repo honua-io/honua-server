@@ -220,7 +220,7 @@ internal sealed class ManagedHotSpotExecutor(
                 continue;
             }
 
-            if (!TryReadNumeric(feature, field, out var value))
+            if (!StatisticsSupport.TryReadNumeric(feature, field, out var value))
             {
                 throw new TransformInputException(
                     $"feature is missing a numeric value for analysis field '{field}'");
@@ -268,47 +268,6 @@ internal sealed class ManagedHotSpotExecutor(
         }
 
         return value;
-    }
-
-    private static bool TryReadNumeric(IFeature feature, string field, out double value)
-    {
-        value = 0;
-        var attributes = feature.Attributes;
-        if (attributes is null || !attributes.Exists(field))
-        {
-            return false;
-        }
-
-        var raw = attributes.GetOptionalValue(field);
-        switch (raw)
-        {
-            case null:
-                return false;
-            case double d:
-                value = d;
-                return true;
-            case float f:
-                value = f;
-                return true;
-            case int i:
-                value = i;
-                return true;
-            case long l:
-                value = l;
-                return true;
-            case short s:
-                value = s;
-                return true;
-            case decimal m:
-                value = (double)m;
-                return true;
-            default:
-                return double.TryParse(
-                    Convert.ToString(raw, CultureInfo.InvariantCulture),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out value);
-        }
     }
 
     private readonly record struct MaterializedPoint(IFeature SourceFeature, double X, double Y, double Value);

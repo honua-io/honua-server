@@ -183,7 +183,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    queryContext.SchemaFields),
+                    queryContext.ExactFieldTypes),
                 feature,
                 queryContext.GlobalIdField));
         }
@@ -234,7 +234,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    queryContext.SchemaFields),
+                    queryContext.ExactFieldTypes),
                 enumerator.Current,
                 queryContext.GlobalIdField));
 
@@ -969,6 +969,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
             SchemaFields = schemaFields,
+            ExactFieldTypes = GrpcTypedValues.BuildExactFieldTypeMap(schemaFields),
             ResponseFields = GrpcConversionHelpers.SelectResponseFields(
                 schemaFields, query.OutFields, query.Distinct ? null : layer.ObjectIdFieldName),
         };
@@ -1274,6 +1275,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         // Attribute fields the caller may see; typed conversion of every returned attribute uses them.
         public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = [];
+
+        public IReadOnlyDictionary<string, MetadataV2FieldType>? ExactFieldTypes { get; init; }
 
         // The fields a response declares: those the caller asked for in out_fields, as FeatureServer does.
         public IReadOnlyList<MetadataV2Field> ResponseFields { get; init; } = [];

@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.Orchestration;
@@ -31,36 +32,15 @@ internal sealed class WorkflowSchedulerBackgroundService(
     // definition's cron expression changes.
     private readonly ConcurrentDictionary<string, CachedCron> _compiled = new(StringComparer.Ordinal);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         OrchestrationLog.SchedulerBackgroundServiceStarted(logger);
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await TickAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            // Intentionally generic: this is a long-running background loop; a single failed
-            // tick must not kill the host — log and keep polling.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                OrchestrationLog.SchedulerTickFailed(logger, ex);
-            }
-
-            try
-            {
-                await Task.Delay(TickInterval, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
+        return PeriodicBackgroundLoop.RunAsync(
+            TickInterval,
+            TickAsync,
+            ex => OrchestrationLog.SchedulerTickFailed(logger, ex),
+            stoppingToken);
     }
 
     internal async Task TickAsync(CancellationToken cancellationToken)

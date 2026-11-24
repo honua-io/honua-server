@@ -5,7 +5,6 @@ using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -111,10 +110,10 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         string? idempotencyKey = null;
         try
         {
-            schema = Identifier(inputs.GetOrDefault("schema", "public"));
-            table = Identifier(Require(inputs, "table"));
-            geometryColumn = Identifier(inputs.GetOrDefault("geometryColumn", "geom"));
-            targetSrid = RequireSrid(inputs, "targetSrid");
+            schema = SinkFeatureEncoder.Identifier(inputs.GetOrDefault("schema", "public"));
+            table = SinkFeatureEncoder.Identifier(Require(inputs, "table"));
+            geometryColumn = SinkFeatureEncoder.Identifier(inputs.GetOrDefault("geometryColumn", "geom"));
+            targetSrid = inputs.RequireSrid("targetSrid");
             batchSize = inputs.TryGet("batchSize", out var rawBatch)
                 && int.TryParse(rawBatch, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
                 && parsed > 0
@@ -131,8 +130,8 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 
             if (hasIdempotencyColumn)
             {
-                idempotencyColumn = Identifier(rawIdempotencyColumn!);
-                idempotencyConstraint = Identifier(rawIdempotencyConstraint!);
+                idempotencyColumn = SinkFeatureEncoder.Identifier(rawIdempotencyColumn!);
+                idempotencyConstraint = SinkFeatureEncoder.Identifier(rawIdempotencyConstraint!);
                 idempotencyKey = Require(inputs, "idempotencyKey");
             }
         }
@@ -498,7 +497,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             var values = table.GetValues();
             for (var i = 0; i < names.Length; i++)
             {
-                WriteAttribute(writer, names[i], values[i]);
+                SinkFeatureEncoder.WriteAttribute(writer, names[i], values[i], writeNonFiniteAsNull: true);
             }
         }
 
@@ -506,92 +505,6 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         writer.Flush();
 
         return Encoding.UTF8.GetString(bufferWriter.WrittenSpan);
-    }
-
-    private static void WriteAttribute(Utf8JsonWriter writer, string name, object? value)
-    {
-        writer.WritePropertyName(name);
-        switch (value)
-        {
-            case null or DBNull:
-                writer.WriteNullValue();
-                break;
-            case JsonElement jsonElement:
-                jsonElement.WriteTo(writer);
-                break;
-            case string stringValue:
-                writer.WriteStringValue(stringValue);
-                break;
-            case bool boolValue:
-                writer.WriteBooleanValue(boolValue);
-                break;
-            case byte byteValue:
-                writer.WriteNumberValue(byteValue);
-                break;
-            case sbyte sbyteValue:
-                writer.WriteNumberValue(sbyteValue);
-                break;
-            case short shortValue:
-                writer.WriteNumberValue(shortValue);
-                break;
-            case ushort ushortValue:
-                writer.WriteNumberValue(ushortValue);
-                break;
-            case int intValue:
-                writer.WriteNumberValue(intValue);
-                break;
-            case uint uintValue:
-                writer.WriteNumberValue(uintValue);
-                break;
-            case long longValue:
-                writer.WriteNumberValue(longValue);
-                break;
-            case ulong ulongValue:
-                writer.WriteNumberValue(ulongValue);
-                break;
-            case float floatValue when float.IsFinite(floatValue):
-                writer.WriteNumberValue(floatValue);
-                break;
-            case float:
-                // NaN / ±Infinity are not valid JSON numbers; write null to preserve the
-                // numeric column type in JSONB rather than silently coercing to a string.
-                writer.WriteNullValue();
-                break;
-            case double doubleValue when double.IsFinite(doubleValue):
-                writer.WriteNumberValue(doubleValue);
-                break;
-            case double:
-                // Same as float: non-finite double → null in JSONB.
-                writer.WriteNullValue();
-                break;
-            case decimal decimalValue:
-                writer.WriteNumberValue(decimalValue);
-                break;
-            case DateTime dateTime:
-                writer.WriteStringValue(dateTime);
-                break;
-            case DateTimeOffset dateTimeOffset:
-                writer.WriteStringValue(dateTimeOffset);
-                break;
-            case Guid guid:
-                writer.WriteStringValue(guid);
-                break;
-            default:
-                writer.WriteStringValue(Convert.ToString(value, CultureInfo.InvariantCulture));
-                break;
-        }
-    }
-
-    private static string Identifier(string value)
-    {
-        if (!IdentifierRegex().IsMatch(value))
-        {
-            throw new TransformInputException(
-                $"identifier '{value}' is invalid; identifiers must match ^[A-Za-z_][A-Za-z0-9_]*$ " +
-                "(they cannot be parameterized in DDL/DML).");
-        }
-
-        return value;
     }
 
     private static string Require(StepInputReader inputs, string key)
@@ -603,21 +516,6 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 
         throw new TransformInputException($"requires a '{key}' option.");
     }
-
-    private static int RequireSrid(StepInputReader inputs, string key)
-    {
-        if (!inputs.TryGet(key, out var raw)
-            || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            || value <= 0)
-        {
-            throw new TransformInputException($"requires a positive integer '{key}' option.");
-        }
-
-        return value;
-    }
-
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
-    private static partial Regex IdentifierRegex();
 
     private static partial class Log
     {

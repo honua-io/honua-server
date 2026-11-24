@@ -152,7 +152,12 @@ internal sealed partial class DeployWorkflowReconciler(
         }
 
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
+            operationId,
+            LeaseRenewInterval,
+            reconciliationCancellation,
+            ct => workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, ct),
+            logger);
         WorkflowOperationRecord? reconciledVersion = null;
 
         try
@@ -316,44 +321,12 @@ internal sealed partial class DeployWorkflowReconciler(
         }
         finally
         {
-            reconciliationCancellation.Cancel();
-            try
-            {
-                await renewalTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                // Expected: the Cancel() call above is what stops the lease-renewal loop,
-                // so its resulting OperationCanceledException is normal shutdown, not an error.
-            }
-
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cleanup.Token).ConfigureAwait(false);
-        }
-    }
-
-    private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
-    {
-        while (!reconciliationCancellation.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
-                var renewed = await workflowStore.RenewLeaseAsync(
-                    operationId,
-                    _ownerId,
-                    LeaseDuration,
-                    reconciliationCancellation.Token).ConfigureAwait(false);
-                if (!renewed)
-                {
-                    reconciliationCancellation.Cancel();
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                return;
-            }
+            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
+                operationId,
+                reconciliationCancellation,
+                renewalTask,
+                ct => workflowStore.ReleaseLeaseAsync(operationId, _ownerId, ct),
+                logger).ConfigureAwait(false);
         }
     }
 
@@ -1255,6 +1228,10 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
                     try
                     {
                         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
                     }
                     // Intentional catch-all: this is a per-operation attempt inside the reconciliation
                     // loop; one operation's failure must not abort reconciliation of the rest.

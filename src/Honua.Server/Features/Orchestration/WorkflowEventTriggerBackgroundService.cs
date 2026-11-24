@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.Orchestration;
@@ -25,37 +26,15 @@ internal sealed class WorkflowEventTriggerBackgroundService(
     // fires on the next tick.
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastObjectStorePoll = new(StringComparer.Ordinal);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         OrchestrationLog.EventTriggerBackgroundServiceStarted(logger);
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await TickAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            // Intentionally generic: this is a long-running background polling loop. A
-            // single failed tick (e.g. a transient store/probe failure) must not kill the
-            // host's background service; log and keep polling on the next tick.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                OrchestrationLog.EventTriggerTickFailed(logger, ex);
-            }
-
-            try
-            {
-                await Task.Delay(TickInterval, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
+        return PeriodicBackgroundLoop.RunAsync(
+            TickInterval,
+            TickAsync,
+            ex => OrchestrationLog.EventTriggerTickFailed(logger, ex),
+            stoppingToken);
     }
 
     internal async Task TickAsync(CancellationToken cancellationToken)

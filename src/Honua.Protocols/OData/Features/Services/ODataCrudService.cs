@@ -125,8 +125,9 @@ internal sealed partial class ODataCrudService
                 srid,
                 axisOrder);
             var attributes = ODataAttributeSerializer.Serialize(featureValue.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, featureValue, geometry, attributes);
-            var etag = ComputeFeatureEtag(layerId, featureValue, geometry, attributes);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, featureValue, geometry, attributes, hiddenFields);
+            var etag = ComputeFeatureEtag(layerId, featureValue, geometry, attributes, hiddenFields);
 
             return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag);
         }
@@ -240,8 +241,9 @@ internal sealed partial class ODataCrudService
                 srid,
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes, hiddenFields);
+            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes, hiddenFields);
             return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
         }
         catch (ResourceConflictException ex)
@@ -303,8 +305,9 @@ internal sealed partial class ODataCrudService
                 existingFeatureValue.Geometry,
                 srid,
                 axisOrder);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
             var currentAttributes = ODataAttributeSerializer.Serialize(existingFeatureValue.Attributes);
-            var currentEtag = ComputeFeatureEtag(layerId, existingFeatureValue, currentGeometry, currentAttributes);
+            var currentEtag = ComputeFeatureEtag(layerId, existingFeatureValue, currentGeometry, currentAttributes, hiddenFields);
 
             if (!string.IsNullOrWhiteSpace(ifMatch) &&
                 !_etagService.MatchesPrecondition(ifMatch, currentEtag))
@@ -403,7 +406,7 @@ internal sealed partial class ODataCrudService
                     {
                         var geometry = ODataGeometryConverter.ConvertWkbToGeometry(_geometryService, current.Value.Geometry, srid, axisOrder);
                         var attributes = ODataAttributeSerializer.Serialize(current.Value.Attributes);
-                        var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes);
+                        var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes, hiddenFields);
                         if ((!string.IsNullOrWhiteSpace(ifMatch) && !_etagService.MatchesPrecondition(ifMatch, latestEtag)) ||
                             (!string.IsNullOrWhiteSpace(ifNoneMatch) && !_etagService.IsModified(ifNoneMatch, latestEtag)))
                         {
@@ -428,8 +431,8 @@ internal sealed partial class ODataCrudService
                 srid,
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(result.Value.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, result.Value, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, result.Value, responseGeometry, serializedAttributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, result.Value, responseGeometry, serializedAttributes, hiddenFields);
+            var etag = ComputeFeatureEtag(layerId, result.Value, responseGeometry, serializedAttributes, hiddenFields);
 
             return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag, result.Value);
         }
@@ -493,7 +496,12 @@ internal sealed partial class ODataCrudService
                 srid,
                 axisOrder);
             var currentAttributes = ODataAttributeSerializer.Serialize(existingFeature.Value.Attributes);
-            var currentEtag = ComputeFeatureEtag(layerId, existingFeature.Value, currentGeometry, currentAttributes);
+            var currentEtag = ComputeFeatureEtag(
+                layerId,
+                existingFeature.Value,
+                currentGeometry,
+                currentAttributes,
+                resource.HiddenSchemaFieldNames());
 
             if (!string.IsNullOrWhiteSpace(ifMatch) &&
                 !_etagService.MatchesPrecondition(ifMatch, currentEtag))
@@ -674,9 +682,10 @@ internal sealed partial class ODataCrudService
         int layerId,
         Feature feature,
         ODataSpatialGeometry? geometry,
-        IReadOnlyDictionary<string, object?> attributes)
+        IReadOnlyDictionary<string, object?> attributes,
+        IReadOnlySet<string>? hiddenFields = null)
     {
-        var payload = ODataUtilityService.BuildFeaturePayload(layerId, feature, geometry, attributes);
+        var payload = ODataUtilityService.BuildFeaturePayload(layerId, feature, geometry, attributes, hiddenFields);
         var json = ODataUtilityService.SerializeForEtag(payload);
         return _etagService.ComputeETag(json);
     }

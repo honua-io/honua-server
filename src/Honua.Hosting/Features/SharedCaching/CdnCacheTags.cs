@@ -86,26 +86,47 @@ internal static class CdnCacheTags
 
     private static string? ScopeOf(PathString path, string? resolvedServiceId)
     {
-        var segments = (path.Value ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var geoServices = (segments is [var root, ..] && root.Equals("services", StringComparison.OrdinalIgnoreCase))
-            || (segments is [var rest, var services, ..] && rest.Equals("rest", StringComparison.OrdinalIgnoreCase)
-                && services.Equals("services", StringComparison.OrdinalIgnoreCase));
+        var pathSpan = (path.Value ?? string.Empty).AsSpan();
+        Span<Range> ranges = stackalloc Range[4];
+        var count = pathSpan.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        if (count == 0)
+        {
+            return null;
+        }
+
+        var first = pathSpan[ranges[0]];
+        var isRestServices = count >= 2
+            && first.Equals("rest", StringComparison.OrdinalIgnoreCase)
+            && pathSpan[ranges[1]].Equals("services", StringComparison.OrdinalIgnoreCase);
+        var geoServices = first.Equals("services", StringComparison.OrdinalIgnoreCase) || isRestServices;
         if (geoServices && !string.IsNullOrWhiteSpace(resolvedServiceId))
         {
             return ServicesScope(Name(resolvedServiceId));
         }
 
-        return segments switch
+        if (first.Equals("stac", StringComparison.OrdinalIgnoreCase))
         {
-            [var first, ..] when first.Equals("stac", StringComparison.OrdinalIgnoreCase) => StacScope,
-            [var first, ..] when first.Equals("ogc", StringComparison.OrdinalIgnoreCase) => OgcScope,
-            [var first, var layer, ..] when first.Equals("tiles", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(layer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
-                => TilesScope(layerId.ToString(CultureInfo.InvariantCulture)),
-            [var first, var second, var service, ..] when first.Equals("rest", StringComparison.OrdinalIgnoreCase)
-                && second.Equals("services", StringComparison.OrdinalIgnoreCase) => ServicesScope(Name(service)),
-            _ => null,
-        };
+            return StacScope;
+        }
+
+        if (first.Equals("ogc", StringComparison.OrdinalIgnoreCase))
+        {
+            return OgcScope;
+        }
+
+        if (count >= 2
+            && first.Equals("tiles", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        {
+            return TilesScope(layerId.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (isRestServices && count >= 3)
+        {
+            return ServicesScope(Name(pathSpan[ranges[2]].ToString()));
+        }
+
+        return null;
     }
 
     // Lower-cased so the tag is the same whichever spelling the route was given; escaping leaves only visible ASCII without commas.

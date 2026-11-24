@@ -196,9 +196,19 @@ public static class PortalTokenAuthenticationExtensions
             services.AddHttpClient();
         }
 
-        services.AddHttpClient(PortalOAuthBroker.HttpClientName);
-        services.AddHttpClient(ClientCredentialsFederationService.HttpClientName);
+        services.AddHttpClient(PortalOAuthBroker.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
+        services.AddHttpClient(ClientCredentialsFederationService.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
     }
+
+    // Redirects are disabled so 3xx responses cannot replay credential-bearing token POSTs to another host.
+    private static SocketsHttpHandler CreateNoRedirectHttpHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    };
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
     {

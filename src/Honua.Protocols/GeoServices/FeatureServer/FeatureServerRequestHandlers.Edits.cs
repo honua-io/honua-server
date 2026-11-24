@@ -446,7 +446,7 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
+                var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
                 if (!translationResult.IsSuccess)
                 {
                     return (null, StandardErrorHelpers.CreateBadRequest(context,

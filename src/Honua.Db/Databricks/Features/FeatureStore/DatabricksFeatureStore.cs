@@ -83,22 +83,24 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildSelect(mapping, query);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, statement, cancellationToken).ConfigureAwait(false);
+        var features = await _dataAccess.ExecuteSelectAsync(mapping, statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
 
-        // When the page is smaller than the requested limit, the result is complete and
-        // the page length is the total. Otherwise issue a COUNT for the accurate total so
-        // callers can compute numberMatched / next-page links.
+        // When a non-empty page is smaller than the requested limit, the result is complete and
+        // offset + page length is the total. When the page is full, or an empty page was returned
+        // past offset > 0, issue a COUNT so numberMatched / totalCount is never fabricated.
+        var offset = query.Offset ?? 0;
         long totalCount;
         var hasMore = false;
-        if (query.Limit is int limit && limit > 0 && features.Length >= limit)
+        if ((query.Limit is int limit && limit > 0 && features.Length >= limit)
+            || (features.Length == 0 && offset > 0))
         {
             totalCount = await CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
-            var consumed = (long)(query.Offset ?? 0) + features.Length;
-            hasMore = consumed < totalCount;
+            var consumed = (long)offset + features.Length;
+            hasMore = features.Length > 0 && consumed < totalCount;
         }
         else
         {
-            totalCount = (long)(query.Offset ?? 0) + features.Length;
+            totalCount = (long)offset + features.Length;
         }
 
         return QueryResult<Feature>.Create(totalCount, features, hasMore);
@@ -111,21 +113,21 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildObjectIds(mapping, query);
-        return await _dataAccess.ExecuteObjectIdsAsync(statement, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteObjectIdsAsync(statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
     }
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildCount(mapping, query);
-        return await _dataAccess.ExecuteCountAsync(statement, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteCountAsync(statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildExtent(mapping, query);
-        return await _dataAccess.ExecuteExtentAsync(mapping, statement, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteExtentAsync(mapping, statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
     }
 
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
@@ -146,7 +148,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildStatistics(mapping, query);
-        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
     }
 
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
@@ -170,7 +172,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildH3Aggregation(mapping, query, h3Query);
-        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
     }
 
     private async Task<DatabricksLayerMapping> ResolveMappingAsync(int layerId, CancellationToken cancellationToken)

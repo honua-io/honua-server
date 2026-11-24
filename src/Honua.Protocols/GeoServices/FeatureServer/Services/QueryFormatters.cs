@@ -861,7 +861,7 @@ internal sealed class QueryFormatter
             return coords;
         }
 
-        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
         if (counterClockwise != isCcw)
         {
             Array.Reverse(coords);
@@ -905,18 +905,17 @@ internal sealed class QueryFormatter
 
     private static double[] BuildCoordinate(CoordinateSequence sequence, int index)
     {
-        var values = new List<double>(4)
-        {
-            sequence.GetX(index),
-            sequence.GetY(index)
-        };
+        Span<double> buf = stackalloc double[4];
+        buf[0] = sequence.GetX(index);
+        buf[1] = sequence.GetY(index);
+        var count = 2;
 
         if (sequence.Dimension > 2)
         {
             var z = sequence.GetOrdinate(index, Ordinate.Z);
             if (!double.IsNaN(z))
             {
-                values.Add(z);
+                buf[count++] = z;
             }
         }
 
@@ -925,11 +924,11 @@ internal sealed class QueryFormatter
             var m = sequence.GetOrdinate(index, Ordinate.M);
             if (!double.IsNaN(m))
             {
-                values.Add(m);
+                buf[count++] = m;
             }
         }
 
-        return values.ToArray();
+        return buf[..count].ToArray();
     }
 
     internal static string? MapGeometryType(MetadataV2GeometryType geometryType)
