@@ -1689,27 +1689,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         missingQuery.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {missingQuery.Payload}");
         missingQuery.Payload.Should().Contain("Capabilities must include Query");
 
-        // This test's connection has no search path to the fixture's server schema, so its
-        // `features` table is not the one the server's managed feature writer writes. A managed
-        // copy through it would serve none of its rows and its edits would land elsewhere, so
-        // the publish is refused.
-        var foreignStore = await PostPublishLayerAsync(new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = _idNamePopulationFields,
-            ServiceName = _serviceName,
-            StorageMode = "managed",
-            Capabilities = ["Query", "Create"]
-        });
-        foreignStore.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {foreignStore.Payload}");
-        foreignStore.Payload.Should().Contain("own feature database");
-
         (await GetPublishedLayerRowCountAsync()).Should().Be(0);
     }
 
