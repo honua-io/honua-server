@@ -9,7 +9,7 @@
 # back out of GHCR).
 #
 # Usage:
-#   scripts/ci/base-image-mirrors.sh            # print "<mirror-tag>\t<source-ref>" lines
+#   scripts/ci/base-image-mirrors.sh [--ecs-only] # print "<mirror-tag>\t<source-ref>" lines
 #   scripts/ci/base-image-mirrors.sh --verify <workflow.yml>...
 #                                               # fail if the workflow consumes a
 #                                               # BASE_REPO tag this map does not
@@ -29,11 +29,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # "<mirror tag>|<repo-relative Dockerfile>|<ARG name>"
+ECS_MIRROR_MAP=(
+  "sdk-11.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE"
+  "runtime-deps-11.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE"
+)
 MIRROR_MAP=(
   "sdk-11.0|Dockerfile|DOTNET_SDK_IMAGE"
   "aspnet-11.0|Dockerfile|DOTNET_ASPNET_IMAGE"
-  "sdk-11.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE"
-  "runtime-deps-11.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE"
+  "${ECS_MIRROR_MAP[@]}"
   "sdk-11.0-lambda|docker/Dockerfile.lambda.aot|DOTNET_SDK_IMAGE"
   "runtime-deps-11.0|docker/Dockerfile.lambda.aot|DOTNET_RUNTIME_DEPS_IMAGE"
   "lambda-adapter-0.9.1|docker/Dockerfile.lambda.aot|LAMBDA_ADAPTER_IMAGE"
@@ -68,7 +71,7 @@ resolve_arg_default() {
 
 print_mirror_set() {
   local entry tag dockerfile arg_name source_ref
-  for entry in "${MIRROR_MAP[@]}"; do
+  for entry in "$@"; do
     IFS='|' read -r tag dockerfile arg_name <<<"${entry}"
     source_ref="$(resolve_arg_default "${dockerfile}" "${arg_name}")"
     printf '%s\t%s\n' "${tag}" "${source_ref}"
@@ -264,12 +267,17 @@ main() {
     exit 0
   fi
 
+  local -a mirror_entries=("${MIRROR_MAP[@]}")
+  if [[ "${1:-}" == "--ecs-only" ]]; then
+    mirror_entries=("${ECS_MIRROR_MAP[@]}")
+    shift
+  fi
   if [[ "$#" -gt 0 ]]; then
     echo "::error::unknown argument '$1'" >&2
     exit 2
   fi
 
-  print_mirror_set
+  print_mirror_set "${mirror_entries[@]}"
 }
 
 main "$@"
