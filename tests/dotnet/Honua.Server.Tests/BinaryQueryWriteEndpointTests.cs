@@ -17,11 +17,12 @@ namespace Honua.Server.Tests;
 public sealed class BinaryQueryWriteEndpointTests
 {
     [IntegrationTheory]
-    [InlineData("pbf")]
-    [InlineData("parquet")]
+    [InlineData("pbf", 300)]
+    [InlineData("pbf", 1200)]
+    [InlineData("parquet", 300)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_LargeBinaryPage_WritesBoundedChunksOnRepeatedRequests(string format)
+    public async Task Query_LargeBinaryPage_WritesBoundedChunksOnRepeatedRequests(string format, int recordCount)
     {
         var writes = new ResponseWriteProbe();
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -41,18 +42,23 @@ public sealed class BinaryQueryWriteEndpointTests
                 await command.ExecuteNonQueryAsync();
             }
 
-            var path = $"/rest/services/test/FeatureServer/0/query?where=1%3D1&f={format}&outFields=name&resultRecordCount=300";
+            var path = $"/rest/services/test/FeatureServer/0/query?where=1%3D1&f={format}&outFields=name&orderByFields=objectid&resultRecordCount={recordCount}";
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 writes.LargestWrite = 0;
-                using var response = await fixture.Client.GetAsync(path);
+                using var response = await fixture.Client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();
+                var contentLength = response.Content.Headers.ContentLength;
                 var bytes = await response.Content.ReadAsByteArrayAsync();
                 bytes.Length.Should().BeGreaterThan(64 * 1024);
                 response.Content.Headers.ContentType!.MediaType.Should().Be(format == "pbf"
                     ? "application/x-protobuf" : "application/vnd.apache.parquet");
                 writes.LargestWrite.Should().BeLessThanOrEqualTo(64 * 1024);
-                if (format == "parquet")
+                if (format == "pbf")
+                {
+                    contentLength.Should().Be(bytes.LongLength);
+                }
+                else
                 {
                     using var stream = new MemoryStream(bytes);
                     using var reader = ArrowParquetTestReader.Open(stream);
