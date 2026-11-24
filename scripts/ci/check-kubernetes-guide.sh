@@ -80,6 +80,13 @@ def require(values: dict[str, str], path: str, expected: str, topology: str) -> 
         fail(f"{topology} {path} must be {expected!r}, found {actual!r}")
 
 
+runtime_secret_example = re.search(r"^cat > honua-runtime\.env <<'EOF'\n(.*?)^EOF$", text, re.MULTILINE | re.DOTALL)
+if not runtime_secret_example or not re.search(
+    r"(?m)^Operations__SecretChannel__KeyRingSecret=.+$", runtime_secret_example.group(1)
+):
+    fail("the runtime Secret example must configure the operation key-ring secret")
+
+
 single_yaml = extract("KUBERNETES_SINGLE_NODE_VALUES")
 multi_yaml = extract("KUBERNETES_MULTI_NODE_VALUES")
 single = scalar_paths(single_yaml)

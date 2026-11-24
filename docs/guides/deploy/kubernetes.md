@@ -57,6 +57,14 @@ export CHART_PATH="$PWD/honua-helm/honua"
 Create the namespace, a single-writer persistent volume claim, and the runtime
 Secret. Put real values in the temporary file; the examples are placeholders.
 
+A production deployment with a configured database requires operation key-ring
+protection. This example uses a random secret of at least 43 characters. Use the
+same secret for every serving replica and operation worker that uses the
+database. Keep it for the life of the database and restore it with the database.
+For deployments that use a certificate, see the
+[operation key-ring guidance](cloud-deployments.md#aws-ecsfargate) before
+changing the protection method.
+
 ```bash
 kubectl create namespace honua --dry-run=client -o yaml | kubectl apply -f -
 
@@ -77,6 +85,7 @@ cat > honua-runtime.env <<'EOF'
 ConnectionStrings__DefaultConnection=Host=db.example.com;Database=honua;Username=honua;Password=replace-me;SSL Mode=Require
 HONUA_ADMIN_PASSWORD=Replace-With-A-Strong-Admin-Password1!
 Security__ConnectionEncryption__MasterKey=replace-with-at-least-32-random-characters
+Operations__SecretChannel__KeyRingSecret=replace-with-at-least-43-random-characters
 EOF
 kubectl -n honua create secret generic honua-runtime \
   --from-env-file=honua-runtime.env \
@@ -217,7 +226,8 @@ observability:
   otlpProtocol: "grpc"
 
 # This existing Secret must contain ConnectionStrings__DefaultConnection,
-# HONUA_ADMIN_PASSWORD, and Security__ConnectionEncryption__MasterKey.
+# HONUA_ADMIN_PASSWORD, Security__ConnectionEncryption__MasterKey,
+# and Operations__SecretChannel__KeyRingSecret for this example.
 secret:
   create: false
   name: honua-runtime
