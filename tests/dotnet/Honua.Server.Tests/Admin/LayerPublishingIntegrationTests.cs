@@ -1923,9 +1923,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         PublishLayerRequest request,
         Guid? connectionId = null)
     {
+        using var content = JsonContent.Create(request, options: _jsonOptions);
         using var response = await _client.PostAsync(
             $"/api/v1/admin/connections/{connectionId ?? _connectionId}/layers",
-            JsonContent.Create(request, options: _jsonOptions));
+            content);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
