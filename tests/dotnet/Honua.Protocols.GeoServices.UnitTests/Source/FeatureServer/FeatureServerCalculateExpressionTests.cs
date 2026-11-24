@@ -95,10 +95,12 @@ public sealed class FeatureServerCalculateExpressionTests
 
     [UnitTheory]
     [InlineData("name * 2")]
+    [InlineData("name * pop")]
+    [InlineData("pop * name")]
     [InlineData("-name")]
     public void TryEvaluateCalcExpression_NonNumericOperand_StillFails(string expression)
     {
-        var attributes = new Dictionary<string, object?> { ["name"] = "abc" };
+        var attributes = new Dictionary<string, object?> { ["name"] = "abc", ["pop"] = null };
 
         var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
             expression,
@@ -107,7 +109,7 @@ public sealed class FeatureServerCalculateExpressionTests
             out var error);
 
         parsed.Should().BeFalse();
-        error.Should().NotBeNullOrWhiteSpace();
+        error.Should().Contain("numeric value");
     }
 
     [UnitTheory]

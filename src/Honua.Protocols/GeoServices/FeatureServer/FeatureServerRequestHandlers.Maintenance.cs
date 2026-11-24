@@ -1542,16 +1542,18 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            // SQL semantics: any arithmetic with a NULL operand yields NULL.
-            if (left is null || right is null)
-            {
-                return true;
-            }
-
-            if (!TryGetDecimal(left, out var leftNumber) || !TryGetDecimal(right, out var rightNumber))
+            decimal leftNumber = 0;
+            decimal rightNumber = 0;
+            if ((left is not null && !TryGetDecimal(left, out leftNumber)) ||
+                (right is not null && !TryGetDecimal(right, out rightNumber)))
             {
                 error = "Arithmetic operators require numeric values.";
                 return false;
+            }
+
+            if (left is null || right is null)
+            {
+                return true;
             }
 
             if ((operation == TokenKind.Slash || operation == TokenKind.Percent) && rightNumber == 0)
