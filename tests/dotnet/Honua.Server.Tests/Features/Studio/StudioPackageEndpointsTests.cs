@@ -1487,6 +1487,8 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    [Endpoint("POST /api/v1/studio/app-packages/generate")]
     [InlineData("map-packages")]
     [InlineData("app-packages")]
     public async Task CreateMapOrApp_RetiredRoute_ReturnsNotFound(string retiredRoute)
