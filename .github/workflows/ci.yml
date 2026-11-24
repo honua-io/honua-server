@@ -644,6 +644,7 @@ jobs:
               --arg reason "${reason}" \
               '{run_all: true, shards: $shards, reason: $reason}')
           fi
+          descriptor=$(jq -c --argjson selection "${descriptor}" -f scripts/ci/required-shard-descriptor.jq .github/ci-shards.json)
           echo "Descriptor: ${descriptor}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
              [ "${{ github.ref }}" = "refs/heads/trunk" ] &&

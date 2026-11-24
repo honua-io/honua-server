@@ -47,8 +47,6 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/collections/{collectionId}",
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/collections/{collectionId}/position",
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/collections/{collectionId}/cube",
-        "serve.sensorthings|sensorthings-1.1|GET /sta/v1.1/Things",
-        "serve.sensorthings|sensorthings-1.1|POST /sta/v1.1/Observations",
         "serve.wfs|wfs-2.0|POST /wfs",
         "serve.wps|wps-2.0.2|GET /wps?request=GetCapabilities",
         "serve.wps|wps-2.0.2|GET /wps?request=DescribeProcess",
@@ -80,8 +78,8 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal("https://github.com/honua-io/honua-server/issues/3388", root.GetProperty("tracking_issue").GetString());
 
         var assignments = root.GetProperty("assignments").EnumerateArray().ToArray();
-        Assert.Equal(52, assignments.Length);
-        Assert.Equal(25, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
+        Assert.Equal(50, assignments.Length);
+        Assert.Equal(24, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(
             ArchitectureTestHelpers.CombinePath(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));

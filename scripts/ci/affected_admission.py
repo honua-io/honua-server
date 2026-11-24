@@ -23,7 +23,10 @@ def selection(base, head):
     descriptor = subprocess.check_output(
         ["bash", "scripts/ci/honua-server-targeted-tests.sh", "--stdin"],
         input=changed + "\n", text=True)
-    return json.loads(descriptor)
+    required = subprocess.check_output(
+        ["jq", "-c", "--argjson", "selection", descriptor, "-f",
+         "scripts/ci/required-shard-descriptor.jq", ".github/ci-shards.json"], text=True)
+    return json.loads(required)
 
 
 def decision(descriptor):
