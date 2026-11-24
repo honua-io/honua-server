@@ -467,11 +467,8 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         (await fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, populatedId))
             .Should().Be("ADA");
 
-        command.CommandText = """
-            SELECT attributes->>'name' IS NULL
-            FROM features
-            WHERE layer_id = @layerId AND objectid = @objectId
-            """;
+        command.CommandText = "SELECT attributes->>'name' IS NULL FROM features " +
+            "WHERE layer_id = @layerId AND objectid = @objectId";
         (await command.ExecuteScalarAsync()).Should().Be(true, "the original row should still exist with a NULL name");
     }
 
