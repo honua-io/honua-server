@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Offline regression tests for container release identity."""
 import importlib.util
+import json
 from pathlib import Path
-import unittest
+import re
 import subprocess
+import tempfile
+import textwrap
+import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(__file__).with_name('container-version.py')
@@ -57,38 +61,77 @@ class ContainerVersionTests(unittest.TestCase):
         self.assertIn('--version "$PLATFORM_VERSION"', step)
         self.assertNotIn('nightly-${CANDIDATE_SHA7}', step)
 
-    def test_handoff_handles_existing_images_and_older_workflow_inputs(self):
+    def test_handoff_skips_duplicate_publications_and_preserves_dispatch_inputs(self):
         workflow = (ROOT / '.github/workflows/nightly-container-build.yml').read_text()
-        handoff = workflow.split('          # One build per candidate:', 1)[1].split('          {\n', 1)[0]
-        # Exercise the real handoff shell with only GitHub reads/writes replaced.
+        step = workflow.split('      - name: Tag the selected sha and re-dispatch this workflow at it\n', 1)[1]
+        handoff = textwrap.dedent(re.split(r'\n(?= {0,9}\S)', step.split('        run: |\n', 1)[1], maxsplit=1)[0])
         mock = r'''gh() {
-          if [ "$1" = run ]; then
-            case "$*" in *headSha*) echo "$IMAGED" ;; *) echo "$ACTIVE" ;; esac
-          else
-            printf 'DISPATCH:'
-            printf '<%s>' "$@"
-            printf '\n'
-          fi
+          case "$*" in
+            "api repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag} --jq .object.sha")
+              printf '%s\n' "$CANDIDATE_SHA" ;;
+            "api --paginate repos/${GITHUB_REPOSITORY}/actions/workflows/nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&per_page=100")
+              printf '%s\n' "$RUN_PAGES" ;;
+            "workflow run nightly-container-build.yml --repo ${GITHUB_REPOSITORY} --ref ${tag}"*)
+              printf 'DISPATCH:'
+              printf '<%s>' "$@"
+              printf '\n' ;;
+            *)
+              printf 'Unexpected gh call: %s\n' "$*" >&2
+              return 1 ;;
+          esac
         }
 '''
-        for release, active, imaged, expected_dispatch, expected_error in (
-            ('', '0', '0', True, False),
-            ('', '1', '0', False, False),
-            ('2026.1.0-rc.2', '1', '0', False, True),
-        ):
-            with self.subTest(release=release, active=active, imaged=imaged):
-                result = subprocess.run(['bash', '-c', 'set -euo pipefail\n' + mock +
-                    '# One build per candidate:' + handoff], text=True, capture_output=True,
-                    env={'RELEASE_VERSION': release, 'ACTIVE': active, 'IMAGED': imaged,
-                         'GITHUB_REPOSITORY': 'honua-io/honua-server', 'HANDOFF_TOKEN': 'test',
-                         'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40,
-                         'tag': 'nightly-candidate-aaaaaaa'})
-                self.assertEqual(result.returncode != 0, expected_error, result.stderr)
-                self.assertEqual('DISPATCH:' in result.stdout, expected_dispatch, result.stdout)
-                if expected_dispatch:
-                    self.assertEqual('<release_version=' in result.stdout, bool(release))
-                    if release:
-                        self.assertIn(f'<release_version={release}>', result.stdout)
+        repository = 'honua-io/honua-server'
+        tag = 'nightly-candidate-aaaaaaa'
+        full = {
+            'status': 'queued', 'event': 'workflow_dispatch', 'head_branch': tag,
+            'head_repository': {'full_name': repository},
+            'display_title': f'Nightly Container Build · refs/tags/{tag}',
+        }
+        ecs = dict(full, status='in_progress', display_title=f'ECS-only candidate · refs/tags/{tag}')
+        scheduled = dict(full, event='schedule', head_branch='trunk',
+                         display_title='Nightly Container Build · refs/heads/trunk')
+        legacy = dict(full, status='in_progress', display_title='Nightly Container Build')
+        unrelated = [
+            dict(full, status='completed'),
+            dict(full, display_title=f'Nightly Container Build · refs/heads/{tag}'),
+            dict(full, head_repository={'full_name': 'fork/honua-server'}),
+        ]
+        version = '2026.1.0-rc.2'
+        dispatch = f'DISPATCH:<workflow><run><nightly-container-build.yml><--repo><{repository}><--ref><{tag}>'
+        cases = (
+            ('legacy inputs', unrelated, '', 'false', dispatch),
+            ('release version', [], version, 'false', f'{dispatch}<-f><release_version={version}>'),
+            ('ECS only', [], '', 'true', f'{dispatch}<-f><ecs_only=true>'),
+            ('versioned ECS', [], version, 'true', f'{dispatch}<-f><release_version={version}><-f><ecs_only=true>'),
+            ('queued tagged build', [full], '', 'false', None),
+            ('scheduled trunk build', [scheduled], '', '', None),
+            ('active legacy build', [legacy], '', 'false', None),
+            ('active ECS cannot cover full publication', [ecs], '', 'false', 'error'),
+            ('active build cannot accept a release version', [full], version, 'false', 'error'),
+            ('active build cannot accept ECS input', [full], '', 'true', 'error'),
+        )
+        for name, runs, release, ecs_only, expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                pages = [json.dumps({'workflow_runs': page}) for page in ([], runs)]
+                result = subprocess.run(
+                    ['bash', '-c', mock + handoff], text=True, capture_output=True,
+                    env={'RELEASE_VERSION': release, 'ECS_ONLY': ecs_only, 'PARTIAL_PUBLICATION': '0',
+                         'RUN_PAGES': '\n'.join(pages), 'RUNNER_TEMP': temp,
+                         'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md'),
+                         'GITHUB_REPOSITORY': repository, 'HANDOFF_TOKEN': 'test',
+                         'CANDIDATE_SHA': 'a' * 40, 'GITHUB_SHA': 'b' * 40})
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 1 if expected == 'error' else 0, output)
+                dispatches = [line for line in result.stdout.splitlines() if line.startswith('DISPATCH:')]
+                if expected == 'error':
+                    self.assertIn('is already active', output)
+                    self.assertEqual(dispatches, [])
+                elif expected is None:
+                    self.assertIn('is already queued or running', output)
+                    self.assertEqual(dispatches, [])
+                else:
+                    self.assertEqual(dispatches, [expected])
 
     def test_dockerfiles_stamp_publish_and_runtime_label(self):
         for name in ('Dockerfile', 'docker/Dockerfile.aot', 'docker/Dockerfile.lambda',
