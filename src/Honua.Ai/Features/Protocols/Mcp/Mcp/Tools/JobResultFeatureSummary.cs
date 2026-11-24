@@ -80,8 +80,9 @@ internal static class JobResultFeatureSummary
 
             return accumulator.Build();
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
+            // JSON text decoding can fail after the document has been parsed.
             return null;
         }
     }
