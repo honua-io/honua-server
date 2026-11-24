@@ -1693,14 +1693,58 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_IntoManagedStoreFromAnotherDatabase_IsRejectedBeforePublishing()
+    {
+        var externalDatabase = await CreateConnectionDatabaseAsync();
+        var externalConnectionId = Guid.Empty;
+        try
+        {
+            var connectionString = BuildConnectionString(externalDatabase);
+            await CreatePostGisTableAsync(connectionString, _tableName);
+            externalConnectionId = await CreateTransientSecureConnectionAsync(
+                connectionString,
+                $"layer-publish-external-{Guid.NewGuid():N}");
+
+            var foreignStore = await PostPublishLayerAsync(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = _tableName,
+                LayerName = $"Layer {_tableName}",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = _idNamePopulationFields,
+                ServiceName = _serviceName,
+                StorageMode = "managed",
+                Capabilities = ["Query", "Create"]
+            }, externalConnectionId);
+            foreignStore.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"response: {foreignStore.Payload}");
+            foreignStore.Payload.Should().Contain("own feature database");
+            (await GetPublishedLayerRowCountAsync()).Should().Be(0);
+        }
+        finally
+        {
+            if (externalConnectionId != Guid.Empty)
+            {
+                await DeleteSecureConnectionAsync(externalConnectionId);
+            }
+
+            await DropConnectionDatabaseAsync(externalDatabase);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits()
     {
-        await UseServerFeatureStoreConnectionAsync();
-
+        // The fixture's registered connection uses the default search path. Managed
+        // publishing still resolves the server's feature table in its isolated schema.
         // A managed-store layer's rows are its authoritative features. The source-snapshot
         // refresh deletes and re-copies a layer's rows, which would erase every edit, so it
         // must refuse a managed-store layer.
@@ -1746,9 +1790,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
     }
 
-    // Re-register the fixture connection against the server's feature database.
-    // Its managed features table lives in the isolated per-test schema, which
-    // the connection must name explicitly.
+    // Re-register the fixture connection with the server's isolated per-test schema
+    // on the publishing connection's search path.
     private async Task UseServerFeatureStoreConnectionAsync()
     {
         await DeleteSecureConnectionAsync();
@@ -1876,11 +1919,14 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         reader.GetDouble(3).Should().BeApproximately(ymax, 1e-9);
     }
 
-    private async Task<(HttpStatusCode StatusCode, string Payload)> PostPublishLayerAsync(PublishLayerRequest request)
+    private async Task<(HttpStatusCode StatusCode, string Payload)> PostPublishLayerAsync(
+        PublishLayerRequest request,
+        Guid? connectionId = null)
     {
-        var response = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(request, options: _jsonOptions));
+        using var content = JsonContent.Create(request, options: _jsonOptions);
+        using var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{connectionId ?? _connectionId}/layers",
+            content);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
