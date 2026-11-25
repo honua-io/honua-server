@@ -43,8 +43,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     public async Task LineOfSight_ProtectedDataset_AnonymousRequestIsUnauthorized()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(50);
-        _fixture.UpdateV2ServiceMetadata(
-            WebAppFixture.TestServiceId,
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
         using var client = _fixture.CreateClient();
         using var response = await client.PostAsJsonAsync(
@@ -63,8 +63,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     public async Task Viewshed_ProtectedDataset_AnonymousRequestIsUnauthorized()
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(50);
-        _fixture.UpdateV2ServiceMetadata(
-            WebAppFixture.TestServiceId,
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
         using var client = _fixture.CreateClient();
         using var response = await client.PostAsJsonAsync(

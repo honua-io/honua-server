@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
@@ -70,11 +71,12 @@ public sealed class SpatialAnalyticsAuthorizationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
     public async Task H3_ProtectedLayer_AnonymousRequestIsUnauthorized()
     {
-        RestrictService();
+        RestrictLayer();
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync("/rest/services/test/FeatureServer/0/queryH3?resolution=7&f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(499);
     }
 
     [IntegrationTest]
@@ -89,21 +91,29 @@ public sealed class SpatialAnalyticsAuthorizationTests : IAsyncLifetime
         using var response = await client.GetAsync(
             "/rest/services/beta/FeatureServer/1/queryH3?resolution=7&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     private async Task AssertProtectedLayerPostAsync(string path)
     {
-        RestrictService();
+        RestrictLayer();
         using var client = _fixture.CreateClient();
         using var body = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(path, body);
 
+        if (path.StartsWith("/rest/", StringComparison.Ordinal))
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await response.AssertGeoServicesErrorAsync(499);
+            return;
+        }
+
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    private void RestrictService()
-        => _fixture.UpdateV2ServiceMetadata(
-            WebAppFixture.TestServiceId,
+    private void RestrictLayer()
+        => _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
 }

@@ -358,6 +358,12 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         response.Headers.AcceptRanges.Should().NotContain("bytes",
             "a denied response must not advertise the COG artifact's byte ranges");
         response.Content.Headers.ContentRange.Should().BeNull();
+        if (request.Method == HttpMethod.Get)
+        {
+            var denial = await response.Content.ReadFromJsonAsync<JsonElement>();
+            denial.GetProperty("status").GetInt32().Should().Be(401);
+            denial.GetProperty("detail").GetString().Should().Be("Authentication is required to access this resource.");
+        }
 
         using var authorized = _fixture.CreateAdminClient();
         using var allowed = await authorized.GetAsync(url);
