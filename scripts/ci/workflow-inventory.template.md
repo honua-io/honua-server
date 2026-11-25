@@ -2663,6 +2663,13 @@ setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
 
+### Watchdog startup reconciliation retry
+
+The Caching, File Storage, Styling and Infrastructure shard includes the watchdog
+startup retry integration test. The test advances an injected clock through the
+five-second retry delay and checks that reconciliation retries while the host
+remains healthy.
+
 ### Tile Export Durable Recovery
 
 The Server Features Miscellaneous 7 shard includes Tile Export Durable Recovery.

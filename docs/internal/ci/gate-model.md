@@ -3821,3 +3821,15 @@ The durable recovery fixture uses the production queue wake signal to notify its
 worker when PostgreSQL jobs are queued. The recovery and retry cases still
 exercise the real queue, worker, reconciler, and durable stores in Server
 Features Miscellaneous 7 on selected PR runs and full trunk runs.
+
+### Watchdog startup reconciliation retry timing
+
+The retry test waits for the five-second timer to be registered, verifies the
+first attempt completed, and advances virtual time before checking the retry and
+host health. The server still uses a five-second retry interval.
+
+A paired build-host benchmark used one runner execution per revision. The
+filtered infrastructure cohort had 3,396 passes and five skips on each revision.
+The settings writer class used 5.174 and 0.172 summed case seconds before and
+after. Test-command wall time was 179.00 and 163.64 seconds, a difference of 0.26
+runner-minutes for the measured cohort. Full shard timing remains unmeasured.
