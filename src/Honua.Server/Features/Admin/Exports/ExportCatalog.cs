@@ -77,18 +77,52 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
             await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false),
             await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
             baseUrl);
-        var ids = snapshot.Files.Select(file => Match(file).ExportId)
-            .Concat(snapshot.ExportJobs.Select(job => job.ExportId))
-            .OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
-            .Skip(pageOffset).Take(pageLimit);
+        var (ids, exportsWithVersionsOrJobs) = IndexExports(snapshot);
         var items = new List<ExportResponse>();
         foreach (var id in ids)
         {
+            if (pageOffset > 0)
+            {
+                pageOffset -= await CountsTowardOffsetAsync(id, exportsWithVersionsOrJobs, cancellationToken)
+                    .ConfigureAwait(false) ? 1 : 0;
+                continue;
+            }
+
             var export = await DescribeSummaryAsync(id, snapshot, cancellationToken).ConfigureAwait(false);
-            items.AddRange(export is null ? [] : [export]);
+            if (export is null)
+            {
+                continue;
+            }
+
+            items.Add(export);
+            if (items.Count == pageLimit)
+            {
+                break;
+            }
         }
 
         return items;
+    }
+
+    private async ValueTask<bool> CountsTowardOffsetAsync(
+        string id, HashSet<string> exportsWithVersionsOrJobs, CancellationToken cancellationToken)
+    {
+        // Versions and jobs are enough to count a row. Only pointer-only entries need a storage read.
+        return exportsWithVersionsOrJobs.Contains(id) ||
+            await ReadCurrentAsync(ExportStore.Create(storage, options.Value, id), id, cancellationToken)
+                .ConfigureAwait(false) is not null;
+    }
+
+    private static (IEnumerable<string> Ids, HashSet<string> ExportsWithVersionsOrJobs) IndexExports(CatalogSnapshot snapshot)
+    {
+        var files = snapshot.Files.Select(Match).ToArray();
+        var exportsWithVersionsOrJobs = files.Where(file => file.Version is not null)
+            .Select(file => file.ExportId)
+            .Concat(snapshot.ExportJobs.Select(job => job.ExportId))
+            .OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var ids = files.Select(file => file.ExportId).OfType<string>()
+            .Union(exportsWithVersionsOrJobs, StringComparer.Ordinal).Order(StringComparer.Ordinal);
+        return (ids, exportsWithVersionsOrJobs);
     }
 
     public async Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
@@ -169,8 +203,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
     {
         var store = ExportStore.Create(storage, options.Value, exportId);
-        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-        var current = pointer?.ExportId == exportId ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false) : null;
+        var current = await ReadCurrentAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         var versionIds = snapshot.Files.Select(Match).Where(match => match.ExportId == exportId && match.Version is not null)
             .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .TakeLast(MaxVersionsReturned).ToList();
@@ -182,6 +215,15 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
 
         var publicDelivery = await CurrentPublicDeliveryAsync(current, job, cancellationToken).ConfigureAwait(false);
         return new ExportState { Store = store, Current = current, VersionIds = versionIds, Job = job, PublicDelivery = publicDelivery };
+    }
+
+    private static async Task<ExportVersion?> ReadCurrentAsync(
+        ExportStore store, string exportId, CancellationToken cancellationToken)
+    {
+        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        return pointer?.ExportId == exportId
+            ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false)
+            : null;
     }
 
     // The job records the public delivery at promotion time; a later revocation deletes the promoted
