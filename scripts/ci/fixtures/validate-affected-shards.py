@@ -189,6 +189,10 @@ def check_feature_namespace_selects_its_shard(
             projects=None,
             cap=6,
         )
+        if shard.get("advisory"):
+            if shard["name"] in candidates(result):
+                raise FixtureError(f"advisory shard {shard['name']!r} entered gating selection")
+            continue
         if shard["name"] not in candidates(result):
             raise FixtureError(
                 f"a change under {prefix!r} did not select shard {shard['name']!r} "
@@ -249,15 +253,16 @@ def check_cap_is_enforced(config: dict[str, Any]) -> None:
             "the TestKit probe no longer escalates to run_all; pick a live "
             "infrastructure_paths entry for this fixture"
         )
+    required_count = sum(not shard.get("advisory") for shard in config["shards"])
     for cap in (1, 3, 6):
         result = select_offline(config, probe, descriptor=descriptor, cap=cap)
         if len(result["shards"]) != cap:
             raise FixtureError(f"cap={cap} selected {len(result['shards'])} shards")
-        if result["candidate_count"] != len(config["shards"]):
+        if result["candidate_count"] != required_count:
             raise FixtureError(
-                f"run_all should consider every shard; got {result['candidate_count']}"
+                f"run_all should consider every required shard; got {result['candidate_count']}"
             )
-        if len(result["dropped"]) != len(config["shards"]) - cap:
+        if len(result["dropped"]) != required_count - cap:
             raise FixtureError("dropped families were not reported")
 
 
@@ -334,6 +339,8 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     runnable = runnable_method_index(classes)
     owners: dict[str, list[str]] = {}
     for shard in config["shards"]:
+        if shard.get("advisory"):
+            continue
         projects = selector.shard_projects(shard)
         for fqn, entry in classes.items():
             if entry["csproj"] not in projects or not entry["methods"]:

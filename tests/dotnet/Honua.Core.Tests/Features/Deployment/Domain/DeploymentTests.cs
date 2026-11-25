@@ -864,13 +864,13 @@ public class DeploymentTests
     {
         DeploymentSource.FromPublishedService("svc").Kind.Should().Be(DeploymentSourceKind.PublishedService);
         DeploymentSource.FromPublishedService("svc").PublishedServiceId.Should().Be("svc");
-        DeploymentSource.FromMapPackage("map").Kind.Should().Be(DeploymentSourceKind.MapPackage);
-        DeploymentSource.FromMapPackage("map").MapPackageId.Should().Be("map");
+        DeploymentSource.FromMap("map").Kind.Should().Be(DeploymentSourceKind.Map);
+        DeploymentSource.FromMap("map").MapId.Should().Be("map");
 
-        var app = DeploymentSource.FromAppPackage("app", mapPackageId: "map", publishedServiceId: "svc");
-        app.Kind.Should().Be(DeploymentSourceKind.AppPackage);
-        app.AppPackageId.Should().Be("app");
-        app.MapPackageId.Should().Be("map");
+        var app = DeploymentSource.FromApp("app", mapId: "map", publishedServiceId: "svc");
+        app.Kind.Should().Be(DeploymentSourceKind.App);
+        app.AppId.Should().Be("app");
+        app.MapId.Should().Be("map");
         app.PublishedServiceId.Should().Be("svc");
     }
 

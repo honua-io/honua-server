@@ -13,7 +13,7 @@ public sealed class StudioPackageValidatorControlsTests
     [UnitTest]
     public void Validate_MapBodyWithNoControls_EmitsNoControlDiagnostics()
     {
-        var summary = ValidateBody("""{"format":"honua_map_package.v1","layers":[{"id":"parcels"}]}""");
+        var summary = ValidateBody("""{"format":"honua_map.v1","layers":[{"id":"parcels"}]}""");
 
         Assert.Empty(ControlCodes(summary));
     }
@@ -24,7 +24,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "controls": [
                 { "id": "year-slider", "kind": "timeSlider", "title": "Year built", "sourceId": "parcels", "config": { "field": "yearBuilt" } },
@@ -40,7 +40,7 @@ public sealed class StudioPackageValidatorControlsTests
     public void Validate_ControlsThatAreNotAnArray_Fails()
     {
         var summary = ValidateBody(
-            """{"format":"honua_map_package.v1","layers":[],"controls":{"id":"nav","kind":"navigation"}}""");
+            """{"format":"honua_map.v1","layers":[],"controls":{"id":"nav","kind":"navigation"}}""");
 
         AssertInvalidWith(summary, "studio.controls.array");
     }
@@ -51,7 +51,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "nav", "kind": "navigation", "position": "top-right" }]
             }
@@ -64,10 +64,10 @@ public sealed class StudioPackageValidatorControlsTests
     public void Validate_ControlWithoutIdOrKind_Fails()
     {
         AssertInvalidWith(
-            ValidateBody("""{"format":"honua_map_package.v1","layers":[],"controls":[{"kind":"navigation"}]}"""),
+            ValidateBody("""{"format":"honua_map.v1","layers":[],"controls":[{"kind":"navigation"}]}"""),
             "studio.control.id.required");
         AssertInvalidWith(
-            ValidateBody("""{"format":"honua_map_package.v1","layers":[],"controls":[{"id":"nav"}]}"""),
+            ValidateBody("""{"format":"honua_map.v1","layers":[],"controls":[{"id":"nav"}]}"""),
             "studio.control.kind.required");
     }
 
@@ -80,7 +80,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "sketch", "kind": "draw" }]
             }
@@ -97,7 +97,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [
                 { "id": "year-slider", "kind": "timeSlider" },
@@ -116,7 +116,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "{{id}}", "kind": "navigation" }]
             }
@@ -132,7 +132,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "{{sourceId}}" }],
               "controls": [{ "id": "filter", "kind": "filterSelect", "sourceId": "{{sourceId}}" }]
             }
@@ -147,7 +147,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "nav", "kind": "navigation", "config": "top-right" }]
             }
@@ -165,7 +165,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "nav", "kind": "navigation", "title": null }]
             }
@@ -180,7 +180,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "filter", "kind": "filterSelect", "sourceId": null }]
             }
@@ -192,7 +192,7 @@ public sealed class StudioPackageValidatorControlsTests
     [UnitTest]
     public void Validate_NullControlEntry_Fails()
     {
-        var summary = ValidateBody("""{"format":"honua_map_package.v1","layers":[],"controls":[null]}""");
+        var summary = ValidateBody("""{"format":"honua_map.v1","layers":[],"controls":[null]}""");
 
         Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
         Assert.NotEmpty(ControlCodes(summary));
@@ -206,7 +206,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "controls": [{ "id": "f", "kind": "filterSelect", "sourceId": "parcel" }]
             }
@@ -223,7 +223,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels", "sourceId": "ds-parcels" }],
               "controls": [
                 { "id": "a", "kind": "filterSelect", "sourceId": "parcels" },
@@ -244,7 +244,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [],
               "controls": [{ "id": "year-slider", "kind": "timeSlider" }],
               "layout": { "items": [{ "ref": "control:year-slider", "x": 0, "y": 0, "w": 3, "h": 2 }] }
@@ -262,7 +262,7 @@ public sealed class StudioPackageValidatorControlsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_app_package.v1",
+              "format": "honua_app.v1",
               "layers": [],
               "controls": [{ "id": "sketch", "kind": "draw" }]
             }
@@ -297,7 +297,7 @@ public sealed class StudioPackageValidatorControlsTests
         {
             Family = family,
             SchemaVersion = "1.0",
-            Format = family == StudioPackageFamily.App ? "honua_app_package.v1" : "honua_map_package.v1",
+            Format = family == StudioPackageFamily.App ? "honua_app.v1" : "honua_map.v1",
             Body = document.RootElement.Clone(),
         });
     }

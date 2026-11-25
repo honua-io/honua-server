@@ -59,8 +59,8 @@ public sealed partial class McpPublishedCatalogReadbackTests
         resources.SelectMany(resource => resource.Describe()).Select(descriptor => descriptor.Uri)
             .Should().Equal("honua://published-services");
         resources.Any(resource => resource.CanHandle("honua://deployments")).Should().BeFalse();
-        resources.Any(resource => resource.CanHandle("honua://map-packages")).Should().BeFalse();
-        resources.Any(resource => resource.CanHandle("honua://app-packages")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://maps")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://apps")).Should().BeFalse();
 
         var context = Context(Catalog());
         var detail = await resources.Single(resource => resource.CanHandle(ServiceUri))

@@ -404,7 +404,7 @@ public sealed class StudioControlMcpToolTests
         using var body = JsonDocument.Parse(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }]{{controls}}
             }

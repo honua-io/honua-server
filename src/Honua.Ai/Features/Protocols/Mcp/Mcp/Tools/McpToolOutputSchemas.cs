@@ -791,21 +791,21 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    // The package sub-object stays open because the canonical MapPackage shape is owned by the domain model, not by this schema.
-    public static readonly JsonElement CreateMapPackageOutputSchema = Parse(
+    // The package sub-object stays open because the canonical Map shape is owned by the domain model, not by this schema.
+    public static readonly JsonElement CreateMapOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["status", "packageId", "resourceUri"],
+          "required": ["status", "mapId", "resourceUri"],
           "properties": {
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft package was created."
+              "description": "created — the draft Map was created."
             },
-            "packageId": { "type": "string", "description": "Stable map_… identifier for the created draft." },
-            "resourceUri": { "type": "string", "description": "honua://map-packages/{packageId}." },
-            "package": { "type": ["object", "null"], "description": "The created MapPackage draft." },
+            "mapId": { "type": "string", "description": "Stable map_… identifier for the created draft." },
+            "resourceUri": { "type": "string", "description": "honua://maps/{mapId}." },
+            "map": { "type": ["object", "null"], "description": "The created Map draft." },
             "warnings": {
               "type": "array",
               "description": "Non-blocking findings deferred to publish-time resolution.",
@@ -823,20 +823,20 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    public static readonly JsonElement CreateAppPackageOutputSchema = Parse(
+    public static readonly JsonElement CreateAppOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["status", "packageId", "resourceUri"],
+          "required": ["status", "appId", "resourceUri"],
           "properties": {
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft package was created."
+              "description": "created — the draft App was created."
             },
-            "packageId": { "type": "string", "description": "Stable app_… identifier for the created draft." },
-            "resourceUri": { "type": "string", "description": "honua://app-packages/{packageId}." },
-            "package": { "type": ["object", "null"], "description": "The created AppPackage draft." },
+            "appId": { "type": "string", "description": "Stable app_… identifier for the created draft." },
+            "resourceUri": { "type": "string", "description": "honua://apps/{appId}." },
+            "app": { "type": ["object", "null"], "description": "The created App draft." },
             "warnings": {
               "type": "array",
               "description": "Non-blocking findings deferred to publish-time resolution.",

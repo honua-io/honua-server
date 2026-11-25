@@ -35,8 +35,8 @@ public sealed partial class McpServiceCollectionExtensionsTests
             {
                 typeof(PublishedServiceResource),
                 typeof(DeploymentResource),
-                typeof(MapPackageResource),
-                typeof(AppPackageResource),
+                typeof(MapResource),
+                typeof(AppResource),
                 typeof(PromotionSurfaceIndexResource)
             }, "the promotion surface is opt-in via AddMcpPromotionSurface");
     }
@@ -264,8 +264,8 @@ public sealed partial class McpServiceCollectionExtensionsTests
             {
                 typeof(PublishedServiceResource),
                 typeof(DeploymentResource),
-                typeof(MapPackageResource),
-                typeof(AppPackageResource),
+                typeof(MapResource),
+                typeof(AppResource),
                 typeof(PromotionSurfaceIndexResource)
             });
 

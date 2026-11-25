@@ -109,6 +109,19 @@ internal static partial class EnrichmentDatasetValidation
         return true;
     }
 
+    // The enrich handler refuses a non-positive or non-finite within-distance, so a stored default like that
+    // would fail every request that relies on it.
+    public static string? DistanceMetersError(double? distanceMeters)
+        => distanceMeters is { } distance && (!double.IsFinite(distance) || distance <= 0d)
+            ? "distanceMeters must be a positive number of meters."
+            : null;
+
+    public static string? DefaultDistanceMetersError(string? predicate, double? distanceMeters, double maxDWithinDistanceMeters)
+        => DistanceMetersError(distanceMeters)
+            ?? (string.Equals(predicate?.Trim(), "dwithin", StringComparison.OrdinalIgnoreCase) && distanceMeters > maxDWithinDistanceMeters
+                ? $"distanceMeters must not exceed {maxDWithinDistanceMeters} meters."
+                : null);
+
     public static bool TryValidateMinimumEdition(string? minimumEdition, out HonuaEdition edition, out string error)
     {
         edition = HonuaEdition.Pro;
@@ -118,8 +131,12 @@ internal static partial class EnrichmentDatasetValidation
             return true;
         }
 
-        if (!Enum.TryParse(minimumEdition, ignoreCase: true, out edition))
+        // One name only: Enum.TryParse also takes "5", "-1" or "Community,Enterprise".
+        var name = Enum.GetNames<HonuaEdition>()
+            .FirstOrDefault(candidate => string.Equals(candidate, minimumEdition.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (name is null || !Enum.TryParse(name, out edition))
         {
+            edition = HonuaEdition.Pro;
             error = "minimumEdition must be one of: Community, Pro, Enterprise.";
             return false;
         }

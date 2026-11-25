@@ -71,7 +71,7 @@ def test_a_failure_outside_the_protocol_scope_is_warned(capsys):
 
 def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
     import json
-    from tests.python.gdal_ogr.conftest import EvidenceCollector
+    from gdal_ogr.conftest import EvidenceCollector
 
     collector = EvidenceCollector()
     collector.record_geometry_delta("round_trip", "featureserver", 2e-8)

@@ -88,8 +88,8 @@ public sealed class StudioCompositionReducerParityMcpTests
     private Task<StudioMcpDraftHarness> SeedAsync(JsonObject testCase)
     {
         var body = Fixture["bodies"]![testCase["body"]!.GetValue<string>()]!.DeepClone().AsObject();
-        body["mapPackageId"] = "parity-map";
-        body["format"] = "honua_map_package.v1";
+        body["mapId"] = "parity-map";
+        body["format"] = "honua_map.v1";
         return StudioMcpDraftHarness.SeedMapDraftAsync(_jobService, body.ToJsonString());
     }
 

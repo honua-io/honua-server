@@ -58,7 +58,7 @@
       "additionalProperties": false,
       "properties": {
         "serviceId": { "type": "string", "minLength": 1, "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)." },
-        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.layerId)." }
+        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.serviceLayerIndex)." }
       }
     },
     "artifactRef": {

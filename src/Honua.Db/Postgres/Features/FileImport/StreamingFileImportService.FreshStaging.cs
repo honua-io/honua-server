@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -123,6 +124,55 @@ internal sealed partial class StreamingFileImportService
         }
         return validation.FeatureCount;
     }
+
+    private const string CreateOnlyFormatMessage = "Create-only imports accept GeoJSON or CSV with complete input validation.";
+
+    private static bool SupportsCreateOnly(SupportedFileFormat? format)
+        => format is SupportedFileFormat.GeoJson or SupportedFileFormat.Csv;
+
+    // Other load modes keep a CSV row whose geometry could not be parsed or geocoded, without a
+    // geometry, and ignore fields beyond the header. A create-only dataset must be complete, so a
+    // missing geometry source or any such row refuses the import. Blank coordinate or WKT cells
+    // stay allowed, a blank address counts as not geocoded, and a row with no values is a blank line.
+    private static void ThrowIfCreateOnlyCsvIncomplete(CsvGeometryDiagnostics diagnostics)
+    {
+        if (!diagnostics.GeometrySourceMapped)
+        {
+            throw new InvalidDataException(
+                "Create-only CSV import refused: no geometry column was found. Name longitude and latitude columns "
+                + "(longitudeColumn/latitudeColumn), a WKT column (wkt/geom/geometry/shape), or an addressColumn where "
+                + "geocoding is available; no dataset was created.");
+        }
+        var problems = DescribeIncompleteCsvRows(diagnostics);
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException(
+                $"Create-only CSV import refused: {string.Join("; ", problems)}. Fix those rows and retry; no dataset was created.");
+        }
+    }
+
+    private static List<string> DescribeIncompleteCsvRows(CsvGeometryDiagnostics diagnostics)
+    {
+        const int listedRows = 10;
+        var problems = new List<string>(3);
+        if (diagnostics.UnparseableGeometryRows > 0)
+        {
+            problems.Add($"{CountRows(diagnostics.UnparseableGeometryRows)} an unparseable geometry");
+        }
+        if (diagnostics.ExtraFieldRows > 0)
+        {
+            problems.Add($"{CountRows(diagnostics.ExtraFieldRows)} more fields than the header row");
+        }
+        if (diagnostics.GeocodeFailureCount > 0)
+        {
+            var rows = string.Join(", ", diagnostics.GeocodeFailures.Take(listedRows).Select(static failure => failure.RowNumber));
+            var more = diagnostics.GeocodeFailureCount > listedRows ? ", ..." : string.Empty;
+            problems.Add($"{CountRows(diagnostics.GeocodeFailureCount)} an address that could not be geocoded (data rows {rows}{more})");
+        }
+        return problems;
+    }
+
+    private static string CountRows(int count) => count == 1 ? "1 row has" : $"{count} rows have";
 
     private async IAsyncEnumerable<IFeature> EnforceCreateOnlyFeatureLimit(
         IAsyncEnumerable<IFeature> features, [EnumeratorCancellation] CancellationToken cancellationToken)

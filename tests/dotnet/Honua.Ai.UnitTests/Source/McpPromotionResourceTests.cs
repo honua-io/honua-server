@@ -308,31 +308,31 @@ public sealed class McpPromotionResourceTests
     }
 
     // ------------------------------------------------------------------
-    // MapPackageResource / AppPackageResource
+    // MapResource / AppResource
     // ------------------------------------------------------------------
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_Read_ReverseLooksUpDeployments()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_Read_ReverseLooksUpDeployments()
     {
         // Return in reverse order to verify the view sorts deployment uris stably
         // regardless of store reverse-lookup ordering.
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map-55", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "map-55", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-b", DeploymentSource.FromMapPackage("map-55")),
-                BuildDeployment("dep-a", DeploymentSource.FromMapPackage("map-55"))
+                BuildDeployment("dep-b", DeploymentSource.FromMap("map-55")),
+                BuildDeployment("dep-a", DeploymentSource.FromMap("map-55"))
             ]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/map-55",
+            "honua://maps/map-55",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageKind").GetString().Should().Be("map_package");
-        body.GetProperty("packageId").GetString().Should().Be("map-55");
+        body.GetProperty("kind").GetString().Should().Be("map");
+        body.GetProperty("mapId").GetString().Should().Be("map-55");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(2);
         var uris = body.GetProperty("deploymentResourceUris").EnumerateArray()
             .Select(e => e.GetString())
@@ -343,227 +343,227 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_NoDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_NoDeployments_ThrowsNotFound()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "orphan", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "orphan", Arg.Any<CancellationToken>())
             .Returns([]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/orphan",
+            "honua://maps/orphan",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
     {
         // A draft has no deployment by definition, so the deployment
         // reverse-lookup alone made the URI the create tool returns unresolvable.
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map_draft", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "map_draft", Arg.Any<CancellationToken>())
             .Returns([]);
-        await _drafts.SaveMapDraftAsync(new MapPackage
+        await _drafts.SaveMapDraftAsync(new Map
         {
-            MapPackageId = "map_draft",
-            Format = "honua_map_package.v1",
+            MapId = "map_draft",
+            Format = "honua_map.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
         }, "test-user");
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/map_draft",
+            "honua://maps/map_draft",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageKind").GetString().Should().Be("map_package");
-        body.GetProperty("packageId").GetString().Should().Be("map_draft");
-        body.GetProperty("resourceUri").GetString().Should().Be("honua://map-packages/map_draft");
-        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("kind").GetString().Should().Be("map");
+        body.GetProperty("mapId").GetString().Should().Be("map_draft");
+        body.GetProperty("resourceUri").GetString().Should().Be("honua://maps/map_draft");
+        body.GetProperty("status").GetString().Should().Be("draft");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
         body.GetProperty("deploymentResourceUris").GetArrayLength().Should().Be(0);
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_PublishedPackage_PrefersDeploymentViewOverAnOlderDraft()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_PublishedPackage_PrefersDeploymentViewOverAnOlderDraft()
     {
         // A promoted package must keep reporting its deployment edges, not the draft it grew from.
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map_promoted", Arg.Any<CancellationToken>())
-            .Returns([BuildDeployment("dep-p", DeploymentSource.FromMapPackage("map_promoted"))]);
-        await _drafts.SaveMapDraftAsync(new MapPackage
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "map_promoted", Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-p", DeploymentSource.FromMap("map_promoted"))]);
+        await _drafts.SaveMapDraftAsync(new Map
         {
-            MapPackageId = "map_promoted",
-            Format = "honua_map_package.v1",
+            MapId = "map_promoted",
+            Format = "honua_map.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
         }, "test-user");
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/map_promoted",
+            "honua://maps/map_promoted",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageStatus").GetString().Should().Be("published");
+        body.GetProperty("status").GetString().Should().Be("published");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
-    public async Task AppPackageResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
+    [Endpoint("POST /mcp resources/read honua://apps/{appId}")]
+    public async Task AppResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "app_draft", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.App, "app_draft", Arg.Any<CancellationToken>())
             .Returns([]);
-        await _drafts.SaveAppDraftAsync(new AppPackage
+        await _drafts.SaveAppDraftAsync(new App
         {
-            AppPackageId = "app_draft",
+            AppId = "app_draft",
             TargetSdk = "honua-sdk-js",
-            Format = "honua_app_package.v1",
+            Format = "honua_app.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
         }, "test-user");
 
-        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://app-packages/app_draft",
+            "honua://apps/app_draft",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageKind").GetString().Should().Be("app_package");
-        body.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/app_draft");
-        body.GetProperty("packageStatus").GetString().Should().Be("draft");
+        body.GetProperty("kind").GetString().Should().Be("app");
+        body.GetProperty("resourceUri").GetString().Should().Be("honua://apps/app_draft");
+        body.GetProperty("status").GetString().Should().Be("draft");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(0);
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
     public async Task PackageResources_DraftOwnedBySomeoneElse_IsNotFound()
     {
         _deployments.ListBySourceAsync(Arg.Any<DeploymentSourceKind>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        await _drafts.SaveMapDraftAsync(new MapPackage
+        await _drafts.SaveMapDraftAsync(new Map
         {
-            MapPackageId = "map_owned",
-            Format = "honua_map_package.v1",
+            MapId = "map_owned",
+            Format = "honua_map.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
         }, "test-user");
-        await _drafts.SaveAppDraftAsync(new AppPackage
+        await _drafts.SaveAppDraftAsync(new App
         {
-            AppPackageId = "app_owned",
+            AppId = "app_owned",
             TargetSdk = "honua-sdk-js",
-            Format = "honua_app_package.v1",
+            Format = "honua_app.v1",
             Status = PackageStatus.Draft,
             CreatedAt = PublishedAt,
         }, "test-user");
 
-        var maps = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
-        var apps = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var maps = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
+        var apps = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
         var other = McpTestFactory.AuthenticatedHttpContext("other-user");
 
-        var readMap = async () => await maps.ReadAsync(other, "honua://map-packages/map_owned", CancellationToken.None);
-        var readApp = async () => await apps.ReadAsync(other, "honua://app-packages/app_owned", CancellationToken.None);
+        var readMap = async () => await maps.ReadAsync(other, "honua://maps/map_owned", CancellationToken.None);
+        var readApp = async () => await apps.ReadAsync(other, "honua://apps/app_owned", CancellationToken.None);
         await readMap.Should().ThrowAsync<GeoprocessingNotFoundException>();
         await readApp.Should().ThrowAsync<GeoprocessingNotFoundException>();
 
         var owner = McpTestFactory.AuthenticatedHttpContext();
-        var owned = await maps.ReadAsync(owner, "honua://map-packages/map_owned", CancellationToken.None);
-        McpTestFactory.ParseJson(owned.Contents[0].Text).GetProperty("packageStatus").GetString().Should().Be("draft");
+        var owned = await maps.ReadAsync(owner, "honua://maps/map_owned", CancellationToken.None);
+        McpTestFactory.ParseJson(owned.Contents[0].Text).GetProperty("status").GetString().Should().Be("draft");
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_OnlyRetiredDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_OnlyRetiredDeployments_ThrowsNotFound()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "retired-only", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "retired-only", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-r1", DeploymentSource.FromMapPackage("retired-only"), status: DeploymentStatus.Retired),
-                BuildDeployment("dep-r2", DeploymentSource.FromMapPackage("retired-only"), status: DeploymentStatus.Superseded)
+                BuildDeployment("dep-r1", DeploymentSource.FromMap("retired-only"), status: DeploymentStatus.Retired),
+                BuildDeployment("dep-r2", DeploymentSource.FromMap("retired-only"), status: DeploymentStatus.Superseded)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/retired-only",
+            "honua://maps/retired-only",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_OnlyFailedOrCancelledDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_OnlyFailedOrCancelledDeployments_ThrowsNotFound()
     {
         // Failed and Cancelled deployments land on PublicationState.Unpublished per
         // the Deployment state machine, so a map package whose only backings are in
         // those terminal-but-not-retired states must not surface through the MCP
         // reverse lookup. The previous filter only excluded Retired/Superseded and
         // erroneously advertised such packages as visible.
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "failed-only", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "failed-only", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-f1", DeploymentSource.FromMapPackage("failed-only"), status: DeploymentStatus.Failed),
-                BuildDeployment("dep-c1", DeploymentSource.FromMapPackage("failed-only"), status: DeploymentStatus.Cancelled)
+                BuildDeployment("dep-f1", DeploymentSource.FromMap("failed-only"), status: DeploymentStatus.Failed),
+                BuildDeployment("dep-c1", DeploymentSource.FromMap("failed-only"), status: DeploymentStatus.Cancelled)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/failed-only",
+            "honua://maps/failed-only",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_OnlyPreServingDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_OnlyPreServingDeployments_ThrowsNotFound()
     {
         // Draft/Scheduled/Provisioning/RollingOut deployments are not yet publishing
         // the package; the visibility contract requires a currently-published
         // backing.
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "pre-serving", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "pre-serving", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-draft", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Draft),
-                BuildDeployment("dep-scheduled", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Scheduled),
-                BuildDeployment("dep-provisioning", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Provisioning),
-                BuildDeployment("dep-rolling-out", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.RollingOut)
+                BuildDeployment("dep-draft", DeploymentSource.FromMap("pre-serving"), status: DeploymentStatus.Draft),
+                BuildDeployment("dep-scheduled", DeploymentSource.FromMap("pre-serving"), status: DeploymentStatus.Scheduled),
+                BuildDeployment("dep-provisioning", DeploymentSource.FromMap("pre-serving"), status: DeploymentStatus.Provisioning),
+                BuildDeployment("dep-rolling-out", DeploymentSource.FromMap("pre-serving"), status: DeploymentStatus.RollingOut)
             ]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/pre-serving",
+            "honua://maps/pre-serving",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_Read_ExcludesRetiredDeploymentsFromCount()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_Read_ExcludesRetiredDeploymentsFromCount()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "mixed", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "mixed", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-retired", DeploymentSource.FromMapPackage("mixed"), status: DeploymentStatus.Retired),
-                BuildDeployment("dep-active", DeploymentSource.FromMapPackage("mixed"))
+                BuildDeployment("dep-retired", DeploymentSource.FromMap("mixed"), status: DeploymentStatus.Retired),
+                BuildDeployment("dep-active", DeploymentSource.FromMap("mixed"))
             ]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/mixed",
+            "honua://maps/mixed",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
@@ -573,57 +573,57 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
-    public async Task AppPackageResource_Read_ReverseLooksUpDeployments()
+    [Endpoint("POST /mcp resources/read honua://apps/{appId}")]
+    public async Task AppResource_Read_ReverseLooksUpDeployments()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "app-9", Arg.Any<CancellationToken>())
-            .Returns([BuildDeployment("dep-a", DeploymentSource.FromAppPackage("app-9"))]);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.App, "app-9", Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-a", DeploymentSource.FromApp("app-9"))]);
 
-        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://app-packages/app-9",
+            "honua://apps/app-9",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageKind").GetString().Should().Be("app_package");
-        body.GetProperty("packageId").GetString().Should().Be("app-9");
+        body.GetProperty("kind").GetString().Should().Be("app");
+        body.GetProperty("appId").GetString().Should().Be("app-9");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
-    public async Task AppPackageResource_OnlySupersededDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://apps/{appId}")]
+    public async Task AppResource_OnlySupersededDeployments_ThrowsNotFound()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "superseded", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.App, "superseded", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-s", DeploymentSource.FromAppPackage("superseded"), status: DeploymentStatus.Superseded)
+                BuildDeployment("dep-s", DeploymentSource.FromApp("superseded"), status: DeploymentStatus.Superseded)
             ]);
 
-        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://app-packages/superseded",
+            "honua://apps/superseded",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
-    public async Task AppPackageResource_OnlyFailedDeployments_ThrowsNotFound()
+    [Endpoint("POST /mcp resources/read honua://apps/{appId}")]
+    public async Task AppResource_OnlyFailedDeployments_ThrowsNotFound()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "failed-app", Arg.Any<CancellationToken>())
+        _deployments.ListBySourceAsync(DeploymentSourceKind.App, "failed-app", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-f", DeploymentSource.FromAppPackage("failed-app"), status: DeploymentStatus.Failed)
+                BuildDeployment("dep-f", DeploymentSource.FromApp("failed-app"), status: DeploymentStatus.Failed)
             ]);
 
-        var resource = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var resource = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://app-packages/failed-app",
+            "honua://apps/failed-app",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
@@ -632,17 +632,17 @@ public sealed class McpPromotionResourceTests
     [UnitTest]
     public void PackageResources_CanHandle_MatchOnlyBarePackageUris()
     {
-        var map = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
-        var app = new AppPackageResource(_deployments, _drafts, _jobService, NullLogger<AppPackageResource>.Instance);
+        var map = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
+        var app = new AppResource(_deployments, _drafts, _jobService, NullLogger<AppResource>.Instance);
 
-        map.CanHandle("honua://map-packages/pkg").Should().BeTrue();
-        map.CanHandle("honua://map-packages/").Should().BeFalse();
-        map.CanHandle("honua://map-packages/pkg/parts").Should().BeFalse();
-        map.CanHandle("honua://app-packages/pkg").Should().BeFalse();
+        map.CanHandle("honua://maps/pkg").Should().BeTrue();
+        map.CanHandle("honua://maps/").Should().BeFalse();
+        map.CanHandle("honua://maps/pkg/parts").Should().BeFalse();
+        map.CanHandle("honua://apps/pkg").Should().BeFalse();
 
-        app.CanHandle("honua://app-packages/pkg").Should().BeTrue();
-        app.CanHandle("honua://app-packages/").Should().BeFalse();
-        app.CanHandle("honua://map-packages/pkg").Should().BeFalse();
+        app.CanHandle("honua://apps/pkg").Should().BeTrue();
+        app.CanHandle("honua://apps/").Should().BeFalse();
+        app.CanHandle("honua://maps/pkg").Should().BeFalse();
     }
 
     // ------------------------------------------------------------------
@@ -737,15 +737,15 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    [Endpoint("POST /mcp resources/read honua://maps")]
     public async Task PromotionIndex_MapPackages_TruncatesAfterStableOrder()
     {
         _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
         [
-            BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-d")),
-            BuildDeployment("dep-2", DeploymentSource.FromMapPackage("map-c")),
-            BuildDeployment("dep-3", DeploymentSource.FromMapPackage("map-b")),
-            BuildDeployment("dep-4", DeploymentSource.FromMapPackage("map-a"))
+            BuildDeployment("dep-1", DeploymentSource.FromMap("map-d")),
+            BuildDeployment("dep-2", DeploymentSource.FromMap("map-c")),
+            BuildDeployment("dep-3", DeploymentSource.FromMap("map-b")),
+            BuildDeployment("dep-4", DeploymentSource.FromMap("map-a"))
         ]);
 
         var resource = new PromotionSurfaceIndexResource(
@@ -754,13 +754,13 @@ public sealed class McpPromotionResourceTests
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages",
+            "honua://maps",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
         body.GetProperty("truncated").GetBoolean().Should().BeTrue();
         var ids = body.GetProperty("items").EnumerateArray()
-            .Select(i => i.GetProperty("packageId").GetString()!)
+            .Select(i => i.GetProperty("mapId").GetString()!)
             .ToArray();
         ids.Should().Equal("map-a", "map-b");
     }
@@ -791,15 +791,15 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    [Endpoint("POST /mcp resources/read honua://maps")]
     public async Task PromotionIndex_MapPackages_GroupsByPackageId()
     {
         _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
         [
-            BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-a")),
-            BuildDeployment("dep-2", DeploymentSource.FromMapPackage("map-a")),
-            BuildDeployment("dep-3", DeploymentSource.FromMapPackage("map-b")),
-            BuildDeployment("dep-4", DeploymentSource.FromAppPackage("app-c"))
+            BuildDeployment("dep-1", DeploymentSource.FromMap("map-a")),
+            BuildDeployment("dep-2", DeploymentSource.FromMap("map-a")),
+            BuildDeployment("dep-3", DeploymentSource.FromMap("map-b")),
+            BuildDeployment("dep-4", DeploymentSource.FromApp("app-c"))
         ]);
 
         var resource = new PromotionSurfaceIndexResource(
@@ -808,14 +808,14 @@ public sealed class McpPromotionResourceTests
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages",
+            "honua://maps",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("packageKind").GetString().Should().Be("map_package");
+        body.GetProperty("kind").GetString().Should().Be("map");
         body.GetProperty("count").GetInt32().Should().Be(2);
         var packageIds = body.GetProperty("items").EnumerateArray()
-            .Select(i => i.GetProperty("packageId").GetString()!)
+            .Select(i => i.GetProperty("mapId").GetString()!)
             .ToArray();
         packageIds.Should().Contain(["map-a", "map-b"]);
         // Ensure app-package deployments are not mixed in.
@@ -886,7 +886,7 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    [Endpoint("POST /mcp resources/read honua://maps")]
     public async Task PromotionIndex_MapPackages_ExcludesPackagesWithoutPublishedDeployments()
     {
         // A map package backed only by Failed/Cancelled/Draft deployments must
@@ -894,9 +894,9 @@ public sealed class McpPromotionResourceTests
         // package, so the index and detail contracts agree.
         _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
         [
-            BuildDeployment("dep-published", DeploymentSource.FromMapPackage("map-live")),
-            BuildDeployment("dep-failed", DeploymentSource.FromMapPackage("map-failed"), status: DeploymentStatus.Failed),
-            BuildDeployment("dep-draft", DeploymentSource.FromMapPackage("map-draft"), status: DeploymentStatus.Draft)
+            BuildDeployment("dep-published", DeploymentSource.FromMap("map-live")),
+            BuildDeployment("dep-failed", DeploymentSource.FromMap("map-failed"), status: DeploymentStatus.Failed),
+            BuildDeployment("dep-draft", DeploymentSource.FromMap("map-draft"), status: DeploymentStatus.Draft)
         ]);
 
         var resource = new PromotionSurfaceIndexResource(
@@ -905,12 +905,12 @@ public sealed class McpPromotionResourceTests
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages",
+            "honua://maps",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
         body.GetProperty("count").GetInt32().Should().Be(1);
-        body.GetProperty("items")[0].GetProperty("packageId").GetString().Should().Be("map-live");
+        body.GetProperty("items")[0].GetProperty("mapId").GetString().Should().Be("map-live");
     }
 
     [UnitTest]
@@ -922,8 +922,8 @@ public sealed class McpPromotionResourceTests
 
         resource.CanHandle("honua://published-services").Should().BeTrue();
         resource.CanHandle("honua://deployments").Should().BeTrue();
-        resource.CanHandle("honua://map-packages").Should().BeTrue();
-        resource.CanHandle("honua://app-packages").Should().BeTrue();
+        resource.CanHandle("honua://maps").Should().BeTrue();
+        resource.CanHandle("honua://apps").Should().BeTrue();
         resource.CanHandle("honua://published-services/svc-1").Should().BeFalse();
         resource.CanHandle("honua://jobs").Should().BeFalse();
     }
@@ -1013,16 +1013,16 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
-    public async Task MapPackageResource_Read_DoesNotExposeEtag()
+    [Endpoint("POST /mcp resources/read honua://maps/{mapId}")]
+    public async Task MapResource_Read_DoesNotExposeEtag()
     {
-        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map-1", Arg.Any<CancellationToken>())
-            .Returns([BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-1"))]);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.Map, "map-1", Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-1", DeploymentSource.FromMap("map-1"))]);
 
-        var resource = new MapPackageResource(_deployments, _drafts, _jobService, NullLogger<MapPackageResource>.Instance);
+        var resource = new MapResource(_deployments, _drafts, _jobService, NullLogger<MapResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages/map-1",
+            "honua://maps/map-1",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
@@ -1031,12 +1031,12 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    [Endpoint("POST /mcp resources/read honua://maps")]
     public async Task PromotionIndex_MapPackages_EmitsNoEtagOnEnvelopeOrItems()
     {
         _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
         [
-            BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-a"))
+            BuildDeployment("dep-1", DeploymentSource.FromMap("map-a"))
         ]);
 
         var resource = new PromotionSurfaceIndexResource(
@@ -1045,7 +1045,7 @@ public sealed class McpPromotionResourceTests
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
-            "honua://map-packages",
+            "honua://maps",
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);

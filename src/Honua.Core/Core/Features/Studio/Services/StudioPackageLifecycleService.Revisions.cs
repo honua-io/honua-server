@@ -50,7 +50,7 @@ public sealed partial class StudioPackageLifecycleService
 
         var (existing, revision) = found;
 
-        var envelope = NormalizeEnvelope(revision.Envelope) with
+        var envelope = NormalizeEnvelope(NormalizeVersionForReopen(revision.Envelope)) with
         {
             PublicationIntent = existing.Envelope.PublicationIntent,
         };

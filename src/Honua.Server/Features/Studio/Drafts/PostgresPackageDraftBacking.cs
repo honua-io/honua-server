@@ -138,18 +138,18 @@ internal sealed class PostgresPackageDraftBacking(JobStoreDatabase database) : I
 
     private static string Encode(PackageDraftKind kind, PackageDraftRecord record) => kind switch
     {
-        PackageDraftKind.Map => JsonSerializer.Serialize(record.Map, PackagingJsonContext.Default.MapPackage),
-        PackageDraftKind.App => JsonSerializer.Serialize(record.App, PackagingJsonContext.Default.AppPackage),
+        PackageDraftKind.Map => JsonSerializer.Serialize(record.Map, PackagingJsonContext.Default.Map),
+        PackageDraftKind.App => JsonSerializer.Serialize(record.App, PackagingJsonContext.Default.App),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
     private static PackageDraftRecord? Decode(PackageDraftKind kind, PackageDraftRecord stored, string packageJson)
         => kind switch
         {
-            PackageDraftKind.Map => JsonSerializer.Deserialize(packageJson, PackagingJsonContext.Default.MapPackage) is { } map
+            PackageDraftKind.Map => JsonSerializer.Deserialize(packageJson, PackagingJsonContext.Default.Map) is { } map
                 ? stored with { Map = map }
                 : null,
-            PackageDraftKind.App => JsonSerializer.Deserialize(packageJson, PackagingJsonContext.Default.AppPackage) is { } app
+            PackageDraftKind.App => JsonSerializer.Deserialize(packageJson, PackagingJsonContext.Default.App) is { } app
                 ? stored with { App = app }
                 : null,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),

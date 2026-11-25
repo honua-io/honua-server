@@ -1,0 +1,12 @@
+{
+  "id": "remove_exploration_context.parcels_workspace_cascade",
+  "schemaRef": "tools/remove_exploration_context.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "mapId": "map_maui_parcels",
+    "explorationContextId": "parcels-workspace",
+    "cascadeBindings": true
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

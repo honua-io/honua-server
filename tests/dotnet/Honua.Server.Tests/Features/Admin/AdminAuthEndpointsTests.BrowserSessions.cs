@@ -263,6 +263,7 @@ public sealed partial class AdminAuthEndpointsTests
         [InlineData(null, "/console/")]
         [InlineData("/console/", "/console/")]
         [InlineData("/console/operate/connections", "/console/operate/connections")]
+        [InlineData("/console/operate/settings", "/console/operate/settings")]
         [Endpoint("GET /admin/auth/callback")]
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath(string? returnTo, string expected)

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/common/controls.schema.json",
-  "title": "Composition controls",
-  "description": "Standard-owned `controls` collection for composition documents (MapPackage/AppPackage). A control is an input affordance the user operates; it emits the `change` event of the ADR-0030 interaction vocabulary and is the target a `control:{id}` reference resolves against. The kind vocabulary is closed — extending it requires a standard ADR — and deliberately excludes a feature-editing draw control (ADR-0028). Controls declare presentation and data binding only; behaviour is wired declaratively through the `interactions` block (common/interactions.schema.json). See docs/adr/0031-composition-controls.md.",
+  "title": "Map and App controls",
+  "description": "Standard-owned `controls` collection for Map and App documents. A control is an input affordance the user operates; it emits the `change` event of the ADR-0030 interaction vocabulary and is the target a `control:{id}` reference resolves against. The kind vocabulary is closed — extending it requires a standard ADR — and deliberately excludes a feature-editing draw control (ADR-0028). Controls declare presentation and data binding only; behaviour is wired declaratively through the `interactions` block (common/interactions.schema.json). Controls never appear in `layout`: grid placement is restricted to `map` and `widget:{id}` by that schema's layoutRef. See docs/adr/0031-composition-controls.md.",
   "type": "object",
   "$defs": {
     "controlKind": {
@@ -28,14 +28,17 @@
     "control": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind"],
+      "required": [
+        "id",
+        "kind"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
-          "pattern": "\\S",
-          "description": "Stable identifier, unique within the document's controls block. `control:{id}` references in the interactions block resolve against this value; controls are chrome and cannot appear in layout items. add_control replaces an existing control with the same id."
+          "description": "Stable identifier, unique within the document's controls block. `control:{id}` references in the **interactions** block resolve against this value; add_control replaces an existing control with the same id. Controls are deliberately NOT layout grammar — ADR-0031 treats them as chrome the host positions, and `layoutItem.ref` is constrained to `map` and `widget:{id}` so a control can never claim a grid cell.",
+          "pattern": "\\S"
         },
         "kind": {
           "$ref": "#/$defs/controlKind",
@@ -49,22 +52,33 @@
         "sourceId": {
           "type": "string",
           "minLength": 1,
+          "description": "Identifier of the layer or datasource the control reads its domain from (e.g. the layer whose field values populate a filterSelect, or the layer a timeSlider ranges over). Data-binding kinds normally set it; presentation-only kinds (navigation, scale, fullscreen, attribution) omit it. Resolution of the identifier within the document is a validation-gate responsibility, as for layer references.",
           "maxLength": 200,
-          "description": "Identifier of the layer or datasource the control reads its domain from (e.g. the layer whose field values populate a filterSelect, or the layer a timeSlider ranges over). Data-binding kinds normally set it; presentation-only kinds (navigation, scale, fullscreen, attribution) omit it. Resolution of the identifier within the document is a validation-gate responsibility, as for layer references."
+          "pattern": "\\S"
         },
         "config": {
           "type": "object",
           "description": "Per-kind configuration (e.g. the field a filterSelect filters on, a slider's bounds and step, a bookmark list). Host-interpreted and intentionally open, matching the widget entry's `config`; it carries no expression language and grants no capability the composition surface does not already have."
+        },
+        "explorationContextId": {
+          "$ref": "exploration.schema.json#/$defs/componentBinding/properties/explorationContextId",
+          "description": "Exploration context this control joins (ADR-0032). A data-binding control bound to a context contributes its state to every component in that context, which is how a filter dropdown narrows peer widgets without an interactions edge per target."
+        },
+        "role": {
+          "$ref": "exploration.schema.json#/$defs/componentBinding/properties/role",
+          "description": "Role this control plays in its exploration context (ADR-0032); data-binding kinds normally bind as `filter`."
         }
       },
-      "description": "One control entry. The shape mirrors the composition widget entry ({ id, kind, title?, sourceId?, config? }) so agents author both collections the same way."
+      "description": "One control entry. The shape mirrors the widget entry ({ id, kind, title?, sourceId?, config? }) so agents author both collections the same way."
     }
   },
   "properties": {
     "controls": {
       "type": "array",
-      "items": { "$ref": "#/$defs/control" },
-      "description": "Input affordances declared by this composition document. Optional and additive: a document without controls is valid. Ids must be unique within the collection (validation-gate check)."
+      "items": {
+        "$ref": "#/$defs/control"
+      },
+      "description": "Input affordances declared by this Map or App document. Optional and additive: a document without controls is valid. Ids must be unique within the collection (validation-gate check)."
     }
   }
 }

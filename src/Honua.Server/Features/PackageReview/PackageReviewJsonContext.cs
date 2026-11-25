@@ -32,8 +32,8 @@ namespace Honua.PackageReview;
 [JsonSerializable(typeof(AnalysisPlanStepPackagePayload))]
 [JsonSerializable(typeof(Dictionary<string, RasterSourceDescriptor>))]
 [JsonSerializable(typeof(JsonElement))]
-[JsonSerializable(typeof(PackageReviewEndpoints.MapPackagePublishRequest))]
-[JsonSerializable(typeof(PackageReviewEndpoints.MapPackagePublishResponse))]
+[JsonSerializable(typeof(PackageReviewEndpoints.MapPublishRequest))]
+[JsonSerializable(typeof(PackageReviewEndpoints.MapPublishResponse))]
 internal sealed partial class PackageReviewJsonContext : JsonSerializerContext
 {
 }

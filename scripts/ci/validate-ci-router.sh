@@ -1015,7 +1015,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
+  '["SensorThings Unit and Component","Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -1137,7 +1137,7 @@ assert_exact_shards \
       'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Raster Serving Scene Geometry and Terrain","WFS"]'
+  '["SensorThings Unit and Component","Protocol and Host Components","Provider and AI Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Raster Serving Scene Geometry and Terrain","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \

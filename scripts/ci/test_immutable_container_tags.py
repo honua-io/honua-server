@@ -1,7 +1,9 @@
 """Offline coverage for immutable candidate image publication."""
 import contextlib
+import io
 import subprocess
 import tempfile
+import textwrap
 import importlib.util
 import json
 import itertools
@@ -33,13 +35,13 @@ class ImmutableTagsTests(unittest.TestCase):
         with patch.object(self.module, 'supports_full_variant', return_value=False), patch.object(
             self.module, 'inspect', side_effect=lambda reference: None if '-full' in reference else 'sha256:' + 'a' * 64
         ):
-            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''),
+            self.assertEqual(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), ''),
                              (True, True))
 
     def test_jit_default_completion_uses_aot_arch_tags_and_full_default_manifest(self):
         observed = []
         with patch.object(self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64):
-            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+            self.assertEqual(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), ''), (True, True))
         self.assertIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
         self.assertIn('ghcr.io/honua/server:nightly-abcdef0-full', observed)
         self.assertNotIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
@@ -49,9 +51,44 @@ class ImmutableTagsTests(unittest.TestCase):
         with patch.object(self.module, 'uses_jit_default', return_value=False), patch.object(
             self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64
         ):
-            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+            self.assertEqual(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), ''), (True, True))
         self.assertIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
         self.assertNotIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
+
+    def test_ecs_only_checks_aot_arches_aliases_and_compose_evidence(self):
+        repositories = ('ghcr.io/honua/server', 'docker.io/honua/server')
+        sha = 'a' * 40
+        observed = []
+        digest = 'sha256:' + 'a' * 64
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or digest):
+            tags = [self.module.ecs_publication_tags(repository, sha) for repository in repositories]
+            self.assertEqual(self.module.check_publication(tags, '', ''), (True, False))
+        suffixes = ('nightly-aaaaaaa', 'nightly-aot-aaaaaaa', 'nightly-aot-aaaaaaa-amd64', 'nightly-aot-aaaaaaa-arm64')
+        self.assertEqual(set(observed), {f'{repository}:{suffix}' for repository in repositories for suffix in suffixes}
+                         | {'ghcr.io/honua/server:nightly-compose-executor-aaaaaaa'})
+
+    def test_ecs_only_partial_retry_keeps_release_version_check(self):
+        missing = 'ghcr.io/honua/server:nightly-compose-executor-aaaaaaa'
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: None if tag == missing else 'sha256:' + 'a' * 64), \
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-rc.2'}):
+            tags = [self.module.ecs_publication_tags('ghcr.io/honua/server', 'a' * 40)]
+            self.assertEqual(self.module.check_publication(tags, '2026.1.0-rc.2', ''), (False, True))
+            with self.assertRaisesRegex(ValueError, 'new SHA'):
+                self.module.check_publication(tags, '', '2026.1.0-nightly.gaaaaaaa')
+
+    def test_reused_ecs_tags_must_match_the_full_revision(self):
+        sha = 'a' * 40
+        digest = 'sha256:' + 'b' * 64
+        tags = [self.module.ecs_publication_tags('ghcr.io/honua/server', sha)]
+        for revisions in ({sha}, {sha, None}, {sha[:7] + 'b' * 33}):
+            with self.subTest(revisions=revisions), patch.object(self.module, 'inspect', return_value=digest), \
+                 patch.object(self.module, 'image_labels', return_value=revisions) as labels:
+                if revisions == {sha}:
+                    self.assertEqual(self.module.check_publication(tags, '', '', revision=sha), (True, False))
+                else:
+                    with self.assertRaisesRegex(ValueError, 'source revision'):
+                        self.module.check_publication(tags, '', '', revision=sha)
+                labels.assert_called_with('ghcr.io/honua/server@' + digest, self.module.REVISION_LABEL)
 
     def test_cli_filter_and_digest_lookup_work_without_a_git_repository(self):
         script = Path(__file__).with_name('immutable-container-tags.py').resolve()
@@ -68,6 +105,16 @@ class ImmutableTagsTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.strip(), expected)
 
+    def test_ecs_digest_lookup_checks_the_revision_of_the_digest_it_returns(self):
+        tag = 'ghcr.io/honua/server:nightly-aot-aaaaaaa'
+        digest = 'sha256:' + 'b' * 64
+        args = ['immutable-container-tags.py', '--sha', 'a' * 40, '--ecs-only', '--tag', tag]
+        with patch.object(sys, 'argv', args), patch.object(self.module, 'inspect', return_value=digest), \
+             patch.object(self.module, 'image_labels', return_value={'b' * 40}) as labels, \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.module.main(), 1)
+            labels.assert_called_once_with('ghcr.io/honua/server@' + digest, self.module.REVISION_LABEL)
+
     def test_existing_sha_tags_are_preserved_but_floating_tags_can_move(self):
         tags = ['ghcr.io/honua-io/honua-server:nightly-abcdef0',
                 'ghcr.io/honua-io/honua-server:nightly-lambda-aot-abcdef0-amd64',
@@ -83,13 +130,13 @@ class ImmutableTagsTests(unittest.TestCase):
 
     def test_explicit_release_mismatch_requires_new_sha(self):
         with patch.object(self.module, 'inspect', return_value='sha256:' + 'a' * 64), \
-             patch.object(self.module, 'versions', return_value={'2026.1.0-nightly.gabcdef0'}):
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-nightly.gabcdef0'}):
             with self.assertRaisesRegex(ValueError, 'new SHA'):
                 self.module.filter_tags(['ghcr.io/honua/server:nightly-abcdef0'], 'abcdef0' + 'a' * 33, '2026.1.0-rc.2')
 
     def test_matching_release_preserves_existing_digest(self):
         with patch.object(self.module, 'inspect', return_value='sha256:' + 'a' * 64), \
-             patch.object(self.module, 'versions', return_value={'2026.1.0-rc.2'}):
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-rc.2'}):
             self.assertEqual(self.module.filter_tags(['ghcr.io/honua/server:nightly-abcdef0'], 'abcdef0' + 'a' * 33, '2026.1.0-rc.2'), [])
 
     def test_auth_and_network_errors_are_not_treated_as_absence(self):
@@ -102,9 +149,9 @@ class ImmutableTagsTests(unittest.TestCase):
 
     def test_complete_registry_publication_does_not_depend_on_run_success_or_ref(self):
         with patch.object(self.module, 'inspect', return_value='sha256:' + 'a' * 64):
-            self.assertTrue(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
+            self.assertTrue(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), '')[0])
         with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
-            self.assertFalse(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
+            self.assertFalse(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), '')[0])
 
     def test_missing_tag_is_distinct_from_inspection_failure(self):
         with patch.object(self.module.subprocess, 'run') as run:
@@ -114,18 +161,18 @@ class ImmutableTagsTests(unittest.TestCase):
 
     def test_explicit_release_checks_partial_publication_too(self):
         with patch.object(self.module, 'inspect', side_effect=[None, 'sha256:' + 'a' * 64]), \
-             patch.object(self.module, 'versions', return_value={'2026.1.0-nightly.gabcdef0'}):
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-nightly.gabcdef0'}):
             with self.assertRaisesRegex(ValueError, 'new SHA'):
-                self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, '2026.1.0-rc.2')
+                self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), '2026.1.0-rc.2')
 
     def test_partial_publication_is_reported_for_safe_legacy_handoffs(self):
         with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
-            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+            self.assertEqual(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), ''), (False, True))
 
     def test_missing_default_full_manifest_is_partial_publication(self):
         missing = 'ghcr.io/honua/server:nightly-abcdef0-full'
         with patch.object(self.module, 'inspect', side_effect=lambda tag: None if tag == missing else 'sha256:' + 'a' * 64):
-            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+            self.assertEqual(self.module.publication_state(self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33), ''), (False, True))
 
     def test_missing_full_variant_is_partial_publication(self):
         repository = 'ghcr.io/honua/server'
@@ -135,21 +182,40 @@ class ImmutableTagsTests(unittest.TestCase):
                 self.module, 'inspect', side_effect=lambda reference: None if reference == missing else 'sha256:' + 'a' * 64
             ):
                 self.assertEqual(
-                    self.module.publication_state(repository, 'abcdef0' + 'a' * 33, ''),
+                    self.module.publication_state(self.module.publication_tags(repository, 'abcdef0' + 'a' * 33), ''),
                     (False, True))
 
     def test_scheduled_partial_retry_cannot_mix_rc_and_nightly_images(self):
         with patch.object(self.module, 'inspect', side_effect=itertools.cycle([None] + ['sha256:' + 'a' * 64] * 11)), \
-             patch.object(self.module, 'versions', return_value={'2026.1.0-rc.2'}):
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-rc.2'}):
             with self.assertRaisesRegex(ValueError, 'new SHA'):
-                self.module.check_publication(['ghcr.io/honua/server'], 'abcdef0' + 'a' * 33, '', '2026.1.0-nightly.gabcdef0')
+                tags = [self.module.publication_tags('ghcr.io/honua/server', 'abcdef0' + 'a' * 33)]
+                self.module.check_publication(tags, '', '2026.1.0-nightly.gabcdef0')
 
     def test_every_platform_must_report_requested_version(self):
         with patch.object(self.module.subprocess, 'run') as run:
             run.return_value.stdout = json.dumps({
                 'linux/amd64': {'config': {'Labels': {self.module.VERSION_LABEL: '2026.1.0-rc.2'}}},
                 'linux/arm64': {'config': {'Labels': {}}}})
-            self.assertEqual(self.module.versions('image@digest'), {'2026.1.0-rc.2', None})
+            self.assertEqual(self.module.image_labels('image@digest', self.module.VERSION_LABEL), {'2026.1.0-rc.2', None})
+
+    def test_cron_skips_a_sha_with_only_ecs_rc_tags(self):
+        sha = 'abcdef0' + 'a' * 33
+        repository = 'ghcr.io/honua/server'
+        ecs_tags = self.module.ecs_publication_tags(repository, sha)
+        args = ['immutable-container-tags.py', '--sha', sha, '--already-imaged', repository,
+                '--expected-version', '2026.1.0-nightly.gabcdef0']
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: 'sha256:' + 'a' * 64 if tag in ecs_tags else None), \
+             patch.object(self.module, 'image_labels', return_value={'2026.1.0-rc.2'}):
+            for flags, code in ((['--scheduled'], 0), ([], 1),
+                                (['--scheduled', '--release-version', '2026.1.0-rc.3'], 1)):
+                with self.subTest(flags=flags), patch.object(sys, 'argv', args + flags), \
+                     patch('builtins.print') as output:
+                    self.assertEqual(self.module.main(), code)
+                    if code == 0:
+                        output.assert_any_call('skip_publish=1')
+                    else:
+                        self.assertTrue(all(call.args != ('skip_publish=1',) for call in output.call_args_list))
 
     def test_every_job_that_runs_the_guard_has_the_guard_on_disk(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/nightly-container-build.yml').read_text()
@@ -170,7 +236,7 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn("steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1'", workflow)
         self.assertLess(workflow.index('name: Check immutable candidate images'),
                         workflow.index('name: Require the release GitHub App'))
-        self.assertIn('--commit "${CANDIDATE_SHA}" --limit 100 --json status', workflow)
+        self.assertIn('nightly-container-build.yml/runs?head_sha=${CANDIDATE_SHA}&per_page=100', workflow)
         self.assertNotIn('select(.status == \"completed\" and .conclusion == \"success\"', workflow)
         for job in ('build-aot', 'build-lambda-aot', 'build-jit', 'manifest-aot',
                     'manifest-lambda-aot', 'manifest-jit', 'compose-executor'):
@@ -190,6 +256,154 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('if [ "${existing}" != "${CANDIDATE_SHA}" ]; then', workflow)
         self.assertIn('if [ "$PARTIAL_PUBLICATION" = 1 ]; then', workflow)
         self.assertIn('contents/scripts/ci/immutable-container-tags.py?ref=${CANDIDATE_SHA}', workflow)
+
+
+class EcsOnlyWorkflowTests(unittest.TestCase):
+    root = Path(__file__).resolve().parents[2]
+    workflow_path = '.github/workflows/nightly-container-build.yml'
+    workflow = (root / workflow_path).read_text()
+
+    def step_script(self, name):
+        step = self.workflow.split(f'      - name: {name}\n', 1)[1]
+        body = step.split('        run: |\n', 1)[1]
+        return textwrap.dedent(re.split(r'\n(?= {0,8}\S)', body, maxsplit=1)[0])
+
+    def test_ecs_scope_guards_jobs_and_mirrors_only_aot_base_images(self):
+        for job in ('build-lambda-aot', 'manifest-lambda-aot', 'build-jit', 'manifest-jit'):
+            block = self.workflow.split(f'\n  {job}:\n', 1)[1]
+            block = re.split(r'\n  [a-z][a-z0-9-]*:', block, maxsplit=1)[0]
+            self.assertRegex(block, r'(?m)^    if: .*!inputs\.ecs_only')
+        self.assertIn("(!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')", self.workflow)
+        aot_job = self.workflow.split('\n  build-aot:\n', 1)[1].split('\n  build-lambda-aot:\n', 1)[0]
+        consumed = set(re.findall(r'env\.BASE_REPO \}\}:([\w.-]+)', aot_job))
+        output = subprocess.check_output(['bash', 'scripts/ci/base-image-mirrors.sh', '--ecs-only'],
+                                         cwd=self.root, text=True)
+        mirrored = {line.split('\t', 1)[0] for line in output.splitlines()}
+        self.assertTrue(consumed)
+        self.assertEqual(mirrored, consumed)
+        subprocess.run(['bash', 'scripts/ci/base-image-mirrors.sh', '--verify', self.workflow_path],
+                       cwd=self.root, check=True, capture_output=True)
+
+    def test_quickstart_can_publish_after_aot_manifest_reuse(self):
+        executor = self.workflow.split('\n  compose-executor:\n', 1)[1]
+        executor = re.split(r'\n  [a-z][a-z0-9-]*:', executor, maxsplit=1)[0]
+        condition = re.search(r'(?m)^    if: (.+)$', executor).group(1)
+        self.assertIn('!cancelled()', condition)
+        self.assertIn("needs.manifest-aot.result == 'success'", condition)
+
+    def test_redirect_rejects_commits_without_the_input(self):
+        script = self.step_script('Verify the selected commit supports ECS-only publication')
+        with tempfile.TemporaryDirectory() as directory:
+            subprocess.run(['git', 'init', '-q'], cwd=directory, check=True)
+            workflow_path = Path(directory, self.workflow_path)
+            workflow_path.parent.mkdir(parents=True)
+            for supports_ecs, contents in ((False, 'name: old workflow\n'), (True, self.workflow)):
+                with self.subTest(supports_ecs=supports_ecs):
+                    workflow_path.write_text(contents)
+                    subprocess.run(['git', 'add', '.'], cwd=directory, check=True)
+                    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                                    'commit', '-qm', 'workflow fixture'], cwd=directory, check=True)
+                    result = subprocess.run(['bash', '-c', script], cwd=directory, capture_output=True, text=True,
+                                            env={**os.environ, 'CANDIDATE_SHA': 'HEAD'})
+                    self.assertEqual(result.returncode, 0 if supports_ecs else 1, result.stdout)
+
+    def write_dispatch_stub(self, directory):
+        stub = Path(directory, 'gh')
+        stub.write_text("""#!/bin/bash
+case "$1 $2" in
+  "api --paginate") printf '%s\n' "$ACTIVE_RUNS" ;;
+  "api repos/"*) printf '%s\n' "$CANDIDATE_SHA" ;;
+  "workflow run") printf '%s\n' "$@" > "$RUNNER_TEMP/dispatch" ;;
+  *) exit 2 ;;
+esac
+""")
+        stub.chmod(0o755)
+
+    def active_runs(self, *entries, status='in_progress'):
+        return json.dumps({'workflow_runs': [
+            {'head_branch': branch, 'display_title': title, 'event': 'workflow_dispatch',
+             'head_repository': {'full_name': 'honua-io/honua-server'}, 'status': status}
+            for branch, title in entries]})
+
+    def test_redirect_forwards_scope_and_release_version_to_existing_candidate_tag(self):
+        script = self.step_script('Tag the selected sha and re-dispatch this workflow at it')
+        with tempfile.TemporaryDirectory() as directory:
+            self.write_dispatch_stub(directory)
+            environment = {**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH'],
+                           'RUNNER_TEMP': directory, 'GITHUB_STEP_SUMMARY': str(Path(directory, 'summary')),
+                           'GITHUB_REPOSITORY': 'honua-io/honua-server', 'GITHUB_SHA': 'b' * 40,
+                           'CANDIDATE_SHA': 'a' * 40, 'HANDOFF_TOKEN': 'fixture-token',
+                           'PARTIAL_PUBLICATION': '0', 'RELEASE_VERSION': '2026.1.0-rc.2',
+                           'ECS_ONLY': 'true', 'ACTIVE_RUNS': '{"workflow_runs":[]}'}
+            result = subprocess.run(['bash', '-c', script], env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            dispatch = Path(directory, 'dispatch')
+            self.assertEqual(dispatch.read_text().splitlines(), [
+                'workflow', 'run', 'nightly-container-build.yml', '--repo', 'honua-io/honua-server',
+                '--ref', 'nightly-candidate-aaaaaaa', '-f', 'release_version=2026.1.0-rc.2', '-f', 'ecs_only=true'])
+            dispatch.unlink()
+            result = subprocess.run(['bash', '-c', script],
+                                    env={**environment, 'ACTIVE_RUNS': self.active_runs(
+                                        ('trunk', 'Nightly Container Build · refs/heads/trunk')), 'RELEASE_VERSION': ''},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(dispatch.exists())
+            full_request = {**environment, 'RELEASE_VERSION': '', 'ECS_ONLY': 'false'}
+            tag = 'nightly-candidate-aaaaaaa'
+            for title, status, exit_code in ((f'ECS-only candidate · refs/tags/{tag}', 'in_progress', 1),
+                                             (f'Nightly Container Build · refs/tags/{tag}', 'in_progress', 0),
+                                             ('Nightly Container Build', 'pending', 0)):
+                with self.subTest(title=title):
+                    result = subprocess.run(['bash', '-c', script],
+                                            env={**full_request, 'ACTIVE_RUNS': self.active_runs(
+                                                (tag, title), status=status)},
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, exit_code, result.stderr)
+                    self.assertFalse(dispatch.exists())
+            proof = self.active_runs((tag, f'Nightly Container Build · refs/heads/{tag}'))
+            result = subprocess.run(['bash', '-c', script], env={**full_request, 'ACTIVE_RUNS': proof},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(dispatch.exists())
+
+    def test_ecs_complete_tags_require_unexpired_official_quickstart_evidence(self):
+        script = self.step_script('Check immutable candidate images in the registry')
+        with tempfile.TemporaryDirectory() as directory:
+            for command, contents in {
+                'python3': '''#!/bin/bash
+case "$1" in
+  *test_immutable*) exit 0 ;;
+  *immutable-container-tags*) printf 'imaged=1\\npartial=0\\n' ;;
+  *) exit 2 ;;
+esac
+''',
+                'gh': '''#!/bin/bash
+case "$*" in
+  *workflows/nightly-container-build.yml/runs*)
+    printf '%s\\n' '{"workflow_runs":[{"id":11,"head_repository":{"full_name":"honua-io/honua-server"},"head_branch":"trunk","event":"schedule"}]}' ;;
+  *runs/11/artifacts*) printf '%s\\n' "$FIXTURE_ARTIFACTS" ;;
+  *) exit 2 ;;
+esac
+''',
+            }.items():
+                stub = Path(directory, command)
+                stub.write_text(contents)
+                stub.chmod(0o755)
+            output = Path(directory, 'output')
+            environment = {**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH'],
+                           'GITHUB_OUTPUT': str(output), 'GITHUB_REPOSITORY': 'honua-io/honua-server',
+                           'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                           'CANDIDATE_SHA': 'a' * 40, 'RELEASE_VERSION': '', 'EXPECTED_VERSION': '',
+                           'ECS_ONLY': 'true', 'REGISTRY_GHCR': 'ghcr.io', 'IMAGE_NAME_GHCR': 'honua-io/honua-server',
+                           'IMAGE_NAME_DOCKERHUB': 'honuaio/honua-server'}
+            for expired, expected in ((True, 'imaged=0\npartial=1\nreuse_aot=1'), (False, 'imaged=1\npartial=0')):
+                with self.subTest(expired=expired):
+                    output.write_text('')
+                    artifacts = {'artifacts': [{'name': 'honua-compose-quickstart-aaaaaaa', 'expired': expired}]}
+                    result = subprocess.run(['bash', '-c', script], capture_output=True, text=True,
+                                            env={**environment, 'FIXTURE_ARTIFACTS': json.dumps(artifacts)})
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(output.read_text().strip(), expected)
 
 
 class CandidateProfileTests(unittest.TestCase):

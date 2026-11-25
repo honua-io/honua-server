@@ -5,8 +5,7 @@
   "inputs": {
     "serviceId": "county_parcels",
     "serviceLayerIndex": 3,
-    "returnedCount": 0,
-    "features": []
+    "returnedCount": 0
   },
   "expected": "tool_result",
   "canonicalRefs": [

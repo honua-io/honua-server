@@ -1,0 +1,26 @@
+{
+  "id": "create_exploration_context.parcels_workspace_global_linked",
+  "schemaRef": "tools/create_exploration_context.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "mapId": "map_maui_parcels",
+    "explorationContext": {
+      "id": "parcels-workspace",
+      "sourceIds": ["parcels", "permits"],
+      "preset": "globalLinked",
+      "initialState": {
+        "version": 1,
+        "filters": {
+          "year-built": {
+            "field": "yearBuilt",
+            "op": ">=",
+            "value": 1990
+          }
+        },
+        "grouping": ["zoning"]
+      }
+    }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -68,6 +69,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -80,6 +82,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -92,6 +95,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -104,6 +108,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -126,6 +131,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
         // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
