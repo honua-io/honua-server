@@ -83,13 +83,8 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         {
             if (pageOffset > 0)
             {
-                // Versions and jobs are enough to count a row. Only pointer-only entries need a storage read.
-                if (exportsWithVersionsOrJobs.Contains(id) ||
-                    await ReadCurrentAsync(ExportStore.Create(storage, options.Value, id), id, cancellationToken).ConfigureAwait(false) is not null)
-                {
-                    pageOffset--;
-                }
-
+                pageOffset -= await CountsTowardOffsetAsync(id, exportsWithVersionsOrJobs, cancellationToken)
+                    .ConfigureAwait(false) ? 1 : 0;
                 continue;
             }
 
@@ -107,6 +102,15 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         }
 
         return items;
+    }
+
+    private async ValueTask<bool> CountsTowardOffsetAsync(
+        string id, HashSet<string> exportsWithVersionsOrJobs, CancellationToken cancellationToken)
+    {
+        // Versions and jobs are enough to count a row. Only pointer-only entries need a storage read.
+        return exportsWithVersionsOrJobs.Contains(id) ||
+            await ReadCurrentAsync(ExportStore.Create(storage, options.Value, id), id, cancellationToken)
+                .ConfigureAwait(false) is not null;
     }
 
     private static (IEnumerable<string> Ids, HashSet<string> ExportsWithVersionsOrJobs) IndexExports(CatalogSnapshot snapshot)
