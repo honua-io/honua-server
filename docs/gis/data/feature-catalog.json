@@ -7665,11 +7665,7 @@
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
-        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady",
-        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.ServeErrors_PublicRoutesFailWhileProbesStayHealthy",
-        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.SettingAbsent_FaultIsInert",
-        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_AfterTheRecoveryRestart_ServesNormally",
-        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_DeepProbeAndPublicRoutesFailWhileLoadBalancerProbesStayHealthy"
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
@@ -9390,7 +9386,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminMetadataHistoryAndSchemasTests.CustomFieldSchemas_AppearInEditorsSearchFacetsAndCrosswalkExtensions",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsAuthorizationDenialTests.Records_Items_RestrictedResource_RequiresRoleForAnonymousAndAuthenticatedCallers",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsAuthorizationDenialTests.Records_Items_RestrictedResource_IsAbsentForUnentitledCallers",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItems_FormatParameter_AllowsGeoJsonAndRejectsHtml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItems_PagedLinks_PreserveFilterParameters",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItems_WithAntimeridianCrossingBbox_AppliesUnionSemantics",
