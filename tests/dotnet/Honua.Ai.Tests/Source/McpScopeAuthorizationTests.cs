@@ -45,6 +45,7 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
     public sealed class ScopeHost : IAsyncLifetime
     {
         internal const string CatalogReader = "mcp-scope-test-catalog-reader";
+        private Guid? _createdRoleId;
 
         internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -68,7 +69,14 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
             await Fixture.InitializeAsync();
             using var scope = Fixture.Services.CreateScope();
             var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
-            await roles.CreateRoleAsync(new RoleDefinition
+            var existing = (await roles.ListRolesAsync())
+                .FirstOrDefault(r => string.Equals(r.Name, CatalogReader, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                return;
+            }
+
+            var created = await roles.CreateRoleAsync(new RoleDefinition
             {
                 Name = CatalogReader,
                 Permissions =
@@ -81,9 +89,20 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
                     },
                 ],
             });
+            _createdRoleId = created.RoleId;
         }
 
-        public Task DisposeAsync() => Fixture.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            if (_createdRoleId is { } roleId)
+            {
+                using var scope = Fixture.Services.CreateScope();
+                var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+                await roles.DeleteRoleAsync(roleId);
+            }
+
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -183,7 +202,12 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
         // The same signed subject owns the artifact and holds the admin role in
         // every case. Only OAuth scope narrowing distinguishes these outcomes.
         var owner = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "operator-123")], "fixture"));
+            [
+                new Claim(ClaimTypes.NameIdentifier, "operator-123"),
+                new Claim("iss", Issuer),
+                new Claim("tid", "scope-test-tenant"),
+            ],
+            "Bearer"));
         var bytes = new byte[] { 137, 80, 78, 71 };
         var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
         var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: owner);
