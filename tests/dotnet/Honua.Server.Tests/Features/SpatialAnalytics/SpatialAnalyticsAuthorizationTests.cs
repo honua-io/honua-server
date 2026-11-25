@@ -77,6 +77,21 @@ public sealed class SpatialAnalyticsAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
+    public async Task H3_ReaderFromAnotherLayer_IsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(() => new RbacTestLayerCatalog(
+            alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
+            betaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["beta-reader"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await client.GetAsync(
+            "/rest/services/beta/FeatureServer/1/queryH3?resolution=7&f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
     private async Task AssertProtectedLayerPostAsync(string path)
     {
         RestrictService();
