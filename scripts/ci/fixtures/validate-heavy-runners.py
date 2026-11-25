@@ -75,9 +75,9 @@ ANALYZER_TESTS_RUNNER = ("matrix.analyzer-partition == 'tests' && ("
                          + planned_heavy("',analyzers-{0},', matrix.analyzer-test-partition") + " || 'ubuntu-latest') || ")
 # Native AOT is not a matrix: every trusted run takes the heavy pool, forks stay hosted.
 AOT_RUNNER = "${{ vars.HONUA_HEAVY_RUNNER" + FORK_GUARD + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"
-# Full runs (the ci.yml run-name rule) take free standard hosted runners; affected runs keep the pool.
+# Full runs use the operator label or standard hosted runners. Affected runs keep the pool.
 FULL_RUN_HOSTED = ("(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
-                   " && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || ")
+                   " && (inputs.full_ci || !inputs.selective_base)) && (vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest') || ")
 SHARD_JOBS = {
     "ci.yml": ("server-tests", "${{ " + FULL_RUN_HOSTED + TRUSTED_HEAVY_RUNNER
                + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
@@ -107,7 +107,7 @@ class ShardRunnerRoutingTests(unittest.TestCase):
             with self.subTest(workflow=workflow):
                 self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
 
-    def test_full_runs_take_hosted_runners_and_affected_runs_the_heavy_pool(self):
+    def test_full_runs_use_the_operator_label_and_affected_runs_use_the_heavy_pool(self):
         expression = self.shard_job("ci.yml")["runs-on"]
         self.assertNotIn("strategy.job-index", expression)
         probe = """const {expression, event, fork, heavy, fallback, inputs} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
@@ -125,7 +125,8 @@ process.stdout.write(JSON.stringify(new Function('github', 'vars', 'inputs', 'fr
         for (event, inputs, full), fork, configured, fallback in product(
                 runs, [False, True], [False, True], ["", "ubuntu-24.04"]):
             trusted = event not in {"pull_request", "workflow_run"} or not fork
-            expected = "ubuntu-latest" if full else pool if configured and trusted else fallback or "ubuntu-latest"
+            use_pool = not full and configured and trusted
+            expected = pool if use_pool else fallback or "ubuntu-latest"
             context = {"expression": expression[3:-2].strip(), "event": event, "inputs": inputs,
                        "fork": fork, "heavy": json.dumps(pool) if configured else "",
                        "fallback": fallback}

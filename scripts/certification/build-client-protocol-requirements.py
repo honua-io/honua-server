@@ -25,7 +25,8 @@ so the mirror records them separately instead of collapsing them into one boolea
     ``(client_lane, surface, client_version)``? The authority is
     ``tests/baselines/client-compat/expected-pairs.json`` -- the contractual set of
     pairs the nightly matrix must produce -- joined to the committed baseline
-    envelopes for the client version each lane actually reports. A row no such
+    envelopes for the client version each lane actually reports. Pairs marked
+    ``nightly_only`` supply nightly interoperability evidence only. A row no such
     pair covers is still produced when ``client-roster-certification.yml`` runs
     ``certification/bounded-roster/run-roster.sh`` and a lane module that script
     executes declares one of the row's test IDs. Nothing here is hand-maintained.
@@ -188,7 +189,7 @@ def load_json(path: Path) -> dict:
 
 
 def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
-    """Resolve every ``(client_lane, protocol)`` this repository is contracted to emit.
+    """Resolve the client-compat pairs eligible to produce governed receipts.
 
     ``expected-pairs.json`` is the contract; the committed baseline envelope for the
     pair supplies the client version that lane actually reports. A contracted pair
@@ -210,6 +211,8 @@ def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
 
     pairs: dict[tuple[str, str], dict] = {}
     for pair in contract["expected_pairs"]:
+        if pair.get("nightly_only"):
+            continue
         key = (pair["client_lane"], pair["protocol"])
         version, baseline_path = versions.get(key, (None, None))
         pairs[key] = {

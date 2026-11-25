@@ -22,7 +22,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "server_config_revision": "sha256:<digest of the executed server configuration>",
   "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|geoservices-rest-stub|py-geopandas|py-owslib|duckdb|r-sf|py-pystac>",
   "client_version": "<client tool version>",
-  "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|stac|portal|admin-api>",
+  "protocol": "<featureserver|mapserver|ogc-features|ogc-api-records|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|stac|portal|admin-api>",
   "protocol_version": "<protocol version the client negotiated, e.g. 2.0.0 for WFS>",
   "environment": "<local|ci|staging>",
   "results": [
@@ -64,7 +64,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `geoservices-rest-stub`, `py-geopandas`, `py-owslib`, `duckdb`, `r-sf`, `py-pystac`. The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-server/issues/3392)) each name the client library rather than its host language runtime, so a second Python client cannot silently reuse another's lane identity. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `geoservices-rest-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
 | `client_version` | string | Yes | Version of the client tool under test. Lanes that exercise more than one library pin all of them in one string, semicolon-separated (e.g. `geopandas=1.0.1;pyogrio=0.10.0;GDAL=3.9.3`). |
 | `protocol_version` | string | No | The protocol version the client actually negotiated (e.g. `2.0.0` for WFS, `1.3.0` for WMS, `1.0` for OGC API Features). Emitted by the PyQGIS lane and by every canonical analyst lane; lets a receipt distinguish a WFS 1.1.0 pass from a WFS 2.0 pass. |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. `portal` is emitted by the ArcGIS Portal/Sharing facade lane and `stac` by the pystac-client lane. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-api-records`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. OWSLib emits `ogc-api-records`, the ArcGIS Portal/Sharing facade lane emits `portal`, and the pystac-client lane emits `stac`. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |

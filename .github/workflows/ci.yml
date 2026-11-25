@@ -1288,10 +1288,9 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.targeted-shards.outputs.schedule_shards != 'false' }}
     # Keep one matrix on one pool: hosted jobs waiting for capacity also occupy
     # max-parallel slots and can prevent idle heavy runners from receiving work.
-    # Full runs (the run-name rule) take standard hosted runners, free for this
-    # public repository; affected runs keep the heavy pool. Fork code stays on
-    # the existing fallback.
-    runs-on: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Full runs (the run-name rule) use the configured label or standard hosted
+    # runners. Affected runs keep the heavy pool and its existing fallback.
+    runs-on: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && (inputs.full_ci || !inputs.selective_base)) && (vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest') || vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
@@ -2699,7 +2698,8 @@ jobs:
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: mcp-certification
     continue-on-error: true
-    timeout-minutes: 10
+    # The step limits leave four minutes for runner/service startup and post-job cleanup.
+    timeout-minutes: 33
     # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
     environment: bedrock-smoke
     permissions:
@@ -2708,7 +2708,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        image: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN != '' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
@@ -2722,35 +2722,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Configure PostgreSQL connection
-        uses: ./.github/actions/configure-postgres-connection
-        with:
-          port: ${{ job.services.postgres.ports['5432'] }}
-
-      - name: Setup Honua MCP environment
-        id: setup
-        uses: ./.github/actions/setup-honua-mcp
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-          node-version: '22.23.3'
-          python-version: ${{ env.PYTHON_VERSION }}
-          sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
-
-      - name: Report skipped smoke tests
-        if: steps.setup.outputs.smoke-available != 'true'
-        shell: bash
-        run: |
-          echo "::warning::test:llm-smoke script not found in honua-sdk-js/mcp — smoke tests skipped"
-          echo "## ⚠️ MCP LLM Smoke Tests Skipped" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}\`)." >> "$GITHUB_STEP_SUMMARY"
-          echo "Land the smoke test scripts in \`honua-sdk-js\` to activate this lane." >> "$GITHUB_STEP_SUMMARY"
-
       - name: Detect Bedrock smoke credentials
+        timeout-minutes: 1
         id: bedrock
-        if: steps.setup.outputs.smoke-available == 'true'
         shell: bash
         env:
           BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
@@ -2759,11 +2733,50 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke will run without the live Bedrock driver."
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke skipped before server and SDK setup."
+            echo "## MCP LLM Smoke Tests skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "HONUA_BEDROCK_SMOKE_ROLE_ARN is not configured. No server, SDK, or live Bedrock smoke was started; MCP Certification remains independent." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Configure AWS credentials for Bedrock smoke
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
         if: steps.bedrock.outputs.available == 'true'
+
+      - name: Configure PostgreSQL connection
+        if: steps.bedrock.outputs.available == 'true'
+        timeout-minutes: 1
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
+
+      - name: Setup Honua MCP environment
+        if: steps.bedrock.outputs.available == 'true'
+        timeout-minutes: 14
+        id: setup
+        uses: ./.github/actions/setup-honua-mcp
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          node-version: '22.23.3'
+          python-version: ${{ env.PYTHON_VERSION }}
+          smoke-only: 'true'
+          sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
+
+      - name: Report skipped smoke tests
+        timeout-minutes: 1
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available != 'true'
+        shell: bash
+        env:
+          SDK_REF: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
+        run: |
+          echo "::warning::test:llm-smoke script not found in honua-sdk-js/mcp — smoke tests skipped"
+          echo "## ⚠️ MCP LLM Smoke Tests Skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The \`test:llm-smoke\` script was not found in \`honua-sdk-js/mcp\` (ref: \`$SDK_REF\`)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Land the smoke test scripts in \`honua-sdk-js\` to activate this lane." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure AWS credentials for Bedrock smoke
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
+        timeout-minutes: 2
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
@@ -2771,8 +2784,9 @@ jobs:
           aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Run MCP LLM Smoke Tests
-        if: steps.setup.outputs.smoke-available == 'true'
-        run: npm run test:llm-smoke
+        if: steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
+        run: timeout --kill-after=10s "$MCP_SMOKE_TIMEOUT" npm run test:llm-smoke
+        timeout-minutes: 7
         working-directory: honua-sdk-js/mcp
         env:
           HONUA_BASE_URL: http://localhost:5000
@@ -2780,12 +2794,14 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
+          MCP_SMOKE_TIMEOUT: 6m
           HONUA_EVAL_BEDROCK: ${{ steps.bedrock.outputs.available == 'true' && '1' || '' }}
           HONUA_EVAL_BEDROCK_MODEL: ${{ vars.HONUA_MCP_SMOKE_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
           AWS_REGION: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Upload LLM smoke transcripts
-        if: always() && steps.setup.outputs.smoke-available == 'true'
+        if: always() && steps.bedrock.outputs.available == 'true' && steps.setup.outputs.smoke-available == 'true'
+        timeout-minutes: 2
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mcp-llm-smoke-transcripts

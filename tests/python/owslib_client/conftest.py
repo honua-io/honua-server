@@ -71,9 +71,17 @@ RASTER_NA_REASON = (
     "facets are structurally not applicable."
 )
 
+RECORDS_APPLICABLE = frozenset({
+    "CERT-CONN-02", "CERT-DISC-01", "CERT-DISC-02", "CERT-PAGE-01", "CERT-PAGE-02",
+})
+RECORDS_NA_REASON = (
+    "The Records lane certifies transport, catalog discovery, metadata, and record paging."
+)
+
 PROTOCOL_SPECS: dict[str, tuple[str, frozenset[str], str]] = {
     # protocol -> (protocol_version, applicable, not_applicable_reason)
     "ogc-features": ("1.0", VECTOR_APPLICABLE, VECTOR_NA_REASON),
+    "ogc-api-records": ("1.0", RECORDS_APPLICABLE, RECORDS_NA_REASON),
     "wfs": ("2.0.0", VECTOR_APPLICABLE, VECTOR_NA_REASON),
     "wms": ("1.3.0", RASTER_APPLICABLE, RASTER_NA_REASON),
     "wmts": ("1.0.0", RASTER_APPLICABLE, RASTER_NA_REASON),
@@ -83,6 +91,7 @@ PROTOCOL_SPECS: dict[str, tuple[str, frozenset[str], str]] = {
 # makereport hook, so a module can never report into the wrong envelope.
 MODULE_PROTOCOL: dict[str, str] = {
     "test_ogc_features": "ogc-features",
+    "test_ogc_records": "ogc-api-records",
     "test_wfs": "wfs",
     "test_wms": "wms",
     "test_wmts": "wmts",
@@ -238,6 +247,11 @@ def oaf_collector(lane_runtime: LaneRuntime, owslib_version: str) -> Certificati
 
 
 @pytest.fixture(scope="session")
+def records_collector(lane_runtime: LaneRuntime, owslib_version: str) -> CertificationEvidenceCollector:
+    return _collector(lane_runtime, owslib_version, "ogc-api-records")
+
+
+@pytest.fixture(scope="session")
 def wfs_collector(lane_runtime: LaneRuntime, owslib_version: str) -> CertificationEvidenceCollector:
     return _collector(lane_runtime, owslib_version, "wfs")
 
@@ -386,10 +400,8 @@ def strip_crs_brackets(value: str | None) -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def _write_cert_evidence(
-    oaf_collector: CertificationEvidenceCollector,
-    wfs_collector: CertificationEvidenceCollector,
-    wms_collector: CertificationEvidenceCollector,
-    wmts_collector: CertificationEvidenceCollector,
+    lane_runtime: LaneRuntime,
+    owslib_version: str,
 ) -> Generator[None, None, None]:
     """Persist one ``.cert.json`` envelope per protocol at session teardown.
 
@@ -399,6 +411,10 @@ def _write_cert_evidence(
     so ``scripts/client-compat/refresh-baselines.sh`` can strip the prefix up to
     the first ``-`` and promote the file under its stable name.
     """
+    collectors = {
+        protocol: _collector(lane_runtime, owslib_version, protocol)
+        for protocol in PROTOCOL_SPECS
+    }
     yield
     override = os.environ.get("HONUA_OWSLIB_OUTPUT_DIR")
     results_dir = Path(override) if override else canonical_fixture.TEST_RESULTS_ROOT
@@ -407,12 +423,7 @@ def _write_cert_evidence(
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
 
-    for protocol, collector in (
-        ("ogc-features", oaf_collector),
-        ("wfs", wfs_collector),
-        ("wms", wms_collector),
-        ("wmts", wmts_collector),
-    ):
+    for protocol, collector in collectors.items():
         path = results_dir / f"{run_id}-{CLIENT_LANE}-{protocol}{suffix}.cert.json"
         collector.write_envelope(path)
 

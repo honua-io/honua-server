@@ -1652,8 +1652,8 @@ Core package or Postgres compatibility job still does. All trusted affected
 indices use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
 except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full runs
-(the `run-name` rule) put every server-test index on free standard
-`ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
+(the `run-name` rule) put every server-test index on the label set by
+`HONUA_CI_HEAVY_RUNNER`, defaulting to standard `ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
 server phase there, against 193-327 minutes on the six heavy runners. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
@@ -3795,3 +3795,32 @@ one runner before and after. On scheduled full run 45038465540 the shard spent
 Every case remains in the same selected PR shard and twice-daily full trunk runs.
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
+
+### MCP LLM smoke credential admission
+
+The advisory full-CI `MCP LLM Smoke Tests` job checks the configured Bedrock role
+before checkout, server setup or SDK builds. Without
+`HONUA_BEDROCK_SMOKE_ROLE_ARN`, PostgreSQL is not started and the job reports an
+explicit skip in its log and summary. With a role, the existing authenticated
+server, SDK smoke command, OIDC credentials and transcript upload remain active.
+The job retains its certification dependency and advisory status.
+
+Run 45159280398/job 137667996720 spent 572 seconds in MCP setup and 22 seconds
+starting PostgreSQL before discovering the smoke script was absent. The previous
+ten-minute cap cancelled post-action cleanup. The 33-minute job limit now gives
+MCP setup 14 minutes, the smoke command six minutes with ten seconds to exit
+before forced termination, and transcript upload two minutes. The smoke step has
+a seven-minute runner limit. The configured-role path reserves four minutes
+outside its step limits for runner and service startup and post-job cleanup.
+With a role and an SDK ref that lacks the smoke script, the job reports the skip
+after checking the SDK manifest. It skips the Python, Honua Server and SDK build
+setup, role assumption and transcript upload. Certification mode still uses the
+SDK certification script. A hosted after-change duration still requires a
+qualifying run.
+
+### Tile Export Durable Recovery fixture
+
+The durable recovery fixture uses the production queue wake signal to notify its
+worker when PostgreSQL jobs are queued. The recovery and retry cases still
+exercise the real queue, worker, reconciler, and durable stores in Server
+Features Miscellaneous 7 on selected PR runs and full trunk runs.

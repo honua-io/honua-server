@@ -11,6 +11,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
@@ -21,7 +22,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     private const double WebMercatorExtent = 20037508.342789244;
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithTestLicense(HonuaEdition.Pro);
+        .WithTestLicense(HonuaEdition.Pro)
+        .WithTestAuthorization();
 
     public async Task InitializeAsync()
     {
@@ -29,6 +31,51 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
+    public async Task LineOfSight_ProtectedDataset_AnonymousRequestIsUnauthorized()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
+        using var client = _fixture.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            "/elevation/0/line-of-sight",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                targetLon = 0.05,
+                targetLat = 0.0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /elevation/{datasetId}/viewshed")]
+    public async Task Viewshed_ProtectedDataset_AnonymousRequestIsUnauthorized()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
+        using var client = _fixture.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            "/elevation/0/viewshed",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                radiusMeters = 5000.0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]

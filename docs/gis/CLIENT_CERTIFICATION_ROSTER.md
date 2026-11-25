@@ -157,7 +157,7 @@ Where the roster grows next. The notebook block is headless Linux and nearly fre
 | Client | Status | Activation | Target | Required tier | Runtime | Protocol surfaces | Owning issue |
 |---|---|---|---|---|---|---|---|
 | `py-geopandas` GeoPandas (via pyogrio / Fiona) | planned | awaiting-evidence | 2026.2 | none | linux-container | `ogc-features`, `wfs` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
-| `py-owslib` OWSLib | planned | awaiting-evidence | 2026.1 | none | linux-container | `ogc-features`, `wfs`, `wms`, `wmts` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
+| `py-owslib` OWSLib | active | activated | 2026.1 | nightly | linux-container | `ogc-api-records`, `ogc-features`, `wfs`, `wms`, `wmts` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `duckdb` DuckDB Spatial | planned | awaiting-evidence | 2026.2 | none | linux-container | `ogc-features` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `r-sf` R sf + ows4R | planned | awaiting-evidence | 2026.2 | none | linux-container | `ogc-features`, `wfs` | [honua-server#3392](https://github.com/honua-io/honua-server/issues/3392) |
 | `jupyter-papermill` Jupyter end-to-end notebook (papermill) | planned | not-activated | later | none | linux-container | `ogc-features`, `mvt` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) (needs its own issue) |
@@ -475,12 +475,12 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 ### `py-owslib` - OWSLib
 
 - **Family / tier**: notebooks-datascience / 1
-- **Status**: planned (awaiting-evidence), target release 2026.1
-- **Required tier**: none (intended on activation: nightly)
+- **Status**: active (activated), target release 2026.1
+- **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Proposed
-- **Lane binding**: py-owslib (planned-lane)
+- **Lane binding**: py-owslib (lane)
 - **Client version policy**: pip pin of `OWSLib` in the lane requirements file, resolved into a lockfile by #3392.
-- **Protocol surfaces**: `ogc-features`, `wfs`, `wms`, `wmts`
+- **Protocol surfaces**: `ogc-api-records`, `ogc-features`, `wfs`, `wms`, `wmts`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`
 - **Structurally not applicable**:
   - `CERT-RNDR`: Headless data client with no map canvas or table surface; rendering fidelity is not observable.
@@ -489,9 +489,9 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Licensing**: open-source - Installs unattended in a container or npm lockfile; no entitlement required.
 - **Runtime**: linux-container
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393.
-- **Evidence producer**: (none)
+- **Evidence producer**: docker/client-compat/owslib + tests/python/owslib_client
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3392
-- **Notes**: Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. #3386 and #3392 must not create duplicate OWSLib producers.
+- **Notes**: Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. The nightly Records suite emits an additional baseline. The bounded-roster workflow produces governed Records candidate evidence.
 
 ### `duckdb` - DuckDB Spatial
 

@@ -1446,7 +1446,7 @@
       "operationId": "discoverGeoServerService",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-discover"
     },
     {
@@ -1456,7 +1456,7 @@
       "operationId": "listGeoServerImportJobs",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs"
     },
     {
@@ -1466,7 +1466,7 @@
       "operationId": "getGeoServerImportJob",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs-jobid"
     },
     {
@@ -1476,7 +1476,7 @@
       "operationId": "cancelGeoServerImportJob",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-jobs-jobid-cancel"
     },
     {
@@ -1486,7 +1486,7 @@
       "operationId": "startGeoServerImport",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-start"
     },
     {

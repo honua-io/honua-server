@@ -10,6 +10,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
@@ -20,7 +21,8 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     private const double WebMercatorExtent = 20037508.342789244;
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithTestLicense(HonuaEdition.Pro);
+        .WithTestLicense(HonuaEdition.Pro)
+        .WithTestAuthorization();
 
     public async Task InitializeAsync()
     {
@@ -28,6 +30,52 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
+    public async Task SunShadow_ProtectedDataset_AnonymousRequestIsUnauthorized()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
+        using var client = _fixture.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            "/elevation/0/sun-shadow",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                timestamp = "2026-03-20T08:00:00Z",
+                maxShadowLengthMeters = 200.0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /elevation/{datasetId}/slice")]
+    public async Task Slice_ProtectedDataset_AnonymousRequestIsUnauthorized()
+    {
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] });
+        using var client = _fixture.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            "/elevation/0/slice",
+            new
+            {
+                startLon = 0.0,
+                startLat = 0.0,
+                endLon = 1.0,
+                endLat = 1.0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
