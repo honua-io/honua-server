@@ -49,17 +49,23 @@ public sealed partial class McpScopeAuthorizationTests
         }
     }
 
+    public enum CatalogCaller
+    {
+        Admin,
+        CatalogReader
+    }
+
     [IntegrationTheory]
-    [InlineData(McpTestTransport.Legacy, true, null)]
-    [InlineData(McpTestTransport.Modern, true, null)]
-    [InlineData(McpTestTransport.Legacy, false, "permission_denied")]
-    [InlineData(McpTestTransport.Modern, false, "permission_denied")]
+    [InlineData(McpTestTransport.Legacy, CatalogCaller.Admin, null)]
+    [InlineData(McpTestTransport.Modern, CatalogCaller.Admin, null)]
+    [InlineData(McpTestTransport.Legacy, CatalogCaller.CatalogReader, "permission_denied")]
+    [InlineData(McpTestTransport.Modern, CatalogCaller.CatalogReader, "permission_denied")]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task WorkflowDiscovery_DoesNotGrantFullExportAuthority(McpTestTransport transport, bool isAdmin, string? denialCode)
+    public async Task WorkflowDiscovery_DoesNotGrantFullExportAuthority(McpTestTransport transport, CatalogCaller caller, string? denialCode)
     {
-        var token = CreateToken("honua.mcp.full", isAdmin ? "admin" : _catalogReaderRole);
+        var token = CreateToken("honua.mcp.full", caller == CatalogCaller.Admin ? "admin" : _catalogReaderRole);
         await AssertCapabilitiesDiscoveredAsync(token, transport);
 
         await AssertOrdinaryCapabilitiesAsync(token, transport);
