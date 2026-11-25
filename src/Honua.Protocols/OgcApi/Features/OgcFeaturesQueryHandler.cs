@@ -436,7 +436,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 featureResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
                 if (!CanUseDirectFeatureWrite(outputFormat, linkTemplate))
                 {
-                    var fallbackCtx = new DirectFeaturePayloadContext { Resource = resource, AxisOrder = outputAxisOrder, GeometryServices = _geometryServices, ProjectedProperties = projectedProperties, LinkTemplate = linkTemplate, Schema = featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false) };
+                    var fallbackCtx = new DirectFeaturePayloadContext
+                    {
+                        Resource = resource,
+                        AxisOrder = outputAxisOrder,
+                        GeometryServices = _geometryServices,
+                        ProjectedProperties = projectedProperties,
+                        LinkTemplate = linkTemplate,
+                        Schema = new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false)
+                    };
                     features = MaterializeDirectFallbackFeatures(featureResult.Value.Items, fallbackCtx);
                 }
             }
