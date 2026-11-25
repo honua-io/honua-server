@@ -239,14 +239,31 @@ public sealed class GeocodingEntitlementGateTests
         Assert.True(payload.RootElement.TryGetProperty("address", out _));
     }
 
-    [IntegrationTheory]
-    [InlineData(null, false)]
-    [InlineData("Enterprise", true)]
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_AnonymousCaller_AdvertisesBatchOnlyWithEntitlement(
-        string? devGrantEdition,
-        bool supportsBatch)
+    public async Task GeocodeServerMetadata_AnonymousCallerWithoutEntitlement_DoesNotAdvertiseBatch()
+    {
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: null);
+
+        Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
+        Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_AnonymousCallerWithEnterprise_AdvertisesBatch()
+    {
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Enterprise");
+
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        Assert.True(locatorProperties.TryGetProperty("MaxBatchSize", out _));
+    }
+
+    private static async Task<JsonElement> GetAnonymousLocatorPropertiesAsync(string? devGrantEdition)
     {
         using var factory = CreateFactory(devGrantEdition);
         using var client = factory.CreateClient();
@@ -257,17 +274,9 @@ public sealed class GeocodingEntitlementGateTests
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var metadata = payload.RootElement;
         var capabilities = metadata.GetProperty("capabilities").GetString()!.Split(',');
-        var locatorProperties = metadata.GetProperty("locatorProperties");
         Assert.Contains("Suggest", capabilities);
         Assert.DoesNotContain("BatchGeocode", capabilities);
-        Assert.Equal(supportsBatch ? "true" : "false", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.Equal(supportsBatch, locatorProperties.TryGetProperty("MaxBatchSize", out _));
-        var hasSuggestedBatchSize = locatorProperties.TryGetProperty("SuggestedBatchSize", out var suggestedBatchSize);
-        Assert.Equal(supportsBatch, hasSuggestedBatchSize);
-        if (hasSuggestedBatchSize)
-        {
-            Assert.Equal(100, suggestedBatchSize.GetInt32());
-        }
+        return metadata.GetProperty("locatorProperties").Clone();
     }
 
     private static HttpRequestMessage CreateGeocodeRequest(string method, string path, string form)

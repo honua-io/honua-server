@@ -110,20 +110,19 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
-    [IntegrationTheory]
-    [InlineData("", false)]
-    [InlineData("Pro", true)]
+    [IntegrationTest]
     [Operation(Operations.Print)]
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
-    public async Task Execute_AnonymousPdfRequest_RequiresPdfEntitlement(string devGrantEdition, bool pdfEnabled)
+    public async Task Execute_AnonymousPdfRequestWithoutGrant_RequiresPdfEntitlement()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-            builder.UseSetting("HONUA_DEV_AUTH", "false")
-                .UseSetting("Licensing:DevGrantEdition", devGrantEdition));
+        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "");
         try
         {
             await fixture.InitializeAsync();
-            await AssertPdfEntitlementAsync(fixture.Client, pdfEnabled);
+            using var response = await RequestPdfAsync(fixture.Client);
+
+            await response.AssertGeoServicesErrorAsync(402);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("printing.pdf-output");
         }
         finally
         {
@@ -131,7 +130,34 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
         }
     }
 
-    private static async Task AssertPdfEntitlementAsync(HttpClient client, bool pdfEnabled)
+    [IntegrationTest]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
+    public async Task Execute_AnonymousPdfRequestWithPro_ReturnsPdfDocument()
+    {
+        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "Pro");
+        try
+        {
+            await fixture.InitializeAsync();
+            using var response = await RequestPdfAsync(fixture.Client);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            bytes.Should().StartWith("%PDF-"u8.ToArray());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static WebAppFixture CreateAnonymousPdfFixture(string devGrantEdition)
+        => new WebAppFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("Licensing:DevGrantEdition", devGrantEdition));
+
+    private static async Task<HttpResponseMessage> RequestPdfAsync(HttpClient client)
     {
         var webMapJson = CreateMinimalWebMapJson();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -141,21 +167,9 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        using var response = await client.PostAsync(
+        return await client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
-
-        if (!pdfEnabled)
-        {
-            await response.AssertGeoServicesErrorAsync(402);
-            (await response.Content.ReadAsStringAsync()).Should().Contain("printing.pdf-output");
-            return;
-        }
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-        bytes.Should().StartWith("%PDF-"u8.ToArray());
     }
 
     [IntegrationTest]
