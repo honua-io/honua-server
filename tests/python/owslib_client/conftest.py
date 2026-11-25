@@ -72,10 +72,10 @@ RASTER_NA_REASON = (
 )
 
 RECORDS_APPLICABLE = frozenset({
-    "CERT-DISC-01", "CERT-DISC-02", "CERT-PAGE-01", "CERT-PAGE-02",
+    "CERT-CONN-02", "CERT-DISC-01", "CERT-DISC-02", "CERT-PAGE-01", "CERT-PAGE-02",
 })
 RECORDS_NA_REASON = (
-    "The Records lane certifies catalog discovery, metadata, and record paging."
+    "The Records lane certifies transport, catalog discovery, metadata, and record paging."
 )
 
 PROTOCOL_SPECS: dict[str, tuple[str, frozenset[str], str]] = {

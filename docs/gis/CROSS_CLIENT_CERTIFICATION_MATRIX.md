@@ -57,7 +57,7 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-RNDR-SPR-01 | RNDR | Sprite/icon resolves and draws | MVT | screenshot+pass/fail |
 | CERT-RNDR-URL-01 | RNDR | Style URL/metadata is consumed | FS, MVT | pass/fail |
 
-† The OWSLib Records nightly suite exercises discovery and pagination. It marks connectivity, TLS, authentication, and structured error cases as `not_applicable`. The bounded-roster workflow emits governed Records candidate receipts.
+† The OWSLib Records nightly suite exercises discovery and pagination. The transport check records TLS as `not_applicable` on plain HTTP and verifies the certificate on HTTPS. Connectivity, authentication, and structured error cases are `not_applicable`. The bounded-roster workflow emits governed Records candidate receipts.
 
 ‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02 (#464). The visual / style certification slice ([`visual-style-certification-slice.md`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/visual-style-certification-slice.md)) tracks the additional `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs.
 

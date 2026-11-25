@@ -144,6 +144,7 @@
         "mapserver",
         "ogc-features",
         "ogc-maps",
+        "ogc-api-records",
         "ogc-tiles",
         "odata",
         "mvt",
@@ -1244,6 +1245,7 @@
       "sourceStatus": "Proposed",
       "clientVersionPolicy": "pip pin of `OWSLib` in the lane requirements file, resolved into a lockfile by #3392.",
       "protocolSurfaces": [
+        "ogc-api-records",
         "ogc-features",
         "wfs",
         "wms",
@@ -1303,7 +1305,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. #3386 and #3392 must not create duplicate OWSLib producers."
+      "notes": "Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. The nightly Records suite emits an additional baseline. The bounded-roster workflow produces governed Records candidate evidence."
     },
     {
       "id": "duckdb",

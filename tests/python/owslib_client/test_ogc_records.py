@@ -3,7 +3,7 @@
 
 """OGC API Records interoperability with OWSLib."""
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import pytest
 from owslib.ogcapi.records import Records
@@ -15,6 +15,24 @@ CATALOG_ID = "honua-catalog"
 @pytest.fixture(scope="session")
 def records_client(base_url):
     return Records(f"{base_url}/ogc/records")
+
+
+@pytest.mark.cert("CERT-CONN-02")
+def test_conn02_transport(base_url, records_collector):
+    url = f"{base_url}/ogc/records"
+    scheme = urlsplit(url).scheme
+    assert scheme in {"http", "https"}
+    with http_get(url, timeout=30, verify=True, allow_redirects=False) as response:
+        assert response.status_code == 200
+
+    records_collector.record(
+        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
+        notes=(
+            "OWSLib read the Records landing page over HTTPS with certificate verification enabled."
+            if scheme == "https" else "Configured HTTP has no TLS handshake."
+        ),
+        evidence_ref=url,
+    )
 
 
 @pytest.mark.cert("CERT-DISC-01")

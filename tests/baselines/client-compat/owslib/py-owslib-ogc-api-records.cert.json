@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "20261125T041344Z",
-  "run_date": "2026-11-25T04:13:44.417395+00:00",
+  "run_id": "20261125T053649Z",
+  "run_date": "2026-11-25T05:36:49.261006+00:00",
   "server_version": "2026.1.0-nightly.g532565b+532565b",
   "server_commit": "532565bc7215d4b9ce9657bc110cbd0366076e31",
   "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
@@ -18,7 +18,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -28,8 +28,8 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
-      "evidence_ref": "",
+      "notes": "Configured HTTP has no TLS handshake.",
+      "evidence_ref": "http://honua:5000/ogc/records",
       "protocol_version": null
     },
     {
@@ -38,7 +38,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -48,14 +48,14 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 1,
+      "duration_ms": 2,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "",
@@ -65,7 +65,7 @@
     {
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
-      "duration_ms": 2,
+      "duration_ms": 1,
       "measured_count": null,
       "measured_delta": null,
       "notes": "",
@@ -78,7 +78,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -88,7 +88,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -98,7 +98,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -108,14 +108,14 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 4,
+      "duration_ms": 10,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "",
@@ -125,7 +125,7 @@
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 6,
+      "duration_ms": 7,
       "measured_count": null,
       "measured_delta": null,
       "notes": "",
@@ -138,7 +138,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -148,7 +148,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -158,7 +158,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -168,7 +168,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -178,7 +178,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -188,7 +188,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -198,7 +198,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -208,7 +208,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -218,7 +218,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -228,7 +228,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -238,7 +238,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -248,7 +248,7 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "The Records lane certifies catalog discovery, metadata, and record paging.",
+      "notes": "The Records lane certifies transport, catalog discovery, metadata, and record paging.",
       "evidence_ref": "",
       "protocol_version": null
     }
