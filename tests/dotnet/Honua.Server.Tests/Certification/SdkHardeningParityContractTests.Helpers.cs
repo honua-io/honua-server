@@ -115,13 +115,16 @@ public sealed partial class SdkHardeningParityContractTests
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 return Task.CompletedTask;
             },
-            policyStore,
-            Options.Create(new RateLimitingOptions
+            new RateLimitingDependencies
             {
-                Enabled = true,
-                GlobalRequestsPerMinute = limit,
-            }),
-            NullLogger<RateLimitingMiddleware>.Instance);
+                PolicyStore = policyStore,
+                Options = Options.Create(new RateLimitingOptions
+                {
+                    Enabled = true,
+                    GlobalRequestsPerMinute = limit,
+                }),
+                Logger = NullLogger<RateLimitingMiddleware>.Instance,
+            });
     }
 
     private static TestHttpScope CreateHttpScope(string path, string? remoteIp = null, string? subject = null)
