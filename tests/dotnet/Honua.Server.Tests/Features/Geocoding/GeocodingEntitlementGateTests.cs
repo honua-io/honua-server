@@ -242,22 +242,10 @@ public sealed class GeocodingEntitlementGateTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithoutAnyLicense_Succeeds()
+    public async Task GeocodeServerMetadata_AnonymousCallerWithoutEntitlement_DoesNotAdvertiseBatch()
     {
-        // Metadata/discovery stays Community, but it must not advertise the gated batch
-        // operation when the active edition cannot call it.
-        using var factory = CreateFactory(devGrantEdition: null);
-        using var client = factory.CreateClient();
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Community");
 
-        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
         Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
         Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
@@ -266,22 +254,29 @@ public sealed class GeocodingEntitlementGateTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithEnterpriseEntitlement_AdvertisesBatch()
+    public async Task GeocodeServerMetadata_AnonymousCallerWithEnterprise_AdvertisesBatch()
     {
-        using var factory = CreateFactory(devGrantEdition: "Enterprise");
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Enterprise");
+
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        Assert.True(locatorProperties.TryGetProperty("MaxBatchSize", out _));
+    }
+
+    private static async Task<JsonElement> GetAnonymousLocatorPropertiesAsync(string devGrantEdition)
+    {
+        using var factory = CreateFactory(devGrantEdition);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
-        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        var metadata = payload.RootElement;
+        var capabilities = metadata.GetProperty("capabilities").GetString()!.Split(',');
+        Assert.Contains("Suggest", capabilities);
+        Assert.DoesNotContain("BatchGeocode", capabilities);
+        return metadata.GetProperty("locatorProperties").Clone();
     }
 
     private static HttpRequestMessage CreateGeocodeRequest(string method, string path, string form)
@@ -306,6 +301,8 @@ public sealed class GeocodingEntitlementGateTests
         {
             TestWebApplicationFactory.ConfigureForTests(builder);
 
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Licensing:Mode", "Enabled");
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
