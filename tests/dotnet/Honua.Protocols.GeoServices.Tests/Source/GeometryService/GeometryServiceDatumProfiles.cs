@@ -5,7 +5,7 @@ using Honua.TestKit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-public sealed class GeometryServiceDatumProfiles : IAsyncLifetime
+public sealed class GeometryServiceDatumProfiles : IAsyncLifetime, IAsyncDisposable
 {
     private readonly DatumGridPostgresFixture _withGrid = new();
     private readonly DatumGridPostgresFixture _withoutGrid = new();
@@ -26,6 +26,8 @@ public sealed class GeometryServiceDatumProfiles : IAsyncLifetime
         await (_withoutGridInitialization ??= _withoutGrid.InitializeAsync(includeNadconGrid: false));
         return _withoutGrid;
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     public async Task DisposeAsync()
     {
