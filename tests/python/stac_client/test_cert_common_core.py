@@ -621,17 +621,21 @@ def test_cert_page_01_first_page_size(
 
 
 @pytest.mark.cert("CERT-PAGE-02")
-def test_cert_page_02_next_page_is_disjoint(
+def test_cert_page_02_next_page_preserves_item_order(
     api_client: Client,
     cert_collector: CertificationEvidenceCollector,
 ) -> None:
-    """Following the ``next`` link yields a disjoint page."""
+    """Following the ``next`` link yields the same items as a larger first page."""
     started = time.perf_counter()
 
     search = api_client.search(collections=[COLLECTION_ID], limit=canonical_fixture.PAGE_SIZE)
     pages = search.pages()
-    first = list(next(iter(pages)).items)
-    second = list(next(iter(pages)).items)
+    first = list(next(pages).items)
+    second = list(next(pages).items)
+    larger_search = api_client.search(
+        collections=[COLLECTION_ID], limit=2 * canonical_fixture.PAGE_SIZE,
+    )
+    expected = list(next(larger_search.pages()).items)
 
     first_ids = set(_item_ids(first))
     second_ids = set(_item_ids(second))
@@ -641,6 +645,7 @@ def test_cert_page_02_next_page_is_disjoint(
     assert not (first_ids & second_ids), (
         f"pages overlap on {sorted(first_ids & second_ids)}"
     )
+    assert [item.id for item in first + second] == [item.id for item in expected]
 
     cert_collector.record(
         "CERT-PAGE-02",
@@ -649,7 +654,7 @@ def test_cert_page_02_next_page_is_disjoint(
         measured_count=len(second),
         notes=(
             f"Page 1 ids {sorted(first_ids)} and page 2 ids {sorted(second_ids)} are disjoint; "
-            "pystac-client followed the server's next link without repeating an item."
+            "pystac-client followed the next link and matched the larger page in order."
         ),
     )
 

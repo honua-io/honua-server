@@ -92,6 +92,10 @@
     },
     {
       "client_lane": "py-owslib",
+      "protocol": "ogc-api-records"
+    },
+    {
+      "client_lane": "py-owslib",
       "protocol": "wfs"
     },
     {

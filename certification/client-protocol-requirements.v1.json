@@ -1739,11 +1739,10 @@
         "producerBinding": {
           "status": "present",
           "producer": {
-            "workflow": ".github/workflows/client-roster-certification.yml",
-            "runner": "certification/bounded-roster/run-roster.sh",
-            "testIds": [
-              "client-cert/owslib/ogc-api-records/serve.ogc-api-records"
-            ]
+            "envelopeClientLane": "py-owslib",
+            "envelopeProtocol": "ogc-api-records",
+            "envelopeClientVersion": "0.36.0",
+            "baseline": "tests/baselines/client-compat/owslib/py-owslib-ogc-api-records.cert.json"
           },
           "reasonCode": null,
           "reason": null

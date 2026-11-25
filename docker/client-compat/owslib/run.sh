@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the OWSLib canonical OGC client certification suite against the Compose
 # `honua` service and writes one .cert.json envelope per protocol
-# (ogc-features, wfs, wms, wmts) into /output for the baseline-diff step.
+# (ogc-features, ogc-api-records, wfs, wms, wmts) into /output for the baseline-diff step.
 #
 # Compose (docker/client-compat/compose.yml, `owslib` service) must mount
 # ../../tests:/workspace/tests:ro and ../../artifacts/client-interop/owslib:/output.

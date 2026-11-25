@@ -36,14 +36,14 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-CONN-02 | CONN | TLS handshake completes | All | pass/fail |
 | CERT-AUTH-01 | AUTH | Unauthenticated request returns 401/403 | All | pass/fail |
 | CERT-AUTH-02 | AUTH | Valid credential grants access | All | pass/fail |
-| CERT-DISC-01 | DISC | List available services/collections | FS, OGC, OData | pass/fail+count |
-| CERT-DISC-02 | DISC | Retrieve single service/collection metadata | FS, OGC, OData | pass/fail |
+| CERT-DISC-01 | DISC | List available services/collections | FS, OGC, OGC Records, OData | pass/fail+count |
+| CERT-DISC-02 | DISC | Retrieve single service/collection metadata | FS, OGC, OGC Records, OData | pass/fail |
 | CERT-SCHM-01 | SCHM | Retrieve field/property schema | FS, OGC, OData | pass/fail |
 | CERT-SCHM-02 | SCHM | Geometry type reported correctly | FS, OGC | pass/fail |
 | CERT-QFLT-01 | QFLT | Attribute equality filter returns subset | FS, OGC, OData | pass/fail+count |
 | CERT-QFLT-02 | QFLT | Spatial bbox/geometry filter returns subset | FS, OGC | pass/fail+count |
-| CERT-PAGE-01 | PAGE | First page with limit returns expected count | FS, OGC, OData | pass/fail+count |
-| CERT-PAGE-02 | PAGE | Second page offset returns different features | FS, OGC, OData | pass/fail |
+| CERT-PAGE-01 | PAGE | First page with limit returns expected count | FS, OGC, OGC Records, OData | pass/fail+count |
+| CERT-PAGE-02 | PAGE | Second page offset returns different features | FS, OGC, OGC Records, OData | pass/fail |
 | CERT-GEOM-01 | GEOM | Returned coordinates within tolerance | FS, OGC | pass/fail+delta |
 | CERT-GEOM-02 | GEOM | Output CRS/SR matches request | FS, OGC | pass/fail |
 | CERT-ERRH-01 | ERRH | Invalid endpoint returns structured error | All | pass/fail |
@@ -81,6 +81,7 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | FS | GeoServices REST FeatureServer / MapServer | `featureserver`, `mapserver` |
 | OGC | OGC API Features | `ogc-features` |
 | OGC Maps | OGC API Maps | `ogc-maps` |
+| OGC Records | OGC API Records | `ogc-api-records` |
 | OGC Tiles | OGC API Tiles | `ogc-tiles` |
 | OData | OData v4 | `odata` |
 | MVT | Vector Tiles (Mapbox Vector Tiles) | `mvt` |
@@ -300,6 +301,9 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-GPD-WFS-TYP-02 | NB-GPD | created_at='2024-01-01T12:00:00+00:00', event_date='2024-02-01', event_time='12:34:56.0000000' - all parse to the seeded instants | wfs | pass/fail |
 
 #### `py-owslib` — OWSLib (71 cases)
+
+The OGC API Records envelope covers the common-core discovery and pagination
+cases (CERT-DISC-01/02 and CERT-PAGE-01/02) through OWSLib's Records client.
 
 | Test Case ID | Category | Description | Protocol(s) | Evidence |
 |---|---|---|---|---|
