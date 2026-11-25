@@ -278,7 +278,9 @@ public sealed partial class AdminAuthEndpointsTests
                 && value.Contains("SameSite=Lax", StringComparison.OrdinalIgnoreCase)
                 && value.Contains("Secure", StringComparison.OrdinalIgnoreCase));
             var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var state = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
+            var query = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query);
+            var state = query["state"].ToString();
+            _oidcHost.Stub.NonceOverride = query["nonce"].ToString();
             using var callback = await browser.GetAsync(
                 "/admin/auth/callback?code=code-123&returnTo=https://unlisted.example.com&state=" + state);
             callback.StatusCode.Should().Be(HttpStatusCode.Redirect);

@@ -17,10 +17,12 @@ internal static class ObservabilityEventEndpoints
     public static void MapObservabilityEventEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/events", HandleListEvents)
             .WithDisplayName("List Operate Events")
@@ -28,8 +30,7 @@ internal static class ObservabilityEventEndpoints
 
         group.MapGet("/logs", HandleListLogs)
             .WithDisplayName("List Recent Server Logs")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     private static async Task<IResult> HandleListEvents(

@@ -264,6 +264,12 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics."]);
         }
 
+        var outStatsVisibilityError = ValidateOutStatisticsVisible(context, outStatistics, resource);
+        if (outStatsVisibilityError != null)
+        {
+            return outStatsVisibilityError;
+        }
+
         outStatistics = AnalyticsFeatureQueryFactory.ApplyStatisticFieldTypes(outStatistics, resource);
 
         // Feature query (where + SQL filter + objectIds + spatial + temporal).

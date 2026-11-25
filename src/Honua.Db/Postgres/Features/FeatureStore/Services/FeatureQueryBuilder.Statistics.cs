@@ -170,7 +170,7 @@ internal sealed partial class FeatureQueryBuilder
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time;
 
-    private static string BuildEpochAwareTemporalExpression(
+    internal static string BuildEpochAwareTemporalExpression(
         string fieldExpression,
         MetadataV2FieldType fieldType)
     {

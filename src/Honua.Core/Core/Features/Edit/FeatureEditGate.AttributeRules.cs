@@ -64,7 +64,12 @@ public static partial class FeatureEditGate
     private static ValidationResult<ImmutableDictionary<string, object?>> ValidateCalculatedFields(
         MetadataV2Object resource, AttributeRuleApplicationResult result)
     {
-        var calculated = result.CalculatedFields.Distinct(StringComparer.OrdinalIgnoreCase)
+        var trackingFields = resource.Editing is null
+            ? null
+            : EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var calculated = result.CalculatedFields
+            .Where(field => trackingFields is null || !trackingFields.Contains(field))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToDictionary(field => field, field => result.Attributes[field], StringComparer.OrdinalIgnoreCase);
         // Server-derived writes may target non-editable fields, but still obey their schema.
         return FeatureAttributeValidator.Validate(resource, calculated);

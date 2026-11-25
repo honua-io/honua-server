@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Text;
+
 namespace Honua.Core.Features.Edit;
 
 public static partial class FeatureAttributeValidator
 {
-    private static long? ReadInt64(object value) => value switch
+    internal static long? ReadInt64(object value) => value switch
     {
         sbyte number => number,
         byte number => number,
@@ -22,7 +24,7 @@ public static partial class FeatureAttributeValidator
         _ => null,
     };
 
-    private static double? ReadDouble(object value) => value switch
+    internal static double? ReadDouble(object value) => value switch
     {
         float number => number,
         double number => number,
@@ -64,15 +66,5 @@ public static partial class FeatureAttributeValidator
     }
 
     private static bool TryValidateBase64(string value)
-    {
-        try
-        {
-            Convert.FromBase64String(value);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
+        => Base64.IsValid(value);
 }

@@ -95,6 +95,20 @@ public sealed class GeoServicesRestPaginationTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task QueryAsync_PastEndEmptyPageWithOffset_QueriesCountInsteadOfReturningOffset()
+    {
+        var client = new PagingGeoServicesRestFeatureClient(upstreamMaxRecordCount: 2, totalFeatures: 5);
+        var reader = CreateReader(client);
+
+        var result = await reader.QueryAsync(LayerId, new FeatureQuery { Offset = 25, Limit = 10 });
+
+        Assert.Empty(result.Items);
+        Assert.False(result.HasMoreResults);
+        Assert.Equal(5, result.TotalCount);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task QueryAsync_UpstreamAlwaysFlagsMoreButReturnsEmptyPage_TerminatesWithoutHang()
     {
         // A hostile/buggy upstream keeps flagging exceededTransferLimit but returns

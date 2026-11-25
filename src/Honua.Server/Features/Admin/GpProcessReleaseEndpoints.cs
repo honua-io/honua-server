@@ -5,6 +5,7 @@ using System.Text;
 using Honua.Geoprocessing.ProcessRelease;
 using Honua.Geoprocessing.Release;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,10 +19,12 @@ public static class GpProcessReleaseEndpoints
     public static void MapGpProcessReleaseEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/gp/process-releases")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Geoprocessing")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapPost("", HandlePublishRelease)
             .WithDisplayName("Publish GP Process Release")

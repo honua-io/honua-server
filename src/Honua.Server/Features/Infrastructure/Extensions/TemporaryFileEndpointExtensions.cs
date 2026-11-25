@@ -41,6 +41,7 @@ public static class TemporaryFileEndpointExtensions
         }
 
         var (data, contentType) = result.Value;
+        context.Response.Headers.CacheControl = "private, no-store";
         return Results.File(data, contentType);
     }
 }

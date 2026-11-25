@@ -67,6 +67,8 @@ public sealed class SceneAssetHydratorTests : IDisposable
 
         File.Exists(Path.Join(localRoot, SceneAssetHydration.MarkerFileName)).Should().BeTrue(
             "hydration must stamp the local cache with a version marker.");
+        hydrator.ActiveLockCount.Should().Be(0,
+            "idle scene locks must be removed and disposed after hydration finishes.");
     }
 
     [UnitTest]

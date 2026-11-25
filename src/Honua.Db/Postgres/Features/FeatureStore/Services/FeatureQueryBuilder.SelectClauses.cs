@@ -307,19 +307,7 @@ internal sealed partial class FeatureQueryBuilder
         HashSet<string> maskedFields,
         ref int paramIndex,
         List<object> parameters)
-    {
-        if (maskedFields.Count == 0)
-        {
-            return DatabaseSchema.AttributesColumn;
-        }
-
-        var maskParamIndex = paramIndex++;
-        parameters.Add(maskedFields.Select(static field => field.ToUpperInvariant()).ToArray());
-        // JSON object keys are case-sensitive while policy field matching is not. Rebuild
-        // the object with a case-insensitive comparison so a differently-cased policy can
-        // never fail open on wildcard/default projections.
-        return $"(SELECT COALESCE(jsonb_object_agg(masked_attr.key, masked_attr.value), '{{}}'::jsonb) FROM jsonb_each({DatabaseSchema.AttributesColumn}) AS masked_attr(key, value) WHERE NOT (UPPER(masked_attr.key) = ANY(${maskParamIndex}::text[])))";
-    }
+        => ApplyMaskRemoval(DatabaseSchema.AttributesColumn, maskedFields, ref paramIndex, parameters);
 
     private static (string PublicIdSelect, string AttributesSelect) BuildRawAttributeSelectExpressions(
         FeatureQuery query,
@@ -370,7 +358,10 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var maskParamIndex = paramIndex++;
-        parameters.Add(maskedFields.ToArray());
-        return $"({attributesExpression} - ${maskParamIndex})";
+        parameters.Add(maskedFields.Select(static field => field.ToUpperInvariant()).ToArray());
+        // JSON object keys are case-sensitive while policy field matching is not. Rebuild
+        // the object with a case-insensitive comparison so a differently-cased policy can
+        // never fail open on wildcard/default or raw projections.
+        return $"(SELECT COALESCE(jsonb_object_agg(masked_attr.key, masked_attr.value), '{{}}'::jsonb) FROM jsonb_each({attributesExpression}) AS masked_attr(key, value) WHERE NOT (UPPER(masked_attr.key) = ANY(${maskParamIndex}::text[])))";
     }
 }

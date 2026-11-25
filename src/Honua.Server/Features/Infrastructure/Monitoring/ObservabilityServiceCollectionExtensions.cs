@@ -13,6 +13,7 @@ using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Operations.Status;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
@@ -152,6 +153,14 @@ internal static class ObservabilityServiceCollectionExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpClient(BackgroundOtlpProbe.HttpClientName);
+        services.TryAddSingleton(sp => new OtlpProbeDependencies
+        {
+            TracingOptions = sp.GetRequiredService<IOptions<TracingOptions>>(),
+            Configuration = sp.GetRequiredService<IConfiguration>(),
+            HttpClientFactory = sp.GetRequiredService<IHttpClientFactory>(),
+            TimeProvider = sp.GetService<TimeProvider>(),
+            Logger = sp.GetService<ILogger<BackgroundOtlpProbe>>(),
+        });
         services.AddSingleton<BackgroundOtlpProbe>();
         services.AddHostedService(sp => sp.GetRequiredService<BackgroundOtlpProbe>());
 

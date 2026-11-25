@@ -21,4 +21,6 @@ internal sealed record CdnPurgeCoordination
     public ICdnPurgeBudget? Budget { get; init; }
 
     public CdnPurgeReliability? Reliability { get; init; }
+
+    public CancellationToken ApplicationStopping { get; init; }
 }

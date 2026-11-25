@@ -205,7 +205,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parsed.Length > 0)
             {
-                var fieldError = ValidateFieldNameList(context, "groupByFields", parsed);
+                var fieldError = ValidateFieldNameList(context, "groupByFields", parsed)
+                    ?? ValidateFieldsVisible(context, new FieldVisibilityCheck { ParameterName = "groupByFields", Fields = parsed, Resource = resource });
                 if (fieldError != null)
                 {
                     return fieldError;
@@ -229,6 +230,12 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid outStatistics",
                 ["outStatistics requires dissolve=true; per-feature buffers cannot carry aggregate statistics."]);
+        }
+
+        var outStatsVisibilityError = ValidateOutStatisticsVisible(context, outStatistics, resource);
+        if (outStatsVisibilityError != null)
+        {
+            return outStatsVisibilityError;
         }
 
         outStatistics = AnalyticsFeatureQueryFactory.ApplyStatisticFieldTypes(outStatistics, resource);

@@ -86,7 +86,7 @@ internal static class MetadataReleaseControlEndpoints
         {
             var operation = await controlService.CreateAsync(
                     plan,
-                    ResolveRequestedBy(context),
+                    AdminPrincipalHelpers.ResolveRequestedBy(context),
                     request.Reason,
                     request.IdempotencyKey,
                     request.CorrelationId,
@@ -120,16 +120,5 @@ internal static class MetadataReleaseControlEndpoints
                 detail: ControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
-    }
-
-    private static string? ResolveRequestedBy(HttpContext context)
-    {
-        if (!string.IsNullOrWhiteSpace(context.User.Identity?.Name))
-        {
-            return context.User.Identity!.Name;
-        }
-
-        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
-        return string.IsNullOrWhiteSpace(apiKeyId) ? null : $"api-key:{apiKeyId}";
     }
 }

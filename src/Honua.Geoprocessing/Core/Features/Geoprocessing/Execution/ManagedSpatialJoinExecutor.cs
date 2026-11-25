@@ -91,7 +91,7 @@ internal sealed class ManagedSpatialJoinExecutor(
         }
 
         // JOIN_COUNT is always emitted so a zero-match target is distinguishable.
-        Upsert(merged, "JOIN_COUNT", accumulator.Count);
+        OverlayExecutorSupport.Upsert(merged, "JOIN_COUNT", accumulator.Count);
         foreach (var spec in stats)
         {
             if (spec.Kind == StatKind.Count)
@@ -100,22 +100,10 @@ internal sealed class ManagedSpatialJoinExecutor(
             }
 
             var (name, value) = accumulator.Resolve(spec);
-            Upsert(merged, name, value);
+            OverlayExecutorSupport.Upsert(merged, name, value);
         }
 
         return new Feature(target.Geometry, merged);
-    }
-
-    private static void Upsert(AttributesTable table, string name, object? value)
-    {
-        if (table.Exists(name))
-        {
-            table[name] = value;
-        }
-        else
-        {
-            table.Add(name, value);
-        }
     }
 
     private static bool Matches(NtsGeometry? joinGeometry, NtsGeometry targetGeometry, SpatialJoinPredicate predicate)

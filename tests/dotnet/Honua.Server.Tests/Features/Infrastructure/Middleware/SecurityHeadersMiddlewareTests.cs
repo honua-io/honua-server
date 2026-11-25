@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -157,6 +159,36 @@ public class SecurityHeadersMiddlewareTests
         // Assert
         Assert.Same(builder, result);
         await Task.CompletedTask;
+    }
+
+    [UnitTest]
+    public async Task SecurityHeadersAndCorrelationId_SurviveDownstreamResponseClear()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSecurityHeaders(_ => { });
+
+        await using var app = builder.Build();
+        app.UseSecurityHeaders();
+        app.UseCorrelationId();
+        app.Use(async (HttpContext context, RequestDelegate _) =>
+        {
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("bad request");
+        });
+        await app.StartAsync();
+
+        var client = app.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test");
+        request.Headers.Add("X-Correlation-ID", "survives-clear-123");
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+        Assert.True(response.Headers.Contains("Content-Security-Policy"));
+        Assert.Equal("survives-clear-123", response.Headers.GetValues("X-Correlation-ID").Single());
     }
 
     private static SecurityHeadersMiddleware BuildMiddleware(SecurityHeadersOptions options)

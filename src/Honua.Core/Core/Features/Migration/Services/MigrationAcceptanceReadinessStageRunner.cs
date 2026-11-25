@@ -3,6 +3,8 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -265,19 +267,25 @@ public static class MigrationAcceptanceReadinessStageRunner
             {
                 Stage = ScanStage,
                 ArtifactKind = scanEntry.Inventory.ArtifactKind,
-                ArtifactHash = ComputeArtifactHash(scanEntry.Inventory)
+                ArtifactHash = ComputeArtifactHash(
+                    scanEntry.Inventory,
+                    MigrationReadinessArtifactHashJsonContext.Default.MigrationSourceInventoryArtifact)
             },
             new()
             {
                 Stage = ApplyStage,
                 ArtifactKind = applyEntry.Outcome.Manifest.ArtifactKind,
-                ArtifactHash = ComputeArtifactHash(applyEntry.Outcome.Manifest)
+                ArtifactHash = ComputeArtifactHash(
+                    applyEntry.Outcome.Manifest,
+                    MigrationReadinessArtifactHashJsonContext.Default.MigrationManifestArtifact)
             },
             new()
             {
                 Stage = ParityStage,
                 ArtifactKind = parityEntry.Outcome.Evidence.ArtifactKind,
-                ArtifactHash = ComputeArtifactHash(parityEntry.Outcome.Evidence),
+                ArtifactHash = ComputeArtifactHash(
+                    parityEntry.Outcome.Evidence,
+                    MigrationReadinessArtifactHashJsonContext.Default.MigrationParityEvidenceArtifact),
                 ReplayToken = parityEntry.Outcome.ReplayToken
             }
         };
@@ -321,27 +329,12 @@ public static class MigrationAcceptanceReadinessStageRunner
         };
     }
 
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code",
-        Justification = "Hash artifact for deterministic replay token; serializer reads public properties only and is not part of the wire protocol.")]
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-        "AOT",
-        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling",
-        Justification = "Hash artifact for deterministic replay token; the AOT host registers the three artifact types via ImportJsonContext source-gen used elsewhere.")]
-    private static string ComputeArtifactHash<T>(T artifact)
+    private static string ComputeArtifactHash<T>(T artifact, JsonTypeInfo<T> typeInfo)
     {
-        var json = JsonSerializer.SerializeToUtf8Bytes(artifact, ArtifactHashJsonOptions);
+        var json = JsonSerializer.SerializeToUtf8Bytes(artifact, typeInfo);
         var hash = SHA256.HashData(json);
         return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
-
-    private static readonly JsonSerializerOptions ArtifactHashJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        WriteIndented = false
-    };
 
     private static string ComputeReplayToken(
         string fixtureId,
@@ -390,4 +383,15 @@ public static class MigrationAcceptanceReadinessStageRunner
         var hash = SHA256.HashData(stream.ToArray());
         return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
+}
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    WriteIndented = false)]
+[JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
+[JsonSerializable(typeof(MigrationManifestArtifact))]
+[JsonSerializable(typeof(MigrationParityEvidenceArtifact))]
+internal sealed partial class MigrationReadinessArtifactHashJsonContext : JsonSerializerContext
+{
 }

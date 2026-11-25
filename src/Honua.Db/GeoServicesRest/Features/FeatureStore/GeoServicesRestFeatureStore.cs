@@ -187,7 +187,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         // (SearchEndpoints.ExecuteSearchAcrossPublicationsAsync, OGC Features
         // next-link computation) can report an accurate numberMatched.
         long totalCount;
-        if (!exceededTransferLimit)
+        if (!exceededTransferLimit && !(built.Length == 0 && baseOffset > 0))
         {
             totalCount = baseOffset + built.Length;
         }

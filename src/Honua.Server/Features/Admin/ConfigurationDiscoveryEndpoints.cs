@@ -19,7 +19,8 @@ internal static class ConfigurationDiscoveryEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Configuration")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = group.MapGet("/discover", HandleDiscoverConfigurationAsync)
             .WithName("DiscoverConfiguration")

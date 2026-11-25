@@ -2,10 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -16,15 +13,15 @@ using Npgsql;
 namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 
-internal sealed class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
+internal sealed partial class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
 {
     private readonly QueryCacheOptions _options;
     private readonly ILogger<PreparedStatementCache> _logger;
-    private readonly ConcurrentDictionary<string, StatementMetrics> _executionCounts = new();
-    private readonly ConcurrentDictionary<(string ConnectionId, string StatementHash), CachedStatement> _cache = new();
-    private readonly ConcurrentDictionary<string, int> _connectionCounts = new();
+    private readonly ConcurrentDictionary<StatementHash, StatementMetrics> _executionCounts = new();
+    private readonly ConcurrentDictionary<(int ConnectionId, StatementHash StatementHash), CachedStatement> _cache = new();
+    private readonly ConcurrentDictionary<int, int> _connectionCounts = new();
     // Tracks which connection IDs already have a StateChange subscription so we only subscribe once.
-    private readonly ConcurrentDictionary<string, byte> _subscribedConnections = new();
+    private readonly ConcurrentDictionary<int, byte> _subscribedConnections = new();
     private readonly Timer _cleanupTimer;
     private bool? _prepareSupported;
     private volatile bool _disposed;
@@ -124,6 +121,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     public sealed class CachedStatement : IDisposable
     {
+        private readonly object _syncLock = new();
+        private bool _disposed;
         private int _hitCount;
         private long _totalExecutionTimeMs;
 
@@ -170,9 +169,31 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return (hitRate * performanceScore * PlanStabilityScore) / Math.Log10(recentUsage + 1);
         }
 
+        public NpgsqlCommand? TryCloneCommand(NpgsqlConnection connection)
+        {
+            lock (_syncLock)
+            {
+                if (_disposed)
+                {
+                    return null;
+                }
+
+                return CloneCommand(Command, connection);
+            }
+        }
+
         public void Dispose()
         {
-            Command.Dispose();
+            lock (_syncLock)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                Command.Dispose();
+            }
         }
     }
 
@@ -213,24 +234,23 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         if (configureParameters == null && sql.Contains('$', StringComparison.Ordinal))
             return null;
 
-        var statementHash = GetStatementHash(sql);
+        var statementHash = StatementHash.Compute(sql);
         var connectionId = GetConnectionId(connection);
         var cacheKey = (connectionId, statementHash);
 
-        // Update execution metrics
-        var metrics = _executionCounts.AddOrUpdate(statementHash,
-            _ => new StatementMetrics
+        // Update execution metrics via TryGetValue fast path to avoid closure allocation on hits
+        if (!_executionCounts.TryGetValue(statementHash, out var metrics))
+        {
+            metrics = _executionCounts.GetOrAdd(statementHash, static (_, querySql) => new StatementMetrics
             {
-                ExecutionCount = 1,
+                ExecutionCount = 0,
                 LastUsed = DateTime.UtcNow,
-                ComplexityScore = AnalyzeQueryComplexity(sql) // Analyze complexity for intelligent caching
-            },
-            (_, existing) =>
-            {
-                existing.IncrementExecutionCount();
-                existing.LastUsed = DateTime.UtcNow;
-                return existing;
-            });
+                ComplexityScore = AnalyzeQueryComplexity(querySql)
+            }, sql);
+        }
+
+        metrics.IncrementExecutionCount();
+        metrics.LastUsed = DateTime.UtcNow;
 
         // Check if we have a cached prepared statement
         if (_cache.TryGetValue(cacheKey, out var cached))
@@ -238,15 +258,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             cached.LastUsed = DateTime.UtcNow;
             cached.IncrementHitCount();
 
-            if (_options.EnablePerformanceLogging)
+            if (_options.EnablePerformanceLogging && _logger.IsEnabled(LogLevel.Debug))
             {
-                PreparedStatementCacheLog.CacheHit(_logger, statementHash);
+                var hitHex = statementHash.ToHexString();
+                PreparedStatementCacheLog.CacheHit(_logger, hitHex);
             }
 
             // Pass metrics so configureParameters is invoked exactly once and parameter
             // distributions are recorded from the same invocation that applies values.
             var cachedClone = await CreatePreparedExecutionCommandAsync(
-                cached.Command,
+                cached,
                 connection,
                 configureParameters,
                 metrics,
@@ -257,21 +278,19 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 return cachedClone;
             }
 
-            if (TryRemoveCachedStatement(cacheKey, out var removed) && removed != null)
-            {
-                removed.Dispose();
-            }
+            RemoveAndDisposeCachedStatement(cacheKey, cached);
 
             return null;
         }
 
         // Intelligent caching decision based on complexity and execution patterns
-        var shouldCache = ShouldCacheStatement(metrics, sql);
+        var shouldCache = ShouldCacheStatement(metrics, statementHash);
         if (shouldCache)
         {
+            var statementHex = statementHash.ToHexString();
             try
             {
-                var preparedCommand = await CreatePreparedStatementAsync(connection, sql, statementHash, configureParameters, cancellationToken);
+                var preparedCommand = await CreatePreparedStatementAsync(connection, sql, statementHex, configureParameters, cancellationToken);
 
                 if (GetConnectionCacheCount(connectionId) >= _options.MaxCachedStatements)
                 {
@@ -280,7 +299,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
                 var cachedStatement = new CachedStatement
                 {
-                    StatementName = $"stmt_{statementHash}",
+                    StatementName = $"stmt_{statementHex}",
                     Command = preparedCommand
                 };
 
@@ -288,17 +307,17 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
                 if (added && _options.EnablePerformanceLogging)
                 {
-                    PreparedStatementCacheLog.CreatedStatement(_logger, statementHash);
+                    PreparedStatementCacheLog.CreatedStatement(_logger, statementHex);
                 }
 
                 if (!added)
                 {
-                    preparedCommand.Dispose();
+                    cachedStatement.Dispose();
 
                     if (_cache.TryGetValue(cacheKey, out var existing))
                     {
                         return await CreatePreparedExecutionCommandAsync(
-                            existing.Command,
+                            existing,
                             connection,
                             configureParameters,
                             metrics,
@@ -309,7 +328,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 }
 
                 return await CreatePreparedExecutionCommandAsync(
-                    preparedCommand,
+                    cachedStatement,
                     connection,
                     configureParameters,
                     metrics,
@@ -320,14 +339,15 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             // caller's query.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                PreparedStatementCacheLog.PrepareFailed(_logger, statementHash, ex);
+                PreparedStatementCacheLog.PrepareFailed(_logger, statementHex, ex);
                 return null;
             }
         }
 
-        if (_options.EnablePerformanceLogging)
+        if (_options.EnablePerformanceLogging && _logger.IsEnabled(LogLevel.Debug))
         {
-            PreparedStatementCacheLog.CacheMiss(_logger, statementHash, metrics.ExecutionCount);
+            var missHex = statementHash.ToHexString();
+            PreparedStatementCacheLog.CacheMiss(_logger, missHex, metrics.ExecutionCount);
         }
 
         return null;
@@ -365,16 +385,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
 
         var connectionId = GetConnectionId(connection);
-        var statementHash = GetStatementHash(sql);
+        var statementHash = StatementHash.Compute(sql);
         var cacheKey = (connectionId, statementHash);
 
         // Check if already cached
         if (_cache.TryGetValue(cacheKey, out var existing))
         {
             existing.LastUsed = DateTime.UtcNow;
-            existing.HitCount++;
+            existing.IncrementHitCount();
             var cachedClone = await CreatePreparedExecutionCommandAsync(
-                existing.Command,
+                existing,
                 connection,
                 configureParameters,
                 metrics: null,
@@ -385,10 +405,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 return cachedClone;
             }
 
-            if (TryRemoveCachedStatement(cacheKey, out var removed) && removed != null)
-            {
-                removed.Dispose();
-            }
+            RemoveAndDisposeCachedStatement(cacheKey, existing);
 
             return null;
         }
@@ -410,14 +427,14 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         var added = TryAddCachedStatement(cacheKey, cached, connection);
         if (!added)
         {
-            command.Dispose();
+            cached.Dispose();
             return null;
         }
 
         PreparedStatementCacheLog.PriorityStatementPrepared(_logger, statementName);
 
         return await CreatePreparedExecutionCommandAsync(
-            command,
+            cached,
             connection,
             configureParameters,
             metrics: null,
@@ -477,12 +494,20 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         CancellationToken cancellationToken)
     {
         var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
-        configureParameters?.Invoke(command);
+        try
+        {
+            configureParameters?.Invoke(command);
 
-        // Prepare the statement
-        await command.PrepareAsync(cancellationToken);
+            // Prepare the statement
+            await command.PrepareAsync(cancellationToken).ConfigureAwait(false);
 
-        return command;
+            return command;
+        }
+        catch
+        {
+            await command.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static NpgsqlCommand CloneCommand(NpgsqlCommand original, NpgsqlConnection connection)
@@ -521,74 +546,48 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return cloned;
     }
 
-    private static void ApplyParameterValues(NpgsqlCommand destination, NpgsqlCommand configured)
-    {
-        for (var index = 0; index < configured.Parameters.Count; index++)
-        {
-            var source = configured.Parameters[index];
-
-            if (destination.Parameters.Count > index)
-            {
-                var target = destination.Parameters[index];
-                target.Value = source.Value;
-                target.ParameterName = source.ParameterName;
-                target.NpgsqlDbType = source.NpgsqlDbType;
-                target.DbType = source.DbType;
-                target.Direction = source.Direction;
-                target.Size = source.Size;
-                target.Precision = source.Precision;
-                target.Scale = source.Scale;
-            }
-            else
-            {
-                destination.Parameters.Add(CloneParameter(source, includeValue: true));
-            }
-        }
-    }
-
-    private static async Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
-        NpgsqlCommand template,
+    internal static async Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
+        CachedStatement cachedStatement,
         NpgsqlConnection connection,
         Action<NpgsqlCommand>? configureParameters,
         StatementMetrics? metrics,
         CancellationToken cancellationToken)
     {
-        var cloned = CloneCommand(template, connection);
-
-        if (configureParameters != null)
+        var cloned = cachedStatement.TryCloneCommand(connection);
+        try
         {
-            // Configure parameters exactly once; reuse the result for both value-application
-            // and distribution tracking so configureParameters is never called twice per request.
-            // The scratch command must carry the statement text: some parameter-binding callbacks
-            // gate on CommandText (e.g. only binding OFFSET when the SQL actually emitted an OFFSET
-            // clause). Without it those callbacks silently skip parameters, leaving cloned slots
-            // unset (null) and triggering an Npgsql "Parameter cannot be null" failure at execution.
-            using var configured = new NpgsqlCommand { CommandText = cloned.CommandText };
-            configureParameters(configured);
-
-            ApplyParameterValues(cloned, configured);
-
-            if (metrics != null)
+            if (cloned is null)
             {
-                RecordParameterDistributions(metrics, configured);
+                return null;
             }
-        }
 
-        await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
-        return cloned;
+            if (configureParameters != null)
+            {
+                ConfigureAndTrackParameters(cloned, configureParameters, metrics);
+            }
+
+            await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
+            var ready = cloned;
+            cloned = null;
+            return ready;
+        }
+        finally
+        {
+            cloned?.Dispose();
+        }
     }
 
-    private int GetConnectionCacheCount(string connectionId)
+    private int GetConnectionCacheCount(int connectionId)
         => _connectionCounts.TryGetValue(connectionId, out var count) ? count : 0;
 
     private bool TryAddCachedStatement(
-        (string ConnectionId, string StatementHash) cacheKey,
+        (int ConnectionId, StatementHash StatementHash) cacheKey,
         CachedStatement cachedStatement,
         NpgsqlConnection connection)
     {
         if (_cache.TryAdd(cacheKey, cachedStatement))
         {
-            _connectionCounts.AddOrUpdate(cacheKey.ConnectionId, 1, (_, count) => count + 1);
+            _connectionCounts.AddOrUpdate(cacheKey.ConnectionId, 1, static (_, count) => count + 1);
             SubscribeToConnectionClose(connection, cacheKey.ConnectionId);
             return true;
         }
@@ -596,7 +595,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return false;
     }
 
-    private void SubscribeToConnectionClose(NpgsqlConnection connection, string connectionId)
+    private void SubscribeToConnectionClose(NpgsqlConnection connection, int connectionId)
     {
         if (!_subscribedConnections.TryAdd(connectionId, 0))
         {
@@ -616,7 +615,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         connection.StateChange += OnStateChange;
     }
 
-    private void ClearConnectionCache(string connectionId)
+    private void ClearConnectionCache(int connectionId)
     {
         var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
         var removedCount = 0;
@@ -624,9 +623,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         var keyIndex = 0;
         while (keyIndex < keysToRemove.Count)
         {
-            if (TryRemoveCachedStatement(keysToRemove[keyIndex], out var removed))
+            if (TryRemoveAndDisposeCachedStatement(keysToRemove[keyIndex], out _))
             {
-                removed!.Dispose();
                 removedCount++;
             }
 
@@ -639,42 +637,53 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    private bool TryRemoveCachedStatement(
-        (string ConnectionId, string StatementHash) cacheKey,
-        out CachedStatement? removed)
+    private void RemoveAndDisposeCachedStatement(
+        (int ConnectionId, StatementHash StatementHash) cacheKey,
+        CachedStatement expected)
     {
-        if (_cache.TryRemove(cacheKey, out removed))
+        if (_cache.TryRemove(KeyValuePair.Create(cacheKey, expected)))
         {
-            var updated = _connectionCounts.AddOrUpdate(cacheKey.ConnectionId, 0, (_, count) => Math.Max(0, count - 1));
-            if (updated == 0)
-            {
-                _connectionCounts.TryRemove(cacheKey.ConnectionId, out _);
-            }
+            DecrementConnectionCount(cacheKey.ConnectionId);
+            expected.Dispose();
+        }
+    }
 
+    private bool TryRemoveAndDisposeCachedStatement(
+        (int ConnectionId, StatementHash StatementHash) cacheKey,
+        out string? statementName)
+    {
+        if (_cache.TryRemove(cacheKey, out var removed))
+        {
+            DecrementConnectionCount(cacheKey.ConnectionId);
+            statementName = removed.StatementName;
+            removed.Dispose();
             return true;
         }
 
+        statementName = null;
         return false;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static string GetConnectionId(NpgsqlConnection connection)
+    private void DecrementConnectionCount(int connectionId)
     {
-        try
+        var updated = _connectionCounts.AddOrUpdate(connectionId, 0, static (_, count) => Math.Max(0, count - 1));
+        if (updated == 0)
         {
-            return connection.ProcessID.ToString(CultureInfo.InvariantCulture);
-        }
-        catch (InvalidOperationException)
-        {
-            return RuntimeHelpers.GetHashCode(connection).ToString(CultureInfo.InvariantCulture);
+            _connectionCounts.TryRemove(KeyValuePair.Create(connectionId, 0));
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static string GetStatementHash(string sql)
+    private static int GetConnectionId(NpgsqlConnection connection)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sql));
-        return Convert.ToHexString(hash);
+        try
+        {
+            return connection.ProcessID;
+        }
+        catch (InvalidOperationException)
+        {
+            return RuntimeHelpers.GetHashCode(connection);
+        }
     }
 
     private static QueryComplexityScore AnalyzeQueryComplexity(string sql)
@@ -712,7 +721,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
     }
 
-    private bool ShouldCacheStatement(StatementMetrics metrics, string sql)
+    private bool ShouldCacheStatement(StatementMetrics metrics, StatementHash statementHash)
     {
         // Always cache if execution count threshold is met (traditional approach)
         if (metrics.ExecutionCount >= _options.MinExecutionsForCaching)
@@ -725,8 +734,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
-                var statementHash = GetStatementHash(sql);
-                PreparedStatementCacheLog.EarlyCachingTriggered(_logger, statementHash, complexityScore);
+                var statementHex = statementHash.ToHexString();
+                PreparedStatementCacheLog.EarlyCachingTriggered(_logger, statementHex, complexityScore);
             }
             return true;
         }
@@ -736,8 +745,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
-                var statementHash = GetStatementHash(sql);
-                PreparedStatementCacheLog.GeospatialCachingTriggered(_logger, statementHash);
+                var statementHex = statementHash.ToHexString();
+                PreparedStatementCacheLog.GeospatialCachingTriggered(_logger, statementHex);
             }
             return true;
         }
@@ -747,8 +756,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
-                var statementHash = GetStatementHash(sql);
-                PreparedStatementCacheLog.PredictiveCachingTriggered(_logger, statementHash, metrics.AverageExecutionTimeMs);
+                var statementHex = statementHash.ToHexString();
+                PreparedStatementCacheLog.PredictiveCachingTriggered(_logger, statementHex, metrics.AverageExecutionTimeMs);
             }
             return true;
         }
@@ -770,7 +779,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return variance < 0.5; // Less than 50% variance
     }
 
-    private void EvictLowestPriorityStatement(string connectionId)
+    private void EvictLowestPriorityStatement(int connectionId)
     {
         var connectionEntries = _cache
             .Where(kvp => kvp.Key.ConnectionId == connectionId)
@@ -782,18 +791,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // Find statement with lowest priority score
         var lowestPriorityEntry = connectionEntries.MinBy(kvp => kvp.Value.GetPriorityScore());
 
-        if (TryRemoveCachedStatement(lowestPriorityEntry.Key, out var removed) && removed != null)
+        if (TryRemoveAndDisposeCachedStatement(lowestPriorityEntry.Key, out var statementName) && statementName != null)
         {
-            removed.Dispose();
-
             if (_options.EnablePerformanceLogging)
             {
-                PreparedStatementCacheLog.EvictedStatement(_logger, removed.StatementName);
+                PreparedStatementCacheLog.EvictedStatement(_logger, statementName);
             }
         }
     }
 
-    private void EvictLeastRecentlyUsed(string connectionId)
+    private void EvictLeastRecentlyUsed(int connectionId)
     {
         var connectionEntries = _cache
             .Where(kvp => kvp.Key.ConnectionId == connectionId)
@@ -804,13 +811,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         var lruEntry = connectionEntries.MinBy(kvp => kvp.Value.LastUsed);
 
-        if (TryRemoveCachedStatement(lruEntry.Key, out var removed) && removed != null)
+        if (TryRemoveAndDisposeCachedStatement(lruEntry.Key, out var statementName) && statementName != null)
         {
-            removed.Dispose();
-
             if (_options.EnablePerformanceLogging)
             {
-                PreparedStatementCacheLog.EvictedStatement(_logger, removed.StatementName);
+                PreparedStatementCacheLog.EvictedStatement(_logger, statementName);
             }
         }
     }
@@ -843,11 +848,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             var expiredKeyIndex = 0;
             while (expiredKeyIndex < expiredKeys.Count)
             {
-                if (TryRemoveCachedStatement(expiredKeys[expiredKeyIndex], out var removed))
-                {
-                    removed!.Dispose();
-                }
-
+                TryRemoveAndDisposeCachedStatement(expiredKeys[expiredKeyIndex], out _);
                 expiredKeyIndex++;
             }
 
@@ -933,7 +934,7 @@ internal static partial class PreparedStatementCacheLog
         EventId = 8706,
         Level = LogLevel.Debug,
         Message = "Cleared {Count} cached statements for connection {ConnectionId}")]
-    public static partial void ConnectionCacheCleared(ILogger logger, int count, string connectionId);
+    public static partial void ConnectionCacheCleared(ILogger logger, int count, int connectionId);
 
     [LoggerMessage(
         EventId = 8707,

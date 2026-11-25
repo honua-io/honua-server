@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -9,6 +10,14 @@ using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
+
+internal sealed class AzureKeyVaultResolverOptions
+{
+    public required HttpClient HttpClient { get; init; }
+    public required HttpClient MetadataClient { get; init; }
+    public required ILogger<AzureKeyVaultResolver> Logger { get; init; }
+    public Func<int, CancellationToken, Task>? RetryDelay { get; init; }
+}
 
 internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDisposable
 {
@@ -19,16 +28,23 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     private const string DefaultApiVersion = "7.4";
     private const string ClientName = "AzureKeyVault";
     private const string ManagedIdentityClientName = "AzureManagedIdentityMetadata";
+    private const int MaxSecretAttempts = 3;
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
     private static readonly Regex _vaultNamePattern = new("^[A-Za-z0-9-]{3,24}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex _secretNamePattern = new("^[A-Za-z0-9-]{1,127}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex _secretVersionPattern = new("^[A-Za-z0-9]{1,64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Action<ILogger, Exception?> _logManagedIdentityTokenFailed =
         LoggerMessage.Define(LogLevel.Debug, new EventId(6402, "AzureManagedIdentityTokenRequestFailed"), "Azure Managed Identity token request failed");
+    private static readonly Action<ILogger, int, int, Exception?> _logKeyVaultRetry =
+        LoggerMessage.Define<int, int>(
+            LogLevel.Warning,
+            new EventId(6409, "AzureKeyVaultRetry"),
+            "Azure Key Vault request failed with status code {StatusCode}; retrying attempt {NextAttempt}.");
 
     private readonly HttpClient _httpClient;
     private readonly HttpClient _metadataClient;
     private readonly ILogger<AzureKeyVaultResolver> _logger;
+    private readonly Func<int, CancellationToken, Task> _retryDelay;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private bool _disposed;
@@ -38,10 +54,22 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     public string ProviderName => ProviderType;
 
     public AzureKeyVaultResolver(IHttpClientFactory httpClientFactory, ILogger<AzureKeyVaultResolver> logger)
+        : this(new AzureKeyVaultResolverOptions
+        {
+            HttpClient = (httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory))).CreateClient(ClientName),
+            MetadataClient = httpClientFactory.CreateClient(ManagedIdentityClientName),
+            Logger = logger
+        })
     {
-        _httpClient = httpClientFactory.CreateClient(ClientName);
-        _metadataClient = httpClientFactory.CreateClient(ManagedIdentityClientName);
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    internal AzureKeyVaultResolver(AzureKeyVaultResolverOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _httpClient = options.HttpClient ?? throw new ArgumentNullException(nameof(options));
+        _metadataClient = options.MetadataClient ?? throw new ArgumentNullException(nameof(options));
+        _logger = options.Logger ?? throw new ArgumentNullException(nameof(options));
+        _retryDelay = options.RetryDelay ?? DefaultRetryDelay;
     }
 
     public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
@@ -69,20 +97,42 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var url = BuildSecretUrl(vaultName, secretName, version);
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 1; attempt <= MaxSecretAttempts; attempt++)
         {
-            throw new InvalidOperationException(
-                $"Azure Key Vault request failed with status code {(int)response.StatusCode}.");
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var secretValue = ExtractSecretValue(content);
+                CacheValue(secretKey, secretValue);
+                return secretValue;
+            }
+
+            if (!IsRetryableKeyVaultFailure(response.StatusCode) || attempt == MaxSecretAttempts)
+            {
+                throw new InvalidOperationException(
+                    $"Azure Key Vault request failed with status code {(int)response.StatusCode}.");
+            }
+
+            _logKeyVaultRetry(_logger, (int)response.StatusCode, attempt + 1, null);
+            await _retryDelay(attempt, cancellationToken).ConfigureAwait(false);
         }
 
-        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var secretValue = ExtractSecretValue(content);
-        CacheValue(secretKey, secretValue);
-        return secretValue;
+        throw new InvalidOperationException("Azure Key Vault request failed.");
+    }
+
+    private static bool IsRetryableKeyVaultFailure(HttpStatusCode status)
+        => status is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || ((int)status is >= 500 and <= 599);
+
+    private static Task DefaultRetryDelay(int failedAttempt, CancellationToken cancellationToken)
+    {
+        var ceilingMs = Math.Min(800, 200 * Math.Max(1, failedAttempt));
+        var delayMs = Random.Shared.Next(ceilingMs / 2, ceilingMs + 1);
+        return Task.Delay(delayMs, cancellationToken);
     }
 
     public bool CanResolve(string secretKey)
@@ -107,57 +157,16 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
         => Task.FromResult(CanResolve(secretKey));
 
-    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
-            return connectionStringTemplate;
-
-        if (connectionStringTemplate.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
-        }
-
-        // Simple pattern matching for Azure Key Vault secret references like ${azure:keyvault:...} or {azure:keyvault:...}
-        var result = connectionStringTemplate;
-        var patterns = new[] { "${", "{" };
-
-        foreach (var pattern in patterns)
-        {
-            var startIndex = 0;
-            while (true)
+    public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        => ConnectionStringSecretTemplateExpander.ExpandAsync(
+            new SecretTemplateExpansionRequest
             {
-                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
-                if (start == -1) break;
-
-                var end = result.IndexOf('}', start + pattern.Length);
-                if (end == -1) break;
-
-                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
-
-                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
-                {
-                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
-                    if (!string.IsNullOrEmpty(resolvedValue))
-                    {
-                        var fullReference = result.Substring(start, end - start + 1);
-                        result = result.Replace(fullReference, resolvedValue);
-                        startIndex = start + resolvedValue.Length;
-                    }
-                    else
-                    {
-                        startIndex = end + 1;
-                    }
-                }
-                else
-                {
-                    startIndex = end + 1;
-                }
-            }
-        }
-
-        return result;
-    }
+                ConnectionStringTemplate = connectionStringTemplate,
+                DirectPrefix = KeyVaultPrefix,
+                CanResolve = CanResolve,
+                ResolveSecretAsync = ResolveSecretAsync
+            },
+            cancellationToken);
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {

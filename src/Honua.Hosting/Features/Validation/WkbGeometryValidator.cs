@@ -1,15 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
-using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Validation;
 
@@ -19,7 +14,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
     private readonly GeometryLimits _geometryLimits;
     private readonly IGeometryTopologyValidator _topologyValidator;
     private readonly ILogger _logger;
-    private readonly WKBReader _wkbReader = new();
 
     public WkbGeometryValidator(
         IOptions<LimitsOptions> limitsOptions,
@@ -53,72 +47,59 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
                 $"WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({maxWkbSize:N0} bytes)");
         }
 
-        if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out _, out _))
+        var scanner = new WkbGeometryScanner(wkb);
+        var scanOutcome = scanner.ScanRoot();
+        if (scanOutcome == WkbScanOutcome.Invalid)
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidWkbStructure,
                 "Invalid WKB structure.");
         }
 
-        try
-        {
-            return ValidateParsedGeometry(_wkbReader.Read(wkb), wkb.Length);
-        }
-        catch (Exception ex) when (ex is ParseException or FormatException or IOException or ArgumentException)
+        if (scanOutcome == WkbScanOutcome.Empty)
         {
             return GeometryValidationResult.Failure(
-                ValidationErrorCode.InvalidWkbStructure,
-                "Invalid WKB structure.");
-        }
-    }
-
-    private GeometryValidationResult ValidateParsedGeometry(Geometry? geometry, int wkbLength)
-    {
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return GeometryValidationResult.Failure(ValidationErrorCode.EmptyGeometry, "Geometry is empty");
+                ValidationErrorCode.EmptyGeometry,
+                "Geometry is empty");
         }
 
-        if (HasNonFiniteCoordinate(geometry))
+        var state = scanner.State;
+        if (state.HasNonFiniteCoordinate)
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidCoordinates,
                 "Geometry contains non-finite coordinates.");
         }
 
-        var vertexCount = CountVertices(geometry);
+        // Count vertices
         var maxVertices = Math.Min(_options.MaxVertices, _geometryLimits.MaxVerticesPerGeometry);
-        if (vertexCount > maxVertices)
+        if (state.VertexCount > maxVertices)
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.TooManyVertices,
-                $"Geometry has {vertexCount:N0} vertices, exceeds maximum allowed ({maxVertices:N0})");
+                $"Geometry has {state.VertexCount:N0} vertices, exceeds maximum allowed ({maxVertices:N0})");
         }
 
-        var ringCount = CountRings(geometry);
-        if (ringCount > _options.MaxRings)
+        // Count rings for polygons
+        if (state.RingCount > _options.MaxRings)
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.TooManyRings,
-                $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
+                $"Geometry has {state.RingCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
         }
 
-        return GeometryValidationResult.Success(BuildGeometryStats(geometry, wkbLength, ringCount));
-    }
-
-    private static GeometryStats BuildGeometryStats(Geometry geometry, int wkbLength, int ringCount)
-    {
-        var (hasZ, hasM) = Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
-        return new GeometryStats
+        var stats = new GeometryStats
         {
-            GeometryType = geometry.GeometryType,
-            VertexCount = CountVertices(geometry),
-            RingCount = ringCount,
-            WkbSize = wkbLength,
-            HasZ = hasZ,
-            HasM = hasM,
-            Srid = geometry.SRID > 0 ? geometry.SRID : null
+            GeometryType = state.RootGeometryType!,
+            VertexCount = (int)state.VertexCount,
+            RingCount = (int)state.RingCount,
+            WkbSize = wkb.Length,
+            HasZ = state.HasZ,
+            HasM = state.HasM,
+            Srid = state.RootSrid
         };
+
+        return GeometryValidationResult.Success(stats);
     }
 
     public async Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
@@ -254,41 +235,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
             GeometryTypeChanged = repairResult.GeometryTypeChanged
         };
     }
-
-    #region Private Validation Helpers
-
-    private static int CountVertices(Geometry geometry)
-    {
-        return geometry.NumPoints;
-    }
-
-    private static bool HasNonFiniteCoordinate(Geometry geometry)
-    {
-        foreach (var coordinate in geometry.Coordinates)
-        {
-            if (!double.IsFinite(coordinate.X) || !double.IsFinite(coordinate.Y))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static int CountRings(Geometry geometry)
-    {
-        return geometry switch
-        {
-            Polygon polygon => 1 + polygon.NumInteriorRings,
-            MultiPolygon multiPolygon => Enumerable.Range(0, multiPolygon.NumGeometries)
-                .Sum(i => CountRings(multiPolygon.GetGeometryN(i))),
-            GeometryCollection collection => Enumerable.Range(0, collection.NumGeometries)
-                .Sum(i => CountRings(collection.GetGeometryN(i))),
-            _ => 0
-        };
-    }
-
-    #endregion
 
     #region Logging
 

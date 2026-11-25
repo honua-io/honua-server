@@ -17,6 +17,8 @@ namespace Honua.Core.Features.Migration.Services;
 // A checkpoint written here cannot resume on another node; production must use the shared store.
 public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpointStore, IDisposable
 {
+    internal const int MaxRunIdLength = 256;
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _rootDirectory;
 
@@ -32,6 +34,12 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
     public async ValueTask SaveAsync(MigrationRunCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
+        if (checkpoint.RunId.Length > MaxRunIdLength)
+        {
+            throw new ArgumentException(
+                $"Run identifier exceeds maximum length of {MaxRunIdLength} characters.",
+                nameof(checkpoint));
+        }
 
         var sanitized = MigrationRunCheckpointSanitizer.Sanitize(checkpoint);
         var path = PathFor(sanitized.RunId);
@@ -111,6 +119,13 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
 
     private static string SafePathSegment(string runId)
     {
+        if (runId.Length > MaxRunIdLength)
+        {
+            throw new ArgumentException(
+                $"Run identifier exceeds maximum length of {MaxRunIdLength} characters.",
+                nameof(runId));
+        }
+
         // Explicitly reject path-separator characters in addition to OS-reported invalid
         // file-name characters. On Linux, Path.GetInvalidFileNameChars() only contains
         // '\0', so '/' would pass through unchanged and Path.Combine would then discard

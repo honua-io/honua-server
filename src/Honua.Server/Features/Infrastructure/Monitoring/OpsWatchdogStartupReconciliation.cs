@@ -7,17 +7,18 @@ using Microsoft.Extensions.Options;
 namespace Honua.Infrastructure.Monitoring;
 
 internal sealed partial class OpsWatchdogStartupReconciliation(
-    IServiceScopeFactory scopeFactory,
+    IServiceProvider services,
     IOptions<OpsAutonomyOptions> options,
     ILogger<OpsWatchdogStartupReconciliation> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var clock = services.GetRequiredService<TimeProvider>();
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await using var scope = scopeFactory.CreateAsyncScope();
+                await using var scope = services.CreateAsyncScope();
                 var writer = scope.ServiceProvider.GetRequiredService<OpsAutonomySettingsWriter>();
                 await writer.ReconcileAsync(
                     new OpsAutonomySettings { KillSwitchEnabled = options.Value.KillSwitchEnabled },
@@ -33,7 +34,7 @@ internal sealed partial class OpsWatchdogStartupReconciliation(
                 ReconciliationFailed(logger, exception);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(5), clock, stoppingToken).ConfigureAwait(false);
         }
     }
 

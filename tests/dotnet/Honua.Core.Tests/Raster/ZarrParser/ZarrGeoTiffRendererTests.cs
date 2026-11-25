@@ -124,7 +124,7 @@ public sealed class ZarrGeoTiffRendererTests
         var bounds = new ZarrTileBounds(extent.XMin, extent.YMin, extent.XMax, extent.YMax);
         ZarrTileSlicePlanner.TryPlan(metadata, null, bounds, null, null, 4 * 1024 * 1024, out var slice, out var error)
             .Should().BeTrue(error);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "geotiff/render", metadata, slice!.Plan.Request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "geotiff/render", Metadata = metadata, Request = slice!.Plan.Request });
         return ZarrGeoTiffRenderer.Render(subset, slice, new ZarrGeoTiffOutput { Extent = extent, Width = width, Height = height });
     }
 

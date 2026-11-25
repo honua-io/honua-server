@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -15,6 +16,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Serialization;
 using Honua.Protocols.GeoServices;
 using Honua.Infrastructure.Analytics;
 using Honua.Infrastructure.Authentication;
@@ -147,9 +149,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 // InvalidOperationException for numeric/boolean/object tokens,
                 // so syntactically valid JSON with the wrong value kind would
                 // otherwise surface as a 500 instead of a 400.
-                if (!TryReadStringProperty(element, "statisticType", out var statisticType) ||
-                    !TryReadStringProperty(element, "onStatisticField", out var onField) ||
-                    !TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                var statTypeProp = JsonElementHelpers.ReadStringProperty(element, "statisticType");
+                var onFieldProp = JsonElementHelpers.ReadStringProperty(element, "onStatisticField");
+                var outFieldProp = JsonElementHelpers.ReadStringProperty(element, "outStatisticFieldName");
+                var (statisticType, onField, outFieldName) = (statTypeProp.Value, onFieldProp.Value, outFieldProp.Value);
+                if (!statTypeProp.IsValid || !onFieldProp.IsValid || !outFieldProp.IsValid)
                 {
                     error = "Each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName.";
                     return false;
@@ -169,7 +173,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
                     return false;
                 }
 
-                if (!TryParseStatisticType(statisticType, out var parsedType))
+                if (StatisticTypeParser.TryParse(statisticType) is not { } parsedType)
                 {
                     error = $"Unsupported statisticType: {LogValueRedactor.SanitizeForLog(statisticType, 64)}.";
                     return false;
@@ -191,51 +195,6 @@ internal static partial class SpatialAnalyticsRequestHandlers
             error = "outStatistics is not valid JSON.";
             return false;
         }
-    }
-
-    // Treats absent properties and JSON null as null, and non-string value
-    // kinds (numbers, booleans, objects, arrays) as a validation failure so
-    // the caller reports a 400 instead of propagating GetString()'s
-    // InvalidOperationException.
-    private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
-    {
-        if (!element.TryGetProperty(propertyName, out var property))
-        {
-            value = null;
-            return true;
-        }
-
-        if (property.ValueKind == JsonValueKind.Null)
-        {
-            value = null;
-            return true;
-        }
-
-        if (property.ValueKind != JsonValueKind.String)
-        {
-            value = null;
-            return false;
-        }
-
-        value = property.GetString();
-        return true;
-    }
-
-    private static bool TryParseStatisticType(string type, out StatisticType result)
-    {
-        result = type.ToLowerInvariant() switch
-        {
-            "count" => StatisticType.Count,
-            "sum" => StatisticType.Sum,
-            "min" => StatisticType.Min,
-            "max" => StatisticType.Max,
-            "avg" => StatisticType.Avg,
-            "stddev" => StatisticType.Stddev,
-            "var" => StatisticType.Var,
-            _ => default
-        };
-
-        return type.ToLowerInvariant() is "count" or "sum" or "min" or "max" or "avg" or "stddev" or "var";
     }
 
     private static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)
@@ -344,35 +303,52 @@ internal static partial class SpatialAnalyticsRequestHandlers
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var resourceResult = await resourceValidator.ValidateServiceLayerV2Async(serviceId, layerId, cancellationToken);
-
         if (!resourceResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            var errorResult = resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StandardErrorHelpers.CreateBadRequest(context, errorMessage)
-                : StandardErrorHelpers.CreateNotFound(context, errorMessage);
-            return (0, null, null, errorResult);
+            return (0, null, null, CreateResourceLookupError(context, resourceResult));
         }
 
         var triple = resourceResult.Resource;
-        var service = triple.Service;
-        var resource = triple.Resource;
-
-        if (!IsProtocolEnabled(service, FeatureServerProtocolName))
+        if (!IsProtocolEnabled(triple.Service, FeatureServerProtocolName))
         {
             return (0, null, null, StandardErrorHelpers.CreateNotFound(
                 context,
                 $"{FeatureServerProtocolName} is not enabled for this service."));
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, triple.Resource, AuthorizationOperation.Query, triple.Service, cancellationToken);
         if (accessError != null)
         {
             return (0, null, null, accessError);
         }
 
-        return (layerId, resource, service, null);
+        var storageLayerId = ResolveRestStorageLayerId(triple);
+        if (!storageLayerId.HasValue)
+        {
+            return (0, null, null, StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer {layerId} in service '{serviceId}' is not available for spatial analytics."));
+        }
+
+        return (storageLayerId.Value, triple.Resource, triple.Service, null);
     }
+
+    private static IResult CreateResourceLookupError(
+        HttpContext context,
+        ResourceValidationResult<MetadataV2ServiceLayerTriple> resourceResult)
+    {
+        var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
+        return resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
+            ? StandardErrorHelpers.CreateBadRequest(context, errorMessage)
+            : StandardErrorHelpers.CreateNotFound(context, errorMessage);
+    }
+
+    private static int? ResolveRestStorageLayerId(MetadataV2ServiceLayerTriple triple)
+        => triple.StorageLayerId
+            ?? (triple.Snapshot is not null
+                ? triple.Snapshot.ResolveStorageLayerId(triple.Publication, triple.Resource)
+                : null);
 
     private static async Task<(int LayerId, MetadataV2Object? Resource, IResult? Error)> ValidateOgcResourceAsync(
         HttpContext context, string collectionId, CancellationToken cancellationToken)
@@ -387,14 +363,17 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return (0, null, layerValidation.ErrorResult!);
         }
 
-        if (!layerValidation.Publication!.LayerIndex.HasValue)
+        var storageLayerId = layerValidation.Snapshot is not null && layerValidation.Publication is not null
+            ? layerValidation.Snapshot.ResolveStorageLayerId(layerValidation.Publication, layerValidation.Resource)
+            : null;
+        if (!storageLayerId.HasValue)
         {
             return (0, null, StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Collection '{collectionId}' is not available for spatial analytics."));
         }
 
-        return (layerValidation.Publication.LayerIndex.Value, layerValidation.Resource!, null);
+        return (storageLayerId.Value, layerValidation.Resource!, null);
     }
 
     private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)

@@ -139,10 +139,10 @@ internal static partial class MigrationRunAdminEndpoints
             RunId = request.RunId.Trim(),
             SourceKind = request.SourceKind.Trim(),
             SourceUrl = TrimToEmpty(request.SourceUrl),
-            SourceDisplayName = TrimToNull(request.SourceDisplayName),
+            SourceDisplayName = MigrationStringHelpers.TrimToNull(request.SourceDisplayName),
             Status = MigrationRunStatus.Running,
             StartedAt = request.StartedAt ?? DateTimeOffset.UtcNow,
-            StatusNote = TrimToNull(request.StatusNote)
+            StatusNote = MigrationStringHelpers.TrimToNull(request.StatusNote)
         };
 
         var catalog = context.RequestServices.GetRequiredService<IMigrationRunCatalog>();
@@ -324,10 +324,10 @@ internal static partial class MigrationRunAdminEndpoints
             runId,
             status,
             request.CompletedAt ?? DateTimeOffset.UtcNow,
-            TrimToNull(request.EvidencePackRef),
-            TrimToNull(request.EvidencePackFingerprint),
+            MigrationStringHelpers.TrimToNull(request.EvidencePackRef),
+            MigrationStringHelpers.TrimToNull(request.EvidencePackFingerprint),
             string.IsNullOrWhiteSpace(request.EvidencePackBody) ? null : request.EvidencePackBody,
-            TrimToNull(request.StatusNote),
+            MigrationStringHelpers.TrimToNull(request.StatusNote),
             cancellationToken).ConfigureAwait(false);
 
         if (completed is null)
@@ -562,17 +562,6 @@ internal static partial class MigrationRunAdminEndpoints
 
     private static string TrimToEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-
-    private static string? TrimToNull(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-        return trimmed.Length == 0 ? null : trimmed;
-    }
 
     // PA-164: this class is static (no constructor/DI-injected ILogger<T> field is
     // possible), so each catch resolves a logger from the current request's

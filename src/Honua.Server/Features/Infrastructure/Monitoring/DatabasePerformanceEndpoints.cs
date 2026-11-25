@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -20,7 +21,8 @@ internal static class DatabasePerformanceEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Database Performance")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/query-cache/statistics", GetQueryCacheStatistics)
             .WithName("GetQueryCacheStatistics")

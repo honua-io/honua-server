@@ -156,7 +156,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
                         $"{_processId} artifact size exceeds configured MaxArtifactBytes={maxBytes} during streaming.");
                 }
 
-                features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
+                features.Add(LayerSourcedFeatureExecutor.ToNtsFeature(sourceFeature, geoJsonReader));
             }
         }
         catch (DagSourceSelectionException ex)
@@ -439,33 +439,6 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             throw new UnauthorizedAccessException("Connection is not accessible in the active tenant scope.");
         }
-    }
-
-    private static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
-    {
-        NtsGeometry? geometry = null;
-        if (!string.IsNullOrWhiteSpace(sourceFeature.GeometryGeoJson))
-        {
-            try
-            {
-                geometry = reader.Read<NtsGeometry>(sourceFeature.GeometryGeoJson);
-            }
-            catch (Exception ex) when (ex is Newtonsoft.Json.JsonException or ArgumentException or FormatException)
-            {
-                geometry = null;
-            }
-        }
-
-        var attributes = new AttributesTable();
-        foreach (var (key, value) in sourceFeature.Attributes)
-        {
-            if (!attributes.Exists(key))
-            {
-                attributes.Add(key, value);
-            }
-        }
-
-        return new Feature(geometry, attributes);
     }
 
     private static int? TryGetInt(StepInputReader inputs, string name)

@@ -39,9 +39,9 @@ public static class GpCli
         {
             return verb switch
             {
-                "list" => RunList(rest),
+                "list" => await RunListAsync(rest).ConfigureAwait(false),
                 "doctor" => await RunDoctor(rest).ConfigureAwait(false),
-                "describe" => RunDescribe(rest),
+                "describe" => await RunDescribeAsync(rest).ConfigureAwait(false),
                 "run" => await RunRun(rest).ConfigureAwait(false),
                 "test" => await RunTest(rest).ConfigureAwait(false),
                 "plan" => await RunPlan(rest).ConfigureAwait(false),
@@ -135,7 +135,7 @@ public static class GpCli
         return await runner.RunAsync(processId, inputs, cancellationToken).ConfigureAwait(false);
     }
 
-    private static int RunList(string[] args)
+    private static async Task<int> RunListAsync(string[] args)
     {
         string? project = null;
         var asJson = false;
@@ -162,7 +162,7 @@ public static class GpCli
         var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var catalog = provider.GetService<IProcessCatalog>();
-        var probe = BuildProbe(probeContainer);
+        var probe = await BuildProbeAsync(probeContainer).ConfigureAwait(false);
         (GpProjectManifest Manifest, GpRunnability Verdict)? projectDiscovery = project is null ? null : DiscoverProject(project);
 
         if (asJson)
@@ -229,7 +229,10 @@ public static class GpCli
             : null;
     }
 
-    private static GpEnvironmentProbe BuildProbe(bool probeContainer, bool? knownImageAvailability = null)
+    private static async Task<GpEnvironmentProbe> BuildProbeAsync(
+        bool probeContainer,
+        bool? knownImageAvailability = null,
+        CancellationToken cancellationToken = default)
     {
         var configuration = GpContainerConfiguration.Create();
         var image = configuration["GdalContainer:Image"]!;
@@ -243,13 +246,17 @@ public static class GpCli
             return new GpEnvironmentProbe(null, image);
         }
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
         bool available;
         try
         {
-            available = GdalContainerProbe.IsImageAvailableAsync(image, configuration["GdalContainer:DockerExecutable"]!, timeout.Token).GetAwaiter().GetResult();
+            available = await GdalContainerProbe.IsImageAvailableAsync(
+                image,
+                configuration["GdalContainer:DockerExecutable"]!,
+                timeout.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             available = false;
         }
@@ -318,7 +325,7 @@ public static class GpCli
         return probe.Succeeded && (managedOnly || nativeReady) ? 0 : 1;
     }
 
-    private static int RunDescribe(string[] args)
+    private static async Task<int> RunDescribeAsync(string[] args)
     {
         if (args.Length == 0)
         {
@@ -389,7 +396,8 @@ public static class GpCli
                 $"Process id '{processId}' is not registered. Run 'honua gp list' to see available processes.");
         }
 
-        var runnability = GpRunnabilityAssessor.Assess(definition, processId, ExecutorProfile(ResolveExecutors(provider), processId), BuildProbe(probeContainer));
+        var probe = await BuildProbeAsync(probeContainer).ConfigureAwait(false);
+        var runnability = GpRunnabilityAssessor.Assess(definition, processId, ExecutorProfile(ResolveExecutors(provider), processId), probe);
         Console.WriteLine(asJson
             ? GpDescribeRenderer.RenderJson(definition, runnability)
             : GpDescribeRenderer.RenderText(definition, runnability));
@@ -428,7 +436,7 @@ public static class GpCli
         // naming it; the devkit never turns a local run into a server submission.
         var runnability = GpRunnabilityAssessor.Assess(
             catalog?.GetProcess(parsed.ProcessId), parsed.ProcessId, ExecutorProfile(executors, parsed.ProcessId),
-            BuildProbe(probeContainer: false, knownImageAvailability: gdalMode == GdalProcessExecutorMode.Container ? true : null));
+            await BuildProbeAsync(probeContainer: false, knownImageAvailability: gdalMode == GdalProcessExecutorMode.Container ? true : null).ConfigureAwait(false));
         if (!runnability.RunnableHere)
         {
             var blocker = runnability.Prerequisites.First(static p => !p.Satisfied);

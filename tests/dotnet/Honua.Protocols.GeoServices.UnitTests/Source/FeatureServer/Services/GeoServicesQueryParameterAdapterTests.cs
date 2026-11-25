@@ -51,6 +51,33 @@ public sealed class GeoServicesQueryParameterAdapterTests
             "the page must match the layer's advertised maxRecordCount when the caller omits resultRecordCount");
     }
 
+    [UnitTest]
+    public async Task ConvertAsync_ReturnIdsOnly_HonorsExplicitResultRecordCountClampedToMaxNonStreamingObjectIds()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(NullLogger<GeoServicesQueryParameterAdapter>.Instance);
+        var resource = new MetadataV2Object
+        {
+            SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }]
+        };
+        var limits = new QueryLimits { MaxRecordCount = 1000, DefaultRecordCount = 100 };
+
+        var explicitResult = await adapter.ConvertAsync(new GeoServicesQueryRequest
+        {
+            Parameters = new QueryParameters { F = "pbf", ReturnIdsOnly = true, ResultRecordCount = 250 },
+            QueryLimits = limits
+        }, resource);
+        explicitResult.IsSuccess.Should().BeTrue();
+        explicitResult.Query!.Value.Limit.Should().Be(250);
+
+        var oversizedResult = await adapter.ConvertAsync(new GeoServicesQueryRequest
+        {
+            Parameters = new QueryParameters { F = "pbf", ReturnIdsOnly = true, ResultRecordCount = 500_000 },
+            QueryLimits = limits
+        }, resource);
+        oversizedResult.IsSuccess.Should().BeTrue();
+        oversizedResult.Query!.Value.Limit.Should().Be(FeatureServerQueryExecutor.MaxNonStreamingObjectIds);
+    }
+
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public async Task ConvertAsync_OutFields_ProjectsCanonicalSchemaName()

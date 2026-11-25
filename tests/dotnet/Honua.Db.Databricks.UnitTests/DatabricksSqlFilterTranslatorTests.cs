@@ -76,6 +76,34 @@ public sealed class DatabricksSqlFilterTranslatorTests
         Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Translate_EwkbGeometryLiteral_StripsEmbeddedSridAndPassesLayerSrid()
+    {
+        // Little-endian EWKB POINT with SRID flag (0x20000001) and embedded SRID 4326.
+        byte[] ewkbPoint =
+        [
+            0x01,
+            0x01, 0x00, 0x00, 0x20,
+            0xE6, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ];
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geometry"),
+            new GeometryLiteral(ewkbPoint, 4326, "POINT"));
+
+        var fragment = new DatabricksSqlFilterTranslator().Translate(
+            filter,
+            FilterTranslationContext.FromResource(CreateSpatialResource()));
+
+        Assert.Contains("st_geomfromwkb(unhex(:p0), 4326)", fragment.Sql, StringComparison.Ordinal);
+        var boundHex = Assert.IsType<string>(Assert.Single(fragment.Parameters));
+        // Normalized OGC WKB has 21 bytes (42 hex chars), not 25 bytes (50 hex chars).
+        Assert.Equal(42, boundHex.Length);
+        Assert.StartsWith("0101000000", boundHex, StringComparison.Ordinal);
+    }
+
     private static MetadataV2Object CreateSpatialResource()
         => new()
         {

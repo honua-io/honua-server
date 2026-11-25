@@ -6,9 +6,14 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Caching;
@@ -145,10 +150,11 @@ internal sealed class MetadataDocumentByteCache
             return Results.Json(uncached, request.TypeInfo, contentType: request.ContentType);
         }
 
+        var scopedKey = ScopeKeyForRequest(context, cacheKey);
         var configGeneration = await ResolveConfigGenerationAsync(context, context.RequestAborted)
             .ConfigureAwait(false);
         var stamp = docCache.CaptureStamp(configGeneration);
-        if (docCache.Get(stamp, cacheKey) is { } hit)
+        if (docCache.Get(stamp, scopedKey) is { } hit)
         {
             return hit.ToResult();
         }
@@ -162,7 +168,55 @@ internal sealed class MetadataDocumentByteCache
         var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, request.TypeInfo);
         var etag = context.RequestServices.GetService<IETagService>()?.ComputeETag(bytes);
         var document = new CachedMetadataDocument(bytes, request.ContentType, etag);
-        return docCache.Set(stamp, cacheKey, document).ToResult();
+        return docCache.Set(stamp, scopedKey, document).ToResult();
+    }
+
+    // Partition every cached document centrally by tenant, active schema, test-schema override,
+    // and license edition so schema-per-tenant or edition-varying payloads never cross boundaries.
+    internal static string ScopeKeyForRequest(HttpContext context, string cacheKey)
+    {
+        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>";
+        var schema = SchemaContext.AmbientCurrentSchema
+            ?? context.RequestServices?.GetService<ISchemaContext>()?.CurrentSchema
+            ?? "default";
+        var testSchema = ResolveTestSchemaHeader(context);
+        var licenseSnapshot = context.RequestServices?.GetService<ILicenseEntitlementService>()?.GetSnapshot();
+        var sb = PooledTextBuilder.Rent();
+        try
+        {
+            sb.Append("t:").Append(tenantId)
+                .Append("|s:").Append(schema)
+                .Append("|ts:").Append(testSchema)
+                .Append("|l:");
+            if (licenseSnapshot is null)
+            {
+                sb.Append("none");
+            }
+            else
+            {
+                sb.Append(licenseSnapshot.EditionName)
+                    .Append(':')
+                    .Append(licenseSnapshot.SnapshotVersion);
+            }
+
+            sb.Append("|k:").Append(cacheKey);
+            return HashKey(sb);
+        }
+        finally
+        {
+            PooledTextBuilder.Return(sb);
+        }
+    }
+
+    private static string ResolveTestSchemaHeader(HttpContext context)
+    {
+        if (context.RequestServices?.GetService<IConfiguration>()?.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS") == true
+            && context.Request.Headers.TryGetValue("X-Honua-Test-Schema", out var headerSchema))
+        {
+            return headerSchema.ToString().Trim();
+        }
+
+        return string.Empty;
     }
 
     // Must match the query keys BaseUrlResolver.PreserveToken copies into document links.

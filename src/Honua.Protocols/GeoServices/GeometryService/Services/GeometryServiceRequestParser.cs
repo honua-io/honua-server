@@ -10,8 +10,6 @@ namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
 internal static class GeometryServiceRequestParser
 {
-    private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
-
     // The body passed the request body limit while it was read.
     public const string PayloadTooLargeError = "The request body is larger than this operation accepts.";
 
@@ -89,7 +87,7 @@ internal static class GeometryServiceRequestParser
             var receivedContentType = string.IsNullOrWhiteSpace(request.ContentType)
                 ? "(missing)"
                 : request.ContentType.Split(';', 2)[0].Trim();
-            return (null, UnsupportedMediaTypeErrorPrefix + receivedContentType);
+            return (null, GeoServicesRequestValueHelpers.UnsupportedMediaTypeErrorPrefix + receivedContentType);
         }
 
         try
@@ -138,17 +136,7 @@ internal static class GeometryServiceRequestParser
     }
 
     public static bool TryGetUnsupportedMediaType(string? error, out string? receivedContentType)
-    {
-        receivedContentType = null;
-        if (string.IsNullOrWhiteSpace(error) ||
-            !error.StartsWith(UnsupportedMediaTypeErrorPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        receivedContentType = error[UnsupportedMediaTypeErrorPrefix.Length..];
-        return true;
-    }
+        => GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(error, out receivedContentType);
 
     private static bool IsSupportedJsonContentType(string? contentType)
     {

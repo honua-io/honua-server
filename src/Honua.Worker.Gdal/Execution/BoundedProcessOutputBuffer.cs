@@ -7,21 +7,43 @@ namespace Honua.Worker.Gdal.Execution;
 
 internal sealed class BoundedProcessOutputBuffer
 {
-    public const int DefaultMaxOutputChars = 4 * 1024 * 1024;
-    public const int DefaultMaxErrorChars = 64 * 1024;
-    public const string StdoutOverflowMessage = "GDAL command standard output exceeded the configured buffer limit.";
+    internal const int DefaultMaxChars = 256 * 1024;
+    internal const int DefaultStandardOutputMaxChars = 50 * 1024 * 1024;
+    internal const int DefaultMaxErrorChars = 64 * 1024;
+    internal const string TruncationMarker = "... [output truncated]";
+    internal const string StdoutOverflowMessage = "GDAL command standard output exceeded the configured buffer limit.";
 
-    private readonly object _sync = new();
-    private readonly StringBuilder _builder = new();
+    private enum TruncationMarkerMode
+    {
+        Append,
+        Omit,
+    }
+
     private readonly int _maxChars;
+    private readonly TruncationMarkerMode _truncationMarkerMode;
+    private readonly Lock _sync = new();
+    private readonly StringBuilder _builder = new();
     private bool _truncated;
     private long _truncatedLineCount;
 
-    public BoundedProcessOutputBuffer(int maxChars = DefaultMaxOutputChars)
+    public BoundedProcessOutputBuffer(int maxChars = DefaultMaxChars)
+        : this(maxChars, TruncationMarkerMode.Append)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(maxChars);
-        _maxChars = maxChars;
     }
+
+    private BoundedProcessOutputBuffer(int maxChars, TruncationMarkerMode truncationMarkerMode)
+    {
+        _maxChars = maxChars > 0
+            ? maxChars
+            : throw new ArgumentOutOfRangeException(nameof(maxChars), "Maximum character limit must be positive.");
+        _truncationMarkerMode = truncationMarkerMode;
+    }
+
+    public static BoundedProcessOutputBuffer CreateWithTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Append);
+
+    public static BoundedProcessOutputBuffer CreateWithoutTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Omit);
 
     public int MaxChars => _maxChars;
 
@@ -36,7 +58,7 @@ internal sealed class BoundedProcessOutputBuffer
         }
     }
 
-    public bool IsTruncated
+    public bool Truncated
     {
         get
         {
@@ -46,6 +68,8 @@ internal sealed class BoundedProcessOutputBuffer
             }
         }
     }
+
+    public bool IsTruncated => Truncated;
 
     public long TruncatedLineCount
     {
@@ -67,15 +91,13 @@ internal sealed class BoundedProcessOutputBuffer
 
         lock (_sync)
         {
-            var remaining = _maxChars - _builder.Length;
-            if (remaining <= 0)
+            if (_truncated)
             {
-                _truncated = true;
                 _truncatedLineCount++;
                 return;
             }
 
-            AppendWithinRemaining(line, remaining);
+            AppendWithinLimit(line);
         }
     }
 
@@ -92,7 +114,7 @@ internal sealed class BoundedProcessOutputBuffer
         BoundedProcessOutputBuffer stdout,
         BoundedProcessOutputBuffer stderr)
     {
-        if (exitCode == 0 && stdout.IsTruncated)
+        if (exitCode == 0 && stdout.Truncated)
         {
             var existingError = stderr.ToString().Trim();
             var message = string.IsNullOrEmpty(existingError)
@@ -103,6 +125,7 @@ internal sealed class BoundedProcessOutputBuffer
                 ExitCode = 1,
                 StandardOutput = string.Empty,
                 StandardError = message,
+                StandardOutputTruncated = true,
             };
         }
 
@@ -111,24 +134,29 @@ internal sealed class BoundedProcessOutputBuffer
             ExitCode = exitCode,
             StandardOutput = stdout.ToString(),
             StandardError = stderr.ToString(),
+            StandardOutputTruncated = stdout.Truncated,
         };
     }
 
-    private void AppendWithinRemaining(string line, int remaining)
+    private void AppendWithinLimit(string line)
     {
-        var newline = Environment.NewLine;
-        var needed = (long)line.Length + newline.Length;
-        if (needed <= remaining)
+        var remaining = _maxChars - _builder.Length;
+        var lineLengthWithNewLine = (long)line.Length + Environment.NewLine.Length;
+        if (lineLengthWithNewLine <= remaining)
         {
-            _builder.Append(line);
-            _builder.Append(newline);
+            _builder.AppendLine(line);
             return;
         }
 
-        var take = Math.Min(line.Length, remaining);
-        if (take > 0)
+        if (remaining > 0)
         {
-            _builder.Append(line.AsSpan(0, take));
+            _builder.Append(line, 0, Math.Min(line.Length, remaining));
+        }
+
+        if (_truncationMarkerMode == TruncationMarkerMode.Append)
+        {
+            _builder.AppendLine();
+            _builder.Append(TruncationMarker);
         }
 
         _truncated = true;

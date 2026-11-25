@@ -22,7 +22,8 @@ internal static class GeocodingOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/providers", HandleGetProviderStatus)
             .WithDisplayName("Get Geocoding Provider Status")

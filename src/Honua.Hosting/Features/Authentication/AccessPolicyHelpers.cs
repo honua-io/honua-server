@@ -97,26 +97,6 @@ internal static partial class AccessPolicyHelpers
         return CreateAccessDeniedResult(context, decision);
     }
 
-    public static IResult? RequireResourceAccess(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service = null,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(resource);
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
-        {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
-        }
-
-        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
-        {
-            return StandardErrorHelpers.CreateForbidden(context, MetadataV2RelationshipEditPolicy.ReadOnlyReason);
-        }
-
-        return CreateAccessDeniedResult(context, EvaluateResourceAccess(context, resource, service, scope));
-    }
-
     public static Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
         MetadataV2Object resource,
@@ -395,57 +375,6 @@ internal static partial class AccessPolicyHelpers
             || string.Equals(grant.Service, "*", StringComparison.Ordinal)
             || string.Equals(grant.Layer, "*", StringComparison.Ordinal);
 
-    public static IResult? RequireServiceAccess(
-        HttpContext context,
-        MetadataV2Service service,
-        AccessScope scope = AccessScope.Read)
-        => CreateAccessDeniedResult(context, EvaluateServiceAccess(context, service, scope));
-
-    public static AccessDecision EvaluateServiceAccess(
-        HttpContext context,
-        MetadataV2Service service,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
-        {
-            return AccessDecision.Forbidden(AccessForbiddenMessage);
-        }
-
-        return EvaluateScopedKeyAccess(context.User, service.Metadata.Name, null, DefaultOperationForScope(scope))
-            ?? EvaluateServicePolicy(context.RequestServices, context.User, null, service, scope);
-    }
-
-    public static bool IsResourceAccessible(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service = null,
-        AccessScope scope = AccessScope.Read)
-        => EvaluateResourceAccess(context, resource, service, scope).IsAllowed;
-
-    // A foreign-tenant resource is forbidden before the coarse seam so list surfaces hide it the same way an item check does.
-    public static AccessDecision EvaluateResourceAccess(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service = null,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(resource);
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
-        {
-            return AccessDecision.Forbidden(TenantScopeDeniedReason);
-        }
-
-        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
-        {
-            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
-        }
-
-        var decision = EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
-            ?? EvaluateServicePolicy(context.RequestServices, context.User, resource.AccessPolicy, service, scope);
-        return ResponseAccessVerdict.ObserveGrant(context, decision);
-    }
-
     // An explicit group audience is an alternative service READ grant only.
     // Resource policy remains authoritative, and callers enforce tenant/key scope first.
     internal static AccessDecision EvaluateServicePolicy(
@@ -640,16 +569,6 @@ internal static partial class AccessPolicyHelpers
             context, candidates, service, operation, cancellationToken).ConfigureAwait(false);
         return access.RequireAny(candidates);
     }
-
-    public static IResult? RequireAnyResourceAccess(
-        HttpContext context,
-        IEnumerable<MetadataV2Object> resources,
-        MetadataV2Service? service = null,
-        AccessScope scope = AccessScope.Read)
-        => RequireAnyDecision(
-            context,
-            resources,
-            resource => EvaluateResourceAccess(context, resource, service, scope));
 
     internal static IResult? RequireAnyDecision(
         HttpContext context,

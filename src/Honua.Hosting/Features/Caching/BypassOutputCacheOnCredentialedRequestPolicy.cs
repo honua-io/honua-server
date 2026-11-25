@@ -100,7 +100,7 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
 
     private static string? ResolveForwardedClientCertHeader(HttpContext context)
     {
-        if (!TryGetRequestServices(context, out var services))
+        if (!ResponseCacheUtilities.TryGetRequestServices(context, out var services))
         {
             return null;
         }
@@ -122,20 +122,5 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
         var configuration = services.GetService<IConfiguration>();
         var fromConfig = configuration?[$"{ClientCertificateAuthenticationOptions.SectionName}:ForwardedCertificate:HeaderName"];
         return string.IsNullOrWhiteSpace(fromConfig) ? null : fromConfig;
-    }
-
-    private static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
-    {
-        try
-        {
-            services = context.RequestServices;
-        }
-        catch (InvalidOperationException)
-        {
-            services = null!;
-            return false;
-        }
-
-        return services is not null;
     }
 }

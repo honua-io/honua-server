@@ -757,36 +757,38 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return true;
     }
 
-    private async Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
+    private Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
+        => GetJsonDocumentAsync(
+            _httpClient,
+            new JsonDocumentFetchRequest
+            {
+                Uri = uri,
+                PrimaryAccept = "application/geo+json",
+                SecondaryAccept = "application/json",
+            },
+            cancellationToken);
+
+    internal static async Task<JsonDocument> GetJsonDocumentAsync(
+        HttpClient httpClient,
+        JsonDocumentFetchRequest request,
+        CancellationToken cancellationToken)
     {
-        var requestUri = uri;
+        var requestUri = request.Uri;
 
         for (var redirectCount = 0; ; redirectCount++)
         {
             MigrationLinkedUrlPolicy.Current.EnsureAllows(requestUri);
             using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            message.Headers.Accept.ParseAdd("application/geo+json");
-            message.Headers.Accept.ParseAdd("application/json");
+            message.Headers.Accept.ParseAdd(request.PrimaryAccept);
+            message.Headers.Accept.ParseAdd(request.SecondaryAccept);
 
-            using var response = await _httpClient
+            using var response = await httpClient
                 .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
 
             if ((int)response.StatusCode is >= 300 and < 400)
             {
-                if (redirectCount >= MaxJsonDocumentRedirects)
-                {
-                    throw new HttpRequestException("OGC API Features endpoint returned too many redirects.");
-                }
-
-                var redirectUri = MigrationPinnedDns.ResolveRedirectUri(requestUri, response.Headers.Location);
-                if (redirectUri == null || !MigrationPinnedDns.IsSafeRedirectUri(requestUri, redirectUri))
-                {
-                    throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
-                }
-
-                MigrationLinkedUrlPolicy.Current.EnsureAllows(redirectUri);
-                requestUri = redirectUri;
+                requestUri = ResolveSafeRedirectUri(requestUri, response, redirectCount);
                 continue;
             }
 
@@ -796,6 +798,32 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 .ConfigureAwait(false);
             return JsonDocument.Parse(payload);
         }
+    }
+
+    private static Uri ResolveSafeRedirectUri(Uri requestUri, HttpResponseMessage response, int redirectCount)
+    {
+        if (redirectCount >= MaxJsonDocumentRedirects)
+        {
+            throw new HttpRequestException("OGC API Features endpoint returned too many redirects.");
+        }
+
+        var redirectUri = MigrationPinnedDns.ResolveRedirectUri(requestUri, response.Headers.Location);
+        if (redirectUri == null || !MigrationPinnedDns.IsSafeRedirectUri(requestUri, redirectUri))
+        {
+            throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
+        }
+
+        MigrationLinkedUrlPolicy.Current.EnsureAllows(redirectUri);
+        return redirectUri;
+    }
+
+    internal sealed record JsonDocumentFetchRequest
+    {
+        public required Uri Uri { get; init; }
+
+        public required string PrimaryAccept { get; init; }
+
+        public required string SecondaryAccept { get; init; }
     }
 
     private static OgcApiFeaturesImportResult Failure(

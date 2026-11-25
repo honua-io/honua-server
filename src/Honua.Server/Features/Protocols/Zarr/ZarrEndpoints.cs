@@ -30,7 +30,8 @@ internal static class ZarrEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Zarr Stores")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         group.MapPost("/", HandleRegister)
             .WithDisplayName("Register Zarr Store")
@@ -222,16 +223,15 @@ internal static class ZarrEndpoints
         catch (InvalidDataException ex)
         {
             ZarrLog.MetadataScanFailed(logger, ex, id);
-            return TypedResults.BadRequest("Zarr metadata is invalid: " + ex.Message);
+            return TypedResults.BadRequest("Zarr metadata is invalid.");
         }
-        catch (InvalidOperationException ex)
+        catch (ZarrSubsetValidationException ex)
         {
             ZarrLog.MetadataScanFailed(logger, ex, id);
             return TypedResults.BadRequest(ex.Message);
         }
         // Intentional broad catch: this is the request-handling boundary for the Zarr metadata scan
-        // endpoint (after the more specific InvalidDataException/InvalidOperationException cases
-        // above); the failure is logged and mapped to a generic error response below.
+        // endpoint; unexpected failures are logged and mapped to a generic error response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ZarrLog.MetadataScanFailed(logger, ex, id);

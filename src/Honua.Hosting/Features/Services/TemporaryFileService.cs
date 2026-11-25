@@ -7,6 +7,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Services;
 
@@ -117,6 +119,8 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             throw new InvalidOperationException($"Content type '{contentType}' is not allowed. Allowed types: {string.Join(", ", _allowedContentTypes)}");
         }
 
+        var authorizedPrincipalKey = TemporaryFilePrincipalKey.ResolveForStorage(principal);
+
         var fileId = Guid.NewGuid().ToString("N");
         var extension = GetFileExtension(contentType);
         var fileName = $"{fileId}{extension}";
@@ -143,7 +147,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 ExpiresAt = expirationTime,
                 OriginalSize = data.Length,
                 CreatedAt = DateTimeOffset.UtcNow,
-                AuthorizedPrincipalKey = ResolvePrincipalKey(principal)
+                AuthorizedPrincipalKey = authorizedPrincipalKey
             };
             var metadata = System.Text.Json.JsonSerializer.Serialize(metadataObj, TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
             await WriteOwnerOnlyAsync(metadataPath, System.Text.Encoding.UTF8.GetBytes(metadata), cancellationToken).ConfigureAwait(false);
@@ -477,31 +481,8 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         };
     }
 
-    private static string? ResolvePrincipalKey(ClaimsPrincipal? principal)
-    {
-        if (principal?.Identity?.IsAuthenticated != true)
-        {
-            return null;
-        }
-
-        return principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue("sub")
-            ?? principal.Identity.Name;
-    }
-
     private static bool IsPrincipalAuthorized(TemporaryFileMetadata metadata, ClaimsPrincipal? principal)
-    {
-        if (string.IsNullOrWhiteSpace(metadata.AuthorizedPrincipalKey))
-        {
-            return true;
-        }
-
-        var principalKey = ResolvePrincipalKey(principal);
-        return string.Equals(
-            principalKey,
-            metadata.AuthorizedPrincipalKey,
-            StringComparison.Ordinal);
-    }
+        => TemporaryFilePrincipalKey.IsAuthorized(metadata.AuthorizedPrincipalKey, principal);
 
     private static async Task WriteOwnerOnlyAsync(string path, byte[] data, CancellationToken cancellationToken)
     {
@@ -565,4 +546,47 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         public DateTimeOffset CreatedAt { get; set; }
         public string? AuthorizedPrincipalKey { get; set; }
     }
+}
+
+// Shared canonical ownership key for local and cloud-backed temporary files. Authenticated callers
+// are bound by authentication scheme, issuer, tenant, and unique key/subject identifier, and fail
+// closed when no unique identifier can be resolved rather than falling back to anonymous access.
+internal static class TemporaryFilePrincipalKey
+{
+    public static string? ResolveForStorage(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        return TryResolveAuthenticatedKey(principal)
+            ?? throw new InvalidOperationException(
+                "Authenticated principal does not carry a unique identity for temporary file ownership.");
+    }
+
+    public static string? ResolveForRead(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        return TryResolveAuthenticatedKey(principal);
+    }
+
+    public static bool IsAuthorized(string? authorizedPrincipalKey, ClaimsPrincipal? principal)
+    {
+        if (string.IsNullOrWhiteSpace(authorizedPrincipalKey))
+        {
+            return true;
+        }
+
+        var principalKey = ResolveForRead(principal);
+        return principalKey is not null
+            && string.Equals(principalKey, authorizedPrincipalKey, StringComparison.Ordinal);
+    }
+
+    private static string? TryResolveAuthenticatedKey(ClaimsPrincipal principal)
+        => OwnerIdentityScope.TryResolvePrincipalBindingKey(principal);
 }

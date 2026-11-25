@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -108,7 +109,8 @@ internal static class CollectionsEndpoints
                     continue;
                 }
 
-                var decision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource!, service);
+                var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                    context, resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
 
                 if (decision.IsAllowed)
                 {

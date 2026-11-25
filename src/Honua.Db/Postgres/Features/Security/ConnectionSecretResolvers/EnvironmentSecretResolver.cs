@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 
@@ -63,44 +64,41 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
-            return connectionStringTemplate;
-
-        // Simple pattern to find env: references in connection strings
-        // This is a basic implementation - could be enhanced with more sophisticated parsing
-        var result = connectionStringTemplate;
-        var startIndex = 0;
-
-        while (true)
         {
-            var envIndex = result.IndexOf(ShortPrefix, startIndex, StringComparison.OrdinalIgnoreCase);
-            if (envIndex == -1)
-                break;
+            return connectionStringTemplate;
+        }
 
-            // Find the end of the variable reference (semicolon, space, or end of string)
+        // Single-pass scan into a StringBuilder so substituted values are never re-parsed.
+        var builder = new StringBuilder(connectionStringTemplate.Length);
+        var cursor = 0;
+
+        while (cursor < connectionStringTemplate.Length)
+        {
+            var envIndex = connectionStringTemplate.IndexOf(ShortPrefix, cursor, StringComparison.OrdinalIgnoreCase);
+            if (envIndex == -1)
+            {
+                builder.Append(connectionStringTemplate, cursor, connectionStringTemplate.Length - cursor);
+                break;
+            }
+
+            builder.Append(connectionStringTemplate, cursor, envIndex - cursor);
+
             var endIndex = envIndex + ShortPrefix.Length;
-            while (endIndex < result.Length &&
-                   result[endIndex] != ';' &&
-                   result[endIndex] != ' ' &&
-                   result[endIndex] != '\t')
+            while (endIndex < connectionStringTemplate.Length &&
+                   connectionStringTemplate[endIndex] != ';' &&
+                   connectionStringTemplate[endIndex] != ' ' &&
+                   connectionStringTemplate[endIndex] != '\t')
             {
                 endIndex++;
             }
 
-            var secretKey = result[envIndex..endIndex];
-            var resolvedValue = await ResolveSecretAsync(secretKey, cancellationToken);
-
-            if (!string.IsNullOrEmpty(resolvedValue))
-            {
-                result = result.Replace(secretKey, resolvedValue);
-                startIndex = envIndex + resolvedValue.Length;
-            }
-            else
-            {
-                startIndex = endIndex;
-            }
+            var secretKey = connectionStringTemplate[envIndex..endIndex];
+            var resolvedValue = await ResolveSecretAsync(secretKey, cancellationToken).ConfigureAwait(false);
+            builder.Append(string.IsNullOrEmpty(resolvedValue) ? secretKey : resolvedValue);
+            cursor = endIndex;
         }
 
-        return result;
+        return builder.ToString();
     }
 
     internal static bool TryGetVariableName(

@@ -277,6 +277,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 1;
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+        AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
@@ -468,6 +469,14 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         else if (dateBin.FixedInterval.HasValue)
         {
             var intervalSeconds = (long)dateBin.FixedInterval.Value.TotalSeconds;
+            if (intervalSeconds <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(dateBin),
+                    dateBin.FixedInterval.Value,
+                    "Date bin FixedInterval must be at least one second.");
+            }
+
             binExpr = $"date_trunc('second', {fieldExpr} - INTERVAL '{intervalSeconds} seconds' * (EXTRACT(EPOCH FROM {fieldExpr}) / {intervalSeconds} - FLOOR(EXTRACT(EPOCH FROM {fieldExpr}) / {intervalSeconds})))";
         }
         else
@@ -530,6 +539,14 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             var start = binDefinition.IntervalStart ?? 0;
+            if (!double.IsFinite(start))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(binDefinition),
+                    start,
+                    "IntervalStart must be a finite value.");
+            }
+
             binExpr = $"FLOOR(({fieldExpr} - {start.ToString(CultureInfo.InvariantCulture)}) / {binDefinition.IntervalSize.Value.ToString(CultureInfo.InvariantCulture)}) * {binDefinition.IntervalSize.Value.ToString(CultureInfo.InvariantCulture)} + {start.ToString(CultureInfo.InvariantCulture)}";
         }
         else

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Tiles.PMTiles;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
@@ -225,5 +226,99 @@ public class PMTilesDirectoryTests
             tileData.Should().BeEquivalentTo(expectedTile,
                 $"the bytes at tileId={entries[i].TileId} must be that coordinate's tile");
         }
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Decompress_GzipPayloadExceedingMaxDecompressedBytes_ThrowsInvalidDataException()
+    {
+        var payload = new byte[64 * 1024];
+        Array.Fill(payload, (byte)'A');
+        var compressed = PMTilesDirectory.Compress(payload, PMTilesCompression.Gzip);
+
+        var act = () => PMTilesDirectory.Decompress(compressed, PMTilesCompression.Gzip, maxDecompressedBytes: 1024);
+
+        act.Should().Throw<InvalidDataException>()
+            .WithMessage("*exceeds maximum allowed size*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Decompress_GzipPayloadWithinLimit_RoundTripsSuccessfully()
+    {
+        var payload = new byte[512];
+        Array.Fill(payload, (byte)'B');
+        var compressed = PMTilesDirectory.Compress(payload, PMTilesCompression.Gzip);
+
+        var decompressed = PMTilesDirectory.Decompress(compressed, PMTilesCompression.Gzip, maxDecompressedBytes: 1024);
+
+        decompressed.Should().Equal(payload);
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_EmptyBuffer_ThrowsInvalidDataException()
+    {
+        var act = () => PMTilesDirectory.DeserializeEntries([]);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_TruncatedVarint_ThrowsInvalidDataException()
+    {
+        // Continuation bit set on final byte with no following byte
+        var act = () => PMTilesDirectory.DeserializeEntries([0x81]);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_TruncatedEntryColumns_ThrowsInvalidDataException()
+    {
+        // 1 entry requires at least 4 varints, but the final offset byte is truncated mid-varint.
+        var act = () => PMTilesDirectory.DeserializeEntries([0x01, 0x00, 0x01, 0x0A, 0x80]);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_VarintExceeding64Bits_ThrowsInvalidDataException()
+    {
+        // 10-byte varint whose 10th byte sets bits beyond bit 63 (0x02 << 63 overflows ulong).
+        byte[] overflowVarint = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
+
+        var act = () => PMTilesDirectory.DeserializeEntries(overflowVarint);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_EntryCountExceedingPayloadCapacity_ThrowsInvalidDataException()
+    {
+        // Claims 10 entries, but only 4 bytes follow (can hold at most 1 entry).
+        var act = () => PMTilesDirectory.DeserializeEntries([0x0A, 0x00, 0x01, 0x01, 0x01]);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_EntryCountExceedingIntMax_ThrowsInvalidDataException()
+    {
+        using var stream = new MemoryStream();
+        PMTilesDirectory.WriteVarint(stream, (ulong)int.MaxValue + 1UL);
+        var bytes = stream.ToArray();
+
+        var act = () => PMTilesDirectory.DeserializeEntries(bytes);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [UnitTest]
+    public void DeserializeEntries_FirstEntryZeroOffset_ThrowsInvalidDataException()
+    {
+        // 1 entry: num_entries=1, tile_id_delta=0, run_length=1, length=10, offset=0 (invalid for i == 0)
+        var act = () => PMTilesDirectory.DeserializeEntries([0x01, 0x00, 0x01, 0x0A, 0x00]);
+
+        act.Should().Throw<InvalidDataException>();
     }
 }

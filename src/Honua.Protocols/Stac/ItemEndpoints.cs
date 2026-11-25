@@ -119,6 +119,15 @@ internal static class ItemEndpoints
 
             var effectiveLimit = Math.Clamp(limit ?? StacConstants.DefaultSearchLimit, 1, StacConstants.MaxSearchLimit);
             var effectiveOffset = Math.Max(offset ?? 0, 0);
+            var maxOffset = context.RequestServices.GetService<IOptions<Honua.Core.Configuration.LimitsOptions>>()?.Value.Query.MaxOffset
+                ?? 1_000_000;
+            if (effectiveOffset > maxOffset)
+            {
+                StacTelemetry.SetFailed(activity, "offset_limit_exceeded");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"offset ({effectiveOffset.ToString(CultureInfo.InvariantCulture)}) exceeds the maximum supported offset of {maxOffset.ToString(CultureInfo.InvariantCulture)}.");
+            }
 
             var query = new FeatureQuery
             {

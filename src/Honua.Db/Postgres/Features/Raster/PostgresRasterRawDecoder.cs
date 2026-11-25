@@ -6,12 +6,54 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-internal static class PostgresRasterRawDecoder
+internal static partial class PostgresRasterRawDecoder
 {
     private const int HeaderLength = 61;
     private const int MaxSampleBytes = 256 * 1024 * 1024;
 
+    private enum RasterByteOrder
+    {
+        BigEndian,
+        LittleEndian
+    }
+
+    private readonly struct RasterHeader
+    {
+        public required RasterByteOrder ByteOrder { get; init; }
+        public required ushort BandCount { get; init; }
+        public required ushort Width { get; init; }
+        public required ushort Height { get; init; }
+        public required int Pixels { get; init; }
+    }
+
+    private sealed class BandDecodeState
+    {
+        public int Offset { get; set; } = HeaderLength;
+        public byte[]? Data { get; set; }
+        public required byte[][] Masks { get; init; }
+        public int SampleType { get; set; } = -1;
+        public int SampleBytes { get; set; }
+        public string? PixelType { get; set; }
+    }
+
     internal static RasterResult Decode(ReadOnlySpan<byte> wkb)
+    {
+        var header = ReadRasterHeader(wkb);
+        var state = new BandDecodeState { Masks = new byte[header.BandCount][] };
+        for (var band = 0; band < header.BandCount; band++)
+        {
+            DecodeBand(wkb, header, state);
+        }
+
+        if (state.Offset != wkb.Length)
+        {
+            throw new InvalidDataException("Unexpected trailing raster bytes.");
+        }
+
+        return BuildRasterResult(wkb, header, state);
+    }
+
+    private static RasterHeader ReadRasterHeader(ReadOnlySpan<byte> wkb)
     {
         Require(wkb, 0, HeaderLength);
         if (wkb[0] is not (0 or 1)) throw new InvalidDataException("Invalid raster byte order.");
@@ -21,70 +63,96 @@ internal static class PostgresRasterRawDecoder
         var width = ReadUInt16(wkb[57..], little);
         var height = ReadUInt16(wkb[59..], little);
         if (width == 0 || height == 0 || bandCount == 0) throw new InvalidDataException("Empty raster pixel layout.");
-        var pixels = checked((int)width * height);
-        var offset = HeaderLength;
-        byte[]? data = null;
-        var masks = new byte[bandCount][];
-        var sampleType = -1;
-        var sampleBytes = 0;
-        string? pixelType = null;
-        for (var band = 0; band < bandCount; band++)
+        return new RasterHeader
         {
-            Require(wkb, offset, 1);
-            var flags = wkb[offset++];
-            if ((flags & 0x80) != 0) throw new NotSupportedException("Out-db bands must be materialized before export.");
-            var type = flags & 0x0f;
-            var layout = type switch
-            {
-                0 => (1, "1BB"),
-                1 => (1, "2BUI"),
-                2 => (1, "4BUI"),
-                3 => (1, "8BSI"),
-                4 => (1, "8BUI"),
-                5 => (2, "16BSI"),
-                6 => (2, "16BUI"),
-                7 => (4, "32BSI"),
-                8 => (4, "32BUI"),
-                10 => (4, "32BF"),
-                11 => (8, "64BF"),
-                _ => throw new NotSupportedException("Unsupported raster sample type.")
-            };
-            if (band == 0)
-            {
-                sampleType = type;
-                sampleBytes = layout.Item1;
-                pixelType = layout.Item2;
-                var total = checked((long)pixels * sampleBytes * bandCount);
-                if (total > MaxSampleBytes) throw new NotSupportedException("Raw raster exceeds the sample byte budget.");
-                data = new byte[(int)total];
-            }
-            else if (type != sampleType)
-            {
-                throw new NotSupportedException("Raw export requires one common sample type across bands.");
-            }
-            var bandLength = checked(pixels * sampleBytes);
-            Require(wkb, offset, checked(sampleBytes + bandLength));
-            var noData = ReadSample(wkb.Slice(offset, sampleBytes), type, little);
-            offset += sampleBytes;
-            var source = wkb.Slice(offset, bandLength);
-            var target = data!.AsSpan(band * bandLength, bandLength);
-            masks[band] = new byte[(pixels + 7) / 8];
-            for (var pixel = 0; pixel < pixels; pixel++)
-            {
-                var sample = source.Slice(pixel * sampleBytes, sampleBytes);
-                var destination = target.Slice(pixel * sampleBytes, sampleBytes);
-                sample.CopyTo(destination);
-                if (!little && sampleBytes > 1) destination.Reverse();
-                var value = ReadSample(sample, type, little);
-                // NoData is a stored sentinel, not a computed measurement. Match it exactly:
-                // a tolerance would mask adjacent valid samples. Equals also matches NaN sentinels.
-                var invalid = (flags & 0x20) != 0 || ((flags & 0x40) != 0 &&
-                    value.Equals(noData));
-                if (!invalid) masks[band][pixel / 8] |= (byte)(0x80 >> (pixel % 8));
-            }
-            offset += bandLength;
+            ByteOrder = little ? RasterByteOrder.LittleEndian : RasterByteOrder.BigEndian,
+            BandCount = bandCount,
+            Width = width,
+            Height = height,
+            Pixels = checked((int)width * height)
+        };
+    }
+
+    private static (int SampleBytes, string PixelType) ResolveSampleLayout(int type) => type switch
+    {
+        0 => (1, "1BB"),
+        1 => (1, "2BUI"),
+        2 => (1, "4BUI"),
+        3 => (1, "8BSI"),
+        4 => (1, "8BUI"),
+        5 => (2, "16BSI"),
+        6 => (2, "16BUI"),
+        7 => (4, "32BSI"),
+        8 => (4, "32BUI"),
+        10 => (4, "32BF"),
+        11 => (8, "64BF"),
+        _ => throw new NotSupportedException("Unsupported raster sample type.")
+    };
+
+    private static void DecodeBand(ReadOnlySpan<byte> wkb, RasterHeader header, BandDecodeState state)
+    {
+        Require(wkb, state.Offset, 1);
+        var flags = wkb[state.Offset++];
+        if ((flags & 0x80) != 0) throw new NotSupportedException("Out-db bands must be materialized before export.");
+        var type = flags & 0x0f;
+        var bandIndex = InitializeOrValidateBandLayout(header, state, type);
+
+        var bandLength = checked(header.Pixels * state.SampleBytes);
+        Require(wkb, state.Offset, checked(state.SampleBytes + bandLength));
+        var noDataSpan = wkb.Slice(state.Offset, state.SampleBytes);
+        state.Offset += state.SampleBytes;
+        var source = wkb.Slice(state.Offset, bandLength);
+        var target = state.Data!.AsSpan(bandIndex * bandLength, bandLength);
+        var mask = new byte[(header.Pixels + 7) / 8];
+        state.Masks[bandIndex] = mask;
+
+        if (header.ByteOrder == RasterByteOrder.LittleEndian || state.SampleBytes == 1)
+        {
+            source.CopyTo(target);
         }
-        if (offset != wkb.Length) throw new InvalidDataException("Unexpected trailing raster bytes.");
+        else
+        {
+            CopyBigEndianToLittleEndian(source, target, state.SampleBytes);
+        }
+
+        PopulateBandValidityMask(flags, new ValidityMaskRequest
+        {
+            LittleEndianTarget = target,
+            NoDataSpan = noDataSpan,
+            SampleType = type,
+            SourceByteOrder = header.ByteOrder,
+            Pixels = header.Pixels,
+            Mask = mask
+        });
+
+        state.Offset += bandLength;
+    }
+
+    private static int InitializeOrValidateBandLayout(RasterHeader header, BandDecodeState state, int type)
+    {
+        var layout = ResolveSampleLayout(type);
+        if (state.Data is null)
+        {
+            state.SampleType = type;
+            state.SampleBytes = layout.SampleBytes;
+            state.PixelType = layout.PixelType;
+            var total = checked((long)header.Pixels * state.SampleBytes * header.BandCount);
+            if (total > MaxSampleBytes) throw new NotSupportedException("Raw raster exceeds the sample byte budget.");
+            state.Data = new byte[(int)total];
+            return 0;
+        }
+
+        if (type != state.SampleType)
+        {
+            throw new NotSupportedException("Raw export requires one common sample type across bands.");
+        }
+
+        return Array.IndexOf(state.Masks, null);
+    }
+
+    private static RasterResult BuildRasterResult(ReadOnlySpan<byte> wkb, RasterHeader header, BandDecodeState state)
+    {
+        var little = header.ByteOrder == RasterByteOrder.LittleEndian;
         var scaleX = ReadDouble(wkb[5..], little);
         var scaleY = ReadDouble(wkb[13..], little);
         var x = ReadDouble(wkb[21..], little);
@@ -92,21 +160,34 @@ internal static class PostgresRasterRawDecoder
         var skewX = ReadDouble(wkb[37..], little);
         var skewY = ReadDouble(wkb[45..], little);
         var srid = little ? BinaryPrimitives.ReadInt32LittleEndian(wkb[53..]) : BinaryPrimitives.ReadInt32BigEndian(wkb[53..]);
-        var xs = new[] { x, x + width * scaleX, x + height * skewX, x + width * scaleX + height * skewX };
-        var ys = new[] { y, y + width * skewY, y + height * scaleY, y + width * skewY + height * scaleY };
+        var xs = new[] { x, x + header.Width * scaleX, x + header.Height * skewX, x + header.Width * scaleX + header.Height * skewX };
+        var ys = new[] { y, y + header.Width * skewY, y + header.Height * scaleY, y + header.Width * skewY + header.Height * scaleY };
         return new RasterResult
         {
-            Data = data!,
+            Data = state.Data!,
             ContentType = "application/octet-stream",
-            Width = width,
-            Height = height,
-            BandCount = bandCount,
-            PixelType = pixelType,
-            BandValidityMasks = masks,
+            Width = header.Width,
+            Height = header.Height,
+            BandCount = header.BandCount,
+            PixelType = state.PixelType,
+            BandValidityMasks = state.Masks,
             Srid = srid,
             GeoTransform = [x, scaleX, skewX, y, skewY, scaleY],
             Extent = new RasterExtent { XMin = xs.Min(), XMax = xs.Max(), YMin = ys.Min(), YMax = ys.Max(), Srid = srid }
         };
+    }
+
+    private static void CopyBigEndianToLittleEndian(
+        ReadOnlySpan<byte> source,
+        Span<byte> target,
+        int sampleBytes)
+    {
+        for (var offset = 0; offset < source.Length; offset += sampleBytes)
+        {
+            var destination = target.Slice(offset, sampleBytes);
+            source.Slice(offset, sampleBytes).CopyTo(destination);
+            destination.Reverse();
+        }
     }
 
     private static void Require(ReadOnlySpan<byte> data, int offset, int length)

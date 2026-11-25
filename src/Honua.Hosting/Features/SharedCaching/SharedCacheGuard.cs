@@ -30,18 +30,19 @@ internal static class SharedCacheGuard
             return;
         }
 
-        if (cacheControl.Length > 0 && !ExcludesSharedCaches(cacheControl) && ResponseMayBeShared(context))
+        var excludesShared = cacheControl.Contains("private", StringComparison.OrdinalIgnoreCase);
+        if (cacheControl.Length > 0 && !excludesShared && ResponseMayBeShared(context))
         {
             return;
         }
 
-        if (ExcludesSharedCaches(cacheControl))
+        if (excludesShared)
         {
             // The ETag service writes this pair only when nothing else set a policy. It is a
             // validation fallback, not a decision to store the response in a private cache.
             // A response that is not shareable still leaves as private, no-store. A handler
             // that chose its own private lifetime is left alone.
-            if (IsETagFallback(cacheControl) && !ResponseMayBeShared(context))
+            if (IsETagFallback(cacheControl.AsSpan()) && !ResponseMayBeShared(context))
             {
                 LeaveAsNotShared(context);
                 return;
@@ -55,12 +56,40 @@ internal static class SharedCacheGuard
     }
 
     // CacheControlHeaderValue reorders directives, so compare the set rather than the raw string.
-    private static bool IsETagFallback(string cacheControl)
+    private static bool IsETagFallback(ReadOnlySpan<char> cacheControl)
     {
-        var directives = cacheControl.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return directives.Length == 2
-            && directives.Contains("private", StringComparer.OrdinalIgnoreCase)
-            && directives.Contains("must-revalidate", StringComparer.OrdinalIgnoreCase);
+        var count = 0;
+        var hasPrivate = false;
+        var hasMustRevalidate = false;
+        foreach (var range in cacheControl.Split(','))
+        {
+            var directive = cacheControl[range].Trim();
+            if (directive.IsEmpty)
+            {
+                continue;
+            }
+
+            count++;
+            if (count > 2)
+            {
+                return false;
+            }
+
+            if (directive.Equals("private", StringComparison.OrdinalIgnoreCase))
+            {
+                hasPrivate = true;
+            }
+            else if (directive.Equals("must-revalidate", StringComparison.OrdinalIgnoreCase))
+            {
+                hasMustRevalidate = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        return count == 2 && hasPrivate && hasMustRevalidate;
     }
 
     private static void LeaveAsNotShared(HttpContext context)
@@ -68,10 +97,6 @@ internal static class SharedCacheGuard
         context.Response.Headers.CacheControl = NotShared;
         SharedCacheResponse.RemoveCacheTags(context);
     }
-
-    internal static bool ExcludesSharedCaches(string cacheControl)
-        => cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase)
-           || cacheControl.Contains("private", StringComparison.OrdinalIgnoreCase);
 
     internal static bool RequestMayBeShared(HttpContext context)
         => (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))

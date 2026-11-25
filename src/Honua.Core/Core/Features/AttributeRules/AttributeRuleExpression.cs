@@ -100,6 +100,40 @@ public static class AttributeRuleExpression
         return trimmed;
     }
 
+    internal static bool TryToDouble(object? value, out double result)
+    {
+        switch (value)
+        {
+            case double d:
+                result = d;
+                return true;
+            case float f:
+                result = f;
+                return true;
+            case decimal m:
+                result = (double)m;
+                return true;
+            case long l:
+                result = l;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case short s:
+                result = s;
+                return true;
+            case byte b:
+                result = b;
+                return true;
+            case string str when double.TryParse(str, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
+                result = parsed;
+                return true;
+            default:
+                result = 0;
+                return false;
+        }
+    }
+
     // Recursive-descent parser/evaluator for the supported subset. Returns false from
     // TryParse for any token or construct outside the grammar.
     private ref struct Parser(string text, IReadOnlyDictionary<string, object?> attributes)
@@ -672,40 +706,5 @@ public static class AttributeRuleExpression
                 Convert.ToString(right, CultureInfo.InvariantCulture),
                 StringComparison.Ordinal);
         }
-
-        private static bool TryToDouble(object? value, out double result)
-        {
-            switch (value)
-            {
-                case double d:
-                    result = d;
-                    return true;
-                case float f:
-                    result = f;
-                    return true;
-                case decimal m:
-                    result = (double)m;
-                    return true;
-                case long l:
-                    result = l;
-                    return true;
-                case int i:
-                    result = i;
-                    return true;
-                case short s:
-                    result = s;
-                    return true;
-                case byte b:
-                    result = b;
-                    return true;
-                case string str when double.TryParse(str, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
-                    result = parsed;
-                    return true;
-                default:
-                    result = 0;
-                    return false;
-            }
-        }
-
     }
 }

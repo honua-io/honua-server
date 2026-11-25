@@ -21,7 +21,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
 [Collection("RateLimitingCapacity")]
-public sealed class RateLimitingMiddlewareTests
+public sealed partial class RateLimitingMiddlewareTests
 {
     [UnitTheory]
     [InlineData("valid", 1)]
@@ -511,12 +511,7 @@ public sealed class RateLimitingMiddlewareTests
     [UnitTest]
     public async Task InvokeAsync_AnonymousIpv6_SharesASlash64AndLeavesIpv4Distinct()
     {
-        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
-        var previous = counters.Keys.Cast<object>()
-            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
-        counters.Clear();
+        RateLimitingMiddleware.ClearSharedMemoryCounters();
         try
         {
             var middleware = CreateMiddleware(limit: 1);
@@ -538,11 +533,7 @@ public sealed class RateLimitingMiddlewareTests
         }
         finally
         {
-            counters.Clear();
-            foreach (var entry in previous)
-            {
-                counters.Add(entry.Key, entry.Value);
-            }
+            RateLimitingMiddleware.ClearSharedMemoryCounters();
         }
     }
 
@@ -550,12 +541,7 @@ public sealed class RateLimitingMiddlewareTests
     public async Task InvokeAsync_AtCapacity_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.
-        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
-        var previous = counters.Keys.Cast<object>()
-            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
-        counters.Clear();
+        RateLimitingMiddleware.ClearSharedMemoryCounters();
         try
         {
             var policies = Substitute.For<IRateLimitPolicyStore>();
@@ -589,18 +575,14 @@ public sealed class RateLimitingMiddlewareTests
 
             Assert.Equal(128, burst.Count(status => status == StatusCodes.Status200OK));
             Assert.DoesNotContain(StatusCodes.Status429TooManyRequests, burst);
-            Assert.Equal(10_000, counters.Count);
+            Assert.InRange(RateLimitingMiddleware.SharedMemoryCounterCount, 1, RateLimitingMiddleware.MaxMemoryCounterEntries);
             // existing-9989 is the most recently used pre-burst subject, so eviction
             // must not have reset its one-request budget.
             Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-9989"));
         }
         finally
         {
-            counters.Clear();
-            foreach (var entry in previous)
-            {
-                counters.Add(entry.Key, entry.Value);
-            }
+            RateLimitingMiddleware.ClearSharedMemoryCounters();
         }
     }
 
@@ -617,17 +599,20 @@ public sealed class RateLimitingMiddlewareTests
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 return Task.CompletedTask;
             },
-            policyStore,
-            Options.Create(new RateLimitingOptions
+            new RateLimitingDependencies
             {
-                Enabled = enabled,
-                GlobalRequestsPerMinute = limit
-            }),
-            NullLogger<RateLimitingMiddleware>.Instance);
+                PolicyStore = policyStore,
+                Options = Options.Create(new RateLimitingOptions
+                {
+                    Enabled = enabled,
+                    GlobalRequestsPerMinute = limit
+                }),
+                Logger = NullLogger<RateLimitingMiddleware>.Instance,
+            });
     }
 
     private static DefaultHttpContext CreateContext(
-        string remoteIp,
+        string? remoteIp,
         string? localIp = null,
         string? user = null,
         string? subject = null,
@@ -643,7 +628,10 @@ public sealed class RateLimitingMiddlewareTests
         context.Request.Method = httpMethod;
         context.Request.Path = "/native-contract";
         context.Response.Body = new MemoryStream();
-        context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        if (!string.IsNullOrWhiteSpace(remoteIp))
+        {
+            context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        }
         if (!string.IsNullOrWhiteSpace(localIp))
         {
             context.Connection.LocalIpAddress = IPAddress.Parse(localIp);

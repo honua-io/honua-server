@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -172,7 +173,8 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context, resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }
@@ -184,7 +186,8 @@ internal static class CollectionsEndpoints
                 // surfacing it there would leak across canonical boundaries).
                 if (canonicalByResource.TryGetValue(resource!.Metadata.Id, out var canonical))
                 {
-                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, canonical.Service))
+                    if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                            context, resource!, canonical.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
                     {
                         continue;
                     }

@@ -41,7 +41,8 @@ internal static class MultidimensionalCoverageEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Multidimensional Coverages")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         group.MapPost("/", HandleRegister)
             .WithDisplayName("Register Multidim Coverage")
@@ -260,46 +261,76 @@ internal static class MultidimensionalCoverageEndpoints
             return TypedResults.NotFound();
         }
 
+        var requestTenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
+        var normalizedRequestTenant = string.IsNullOrWhiteSpace(requestTenantId) ? null : requestTenantId;
+        var normalizedJobTenant = string.IsNullOrWhiteSpace(job.Audit?.TenantId) ? null : job.Audit!.TenantId;
+        if (!string.Equals(normalizedJobTenant, normalizedRequestTenant, StringComparison.Ordinal))
+        {
+            return TypedResults.NotFound();
+        }
+
         var statusUrl = $"/api/v1/admin/multidim-coverages/jobs/{jobId}";
         var response = new MultidimensionalCoverageScanJobResponse
         {
             JobId = jobId,
             Status = ToStatusString(job.Status),
             StatusUrl = statusUrl,
-            Error = job.Status == ExecutionJobStatus.Failed ? job.ErrorMessage : null,
+            Error = job.Status == ExecutionJobStatus.Failed
+                ? "Metadata scan failed. Check server logs for details."
+                : null,
             Warnings = job.Warnings,
         };
 
         if (job.Status == ExecutionJobStatus.Succeeded &&
             MultidimCoverageScanJob.TryGetRegistrationId(job, out var registrationId))
         {
-            var registration = await store.GetAsync(registrationId, cancellationToken).ConfigureAwait(false);
+            var registration = await MaterializeCompletedScanAsync(context, job, registrationId).ConfigureAwait(false);
             if (registration is not null)
             {
-                // Materialize on first observation of success; UpdateMetadataAsync is
-                // idempotent so repeated polls converge.
-                var artifact = job.ArtifactReferences.Count > 0 ? job.ArtifactReferences[0] : null;
-                var metadata = MultidimCoverageScanJob.TryMapArtifact(
-                    artifact,
-                    registration.Format,
-                    registration.Variables);
-
-                if (metadata is not null)
-                {
-                    await store.UpdateMetadataAsync(registrationId, metadata, cancellationToken).ConfigureAwait(false);
-                    MultidimensionalCoverageLog.MetadataScanCompleted(
-                        logger, registrationId, metadata.Variables.Count, metadata.Srid);
-                    registration = await store.GetAsync(registrationId, cancellationToken).ConfigureAwait(false);
-                }
-
-                await TryRegisterDerivedZarrAsync(context, registration!, artifact, logger, cancellationToken)
-                    .ConfigureAwait(false);
-
-                response = response with { Coverage = ToResponse(registration!) };
+                response = response with { Coverage = ToResponse(registration) };
             }
         }
 
         return Results.Json(response, MultidimensionalCoverageJsonContext.Default.MultidimensionalCoverageScanJobResponse);
+    }
+
+    private static async Task<MultidimensionalCoverageRegistration?> MaterializeCompletedScanAsync(
+        HttpContext context,
+        ExecutionJobRecord job,
+        long registrationId)
+    {
+        var store = context.RequestServices.GetRequiredService<IMultidimensionalCoverageStore>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<MultidimensionalCoverageEndpointsLog>>();
+        var cancellationToken = context.RequestAborted;
+
+        var registration = await store.GetAsync(registrationId, cancellationToken).ConfigureAwait(false);
+        if (registration is null)
+        {
+            return null;
+        }
+
+        var needsMaterialization = registration.MetadataScannedAt is null ||
+            (job.CompletedAt is { } completedAt && registration.MetadataScannedAt < completedAt);
+        if (!needsMaterialization)
+        {
+            return registration;
+        }
+
+        var artifact = job.ArtifactReferences.Count > 0 ? job.ArtifactReferences[0] : null;
+        var metadata = MultidimCoverageScanJob.TryMapArtifact(artifact, registration.Format, registration.Variables);
+        if (metadata is not null)
+        {
+            await store.UpdateMetadataAsync(registrationId, metadata, cancellationToken).ConfigureAwait(false);
+            MultidimensionalCoverageLog.MetadataScanCompleted(logger, registrationId, metadata.Variables.Count, metadata.Srid);
+            registration = await store.GetAsync(registrationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (registration is not null)
+        {
+            await TryRegisterDerivedZarrAsync(context, registration, artifact, logger, cancellationToken).ConfigureAwait(false);
+        }
+
+        return registration;
     }
 
     private static async Task TryRegisterDerivedZarrAsync(

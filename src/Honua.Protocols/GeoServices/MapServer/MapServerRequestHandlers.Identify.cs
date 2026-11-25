@@ -228,7 +228,7 @@ internal static partial class MapServerEndpoints
                 ResolveIdentifyTelemetryLayerTag(layersParam, dynamicLayers.Count > 0));
 
             var timeValue = GetValue(values, "time");
-            var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
+            var timeRelationValue = GeoServicesLayerTimeResolver.NormalizeTimeRelation(GetValue(values, "timeRelation"));
             var serviceSrid = ResolveIdentifyServiceSrid(service, publishedLayers);
 
             if (!TryResolveIdentifySrid(srValue, geometry, serviceSrid, out var geometrySrid, out var srError))
@@ -351,18 +351,21 @@ internal static partial class MapServerEndpoints
                 layerDefs.TryGetValue(layer.PublicLayerId, out var layerDef);
                 var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
-                if (!TryGetEffectiveTimeParameters(
-                        timeValue,
-                        timeRelationValue,
-                        renderLayer,
-                        layerTimeOptions,
-                        out var effectiveTime,
-                        out var effectiveTimeRelation,
-                        out var timeError))
+                var timeResolution = GeoServicesLayerTimeResolver.ResolveEffectiveTimeParameters(new EffectiveTimeRequest
+                {
+                    GlobalTime = timeValue,
+                    GlobalTimeRelation = timeRelationValue,
+                    Target = new LayerTimeTarget(renderLayer.Id, renderLayer.Layer.PublicLayerId),
+                    LayerTimeOptions = layerTimeOptions
+                });
+                if (!timeResolution.IsValid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
-                        timeError ?? "Invalid time parameter.");
+                        timeResolution.Error ?? "Invalid time parameter.");
                 }
+
+                var effectiveTime = timeResolution.EffectiveTime;
+                var effectiveTimeRelation = timeResolution.EffectiveTimeRelation;
 
                 if (!TryBuildLayerSqlFilter(
                         filterExpressionService,
@@ -933,114 +936,6 @@ internal static partial class MapServerEndpoints
         }
 
         return true;
-    }
-
-    private static bool TryGetEffectiveTimeParameters(
-        string? globalTime,
-        string? globalTimeRelation,
-        IdentifyRenderLayer renderLayer,
-        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        out string? effectiveTime,
-        out string? effectiveTimeRelation,
-        out string? error)
-    {
-        effectiveTime = globalTime;
-        effectiveTimeRelation = globalTimeRelation;
-        error = null;
-
-        LayerTimeOptions? options = null;
-        if (TryResolveLayerTimeOptions(layerTimeOptions, renderLayer, out var resolvedOptions))
-        {
-            options = resolvedOptions;
-            if (options.UseTime is false)
-            {
-                effectiveTime = null;
-                effectiveTimeRelation = null;
-                return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.Time))
-            {
-                effectiveTime = options.Time;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.TimeRelation))
-            {
-                effectiveTimeRelation = options.TimeRelation;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(effectiveTime))
-        {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
-        }
-
-        if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
-        {
-            error = InvalidTimeParameterMessage;
-            return false;
-        }
-
-        if (start is null && end is null && options?.TimeDataCumulative != true)
-        {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
-        }
-
-        if (options?.TimeDataCumulative == true)
-        {
-            start = null;
-        }
-
-        if (options?.TimeOffset is { } timeOffset)
-        {
-            if (!TryApplyTimeOffset(
-                    start,
-                    end,
-                    timeOffset,
-                    options.TimeOffsetUnits,
-                    out var adjustedStart,
-                    out var adjustedEnd,
-                    out var offsetError))
-            {
-                error = offsetError ?? "Invalid time offset.";
-                return false;
-            }
-
-            start = adjustedStart;
-            end = adjustedEnd;
-        }
-
-        effectiveTime = BuildTimeParameter(start, end);
-        effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
-        return true;
-    }
-
-    private static bool TryResolveLayerTimeOptions(
-        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        IdentifyRenderLayer renderLayer,
-        out LayerTimeOptions resolvedOptions)
-    {
-        if (layerTimeOptions.TryGetValue(renderLayer.Id, out var directOptions) &&
-            directOptions is not null)
-        {
-            resolvedOptions = directOptions;
-            return true;
-        }
-
-        if (renderLayer.Id != renderLayer.Layer.PublicLayerId &&
-            layerTimeOptions.TryGetValue(renderLayer.Layer.PublicLayerId, out var sourceLayerOptions) &&
-            sourceLayerOptions is not null)
-        {
-            resolvedOptions = sourceLayerOptions;
-            return true;
-        }
-
-        resolvedOptions = default!;
-        return false;
     }
 
     private static IdentifyLayerSelection ResolveIdentifyLayers(

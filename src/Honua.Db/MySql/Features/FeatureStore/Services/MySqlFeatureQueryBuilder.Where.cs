@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Db.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Queries.Filters;
 
 namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
@@ -25,7 +26,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         if (query.TextSearch is { } search)
         {
             var searchIndex = paramIndex;
-            var predicate = FeatureTextSearchSql.Build(search, MySqlIdentifier.Quote, text =>
+            var predicate = FeatureTextSearchSql.Build(search, field => MySqlIdentifier.Quote(ResolveTextSearchField(mapping, field)), text =>
             {
                 var marker = "@p" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
                 parameters.Add(text);
@@ -37,6 +38,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         if (query.EnforcedSqlFilter is { } enforcedFilter)
         {
+            EnsureMySqlDialect(enforcedFilter, nameof(FeatureQuery.EnforcedSqlFilter));
             // Enforced row-visibility predicate — applied first, cannot be overridden by callers.
             var renumbered = ConvertNamedParameters(enforcedFilter.Sql, ref paramIndex);
             sb.Append(CultureInfo.InvariantCulture, $" AND ({renumbered})");
@@ -48,6 +50,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         if (query.SqlFilter is { } sqlFilter)
         {
+            EnsureMySqlDialect(sqlFilter, nameof(FeatureQuery.SqlFilter));
             // Pre-translated SQL — re-number the embedded `@pN` placeholders so they
             // do not collide with the local sequence and append the filter parameters.
             var renumbered = ConvertNamedParameters(sqlFilter.Sql, ref paramIndex);
@@ -75,6 +78,16 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
             sb.Append(CultureInfo.InvariantCulture,
                 $" AND {mapping.QuotedPrimaryKeyColumn} IN ({string.Join(", ", placeholders)})");
+        }
+    }
+
+    private static void EnsureMySqlDialect(SqlFragment fragment, string parameterName)
+    {
+        if (fragment.Dialect is { Length: > 0 } dialect
+            && !string.Equals(dialect, MySqlSqlDialect.Instance.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            throw MySqlUnsupportedFeature.Create(
+                $"{parameterName} was translated for SQL dialect '{dialect}', which cannot be executed by the MySQL/MariaDB provider (expected '{MySqlSqlDialect.Instance.Name}').");
         }
     }
 
@@ -272,6 +285,15 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         throw new ArgumentException(
             $"WHERE field '{field}' is not declared on layer {mapping.LayerId}.");
+    }
+
+    private static string ResolveTextSearchField(MySqlLayerMapping mapping, string field)
+    {
+        MySqlIdentifier.ValidateFieldName(field);
+        var declared = mapping.AttributeColumns.FirstOrDefault(
+            column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"Text search field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
 }

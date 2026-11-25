@@ -960,6 +960,55 @@ public sealed partial class QueryFormatterTests
         return writer.Write(new Polygon(ring) { SRID = 4326 });
     }
 
+    [UnitTest]
+    public void GeoServicesFeatureJsonConverter_Write_NormalizesPrimitivesAndComplexAttributes()
+    {
+        var guid = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var timestamp = new DateTimeOffset(2024, 6, 15, 12, 30, 0, TimeSpan.Zero);
+        using var jsonDoc = JsonDocument.Parse("""{"nested":[1,2]}""");
+        var feature = CreateRichGeoServicesFeature(guid, timestamp, jsonDoc.RootElement.Clone());
+
+        var json = JsonSerializer.Serialize(feature, FeatureServerJsonContext.Default.GeoServicesFeature);
+        using var parsed = JsonDocument.Parse(json);
+        var root = parsed.RootElement;
+        var attrs = root.GetProperty("attributes");
+
+        attrs.GetProperty("objectid").GetInt64().Should().Be(7L);
+        attrs.GetProperty("name").GetString().Should().Be("alpha");
+        attrs.GetProperty("count").GetInt32().Should().Be(3);
+        attrs.GetProperty("ratio").GetDouble().Should().Be(2.5d);
+        attrs.GetProperty("flagTrue").GetInt32().Should().Be(1);
+        attrs.GetProperty("flagFalse").GetInt32().Should().Be(0);
+        attrs.GetProperty("empty").ValueKind.Should().Be(JsonValueKind.Null);
+        attrs.GetProperty("id").GetGuid().Should().Be(guid);
+        attrs.GetProperty("when").GetDateTimeOffset().Should().Be(timestamp);
+        attrs.GetProperty("payload").GetString().Should().Be("""{"nested":[1,2]}""");
+        attrs.GetProperty("tags").GetArrayLength().Should().Be(2);
+        root.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(1.5);
+        root.GetProperty("centroid").GetProperty("y").GetDouble().Should().Be(2.5);
+    }
+
+    private static GeoServicesFeature CreateRichGeoServicesFeature(Guid guid, DateTimeOffset timestamp, JsonElement payload) => new()
+    {
+        Attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectid"] = 7L,
+            ["name"] = "alpha",
+            ["count"] = 3,
+            ["ratio"] = 2.5d,
+            ["flagTrue"] = true,
+            ["flagFalse"] = false,
+            ["empty"] = null,
+            ["id"] = guid,
+            ["when"] = timestamp,
+            ["payload"] = payload,
+            ["tags"] = new object[] { "a", 1 }
+        },
+        IncludeGeometry = true,
+        Geometry = new GeoServicesGeometry { X = 1.5, Y = 2.5 },
+        Centroid = new GeoServicesGeometry { X = 1.5, Y = 2.5 }
+    };
+
     private static byte[] CreateMeasuredPointGeometry(double x, double y, double z, double m)
     {
         var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true);

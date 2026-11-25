@@ -31,8 +31,13 @@ public sealed class ODataFeaturePayloadTests
         var feature = Feature.Create(5, geometry: null, attributes);
         var geometry = new ODataSpatialGeometry { Type = "Point", CoordinatesJson = "[1,2]" };
 
-        var expected = ODataUtilityService.BuildFeaturePayload(
-            12, feature, geometry, ODataAttributeSerializer.Serialize(feature.Attributes));
+        var expected = ODataUtilityService.BuildFeaturePayload(new ODataUtilityService.ODataFeaturePayloadRequest
+        {
+            LayerId = 12,
+            Feature = feature,
+            Geometry = geometry,
+            Attributes = ODataAttributeSerializer.Serialize(feature.Attributes),
+        });
         var actual = ODataUtilityService.BuildFeaturePayload(12, feature, geometry);
 
         Assert.Equal(expected.Keys, actual.Keys);

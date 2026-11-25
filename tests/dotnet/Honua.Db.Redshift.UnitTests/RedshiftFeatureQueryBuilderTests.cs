@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Redshift.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Redshift.Tests;
 
@@ -238,7 +239,7 @@ public class RedshiftFeatureQueryBuilderTests
         var query = new FeatureQuery { Where = whereClause };
         var fieldName = whereClause.Split(' ')[0];
 
-        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes);
+        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, [fieldName]);
 
         Assert.Contains($"AND (\"{fieldName}\" = @p0)", result.Sql, StringComparison.Ordinal);
         Assert.Single(result.WhereParameters);
@@ -674,6 +675,96 @@ public class RedshiftFeatureQueryBuilderTests
 
         var ex = Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query));
         Assert.Contains("order-by", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildQueries_EnforcedSqlFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            EnforcedSqlFilter = new Honua.Core.Queries.Filters.SqlFragment("tenant_id = @p0", [42])
+        };
+
+        Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes));
+        Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildCountQuery(Mapping(), query, _attributes));
+        Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildObjectIdsQuery(Mapping(), query, _attributes));
+        Assert.Throws<NotSupportedException>(() => RedshiftFeatureQueryBuilder.BuildExtentQuery(Mapping(), query, _attributes));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_GeographySpatialFilterWithEwkb_CastsColumnToGeometryAndStripsSrid()
+    {
+        // Little-endian EWKB POINT with SRID flag (0x20000001) and embedded SRID 4326.
+        byte[] ewkbPoint =
+        [
+            0x01,
+            0x01, 0x00, 0x00, 0x20,
+            0xE6, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ];
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkbPoint, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(geometryType: RedshiftGeometryColumnType.Geography), query, _attributes);
+
+        Assert.Contains("ST_Intersects(ST_GeomFromWKB(ST_AsBinary(\"geom\")), ST_GeomFromWKB(@p0, 4326))", result.Sql, StringComparison.Ordinal);
+        var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        Assert.Equal(21, boundWkb.Length);
+        Assert.Equal(0x00, boundWkb[4]);
+    }
+
+    [Fact]
+    public void BuildQueries_UndeclaredFieldReference_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(), new FeatureQuery { Where = "secret_col = 'x'" }, _attributes));
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(), new FeatureQuery { OrderBy = [OrderByClause.Asc("secret_col")] }, _attributes));
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(),
+            new FeatureQuery
+            {
+                TextSearch = new FeatureTextSearch(["secret_col"], [new FeatureSearchTerm[] { new("a", false) }])
+            },
+            _attributes));
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(
+            Mapping(),
+            new FeatureQuery
+            {
+                OutStatistics = [new StatisticDefinition { StatisticType = StatisticType.Sum, OnStatisticField = "secret_col", OutStatisticFieldName = "s" }]
+            },
+            _attributes));
+        Assert.Throws<ArgumentException>(() => RedshiftFeatureQueryBuilder.BuildStatistics(
+            Mapping(),
+            new FeatureQuery
+            {
+                OutStatistics = [new StatisticDefinition { StatisticType = StatisticType.Count, OnStatisticField = "id", OutStatisticFieldName = "n" }],
+                GroupByFields = ["secret_col"]
+            },
+            _attributes));
+    }
+
+    [UnitTest]
+    public void BuildStatistics_OrderByGroupByFieldWithDifferentCasing_QuotesCanonicalDeclaredColumnName()
+    {
+        string[] declared = ["Region", "Area"];
+        var query = new FeatureQuery
+        {
+            GroupByFields = ["region"],
+            OutStatistics = [new StatisticDefinition { StatisticType = StatisticType.Sum, OnStatisticField = "area", OutStatisticFieldName = "total_area" }],
+            OrderBy = [OrderByClause.Desc("REGION")]
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildStatistics(Mapping(), query, declared);
+
+        Assert.Contains("GROUP BY \"Region\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY \"Region\" DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY \"region\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY \"REGION\"", result.Sql, StringComparison.Ordinal);
     }
 
     private static string FilterTail(string sql)

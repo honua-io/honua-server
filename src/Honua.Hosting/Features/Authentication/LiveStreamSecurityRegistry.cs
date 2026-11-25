@@ -39,8 +39,9 @@ internal sealed class LiveStreamSecurityOptions
 
 // Every refresh is awaited before the security consumer permits later dispatch. Per-stream
 // serialization also covers the backstop, so an older policy lookup cannot replace a newer one.
-internal sealed class LiveStreamSecurityRegistry(
-    IOptions<LiveStreamSecurityOptions>? options = null) : BackgroundService
+internal sealed partial class LiveStreamSecurityRegistry(
+    IOptions<LiveStreamSecurityOptions>? options = null,
+    ILogger<LiveStreamSecurityRegistry>? logger = null) : BackgroundService
 {
     private readonly ConcurrentDictionary<long, Registration> _registrations = new();
     private long _nextId;
@@ -88,7 +89,21 @@ internal sealed class LiveStreamSecurityRegistry(
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                await RefreshAsync(null, stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await RefreshAsync(null, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    if (logger is not null)
+                    {
+                        LogBackstopRefreshFailed(logger, ex);
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -96,6 +111,12 @@ internal sealed class LiveStreamSecurityRegistry(
             // Normal host shutdown.
         }
     }
+
+    [LoggerMessage(
+        EventId = 8610,
+        Level = LogLevel.Error,
+        Message = "Live-stream security backstop refresh failed; continuing on next interval.")]
+    private static partial void LogBackstopRefreshFailed(ILogger logger, Exception exception);
 
     internal sealed record Callbacks(Func<CancellationToken, Task> Refresh, Func<CancellationToken, Task>? Revoke);
 

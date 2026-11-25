@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Console.Models;
@@ -50,19 +51,24 @@ internal static class ConsoleAccessEndpoints
     public static void MapConsoleAccessEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/access/{environmentId}")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console", "Access")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/roles", HandleGetRoles);
         group.MapGet("/members", HandleGetMembers);
         group.MapPost("/roles", HandleCreateRole)
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
         group.MapPut("/roles/{roleId:guid}", HandleUpdateRole)
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
         group.MapDelete("/roles/{roleId:guid}", HandleDeleteRole)
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
         group.MapGet("/roles/audit", HandleGetRoleAudit);
     }
 

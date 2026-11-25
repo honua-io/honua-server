@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 const cesiumDistDir = resolve(import.meta.dirname, '..', 'node_modules', 'cesium', 'Build', 'Cesium');
-const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/', '/rest/', '/wms', '/wmts', '/wfs'];
+const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/', '/rest/', '/wms', '/wmts', '/wfs', '/elevation/', '/terrain/'];
 const proxyOrigins = new Map<string, Promise<string>>();
 
 /** Options for creating a Cesium viewer. */
@@ -105,7 +105,7 @@ async function getProxyOrigin(upstreamOrigin: string): Promise<string> {
         void (async () => {
           try {
             const upstreamUrl = new URL(`${url.pathname}${url.search}`, upstreamOrigin);
-            const upstreamResponse = await fetch(upstreamUrl, { method: req.method });
+            const upstreamResponse = await fetch(upstreamUrl, { method: req.method, headers: { Accept: req.headers.accept ?? '*/*' } });
             const contentType = upstreamResponse.headers.get('content-type');
             if (contentType) {
               res.setHeader('Content-Type', contentType);

@@ -31,15 +31,15 @@ public sealed partial class BinaryFormatFuzzTests
         var zstdBomb = ZstdCodec.Compress(bombSource, CompressionLevel.Optimal);
         var destination = new byte[64];
 
-        Action decodeGzip = () => ZarrChunkDecoder.Decode(gzipBomb, "gzip", destination, CancellationToken.None);
-        Action decodeZlib = () => ZarrChunkDecoder.Decode(zlibBomb, "zlib", destination, CancellationToken.None);
+        Action decodeGzip = () => DecodeZarr(gzipBomb, "gzip", destination);
+        Action decodeZlib = () => DecodeZarr(zlibBomb, "zlib", destination);
         Action decodeZstd = () => ZstdCodec.Decompress(zstdBomb, maxDecompressedBytes: destination.Length);
-        Action decodeBlosc = () => ZarrChunkDecoder.Decode([2, 1, 1, 4, 0, 0, 0, 0], "blosc", destination, CancellationToken.None);
+        Action decodeBlosc = () => DecodeZarr([2, 1, 1, 4, 0, 0, 0, 0], "blosc", destination);
 
         decodeGzip.Should().Throw<InvalidDataException>();
         decodeZlib.Should().Throw<InvalidDataException>();
         decodeZstd.Should().Throw<InvalidDataException>();
-        decodeBlosc.Should().Throw<InvalidOperationException>();
+        decodeBlosc.Should().Throw<ZarrSubsetValidationException>();
     }
 
     [UnitTest]
@@ -197,13 +197,24 @@ public sealed partial class BinaryFormatFuzzTests
         }
     }
 
+    private static void DecodeZarr(byte[] raw, string? compressor, byte[] destination)
+        => ZarrChunkDecoder.Decode(
+            new ZarrChunkDecodeRequest
+            {
+                Raw = raw,
+                Compressor = compressor,
+                Destination = destination,
+                DestinationLength = destination.Length,
+            },
+            CancellationToken.None);
+
     private static void AssertSafeZarrDecode(byte[] payload, string? codec, byte[] destination)
     {
         try
         {
-            ZarrChunkDecoder.Decode(payload, codec, destination, CancellationToken.None);
+            DecodeZarr(payload, codec, destination);
         }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or ZarrSubsetValidationException)
         {
             ex.Message.Should().NotBeNullOrWhiteSpace();
         }

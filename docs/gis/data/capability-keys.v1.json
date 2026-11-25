@@ -933,6 +933,11 @@
     ],
     "interop": [
       {
+        "clientLane": "cli",
+        "protocol": "wcs",
+        "capability": "serve.wcs"
+      },
+      {
         "clientLane": "js",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
@@ -991,6 +996,16 @@
         "clientLane": "js-cesium",
         "protocol": "ogc-maps",
         "capability": "serve.ogc-api-maps"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "elevation",
+        "capability": "serve.elevation"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "quantized-mesh",
+        "capability": "serve.terrain-quantized-mesh"
       },
       {
         "clientLane": "desktop-qgis",

@@ -74,8 +74,8 @@ public sealed class CredentialAudit5623Tests
         var service = Service("private-service");
         var resource = Resource("sensitive-layer");
         AccessPolicyHelpers.EvaluateAccess(context, null, null).IsAllowed.Should().BeFalse();
-        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().NotBeNull();
-        AccessPolicyHelpers.RequireServiceAccess(context, service).Should().NotBeNull();
+        (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service)).Should().NotBeNull();
+        (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Query)).Should().NotBeNull();
         foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
         {
             (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))
@@ -83,7 +83,6 @@ public sealed class CredentialAudit5623Tests
             (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation)).Should().NotBeNull();
         }
         ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim("permission", "read:private-service/sensitive-layer"));
-        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().BeNull();
         (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service)).Should().BeNull();
     }
 
@@ -118,8 +117,8 @@ public sealed class CredentialAudit5623Tests
         };
         var service = Service(serviceName);
         var resource = Resource(layerName);
-        AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service, scope).IsAllowed.Should().Be(allowed);
-        (AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope) is null).Should().Be(allowed);
+        var defaultOperation = AccessPolicyHelpers.DefaultOperationForScope(scope);
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, defaultOperation)).IsAllowed.Should().Be(allowed);
         (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service, scope) is null).Should().Be(allowed);
         foreach (var operation in new[] { AuthorizationOperation.Admin, AuthorizationOperation.Approve })
         {
@@ -146,7 +145,6 @@ public sealed class CredentialAudit5623Tests
             User = ScopedKey(permission, LayerScopedWriteKey.ScopedKeyRole, "admin-api-key")
         };
         var service = Service(serviceName);
-        (AccessPolicyHelpers.RequireServiceAccess(context, service) is null).Should().Be(allowed);
         foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Read, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
         {
             (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, operation) is null).Should().Be(allowed);
@@ -169,8 +167,8 @@ public sealed class CredentialAudit5623Tests
         var service = Service("private-service");
         var resource = Resource("sensitive-layer");
 
-        AccessPolicyHelpers.RequireResourceAccess(context, resource, service).Should().BeNull();
-        AccessPolicyHelpers.RequireServiceAccess(context, service).Should().BeNull();
+        (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service)).Should().BeNull();
+        (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Query)).Should().BeNull();
         foreach (var operation in new[] { AuthorizationOperation.Query, AuthorizationOperation.Read, AuthorizationOperation.Metadata, AuthorizationOperation.Export })
         {
             (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, operation))

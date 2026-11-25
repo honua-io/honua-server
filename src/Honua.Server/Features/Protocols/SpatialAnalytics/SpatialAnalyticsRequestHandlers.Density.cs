@@ -184,6 +184,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 "Invalid weightField",
                 ["weightField must be a valid field identifier."]);
         }
+        else if (resource.IsHiddenSchemaField(weightField))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid weightField",
+                [$"Unknown field '{weightField}' in weightField."]);
+        }
 
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(

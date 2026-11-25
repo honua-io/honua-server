@@ -141,7 +141,7 @@ A customer cannot leave Esri without these. Regression in an activated Tier 0 la
 | `desktop-arcgis` ArcGIS Pro (arcpy + honua_gp shim parity) | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `js` OpenLayers | active | activated | 2026.1 | nightly | browser-playwright | `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `js-maplibre` MapLibre GL JS | active | activated | 2026.1 | nightly | browser-playwright | `mvt`, `ogc-maps`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `js-cesium` CesiumJS | active | activated | 2026.1 | nightly | browser-playwright | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
+| `js-cesium` CesiumJS | active | activated | 2026.1 | nightly | browser-playwright | `wms`, `wmts`, `ogc-tiles`, `ogc-maps`, `elevation`, `quantized-mesh` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `esri-js-maps-sdk` ArcGIS Maps SDK for JavaScript | active | awaiting-federation | 2026.2 | none | browser-playwright | `featureserver`, `mapserver`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
 | `cli` GDAL / OGR (ogr2ogr) | active | activated | 2026.1 | nightly | linux-container | `ogc-features`, `wfs`, `admin-api` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `esri-arcgis-python` ArcGIS API for Python | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` | [honua-server#3389](https://github.com/honua-io/honua-server/issues/3389) |
@@ -295,7 +295,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Roster origin**: artifact; artifact status Live nightly
 - **Lane binding**: js-cesium (lane)
 - **Client version policy**: npm lockfile-resolved `cesium` version in tests/js-browser (currently 1.140.0).
-- **Protocol surfaces**: `wms`, `wmts`, `ogc-tiles`, `ogc-maps`
+- **Protocol surfaces**: `wms`, `wmts`, `ogc-tiles`, `ogc-maps`, `elevation`, `quantized-mesh`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
   - `CERT-SCHM`: Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints.
@@ -309,7 +309,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: canonical-client-fixture - Converges on the single logical fixture + server-config revision tracked by #3393.
 - **Evidence producer**: docker/client-compat/cesium (tests/js-browser/cesium)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
-- **Notes**: Cesium imagery providers consume server-rendered raster output; the matrix Cesium sub-lane footnote governs the not-applicable set.
+- **Notes**: Cesium covers imagery providers, elevation point sampling, and quantized-mesh tile loading. The matrix Cesium sub-lane footnote describes each evidence surface.
 
 ### `esri-js-maps-sdk` - ArcGIS Maps SDK for JavaScript
 

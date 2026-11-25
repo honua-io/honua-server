@@ -113,7 +113,7 @@ public sealed class WorkerCrashIsolationAndQuarantineTests : IDisposable
     public async Task BoundedProcessOutputBuffer_PathologicalOutputFlood_StaysStrictlyBoundedWithoutOom()
     {
         const int maxChars = 4096;
-        var buffer = new BoundedProcessOutputBuffer(maxChars);
+        var buffer = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(maxChars);
         var payloadLine = new string('X', 1024);
 
         var writers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
@@ -143,7 +143,10 @@ public sealed class WorkerCrashIsolationAndQuarantineTests : IDisposable
         var result = await runner.RunAsync(tool, args, _scratchRoot, cts.Token);
 
         result.Succeeded.Should().BeFalse();
-        result.StandardError.Length.Should().BeLessThanOrEqualTo(BoundedProcessOutputBuffer.DefaultMaxErrorChars);
+        var maxStderrLength = BoundedProcessOutputBuffer.DefaultMaxErrorChars
+            + Environment.NewLine.Length
+            + BoundedProcessOutputBuffer.TruncationMarker.Length;
+        result.StandardError.Length.Should().BeLessThanOrEqualTo(maxStderrLength);
         result.StandardError.Length.Should().BeGreaterThan(0);
     }
 
@@ -182,9 +185,7 @@ public sealed class WorkerCrashIsolationAndQuarantineTests : IDisposable
     public async Task LocalProcessPool_CrashAndCancellation_ReleasesSlotCleansScratchAndServesNextJob()
     {
         var poolRoot = Path.Join(_scratchRoot, "pool");
-        using var backend = new LocalProcessPoolBatchComputeBackend(
-            Options.Create(new LocalProcessPoolOptions { MaxConcurrentProcesses = 1, WorkingRoot = poolRoot }),
-            NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
+        using var backend = CreateLocalProcessBackend(poolRoot);
 
         var crashJob = CreateShellJob("op-crash", OperatingSystem.IsWindows() ? "exit /b 137" : "kill -9 $$");
         var crashTerminal = await RunToTerminalAsync(backend, crashJob);
@@ -291,12 +292,39 @@ public sealed class WorkerCrashIsolationAndQuarantineTests : IDisposable
         return stream.ToArray();
     }
 
-    private static ExecutionJobRecord CreateShellJob(string operationId, string script)
+    private static LocalProcessPoolBatchComputeBackend CreateLocalProcessBackend(string poolRoot)
+    {
+        var (shell, flag) = ResolveShell();
+        return new LocalProcessPoolBatchComputeBackend(
+            Options.Create(new LocalProcessPoolOptions
+            {
+                MaxConcurrentProcesses = 1,
+                WorkingRoot = poolRoot,
+                WorkerContracts =
+                [
+                    new LocalProcessWorkerContractOptions
+                    {
+                        Executable = shell,
+                        ArgumentPrefix = [flag],
+                        MaxSupportedContractVersion = 1,
+                    },
+                ],
+            }),
+            NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
+    }
+
+    private static (string Shell, string Flag) ResolveShell()
     {
         var shell = OperatingSystem.IsWindows()
             ? Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe"
             : (File.Exists("/usr/bin/sh") ? "/usr/bin/sh" : "/bin/sh");
         var flag = OperatingSystem.IsWindows() ? "/c" : "-c";
+        return (shell, flag);
+    }
+
+    private static ExecutionJobRecord CreateShellJob(string operationId, string script)
+    {
+        var (shell, flag) = ResolveShell();
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
         {

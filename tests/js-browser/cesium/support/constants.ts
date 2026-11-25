@@ -14,6 +14,9 @@ export const POLYGON_LAYER_ID = 2002;
 /** Seed feature centers (San Francisco area). */
 export const POINT_CENTER: [number, number] = [-122.4194, 37.7749];
 
+/** Constant height in the browser-compat raster on layer 2000. */
+export const SEED_ELEVATION_METERS = 180;
+
 /** Default seeded extent in EPSG:4326 (lon,lat,lon,lat). */
 export const SEED_BBOX_4326 = '-122.44,37.76,-122.40,37.79';
 

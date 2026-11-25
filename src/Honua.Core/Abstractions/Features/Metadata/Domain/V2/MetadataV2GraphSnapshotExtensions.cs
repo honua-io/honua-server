@@ -1,17 +1,29 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public static class MetadataV2GraphSnapshotExtensions
 {
+    private static readonly IReadOnlyList<MetadataV2Layer> EmptyPublications = ImmutableArray<MetadataV2Layer>.Empty;
+
     public static bool IsRoutable(
         this MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(publication);
+
+        if (!string.IsNullOrEmpty(publication.Metadata.Id) &&
+            snapshot.Index.PublicationsById.TryGetValue(publication.Metadata.Id, out var indexed) &&
+            ReferenceEquals(indexed, publication))
+        {
+            return snapshot.Index.RoutablePublicationIds.Contains(publication.Metadata.Id);
+        }
+
         if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
             !service.IsRoutable())
         {
@@ -32,7 +44,13 @@ public static class MetadataV2GraphSnapshotExtensions
         this MetadataV2GraphSnapshot snapshot,
         MetadataV2StorageBinding binding,
         MetadataV2Object? resource)
-        => binding.IsRoutable(resource) && IsUnderstoodConnection(snapshot.ResolveConnection(binding));
+        => IsRoutableBinding(binding, resource, snapshot.ResolveConnection(binding));
+
+    internal static bool IsRoutableBinding(
+        MetadataV2StorageBinding binding,
+        MetadataV2Object? resource,
+        MetadataV2Connection? connection)
+        => binding.IsRoutable(resource) && IsUnderstoodConnection(connection);
 
     public static bool IsRoutable(this MetadataV2Service service)
     {
@@ -110,7 +128,14 @@ public static class MetadataV2GraphSnapshotExtensions
         this MetadataV2GraphSnapshot snapshot, string serviceId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return snapshot.Index.PublicationsByService[serviceId].ToArray();
+        if (string.IsNullOrEmpty(serviceId))
+        {
+            return EmptyPublications;
+        }
+
+        return snapshot.Index.PublicationsByServiceMap.TryGetValue(serviceId, out var publications)
+            ? publications
+            : EmptyPublications;
     }
 
     public static MetadataV2Object? ResolveResource(
@@ -144,7 +169,9 @@ public static class MetadataV2GraphSnapshotExtensions
             return primary;
         }
 
-        return snapshot.Index.StorageBindingsByResource[resource.Metadata.Id].FirstOrDefault();
+        return snapshot.Index.StorageBindingsByResourceMap.TryGetValue(resource.Metadata.Id, out var bindings) && !bindings.IsEmpty
+            ? bindings[0]
+            : null;
     }
 
     public static int? ResolveStorageLayerId(
@@ -203,8 +230,10 @@ public static class MetadataV2GraphSnapshotExtensions
         {
             return primary.StorageLayerId;
         }
-        var any = snapshot.Index.StorageBindingsByResource[resource.Metadata.Id].FirstOrDefault();
-        return any?.StorageLayerId;
+
+        return snapshot.Index.StorageBindingsByResourceMap.TryGetValue(resource.Metadata.Id, out var bindings) && !bindings.IsEmpty
+            ? bindings[0].StorageLayerId
+            : null;
     }
 
     public static IEnumerable<MetadataV2Layer> PublicationsForStorageLayer(
@@ -212,9 +241,9 @@ public static class MetadataV2GraphSnapshotExtensions
         int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return snapshot.Graph.Publications.Where(publication =>
-            snapshot.IsRoutable(publication)
-            && snapshot.ResolveStorageLayerId(publication) == storageLayerId);
+        return snapshot.Index.RoutablePublicationsByStorageLayerId.TryGetValue(storageLayerId, out var publications)
+            ? publications
+            : EmptyPublications;
     }
 
     public static MetadataV2StorageResourceResolution ResolveStorageResource(
@@ -265,16 +294,11 @@ public static class MetadataV2GraphSnapshotExtensions
         {
             return null;
         }
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub =>
-            snapshot.IsRoutable(pub) &&
-            (string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-             || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-             || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-             || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase))))
-        {
-            return pub;
-        }
-        return null;
+
+        return snapshot.Index.RoutablePublicationsByServiceAndIdentifier.TryGetValue(serviceId, out var byIdentifier) &&
+            byIdentifier.TryGetValue(serviceLocalIdOrPath, out var publication)
+            ? publication
+            : null;
     }
 
     public static MetadataV2Layer? FindPublicationByLayerIndex(
@@ -283,17 +307,29 @@ public static class MetadataV2GraphSnapshotExtensions
         int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId]
-                     .Where(pub => pub.LayerIndex == layerIndex && snapshot.IsRoutable(pub)))
+        if (string.IsNullOrEmpty(serviceId))
         {
-            return pub;
+            return null;
         }
-        return null;
+
+        return snapshot.Index.RoutablePublicationsByServiceAndLayerIndex.TryGetValue((serviceId, layerIndex), out var publication)
+            ? publication
+            : null;
     }
 
     public static int? ResolveStorageSrid(this MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Index.StorageSridByStorageLayerId.TryGetValue(storageLayerId, out var srid))
+        {
+            return srid;
+        }
+
+        if (!snapshot.Index.InvalidOrAmbiguousStorageSridLayerIds.Contains(storageLayerId))
+        {
+            return null;
+        }
+
         if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
         {
             return null;

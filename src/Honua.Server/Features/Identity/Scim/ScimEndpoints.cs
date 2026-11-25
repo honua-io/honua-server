@@ -236,7 +236,7 @@ internal static partial class ScimEndpoints
                 new ScimUserProvisioning
                 {
                     UserName = input.UserName.Trim(),
-                    ExternalId = input.ExternalId,
+                    ExternalId = string.IsNullOrWhiteSpace(input.ExternalId) ? null : input.ExternalId.Trim(),
                     ExternalIssuer = options.Value.OidcIssuer,
                     DisplayName = input.DisplayName,
                     Email = email,
@@ -258,8 +258,32 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status404NotFound, "User not found.");
         }
 
+        await RevokeSessionsIfUserChangedAsync(context, existing, replaced).ConfigureAwait(false);
+
         ScimLog.UserReplaced(logger, replaced.UserId);
         return ScimJson(ToScimUser(replaced), ScimJsonContext.Default.ScimUser, StatusCodes.Status200OK);
+    }
+
+    private static async Task RevokeSessionsIfUserChangedAsync(
+        HttpContext context,
+        ManagedUser? existing,
+        ManagedUser replaced)
+    {
+        var identityChanged = existing is not null
+            && (!string.Equals(existing.ExternalId, replaced.ExternalId, StringComparison.Ordinal)
+                || !string.Equals(existing.ExternalIssuer, replaced.ExternalIssuer, StringComparison.Ordinal));
+        if (!replaced.IsActive || identityChanged)
+        {
+            var oauthStore = context.RequestServices.GetService<PortalOAuthStore>();
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                oauthStore,
+                existing,
+                context.RequestAborted).ConfigureAwait(false);
+            await PortalOAuthRefreshRevoker.RevokeManagedUserAsync(
+                oauthStore,
+                replaced,
+                context.RequestAborted).ConfigureAwait(false);
+        }
     }
 
     private static async Task<IResult> HandlePatchUser(

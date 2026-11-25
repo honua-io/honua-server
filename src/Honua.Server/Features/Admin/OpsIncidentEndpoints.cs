@@ -4,6 +4,7 @@
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Npgsql;
@@ -16,7 +17,9 @@ internal static class OpsIncidentEndpoints
     {
         group.MapGet("/incidents/{incidentId:guid}", HandleGetIncident)
             .WithDisplayName("Get Persisted Ops Incident Context")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .RequireOpsReadAuthorization()
+            .RequirePlatformAdminAuthority()
             .CacheOutput(policy => policy.NoCache())
             .Produces<OpsIncidentContextResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

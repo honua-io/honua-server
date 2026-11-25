@@ -56,7 +56,7 @@ internal static partial class FeatureStreamEndpoints
                 session.WriteLock.Release();
             }
         }
-        catch (Exception exception) when (exception is OperationCanceledException or WebSocketException or ObjectDisposedException)
+        catch (Exception exception) when (exception is OperationCanceledException or WebSocketException or IOException or ObjectDisposedException)
         {
             // The stream ended or the socket failed before the close could be sent.
         }
