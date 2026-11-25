@@ -16,6 +16,9 @@ internal static class PMTilesDirectory
     // 16 KiB. The header occupies 127 bytes, leaving this many bytes for the root itself.
     private const int MaxRootDirectoryBytes = (16 * 1024) - PMTilesHeader.HeaderSize;
     private const int MaxRootDirectoryEntries = 16384;
+    internal const int DefaultMaxDecompressedBytes = 64 * 1024 * 1024;
+    private const int MaxDirectoryEntries = 1_000_000;
+    private const int MinBytesPerEntry = 4;
 
     public static (byte[] RootBytes, byte[] LeafBytes) BuildDirectories(
         IReadOnlyList<PMTilesEntry> entries,
@@ -138,45 +141,110 @@ internal static class PMTilesDirectory
     internal static PMTilesEntry[] DeserializeEntries(ReadOnlySpan<byte> data)
     {
         var pos = 0;
-        var numEntries = (int)ReadVarint(data, ref pos);
-        var entries = new PMTilesEntry[numEntries];
+        var rawNumEntries = ReadVarint(data, ref pos);
+        var maxPossibleEntries = (ulong)((data.Length - pos) / MinBytesPerEntry);
+        if (rawNumEntries > maxPossibleEntries || rawNumEntries > MaxDirectoryEntries)
+        {
+            throw new InvalidDataException(
+                $"PMTiles directory declares {rawNumEntries} entries, exceeding bounds for a {data.Length}-byte buffer.");
+        }
 
-        // Column 1: tile_id deltas
+        var numEntries = (int)rawNumEntries;
+        if (numEntries == 0)
+        {
+            return [];
+        }
+
+        var entries = new PMTilesEntry[numEntries];
+        pos = ReadTileIds(data, pos, entries);
+        pos = ReadRunLengths(data, pos, entries);
+        pos = ReadLengths(data, pos, entries);
+        ReadOffsets(data, pos, entries);
+        return entries;
+    }
+
+    private static int ReadTileIds(ReadOnlySpan<byte> data, int pos, PMTilesEntry[] entries)
+    {
         var lastTileId = 0UL;
-        for (var i = 0; i < numEntries; i++)
+        for (var i = 0; i < entries.Length; i++)
         {
             var delta = ReadVarint(data, ref pos);
+            if (delta > ulong.MaxValue - lastTileId)
+            {
+                throw new InvalidDataException("PMTiles tile ID delta overflows 64-bit unsigned integer.");
+            }
+
             lastTileId += delta;
             entries[i] = new PMTilesEntry(lastTileId, 0, 0, 0);
         }
 
-        // Column 2: run_length
-        for (var i = 0; i < numEntries; i++)
+        return pos;
+    }
+
+    private static int ReadRunLengths(ReadOnlySpan<byte> data, int pos, PMTilesEntry[] entries)
+    {
+        for (var i = 0; i < entries.Length; i++)
         {
-            var runLength = (uint)ReadVarint(data, ref pos);
-            entries[i] = entries[i] with { RunLength = runLength };
+            var runLength = ReadVarint(data, ref pos);
+            if (runLength > uint.MaxValue)
+            {
+                throw new InvalidDataException("PMTiles entry run length exceeds 32-bit unsigned range.");
+            }
+
+            entries[i] = entries[i] with { RunLength = (uint)runLength };
         }
 
-        // Column 3: length
-        for (var i = 0; i < numEntries; i++)
+        return pos;
+    }
+
+    private static int ReadLengths(ReadOnlySpan<byte> data, int pos, PMTilesEntry[] entries)
+    {
+        for (var i = 0; i < entries.Length; i++)
         {
-            var length = (uint)ReadVarint(data, ref pos);
-            entries[i] = entries[i] with { Length = length };
+            var length = ReadVarint(data, ref pos);
+            if (length > uint.MaxValue)
+            {
+                throw new InvalidDataException("PMTiles entry length exceeds 32-bit unsigned range.");
+            }
+
+            entries[i] = entries[i] with { Length = (uint)length };
         }
 
+        return pos;
+    }
+
+    private static void ReadOffsets(ReadOnlySpan<byte> data, int pos, PMTilesEntry[] entries)
+    {
         // Column 4: offset decoding per PMTiles v3 spec:
         //   0 (when i > 0) means contiguous (offset = prev.offset + prev.length).
         //   Otherwise offset = v - 1 (absolute).
-        for (var i = 0; i < numEntries; i++)
+        for (var i = 0; i < entries.Length; i++)
         {
-            var v = ReadVarint(data, ref pos);
-            var offset = v == 0 && i > 0
-                ? entries[i - 1].Offset + entries[i - 1].Length
-                : v - 1;
+            var value = ReadVarint(data, ref pos);
+            var offset = ResolveEntryOffset(entries, i, value);
             entries[i] = entries[i] with { Offset = offset };
         }
+    }
 
-        return entries;
+    private static ulong ResolveEntryOffset(PMTilesEntry[] entries, int index, ulong encodedValue)
+    {
+        if (encodedValue != 0)
+        {
+            return encodedValue - 1;
+        }
+
+        if (index == 0)
+        {
+            throw new InvalidDataException("PMTiles first directory entry cannot use a relative zero offset.");
+        }
+
+        var previous = entries[index - 1];
+        if (previous.Offset > ulong.MaxValue - previous.Length)
+        {
+            throw new InvalidDataException("PMTiles contiguous entry offset overflows 64-bit unsigned integer.");
+        }
+
+        return previous.Offset + previous.Length;
     }
 
     internal static void WriteVarint(Stream stream, ulong value)
@@ -195,7 +263,17 @@ internal static class PMTilesDirectory
         var shift = 0;
         for (var bytesRead = 0; bytesRead < 10; bytesRead++)
         {
+            if (pos >= data.Length)
+            {
+                throw new InvalidDataException("Unexpected end of PMTiles varint.");
+            }
+
             var b = data[pos++];
+            if (bytesRead == 9 && b > 1)
+            {
+                throw new InvalidDataException("PMTiles varint overflows 64-bit unsigned integer.");
+            }
+
             result |= (ulong)(b & 0x7F) << shift;
             if ((b & 0x80) == 0)
             {
@@ -226,22 +304,56 @@ internal static class PMTilesDirectory
         throw new NotSupportedException($"Compression type {compression} is not supported for directory serialization.");
     }
 
-    internal static byte[] Decompress(byte[] data, PMTilesCompression compression)
+    internal static byte[] Decompress(
+        byte[] data,
+        PMTilesCompression compression,
+        int maxDecompressedBytes = DefaultMaxDecompressedBytes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxDecompressedBytes);
+
         if (compression == PMTilesCompression.None)
         {
+            if (data.Length > maxDecompressedBytes)
+            {
+                throw new InvalidDataException(
+                    $"PMTiles payload length {data.Length} exceeds the {maxDecompressedBytes}-byte limit.");
+            }
+
             return data;
         }
 
         if (compression == PMTilesCompression.Gzip)
         {
-            using var input = new MemoryStream(data);
-            using var gzip = new GZipStream(input, CompressionMode.Decompress);
-            using var output = new MemoryStream();
-            gzip.CopyTo(output);
-            return output.ToArray();
+            return DecompressGzipBounded(data, maxDecompressedBytes);
         }
 
         throw new NotSupportedException($"Compression type {compression} is not supported for directory deserialization.");
+    }
+
+    private static byte[] DecompressGzipBounded(byte[] data, int maxDecompressedBytes)
+    {
+        using var input = new MemoryStream(data);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        var buffer = new byte[8192];
+        var totalWritten = 0;
+
+        while (true)
+        {
+            var read = gzip.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                return output.ToArray();
+            }
+
+            if (read > maxDecompressedBytes - totalWritten)
+            {
+                throw new InvalidDataException(
+                    $"PMTiles gzip payload decompressed beyond the {maxDecompressedBytes}-byte limit.");
+            }
+
+            output.Write(buffer, 0, read);
+            totalWritten += read;
+        }
     }
 }

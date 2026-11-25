@@ -291,8 +291,8 @@ internal static class WkbToSkiaConverter
         // possibly hold, so we never allocate a multi-GB backing array.
         var remaining = reader.RemainingBytes;
         var safeCapacity = remaining > 0
-            ? Math.Min(numGeometries, remaining / MinNestedPointBytes + 1)
-            : numGeometries;
+            ? Math.Min(numGeometries, (remaining / MinNestedPointBytes) + 1)
+            : 0;
         var points = new List<SKPoint>(safeCapacity);
 
         for (int i = 0; i < numGeometries; i++)

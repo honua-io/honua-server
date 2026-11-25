@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Infrastructure.Services;
@@ -44,7 +45,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
             return GeometryValidationResult.NullGeometry(_options.AllowNullGeometry);
         }
 
-        // Check WKB size limit
         var maxWkbSize = Math.Min(_options.MaxWkbSize, _geometryLimits.MaxGeometrySize);
         if (wkb.Length > maxWkbSize)
         {
@@ -53,56 +53,72 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
                 $"WKB size ({wkb.Length:N0} bytes) exceeds maximum allowed ({maxWkbSize:N0} bytes)");
         }
 
-        try
-        {
-            var geometry = _wkbReader.Read(wkb);
-
-            if (geometry == null || geometry.IsEmpty)
-            {
-                return GeometryValidationResult.Failure(
-                    ValidationErrorCode.EmptyGeometry,
-                    "Geometry is empty");
-            }
-
-            // Count vertices
-            var vertexCount = CountVertices(geometry);
-            var maxVertices = Math.Min(_options.MaxVertices, _geometryLimits.MaxVerticesPerGeometry);
-            if (vertexCount > maxVertices)
-            {
-                return GeometryValidationResult.Failure(
-                    ValidationErrorCode.TooManyVertices,
-                    $"Geometry has {vertexCount:N0} vertices, exceeds maximum allowed ({maxVertices:N0})");
-            }
-
-            // Count rings for polygons
-            var ringCount = CountRings(geometry);
-            if (ringCount > _options.MaxRings)
-            {
-                return GeometryValidationResult.Failure(
-                    ValidationErrorCode.TooManyRings,
-                    $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
-            }
-
-            var (hasZ, hasM) = Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
-            var stats = new GeometryStats
-            {
-                GeometryType = geometry.GeometryType,
-                VertexCount = vertexCount,
-                RingCount = ringCount,
-                WkbSize = wkb.Length,
-                HasZ = hasZ,
-                HasM = hasM,
-                Srid = geometry.SRID > 0 ? geometry.SRID : null
-            };
-
-            return GeometryValidationResult.Success(stats);
-        }
-        catch (Exception ex) when (ex is ParseException or FormatException)
+        if (!WkbSridNormalizer.TryGetDeclaredOrdinates(wkb, out _, out _))
         {
             return GeometryValidationResult.Failure(
                 ValidationErrorCode.InvalidWkbStructure,
                 "Invalid WKB structure.");
         }
+
+        try
+        {
+            return ValidateParsedGeometry(_wkbReader.Read(wkb), wkb.Length);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException or IOException or ArgumentException)
+        {
+            return GeometryValidationResult.Failure(
+                ValidationErrorCode.InvalidWkbStructure,
+                "Invalid WKB structure.");
+        }
+    }
+
+    private GeometryValidationResult ValidateParsedGeometry(Geometry? geometry, int wkbLength)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryValidationResult.Failure(ValidationErrorCode.EmptyGeometry, "Geometry is empty");
+        }
+
+        if (HasNonFiniteCoordinate(geometry))
+        {
+            return GeometryValidationResult.Failure(
+                ValidationErrorCode.InvalidCoordinates,
+                "Geometry contains non-finite coordinates.");
+        }
+
+        var vertexCount = CountVertices(geometry);
+        var maxVertices = Math.Min(_options.MaxVertices, _geometryLimits.MaxVerticesPerGeometry);
+        if (vertexCount > maxVertices)
+        {
+            return GeometryValidationResult.Failure(
+                ValidationErrorCode.TooManyVertices,
+                $"Geometry has {vertexCount:N0} vertices, exceeds maximum allowed ({maxVertices:N0})");
+        }
+
+        var ringCount = CountRings(geometry);
+        if (ringCount > _options.MaxRings)
+        {
+            return GeometryValidationResult.Failure(
+                ValidationErrorCode.TooManyRings,
+                $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
+        }
+
+        return GeometryValidationResult.Success(BuildGeometryStats(geometry, wkbLength, ringCount));
+    }
+
+    private static GeometryStats BuildGeometryStats(Geometry geometry, int wkbLength, int ringCount)
+    {
+        var (hasZ, hasM) = Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
+        return new GeometryStats
+        {
+            GeometryType = geometry.GeometryType,
+            VertexCount = CountVertices(geometry),
+            RingCount = ringCount,
+            WkbSize = wkbLength,
+            HasZ = hasZ,
+            HasM = hasM,
+            Srid = geometry.SRID > 0 ? geometry.SRID : null
+        };
     }
 
     public async Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
@@ -244,6 +260,19 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
     private static int CountVertices(Geometry geometry)
     {
         return geometry.NumPoints;
+    }
+
+    private static bool HasNonFiniteCoordinate(Geometry geometry)
+    {
+        foreach (var coordinate in geometry.Coordinates)
+        {
+            if (!double.IsFinite(coordinate.X) || !double.IsFinite(coordinate.Y))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int CountRings(Geometry geometry)

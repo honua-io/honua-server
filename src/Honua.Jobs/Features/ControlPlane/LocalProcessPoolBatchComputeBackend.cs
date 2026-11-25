@@ -31,6 +31,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     internal const string LaunchedMarkerPrefix = "local-process:";
 
     private const int MaxTailLines = 50;
+    private const int MaxTailChars = 500;
 
     private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
@@ -359,7 +360,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
         catch
         {
-            _executions.TryRemove(job.OperationId, out _);
+            EvictExecution(job.OperationId);
             process.Dispose();
             throw;
         }
@@ -651,9 +652,10 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                 return;
             }
 
+            var bounded = line.Length > MaxTailChars ? line[^MaxTailChars..] : line;
             lock (_sync)
             {
-                _tail.Enqueue(line);
+                _tail.Enqueue(bounded);
                 while (_tail.Count > MaxTailLines)
                 {
                     _tail.Dequeue();

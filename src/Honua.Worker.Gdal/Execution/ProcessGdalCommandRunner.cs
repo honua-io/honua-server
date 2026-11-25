@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Text;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Configuration;
@@ -121,23 +120,11 @@ internal sealed partial class ProcessGdalCommandRunner(
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
+        var stdout = new BoundedProcessOutputBuffer(BoundedProcessOutputBuffer.DefaultMaxOutputChars);
+        var stderr = new BoundedProcessOutputBuffer(BoundedProcessOutputBuffer.DefaultMaxErrorChars);
 
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stdout.AppendLine(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stderr.AppendLine(e.Data);
-            }
-        };
+        process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
+        process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
 
         await RunProcessAsync(process, nativeEntry, cancellationToken).ConfigureAwait(false);
 
