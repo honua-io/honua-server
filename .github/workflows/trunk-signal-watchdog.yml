@@ -59,12 +59,34 @@ jobs:
             const runs = data.workflow_runs;
             const finished = runs.filter(run => run.status === 'completed' && ['success', 'failure'].includes(run.conclusion));
             const lastResult = finished.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+            async function readJobPage(runId, page) {
+              const retryDelaysMs = [1000, 2000];
+              for (let attempt = 0; ; attempt++) {
+                try {
+                  return await github.rest.actions.listJobsForWorkflowRun({
+                    ...repo, run_id: runId, filter: 'latest', per_page: 25, page,
+                  });
+                } catch (error) {
+                  const status = error.status ?? 'unknown';
+                  const context = `Actions jobs API for run ${runId}, page ${page} (status ${status})`;
+                  if (![500, 502, 503, 504].includes(status) || attempt === retryDelaysMs.length) {
+                    throw new Error(`${context}: ${error.message}`, { cause: error });
+                  }
+                  core.warning(`${context}; retrying in ${retryDelaysMs[attempt]} ms.`);
+                  await new Promise(resolve => setTimeout(resolve, retryDelaysMs[attempt]));
+                }
+              }
+            }
             const jobCache = new Map();
             async function jobsFor(run) {
               if (!jobCache.has(run.id)) {
-                jobCache.set(run.id, await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
-                  ...repo, run_id: run.id, filter: 'latest', per_page: 100,
-                }));
+                const jobs = [];
+                for (let page = 1; ; page++) {
+                  const response = await readJobPage(run.id, page);
+                  jobs.push(...response.data.jobs);
+                  if (!/;\s*rel="next"/.test(response.headers.link ?? '')) break;
+                }
+                jobCache.set(run.id, jobs);
               }
               return jobCache.get(run.id);
             }

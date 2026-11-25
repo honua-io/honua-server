@@ -211,6 +211,9 @@ its issue closes only when all signals recover. GitHub can report a workflow as 
 while its children execute. For these runs the watchdog checks paginated, latest-attempt
 job evidence: runner assignment proves a scheduled start, while child jobs waiting
 over 45 minutes still alert. A queued job's `started_at` alone does not prove execution.
+The watchdog follows all Actions jobs pages at 25 jobs per page and retries HTTP 500, 502, 503
+and 504 twice on the affected page. If a jobs request still fails, the watchdog reports the API
+error with its run and page before evaluating or changing the stale-signal issue.
 
 Stage 3 details:
 
