@@ -5663,6 +5663,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsHappyPathTests.GetReport_CompletedJob_GeneratesRealReportEnvelope",
+        "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsTests.AnalysisReport_AnonymousReadIsUnauthorized",
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsTests.GetReport_UnknownJob_ReachesHandlerAndReturnsProblemDetails"
       ],
       "proof_ledger_surface": "analysis-reporting",
@@ -5679,6 +5680,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsHappyPathTests.RenderReport_CompletedJob_RendersRealHtml",
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsHappyPathTests.RenderReport_CompletedJob_RendersRealMarkdown",
+        "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsTests.AnalysisReport_AnonymousReadIsUnauthorized",
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsTests.RenderReport_UnknownFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Reporting.AnalysisReportEndpointsTests.RenderReport_UnknownJob_ReachesHandlerAndReturnsProblemDetails"
       ],
@@ -6837,7 +6839,7 @@
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeAfterAWarmFullGet_IsNotServedFromTheOutputCache",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeRequest_Returns206WithExactlyThoseBytes",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_ResolvesS3LowercasedUserMetadataKeys",
-        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_AnonymousReadIsUnauthorizedBeforeBytesOrHeaders",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_StorageBindingReboundUnderSameId_DoesNotServePreviousBytes",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_UnknownArtifact_Returns404",
         "Honua.Server.Tests.Features.Admin.CogArtifactProducerEndpointTests.PublishCog_RealProducer_StoresAndServesOptimizedBytes"
@@ -7665,7 +7667,11 @@
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
-        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.ServeErrors_PublicRoutesFailWhileProbesStayHealthy",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.SettingAbsent_FaultIsInert",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_AfterTheRecoveryRestart_ServesNormally",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_DeepProbeAndPublicRoutesFailWhileLoadBalancerProbesStayHealthy"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
@@ -12688,7 +12694,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_ValidResolution_ReturnsOkOrCapabilityError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_WithKRingDistance_ReturnsOkOrCapabilityError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_UnsupportedBoundReader_ReturnsCapabilityError"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_UnsupportedBoundReader_ReturnsCapabilityError",
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.H3_ProtectedLayer_AnonymousRequestIsUnauthorized",
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.H3_ReaderFromAnotherLayer_IsForbidden"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -17066,7 +17074,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_ConditionalReads_HonorValidatorsBeforeRanges",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_Head_ReportsTheArtifactLengthOnEveryProbe",
-        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_AnonymousReadIsUnauthorizedBeforeBytesOrHeaders",
         "Honua.Server.Tests.Features.Admin.CogArtifactProducerEndpointTests.PublishCog_RealProducer_StoresAndServesOptimizedBytes"
       ],
       "proof_ledger_surface": "cog-range-proxy",
@@ -22536,6 +22544,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.LineOfSight_ProtectedDataset_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_EndpointOutsideCoverage_ReturnsNotFoundAndNotVisible",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_MissingCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_ObserverEqualsTarget_ReturnsUnprocessableEntity",
@@ -22560,7 +22569,8 @@
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_OverStepTerrain_ReturnsKnownStationElevationsAndRelief",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_OverSurface_ReturnsIntersectionMetadata",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity",
-        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithoutProLicense_ReturnsPaymentRequired"
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithoutProLicense_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.Slice_ProtectedDataset_AnonymousRequestIsUnauthorized"
       ],
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
@@ -22578,7 +22588,8 @@
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSunShadow_KnownInput_MatchesIndependentlyComputedNoaaSolarPosition",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSunShadow_MissingTimestamp_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSunShadow_SunBelowHorizon_ReportsNoShadow",
-        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSunShadow_WithoutProLicense_ReturnsPaymentRequired"
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSunShadow_WithoutProLicense_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.SunShadow_ProtectedDataset_AnonymousRequestIsUnauthorized"
       ],
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
@@ -22597,7 +22608,8 @@
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_ObserverRaisedAboveRidgeRing_RestoresLongRangeVisibility",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_RidgeRingTerrain_OccludesFarSamplesButNotNearSamples",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_SampleGrid_MatchesRequestedRayFanAndRadius",
-        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_WithCoveredFlatTerrain_ReturnsVisibleSamples"
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostViewshed_WithCoveredFlatTerrain_ReturnsVisibleSamples",
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.Viewshed_ProtectedDataset_AnonymousRequestIsUnauthorized"
       ],
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",
@@ -22955,6 +22967,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.BufferAggregate_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcBufferAggregate_Dissolve_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcBufferAggregate_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcBufferAggregate_MissingDistance_ReturnsBadRequest"
@@ -22971,6 +22984,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.Clustering_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_Dbscan_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_MissingEps_ReturnsBadRequest",
@@ -22988,6 +23002,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.Density_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcDensity_HexGrid_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcDensity_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcDensity_MissingCellSize_ReturnsBadRequest"
@@ -23076,6 +23091,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.SpatialJoin_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcSpatialJoin_Intersects_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcSpatialJoin_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcSpatialJoin_MissingJoinLayer_ReturnsBadRequest"
@@ -25065,6 +25081,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.BufferAggregate_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DissolveFalseWithOutStatistics_ReturnsBadRequest",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DissolveFalse_ReturnsRowPerFeature",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DissolveTrue_ReturnsDissolvedPolygon",
@@ -25090,6 +25107,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.Clustering_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsPerformanceTests.QueryClusters_Dbscan_100K_CompletesWithinBudget",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryClusters_Dbscan_HullPerCluster_ReturnsHullGeometries",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryClusters_Dbscan_MissingEps_ReturnsBadRequest",
@@ -25133,6 +25151,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.Density_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryDensity_CellSizeBelowMinimum_ReturnsBadRequest",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryDensity_DoesNotLeakInputCountIntoProperties",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryDensity_HexGrid_ReturnsCellsWithCounts",
@@ -25208,6 +25227,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsAuthorizationTests.SpatialJoin_ProtectedLayer_AnonymousRequestIsUnauthorized",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithinMissingDistance_ReturnsBadRequest",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithinOverKnownGeometry_ReturnsExactRowLevelMatchCountsAndAggregates",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithin_ReturnsTargetFeaturesWithMatchCount",
