@@ -14,15 +14,15 @@ public sealed class GeometryServiceDatumProfiles : IAsyncLifetime
 
     public Task InitializeAsync() => Task.CompletedTask;
 
-    public async Task<DatumGridPostgresFixture> GetAsync(bool includeNadconGrid)
+    // xUnit runs the cases in this class fixture's test collection serially.
+    public async Task<DatumGridPostgresFixture> GetWithGridAsync()
     {
-        // xUnit runs the cases in this class fixture's test collection serially.
-        if (includeNadconGrid)
-        {
-            await (_withGridInitialization ??= _withGrid.InitializeAsync(includeNadconGrid: true));
-            return _withGrid;
-        }
+        await (_withGridInitialization ??= _withGrid.InitializeAsync(includeNadconGrid: true));
+        return _withGrid;
+    }
 
+    public async Task<DatumGridPostgresFixture> GetWithoutGridAsync()
+    {
         await (_withoutGridInitialization ??= _withoutGrid.InitializeAsync(includeNadconGrid: false));
         return _withoutGrid;
     }

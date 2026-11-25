@@ -17,7 +17,6 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 public sealed partial class GeometryServiceProjectTests : IClassFixture<WebAppFixture>, IClassFixture<GeometryServiceDatumProfiles>
 {
     private readonly WebAppFixture _fixture;
-
     private readonly GeometryServiceDatumProfiles _datumProfiles;
 
     public GeometryServiceProjectTests(WebAppFixture fixture, GeometryServiceDatumProfiles datumProfiles)
@@ -74,7 +73,9 @@ public sealed partial class GeometryServiceProjectTests : IClassFixture<WebAppFi
         // no grids (Helmert -8,159,175), and the pinned NOAA NADCON grid.
         // CI's external PostGIS 16 fixture includes a legacy conus grid; isolate
         // operation availability instead of assuming every base image is grid-free.
-        var datumDatabase = await _datumProfiles.GetAsync(includeNadconGrid);
+        var datumDatabase = includeNadconGrid
+            ? await _datumProfiles.GetWithGridAsync()
+            : await _datumProfiles.GetWithoutGridAsync();
         var fixture = datumDatabase.ConfigureGeometryService(new WebAppFixture());
         await fixture.InitializeAsync();
         try
@@ -387,7 +388,7 @@ public sealed partial class GeometryServiceProjectTests : IClassFixture<WebAppFi
     {
         // Keep the independent pyproj NADCON reference and supply its required grid
         // in the dedicated NADCON-enabled PostGIS fixture.
-        var datumDatabase = await _datumProfiles.GetAsync(includeNadconGrid: true);
+        var datumDatabase = await _datumProfiles.GetWithGridAsync();
         var fixture = datumDatabase.ConfigureGeometryService(new WebAppFixture());
         await fixture.InitializeAsync();
         try
