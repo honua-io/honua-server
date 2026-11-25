@@ -495,39 +495,45 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
             if (path.EndsWith("/token", StringComparison.Ordinal))
             {
-                var form = request.Content is null
-                    ? string.Empty
-                    : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
-                var parsedForm = QueryHelpers.ParseQuery(form);
-                var code = parsedForm["code"].ToString();
-                if (string.Equals(code, "reject", StringComparison.Ordinal))
-                {
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
-                }
-
-                const string codePrefix = "mock-idp-authorization-code:";
-                var issuer = string.Equals(code, "wrong-issuer", StringComparison.Ordinal)
-                    ? "https://untrusted-idp.test"
-                    : IdpAuthority;
-                string? nonce = code switch
-                {
-                    "wrong-nonce" => "0000000000000000000000000000000000000000000000000000000000000000",
-                    "missing-nonce" => null,
-                    _ when code.StartsWith(codePrefix, StringComparison.Ordinal) => code[codePrefix.Length..],
-                    _ => "unused-nonce",
-                };
-
-                var tokenResponse = JsonSerializer.Serialize(new
-                {
-                    access_token = "mock-idp-access-token",
-                    id_token = CreateIdToken(issuer, nonce),
-                    token_type = "Bearer",
-                    expires_in = 600,
-                });
-                return Task.FromResult(Json(tokenResponse));
+                return Task.FromResult(HandleTokenExchange(request, cancellationToken));
             }
 
             return Task.FromResult(NotFound());
+        }
+
+        private static HttpResponseMessage HandleTokenExchange(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var form = request.Content is null
+                ? string.Empty
+                : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
+            var code = QueryHelpers.ParseQuery(form)["code"].ToString();
+            if (string.Equals(code, "reject", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            }
+
+            const string codePrefix = "mock-idp-authorization-code:";
+            var issuer = string.Equals(code, "wrong-issuer", StringComparison.Ordinal)
+                ? "https://untrusted-idp.test"
+                : IdpAuthority;
+            string? nonce = code switch
+            {
+                "wrong-nonce" => "0000000000000000000000000000000000000000000000000000000000000000",
+                "missing-nonce" => null,
+                _ when code.StartsWith(codePrefix, StringComparison.Ordinal) => code[codePrefix.Length..],
+                _ => "unused-nonce",
+            };
+
+            var tokenResponse = JsonSerializer.Serialize(new
+            {
+                access_token = "mock-idp-access-token",
+                id_token = CreateIdToken(issuer, nonce),
+                token_type = "Bearer",
+                expires_in = 600,
+            });
+            return Json(tokenResponse);
         }
 
         private static HttpResponseMessage NotFound() => new(HttpStatusCode.NotFound);

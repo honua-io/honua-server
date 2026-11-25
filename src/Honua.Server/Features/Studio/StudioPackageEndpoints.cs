@@ -553,12 +553,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(context, logger, "draft.create", ex);
+            return MapStudioArgumentException(StudioOperationError(context, logger, "draft.create"), ex);
         }
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "draft.create", "Studio package draft could not be created.", ex);
+                StudioOperationError(context, logger, "draft.create") with { ServerErrorDetail = "Studio package draft could not be created." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -761,12 +761,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(context, logger, "draft.update", ex);
+            return MapStudioArgumentException(StudioOperationError(context, logger, "draft.update"), ex);
         }
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "draft.update", "Studio package draft could not be updated.", ex);
+                StudioOperationError(context, logger, "draft.update") with { ServerErrorDetail = "Studio package draft could not be updated." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -946,7 +946,7 @@ internal static partial class StudioPackageEndpoints
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "draft.validate", "Studio package draft could not be validated.", ex);
+                StudioOperationError(context, logger, "draft.validate") with { ServerErrorDetail = "Studio package draft could not be validated." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1017,7 +1017,7 @@ internal static partial class StudioPackageEndpoints
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "draft.preview", "Studio package preview plan could not be created.", ex);
+                StudioOperationError(context, logger, "draft.preview") with { ServerErrorDetail = "Studio package preview plan could not be created." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1117,12 +1117,12 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(context, logger, "version.create", ex);
+            return MapStudioArgumentException(StudioOperationError(context, logger, "version.create"), ex);
         }
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "version.create", "Studio content version could not be created.", ex);
+                StudioOperationError(context, logger, "version.create") with { ServerErrorDetail = "Studio content version could not be created." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1694,7 +1694,7 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(context, logger, "publish-request.create", ex);
+            return MapStudioArgumentException(StudioOperationError(context, logger, "publish-request.create"), ex);
         }
         catch (KeyNotFoundException)
         {
@@ -1703,7 +1703,7 @@ internal static partial class StudioPackageEndpoints
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "publish-request.create", "Studio publication request could not be created.", ex);
+                StudioOperationError(context, logger, "publish-request.create") with { ServerErrorDetail = "Studio publication request could not be created." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1819,7 +1819,7 @@ internal static partial class StudioPackageEndpoints
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "version.reopen", "Studio content version could not be reopened.", ex);
+                StudioOperationError(context, logger, "version.reopen") with { ServerErrorDetail = "Studio content version could not be reopened." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1922,88 +1922,18 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(context, logger, "rollback.create", ex);
+            return MapStudioArgumentException(StudioOperationError(context, logger, "rollback.create"), ex);
         }
         catch (InvalidOperationException ex)
         {
             return MapStudioInvalidOperationException(
-                context, logger, "rollback.create", "Studio rollback request could not be created.", ex);
+                StudioOperationError(context, logger, "rollback.create") with { ServerErrorDetail = "Studio rollback request could not be created." }, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             StudioEndpointsLog.EndpointFailed(logger, "rollback.create", ex);
             return ServerError(context, "Studio rollback request could not be created.");
         }
-    }
-
-    internal static IResult MapStudioArgumentException(
-        HttpContext context,
-        ILogger logger,
-        string operation,
-        ArgumentException ex)
-    {
-        if (ex is ArgumentNullException)
-        {
-            StudioEndpointsLog.EndpointFailed(logger, operation, ex);
-            return ServerError(context, "The Studio package operation could not be completed.");
-        }
-
-        if (ex.Message.StartsWith("Publication intent is invalid", StringComparison.Ordinal))
-        {
-            return BadRequest(context, ex.Message);
-        }
-
-        StudioEndpointsLog.EndpointFailed(logger, operation, ex);
-        return BadRequest(context, "The Studio package request is invalid.");
-    }
-
-    internal static IResult MapStudioInvalidOperationException(
-        HttpContext context,
-        ILogger logger,
-        string operation,
-        string serverErrorDetail,
-        InvalidOperationException ex)
-    {
-        if (TryMapKnownStudioConflict(ex, out var conflictDetail))
-        {
-            return Conflict(context, conflictDetail);
-        }
-
-        StudioEndpointsLog.EndpointFailed(logger, operation, ex);
-        return ServerError(context, serverErrorDetail);
-    }
-
-    private static bool TryMapKnownStudioConflict(InvalidOperationException ex, out string safeDetail)
-    {
-        var message = ex.Message;
-        if (string.Equals(message, "Stale draft generation; refresh and retry.", StringComparison.Ordinal)
-            || (message.Contains("stale", StringComparison.OrdinalIgnoreCase)
-                && message.Contains("generation", StringComparison.OrdinalIgnoreCase)))
-        {
-            safeDetail = "Stale draft generation; refresh and retry.";
-            return true;
-        }
-
-        if (message.Contains("idempotency", StringComparison.OrdinalIgnoreCase))
-        {
-            safeDetail = "Idempotency-Key was already used with a different request.";
-            return true;
-        }
-
-        if (message.Contains("bridged", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("does not support", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("not supported", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("native draft", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("cannot be published", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("cannot be rolled back", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-        {
-            safeDetail = "The Studio package operation conflicts with the current resource state.";
-            return true;
-        }
-
-        safeDetail = string.Empty;
-        return false;
     }
 
     private static Task<IResult?> EnsureGenerateAuthorizedAsync(
@@ -2109,41 +2039,6 @@ internal static partial class StudioPackageEndpoints
         error = string.Join(", ", results.Select(static result => result.ErrorMessage));
         return false;
     }
-
-    private static IResult BadRequest(HttpContext context, string detail)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status400BadRequest, "Bad Request", detail);
-
-    private static IResult Forbidden(HttpContext context, string detail, string code)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status403Forbidden, "Forbidden", detail, code);
-
-    private static IResult NotFound(HttpContext context, string detail)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail);
-
-    private static IResult NotFound(HttpContext context, string detail, string code)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail, code);
-
-    private static IResult Conflict(HttpContext context, string detail)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);
-
-    // A host without a durable proposal store composes draft state (volatile outside Production) but
-    // not the governed proposal control plane. A mutation that needs it -- publish-request's
-    // separate-principal approval, or any mutation on a fail-closed Production store -- refuses
-    // with the shared typed capability-unavailable problem, never a 409 or 500 that drops the
-    // missingDependency receipt.
-    private static IResult CapabilityUnavailable(HttpContext context, CapabilityUnavailableException exception)
-        => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-            context,
-            exception.Message,
-            exception.MissingDependency,
-            exception.Remediation,
-            exception.RemediationRef,
-            exception.Capability);
-
-    private static IResult ServerError(HttpContext context, string detail)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status500InternalServerError, "Internal Server Error", detail);
-
-    private static IResult ServiceUnavailable(HttpContext context, string detail, string code)
-        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status503ServiceUnavailable, "Service Unavailable", detail, code);
 
     internal sealed class StudioPackageEndpointsMarker;
 }

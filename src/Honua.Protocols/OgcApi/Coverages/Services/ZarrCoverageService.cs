@@ -254,16 +254,16 @@ internal sealed partial class ZarrCoverageService
 
         try
         {
-            var result = await _subsetReader
-                .ReadSubsetAsync(
-                    rangeReader,
-                    registration.Bucket,
-                    registration.RootPath,
-                    RequireMetadata(registration),
-                    request,
-                    CoverageSubsetLimits,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            var parameters = new ZarrSubsetReadParameters
+            {
+                Reader = rangeReader,
+                Bucket = registration.Bucket,
+                RootPath = registration.RootPath,
+                Metadata = RequireMetadata(registration),
+                Request = request,
+                Limits = CoverageSubsetLimits,
+            };
+            var result = await _subsetReader.ReadSubsetAsync(parameters, cancellationToken).ConfigureAwait(false);
             return new ZarrSubsetRead(result, null);
         }
         catch (ZarrSubsetValidationException ex)

@@ -71,12 +71,7 @@ public sealed class ODataSearchServiceSqlTests
     public async Task ProcessExpandAsync_StripsHiddenRelatedFields_AndRejectsHiddenExpandSelect()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var parent = new MetadataV2Object
-        {
-            Metadata = new() { Id = "parents" },
-            Status = active,
-            Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
-        };
+        var parent = CreateParentResource(active);
         var child = new MetadataV2Object
         {
             Metadata = new() { Id = "children" },
@@ -88,27 +83,13 @@ public sealed class ODataSearchServiceSqlTests
                 new MetadataV2Field { Name = "secret_note", Type = MetadataV2FieldType.String, Hidden = true }
             ]
         };
-        var graph = Substitute.For<IMetadataV2GraphProvider>();
-        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(new MetadataV2Graph
-        {
-            Resources = [parent, child],
-            Services = [new() { Metadata = new() { Id = "service" }, Status = active, Protocols = ["OData"] }],
-            Publications = [new() { Metadata = new() { Id = "pub" }, Status = active, ResourceId = "children", ServiceId = "service", LayerIndex = 14, StorageBindingId = "binding" }],
-            StorageBindings = [new() { Metadata = new() { Id = "binding" }, Status = active, ResourceId = "children", StorageLayerId = 14 }]
-        }, "test", DateTimeOffset.UtcNow));
         var attributes = new Dictionary<string, object?>
         {
             ["join_id"] = 901L,
             ["name"] = "visible",
             ["secret_note"] = "confidential"
         }.ToImmutableDictionary();
-        var relationships = Substitute.For<IRelationshipStore>();
-        relationships.QueryRelatedAsync(13, Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(81, null, attributes)]));
-        var service = new ODataSearchService(new ODataSearchDependencies(
-            Substitute.For<IFeatureReader>(), relationships, Substitute.For<IStreamingFeatureStore>(),
-            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), graph, null!,
-            Options.Create(new ODataOptions())), null!);
+        var service = CreateExpandService(parent, child, Feature.Create(81, null, attributes));
 
         var expanded = await service.ProcessExpandAsync("Children", parent, 13, [901], CancellationToken.None);
         var payload = expanded[901]["Children"].Should().ContainSingle().Subject.Should().BeOfType<Dictionary<string, object?>>().Subject;
@@ -117,6 +98,36 @@ public sealed class ODataSearchServiceSqlTests
 
         var selectHidden = () => service.ProcessExpandAsync("Children($select=secret_note)", parent, 13, [901], CancellationToken.None);
         await selectHidden.Should().ThrowAsync<ArgumentException>();
+    }
+
+    private static MetadataV2Object CreateParentResource(MetadataV2Status active) => new()
+    {
+        Metadata = new() { Id = "parents" },
+        Status = active,
+        Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
+    };
+
+    private static ODataSearchService CreateExpandService(
+        MetadataV2Object parent,
+        MetadataV2Object child,
+        Feature relatedFeature)
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Resources = [parent, child],
+            Services = [new() { Metadata = new() { Id = "service" }, Status = active, Protocols = ["OData"] }],
+            Publications = [new() { Metadata = new() { Id = "pub" }, Status = active, ResourceId = "children", ServiceId = "service", LayerIndex = 14, StorageBindingId = "binding" }],
+            StorageBindings = [new() { Metadata = new() { Id = "binding" }, Status = active, ResourceId = "children", StorageLayerId = 14 }]
+        }, "test", DateTimeOffset.UtcNow));
+        var relationships = Substitute.For<IRelationshipStore>();
+        relationships.QueryRelatedAsync(13, Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [relatedFeature]));
+        return new ODataSearchService(new ODataSearchDependencies(
+            Substitute.For<IFeatureReader>(), relationships, Substitute.For<IStreamingFeatureStore>(),
+            Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), graph, null!,
+            Options.Create(new ODataOptions())), null!);
     }
 
     [Theory]

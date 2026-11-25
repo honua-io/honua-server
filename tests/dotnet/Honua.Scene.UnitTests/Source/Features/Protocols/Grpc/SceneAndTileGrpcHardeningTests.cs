@@ -27,20 +27,8 @@ public sealed class SceneAndTileGrpcHardeningTests
     {
         var datasets = new Dictionary<string, SceneDataset>(StringComparer.Ordinal)
         {
-            ["scene-a"] = new SceneDataset
-            {
-                Id = "scene-a",
-                Name = "Scene A",
-                AssetRoot = "/tmp/scene-a",
-                AccessPolicy = new AccessPolicy { AllowAnonymous = true }
-            },
-            ["scene-b"] = new SceneDataset
-            {
-                Id = "scene-b",
-                Name = "Scene B",
-                AssetRoot = "/tmp/scene-b",
-                AccessPolicy = new AccessPolicy { AllowAnonymous = true }
-            }
+            ["scene-a"] = CreatePublicDataset("scene-a", "Scene A", "/tmp/scene-a"),
+            ["scene-b"] = CreatePublicDataset("scene-b", "Scene B", "/tmp/scene-b")
         };
         var options = new SceneDatasetOptions
         {
@@ -74,24 +62,10 @@ public sealed class SceneAndTileGrpcHardeningTests
         Directory.CreateDirectory(tempRoot);
         try
         {
-            await File.WriteAllTextAsync(
-                Path.Join(tempRoot, "tileset.json"),
-                """{"asset":{"version":"1.1"},"geometricError":100,"root":{"boundingVolume":{"box":[0,0,0,1,0,0,0,1,0,0,0,1]},"geometricError":10,"content":{"uri":"root.glb"}}}""");
-            await File.WriteAllBytesAsync(Path.Join(tempRoot, "root.glb"), [0x67, 0x6C, 0x54, 0x46]);
-
-            var datasets = new Dictionary<string, SceneDataset>(StringComparer.Ordinal)
-            {
-                ["scene-stream"] = new SceneDataset
-                {
-                    Id = "scene-stream",
-                    Name = "Stream Scene",
-                    AssetRoot = tempRoot,
-                    TilesetFileName = "tileset.json",
-                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
-                }
-            };
+            await WriteSampleTilesetAsync(tempRoot);
+            var dataset = CreatePublicDataset("scene-stream", "Stream Scene", tempRoot) with { TilesetFileName = "tileset.json" };
             var service = new HonuaTileGrpcService(
-                new DictionarySceneRegistry(datasets),
+                new DictionarySceneRegistry(new Dictionary<string, SceneDataset>(StringComparer.Ordinal) { ["scene-stream"] = dataset }),
                 NullLogger<HonuaTileGrpcService>.Instance);
 
             using var cts = new CancellationTokenSource();
@@ -109,6 +83,22 @@ public sealed class SceneAndTileGrpcHardeningTests
         {
             Directory.Delete(tempRoot, recursive: true);
         }
+    }
+
+    private static SceneDataset CreatePublicDataset(string id, string name, string assetRoot) => new()
+    {
+        Id = id,
+        Name = name,
+        AssetRoot = assetRoot,
+        AccessPolicy = new AccessPolicy { AllowAnonymous = true }
+    };
+
+    private static async Task WriteSampleTilesetAsync(string tempRoot)
+    {
+        await File.WriteAllTextAsync(
+            Path.Join(tempRoot, "tileset.json"),
+            """{"asset":{"version":"1.1"},"geometricError":100,"root":{"boundingVolume":{"box":[0,0,0,1,0,0,0,1,0,0,0,1]},"geometricError":10,"content":{"uri":"root.glb"}}}""");
+        await File.WriteAllBytesAsync(Path.Join(tempRoot, "root.glb"), [0x67, 0x6C, 0x54, 0x46]);
     }
 
     private static TestServerCallContext CreateCallContext(CancellationToken cancellationToken)

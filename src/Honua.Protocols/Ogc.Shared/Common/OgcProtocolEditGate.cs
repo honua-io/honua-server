@@ -49,6 +49,10 @@ internal static class OgcProtocolEditGate
         FeatureEditBatch Batch,
         Dictionary<(FeatureEditOperationKind Kind, long Id), IReadOnlyDictionary<string, object?>> Rows);
 
+    private readonly record struct EffectiveBatchCheck(
+        EffectiveEdits Effective,
+        IFeatureEditHooks Hooks);
+
     internal static async Task<PreparedGate> PrepareAsync(
         Target target,
         FeatureEditBatch batch,
@@ -84,7 +88,7 @@ internal static class OgcProtocolEditGate
             effective = new(batch, []);
         }
 
-        return await CheckEffectiveBatchAsync(target, effective, hooks, cancellationToken).ConfigureAwait(false);
+        return await CheckEffectiveBatchAsync(target, new EffectiveBatchCheck(effective, hooks), cancellationToken).ConfigureAwait(false);
     }
 
     internal static Task RunAfterAsync(Target target, FeatureEditBatch batch, FeatureEditResult result)
@@ -112,77 +116,87 @@ internal static class OgcProtocolEditGate
         }
 
         var maskedSet = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Feature MergeMasked(Feature feature)
-        {
-            var preserved = feature.PreservedAttributeNames.IsDefaultOrEmpty
-                ? maskedFields.Distinct(StringComparer.OrdinalIgnoreCase).ToImmutableArray()
-                : feature.PreservedAttributeNames
-                    .Concat(maskedFields)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToImmutableArray();
-            var removals = feature.ExplicitAttributeRemovals.IsDefaultOrEmpty
-                ? feature.ExplicitAttributeRemovals
-                : [.. feature.ExplicitAttributeRemovals.Where(name => !maskedSet.Contains(name))];
-            return feature with
-            {
-                PreservedAttributeNames = preserved,
-                ExplicitAttributeRemovals = removals,
-            };
-        }
-
         return batch with
         {
             Updates = batch.Updates.IsDefaultOrEmpty
                 ? batch.Updates
-                : [.. batch.Updates.Select(MergeMasked)],
+                : [.. batch.Updates.Select(feature => MergeMaskedAttributes(feature, maskedFields, maskedSet))],
             Operations = batch.Operations.IsDefaultOrEmpty
                 ? batch.Operations
                 : [.. batch.Operations.Select(operation =>
                     operation.Kind == FeatureEditOperationKind.Update && operation.Feature is { } feature
-                        ? operation with { Feature = MergeMasked(feature) }
+                        ? operation with { Feature = MergeMaskedAttributes(feature, maskedFields, maskedSet) }
                         : operation)],
+        };
+    }
+
+    private static Feature MergeMaskedAttributes(
+        Feature feature,
+        ImmutableArray<string> maskedFields,
+        HashSet<string> maskedSet)
+    {
+        var preserved = feature.PreservedAttributeNames.IsDefaultOrEmpty
+            ? maskedFields.Distinct(StringComparer.OrdinalIgnoreCase).ToImmutableArray()
+            : feature.PreservedAttributeNames
+                .Concat(maskedFields)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToImmutableArray();
+        var removals = feature.ExplicitAttributeRemovals.IsDefaultOrEmpty
+            ? feature.ExplicitAttributeRemovals
+            : [.. feature.ExplicitAttributeRemovals.Where(name => !maskedSet.Contains(name))];
+        return feature with
+        {
+            PreservedAttributeNames = preserved,
+            ExplicitAttributeRemovals = removals,
         };
     }
 
     private static async Task<PreparedGate> CheckEffectiveBatchAsync(
         Target target,
-        EffectiveEdits effective,
-        IFeatureEditHooks hooks,
+        EffectiveBatchCheck batchCheck,
         CancellationToken cancellationToken)
     {
-        var check = new FeatureEditCheck(target.Resource, Scope(target), effective.Batch)
-        {
-            EffectiveAttributes = row => EffectiveAttributes(row, effective.Rows),
-            UnsupportedExpressions = target.Context.RequestServices?.GetService<ILoggerFactory>() is { } logging
-                ? new AttributeRuleWarningSink(logging.CreateLogger("Honua.Features.AttributeRules"))
-                : null,
-        };
+        var check = CreateFeatureEditCheck(target, batchCheck.Effective);
         var rules = FeatureEditGate.ApplyAttributeRules(check);
+        var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context);
         var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
             target.Reader,
             target.LayerId,
             target.Resource.OwnerEditPolicy,
             rules.Batch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context),
+            principal,
             cancellationToken).ConfigureAwait(false);
         if (!prepared.IsAllowed)
         {
             return new(rules.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(rules.Batch, prepared.DenialReason ?? "Edit not permitted."), []);
         }
 
-        var clock = target.Context.RequestServices?.GetService<TimeProvider>() ?? TimeProvider.System;
-        var now = clock.GetUtcNow();
+        var now = (target.Context.RequestServices?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         var checkedBatch = EditorTrackingBatch.Stamp(
             target.Resource,
             prepared.Batch,
-            new EditorTrackingStamp(
-                ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context).Name,
-                field => TrackingTimeValue(field, now)));
-        var rejections = await FeatureEditGate.CheckAsync(hooks, check with
+            new EditorTrackingStamp(principal.Name, field => TrackingTimeValue(field, now)));
+        var rejections = await FeatureEditGate.CheckAsync(
+            batchCheck.Hooks,
+            check with { Batch = checkedBatch, Rejections = rules.Rejections },
+            cancellationToken).ConfigureAwait(false);
+        return FinalizeCheckRejections(target, checkedBatch, rejections);
+    }
+
+    private static FeatureEditCheck CreateFeatureEditCheck(Target target, EffectiveEdits effective)
+        => new(target.Resource, Scope(target), effective.Batch)
         {
-            Batch = checkedBatch,
-            Rejections = rules.Rejections,
-        }, cancellationToken).ConfigureAwait(false);
+            EffectiveAttributes = row => EffectiveAttributes(row, effective.Rows),
+            UnsupportedExpressions = target.Context.RequestServices?.GetService<ILoggerFactory>() is { } logging
+                ? new AttributeRuleWarningSink(logging.CreateLogger("Honua.Features.AttributeRules"))
+                : null,
+        };
+
+    private static PreparedGate FinalizeCheckRejections(
+        Target target,
+        FeatureEditBatch checkedBatch,
+        IReadOnlyList<FeatureEditHookRejection> rejections)
+    {
         if (rejections.Count == 0)
         {
             return new(checkedBatch, null, []);

@@ -421,16 +421,11 @@ internal sealed partial class Wcs20Handler
         var renderHeight = sliceSelections.Count > 0
             ? Math.Max(1, sliceHeight)
             : Math.Max(1, query.OutputHeight ?? coverage.Coverage.Value.Raster.Height);
-        var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
-        RasterRenderCapacityLimiter.Lease? renderLease = null;
-        if (limiter is not null)
+        var (renderLease, capacityRefusal) = await TryAcquireCoverageRenderLeaseAsync(
+            context, (renderWidth, renderHeight), cancellationToken).ConfigureAwait(false);
+        if (capacityRefusal is not null)
         {
-            renderLease = await limiter.TryAcquireAsync(renderWidth, renderHeight, cancellationToken).ConfigureAwait(false);
-            if (renderLease is null)
-            {
-                context.Response.Headers.RetryAfter = RasterRenderCapacityLimiter.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
-                return Wcs20ErrorResults.CreateServiceUnavailable(RasterRenderCapacityLimiter.CapacityExceededMessage);
-            }
+            return capacityRefusal;
         }
 
         await using (renderLease)
@@ -450,24 +445,10 @@ internal sealed partial class Wcs20Handler
                     .ConfigureAwait(false);
             }
 
-            var result = await _coverageBackend.ExportImageAsync(
-                coverage.Coverage.Value.LayerId,
-                coverage.Coverage.Value.Raster.Id,
-                query,
+            return await ExportCoverageResultAsync(
+                (coverageId, coverage.Coverage.Value),
+                (query, telemetry),
                 cancellationToken).ConfigureAwait(false);
-
-            telemetry
-                .WithTag("honua.result.bytes", result.Data.Length)
-                .WithTag("honua.result.content_type", result.ContentType);
-            telemetry.SetSuccess(1);
-
-            Wcs20Log.CoverageReturned(
-                _logger,
-                coverageId.Raw,
-                result.Data.Length,
-                result.ContentType);
-
-            return EncodedRasterResults.File(result.Data, result.ContentType);
         }
     }
 
@@ -611,7 +592,7 @@ internal sealed partial class Wcs20Handler
                     PublishedMetadataProjection.ForCapabilities(snapshot.Graph, coverage.Coverage.Value.Service));
         }
 
-        var service = await ResolveServiceAsync(context, snapshot, scope, cancellationToken).ConfigureAwait(false);
+        var service = await ResolveServiceAsync(context, new WcsServiceLookup(snapshot, scope), cancellationToken).ConfigureAwait(false);
         if (service.Error is not null)
         {
             return new CoverageListResult([], service.Error);
@@ -699,7 +680,7 @@ internal sealed partial class Wcs20Handler
             return new CoverageResolutionResult(result.Coverage, result.Error);
         }
 
-        var service = await ResolveServiceAsync(context, snapshot, scope, cancellationToken).ConfigureAwait(false);
+        var service = await ResolveServiceAsync(context, new WcsServiceLookup(snapshot, scope), cancellationToken).ConfigureAwait(false);
         if (service.Error is not null)
         {
             return new CoverageResolutionResult(null, service.Error);
@@ -944,92 +925,6 @@ internal sealed partial class Wcs20Handler
     private static bool IsCoverageProtocol(MetadataV2Service service)
         => IsProtocolEnabled(service, WcsProtocolName) ||
            IsProtocolEnabled(service, ServiceProtocols.ImageServer);
-
-    private static async Task<ServiceResolutionResult> ResolveServiceAsync(
-        HttpContext context,
-        MetadataV2GraphSnapshot snapshot,
-        Wcs20RouteScope scope,
-        CancellationToken cancellationToken)
-    {
-        var serviceId = scope.ServiceId;
-        if (string.IsNullOrWhiteSpace(serviceId))
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.NoApplicableCode,
-                    "Service was not found."));
-        }
-
-        // Resolve by id first (canonical), then by display name to cover the
-        // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
-        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
-        {
-            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
-                ?? snapshot.FindService(serviceId);
-        }
-
-        var serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context,
-            service is not null && service.IsRoutable()
-                ? ResourceValidationResult.Success(service)
-                : ResourceValidationResult.NotFound<MetadataV2Service>($"Service '{serviceId}' was not found."));
-        if (!serviceResult.IsValid)
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.NoApplicableCode,
-                    serviceResult.ErrorMessage!));
-        }
-
-        service = serviceResult.Resource!;
-        if (!IsProtocolEnabled(service, WcsProtocolName))
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.OperationNotSupported,
-                    "WCS is not enabled for this service."));
-        }
-
-        var serviceAccess = await AccessPolicyHelpers.EvaluateServiceQueryAccessAsync(
-            context, service, cancellationToken).ConfigureAwait(false);
-        if (!serviceAccess.IsAllowed && LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User))
-        {
-            // A layer-restricted read key may bootstrap only its own published
-            // coverages. The ordinary per-resource checks below still filter the
-            // capabilities list and each requested coverage independently.
-            var hasReadableCoverage = false;
-            foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
-            {
-                if (!snapshot.IsRoutable(publication) ||
-                    snapshot.ResolveResource(publication) is not { } candidateResource ||
-                    !snapshot.ResolveStorageLayerId(publication, candidateResource).HasValue ||
-                    !TenantScopeHelpers.IsPublicationVisible(context, publication, candidateResource, service))
-                {
-                    continue;
-                }
-
-                if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
-                        context, candidateResource, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
-                {
-                    hasReadableCoverage = true;
-                    break;
-                }
-            }
-
-            if (hasReadableCoverage)
-            {
-                serviceAccess = AccessDecision.Allowed();
-            }
-        }
-        if (!serviceAccess.IsAllowed)
-        {
-            return new ServiceResolutionResult(null, CreateAccessDeniedResult(context, serviceAccess));
-        }
-
-        return new ServiceResolutionResult(service, null);
-    }
 
     private static MetadataV2Service? FindServiceForProtocol(
         MetadataV2GraphSnapshot snapshot,
@@ -3122,50 +3017,14 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var parsed = new List<WcsCoverageIdentifier>();
-        var seenLayerIds = new HashSet<int>();
-        var seenRawIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var rawCount = 0;
-        foreach (var token in SplitCsvValues(values))
+        var (parsed, parseError) = ParseCoverageIdTokens(values);
+        if (parseError is { } failed)
         {
-            rawCount++;
-            if (rawCount > MaxDescribeCoverageIds)
-            {
-                error = new WcsParameterError(
-                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                    $"COVERAGEID may specify at most {MaxDescribeCoverageIds} coverages per DescribeCoverage request.",
-                    Wcs20Utilities.Parameters.CoverageId);
-                return false;
-            }
-
-            if (!TryParseCoverageId(token, out var coverageId))
-            {
-                error = new WcsParameterError(
-                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                    "COVERAGEID values must be valid coverage identifiers.",
-                    Wcs20Utilities.Parameters.CoverageId);
-                return false;
-            }
-
-            var isNew = coverageId.LayerId.HasValue
-                ? seenLayerIds.Add(coverageId.LayerId.Value)
-                : seenRawIds.Add(coverageId.Raw);
-            if (isNew)
-            {
-                parsed.Add(coverageId);
-            }
-        }
-
-        if (parsed.Count == 0)
-        {
-            error = new WcsParameterError(
-                Wcs20Utilities.ExceptionCodes.MissingParameterValue,
-                "COVERAGEID is required.",
-                Wcs20Utilities.Parameters.CoverageId);
+            error = failed;
             return false;
         }
 
-        coverageIds = parsed.ToArray();
+        coverageIds = parsed;
         return true;
     }
 

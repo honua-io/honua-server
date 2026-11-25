@@ -157,12 +157,15 @@ internal sealed class ZarrTileService : IZarrTileService
         try
         {
             result = await _subsetReader.ReadSubsetAsync(
-                    rangeReader,
-                    servable.Bucket,
-                    servable.RootPath,
-                    metadata,
-                    slice!.Plan.Request,
-                    TileSubsetLimits,
+                    new ZarrSubsetReadParameters
+                    {
+                        Reader = rangeReader,
+                        Bucket = servable.Bucket,
+                        RootPath = servable.RootPath,
+                        Metadata = metadata,
+                        Request = slice!.Plan.Request,
+                        Limits = TileSubsetLimits,
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
         }

@@ -1734,81 +1734,20 @@ catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdow
     return;
 }
 
-#if HONUA_POSTGIS_ONLY
-if (!app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>().IsDegraded)
+if (!await StartupPostMigrationChecks.RunAsync(
+        app,
+        new StartupPostMigrationOptions
+        {
+            MigrationOwnership = hostManagesOwnMigrations
+                ? StartupMigrationOwnership.HostManagesMigrations
+                : StartupMigrationOwnership.ExternalMigrations,
+            KeyRingMode = durableKeyRing
+                ? StartupKeyRingMode.Durable
+                : StartupKeyRingMode.Ephemeral,
+            MigrationsAssembly = Assembly.GetExecutingAssembly()
+        }))
 {
-    try
-    {
-        await using var startupScope = app.Services.CreateAsyncScope();
-        await DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(
-            startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
-            startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
-    }
-    catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableException ex)
-    {
-        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
-        return;
-    }
-    catch (Exception ex) when (ex is not OutOfMemoryException and not InvalidOperationException)
-    {
-        var skipMigrationsConfigured = !hostManagesOwnMigrations;
-        if (!TryEnterDegradedStart(
-            "PostGIS connection policy validation",
-            ex,
-            migrationsPending: !skipMigrationsConfigured,
-            schemaGuardPending: skipMigrationsConfigured))
-        {
-            throw;
-        }
-    }
-}
-#endif
-
-// The key-ring checks (every key protected, every wrapped key readable with the configured secret)
-// run when KeyManagementOptions is first built. Left to the data-protection hosted service, a
-// refusal escapes app.Run unhandled and the AOT image aborts with exit 139, so build it here
-// unless startup is already degraded (in which case DatabaseRecoveryBackgroundService runs it on recovery).
-if (durableKeyRing &&
-    !app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>().IsDegraded)
-{
-    try
-    {
-        _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<
-            Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>().Value;
-    }
-    catch (InvalidOperationException ex)
-        when (!Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
-    {
-        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
-        return;
-    }
-    catch (Npgsql.PostgresException ex)
-        when (string.Equals(ex.SqlState, "42P01", StringComparison.Ordinal))
-    {
-        var skipMigrationsConfigured = !hostManagesOwnMigrations;
-        if (!TryArmDegradedStart(
-            "key-ring validation",
-            "missing-schema",
-            migrationsPending: !skipMigrationsConfigured,
-            schemaGuardPending: skipMigrationsConfigured,
-            reasonCode: Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor,
-            reason: "key-ring validation: table 'data_protection_keys' is not yet present"))
-        {
-            throw;
-        }
-    }
-    catch (Exception ex) when (ex is not OutOfMemoryException and not InvalidOperationException)
-    {
-        var skipMigrationsConfigured = !hostManagesOwnMigrations;
-        if (!TryEnterDegradedStart(
-            "key-ring validation",
-            ex,
-            migrationsPending: !skipMigrationsConfigured,
-            schemaGuardPending: skipMigrationsConfigured))
-        {
-            throw;
-        }
-    }
+    return;
 }
 
 // Configure health endpoints

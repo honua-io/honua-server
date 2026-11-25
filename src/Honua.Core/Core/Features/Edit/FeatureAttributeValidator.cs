@@ -80,7 +80,7 @@ public static partial class FeatureAttributeValidator
             {
                 normalizedValue = CoerceExactNumber(field, rawValue, normalizedValue);
             }
-            var error = ValidateAttributeValue(field, normalizedValue, _options.Profile, _index);
+            var error = ValidateAttributeValue(field, normalizedValue);
             if (error != null)
             {
                 _errors.Add(error);
@@ -94,6 +94,24 @@ public static partial class FeatureAttributeValidator
                 normalizedValue = booleanValue;
             }
             _attributes[field.Name] = normalizedValue;
+        }
+
+        private string? ValidateAttributeValue(MetadataV2Field field, object? value)
+        {
+            if (value == null)
+            {
+                return field.Nullable ? null : $"Field '{field.Name}' cannot be null.";
+            }
+
+            var typeError = ValidateAgainstFieldType(field, value, _options.Profile);
+            if (typeError != null)
+            {
+                return typeError;
+            }
+
+            return field.Domain is not null
+                ? ValidateAgainstDomain(field, value, _index)
+                : null;
         }
 
         public ValidationResult<ImmutableDictionary<string, object?>> Complete()
@@ -156,36 +174,6 @@ public static partial class FeatureAttributeValidator
                 ?? normalizedValue,
             _ => normalizedValue
         };
-
-    private static string? ValidateAttributeValue(
-        MetadataV2Field field,
-        object? value,
-        AttributeValidationProfile mode,
-        CompiledResourceFieldIndex index)
-    {
-        if (value == null)
-        {
-            return field.Nullable ? null : $"Field '{field.Name}' cannot be null.";
-        }
-
-        var typeError = ValidateAgainstFieldType(field, value, mode);
-        if (typeError != null)
-        {
-            return typeError;
-        }
-
-        // Domain check applies on top of type validation.
-        if (field.Domain is { } domain)
-        {
-            var domainError = ValidateAgainstDomain(field, value, domain, index);
-            if (domainError != null)
-            {
-                return domainError;
-            }
-        }
-
-        return null;
-    }
 
 }
 
@@ -253,81 +241,113 @@ internal sealed class CompiledResourceFieldIndex
 
 internal sealed class CompiledCodedValueDomain
 {
-    private readonly FrozenSet<string>? _stringCodes;
-    private readonly FrozenSet<long>? _longCodes;
-    private readonly FrozenSet<double>? _doubleCodes;
-    private readonly bool _allowTrue;
-    private readonly bool _allowFalse;
-
-    private CompiledCodedValueDomain(
-        FrozenSet<string>? stringCodes,
-        FrozenSet<long>? longCodes,
-        FrozenSet<double>? doubleCodes,
-        bool allowTrue,
-        bool allowFalse)
+    [Flags]
+    private enum AllowedBooleanCodes : byte
     {
-        _stringCodes = stringCodes;
-        _longCodes = longCodes;
-        _doubleCodes = doubleCodes;
-        _allowTrue = allowTrue;
-        _allowFalse = allowFalse;
+        None = 0,
+        True = 1,
+        False = 2,
     }
 
-    public static CompiledCodedValueDomain Build(IReadOnlyList<MetadataV2CodedValue> codedValues)
+    private readonly record struct CodedValueSet
     {
-        HashSet<string>? stringCodes = null;
-        HashSet<long>? longCodes = null;
-        HashSet<double>? doubleCodes = null;
-        var allowTrue = false;
-        var allowFalse = false;
+        public FrozenSet<string>? StringCodes { get; init; }
 
-        for (var i = 0; i < codedValues.Count; i++)
+        public FrozenSet<long>? LongCodes { get; init; }
+
+        public FrozenSet<double>? DoubleCodes { get; init; }
+
+        public AllowedBooleanCodes BooleanCodes { get; init; }
+    }
+
+    private sealed class CodedValueAccumulator
+    {
+        private HashSet<string>? _stringCodes;
+        private HashSet<long>? _longCodes;
+        private HashSet<double>? _doubleCodes;
+        private AllowedBooleanCodes _booleanCodes;
+
+        public void Add(JsonElement code)
         {
-            var code = codedValues[i].Code;
             switch (code.ValueKind)
             {
                 case JsonValueKind.String:
-                    {
-                        var text = code.GetString();
-                        if (text is not null)
-                        {
-                            stringCodes ??= new HashSet<string>(StringComparer.Ordinal);
-                            stringCodes.Add(text);
-                        }
-                        break;
-                    }
+                    AddStringCode(code.GetString());
+                    break;
                 case JsonValueKind.Number:
-                    if (code.TryGetInt64(out var codedLong))
-                    {
-                        longCodes ??= [];
-                        longCodes.Add(codedLong);
-                    }
-                    else if (code.TryGetDouble(out var codedDouble))
-                    {
-                        doubleCodes ??= [];
-                        doubleCodes.Add(codedDouble);
-                    }
+                    AddNumericCode(code);
                     break;
                 case JsonValueKind.True:
-                    allowTrue = true;
+                    _booleanCodes |= AllowedBooleanCodes.True;
                     break;
                 case JsonValueKind.False:
-                    allowFalse = true;
+                    _booleanCodes |= AllowedBooleanCodes.False;
                     break;
             }
         }
 
-        return new CompiledCodedValueDomain(
-            stringCodes?.ToFrozenSet(StringComparer.Ordinal),
-            longCodes?.ToFrozenSet(),
-            doubleCodes?.ToFrozenSet(),
-            allowTrue,
-            allowFalse);
+        public CodedValueSet ToCodedValueSet()
+            => new()
+            {
+                StringCodes = _stringCodes?.ToFrozenSet(StringComparer.Ordinal),
+                LongCodes = _longCodes?.ToFrozenSet(),
+                DoubleCodes = _doubleCodes?.ToFrozenSet(),
+                BooleanCodes = _booleanCodes,
+            };
+
+        private void AddStringCode(string? text)
+        {
+            if (text is null)
+            {
+                return;
+            }
+
+            _stringCodes ??= new HashSet<string>(StringComparer.Ordinal);
+            _stringCodes.Add(text);
+        }
+
+        private void AddNumericCode(JsonElement code)
+        {
+            if (code.TryGetInt64(out var codedLong))
+            {
+                _longCodes ??= [];
+                _longCodes.Add(codedLong);
+            }
+            else if (code.TryGetDouble(out var codedDouble))
+            {
+                _doubleCodes ??= [];
+                _doubleCodes.Add(codedDouble);
+            }
+        }
+    }
+
+    private readonly FrozenSet<string>? _stringCodes;
+    private readonly FrozenSet<long>? _longCodes;
+    private readonly FrozenSet<double>? _doubleCodes;
+    private readonly AllowedBooleanCodes _booleanCodes;
+
+    private CompiledCodedValueDomain(CodedValueSet codes)
+    {
+        _stringCodes = codes.StringCodes;
+        _longCodes = codes.LongCodes;
+        _doubleCodes = codes.DoubleCodes;
+        _booleanCodes = codes.BooleanCodes;
+    }
+
+    public static CompiledCodedValueDomain Build(IReadOnlyList<MetadataV2CodedValue> codedValues)
+    {
+        var accumulator = new CodedValueAccumulator();
+        for (var i = 0; i < codedValues.Count; i++)
+        {
+            accumulator.Add(codedValues[i].Code);
+        }
+
+        return new CompiledCodedValueDomain(accumulator.ToCodedValueSet());
     }
 
     public bool Matches(object value)
     {
-        if (value is bool b && (b ? _allowTrue : _allowFalse))
+        if (value is bool b && ((b ? AllowedBooleanCodes.True : AllowedBooleanCodes.False) & _booleanCodes) != 0)
         {
             return true;
         }

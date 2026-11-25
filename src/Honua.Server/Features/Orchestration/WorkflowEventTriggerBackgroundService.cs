@@ -31,9 +31,12 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         OrchestrationLog.EventTriggerBackgroundServiceStarted(logger);
 
         return PeriodicBackgroundLoop.RunAsync(
-            TickInterval,
-            TickAsync,
-            ex => OrchestrationLog.EventTriggerTickFailed(logger, ex),
+            new PeriodicBackgroundLoopOptions
+            {
+                Interval = TickInterval,
+                ExecuteIterationAsync = TickAsync,
+                OnIterationError = ex => OrchestrationLog.EventTriggerTickFailed(logger, ex)
+            },
             stoppingToken);
     }
 

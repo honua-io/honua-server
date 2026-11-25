@@ -185,7 +185,13 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SnowflakeFeatureQueryBuilder.BuildH3AggregationQuery(mapping, query, h3Query, attributeColumns);
+        var sql = SnowflakeFeatureQueryBuilder.BuildH3AggregationQuery(new SnowflakeH3QueryRequest
+        {
+            Mapping = mapping,
+            Query = query,
+            H3Query = h3Query,
+            AttributeColumns = attributeColumns,
+        });
         return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

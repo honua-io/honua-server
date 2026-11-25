@@ -351,18 +351,21 @@ internal static partial class MapServerEndpoints
                 layerDefs.TryGetValue(layer.PublicLayerId, out var layerDef);
                 var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
-                if (!GeoServicesLayerTimeResolver.TryGetEffectiveTimeParameters(
-                        timeValue,
-                        timeRelationValue,
-                        new LayerTimeTarget(renderLayer.Id, renderLayer.Layer.PublicLayerId),
-                        layerTimeOptions,
-                        out var effectiveTime,
-                        out var effectiveTimeRelation,
-                        out var timeError))
+                var timeResolution = GeoServicesLayerTimeResolver.ResolveEffectiveTimeParameters(new EffectiveTimeRequest
+                {
+                    GlobalTime = timeValue,
+                    GlobalTimeRelation = timeRelationValue,
+                    Target = new LayerTimeTarget(renderLayer.Id, renderLayer.Layer.PublicLayerId),
+                    LayerTimeOptions = layerTimeOptions
+                });
+                if (!timeResolution.IsValid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
-                        timeError ?? "Invalid time parameter.");
+                        timeResolution.Error ?? "Invalid time parameter.");
                 }
+
+                var effectiveTime = timeResolution.EffectiveTime;
+                var effectiveTimeRelation = timeResolution.EffectiveTimeRelation;
 
                 if (!TryBuildLayerSqlFilter(
                         filterExpressionService,

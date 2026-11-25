@@ -27,12 +27,12 @@ public sealed class GeometryExecutorSupportTests
             [Prefix + "srid"] = "4326",
         };
 
-        var ok = GeometryExecutorSupport.TryReadSingleGeometryInputs(parameters, out var inputs, out var error);
+        var read = GeometryExecutorSupport.ReadSingleGeometryInputs(parameters);
 
-        ok.Should().BeTrue();
-        error.Should().BeEmpty();
-        inputs.Srid.Should().Be(4326);
-        inputs.WkbBytes.Should().Equal(wkb);
+        read.IsValid.Should().BeTrue();
+        read.Error.Should().BeNull();
+        read.Inputs.Srid.Should().Be(4326);
+        read.Inputs.WkbBytes.Should().Equal(wkb);
     }
 
     [UnitTest]
@@ -48,12 +48,12 @@ public sealed class GeometryExecutorSupportTests
             [Prefix + "unit"] = "hectares",
         };
 
-        var areaOk = GeometryExecutorSupport.TryReadMeasuredGeometryInputs(areaParams, isArea: true, out var areaInputs, out var areaError);
-        areaOk.Should().BeTrue();
-        areaError.Should().BeEmpty();
-        areaInputs.Geodesic.Should().BeTrue();
-        areaInputs.Unit.Should().Be("hectares");
-        areaInputs.MetersPerUnit.Should().Be(10_000d);
+        var areaRead = GeometryExecutorSupport.ReadAreaGeometryInputs(areaParams);
+        areaRead.IsValid.Should().BeTrue();
+        areaRead.Error.Should().BeNull();
+        areaRead.Inputs.Mode.Should().Be(MeasurementMode.Geodesic);
+        areaRead.Inputs.Unit.Should().Be("hectares");
+        areaRead.Inputs.MetersPerUnit.Should().Be(10_000d);
 
         var badLengthParams = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -62,9 +62,9 @@ public sealed class GeometryExecutorSupportTests
             [Prefix + "unit"] = "furlongs",
         };
 
-        var lengthOk = GeometryExecutorSupport.TryReadMeasuredGeometryInputs(badLengthParams, isArea: false, out _, out var lengthError);
-        lengthOk.Should().BeFalse();
-        lengthError.Should().Contain("furlongs");
+        var lengthRead = GeometryExecutorSupport.ReadLengthGeometryInputs(badLengthParams);
+        lengthRead.IsValid.Should().BeFalse();
+        lengthRead.Error.Should().Contain("furlongs");
     }
 
     [UnitTest]
@@ -78,19 +78,21 @@ public sealed class GeometryExecutorSupportTests
             [Prefix + "srid"] = "3857",
         };
 
-        GeometryExecutorSupport.TryReadPairGeometryInputs(parameters, "targetWkb", "clipEnvelopeWkb", out var pair, out var pairError)
-            .Should().BeTrue();
-        pairError.Should().BeEmpty();
-        pair.Srid.Should().Be(3857);
+        var pairRead = GeometryExecutorSupport.ReadPairGeometryInputs(
+            parameters,
+            new PairGeometryInputNames("targetWkb", "clipEnvelopeWkb"));
+        pairRead.IsValid.Should().BeTrue();
+        pairRead.Error.Should().BeNull();
+        pairRead.Inputs.Srid.Should().Be(3857);
 
-        GeometryExecutorSupport.TryDecodeGeometry(pair.FirstWkb, out var geometry, out var decodeError)
-            .Should().BeTrue();
-        decodeError.Should().BeEmpty();
-        geometry.Should().BeOfType<Point>();
+        var decode = GeometryExecutorSupport.DecodeGeometry(pairRead.Inputs.FirstWkb);
+        decode.IsValid.Should().BeTrue();
+        decode.Error.Should().BeNull();
+        decode.Geometry.Should().BeOfType<Point>();
 
-        GeometryExecutorSupport.TryDecodeGeometry("not-base64!!!", out _, out var badDecodeError)
-            .Should().BeFalse();
-        badDecodeError.Should().Be("is not valid base64");
+        var badDecode = GeometryExecutorSupport.DecodeGeometry("not-base64!!!");
+        badDecode.IsValid.Should().BeFalse();
+        badDecode.Error.Should().Be("is not valid base64");
     }
 
     [UnitTest]
@@ -98,30 +100,25 @@ public sealed class GeometryExecutorSupportTests
     {
         var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(new Point(1, 2) { SRID = 3857 });
 
-        var ok = GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
-            wkb,
-            4326,
-            out _,
-            out var wkbError,
-            out var isEmpty,
-            out var sridError);
+        var decode = GeometryExecutorSupport.DecodeWkbAndValidateSrid(wkb, 4326);
 
-        ok.Should().BeFalse();
-        wkbError.Should().BeNull();
-        isEmpty.Should().BeFalse();
-        sridError.Should().NotBeNullOrWhiteSpace();
+        decode.IsValid.Should().BeFalse();
+        decode.FailureKind.Should().Be(WkbDecodeFailureKind.InvalidSrid);
+        decode.Error.Should().NotBeNullOrWhiteSpace();
     }
 
     [UnitTest]
     public void BuildMeasurePayload_AndBuildJsonDataUri_ProduceExpectedEnvelope()
     {
-        var payload = GeometryExecutorSupport.BuildMeasurePayload(
-            "geometry.area",
-            "area",
-            42.5,
-            "square-meters",
-            4326,
-            "Polygon");
+        var payload = GeometryExecutorSupport.BuildMeasurePayload(new MeasurePayloadRequest
+        {
+            ProcessId = "geometry.area",
+            Measure = "area",
+            Value = 42.5,
+            Unit = "square-meters",
+            InputSrid = 4326,
+            InputGeometryType = "Polygon"
+        });
 
         var uri = GeometryExecutorSupport.BuildJsonDataUri(payload);
         uri.Should().StartWith("data:application/json;base64,");
@@ -140,23 +137,37 @@ public sealed class GeometryExecutorSupportTests
     [UnitTest]
     public void SinkFeatureEncoder_WriteAttribute_RespectsWriteNonFiniteAsNull()
     {
-        static string Serialize(object? value, bool writeNonFiniteAsNull)
+        SerializeAttribute(double.NaN, NonFiniteMode.AsNull).Should().Be("{\"v\":null}");
+        SerializeAttribute(float.PositiveInfinity, NonFiniteMode.AsNull).Should().Be("{\"v\":null}");
+        SerializeAttribute(double.NaN, NonFiniteMode.AsString).Should().Be("{\"v\":\"NaN\"}");
+        SerializeAttribute(12.5, NonFiniteMode.AsNull).Should().Be("{\"v\":12.5}");
+    }
+
+    private enum NonFiniteMode
+    {
+        AsNull,
+        AsString,
+    }
+
+    private static string SerializeAttribute(object? value, NonFiniteMode mode)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
         {
-            using var stream = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream))
+            writer.WriteStartObject();
+            if (mode == NonFiniteMode.AsNull)
             {
-                writer.WriteStartObject();
-                SinkFeatureEncoder.WriteAttribute(writer, "v", value, writeNonFiniteAsNull);
-                writer.WriteEndObject();
+                SinkFeatureEncoder.WriteAttributeWithNullNonFinite(writer, "v", value);
+            }
+            else
+            {
+                SinkFeatureEncoder.WriteAttribute(writer, "v", value);
             }
 
-            return Encoding.UTF8.GetString(stream.ToArray());
+            writer.WriteEndObject();
         }
 
-        Serialize(double.NaN, writeNonFiniteAsNull: true).Should().Be("{\"v\":null}");
-        Serialize(float.PositiveInfinity, writeNonFiniteAsNull: true).Should().Be("{\"v\":null}");
-        Serialize(double.NaN, writeNonFiniteAsNull: false).Should().Be("{\"v\":\"NaN\"}");
-        Serialize(12.5, writeNonFiniteAsNull: true).Should().Be("{\"v\":12.5}");
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     [UnitTest]
@@ -180,8 +191,8 @@ public sealed class GeometryExecutorSupportTests
         });
 
         reader.RequireSrid("targetSrid").Should().Be(4326);
-        reader.ReadBool("dissolve", defaultValue: true).Should().BeFalse();
-        reader.ReadBool("missingFlag", defaultValue: true).Should().BeTrue();
+        reader.ReadBoolDefaultTrue("dissolve").Should().BeFalse();
+        reader.ReadBoolDefaultTrue("missingFlag").Should().BeTrue();
         reader.ReadDistance().Should().Be(12.5);
         reader.ReadUnitFactor().Should().Be(1000.0);
     }

@@ -10,6 +10,7 @@ using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
 using Honua.Tests.ProviderUnitSupport;
+using NSubstitute;
 
 namespace Honua.Db.Databricks.Tests;
 
@@ -24,7 +25,7 @@ public class DatabricksFeatureStoreReadPolicyTests
     [MemberData(nameof(ReadOperations))]
     public async Task Read_WithRowLevelSecurityPredicateResolved_IsRefusedBeforeExecuting(string operation)
     {
-        var dataAccess = new RecordingDataAccess();
+        var (dataAccess, statements) = CreateRecordingDataAccess();
         var reader = CreateStore(dataAccess, CreateResolver(
             rowFilter: new Honua.Core.Queries.Filters.SqlFragment("region = @p0", ["west"])));
 
@@ -32,49 +33,49 @@ public class DatabricksFeatureStoreReadPolicyTests
 
         Assert.Contains("row-level security", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Databricks", exception.Message, StringComparison.Ordinal);
-        Assert.Empty(dataAccess.Statements);
+        Assert.Empty(statements);
     }
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
     public async Task Read_WithFieldMaskResolved_IsRefusedBeforeExecuting(string operation)
     {
-        var dataAccess = new RecordingDataAccess();
+        var (dataAccess, statements) = CreateRecordingDataAccess();
         var reader = CreateStore(dataAccess, CreateResolver(maskedFields: ["owner"]));
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
 
         Assert.Contains("field-mask", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Databricks", exception.Message, StringComparison.Ordinal);
-        Assert.Empty(dataAccess.Statements);
+        Assert.Empty(statements);
     }
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
     public async Task Read_WithPermanentFilterConfigured_IsRefusedBeforeExecuting(string operation)
     {
-        var dataAccess = new RecordingDataAccess();
+        var (dataAccess, statements) = CreateRecordingDataAccess();
         var reader = CreateStore(dataAccess, CreateResolver(permanentFilterExpression: "status = 'active'"));
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
 
         Assert.Contains("permanent", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Databricks", exception.Message, StringComparison.Ordinal);
-        Assert.Empty(dataAccess.Statements);
+        Assert.Empty(statements);
     }
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
     public async Task Read_WithNoPolicyResolved_EmitsSameSqlAsEmptyResolver(string operation)
     {
-        var baseline = new RecordingDataAccess();
+        var (baseline, baselineStatements) = CreateRecordingDataAccess();
         await InvokeReadAsync(CreateStore(baseline, new LayerReadSecurityResolver(null, null, null, null)), operation);
 
-        var withResolver = new RecordingDataAccess();
+        var (withResolver, resolverStatements) = CreateRecordingDataAccess();
         await InvokeReadAsync(CreateStore(withResolver, CreateResolver()), operation);
 
-        Assert.NotEmpty(baseline.Statements);
-        Assert.Equal(baseline.Statements, withResolver.Statements);
+        Assert.NotEmpty(baselineStatements);
+        Assert.Equal(baselineStatements, resolverStatements);
     }
 
     private static LayerReadSecurityResolver CreateResolver(
@@ -87,7 +88,7 @@ public class DatabricksFeatureStoreReadPolicyTests
             new StubRowFilterSource(rowFilter),
             new StubFieldMaskSource(maskedFields ?? []));
 
-    private static DatabricksFeatureStore CreateStore(RecordingDataAccess dataAccess, LayerReadSecurityResolver readSecurity)
+    private static DatabricksFeatureStore CreateStore(IDatabricksFeatureDataAccess dataAccess, LayerReadSecurityResolver readSecurity)
     {
         var mapping = new DatabricksLayerMapping
         {
@@ -119,37 +120,31 @@ public class DatabricksFeatureStoreReadPolicyTests
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
     };
 
-    private sealed class RecordingDataAccess : IDatabricksFeatureDataAccess
+    private static (IDatabricksFeatureDataAccess DataAccess, List<string> Statements) CreateRecordingDataAccess()
     {
-        public List<string> Statements { get; } = [];
+        var statements = new List<string>();
+        var dataAccess = Substitute.For<IDatabricksFeatureDataAccess>();
+        dataAccess.ExecuteSelectAsync(Arg.Any<DatabricksLayerQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => RecordStatement(statements, call.ArgAt<DatabricksLayerQuery>(0).Statement, ImmutableArray<Feature>.Empty));
+        dataAccess.ExecuteCountAsync(Arg.Any<DatabricksSqlStatement>(), Arg.Any<CancellationToken>(), Arg.Any<DataConnection?>())
+            .Returns(call => RecordStatement(statements, call.ArgAt<DatabricksSqlStatement>(0), 0L));
+        dataAccess.ExecuteExtentAsync(Arg.Any<DatabricksLayerQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => RecordStatement<FeatureExtent?>(statements, call.ArgAt<DatabricksLayerQuery>(0).Statement, null));
+        dataAccess.ExecuteObjectIdsAsync(Arg.Any<DatabricksSqlStatement>(), Arg.Any<CancellationToken>(), Arg.Any<DataConnection?>())
+            .Returns(call => RecordStatement(statements, call.ArgAt<DatabricksSqlStatement>(0), ImmutableArray<long>.Empty));
+        dataAccess.ExecuteStatisticsAsync(Arg.Any<DatabricksSqlStatement>(), Arg.Any<CancellationToken>(), Arg.Any<DataConnection?>())
+            .Returns(call => RecordStatement(statements, call.ArgAt<DatabricksSqlStatement>(0), ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty));
+        return (dataAccess, statements);
+    }
 
-        public Task<ImmutableArray<Feature>> ExecuteSelectAsync(
-            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
-            => Record(statement, ImmutableArray<Feature>.Empty);
-
-        public Task<long> ExecuteCountAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
-            => Record(statement, 0L);
-
-        public Task<FeatureExtent?> ExecuteExtentAsync(
-            DatabricksLayerMapping mapping, DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
-            => Record<FeatureExtent?>(statement, null);
-
-        public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
-            => Record(statement, ImmutableArray<long>.Empty);
-
-        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
-            DatabricksSqlStatement statement, CancellationToken cancellationToken, DataConnection? dataConnection = null)
-            => Record(statement, ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty);
-
-        private Task<T> Record<T>(DatabricksSqlStatement statement, T result)
+    private static Task<T> RecordStatement<T>(List<string> statements, DatabricksSqlStatement statement, T result)
+    {
+        lock (statements)
         {
-            lock (Statements)
-            {
-                Statements.Add(statement.Sql + " | " + string.Join(",", statement.Parameters.Select(static p => $"{p.Name}={p.Value}")));
-                Statements.Sort(StringComparer.Ordinal);
-            }
-
-            return Task.FromResult(result);
+            statements.Add(statement.Sql + " | " + string.Join(",", statement.Parameters.Select(static p => $"{p.Name}={p.Value}")));
+            statements.Sort(StringComparer.Ordinal);
         }
+
+        return Task.FromResult(result);
     }
 }

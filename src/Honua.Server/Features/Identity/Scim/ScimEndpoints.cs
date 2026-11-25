@@ -258,6 +258,17 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status404NotFound, "User not found.");
         }
 
+        await RevokeSessionsIfUserChangedAsync(context, existing, replaced).ConfigureAwait(false);
+
+        ScimLog.UserReplaced(logger, replaced.UserId);
+        return ScimJson(ToScimUser(replaced), ScimJsonContext.Default.ScimUser, StatusCodes.Status200OK);
+    }
+
+    private static async Task RevokeSessionsIfUserChangedAsync(
+        HttpContext context,
+        ManagedUser? existing,
+        ManagedUser replaced)
+    {
         var identityChanged = existing is not null
             && (!string.Equals(existing.ExternalId, replaced.ExternalId, StringComparison.Ordinal)
                 || !string.Equals(existing.ExternalIssuer, replaced.ExternalIssuer, StringComparison.Ordinal));
@@ -273,9 +284,6 @@ internal static partial class ScimEndpoints
                 replaced,
                 context.RequestAborted).ConfigureAwait(false);
         }
-
-        ScimLog.UserReplaced(logger, replaced.UserId);
-        return ScimJson(ToScimUser(replaced), ScimJsonContext.Default.ScimUser, StatusCodes.Status200OK);
     }
 
     private static async Task<IResult> HandlePatchUser(

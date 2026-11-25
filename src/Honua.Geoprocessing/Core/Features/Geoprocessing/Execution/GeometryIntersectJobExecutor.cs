@@ -48,38 +48,24 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing intersect inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadPairGeometryInputs(parameters, "targetWkb", "intersectorWkb", out var inputs, out var inputError))
+        var pairRead = GeometryExecutorSupport.ReadAndDecodeValidatedPair(
+            parameters,
+            new PairGeometryInputNames("targetWkb", "intersectorWkb"));
+        if (!pairRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: {inputError}");
+            if (pairRead.FailedField is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, pairRead.FailedField, pairRead.LogReason!);
+            }
+            else
+            {
+                Log.InvalidInputs(_logger, job.OperationId, pairRead.LogReason!);
+            }
+
+            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: {pairRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.FirstWkb, out var target, out var decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: targetWkb {decodeError}");
-        }
-
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.SecondWkb, out var intersector, out decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: intersectorWkb {decodeError}");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: targetWkb {targetSridError}.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(intersector, inputs.Srid, out var intersectorSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "intersectorWkb", intersectorSridError);
-            return JobExecutionResult.InvalidInput($"Invalid intersect inputs: intersectorWkb {intersectorSridError}.");
-        }
-
-        target.SRID = inputs.Srid;
-        intersector.SRID = inputs.Srid;
+        var (target, intersector, srid) = (pairRead.Pair.First, pairRead.Pair.Second, pairRead.Pair.Srid);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, "Computing intersect geometry", cancellationToken).ConfigureAwait(false);
@@ -101,7 +87,7 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
                 "Intersect computation produced an empty geometry; verify that the two geometries overlap.");
         }
 
-        intersection.SRID = inputs.Srid;
+        intersection.SRID = srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding intersect artifact", cancellationToken).ConfigureAwait(false);
@@ -111,7 +97,7 @@ internal sealed partial class GeometryIntersectJobExecutor : IProcessExecutor
             HandledProcessId,
             new[]
             {
-                ("inputSrid", (object)inputs.Srid),
+                ("inputSrid", (object)srid),
             });
 
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;

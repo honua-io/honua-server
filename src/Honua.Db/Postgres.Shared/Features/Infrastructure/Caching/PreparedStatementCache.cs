@@ -1,12 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -17,54 +13,8 @@ using Npgsql;
 namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 
-internal sealed class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
+internal sealed partial class PreparedStatementCache : IPreparedStatementCacheStatisticsProvider, IDisposable
 {
-    internal readonly record struct StatementHash(ulong P0, ulong P1, ulong P2, ulong P3)
-    {
-        private const int StackAllocUtf8Threshold = 512;
-
-        public static StatementHash Compute(string sql)
-        {
-            Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
-            var maxUtf8Bytes = Encoding.UTF8.GetMaxByteCount(sql.Length);
-            if (maxUtf8Bytes <= StackAllocUtf8Threshold)
-            {
-                Span<byte> utf8Buffer = stackalloc byte[StackAllocUtf8Threshold];
-                var written = Encoding.UTF8.GetBytes(sql, utf8Buffer);
-                SHA256.TryHashData(utf8Buffer[..written], digest, out _);
-            }
-            else
-            {
-                var rented = ArrayPool<byte>.Shared.Rent(maxUtf8Bytes);
-                try
-                {
-                    var written = Encoding.UTF8.GetBytes(sql, rented);
-                    SHA256.TryHashData(rented.AsSpan(0, written), digest, out _);
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(rented);
-                }
-            }
-
-            return new StatementHash(
-                BinaryPrimitives.ReadUInt64LittleEndian(digest[..8]),
-                BinaryPrimitives.ReadUInt64LittleEndian(digest[8..16]),
-                BinaryPrimitives.ReadUInt64LittleEndian(digest[16..24]),
-                BinaryPrimitives.ReadUInt64LittleEndian(digest[24..32]));
-        }
-
-        public string ToHexString()
-        {
-            Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
-            BinaryPrimitives.WriteUInt64LittleEndian(digest[..8], P0);
-            BinaryPrimitives.WriteUInt64LittleEndian(digest[8..16], P1);
-            BinaryPrimitives.WriteUInt64LittleEndian(digest[16..24], P2);
-            BinaryPrimitives.WriteUInt64LittleEndian(digest[24..32], P3);
-            return Convert.ToHexString(digest);
-        }
-    }
-
     private readonly QueryCacheOptions _options;
     private readonly ILogger<PreparedStatementCache> _logger;
     private readonly ConcurrentDictionary<StatementHash, StatementMetrics> _executionCounts = new();
@@ -596,31 +546,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return cloned;
     }
 
-    private static void ApplyParameterValues(NpgsqlCommand destination, NpgsqlCommand configured)
-    {
-        for (var index = 0; index < configured.Parameters.Count; index++)
-        {
-            var source = configured.Parameters[index];
-
-            if (destination.Parameters.Count > index)
-            {
-                var target = destination.Parameters[index];
-                target.Value = source.Value;
-                target.ParameterName = source.ParameterName;
-                target.NpgsqlDbType = source.NpgsqlDbType;
-                target.DbType = source.DbType;
-                target.Direction = source.Direction;
-                target.Size = source.Size;
-                target.Precision = source.Precision;
-                target.Scale = source.Scale;
-            }
-            else
-            {
-                destination.Parameters.Add(CloneParameter(source, includeValue: true));
-            }
-        }
-    }
-
     internal static async Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
         CachedStatement cachedStatement,
         NpgsqlConnection connection,
@@ -635,23 +560,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             {
                 return null;
             }
+
             if (configureParameters != null)
             {
-                // Configure parameters exactly once; reuse the result for both value-application
-                // and distribution tracking so configureParameters is never called twice per request.
-                // The scratch command must carry the statement text: some parameter-binding callbacks
-                // gate on CommandText (e.g. only binding OFFSET when the SQL actually emitted an OFFSET
-                // clause). Without it those callbacks silently skip parameters, leaving cloned slots
-                // unset (null) and triggering an Npgsql "Parameter cannot be null" failure at execution.
-                using var configured = new NpgsqlCommand { CommandText = cloned.CommandText };
-                configureParameters(configured);
-
-                ApplyParameterValues(cloned, configured);
-
-                if (metrics != null)
-                {
-                    RecordParameterDistributions(metrics, configured);
-                }
+                ConfigureAndTrackParameters(cloned, configureParameters, metrics);
             }
 
             await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
@@ -773,27 +685,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return RuntimeHelpers.GetHashCode(connection);
         }
     }
-
-    internal bool TryAddCachedStatementForTest(int connectionId, string sql, CachedStatement cachedStatement)
-    {
-        var key = (connectionId, StatementHash.Compute(sql));
-        if (_cache.TryAdd(key, cachedStatement))
-        {
-            _connectionCounts.AddOrUpdate(connectionId, 1, static (_, count) => count + 1);
-            return true;
-        }
-
-        return false;
-    }
-
-    internal void RemoveStaleCachedStatementForTest(int connectionId, string sql, CachedStatement expected)
-        => RemoveAndDisposeCachedStatement((connectionId, StatementHash.Compute(sql)), expected);
-
-    internal bool ContainsCachedStatementForTest(int connectionId, string sql, out CachedStatement? cached)
-        => _cache.TryGetValue((connectionId, StatementHash.Compute(sql)), out cached);
-
-    internal int GetConnectionCountForTest(int connectionId)
-        => GetConnectionCacheCount(connectionId);
 
     private static QueryComplexityScore AnalyzeQueryComplexity(string sql)
     {

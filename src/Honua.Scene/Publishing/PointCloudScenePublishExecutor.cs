@@ -9,7 +9,6 @@ using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.PointCloud;
-using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -101,105 +100,46 @@ internal sealed partial class PointCloudScenePublishExecutor
         CityGmlScenePublishExecutor.ValidateOptions(displayName, request.EditionGate, request.CacheMaxAgeSeconds);
         var cacheMaxAge = request.CacheMaxAgeSeconds ?? ScenePublishHelper.DefaultCacheMaxAgeSeconds;
 
-        await ScenePublishHelper.PreflightConflictAsync(_registration, sceneId, cancellationToken).ConfigureAwait(false);
-
-        // 3. Stage → register → promote, reusing the shared durability mechanics.
-        var outputDirectory = SceneTilesetStaging.ResolveOutputDirectory(
-            _environment.ContentRootPath, serverOptions.OutputRoot, sceneId);
-        var stagingDirectory = SceneTilesetStaging.ResolveStagingDirectory(
-            _environment.ContentRootPath, serverOptions.OutputRoot, intentId);
-        string? stagingToCleanup = stagingDirectory;
-        try
-        {
-            Directory.CreateDirectory(stagingDirectory);
-            // Safe: "tileset.json" is a hardcoded literal, and tileset.Tiles' uri keys
-            // are deterministic "points_NNNN.pnts" names built from the quadtree node
-            // index by PointCloudTilesetBuilder — neither is derived from the uploaded
-            // LAS point data, so neither combine can be rooted.
-            await File.WriteAllBytesAsync(
-                Path.Join(stagingDirectory, "tileset.json"),
-                tileset.TilesetJsonBytes,
-                cancellationToken).ConfigureAwait(false);
-            foreach (var (uri, bytes) in tileset.Tiles)
+        var outputDirectory = await HostedScenePublishPipeline.StageAndPublishAsync(
+            new HostedScenePublishRequest
             {
-                await File.WriteAllBytesAsync(
-                    Path.Join(stagingDirectory, uri),
-                    bytes,
-                    cancellationToken).ConfigureAwait(false);
-            }
+                ContentRootPath = _environment.ContentRootPath,
+                OutputRoot = serverOptions.OutputRoot,
+                IntentId = intentId,
+                SceneId = sceneId,
+                DisplayName = displayName,
+                Description = request.Description,
+                ContentKind = SceneContentKind.PointCloud,
+                TilesetJsonBytes = tileset.TilesetJsonBytes,
+                Tiles = tileset.Tiles,
+                BoundsDegrees = tileset.BoundsDegrees,
+                CacheMaxAgeSeconds = cacheMaxAge,
+                EditionGate = request.EditionGate,
+                RequiresAuth = request.RequiresAuth,
+                CreatedBy = request.CreatedBy ?? "publisher",
+                Registration = _registration,
+                Storage = _storage,
+                Activity = activity,
+                OnOverwroteStaleFinalDir = stale => PointCloudIngestLog.PromotionOverwroteStaleFinalDir(_logger, stale),
+                OnStagingCleanupFailed = (dir, ex) => PointCloudIngestLog.StagingCleanupFailed(_logger, dir, ex),
+                CompensateRegistrationAsync = CompensateRegistrationAsync,
+            },
+            cancellationToken).ConfigureAwait(false);
 
-            // Replicate the staged point-cloud tileset to the shared object store
-            // before registering so the recorded storage prefix always implies the
-            // bytes exist and any node can hydrate it (ADR-0060).
-            var newDatasetId = Guid.NewGuid();
-            var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
-                _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
-            if (storagePrefix is not null)
-            {
-                await SceneAssetHydration.WriteMarkerAsync(
-                    stagingDirectory,
-                    SceneAssetHydration.BuildToken(newDatasetId, storagePrefix),
-                    cancellationToken).ConfigureAwait(false);
-            }
+        stopwatch.Stop();
+        activity?.SetTag("honua.scene.id", sceneId);
+        activity?.SetTag("honua.scene.point_count", tileset.PointCount);
+        activity?.SetTag("honua.scene.tile_count", tileset.TileCount);
+        PointCloudIngestLog.Completed(
+            _logger, intentId, sceneId, tileset.PointCount, tileset.TileCount, stopwatch.ElapsedMilliseconds);
 
-            var registeredDatasetId = await CityGmlScenePublishExecutor.TryRegisterSceneAsync(
-                _registration,
-                newDatasetId,
-                sceneId,
-                displayName,
-                request.Description,
-                outputDirectory,
-                storagePrefix,
-                SceneContentKind.PointCloud,
-                tileset.BoundsDegrees,
-                cacheMaxAge,
-                request.EditionGate,
-                request.RequiresAuth,
-                request.CreatedBy ?? "publisher",
-                cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                SceneTilesetStaging.PromoteStagingToFinal(
-                    stagingDirectory,
-                    outputDirectory,
-                    stale => PointCloudIngestLog.PromotionOverwroteStaleFinalDir(_logger, stale));
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                if (registeredDatasetId is { } datasetId)
-                {
-                    await CompensateRegistrationAsync(datasetId, sceneId).ConfigureAwait(false);
-                }
-                throw;
-            }
-            stagingToCleanup = null;
-
-            stopwatch.Stop();
-            activity?.SetTag("honua.scene.id", sceneId);
-            activity?.SetTag("honua.scene.point_count", tileset.PointCount);
-            activity?.SetTag("honua.scene.tile_count", tileset.TileCount);
-            PointCloudIngestLog.Completed(
-                _logger, intentId, sceneId, tileset.PointCount, tileset.TileCount, stopwatch.ElapsedMilliseconds);
-
-            return new PointCloudSceneIngestOutcome(
-                sceneId,
-                outputDirectory,
-                tileset.BoundsDegrees,
-                tileset.PointCount,
-                tileset.TileCount,
-                header.HasColor);
-        }
-        finally
-        {
-            if (stagingToCleanup is not null)
-            {
-                SceneTilesetStaging.TryDeleteStaging(
-                    stagingToCleanup,
-                    ex => PointCloudIngestLog.StagingCleanupFailed(_logger, stagingToCleanup, ex));
-            }
-        }
+        return new PointCloudSceneIngestOutcome(
+            sceneId,
+            outputDirectory,
+            tileset.BoundsDegrees,
+            tileset.PointCount,
+            tileset.TileCount,
+            header.HasColor);
     }
 
     private static PointCloudTilingOptions BuildTilingOptions(SceneGenerationServerOptions serverOptions)

@@ -324,11 +324,11 @@ public sealed class MetadataDocumentByteCacheTests
         var cache = new MetadataDocumentByteCache();
         using var tenantAServices = new ServiceCollection()
             .AddSingleton(cache)
-            .AddSingleton<ITenantContext>(new StubTenantContext("tenant-a"))
+            .AddSingleton(CreateTenantContext("tenant-a"))
             .BuildServiceProvider();
         using var tenantBServices = new ServiceCollection()
             .AddSingleton(cache)
-            .AddSingleton<ITenantContext>(new StubTenantContext("tenant-b"))
+            .AddSingleton(CreateTenantContext("tenant-b"))
             .BuildServiceProvider();
 
         var (_, bodyA) = await ExecuteCachedJsonAsync(tenantAServices, "shared-key", () => new SampleJsonDoc("tenant-a-data", 1));
@@ -418,26 +418,12 @@ public sealed class MetadataDocumentByteCacheTests
         Assert.Contains("enterprise-doc", Encoding.UTF8.GetString(bodyEnterprise), StringComparison.Ordinal);
     }
 
-    private sealed class StubTenantContext(string? tenantId) : ITenantContext
+    private static ITenantContext CreateTenantContext(string tenantId)
     {
-        public string? TenantId { get; } = tenantId;
-
-        public TenantContextSource Source { get; } =
-            tenantId is null ? TenantContextSource.Anonymous : TenantContextSource.Claim;
-
-        public bool RequireTenantId(out string resolvedTenantId, out string? reason)
-        {
-            if (string.IsNullOrEmpty(TenantId))
-            {
-                resolvedTenantId = string.Empty;
-                reason = "missing tenant";
-                return false;
-            }
-
-            resolvedTenantId = TenantId;
-            reason = null;
-            return true;
-        }
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns(tenantId);
+        tenant.Source.Returns(TenantContextSource.Claim);
+        return tenant;
     }
 
     private sealed class MutableGenerationSource(long generation) : IConfigurationGenerationSource

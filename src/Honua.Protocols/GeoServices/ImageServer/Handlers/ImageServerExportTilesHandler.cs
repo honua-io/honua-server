@@ -486,10 +486,12 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, levelsError ?? "Invalid levels parameter."));
         }
 
-        if (!GeoServicesExportTilesExtentParser.TryParseMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        var maxTilesResult = GeoServicesExportTilesExtentParser.ParseMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits);
+        if (!maxTilesResult.IsValid)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
+            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesResult.Error ?? "Invalid maxTiles parameter."));
         }
+        var maxTiles = maxTilesResult.MaxTiles;
 
         if (!TryParseExportTilesExtent(
                 ImageServerRequestValues.GetString(values, "exportExtent") ?? ImageServerRequestValues.GetString(values, "bbox"),
@@ -582,7 +584,11 @@ internal sealed class ImageServerExportTilesHandler
         var trimmed = extentValue.Trim();
         if (trimmed.StartsWith('{'))
         {
-            return GeoServicesExportTilesExtentParser.TryParseJsonExtent(trimmed, fallbackSridValue, out extent, out srid, out error);
+            var parsedExtent = GeoServicesExportTilesExtentParser.ParseJsonExtent(trimmed, fallbackSridValue);
+            extent = parsedExtent.Extent;
+            srid = parsedExtent.Srid;
+            error = parsedExtent.Error;
+            return parsedExtent.IsValid;
         }
 
         var parsedSrid = SpatialReferenceHelpers.TryParseSrid(fallbackSridValue);
@@ -997,10 +1003,12 @@ internal sealed class ImageServerExportTilesHandler
                 context, "Compact Cache V2 tile export requires at least two zoom levels."));
         }
 
-        if (!GeoServicesExportTilesExtentParser.TryParseMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        var maxTilesResult = GeoServicesExportTilesExtentParser.ParseMaxTiles(ImageServerRequestValues.GetString(values, "maxTiles"), limits);
+        if (!maxTilesResult.IsValid)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
+            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesResult.Error ?? "Invalid maxTiles parameter."));
         }
+        var maxTiles = maxTilesResult.MaxTiles;
 
         if (!TryParseExportTilesExtent(
                 ImageServerRequestValues.GetString(values, "exportExtent") ?? ImageServerRequestValues.GetString(values, "bbox"),

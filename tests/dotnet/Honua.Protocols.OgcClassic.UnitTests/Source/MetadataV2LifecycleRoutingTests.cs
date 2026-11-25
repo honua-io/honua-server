@@ -93,7 +93,7 @@ public sealed class MetadataV2LifecycleRoutingTests
 
         var task = (Task)method!.Invoke(
             null,
-            [new DefaultHttpContext(), snapshot, new Wcs20RouteScope(null, "service-ogc"), CancellationToken.None])!;
+            [new DefaultHttpContext(), new Wcs20Handler.WcsServiceLookup(snapshot, new Wcs20RouteScope(null, "service-ogc")), CancellationToken.None])!;
         await task;
         var result = task.GetType().GetProperty("Result")!.GetValue(task);
 

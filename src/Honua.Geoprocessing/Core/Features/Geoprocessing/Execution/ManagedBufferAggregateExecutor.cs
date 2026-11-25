@@ -29,7 +29,7 @@ internal sealed class ManagedBufferAggregateExecutor(
         var effectiveDistance = distance * unitFactor;
 
         var useGeodesicBuffer = ShouldUseGeodesicBuffer(inputs, distance);
-        var dissolve = inputs.ReadBool("dissolve", defaultValue: true);
+        var dissolve = inputs.ReadBoolDefaultTrue("dissolve");
         var groupByFields = ReadGroupByFields(inputs);
 
         var buffered = new List<BufferedInput>(source.Count);
@@ -139,7 +139,7 @@ internal sealed class ManagedBufferAggregateExecutor(
             return false;
         }
 
-        if (inputs.ReadBool("geodesic", defaultValue: false))
+        if (inputs.ReadBoolDefaultFalse("geodesic"))
         {
             return true;
         }

@@ -89,17 +89,20 @@ internal static class CdnCacheTags
         var pathSpan = (path.Value ?? string.Empty).AsSpan();
         Span<Range> ranges = stackalloc Range[4];
         var count = pathSpan.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
-        if (count == 0)
-        {
-            return null;
-        }
+        return count == 0 ? null : ResolveScopedTag(pathSpan, ranges[..count], resolvedServiceId);
+    }
 
+    private static string? ResolveScopedTag(
+        ReadOnlySpan<char> pathSpan,
+        ReadOnlySpan<Range> ranges,
+        string? resolvedServiceId)
+    {
         var first = pathSpan[ranges[0]];
-        var isRestServices = count >= 2
+        var isRestServices = ranges.Length >= 2
             && first.Equals("rest", StringComparison.OrdinalIgnoreCase)
             && pathSpan[ranges[1]].Equals("services", StringComparison.OrdinalIgnoreCase);
-        var geoServices = first.Equals("services", StringComparison.OrdinalIgnoreCase) || isRestServices;
-        if (geoServices && !string.IsNullOrWhiteSpace(resolvedServiceId))
+        if ((first.Equals("services", StringComparison.OrdinalIgnoreCase) || isRestServices)
+            && !string.IsNullOrWhiteSpace(resolvedServiceId))
         {
             return ServicesScope(Name(resolvedServiceId));
         }
@@ -114,20 +117,22 @@ internal static class CdnCacheTags
             return OgcScope;
         }
 
-        if (count >= 2
+        if (ranges.Length >= 2
             && first.Equals("tiles", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            && ParseTileLayerId(pathSpan[ranges[1]]) is { } layerId)
         {
             return TilesScope(layerId.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (isRestServices && count >= 3)
-        {
-            return ServicesScope(Name(pathSpan[ranges[2]].ToString()));
-        }
-
-        return null;
+        return isRestServices && ranges.Length >= 3
+            ? ServicesScope(Name(pathSpan[ranges[2]].ToString()))
+            : null;
     }
+
+    private static int? ParseTileLayerId(ReadOnlySpan<char> segment)
+        => int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+            ? layerId
+            : null;
 
     // Lower-cased so the tag is the same whichever spelling the route was given; escaping leaves only visible ASCII without commas.
     private static string Name(string value)

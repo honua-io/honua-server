@@ -141,7 +141,7 @@ internal static partial class StudioPackageEndpoints
         }
         catch (ArgumentException ex)
         {
-            return MapStudioArgumentException(scope.Context, scope.Logger, "draft.revision.restore", ex);
+            return MapStudioArgumentException(StudioOperationError(scope.Context, scope.Logger, "draft.revision.restore"), ex);
         }
         catch (KeyNotFoundException)
         {
@@ -149,8 +149,9 @@ internal static partial class StudioPackageEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return MapStudioInvalidOperationException(
-                scope.Context, scope.Logger, "draft.revision.restore", "Studio package draft revision could not be restored.", ex);
+            var err = StudioOperationError(scope.Context, scope.Logger, "draft.revision.restore") with
+            { ServerErrorDetail = "Studio package draft revision could not be restored." };
+            return MapStudioInvalidOperationException(err, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -201,7 +202,13 @@ internal static partial class StudioPackageEndpoints
             return MutationDecision(context, receipt.Operation);
         }
 
-        var restored = receipt.Value;
+        return CreateRestoredDraftResponse(scope, receipt.Value);
+    }
+
+    private static IResult CreateRestoredDraftResponse(
+        StudioDraftRevisionScope scope,
+        StudioPackageDraft? restored)
+    {
         if (restored is null)
         {
             StudioEndpointsLog.EndpointFailed(

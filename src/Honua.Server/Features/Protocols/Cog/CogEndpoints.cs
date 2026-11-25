@@ -55,11 +55,7 @@ internal static class CogEndpoints
 
     private static async Task<IResult> HandleRegister(
         RegisterCogRequest request,
-        HttpContext context,
-        [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] ICogStore store,
-        ILogger<CogEndpointsLog> logger,
-        CancellationToken cancellationToken)
+        HttpContext context)
     {
         if (request is null)
         {
@@ -70,8 +66,12 @@ internal static class CogEndpoints
             return TypedResults.BadRequest(error);
         }
 
-        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
-        if (!await LayerPublicationExistsAsync(graphProvider, request.LayerId, tenantId, cancellationToken).ConfigureAwait(false))
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var store = context.RequestServices.GetRequiredService<ICogStore>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<CogEndpointsLog>>();
+        var cancellationToken = context.RequestAborted;
+
+        if (!await LayerPublicationExistsAsync(graphProvider, context, request.LayerId).ConfigureAwait(false))
         {
             return TypedResults.NotFound("Layer not found.");
         }
@@ -234,11 +234,11 @@ internal static class CogEndpoints
 
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
-        int layerId,
-        string? tenantId,
-        CancellationToken cancellationToken)
+        HttpContext context,
+        int layerId)
     {
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         return CogPublicationBinding.Resolve(snapshot, layerId, tenantId) is not null;
     }
 

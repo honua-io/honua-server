@@ -80,10 +80,10 @@ internal sealed partial class HonuaFeatureService
             GeometryType = GrpcConversionHelpers.ToProtoGeometryType(related.GeometryType),
             SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(query.ResponseSpatialReference)
         };
-        var exactFieldTypes = GrpcTypedValues.BuildExactFieldTypeMap(related.AttributeFields);
+        var projectionContext = CreateRelatedProjectionContext(plan, names);
         response.Fields.AddRange(selected.Select(GrpcConversionHelpers.ToProtoField));
         response.Groups.AddRange(page.Positions.GroupBy(position => position.OriginId)
-            .Select(group => BuildRelatedGroup(plan, group, names, exactFieldTypes)));
+            .Select(group => BuildRelatedGroup(projectionContext, group)));
         if (page.HasMore)
         {
             if (page.Positions.IsDefaultOrEmpty)
@@ -96,11 +96,34 @@ internal sealed partial class HonuaFeatureService
         }
         return response;
     }
-    private static Proto.RelatedRecordGroup BuildRelatedGroup(RelatedReadPlan plan,
-        IGrouping<long, RelatedFeaturePosition> positions, HashSet<string> selectedNames,
-        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes)
+
+    private static RelatedGroupProjectionContext CreateRelatedProjectionContext(RelatedReadPlan plan, HashSet<string> names) => new()
+    {
+        Plan = plan,
+        SelectedNames = names,
+        ConversionOptions = new GrpcConversionHelpers.ProtoFeatureConversionOptions
+        {
+            IncludeGeometry = plan.Query.ReturnGeometry,
+            GeometryLimits = plan.Query.GeometryLimits,
+            ObjectIdFieldName = plan.Related.ObjectIdFieldName,
+            HiddenFields = plan.Query.AttributeHiddenFields,
+            ExactFieldTypes = GrpcTypedValues.BuildExactFieldTypeMap(plan.Related.AttributeFields)
+        }
+    };
+
+    private sealed class RelatedGroupProjectionContext
+    {
+        public required RelatedReadPlan Plan { get; init; }
+        public required HashSet<string> SelectedNames { get; init; }
+        public required GrpcConversionHelpers.ProtoFeatureConversionOptions ConversionOptions { get; init; }
+    }
+
+    private static Proto.RelatedRecordGroup BuildRelatedGroup(
+        RelatedGroupProjectionContext projection,
+        IGrouping<long, RelatedFeaturePosition> positions)
     {
         var output = new Proto.RelatedRecordGroup { ObjectId = positions.Key };
+        var globalIdField = projection.Plan.Query.GlobalIdField;
         foreach (var position in positions)
         {
             if (position.RelatedFeature is not { } feature)
@@ -109,12 +132,12 @@ internal sealed partial class HonuaFeatureService
             }
             var projected = feature with
             {
-                Attributes = feature.Attributes.Where(pair => selectedNames.Contains(pair.Key)).ToImmutableDictionary()
+                Attributes = feature.Attributes.Where(pair => projection.SelectedNames.Contains(pair.Key)).ToImmutableDictionary()
             };
-            var query = plan.Query;
-            output.Features.Add(WithGlobalId(GrpcConversionHelpers.ToProtoFeature(projected, query.ReturnGeometry,
-                query.GeometryLimits, plan.Related.ObjectIdFieldName, query.AttributeHiddenFields,
-                exactFieldTypes), feature, query.GlobalIdField));
+            output.Features.Add(WithGlobalId(
+                GrpcConversionHelpers.ToProtoFeatureWithOptions(projected, projection.ConversionOptions),
+                feature,
+                globalIdField));
         }
         return output;
     }

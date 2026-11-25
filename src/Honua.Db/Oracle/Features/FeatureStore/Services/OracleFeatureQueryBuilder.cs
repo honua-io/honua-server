@@ -422,55 +422,58 @@ internal static partial class OracleFeatureQueryBuilder
         // Oracle 12c-21c rejects IN lists with more than 1,000 expressions (ORA-01795).
         // Chunk larger object id lists into parenthesized OR-joined IN lists of <= 1,000.
         sb.Append(" AND ");
-        AppendChunkedInClause(sb, mapping.QuotedPrimaryKeyColumn, ids.AsSpan(), parameters);
+        AppendChunkedInClause(new() { Sql = sb, QuotedColumn = mapping.QuotedPrimaryKeyColumn, Parameters = parameters }, ids.AsSpan());
+    }
+
+    private sealed class OracleInClauseTarget
+    {
+        public required StringBuilder Sql { get; init; }
+        public required string QuotedColumn { get; init; }
+        public required List<object> Parameters { get; init; }
     }
 
     private static void AppendChunkedInClause<T>(
-        StringBuilder sb,
-        string quotedColumn,
-        ReadOnlySpan<T> values,
-        List<object> parameters)
+        OracleInClauseTarget target,
+        ReadOnlySpan<T> values)
     {
         if (values.Length <= MaxInListItems)
         {
-            AppendInChunk(sb, quotedColumn, values, parameters);
+            AppendInChunk(target, values);
             return;
         }
 
-        sb.Append('(');
+        target.Sql.Append('(');
         for (var offset = 0; offset < values.Length; offset += MaxInListItems)
         {
             if (offset > 0)
             {
-                sb.Append(" OR ");
+                target.Sql.Append(" OR ");
             }
 
             var count = Math.Min(MaxInListItems, values.Length - offset);
-            AppendInChunk(sb, quotedColumn, values.Slice(offset, count), parameters);
+            AppendInChunk(target, values.Slice(offset, count));
         }
 
-        sb.Append(')');
+        target.Sql.Append(')');
     }
 
     private static void AppendInChunk<T>(
-        StringBuilder sb,
-        string quotedColumn,
-        ReadOnlySpan<T> values,
-        List<object> parameters)
+        OracleInClauseTarget target,
+        ReadOnlySpan<T> values)
     {
-        sb.Append(quotedColumn).Append(" IN (");
+        target.Sql.Append(target.QuotedColumn).Append(" IN (");
         for (var i = 0; i < values.Length; i++)
         {
             if (i > 0)
             {
-                sb.Append(", ");
+                target.Sql.Append(", ");
             }
 
-            sb.Append(":p").Append(parameters.Count.ToString(CultureInfo.InvariantCulture));
-            parameters.Add(values[i]!);
+            target.Sql.Append(":p").Append(target.Parameters.Count.ToString(CultureInfo.InvariantCulture));
+            target.Parameters.Add(values[i]!);
         }
 
-        sb.Append(')');
+        target.Sql.Append(')');
     }
 
     private static void AppendSpatialFilter(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
@@ -681,7 +684,7 @@ internal static partial class OracleFeatureQueryBuilder
                 }
 
                 var inBuilder = new StringBuilder();
-                AppendChunkedInClause(inBuilder, OracleIdentifier.QuoteAttribute(field), CollectionsMarshal.AsSpan(values), parameters);
+                AppendChunkedInClause(new() { Sql = inBuilder, QuotedColumn = OracleIdentifier.QuoteAttribute(field), Parameters = parameters }, CollectionsMarshal.AsSpan(values));
                 rendered.Add(inBuilder.ToString());
                 continue;
             }

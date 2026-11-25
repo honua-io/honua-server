@@ -339,17 +339,8 @@ public sealed class ProtobufWriterTests
     {
         ulong[] values =
         [
-            0UL,
-            1UL,
-            127UL,
-            128UL,
-            (1UL << 14) - 1,
-            1UL << 14,
-            (1UL << 56) - 1,
-            1UL << 56,
-            (1UL << 63) - 1,
-            1UL << 63,
-            ulong.MaxValue
+            0UL, 1UL, 127UL, 128UL, (1UL << 14) - 1, 1UL << 14,
+            (1UL << 56) - 1, 1UL << 56, (1UL << 63) - 1, 1UL << 63, ulong.MaxValue
         ];
 
         var payload = new ProtobufWriter(128);

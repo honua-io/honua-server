@@ -47,34 +47,21 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing length inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadMeasuredGeometryInputs(parameters, isArea: false, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadLengthGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid length inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid length inputs: {inputRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
-            inputs.WkbBytes,
-            inputs.Srid,
-            out var geometry,
-            out var wkbError,
-            out var isEmpty,
-            out var sridError))
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            if (wkbError is not null)
-            {
-                Log.InvalidWkb(_logger, job.OperationId, wkbError);
-                return JobExecutionResult.InvalidInput("Invalid length inputs: WKB payload could not be decoded.");
-            }
-
-            if (isEmpty)
-            {
-                return JobExecutionResult.InvalidInput("Invalid length inputs: geometry is empty.");
-            }
-
-            Log.InvalidInputs(_logger, job.OperationId, sridError!);
-            return JobExecutionResult.InvalidInput($"Invalid length inputs: {sridError}.");
+            return RejectDecodeFailure(job.OperationId, decodeResult);
         }
+
+        var geometry = decodeResult.Geometry!;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing length", cancellationToken).ConfigureAwait(false);
@@ -82,11 +69,11 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         double length;
         try
         {
-            if (inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            if (inputs.IsGeodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
             {
                 length = GeodesicGeometryOperations.ComputeGeodesicLengthMeters(geometry) / inputs.MetersPerUnit;
             }
-            else if (inputs.Geodesic)
+            else if (inputs.IsGeodesic)
             {
                 length = geometry.Length / inputs.MetersPerUnit;
             }
@@ -110,13 +97,15 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding length artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = GeometryExecutorSupport.BuildMeasurePayload(
-            HandledProcessId,
-            "length",
-            length,
-            inputs.Geodesic ? inputs.Unit : "input-crs-units",
-            inputs.Srid,
-            geometry.GeometryType);
+        var payload = GeometryExecutorSupport.BuildMeasurePayload(new MeasurePayloadRequest
+        {
+            ProcessId = HandledProcessId,
+            Measure = "length",
+            Value = length,
+            Unit = inputs.IsGeodesic ? inputs.Unit : "input-crs-units",
+            InputSrid = inputs.Srid,
+            InputGeometryType = geometry.GeometryType,
+        });
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -132,6 +121,23 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(100, "Length completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    private JobExecutionResult RejectDecodeFailure(string operationId, ValidatedGeometryDecodeResult decodeResult)
+    {
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
+        {
+            Log.InvalidWkb(_logger, operationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput("Invalid length inputs: WKB payload could not be decoded.");
+        }
+
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
+        {
+            return JobExecutionResult.InvalidInput("Invalid length inputs: geometry is empty.");
+        }
+
+        Log.InvalidInputs(_logger, operationId, decodeResult.Error!);
+        return JobExecutionResult.InvalidInput($"Invalid length inputs: {decodeResult.Error}.");
     }
 
     private static partial class Log

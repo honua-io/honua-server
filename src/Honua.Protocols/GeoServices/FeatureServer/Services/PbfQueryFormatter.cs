@@ -379,11 +379,13 @@ internal sealed partial class PbfQueryFormatter
             effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform, srid);
     }
 
-    private readonly record struct PbfFieldSpec(
-        string Name,
-        int Index,
-        bool IsObjectId,
-        MetadataV2FieldType? TemporalType);
+    private readonly record struct PbfFieldSpec
+    {
+        public required string Name { get; init; }
+        public required int Index { get; init; }
+        public bool IsObjectId { get; init; }
+        public MetadataV2FieldType? TemporalType { get; init; }
+    }
 
     private static PbfFieldSpec[] BuildFieldSpecs(GeoServicesFieldInfo[] fields, string objectIdFieldName)
     {
@@ -399,11 +401,13 @@ internal sealed partial class PbfQueryFormatter
                 "esriFieldTypeDouble" => MetadataV2FieldType.Decimal,
                 _ => null
             };
-            specs[i] = new PbfFieldSpec(
-                field.Name,
-                i,
-                field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase),
-                temporalType);
+            specs[i] = new PbfFieldSpec
+            {
+                Name = field.Name,
+                Index = i,
+                IsObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase),
+                TemporalType = temporalType
+            };
         }
 
         return specs;
@@ -451,7 +455,6 @@ internal sealed partial class PbfQueryFormatter
 
                 if (value == null)
                 {
-                    // null_value = field 10 (bool, true = null)
                     valueMsg.WriteBool(10, true);
                 }
                 else
@@ -466,7 +469,6 @@ internal sealed partial class PbfQueryFormatter
                     WriteAttributeValue(ref valueMsg, value);
                 }
 
-                // index = field 11 (optional uint32)
                 // WriteUInt32 skips zero, but field index 0 is valid;
                 // use WriteTag + WriteRawVarint directly
                 valueMsg.WriteTag(11, 0);

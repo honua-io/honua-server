@@ -129,75 +129,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        // Extent SQL must work on both MySQL 8.0.12+ and MariaDB 10.6+. Two engine
-        // divergences shape the strategy:
-        //   * MariaDB only supports the 1-arg ST_SRID(geom). The 2-arg setter is MySQL-only,
-        //     so we cannot retag geometries to Cartesian inline.
-        //   * MySQL ST_X/ST_Y are documented as point-only; using them on MultiPoint or
-        //     LineString errors out. ST_Envelope of a degenerate (vertical/horizontal)
-        //     LineString returns a LineString, not a Polygon, breaking ST_ExteriorRing.
-        //
-        // Supported per-row patterns:
-        //   * Point: MIN/MAX of ST_X/ST_Y on the column directly.
-        //   * Polygon/MultiPolygon: ST_Envelope is always a Polygon (polygons have area),
-        //     so ST_PointN(ST_ExteriorRing(ST_Envelope(geom)), 1|3) is safe.
-        //
-        // Other types (MultiPoint, LineString, MultiLineString, GeometryCollection, None)
-        // are rejected explicitly — callers should compute extents in the application
-        // layer or use a PostGIS-backed layer.
-        //
-        // MySQL geographic SRS definitions are latitude-first, so ST_X/ST_Y return latitude
-        // as X. ST_Longitude/ST_Latitude keep both point columns and polygon envelope corners
-        // aligned with the axis-normalized WKB read path. Those accessors were added in 8.0.12,
-        // which is this provider's floor: the same release redefined ST_X/ST_Y to follow SRS
-        // axis order (bugs 27125600 / 88503), so swapping them is not a correct 8.0.11 substitute.
-        // MariaDB does not provide these accessors and keeps ST_X/ST_Y.
-        var useGeographicAxes = _engineFlavor == MySqlEngineFlavor.Mysql
-            && GeographicSridClassifier.IsGeographicSrid(mapping.Srid);
-        string AxisX(string pointExpression) => useGeographicAxes
-            ? $"ST_Longitude({pointExpression})"
-            : $"ST_X({pointExpression})";
-        string AxisY(string pointExpression) => useGeographicAxes
-            ? $"ST_Latitude({pointExpression})"
-            : $"ST_Y({pointExpression})";
-        var geometryColumn = mapping.QuotedGeometryColumn;
-        string EnvelopeCorner(int cornerIndex)
-        {
-            // MariaDB only supports 1-arg ST_SRID(geom) and computes ST_Envelope directly in
-            // stored X/Y order. MySQL 8.0+ rejects ST_Envelope on geographic SRSes, so drop to
-            // SRID 0 for the bounding box and re-tag the corner back to the geographic SRID
-            // before passing it to ST_Longitude/ST_Latitude (which reject SRID 0).
-            if (_engineFlavor == MySqlEngineFlavor.MariaDb)
-            {
-                return $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), {cornerIndex.ToString(CultureInfo.InvariantCulture)})";
-            }
-
-            var cartesianCorner = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), {cornerIndex.ToString(CultureInfo.InvariantCulture)})";
-            return useGeographicAxes
-                ? $"ST_SRID({cartesianCorner}, {mapping.Srid.ToString(CultureInfo.InvariantCulture)})"
-                : cartesianCorner;
-        }
-        var envelopeCorner1 = EnvelopeCorner(1);
-        var envelopeCorner3 = EnvelopeCorner(3);
-        var extentSelect = mapping.GeometryType switch
-        {
-            GeometryType.Point => $"""
-                MIN({AxisX(geometryColumn)}),
-                MIN({AxisY(geometryColumn)}),
-                MAX({AxisX(geometryColumn)}),
-                MAX({AxisY(geometryColumn)})
-                """,
-            GeometryType.Polygon or GeometryType.MultiPolygon => $"""
-                MIN({AxisX(envelopeCorner1)}),
-                MIN({AxisY(envelopeCorner1)}),
-                MAX({AxisX(envelopeCorner3)}),
-                MAX({AxisY(envelopeCorner3)})
-                """,
-            _ => throw MySqlUnsupportedFeature.Create(
-                $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
-                "provider in this slice. Supported geometry types: Point, Polygon, MultiPolygon. " +
-                "Compute extents in the application layer or use a PostGIS-backed layer.")
-        };
+        var extentSelect = BuildExtentSelectClause(mapping);
 
         sb.Append(CultureInfo.InvariantCulture,
             $"""
@@ -211,6 +143,74 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         AppendSpatialFilter(sb, mapping, effectiveQuery, ref paramIndex, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    private bool UseGeographicAxes(MySqlLayerMapping mapping)
+        => _engineFlavor == MySqlEngineFlavor.Mysql
+            && GeographicSridClassifier.IsGeographicSrid(mapping.Srid);
+
+    private string FormatExtentAxisX(MySqlLayerMapping mapping, string pointExpression)
+        => UseGeographicAxes(mapping)
+            ? $"ST_Longitude({pointExpression})"
+            : $"ST_X({pointExpression})";
+
+    private string FormatExtentAxisY(MySqlLayerMapping mapping, string pointExpression)
+        => UseGeographicAxes(mapping)
+            ? $"ST_Latitude({pointExpression})"
+            : $"ST_Y({pointExpression})";
+
+    private string BuildExtentEnvelopeCorner(MySqlLayerMapping mapping, int cornerIndex)
+    {
+        var geometryColumn = mapping.QuotedGeometryColumn;
+        var indexLiteral = cornerIndex.ToString(CultureInfo.InvariantCulture);
+
+        // MariaDB only supports 1-arg ST_SRID(geom) and computes ST_Envelope directly in
+        // stored X/Y order. MySQL 8.0+ rejects ST_Envelope on geographic SRSes, so drop to
+        // SRID 0 for the bounding box and re-tag the corner back to the geographic SRID
+        // before passing it to ST_Longitude/ST_Latitude (which reject SRID 0).
+        if (_engineFlavor == MySqlEngineFlavor.MariaDb)
+        {
+            return $"ST_PointN(ST_ExteriorRing(ST_Envelope({geometryColumn})), {indexLiteral})";
+        }
+
+        var cartesianCorner = $"ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID({geometryColumn}, 0))), {indexLiteral})";
+        return UseGeographicAxes(mapping)
+            ? $"ST_SRID({cartesianCorner}, {mapping.Srid.ToString(CultureInfo.InvariantCulture)})"
+            : cartesianCorner;
+    }
+
+    private string BuildExtentSelectClause(MySqlLayerMapping mapping)
+    {
+        // MySQL ST_X/ST_Y are point-only and ST_Envelope of a degenerate LineString returns a
+        // LineString, breaking ST_ExteriorRing. Geographic SRSes are latitude-first on MySQL 8.0.12+,
+        // so ST_Longitude/ST_Latitude keep extent corners aligned with axis-normalized WKB reads.
+        var geometryColumn = mapping.QuotedGeometryColumn;
+        if (mapping.GeometryType == GeometryType.Point)
+        {
+            return $"""
+                MIN({FormatExtentAxisX(mapping, geometryColumn)}),
+                MIN({FormatExtentAxisY(mapping, geometryColumn)}),
+                MAX({FormatExtentAxisX(mapping, geometryColumn)}),
+                MAX({FormatExtentAxisY(mapping, geometryColumn)})
+                """;
+        }
+
+        if (mapping.GeometryType is GeometryType.Polygon or GeometryType.MultiPolygon)
+        {
+            var envelopeCorner1 = BuildExtentEnvelopeCorner(mapping, 1);
+            var envelopeCorner3 = BuildExtentEnvelopeCorner(mapping, 3);
+            return $"""
+                MIN({FormatExtentAxisX(mapping, envelopeCorner1)}),
+                MIN({FormatExtentAxisY(mapping, envelopeCorner1)}),
+                MAX({FormatExtentAxisX(mapping, envelopeCorner3)}),
+                MAX({FormatExtentAxisY(mapping, envelopeCorner3)})
+                """;
+        }
+
+        throw MySqlUnsupportedFeature.Create(
+            $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
+            "provider in this slice. Supported geometry types: Point, Polygon, MultiPolygon. " +
+            "Compute extents in the application layer or use a PostGIS-backed layer.");
     }
 
     public ParameterizedQuery BuildObjectIdsQuery(

@@ -19,10 +19,13 @@ public sealed class StudioEndpointExceptionMappingTests
     {
         var context = CreateContext();
         var result = StudioPackageEndpoints.MapStudioInvalidOperationException(
-            context,
-            NullLogger.Instance,
-            "draft.create",
-            "Studio package draft could not be created.",
+            new StudioErrorMappingContext
+            {
+                Context = context,
+                Logger = NullLogger.Instance,
+                Operation = "draft.create",
+                ServerErrorDetail = "Studio package draft could not be created.",
+            },
             new InvalidOperationException("Npgsql connection pool exhausted for host=db.internal.secret"));
 
         await result.ExecuteAsync(context);
@@ -39,10 +42,13 @@ public sealed class StudioEndpointExceptionMappingTests
     {
         var context = CreateContext();
         var result = StudioPackageEndpoints.MapStudioInvalidOperationException(
-            context,
-            NullLogger.Instance,
-            "draft.update",
-            "Studio package draft could not be updated.",
+            new StudioErrorMappingContext
+            {
+                Context = context,
+                Logger = NullLogger.Instance,
+                Operation = "draft.update",
+                ServerErrorDetail = "Studio package draft could not be updated.",
+            },
             new InvalidOperationException("Stale draft generation; refresh and retry."));
 
         await result.ExecuteAsync(context);
@@ -57,9 +63,12 @@ public sealed class StudioEndpointExceptionMappingTests
     {
         var context = CreateContext();
         var result = StudioPackageEndpoints.MapStudioArgumentException(
-            context,
-            NullLogger.Instance,
-            "draft.create",
+            new StudioErrorMappingContext
+            {
+                Context = context,
+                Logger = NullLogger.Instance,
+                Operation = "draft.create",
+            },
             new ArgumentException("Internal column secret_col failed binding"));
 
         await result.ExecuteAsync(context);

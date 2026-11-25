@@ -30,7 +30,7 @@ using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac;
 
-internal static class SearchEndpoints
+internal static partial class SearchEndpoints
 {
     private const int Wgs84Srid = 4326;
     private const int MaxItemIdCount = 512;
@@ -451,26 +451,9 @@ internal static class SearchEndpoints
                 }
             }
 
-            var maxOffset = context.RequestServices.GetService<IOptions<Honua.Core.Configuration.LimitsOptions>>()?.Value.Query.MaxOffset
-                ?? 1_000_000;
-            if (offset > maxOffset)
+            if (ValidateSearchOffsetLimits(context, new SearchOffsetCheck { Offset = offset, TargetCount = targets.Length, OmitCount = omitCount }, activity) is { } offsetError)
             {
-                StacTelemetry.SetFailed(activity, "offset_limit_exceeded");
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    $"offset ({offset.ToString(CultureInfo.InvariantCulture)}) exceeds the maximum supported offset of {maxOffset.ToString(CultureInfo.InvariantCulture)}.");
-            }
-
-            if (omitCount && targets.Length > 1)
-            {
-                var maxOmitCountOffset = Math.Min(maxOffset, StacConstants.MaxOmitCountSearchOffset);
-                if (offset > maxOmitCountOffset)
-                {
-                    StacTelemetry.SetFailed(activity, "omit_count_offset_limit_exceeded");
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"offset ({offset.ToString(CultureInfo.InvariantCulture)}) exceeds the maximum supported offset of {maxOmitCountOffset.ToString(CultureInfo.InvariantCulture)} for multi-collection search without exact counts. Narrow collections to a single collection to page further.");
-                }
+                return offsetError;
             }
 
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
@@ -684,32 +667,11 @@ internal static class SearchEndpoints
                 // shared error pipeline maps it to InternalServerError.
                 if (omitCount)
                 {
-                    // Single-collection searches can apply the offset directly without scanning
-                    // discarded pages. Multi-collection searches are bounded above by MaxOmitCountSearchOffset.
-                    var localOffset = 0;
-                    var exhausted = false;
-                    if (targets.Length == 1)
-                    {
-                        localOffset = remainingSkip;
-                        remainingSkip = 0;
-                    }
-                    else
-                    {
-                        while (remainingSkip > 0)
-                        {
-                            var skipPage = await StacPageReader.ReadAsync(
-                                targetReader, storageLayerId,
-                                query with { Offset = localOffset, Limit = Math.Min(remainingSkip, StacConstants.MaxSearchLimit) },
-                                true, cancellationToken);
-                            remainingSkip -= skipPage.Items.Length;
-                            localOffset += skipPage.Items.Length;
-                            if (!skipPage.HasMoreResults || skipPage.Items.IsEmpty)
-                            {
-                                exhausted = true;
-                                break;
-                            }
-                        }
-                    }
+                    var (localOffset, updatedSkip, exhausted) = await AdvanceOmitCountSkipAsync(
+                        (targetReader, storageLayerId),
+                        (query, targets.Length, remainingSkip),
+                        cancellationToken);
+                    remainingSkip = updatedSkip;
 
                     if (!exhausted && allItems.Count < pageLimit)
                     {

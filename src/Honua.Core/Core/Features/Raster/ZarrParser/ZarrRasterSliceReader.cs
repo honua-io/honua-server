@@ -208,11 +208,14 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         try
         {
             var subset = await _subsetReader.ReadSubsetAsync(
-                    resolution.RangeReader!,
-                    registration.Bucket,
-                    registration.RootPath,
-                    metadata,
-                    slice!.Plan.Request,
+                    new ZarrSubsetReadParameters
+                    {
+                        Reader = resolution.RangeReader!,
+                        Bucket = registration.Bucket,
+                        RootPath = registration.RootPath,
+                        Metadata = metadata,
+                        Request = slice!.Plan.Request,
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
             var fillValue = slice.Plan.Array.FillValue;

@@ -29,9 +29,8 @@ public static class WkbSridNormalizer
         }
 
         var output = new byte[input.Length - sridBytesRemoved];
-        var readOffset = 0;
-        var writeOffset = 0;
-        CopyGeometryWithoutSrid(input, ref readOffset, output, ref writeOffset);
+        var stripper = new WkbSridStripper(input, output);
+        stripper.CopyGeometry();
         return output;
     }
 
@@ -211,92 +210,112 @@ public static class WkbSridNormalizer
         return true;
     }
 
-    private static void CopyGeometryWithoutSrid(
-        ReadOnlySpan<byte> input,
-        ref int readOffset,
-        Span<byte> output,
-        ref int writeOffset)
+    private enum WkbByteOrder : byte
     {
-        var byteOrder = input[readOffset++];
-        output[writeOffset++] = byteOrder;
-        var littleEndian = byteOrder == 1;
+        BigEndian = 0,
+        LittleEndian = 1,
+    }
 
-        var rawType = ReadUInt32(input.Slice(readOffset, sizeof(uint)), littleEndian);
-        readOffset += sizeof(uint);
+    private ref struct WkbSridStripper
+    {
+        private readonly ReadOnlySpan<byte> _input;
+        private readonly Span<byte> _output;
+        private int _readOffset;
+        private int _writeOffset;
 
-        WriteUInt32(output.Slice(writeOffset, sizeof(uint)), rawType & ~EwkbSridFlag, littleEndian);
-        writeOffset += sizeof(uint);
-
-        if ((rawType & EwkbSridFlag) != 0)
+        public WkbSridStripper(ReadOnlySpan<byte> input, Span<byte> output)
         {
-            readOffset += sizeof(uint);
+            _input = input;
+            _output = output;
         }
 
-        TryResolveType(rawType, out var geometryType, out var ordinateCount);
-
-        switch (geometryType)
+        public void CopyGeometry()
         {
-            case 1:
-                CopyBytes(input, ref readOffset, output, ref writeOffset, ordinateCount * sizeof(double));
-                break;
-            case 2:
-                CopyCoordinateSequence(input, ref readOffset, output, ref writeOffset, littleEndian, ordinateCount);
-                break;
-            case 3:
-                var ringCount = CopyCount(input, ref readOffset, output, ref writeOffset, littleEndian);
-                for (uint ring = 0; ring < ringCount; ring++)
-                {
-                    CopyCoordinateSequence(input, ref readOffset, output, ref writeOffset, littleEndian, ordinateCount);
-                }
-                break;
-            case 4 or 5 or 6 or 7:
-                var geometryCount = CopyCount(input, ref readOffset, output, ref writeOffset, littleEndian);
-                for (uint geometry = 0; geometry < geometryCount; geometry++)
-                {
-                    CopyGeometryWithoutSrid(input, ref readOffset, output, ref writeOffset);
-                }
-                break;
+            var rawByteOrder = _input[_readOffset++];
+            _output[_writeOffset++] = rawByteOrder;
+            var byteOrder = rawByteOrder == 1 ? WkbByteOrder.LittleEndian : WkbByteOrder.BigEndian;
+
+            var rawType = ReadAndRewriteGeometryType(byteOrder);
+            TryResolveType(rawType, out var geometryType, out var ordinateCount);
+            CopyGeometryPayload(geometryType, ordinateCount, byteOrder);
         }
-    }
 
-    private static void CopyCoordinateSequence(
-        ReadOnlySpan<byte> input,
-        ref int readOffset,
-        Span<byte> output,
-        ref int writeOffset,
-        bool littleEndian,
-        int ordinateCount)
-    {
-        var coordinateCount = CopyCount(input, ref readOffset, output, ref writeOffset, littleEndian);
-        var byteCount = (int)((long)coordinateCount * ordinateCount * sizeof(double));
-        CopyBytes(input, ref readOffset, output, ref writeOffset, byteCount);
-    }
+        private uint ReadAndRewriteGeometryType(WkbByteOrder byteOrder)
+        {
+            var rawType = ReadUInt32(_input.Slice(_readOffset, sizeof(uint)), byteOrder);
+            _readOffset += sizeof(uint);
 
-    private static uint CopyCount(
-        ReadOnlySpan<byte> input,
-        ref int readOffset,
-        Span<byte> output,
-        ref int writeOffset,
-        bool littleEndian)
-    {
-        var slice = input.Slice(readOffset, sizeof(uint));
-        var count = ReadUInt32(slice, littleEndian);
-        slice.CopyTo(output.Slice(writeOffset, sizeof(uint)));
-        readOffset += sizeof(uint);
-        writeOffset += sizeof(uint);
-        return count;
-    }
+            WriteUInt32(_output.Slice(_writeOffset, sizeof(uint)), rawType & ~EwkbSridFlag, byteOrder);
+            _writeOffset += sizeof(uint);
 
-    private static void CopyBytes(
-        ReadOnlySpan<byte> input,
-        ref int readOffset,
-        Span<byte> output,
-        ref int writeOffset,
-        int byteCount)
-    {
-        input.Slice(readOffset, byteCount).CopyTo(output.Slice(writeOffset, byteCount));
-        readOffset += byteCount;
-        writeOffset += byteCount;
+            if ((rawType & EwkbSridFlag) != 0)
+            {
+                _readOffset += sizeof(uint);
+            }
+
+            return rawType;
+        }
+
+        private void CopyGeometryPayload(uint geometryType, int ordinateCount, WkbByteOrder byteOrder)
+        {
+            switch (geometryType)
+            {
+                case 1:
+                    CopyBytes(ordinateCount * sizeof(double));
+                    break;
+                case 2:
+                    CopyCoordinateSequence(byteOrder, ordinateCount);
+                    break;
+                case 3:
+                    CopyPolygonRings(byteOrder, ordinateCount);
+                    break;
+                case 4 or 5 or 6 or 7:
+                    CopyCollectionChildren(byteOrder);
+                    break;
+            }
+        }
+
+        private void CopyPolygonRings(WkbByteOrder byteOrder, int ordinateCount)
+        {
+            var ringCount = CopyCount(byteOrder);
+            for (uint ring = 0; ring < ringCount; ring++)
+            {
+                CopyCoordinateSequence(byteOrder, ordinateCount);
+            }
+        }
+
+        private void CopyCollectionChildren(WkbByteOrder byteOrder)
+        {
+            var geometryCount = CopyCount(byteOrder);
+            for (uint geometry = 0; geometry < geometryCount; geometry++)
+            {
+                CopyGeometry();
+            }
+        }
+
+        private void CopyCoordinateSequence(WkbByteOrder byteOrder, int ordinateCount)
+        {
+            var coordinateCount = CopyCount(byteOrder);
+            var byteCount = (int)((long)coordinateCount * ordinateCount * sizeof(double));
+            CopyBytes(byteCount);
+        }
+
+        private uint CopyCount(WkbByteOrder byteOrder)
+        {
+            var slice = _input.Slice(_readOffset, sizeof(uint));
+            var count = ReadUInt32(slice, byteOrder);
+            slice.CopyTo(_output.Slice(_writeOffset, sizeof(uint)));
+            _readOffset += sizeof(uint);
+            _writeOffset += sizeof(uint);
+            return count;
+        }
+
+        private void CopyBytes(int byteCount)
+        {
+            _input.Slice(_readOffset, byteCount).CopyTo(_output.Slice(_writeOffset, byteCount));
+            _readOffset += byteCount;
+            _writeOffset += byteCount;
+        }
     }
 
     private static bool TryResolveType(uint rawType, out uint geometryType, out int ordinateCount)
@@ -343,19 +362,20 @@ public static class WkbSridNormalizer
             return false;
         }
 
-        value = ReadUInt32(input.Slice(offset, sizeof(uint)), littleEndian);
+        var byteOrder = littleEndian ? WkbByteOrder.LittleEndian : WkbByteOrder.BigEndian;
+        value = ReadUInt32(input.Slice(offset, sizeof(uint)), byteOrder);
         offset += sizeof(uint);
         return true;
     }
 
-    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, bool littleEndian)
-        => littleEndian
+    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, WkbByteOrder byteOrder)
+        => byteOrder == WkbByteOrder.LittleEndian
             ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
             : BinaryPrimitives.ReadUInt32BigEndian(bytes);
 
-    private static void WriteUInt32(Span<byte> destination, uint value, bool littleEndian)
+    private static void WriteUInt32(Span<byte> destination, uint value, WkbByteOrder byteOrder)
     {
-        if (littleEndian)
+        if (byteOrder == WkbByteOrder.LittleEndian)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(destination, value);
         }

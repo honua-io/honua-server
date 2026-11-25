@@ -121,18 +121,18 @@ public sealed class ForwardedHeadersConfigurationTests
     [Fact]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    public void BaseAppSettings_ExcludesTestSceneFixtureAndUnsafeEvalCspRouteOverrides()
+    public void BaseAppSettings_ExcludesUnsafeEvalCspRouteOverrides()
     {
         var baseSettingsPath = ResolveServerConfigPath("appsettings.json");
         var baseSettings = File.ReadAllText(baseSettingsPath);
 
-        baseSettings.Should().NotContain("downtown-honolulu");
         baseSettings.Should().NotContain("unsafe-eval");
+        baseSettings.Should().NotContain("cdn.jsdelivr.net");
         baseSettings.Should().NotContain("RouteOverrides");
 
-        var testSettingsPath = ResolveServerConfigPath("appsettings.Test.json");
-        var testSettings = File.ReadAllText(testSettingsPath);
-        testSettings.Should().Contain("downtown-honolulu");
+        var devSettingsPath = ResolveServerConfigPath("appsettings.Development.json");
+        var devSettings = File.ReadAllText(devSettingsPath);
+        devSettings.Should().Contain("RouteOverrides");
     }
 
     private static string ResolveServerConfigPath(string fileName)

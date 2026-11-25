@@ -196,7 +196,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!ConsoleRequestValidationHelpers.TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
@@ -253,7 +253,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!ConsoleRequestValidationHelpers.TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
@@ -325,7 +325,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!ConsoleRequestValidationHelpers.TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }

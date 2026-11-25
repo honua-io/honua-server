@@ -69,12 +69,10 @@ internal static partial class SpecGroundingEndpointExtensions
             return InvalidRequest($"turn must be at most {MaxTurnLength} characters.");
         }
 
-        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()
-            ?.CreateLogger(typeof(SpecGroundingEndpointExtensions));
-
-        if (!TryReadSpecDocument(request.Spec, logger, out var currentSpec, out var specError))
+        var specRead = ReadSpecDocument(request.Spec, CreateLogger(httpContext));
+        if (specRead.Document is not { } currentSpec)
         {
-            return InvalidRequest(specError);
+            return InvalidRequest(specRead.Error!);
         }
 
         if (!TryMapClarificationAnswer(request.ClarificationAnswer, out var clarificationAnswer, out var clarificationError))
@@ -121,12 +119,10 @@ internal static partial class SpecGroundingEndpointExtensions
             return InvalidRequest("Request body must be a JSON object.");
         }
 
-        var logger = httpContext.RequestServices.GetService<ILoggerFactory>()
-            ?.CreateLogger(typeof(SpecGroundingEndpointExtensions));
-
-        if (!TryReadSpecDocument(request.Spec, logger, out var document, out var specError))
+        var specRead = ReadSpecDocument(request.Spec, CreateLogger(httpContext));
+        if (specRead.Document is not { } document)
         {
-            return InvalidRequest(specError);
+            return InvalidRequest(specRead.Error!);
         }
 
         var summary = groundingService.Summarize(document);
@@ -358,40 +354,45 @@ internal static partial class SpecGroundingEndpointExtensions
         return true;
     }
 
-    private static bool TryReadSpecDocument(
-        JsonElement spec,
-        ILogger? logger,
-        out SpecDocument document,
-        out string error)
+    private readonly record struct SpecDocumentReadResult(SpecDocument? Document, string? Error);
+
+    private static ILogger? CreateLogger(HttpContext httpContext)
+        => httpContext.RequestServices.GetService<ILoggerFactory>()
+            ?.CreateLogger(typeof(SpecGroundingEndpointExtensions));
+
+    private static SpecDocumentReadResult ReadSpecDocument(JsonElement spec, ILogger? logger)
+    {
+        if (ValidateSpecJsonShape(spec) is { } shapeError)
+        {
+            return new SpecDocumentReadResult(null, shapeError);
+        }
+
+        return ParseCanonicalSpec(spec, logger);
+    }
+
+    private static string? ValidateSpecJsonShape(JsonElement spec)
     {
         if (spec.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
         {
-            document = CreateEmptySpecDocument();
-            error = "spec is required.";
-            return false;
+            return "spec is required.";
         }
 
         if (spec.ValueKind != JsonValueKind.Object)
         {
-            document = CreateEmptySpecDocument();
-            error = "spec must be a canonical JSON object.";
-            return false;
+            return "spec must be a canonical JSON object.";
         }
 
-        if (FindWrongTypedSection(spec) is { } sectionError)
-        {
-            document = CreateEmptySpecDocument();
-            error = sectionError;
-            return false;
-        }
+        return FindWrongTypedSection(spec);
+    }
 
+    private static SpecDocumentReadResult ParseCanonicalSpec(JsonElement spec, ILogger? logger)
+    {
         try
         {
-            document = spec.EnumerateObject().Any()
+            var document = spec.EnumerateObject().Any()
                 ? SpecJsonReader.Read(spec.GetRawText())
                 : CreateEmptySpecDocument();
-            error = string.Empty;
-            return true;
+            return new SpecDocumentReadResult(document, null);
         }
         catch (JsonException ex)
         {
@@ -400,31 +401,16 @@ internal static partial class SpecGroundingEndpointExtensions
                 Log.InvalidSpecJson(logger, ex);
             }
 
-            document = CreateEmptySpecDocument();
-            error = "spec is not valid canonical JSON.";
-            return false;
+            return new SpecDocumentReadResult(null, "spec is not valid canonical JSON.");
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
         {
             if (logger is not null)
             {
                 Log.SpecReadFailed(logger, ex);
             }
 
-            document = CreateEmptySpecDocument();
-            error = "spec could not be read.";
-            return false;
-        }
-        catch (FormatException ex)
-        {
-            if (logger is not null)
-            {
-                Log.SpecReadFailed(logger, ex);
-            }
-
-            document = CreateEmptySpecDocument();
-            error = "spec could not be read.";
-            return false;
+            return new SpecDocumentReadResult(null, "spec could not be read.");
         }
     }
 

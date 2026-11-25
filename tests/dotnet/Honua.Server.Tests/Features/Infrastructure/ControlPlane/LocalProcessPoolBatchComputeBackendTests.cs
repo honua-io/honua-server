@@ -27,12 +27,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     {
         using var backend = CreateBackend(workerContracts:
         [
-            new LocalProcessWorkerContractOptions
-            {
-                Executable = ShPath,
-                ArgumentPrefix = ["-c"],
-                MaxSupportedContractVersion = 1
-            }
+            new LocalProcessWorkerContractOptions { Executable = ShPath, ArgumentPrefix = ["-c"], MaxSupportedContractVersion = 1 }
         ]);
         var outFile = Path.Join(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
         try
@@ -43,7 +38,6 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
                 [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "-c",
                 [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "printf '%s' \"$HONUA_CONTRACT_VERSION\" > \"$HONUA_TEST_OUT\"",
                 [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_TEST_OUT"] = outFile,
-                // A malicious/erroneous workload tries to weaken the serving↔worker contract gate.
                 [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_CONTRACT_VERSION"] = "999"
             });
 
@@ -425,23 +419,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         var outsideDir = Path.Join(Path.GetTempPath(), $"honua-outside-{Guid.NewGuid():N}");
         try
         {
-            using var backend = new LocalProcessPoolBatchComputeBackend(
-                Options.Create(new LocalProcessPoolOptions
-                {
-                    MaxConcurrentProcesses = 1,
-                    WorkingRoot = workingRoot,
-                    WorkerContracts =
-                    [
-                        new LocalProcessWorkerContractOptions
-                        {
-                            Executable = SleepPath,
-                            IsSelfContained = true,
-                            MaxSupportedContractVersion = 1
-                        }
-                    ]
-                }),
-                NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
-
+            using var backend = CreateSleepBackendInRoot(workingRoot, maxConcurrent: 1);
             var job = CreateJob("job-escape-wd", new Dictionary<string, string>
             {
                 [LocalProcessParameterKeys.Executable] = SleepPath,
@@ -457,10 +435,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         }
         finally
         {
-            if (Directory.Exists(workingRoot))
-            {
-                Directory.Delete(workingRoot, recursive: true);
-            }
+            DeleteDirectoryIfExists(workingRoot);
         }
     }
 
@@ -487,25 +462,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         var workingRoot = Directory.CreateTempSubdirectory("honua-lpp-evict").FullName;
         try
         {
-            using var backend = new LocalProcessPoolBatchComputeBackend(
-                Options.Create(new LocalProcessPoolOptions
-                {
-                    MaxConcurrentProcesses = 2,
-                    WorkingRoot = workingRoot,
-                    WorkerContracts =
-                    [
-                        new LocalProcessWorkerContractOptions
-                        {
-                            Executable = SleepPath,
-                            IsSelfContained = true,
-                            MaxSupportedContractVersion = 1
-                        }
-                    ]
-                }),
-                NullLogger<LocalProcessPoolBatchComputeBackend>.Instance)
-            {
-                TerminalRetentionTtl = TimeSpan.FromMilliseconds(50)
-            };
+            using var backend = CreateRetentionBackendInRoot(workingRoot, TimeSpan.FromMilliseconds(50));
 
             var job = CreateJob("job-cancel-evict", new Dictionary<string, string>
             {
@@ -525,23 +482,95 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
             });
             cancel.Status.Should().Be(ExecutionJobStatus.Cancelled);
 
-            // Never call ObserveAsync: deferred TTL eviction must clean up both _executions and scratch dir.
-            var deadline = Stopwatch.StartNew();
-            while (deadline.Elapsed < TimeSpan.FromSeconds(5)
-                && (backend.TrackedExecutionCount > 0 || Directory.Exists(scratchDir)))
-            {
-                await Task.Delay(25);
-            }
+            await WaitForEvictionAsync(backend, scratchDir);
 
             backend.TrackedExecutionCount.Should().Be(0);
             Directory.Exists(scratchDir).Should().BeFalse();
         }
         finally
         {
-            if (Directory.Exists(workingRoot))
+            DeleteDirectoryIfExists(workingRoot);
+        }
+    }
+
+    [UnitTest]
+    public async Task ObserveAsync_DelayedAfterRetentionTtl_PreservesSucceededOutcomeWhileCleaningScratch()
+    {
+        var workingRoot = Path.Join(Path.GetTempPath(), $"honua-local-proc-preserve-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workingRoot);
+        try
+        {
+            using var backend = CreateRetentionBackendInRoot(workingRoot, TimeSpan.FromMilliseconds(50));
+            var job = CreateJob("job-delayed-observe", new Dictionary<string, string>
             {
-                Directory.Delete(workingRoot, recursive: true);
-            }
+                [LocalProcessParameterKeys.Executable] = SleepPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "0"
+            });
+
+            var start = await backend.StartAsync(job);
+            start.Status.Should().Be(ExecutionJobStatus.Running);
+            var scratchDir = Path.Join(workingRoot, "job-delayed-observe");
+
+            await WaitForEvictionAsync(backend, scratchDir);
+            backend.TrackedExecutionCount.Should().Be(0);
+            Directory.Exists(scratchDir).Should().BeFalse();
+
+            var delayed = await backend.ObserveAsync(job with
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = start.ProviderOperationId
+            });
+            delayed.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            delayed.PercentComplete.Should().Be(100);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(workingRoot);
+        }
+    }
+
+    private static LocalProcessPoolBatchComputeBackend CreateRetentionBackendInRoot(string workingRoot, TimeSpan ttl) => new(
+        CreateSleepOptions(workingRoot, 1),
+        NullLogger<LocalProcessPoolBatchComputeBackend>.Instance)
+    {
+        TerminalRetentionTtl = ttl
+    };
+
+    private static LocalProcessPoolBatchComputeBackend CreateSleepBackendInRoot(string workingRoot, int maxConcurrent) => new(
+        CreateSleepOptions(workingRoot, maxConcurrent),
+        NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
+
+    private static IOptions<LocalProcessPoolOptions> CreateSleepOptions(string workingRoot, int maxConcurrent) =>
+        Options.Create(new LocalProcessPoolOptions
+        {
+            MaxConcurrentProcesses = maxConcurrent,
+            WorkingRoot = workingRoot,
+            WorkerContracts =
+            [
+                new LocalProcessWorkerContractOptions
+                {
+                    Executable = SleepPath,
+                    IsSelfContained = true,
+                    MaxSupportedContractVersion = 1
+                }
+            ]
+        });
+
+    private static async Task WaitForEvictionAsync(LocalProcessPoolBatchComputeBackend backend, string scratchDir)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(5)
+            && (backend.TrackedExecutionCount > 0 || Directory.Exists(scratchDir)))
+        {
+            await Task.Delay(25);
+        }
+    }
+
+    private static void DeleteDirectoryIfExists(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
         }
     }
 

@@ -30,8 +30,7 @@ public sealed class ZarrTypedNoDataConsumerTests
         var array = registration.Metadata!.Arrays[0];
         var metadata = registration.Metadata;
         var ranges = new InMemoryZarrRangeReader(objects);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(ranges, "bucket", "typed", metadata,
-            new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = ranges, Bucket = "bucket", RootPath = "typed", Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] } });
         subset.Data.Should().Equal(objects["typed/band/0.0.0"]);
         var slice = new ZarrTileSlicePlan(new ZarrCoverageSubsetPlan(array,
             new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] }),
@@ -93,8 +92,7 @@ public sealed class ZarrTypedNoDataConsumerTests
         var (registration, objects, _) = Fixture(dtype, 0);
         var metadata = registration.Metadata!;
         var request = new ZarrSubsetRequest { Variable = "band", Start = [0, 0, 0], Stop = [1, 2, 2] };
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new InMemoryZarrRangeReader(objects),
-            "bucket", "typed", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = new InMemoryZarrRangeReader(objects), Bucket = "bucket", RootPath = "typed", Metadata = metadata, Request = request });
         var slice = new ZarrTileSlicePlan(new ZarrCoverageSubsetPlan(metadata.Arrays[0], request),
             YDimensionIndex: 1, XDimensionIndex: 2, GridXMin: 0, GridYMax: 2, CellWidth: 1, CellHeight: 1);
         var optOut = MiniPngDecoder.Decode(ZarrTileRenderer.Render(subset, slice, 2, fillValue: null));

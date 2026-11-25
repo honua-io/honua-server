@@ -99,10 +99,13 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body is required.");
         }
 
-        if (!NetworkTopologyAdminRequestHelpers.TryResolveIdempotencyKey(context, out var idempotencyKey, out var headerError))
+        var idempotencyKeyResult = NetworkTopologyAdminRequestHelpers.ResolveIdempotencyKey(context);
+        if (!idempotencyKeyResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, idempotencyKeyResult.Error);
         }
+
+        var idempotencyKey = idempotencyKeyResult.Value!;
 
         if (request.TargetGeneration is not { } targetGeneration || targetGeneration <= 0)
         {

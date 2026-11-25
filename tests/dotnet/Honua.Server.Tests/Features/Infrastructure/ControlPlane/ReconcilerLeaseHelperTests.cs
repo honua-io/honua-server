@@ -17,12 +17,14 @@ public sealed class ReconcilerLeaseHelperTests
     public async Task RenewLeaseUntilCancelledAsync_WhenStoreThrows_CancelsReconciliationAndCompletesCleanly()
     {
         using var cts = new CancellationTokenSource();
-        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
-            "op-1",
-            TimeSpan.FromMilliseconds(10),
-            cts,
-            _ => Task.FromException<bool>(new InvalidOperationException("transient db error")),
-            NullLogger.Instance);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(new LeaseRenewalRequest
+        {
+            LeaseId = "op-1",
+            RenewInterval = TimeSpan.FromMilliseconds(10),
+            ReconciliationCancellation = cts,
+            RenewLeaseAsync = _ => Task.FromException<bool>(new InvalidOperationException("transient db error")),
+            Logger = NullLogger.Instance,
+        });
 
         await renewalTask.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -37,17 +39,19 @@ public sealed class ReconcilerLeaseHelperTests
         CancellationToken observedReleaseToken = default;
         var releaseCalls = 0;
 
-        await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
-            "op-2",
-            cts,
-            faultedRenewal,
-            ct =>
+        await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(new LeaseReleaseRequest
+        {
+            LeaseId = "op-2",
+            ReconciliationCancellation = cts,
+            RenewalTask = faultedRenewal,
+            ReleaseLeaseAsync = ct =>
             {
                 releaseCalls++;
                 observedReleaseToken = ct;
                 return Task.CompletedTask;
             },
-            NullLogger.Instance);
+            Logger = NullLogger.Instance,
+        });
 
         releaseCalls.Should().Be(1);
         observedReleaseToken.CanBeCanceled.Should().BeTrue();

@@ -579,36 +579,15 @@ internal static partial class FeatureServerEndpoints
 
         // Build optional WHERE filter
         var whereClause = GetValueString(values, "where");
-        var query = new FeatureQuery
+        var baseQuery = new FeatureQuery
         {
             SpatialReferenceSrid = resource.ReadSrid(),
             VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
-
-        if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
+        var (query, whereError) = ApplyCalculateWhereFilter(context, resource, (whereClause, baseQuery));
+        if (whereError is not null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, whereClause);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid where clause",
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                // Reject predicates naming publisher-hidden fields so /calculate cannot act as a count/boolean oracle.
-                var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        "Invalid where clause",
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                query = query with { SqlFilter = translationResult.SqlFilter };
-            }
+            return whereError;
         }
 
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
@@ -697,6 +676,44 @@ internal static partial class FeatureServerEndpoints
             batchSize,
             versionContext is { IsDefault: false },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static (FeatureQuery Query, IResult? Error) ApplyCalculateWhereFilter(
+        HttpContext context,
+        MetadataV2Object resource,
+        (string? WhereClause, FeatureQuery Query) input)
+    {
+        if (string.IsNullOrWhiteSpace(input.WhereClause) || input.WhereClause == "1=1")
+        {
+            return (input.Query, null);
+        }
+
+        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, input.WhereClause);
+        if (!parseResult.IsSuccess)
+        {
+            return (input.Query, StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid where clause",
+                [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
+        }
+
+        if (parseResult.Expression is null)
+        {
+            return (input.Query, null);
+        }
+
+        // Reject predicates naming publisher-hidden fields so /calculate cannot act as a count/boolean oracle.
+        var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
+        if (!translationResult.IsSuccess)
+        {
+            return (input.Query, StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid where clause",
+                [translationResult.ErrorMessage ?? "Invalid filter syntax."]));
+        }
+
+        return (input.Query with { SqlFilter = translationResult.SqlFilter }, null);
     }
 
     // One calculate batch uses the pipeline transaction; further batches share a writer transaction so a later failure rolls back earlier batches, and a provider that cannot share a transaction refuses the split.

@@ -47,34 +47,21 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing area inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadMeasuredGeometryInputs(parameters, isArea: true, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadAreaGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid area inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid area inputs: {inputRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
-            inputs.WkbBytes,
-            inputs.Srid,
-            out var geometry,
-            out var wkbError,
-            out var isEmpty,
-            out var sridError))
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            if (wkbError is not null)
-            {
-                Log.InvalidWkb(_logger, job.OperationId, wkbError);
-                return JobExecutionResult.InvalidInput("Invalid area inputs: WKB payload could not be decoded.");
-            }
-
-            if (isEmpty)
-            {
-                return JobExecutionResult.InvalidInput("Invalid area inputs: geometry is empty.");
-            }
-
-            Log.InvalidInputs(_logger, job.OperationId, sridError!);
-            return JobExecutionResult.InvalidInput($"Invalid area inputs: {sridError}.");
+            return RejectDecodeFailure(job.OperationId, decodeResult);
         }
+
+        var geometry = decodeResult.Geometry!;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing area", cancellationToken).ConfigureAwait(false);
@@ -82,11 +69,11 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         double area;
         try
         {
-            if (inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            if (inputs.IsGeodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
             {
                 area = GeodesicGeometryOperations.ComputeGeodesicAreaSquareMeters(geometry) / inputs.MetersPerUnit;
             }
-            else if (inputs.Geodesic)
+            else if (inputs.IsGeodesic)
             {
                 area = geometry.Area / inputs.MetersPerUnit;
             }
@@ -110,13 +97,15 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding area artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = GeometryExecutorSupport.BuildMeasurePayload(
-            HandledProcessId,
-            "area",
-            area,
-            inputs.Geodesic ? inputs.Unit : "input-crs-units-squared",
-            inputs.Srid,
-            geometry.GeometryType);
+        var payload = GeometryExecutorSupport.BuildMeasurePayload(new MeasurePayloadRequest
+        {
+            ProcessId = HandledProcessId,
+            Measure = "area",
+            Value = area,
+            Unit = inputs.IsGeodesic ? inputs.Unit : "input-crs-units-squared",
+            InputSrid = inputs.Srid,
+            InputGeometryType = geometry.GeometryType,
+        });
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -132,6 +121,23 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(100, "Area completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    private JobExecutionResult RejectDecodeFailure(string operationId, ValidatedGeometryDecodeResult decodeResult)
+    {
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
+        {
+            Log.InvalidWkb(_logger, operationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput("Invalid area inputs: WKB payload could not be decoded.");
+        }
+
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
+        {
+            return JobExecutionResult.InvalidInput("Invalid area inputs: geometry is empty.");
+        }
+
+        Log.InvalidInputs(_logger, operationId, decodeResult.Error!);
+        return JobExecutionResult.InvalidInput($"Invalid area inputs: {decodeResult.Error}.");
     }
 
     private static partial class Log

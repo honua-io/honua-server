@@ -122,37 +122,17 @@ public class DatabricksMetadataV2QueryTests
     [Fact]
     public async Task Query_BoundDataConnectionWithDistinctCredentials_RoutesToBoundWorkspaceAndToken()
     {
-        const string json = """
-        {
-          "statement_id": "q-bound",
-          "status": { "state": "SUCCEEDED" },
-          "manifest": { "schema": { "columns": [
-            { "name": "__honua_id", "type_name": "LONG", "position": 0 },
-            { "name": "__honua_geom_hex", "type_name": "STRING", "position": 1 },
-            { "name": "name", "type_name": "STRING", "position": 2 }
-          ] } },
-          "result": { "data_array": [ ["11", "0101000000000000000000F03F0000000000000040", "tenant-parcel"] ] }
-        }
-        """;
         using var handler = new BodyCapturingHandler();
-        handler.EnqueueJson(json);
-        var store = CreateStore(handler);
-        var connectionId = Guid.NewGuid();
+        handler.EnqueueJson(CreateFeaturePageJson("q-bound", """["11", "0101000000000000000000F03F0000000000000040", "tenant-parcel"]"""));
         var connection = new DataConnection
         {
-            ConnectionId = connectionId,
+            ConnectionId = Guid.NewGuid(),
             Provider = "databricks",
             Name = "tenant-b",
             ConnectionString = "Host=tenant-b.cloud.databricks.com;WarehouseId=wh-tenant-b;Token=dapi-tenant-b",
             IsEncrypted = false
         };
-        var router = new FeatureProviderQueryRouter(
-            new FakeSecureConnectionRegistry(connection),
-            new FeatureDataProviderRegistry([store]));
-        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
-
-        var reader = await router.ResolveReaderAsync(
-            snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
+        var reader = await ResolveLayer0ReaderAsync(handler, connection);
 
         var result = await reader.QueryAsync(0, new FeatureQuery { Limit = 10 });
 
@@ -278,19 +258,29 @@ public class DatabricksMetadataV2QueryTests
     [Fact]
     public async Task Query_PastEndEmptyPageWithOffset_IssuesCountQueryInsteadOfFabricatingOffsetAsTotal()
     {
-        const string emptyPageJson = """
+        using var handler = new BodyCapturingHandler();
+        handler.EnqueueJson(CreateFeaturePageJson("q-empty", string.Empty));
+        handler.EnqueueJson(CountFiveStatementJson);
+        var connection = new DataConnection
         {
-          "statement_id": "q-empty",
-          "status": { "state": "SUCCEEDED" },
-          "manifest": { "schema": { "columns": [
-            { "name": "__honua_id", "type_name": "LONG", "position": 0 },
-            { "name": "__honua_geom_hex", "type_name": "STRING", "position": 1 },
-            { "name": "name", "type_name": "STRING", "position": 2 }
-          ] } },
-          "result": { "data_array": [] }
-        }
-        """;
-        const string countJson = """
+            ConnectionId = Guid.NewGuid(),
+            Provider = "databricks",
+            Name = "warehouse",
+            Host = "example.cloud.databricks.com",
+            DatabaseName = "wh-123",
+            Username = "token"
+        };
+        var reader = await ResolveLayer0ReaderAsync(handler, connection);
+
+        var result = await reader.QueryAsync(0, new FeatureQuery { Offset = 50, Limit = 10 });
+
+        Assert.Empty(result.Items);
+        Assert.Equal(5, result.TotalCount);
+        Assert.False(result.HasMoreResults);
+        Assert.Equal(2, handler.Bodies.Count);
+    }
+
+    private const string CountFiveStatementJson = """
         {
           "statement_id": "q-count",
           "status": { "state": "SUCCEEDED" },
@@ -300,34 +290,29 @@ public class DatabricksMetadataV2QueryTests
           "result": { "data_array": [ ["5"] ] }
         }
         """;
-        using var handler = new BodyCapturingHandler();
-        handler.EnqueueJson(emptyPageJson);
-        handler.EnqueueJson(countJson);
-        var store = CreateStore(handler);
-        var connectionId = Guid.NewGuid();
-        var connection = new DataConnection
+
+    private static string CreateFeaturePageJson(string statementId, string rowJson) => $$"""
         {
-            ConnectionId = connectionId,
-            Provider = "databricks",
-            Name = "warehouse",
-            Host = "example.cloud.databricks.com",
-            DatabaseName = "wh-123",
-            Username = "token"
-        };
+          "statement_id": "{{statementId}}",
+          "status": { "state": "SUCCEEDED" },
+          "manifest": { "schema": { "columns": [
+            { "name": "__honua_id", "type_name": "LONG", "position": 0 },
+            { "name": "__honua_geom_hex", "type_name": "STRING", "position": 1 },
+            { "name": "name", "type_name": "STRING", "position": 2 }
+          ] } },
+          "result": { "data_array": [ {{rowJson}} ] }
+        }
+        """;
+
+    private static Task<IFeatureReader> ResolveLayer0ReaderAsync(BodyCapturingHandler handler, DataConnection connection)
+    {
+        var store = CreateStore(handler);
         var router = new FeatureProviderQueryRouter(
             new FakeSecureConnectionRegistry(connection),
             new FeatureDataProviderRegistry([store]));
-        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
-
-        var reader = await router.ResolveReaderAsync(
+        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connection.ConnectionId);
+        return router.ResolveReaderAsync(
             snapshot, service, resource, publication, storageLayerId: 0, FeatureProviderReadOperation.Query);
-
-        var result = await reader.QueryAsync(0, new FeatureQuery { Offset = 50, Limit = 10 });
-
-        Assert.Empty(result.Items);
-        Assert.Equal(5, result.TotalCount);
-        Assert.False(result.HasMoreResults);
-        Assert.Equal(2, handler.Bodies.Count);
     }
 
     private static DatabricksFeatureStore CreateStore(BodyCapturingHandler handler)

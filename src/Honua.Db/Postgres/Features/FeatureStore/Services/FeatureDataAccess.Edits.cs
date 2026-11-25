@@ -555,24 +555,22 @@ internal sealed partial class FeatureDataAccess
     }
 
     private async Task<Feature?> EnsurePreconditionSatisfiedAsync(
-        int layerId,
-        long objectId,
+        RowSecurityContext row,
         FeatureEditPrecondition precondition,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
+        var layerId = row.Target.LayerId;
+        var objectId = row.Target.Row.ObjectId;
         if (precondition.ExpectedRowAbsent)
         {
-            await ReserveExpectedAbsenceKeyAsync(new RowSecurityContext(connection, transaction,
-                new(_tableName, layerId, (null, objectId))), cancellationToken).ConfigureAwait(false);
+            await ReserveExpectedAbsenceKeyAsync(row, cancellationToken).ConfigureAwait(false);
         }
 
         var current = await ReadFeatureForUpdateAsync(
             layerId,
             objectId,
-            connection,
-            transaction,
+            row.Connection,
+            row.Transaction!,
             cancellationToken).ConfigureAwait(false);
         return ValidatePreconditionAgainstRow(layerId, objectId, current, precondition);
     }
@@ -706,8 +704,7 @@ internal sealed partial class FeatureDataAccess
         {
             return true;
         }
-        var current = await EnsurePreconditionSatisfiedAsync(row.Target.LayerId, row.Target.Row.ObjectId,
-            precondition.Value, row.Connection, row.Transaction!, cancellationToken).ConfigureAwait(false);
+        var current = await EnsurePreconditionSatisfiedAsync(row, precondition.Value, cancellationToken).ConfigureAwait(false);
         return current.HasValue;
     }
 
@@ -721,8 +718,8 @@ internal sealed partial class FeatureDataAccess
         Feature? current = null;
         if (precondition.HasValue)
         {
-            current = await EnsurePreconditionSatisfiedAsync(row.Target.LayerId, update.Id, precondition.Value,
-                row.Connection, row.Transaction!, cancellationToken).ConfigureAwait(false);
+            var targetRow = row with { Target = new(_tableName, row.Target.LayerId, (null, update.Id)) };
+            current = await EnsurePreconditionSatisfiedAsync(targetRow, precondition.Value, cancellationToken).ConfigureAwait(false);
         }
         else if (update.PreserveOmittedMaskedAttributes || !update.PreservedAttributeNames.IsDefaultOrEmpty || update.PreserveOmittedGeometry)
         {

@@ -2372,16 +2372,18 @@ internal sealed partial class Wfs20Handler
                 : prepared.Operations[0].Descriptor;
             var (singleResult, _) = await ExecutePreparedEditCoreAsync(
                 context,
-                prepared.LayerId,
-                descriptor.Resource,
-                operations,
-                requestGeometryChangedFlags,
-                rollbackOnFailure,
-                cancellationToken,
-                writerTransaction: null,
-                serviceName: descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
-                publicLayerId: descriptor.Publication.LayerIndex,
-                storedRows: BuildDeleteStoredRows(prepared.Operations)).ConfigureAwait(false);
+                new WfsPreparedEditRequest
+                {
+                    LayerId = prepared.LayerId,
+                    Resource = descriptor.Resource,
+                    Operations = operations,
+                    RequestGeometryChangedFlags = requestGeometryChangedFlags,
+                    RollbackOnFailure = rollbackOnFailure,
+                    ServiceName = descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
+                    PublicLayerId = descriptor.Publication.LayerIndex,
+                    StoredRows = BuildDeleteStoredRows(prepared.Operations)
+                },
+                cancellationToken).ConfigureAwait(false);
             return singleResult;
         }
 
@@ -2439,20 +2441,23 @@ internal sealed partial class Wfs20Handler
             {
                 var (executedResult, deferredHook) = await ExecutePreparedEditCoreAsync(
                     context,
-                    layerGroup.Key,
-                    resource,
-                    operations
-                        .Select(static operation => operation.AdapterOperation)
-                        .ToImmutableArray(),
-                    operations
-                        .Select(static operation => operation.RequestGeometryChanged)
-                        .ToImmutableArray(),
-                    rollbackOnFailure,
-                    cancellationToken,
-                    writerTransaction,
-                    serviceName: descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
-                    publicLayerId: descriptor.Publication.LayerIndex,
-                    storedRows: BuildDeleteStoredRows(operations)).ConfigureAwait(false);
+                    new WfsPreparedEditRequest
+                    {
+                        LayerId = layerGroup.Key,
+                        Resource = resource,
+                        Operations = operations
+                            .Select(static operation => operation.AdapterOperation)
+                            .ToImmutableArray(),
+                        RequestGeometryChangedFlags = operations
+                            .Select(static operation => operation.RequestGeometryChanged)
+                            .ToImmutableArray(),
+                        RollbackOnFailure = rollbackOnFailure,
+                        WriterTransaction = writerTransaction,
+                        ServiceName = descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
+                        PublicLayerId = descriptor.Publication.LayerIndex,
+                        StoredRows = BuildDeleteStoredRows(operations)
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 layerResult = executedResult;
                 if (deferredHook is { } hook)
                 {
@@ -2563,202 +2568,12 @@ internal sealed partial class Wfs20Handler
             updateResults: aggregatedUpdateResults.ToImmutableArray(),
             deleteResults: aggregatedDeleteResults.ToImmutableArray());
 
-        if (writerTransaction is null)
-        {
-            return aggregatedResult;
-        }
-
-        if (!aggregatedResult.IsSuccess)
-        {
-            await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            return FeatureEditResult.Rollback(
-                aggregatedResult.CreateResults,
-                aggregatedResult.UpdateResults,
-                aggregatedResult.DeleteResults);
-        }
-
-        var commitOutcome = await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        if (commitOutcome == FeatureWriterTransactionCommitOutcome.Committed)
-        {
-            foreach (var (target, batch, result) in pendingAfterHooks)
-            {
-                await OgcProtocolEditGate.RunAfterAsync(target, batch, result).ConfigureAwait(false);
-            }
-
-            return aggregatedResult;
-        }
-
-        const string errorMessage = "Transaction commit outcome is unknown.";
-        return FeatureEditResult.FailureWithUnknownCommitOutcome(
-            MarkCommitOutcomeUnknown(aggregatedResult.CreateResults, errorMessage),
-            MarkCommitOutcomeUnknown(aggregatedResult.UpdateResults, errorMessage),
-            MarkCommitOutcomeUnknown(aggregatedResult.DeleteResults, errorMessage));
-    }
-
-    private static ImmutableArray<EditOperationResult> MarkCommitOutcomeUnknown(
-        ImmutableArray<EditOperationResult> results,
-        string errorMessage)
-        => results
-            .Select(result => EditOperationResult.FailureWithUnknownCommitOutcome(
-                errorMessage,
-                objectId: result.ObjectId))
-            .ToImmutableArray();
-
-    internal async Task<FeatureEditResult> ExecutePreparedEditAsync(
-        HttpContext context,
-        int layerId,
-        MetadataV2Object resource,
-        ImmutableArray<Wfs20EditOperation> operations,
-        ImmutableArray<bool> requestGeometryChangedFlags,
-        bool rollbackOnFailure,
-        CancellationToken cancellationToken,
-        IFeatureWriterTransaction? writerTransaction = null)
-    {
-        var (result, _) = await ExecutePreparedEditCoreAsync(
-            context,
-            layerId,
-            resource,
-            operations,
-            requestGeometryChangedFlags,
-            rollbackOnFailure,
-            cancellationToken,
-            writerTransaction).ConfigureAwait(false);
-        return result;
-    }
-
-    private async Task<(FeatureEditResult Result, (OgcProtocolEditGate.Target Target, FeatureEditBatch Batch, FeatureEditResult Result)? DeferredAfterHook)> ExecutePreparedEditCoreAsync(
-        HttpContext context,
-        int layerId,
-        MetadataV2Object resource,
-        ImmutableArray<Wfs20EditOperation> operations,
-        ImmutableArray<bool> requestGeometryChangedFlags,
-        bool rollbackOnFailure,
-        CancellationToken cancellationToken,
-        IFeatureWriterTransaction? writerTransaction = null,
-        string? serviceName = null,
-        int? publicLayerId = null,
-        IReadOnlyDictionary<long, Feature>? storedRows = null)
-    {
-        var editAdapterResult = await _editParameterAdapter.ConvertAsync(
-            new Wfs20EditRequest
-            {
-                Operations = operations,
-                RollbackOnFailure = rollbackOnFailure
-            },
-            cancellationToken).ConfigureAwait(false);
-        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
-        {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid WFS transaction.");
-        }
-
-        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
-        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
-        if (!editValidation.IsValid)
-        {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid WFS transaction.");
-        }
-
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var gateTarget = new OgcProtocolEditGate.Target(context, resource)
-        {
-            LayerId = layerId,
-            Reader = _featureReader,
-            ServiceName = serviceName,
-            PublicLayerId = publicLayerId,
-            StoredRows = storedRows,
-            AlwaysLoadUpdateSnapshots = false,
-            FailWholeBatchOnRejection = rollbackOnFailure,
-        };
-        var gate = await OgcProtocolEditGate.PrepareAsync(gateTarget, editBatch, cancellationToken).ConfigureAwait(false);
-        if (gate.Ended is { } ended)
-        {
-            return (ended, null);
-        }
-
-        var batchToWrite = gate.Rejections.Count == 0
-            ? gate.Batch
-            : FeatureEditGate.WithoutRejected(gate.Batch, gate.Rejections);
-        var effectiveGeometryChangedFlags = FilterGeometryChangedFlags(
-            gate.Batch,
-            requestGeometryChangedFlags,
-            gate.Rejections);
-        // Bin per-kind geometry-change flags from the request-intent flags captured by
-        // PrepareInsert/Update/Delete/ReplaceOperationsAsync (BEFORE merging with the
-        // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
-        // report attribute-only Updates because BuildTransactionUpdatedFeatureAsync
-        // preserves the existing WKB when changes.GeometrySpecified is false.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(
-            batchToWrite.Operations,
-            effectiveGeometryChangedFlags);
-        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
-            context,
-            layerId,
-            HonuaTelemetry.Protocols.Wfs20,
-            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
-            layerSrid: resource.ReadSrid(),
-            perOperationGeometryChanged: perOperationGeometryChanged,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        var written = writerTransaction is null
-            ? await _featureWriter.ApplyEditsAsync(layerId, batchToWrite, cancellationToken).ConfigureAwait(false)
-            : await writerTransaction.ApplyEditsAsync(layerId, batchToWrite, cancellationToken).ConfigureAwait(false);
-        var result = gate.Rejections.Count == 0
-            ? written
-            : FeatureEditGate.WithRejectedRows(written, gate.Batch, gate.Rejections);
-
-        if (writerTransaction is null)
-        {
-            if (!result.WasRolledBack)
-            {
-                await OgcProtocolEditGate.RunAfterAsync(gateTarget, gate.Batch, result).ConfigureAwait(false);
-            }
-
-            return (result, null);
-        }
-
-        return (result, result.WasRolledBack ? null : (gateTarget, gate.Batch, result));
-    }
-
-    private static ImmutableArray<bool> FilterGeometryChangedFlags(
-        FeatureEditBatch batch,
-        ImmutableArray<bool> flags,
-        IReadOnlyList<FeatureEditHookRejection> rejections)
-    {
-        if (rejections.Count == 0 || flags.IsDefaultOrEmpty)
-        {
-            return flags;
-        }
-
-        var rejectedKeys = rejections.Select(static rejection => (rejection.Kind, rejection.Index)).ToHashSet();
-        var rows = FeatureEditRows.Enumerate(batch);
-        var builder = ImmutableArray.CreateBuilder<bool>(Math.Max(0, flags.Length - rejections.Count));
-        for (var i = 0; i < rows.Count && i < flags.Length; i++)
-        {
-            if (!rejectedKeys.Contains((rows[i].Kind, rows[i].Index)))
-            {
-                builder.Add(flags[i]);
-            }
-        }
-
-        return builder.ToImmutable();
-    }
-
-    private static Dictionary<long, Feature>? BuildDeleteStoredRows(
-        ImmutableArray<PreparedTransactionOperation> operations)
-    {
-        Dictionary<long, Feature>? stored = null;
-        foreach (var operation in operations)
-        {
-            if (operation.ActionKind == TransactionActionKind.Delete &&
-                operation.DeleteSnapshot is { } snapshot &&
-                operation.EditOperation.ObjectId is { } objectId)
-            {
-                stored ??= new Dictionary<long, Feature>();
-                stored[objectId] = snapshot;
-            }
-        }
-
-        return stored;
+        return writerTransaction is null
+            ? aggregatedResult
+            : await FinalizeMultiLayerTransactionAsync(
+                writerTransaction,
+                (aggregatedResult, pendingAfterHooks),
+                cancellationToken).ConfigureAwait(false);
     }
 
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(

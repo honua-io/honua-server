@@ -7,21 +7,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.SensorThings.Services;
 
-internal sealed record StaExpansion(
-    string Navigation,
-    int Skip,
-    int Top,
-    string? WhereSql,
-    IReadOnlyList<object?> WhereParameters,
-    string OrderBySql,
-    string? Select = null,
-    string? Expand = null,
-    bool Count = false,
-    string? Filter = null,
-    string? OrderBy = null,
-    StaQueryPlan? NestedPlan = null);
-
-internal sealed class StaQueryPlan
+internal sealed partial class StaQueryPlan
 {
     internal const int MaxExpansionDepth = 4;
     private StaQueryPlan(
@@ -82,133 +68,50 @@ internal sealed class StaQueryPlan
     public static StaQueryPlanResult Create(
         HttpRequest request,
         StaEntitySchema schema,
-        StaFilterTranslator filterTranslator,
-        int expansionDepth = 0)
+        StaFilterTranslator filterTranslator)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return CreateFromOptions(StaQueryOptions.FromRequest(request), schema, filterTranslator, expansionDepth);
+        return CreateFromOptions(StaQueryOptions.FromRequest(request), schema, filterTranslator);
     }
 
     internal static StaQueryPlanResult CreateFromOptions(
         StaQueryOptions options,
         StaEntitySchema schema,
-        StaFilterTranslator filterTranslator,
-        int expansionDepth = 0)
+        StaFilterTranslator filterTranslator)
+        => CreateFromOptionsAtDepth(options, (schema, 0), filterTranslator);
+
+    private static StaQueryPlanResult CreateFromOptionsAtDepth(
+        StaQueryOptions options,
+        (StaEntitySchema Schema, int ExpansionDepth) target,
+        StaFilterTranslator filterTranslator)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(target.Schema);
         ArgumentNullException.ThrowIfNull(filterTranslator);
-        if (expansionDepth > MaxExpansionDepth) return StaQueryPlanResult.BadRequest("$expand exceeds the maximum depth.");
+        if (target.ExpansionDepth > MaxExpansionDepth)
+            return StaQueryPlanResult.BadRequest("$expand exceeds the maximum depth.");
 
-        var filter = filterTranslator.Translate(schema, options.Filter);
+        var filter = filterTranslator.Translate(target.Schema, options.Filter);
         if (!filter.IsSuccess)
-        {
             return StaQueryPlanResult.BadRequest(filter.Error ?? "Invalid $filter.");
-        }
 
-        var order = filterTranslator.TranslateOrderExpressions(schema, options.OrderBy);
+        var order = filterTranslator.TranslateOrderExpressions(target.Schema, options.OrderBy);
         if (!order.IsSuccess)
-        {
             return StaQueryPlanResult.BadRequest(order.Error ?? "Invalid $orderby.");
-        }
 
-        var select = new List<StaProperty>();
-        var selectNavigations = new List<string>();
-        if (options.Select is { } rawSelect)
-        {
-            foreach (var name in rawSelect.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (name == "*")
-                {
-                    select.AddRange(schema.Properties);
-                    selectNavigations.Add("@iot.selfLink");
-                    selectNavigations.AddRange(schema.NavigationProperties);
-                    continue;
-                }
-                if (string.Equals(name, "@iot.selfLink", StringComparison.OrdinalIgnoreCase))
-                {
-                    selectNavigations.Add("@iot.selfLink");
-                    continue;
-                }
+        var (select, selectNavigations, selectFailure) = ParseSelectProperties(target.Schema, options.Select);
+        if (selectFailure is { } failedSelect)
+            return failedSelect;
 
-                if (schema.TryGetProperty(name, out var property))
-                {
-                    select.Add(property);
-                    continue;
-                }
-
-                if (schema.IsNavigationProperty(name))
-                {
-                    selectNavigations.Add(name);
-                    continue;
-                }
-
-                return StaQueryPlanResult.BadRequest(
-                    $"Property '{name}' cannot be selected on {schema.EntitySet}. Allowed: {schema.PropertyList}, {string.Join(", ", schema.NavigationProperties)}.");
-            }
-
-            if (select.Count == 0 && selectNavigations.Count == 0)
-            {
-                return StaQueryPlanResult.BadRequest("$select must name at least one property.");
-            }
-        }
-
-        var expansions = new List<StaExpansion>();
-        if (options.Expand is { } rawExpand)
-        {
-            foreach (var item in SplitTopLevel(rawExpand, ','))
-            {
-                var expansion = ParseExpansion(schema, item, filterTranslator, expansionDepth, out var failure);
-                if (expansion is null)
-                {
-                    return failure!.Value;
-                }
-
-                var duplicate = expansions.FindIndex(existing => existing.Navigation == expansion.Navigation);
-                if (duplicate < 0) expansions.Add(expansion);
-                else
-                {
-                    var existing = expansions[duplicate];
-                    if (existing.Skip != expansion.Skip || existing.Top != expansion.Top || existing.Filter != expansion.Filter || existing.OrderBy != expansion.OrderBy || existing.Select != expansion.Select || existing.Count != expansion.Count)
-                        return StaQueryPlanResult.BadRequest($"Conflicting options for expanded navigation '{expansion.Navigation}'.");
-                    var mergedExpand = string.Join(',', new[] { existing.Expand, expansion.Expand }.Where(value => !string.IsNullOrWhiteSpace(value)));
-                    var relationship = SensorThingsRelationships.For(schema.EntitySet)[existing.Navigation];
-                    var mergedPlanResult = CreateFromOptions(
-                        new StaQueryOptions
-                        {
-                            Top = existing.Top,
-                            Skip = existing.Skip,
-                            Filter = existing.Filter,
-                            OrderBy = existing.OrderBy,
-                            Select = existing.Select,
-                            Expand = string.IsNullOrWhiteSpace(mergedExpand) ? null : mergedExpand,
-                            Count = existing.Count
-                        },
-                        StaEntitySchema.For(relationship.Target),
-                        filterTranslator,
-                        expansionDepth + 1);
-                    if (!mergedPlanResult.IsSuccess)
-                    {
-                        return mergedPlanResult;
-                    }
-                    expansions[duplicate] = existing with
-                    {
-                        Expand = mergedExpand,
-                        NestedPlan = mergedPlanResult.Plan
-                    };
-                }
-            }
-        }
+        var (expansions, expandFailure) = ParseAndMergeExpansions(target.Schema, (options.Expand, target.ExpansionDepth), filterTranslator);
+        if (expandFailure is { } failedExpand)
+            return failedExpand;
 
         return StaQueryPlanResult.Success(new StaQueryPlan(
-            schema,
-            options,
-            filter.Sql,
+            target.Schema, options, filter.Sql,
             filter.Parameters.Concat(order.Parameters).ToArray(),
-            SqlFragmentHelpers.RenumberSqlFragmentParameters(order.Sql ?? schema.DefaultOrderBySql, filter.Parameters.Count),
-            select,
-            selectNavigations,
-            expansions));
+            SqlFragmentHelpers.RenumberSqlFragmentParameters(order.Sql ?? target.Schema.DefaultOrderBySql, filter.Parameters.Count),
+            select, selectNavigations, expansions));
     }
 
     // Recognise this STA relationship so explicit requests receive 501, while never
@@ -351,7 +254,7 @@ internal sealed class StaQueryPlan
             Expand = nestedExpand,
             Count = nestedCount
         };
-        var nestedPlanResult = CreateFromOptions(nestedOptions, expandedSchema, filterTranslator, expansionDepth + 1);
+        var nestedPlanResult = CreateFromOptionsAtDepth(nestedOptions, (expandedSchema, expansionDepth + 1), filterTranslator);
         if (!nestedPlanResult.IsSuccess)
         {
             failure = nestedPlanResult;
@@ -359,19 +262,21 @@ internal sealed class StaQueryPlan
         }
 
         var nestedPlan = nestedPlanResult.Plan!;
-        return new StaExpansion(
-            name,
-            skip,
-            top,
-            nestedPlan.WhereSql,
-            nestedPlan.WhereParameters,
-            nestedPlan.OrderBySql,
-            nestedSelect,
-            nestedExpand,
-            nestedCount,
-            nestedFilter,
-            nestedOrderBy,
-            nestedPlan);
+        return new StaExpansion
+        {
+            Navigation = name,
+            Skip = skip,
+            Top = top,
+            WhereSql = nestedPlan.WhereSql,
+            WhereParameters = nestedPlan.WhereParameters,
+            OrderBySql = nestedPlan.OrderBySql,
+            Select = nestedSelect,
+            Expand = nestedExpand,
+            Count = nestedCount,
+            Filter = nestedFilter,
+            OrderBy = nestedOrderBy,
+            NestedPlan = nestedPlan
+        };
     }
 
     internal static List<string> SplitTopLevel(string value, char separator)

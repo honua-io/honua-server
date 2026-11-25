@@ -149,9 +149,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 // InvalidOperationException for numeric/boolean/object tokens,
                 // so syntactically valid JSON with the wrong value kind would
                 // otherwise surface as a 500 instead of a 400.
-                if (!JsonElementHelpers.TryReadStringProperty(element, "statisticType", out var statisticType) ||
-                    !JsonElementHelpers.TryReadStringProperty(element, "onStatisticField", out var onField) ||
-                    !JsonElementHelpers.TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                var statTypeProp = JsonElementHelpers.ReadStringProperty(element, "statisticType");
+                var onFieldProp = JsonElementHelpers.ReadStringProperty(element, "onStatisticField");
+                var outFieldProp = JsonElementHelpers.ReadStringProperty(element, "outStatisticFieldName");
+                var (statisticType, onField, outFieldName) = (statTypeProp.Value, onFieldProp.Value, outFieldProp.Value);
+                if (!statTypeProp.IsValid || !onFieldProp.IsValid || !outFieldProp.IsValid)
                 {
                     error = "Each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName.";
                     return false;
@@ -171,7 +173,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
                     return false;
                 }
 
-                if (!StatisticTypeParser.TryParse(statisticType, out var parsedType))
+                if (StatisticTypeParser.TryParse(statisticType) is not { } parsedType)
                 {
                     error = $"Unsupported statisticType: {LogValueRedactor.SanitizeForLog(statisticType, 64)}.";
                     return false;
@@ -301,21 +303,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var resourceResult = await resourceValidator.ValidateServiceLayerV2Async(serviceId, layerId, cancellationToken);
-
         if (!resourceResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            var errorResult = resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StandardErrorHelpers.CreateBadRequest(context, errorMessage)
-                : StandardErrorHelpers.CreateNotFound(context, errorMessage);
-            return (0, null, null, errorResult);
+            return (0, null, null, CreateResourceLookupError(context, resourceResult));
         }
 
         var triple = resourceResult.Resource;
-        var service = triple.Service;
-        var resource = triple.Resource;
-
-        if (!IsProtocolEnabled(service, FeatureServerProtocolName))
+        if (!IsProtocolEnabled(triple.Service, FeatureServerProtocolName))
         {
             return (0, null, null, StandardErrorHelpers.CreateNotFound(
                 context,
@@ -323,20 +317,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context,
-            resource,
-            AuthorizationOperation.Query,
-            service,
-            cancellationToken);
+            context, triple.Resource, AuthorizationOperation.Query, triple.Service, cancellationToken);
         if (accessError != null)
         {
             return (0, null, null, accessError);
         }
 
-        var storageLayerId = triple.StorageLayerId
-            ?? (triple.Snapshot is not null
-                ? triple.Snapshot.ResolveStorageLayerId(triple.Publication, resource)
-                : null);
+        var storageLayerId = ResolveRestStorageLayerId(triple);
         if (!storageLayerId.HasValue)
         {
             return (0, null, null, StandardErrorHelpers.CreateNotFound(
@@ -344,8 +331,24 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 $"Layer {layerId} in service '{serviceId}' is not available for spatial analytics."));
         }
 
-        return (storageLayerId.Value, resource, service, null);
+        return (storageLayerId.Value, triple.Resource, triple.Service, null);
     }
+
+    private static IResult CreateResourceLookupError(
+        HttpContext context,
+        ResourceValidationResult<MetadataV2ServiceLayerTriple> resourceResult)
+    {
+        var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
+        return resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
+            ? StandardErrorHelpers.CreateBadRequest(context, errorMessage)
+            : StandardErrorHelpers.CreateNotFound(context, errorMessage);
+    }
+
+    private static int? ResolveRestStorageLayerId(MetadataV2ServiceLayerTriple triple)
+        => triple.StorageLayerId
+            ?? (triple.Snapshot is not null
+                ? triple.Snapshot.ResolveStorageLayerId(triple.Publication, triple.Resource)
+                : null);
 
     private static async Task<(int LayerId, MetadataV2Object? Resource, IResult? Error)> ValidateOgcResourceAsync(
         HttpContext context, string collectionId, CancellationToken cancellationToken)

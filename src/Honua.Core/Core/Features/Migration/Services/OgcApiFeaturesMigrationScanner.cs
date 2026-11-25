@@ -326,7 +326,14 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
 
     private Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
         => OgcApiFeaturesImportService.GetJsonDocumentAsync(
-            _httpClient, uri, "application/json", "application/geo+json", cancellationToken);
+            _httpClient,
+            new OgcApiFeaturesImportService.JsonDocumentFetchRequest
+            {
+                Uri = uri,
+                PrimaryAccept = "application/json",
+                SecondaryAccept = "application/geo+json",
+            },
+            cancellationToken);
 
 
     private static IEnumerable<MigrationInventoryField> ReadFields(JsonElement root)

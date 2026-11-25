@@ -8,17 +8,58 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal readonly record struct LayerTimeTarget(int Id, int PublicLayerId);
 
-internal sealed record LayerTimeOptions(
-    bool? UseTime,
-    bool TimeDataCumulative,
-    double? TimeOffset,
-    string? TimeOffsetUnits,
-    string? Time,
-    string? TimeRelation);
+internal sealed record LayerTimeOptions
+{
+    public bool? UseTime { get; init; }
+    public bool TimeDataCumulative { get; init; }
+    public double? TimeOffset { get; init; }
+    public string? TimeOffsetUnits { get; init; }
+    public string? Time { get; init; }
+    public string? TimeRelation { get; init; }
+}
+
+internal readonly record struct EffectiveTimeRequest
+{
+    public string? GlobalTime { get; init; }
+    public string? GlobalTimeRelation { get; init; }
+    public required LayerTimeTarget Target { get; init; }
+    public required IReadOnlyDictionary<int, LayerTimeOptions> LayerTimeOptions { get; init; }
+}
+
+internal readonly record struct EffectiveTimeResolution
+{
+    public bool IsValid { get; init; }
+    public string? EffectiveTime { get; init; }
+    public string? EffectiveTimeRelation { get; init; }
+    public string? Error { get; init; }
+}
 
 internal static class GeoServicesLayerTimeResolver
 {
     internal const string InvalidTimeParameterMessage = "Invalid time parameter.";
+
+    private readonly record struct TimeRangeOffsetRequest
+    {
+        public DateTimeOffset? Start { get; init; }
+        public DateTimeOffset? End { get; init; }
+        public required double Offset { get; init; }
+        public string? Units { get; init; }
+    }
+
+    private readonly record struct TimeRangeOffsetResult
+    {
+        public bool IsValid { get; init; }
+        public DateTimeOffset? Start { get; init; }
+        public DateTimeOffset? End { get; init; }
+        public string? Error { get; init; }
+    }
+
+    private readonly record struct IntegerOffsetResult
+    {
+        public bool IsValid { get; init; }
+        public int Value { get; init; }
+        public string? Error { get; init; }
+    }
 
     internal static string? NormalizeTimeRelation(string? timeRelation)
     {
@@ -36,115 +77,82 @@ internal static class GeoServicesLayerTimeResolver
         return trimmed;
     }
 
-    internal static bool TryGetEffectiveTimeParameters(
-        string? globalTime,
-        string? globalTimeRelation,
-        LayerTimeTarget target,
-        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        out string? effectiveTime,
-        out string? effectiveTimeRelation,
-        out string? error)
+    internal static EffectiveTimeResolution ResolveEffectiveTimeParameters(EffectiveTimeRequest request)
     {
-        effectiveTime = globalTime;
-        effectiveTimeRelation = globalTimeRelation;
-        error = null;
-
-        LayerTimeOptions? options = null;
-        if (TryResolveLayerTimeOptions(layerTimeOptions, target, out var resolvedOptions))
+        var options = ResolveLayerTimeOptions(request.LayerTimeOptions, request.Target);
+        if (options?.UseTime is false)
         {
-            options = resolvedOptions;
-            if (options.UseTime is false)
-            {
-                effectiveTime = null;
-                effectiveTimeRelation = null;
-                return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.Time))
-            {
-                effectiveTime = options.Time;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.TimeRelation))
-            {
-                effectiveTimeRelation = options.TimeRelation;
-            }
+            return new EffectiveTimeResolution { IsValid = true };
         }
+
+        var effectiveTime = !string.IsNullOrWhiteSpace(options?.Time) ? options.Time : request.GlobalTime;
+        var effectiveTimeRelation = !string.IsNullOrWhiteSpace(options?.TimeRelation)
+            ? options.TimeRelation
+            : request.GlobalTimeRelation;
 
         if (string.IsNullOrWhiteSpace(effectiveTime))
         {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
+            return new EffectiveTimeResolution { IsValid = true };
         }
 
+        return BuildResolvedTimeParameters(effectiveTime, effectiveTimeRelation, options);
+    }
+
+    private static EffectiveTimeResolution BuildResolvedTimeParameters(
+        string effectiveTime,
+        string? effectiveTimeRelation,
+        LayerTimeOptions? options)
+    {
         if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
-        {
-            error = InvalidTimeParameterMessage;
-            return false;
-        }
+            return new EffectiveTimeResolution { IsValid = false, Error = InvalidTimeParameterMessage };
 
-        // time=null,null parses as both bounds null — the documented no-op
-        // form. Treat it identically to an omitted time parameter so layer
-        // rendering does not invent a degenerate filter.
         if (start is null && end is null && options?.TimeDataCumulative != true)
-        {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
-        }
+            return new EffectiveTimeResolution { IsValid = true };
 
         if (options?.TimeDataCumulative == true)
-        {
             start = null;
-        }
 
         if (options?.TimeOffset is { } timeOffset)
         {
-            if (!TryApplyTimeOffset(
-                    start,
-                    end,
-                    timeOffset,
-                    options.TimeOffsetUnits,
-                    out var adjustedStart,
-                    out var adjustedEnd,
-                    out var offsetError))
+            var offsetResult = ApplyTimeOffset(new TimeRangeOffsetRequest
             {
-                error = offsetError ?? "Invalid time offset.";
-                return false;
-            }
+                Start = start,
+                End = end,
+                Offset = timeOffset,
+                Units = options.TimeOffsetUnits
+            });
+            if (!offsetResult.IsValid)
+                return new EffectiveTimeResolution { IsValid = false, Error = offsetResult.Error ?? "Invalid time offset." };
 
-            start = adjustedStart;
-            end = adjustedEnd;
+            (start, end) = (offsetResult.Start, offsetResult.End);
         }
 
-        effectiveTime = BuildTimeParameter(start, end);
-        effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
-        return true;
+        return new EffectiveTimeResolution
+        {
+            IsValid = true,
+            EffectiveTime = BuildTimeParameter(start, end),
+            EffectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation)
+        };
     }
 
-    private static bool TryResolveLayerTimeOptions(
+    private static LayerTimeOptions? ResolveLayerTimeOptions(
         IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        LayerTimeTarget target,
-        out LayerTimeOptions resolvedOptions)
+        LayerTimeTarget target)
     {
         if (layerTimeOptions.TryGetValue(target.Id, out var directOptions) &&
             directOptions is not null)
         {
-            resolvedOptions = directOptions;
-            return true;
+            return directOptions;
         }
 
         if (target.Id != target.PublicLayerId &&
             layerTimeOptions.TryGetValue(target.PublicLayerId, out var sourceLayerOptions) &&
             sourceLayerOptions is not null)
         {
-            resolvedOptions = sourceLayerOptions;
-            return true;
+            return sourceLayerOptions;
         }
 
-        resolvedOptions = default!;
-        return false;
+        return null;
     }
 
     private static string BuildTimeParameter(DateTimeOffset? start, DateTimeOffset? end)
@@ -170,128 +178,96 @@ internal static class GeoServicesLayerTimeResolver
         throw new ArgumentException("Time parameter requires a start or end time.");
     }
 
-    private static bool TryApplyTimeOffset(
-        DateTimeOffset? start,
-        DateTimeOffset? end,
-        double offset,
-        string? units,
-        out DateTimeOffset? adjustedStart,
-        out DateTimeOffset? adjustedEnd,
-        out string? error)
+    private static TimeRangeOffsetResult ApplyTimeOffset(TimeRangeOffsetRequest request)
     {
-        adjustedStart = start;
-        adjustedEnd = end;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(units))
+        if (string.IsNullOrWhiteSpace(request.Units))
         {
-            error = "timeOffsetUnits is required when timeOffset is specified.";
-            return false;
+            return new TimeRangeOffsetResult
+            {
+                IsValid = false,
+                Start = request.Start,
+                End = request.End,
+                Error = "timeOffsetUnits is required when timeOffset is specified."
+            };
         }
 
-        var normalizedUnits = units.Trim();
-        var signedOffset = -offset;
-
-        switch (normalizedUnits.ToLowerInvariant())
+        var normalizedUnits = request.Units.Trim().ToLowerInvariant();
+        if (normalizedUnits is "esritimeunitsyears" or "years" or "year"
+            or "esritimeunitsmonths" or "months" or "month")
         {
-            case "esritimeunitsyears":
-            case "years":
-            case "year":
-                {
-                    if (!TryToIntegerOffset(offset, out var intOffset, out error))
-                    {
-                        return false;
-                    }
-
-                    adjustedStart = start?.AddYears(-intOffset);
-                    adjustedEnd = end?.AddYears(-intOffset);
-                    return true;
-                }
-            case "esritimeunitsmonths":
-            case "months":
-            case "month":
-                {
-                    if (!TryToIntegerOffset(offset, out var intOffset, out error))
-                    {
-                        return false;
-                    }
-
-                    adjustedStart = start?.AddMonths(-intOffset);
-                    adjustedEnd = end?.AddMonths(-intOffset);
-                    return true;
-                }
-            case "esritimeunitsweeks":
-            case "weeks":
-            case "week":
-                {
-                    var span = TimeSpan.FromDays(7 * signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            case "esritimeunitsdays":
-            case "days":
-            case "day":
-                {
-                    var span = TimeSpan.FromDays(signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            case "esritimeunitshours":
-            case "hours":
-            case "hour":
-                {
-                    var span = TimeSpan.FromHours(signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            case "esritimeunitsminutes":
-            case "minutes":
-            case "minute":
-                {
-                    var span = TimeSpan.FromMinutes(signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            case "esritimeunitsseconds":
-            case "seconds":
-            case "second":
-                {
-                    var span = TimeSpan.FromSeconds(signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            case "esritimeunitsmilliseconds":
-            case "milliseconds":
-            case "millisecond":
-                {
-                    var span = TimeSpan.FromMilliseconds(signedOffset);
-                    adjustedStart = start?.Add(span);
-                    adjustedEnd = end?.Add(span);
-                    return true;
-                }
-            default:
-                error = $"Unsupported timeOffsetUnits value '{units}'.";
-                return false;
+            return ApplyCalendarOffset(request, normalizedUnits);
         }
+
+        var span = ResolveFixedOffsetSpan(normalizedUnits, -request.Offset);
+        if (!span.HasValue)
+        {
+            return new TimeRangeOffsetResult
+            {
+                IsValid = false,
+                Start = request.Start,
+                End = request.End,
+                Error = $"Unsupported timeOffsetUnits value '{request.Units}'."
+            };
+        }
+
+        return new TimeRangeOffsetResult
+        {
+            IsValid = true,
+            Start = request.Start?.Add(span.Value),
+            End = request.End?.Add(span.Value)
+        };
     }
 
-    private static bool TryToIntegerOffset(double offset, out int value, out string? error)
+    private static TimeRangeOffsetResult ApplyCalendarOffset(
+        TimeRangeOffsetRequest request,
+        string normalizedUnits)
     {
-        error = null;
+        var integerOffset = ParseIntegerOffset(request.Offset);
+        if (!integerOffset.IsValid)
+        {
+            return new TimeRangeOffsetResult
+            {
+                IsValid = false,
+                Start = request.Start,
+                End = request.End,
+                Error = integerOffset.Error
+            };
+        }
+
+        var delta = -integerOffset.Value;
+        var isYears = normalizedUnits is "esritimeunitsyears" or "years" or "year";
+        return new TimeRangeOffsetResult
+        {
+            IsValid = true,
+            Start = isYears ? request.Start?.AddYears(delta) : request.Start?.AddMonths(delta),
+            End = isYears ? request.End?.AddYears(delta) : request.End?.AddMonths(delta)
+        };
+    }
+
+    private static TimeSpan? ResolveFixedOffsetSpan(string normalizedUnits, double signedOffset) =>
+        normalizedUnits switch
+        {
+            "esritimeunitsweeks" or "weeks" or "week" => TimeSpan.FromDays(7 * signedOffset),
+            "esritimeunitsdays" or "days" or "day" => TimeSpan.FromDays(signedOffset),
+            "esritimeunitshours" or "hours" or "hour" => TimeSpan.FromHours(signedOffset),
+            "esritimeunitsminutes" or "minutes" or "minute" => TimeSpan.FromMinutes(signedOffset),
+            "esritimeunitsseconds" or "seconds" or "second" => TimeSpan.FromSeconds(signedOffset),
+            "esritimeunitsmilliseconds" or "milliseconds" or "millisecond" => TimeSpan.FromMilliseconds(signedOffset),
+            _ => null
+        };
+
+    private static IntegerOffsetResult ParseIntegerOffset(double offset)
+    {
         var rounded = Math.Round(offset, MidpointRounding.AwayFromZero);
         if (Math.Abs(offset - rounded) > 0.000001)
         {
-            value = 0;
-            error = "timeOffset for month/year units must be an integer.";
-            return false;
+            return new IntegerOffsetResult
+            {
+                IsValid = false,
+                Error = "timeOffset for month/year units must be an integer."
+            };
         }
 
-        value = (int)rounded;
-        return true;
+        return new IntegerOffsetResult { IsValid = true, Value = (int)rounded };
     }
 }

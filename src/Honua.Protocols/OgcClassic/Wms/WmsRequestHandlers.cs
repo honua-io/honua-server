@@ -142,19 +142,8 @@ internal static partial class WmsRequestHandlers
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
 
-            var accessibleLayerList = new List<WmsLayer>(wmsLayers.Length);
-            foreach (var layer in wmsLayers)
-            {
-                if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
-                        context, layer.Resource, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
-                {
-                    accessibleLayerList.Add(layer);
-                }
-            }
-            var accessibleLayers = accessibleLayerList.ToArray();
-            var challengeLayers = ResolveWmsChallengeLayers(svcDef, wmsLayers, accessibleLayers);
-            var challengeError = await ChallengeRequestedProtectedLayersAsync(
-                context, svcDef, challengeLayers, cancellationToken).ConfigureAwait(false);
+            var (accessibleLayers, challengeLayers, challengeError) = await ResolveAuthorizedWmsLayersAsync(
+                context, (svcDef, wmsLayers), cancellationToken).ConfigureAwait(false);
             if (challengeError != null)
             {
                 return challengeError;

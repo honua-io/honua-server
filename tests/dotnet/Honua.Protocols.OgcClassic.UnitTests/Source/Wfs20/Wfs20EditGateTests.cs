@@ -27,44 +27,41 @@ public sealed class Wfs20EditGateTests
     public async Task ExecutePreparedEditAsync_EditorTracking_IgnoresForgeriesAndStampsServerValues()
     {
         var resource = TrackingResource();
-        foreach (var isInsert in new[] { true, false })
-        {
-            var reader = CreateReader(Row(42, "red", "S"));
-            var writer = new RecordingWriter();
-            var handler = Wfs20HandlerTestFactory.Create(reader, writer);
-            var context = CreateContext();
-            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
-            var feature = Row(isInsert ? 0 : 42, "red", "S");
-            feature = feature with { Attributes = feature.Attributes.Add("creator", "forged").Add("editor", "forged") };
-            var operation = isInsert
-                ? new Wfs20EditOperation(FeatureEditOperation.Create(feature))
-                : new Wfs20EditOperation(FeatureEditOperation.Update(feature), EditUpdateMode.Replace);
+        var insertWritten = await ExecuteTrackedEditAsync(resource, new Wfs20EditOperation(FeatureEditOperation.Create(ForgedTrackingRow(0))));
+        insertWritten.Attributes.Should().Contain("editor", "alice");
+        insertWritten.Attributes["updated"].Should().BeOfType<DateTime>();
+        insertWritten.Attributes.Should().Contain("creator", "alice");
+        insertWritten.Attributes["created"].Should().Be(insertWritten.Attributes["updated"]);
 
-            var result = await handler.ExecutePreparedEditAsync(
-                context,
-                layerId: 7,
-                resource,
-                ImmutableArray.Create(operation),
-                ImmutableArray.Create(false),
-                rollbackOnFailure: true,
-                CancellationToken.None);
+        var updateWritten = await ExecuteTrackedEditAsync(resource, new Wfs20EditOperation(FeatureEditOperation.Update(ForgedTrackingRow(42)), EditUpdateMode.Replace));
+        updateWritten.Attributes.Should().Contain("editor", "alice");
+        updateWritten.Attributes["updated"].Should().BeOfType<DateTime>();
+        updateWritten.Attributes.Should().NotContainKey("creator").And.NotContainKey("created");
+        updateWritten.PreservedAttributeNames.Should().Contain(["creator", "created"]);
+    }
 
-            result.IsSuccess.Should().BeTrue();
-            writer.ApplyCount.Should().Be(1);
-            var written = writer.LastBatch.Operations.Single().Feature!.Value;
-            written.Attributes.Should().Contain("editor", "alice");
-            written.Attributes["updated"].Should().BeOfType<DateTime>();
-            if (isInsert)
-            {
-                written.Attributes.Should().Contain("creator", "alice");
-                written.Attributes["created"].Should().Be(written.Attributes["updated"]);
-            }
-            else
-            {
-                written.Attributes.Should().NotContainKey("creator").And.NotContainKey("created");
-                written.PreservedAttributeNames.Should().Contain(["creator", "created"]);
-            }
-        }
+    private static Feature ForgedTrackingRow(long objectId)
+    {
+        var baseFeature = Row(objectId, "red", "S");
+        return baseFeature with { Attributes = baseFeature.Attributes.Add("creator", "forged").Add("editor", "forged") };
+    }
+
+    private static async Task<Feature> ExecuteTrackedEditAsync(MetadataV2Object resource, Wfs20EditOperation operation)
+    {
+        var reader = CreateReader(Row(42, "red", "S"));
+        var writer = new RecordingWriter();
+        var handler = Wfs20HandlerTestFactory.Create(reader, writer);
+        var context = CreateContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
+
+        var result = await handler.ExecutePreparedEditAsync(
+            context,
+            SingleEditRequest(resource, operation),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        writer.ApplyCount.Should().Be(1);
+        return writer.LastBatch.Operations.Single().Feature!.Value;
     }
 
     [UnitTest]
@@ -77,11 +74,7 @@ public sealed class Wfs20EditGateTests
 
         var result = await handler.ExecutePreparedEditAsync(
             CreateContext(),
-            layerId: 7,
-            ContingentResource(),
-            ImmutableArray.Create(operation),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
+            SingleEditRequest(ContingentResource(), operation),
             CancellationToken.None);
 
         writer.ApplyCount.Should().Be(0);
@@ -92,61 +85,56 @@ public sealed class Wfs20EditGateTests
     [UnitTest]
     public async Task ExecutePreparedEditAsync_AttributeRule_CalculatesAndRejectsConstraintViolation()
     {
-        var resource = ContingentResource() with
-        {
-            AttributeRules =
-            [
-                new MetadataV2AttributeRule
-                {
-                    Name = "setSize",
-                    Type = MetadataV2AttributeRuleType.Calculation,
-                    FieldName = "size",
-                    TriggeringEvents = ["insert"],
-                    ScriptExpression = "return 'S';",
-                },
-                new MetadataV2AttributeRule
-                {
-                    Name = "requireRed",
-                    Type = MetadataV2AttributeRuleType.Constraint,
-                    TriggeringEvents = ["insert"],
-                    ScriptExpression = "$feature.color == 'red'",
-                    ErrorMessage = "Color must be red.",
-                },
-            ]
-        };
-        var reader = CreateReader(Row(42, "red", "S"));
-        var calcWriter = new RecordingWriter();
-        var calcHandler = Wfs20HandlerTestFactory.Create(reader, calcWriter);
+        var resource = CreateAttributeRuleResource();
         var calcOp = new Wfs20EditOperation(FeatureEditOperation.Create(
             Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("color", "red"))));
-        var calcResult = await calcHandler.ExecutePreparedEditAsync(
-            CreateContext(),
-            layerId: 7,
-            resource,
-            ImmutableArray.Create(calcOp),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
-            CancellationToken.None);
+        var (calcResult, calcWriter) = await ExecuteSingleEditAsync(resource, calcOp);
 
         calcResult.IsSuccess.Should().BeTrue();
         calcWriter.LastBatch.Operations.Single().Feature!.Value.Attributes.Should().Contain("size", "S");
 
-        var writer = new RecordingWriter();
-        var handler = Wfs20HandlerTestFactory.Create(reader, writer);
-        var operation = new Wfs20EditOperation(FeatureEditOperation.Create(Row(0, "blue", "S")));
-
-        var result = await handler.ExecutePreparedEditAsync(
-            CreateContext(),
-            layerId: 7,
-            resource,
-            ImmutableArray.Create(operation),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
-            CancellationToken.None);
+        var violationOp = new Wfs20EditOperation(FeatureEditOperation.Create(Row(0, "blue", "S")));
+        var (result, writer) = await ExecuteSingleEditAsync(resource, violationOp);
 
         writer.ApplyCount.Should().Be(0);
         result.WasRolledBack.Should().BeTrue();
         result.CreateResults.Should().ContainSingle().Which.ErrorMessage.Should().Be("Color must be red.");
+    }
+
+    private static MetadataV2Object CreateAttributeRuleResource() => ContingentResource() with
+    {
+        AttributeRules =
+        [
+            new MetadataV2AttributeRule
+            {
+                Name = "setSize",
+                Type = MetadataV2AttributeRuleType.Calculation,
+                FieldName = "size",
+                TriggeringEvents = ["insert"],
+                ScriptExpression = "return 'S';",
+            },
+            new MetadataV2AttributeRule
+            {
+                Name = "requireRed",
+                Type = MetadataV2AttributeRuleType.Constraint,
+                TriggeringEvents = ["insert"],
+                ScriptExpression = "$feature.color == 'red'",
+                ErrorMessage = "Color must be red.",
+            },
+        ]
+    };
+
+    private static async Task<(FeatureEditResult Result, RecordingWriter Writer)> ExecuteSingleEditAsync(
+        MetadataV2Object resource,
+        Wfs20EditOperation operation)
+    {
+        var writer = new RecordingWriter();
+        var handler = Wfs20HandlerTestFactory.Create(CreateReader(Row(42, "red", "S")), writer);
+        var result = await handler.ExecutePreparedEditAsync(
+            CreateContext(),
+            SingleEditRequest(resource, operation),
+            CancellationToken.None);
+        return (result, writer);
     }
 
     [UnitTest]
@@ -160,11 +148,7 @@ public sealed class Wfs20EditGateTests
 
         var result = await handler.ExecutePreparedEditAsync(
             CreateContext(hooks: hooks),
-            layerId: 7,
-            ContingentResource(),
-            ImmutableArray.Create(operation),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
+            SingleEditRequest(ContingentResource(), operation),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
@@ -176,11 +160,7 @@ public sealed class Wfs20EditGateTests
         var blockedHandler = Wfs20HandlerTestFactory.Create(reader, blockedWriter);
         var blocked = await blockedHandler.ExecutePreparedEditAsync(
             CreateContext(hooks: rejectingHooks),
-            layerId: 7,
-            ContingentResource(),
-            ImmutableArray.Create(operation),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
+            SingleEditRequest(ContingentResource(), operation),
             CancellationToken.None);
 
         blockedWriter.ApplyCount.Should().Be(0);
@@ -202,22 +182,19 @@ public sealed class Wfs20EditGateTests
         var handler = Wfs20HandlerTestFactory.Create(reader, writer);
         var replacement = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("color", "red"));
         var operation = new Wfs20EditOperation(FeatureEditOperation.Update(replacement), EditUpdateMode.Replace);
+        var maskedResource = ContingentResource() with
+        {
+            ContingentValueGroups = [],
+            SchemaFields =
+            [
+                .. ContingentResource().SchemaFields,
+                new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
+            ],
+        };
 
         var result = await handler.ExecutePreparedEditAsync(
             CreateContext(masks: masks),
-            layerId: 7,
-            ContingentResource() with
-            {
-                ContingentValueGroups = [],
-                SchemaFields =
-                [
-                    .. ContingentResource().SchemaFields,
-                    new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
-                ],
-            },
-            ImmutableArray.Create(operation),
-            ImmutableArray.Create(false),
-            rollbackOnFailure: true,
+            SingleEditRequest(maskedResource, operation),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
@@ -226,6 +203,15 @@ public sealed class Wfs20EditGateTests
         written.PreservedAttributeNames.Should().Contain("secret");
         written.PreservedAttributeNames.Should().NotContain("size");
     }
+
+    private static Wfs20Handler.WfsPreparedEditRequest SingleEditRequest(MetadataV2Object resource, Wfs20EditOperation operation) => new()
+    {
+        LayerId = 7,
+        Resource = resource,
+        Operations = ImmutableArray.Create(operation),
+        RequestGeometryChangedFlags = ImmutableArray.Create(false),
+        RollbackOnFailure = true,
+    };
 
     private static DefaultHttpContext CreateContext(IFeatureEditHooks? hooks = null, IFieldMaskSource? masks = null)
     {
@@ -255,38 +241,41 @@ public sealed class Wfs20EditGateTests
     private static Feature Row(long id, string color, string size)
         => Feature.Create(id, null, ImmutableDictionary<string, object?>.Empty.Add("color", color).Add("size", size));
 
-    private static MetadataV2Object ContingentResource() => new()
+    private static MetadataV2Field EditableStringField(string name)
+        => new() { Name = name, Type = MetadataV2FieldType.String, Nullable = true, Editable = true };
+
+    private static MetadataV2ContingentFieldValue CodedValue(string jsonLiteral)
+        => new() { Type = "code", Code = JsonElement.Parse(jsonLiteral) };
+
+    private static MetadataV2Object ContingentResource()
     {
-        Metadata = new MetadataV2ObjectMetadata { Id = "shirts", Name = "shirts" },
-        Type = MetadataV2ObjectType.FeatureDataset,
-        SchemaFields =
-        [
-            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
-            new MetadataV2Field { Name = "color", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
-            new MetadataV2Field { Name = "size", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
-        ],
-        ContingentValueGroups =
-        [
-            new MetadataV2ContingentValueGroup
-            {
-                Name = "colorSize",
-                Restrictive = true,
-                Fields = ["color", "size"],
-                ContingentValues =
-                [
-                    new MetadataV2ContingentValue
-                    {
-                        Id = 1,
-                        Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
-                        {
-                            ["color"] = new() { Type = "code", Code = JsonElement.Parse("\"red\"") },
-                            ["size"] = new() { Type = "code", Code = JsonElement.Parse("\"S\"") },
-                        },
-                    },
-                ],
-            },
-        ],
-    };
+        var allowedPair = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["color"] = CodedValue("\"red\""),
+            ["size"] = CodedValue("\"S\""),
+        };
+        return new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "shirts", Name = "shirts" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
+                EditableStringField("color"),
+                EditableStringField("size"),
+            ],
+            ContingentValueGroups =
+            [
+                new MetadataV2ContingentValueGroup
+                {
+                    Name = "colorSize",
+                    Restrictive = true,
+                    Fields = ["color", "size"],
+                    ContingentValues = [new MetadataV2ContingentValue { Id = 1, Values = allowedPair }],
+                },
+            ],
+        };
+    }
 
     private static MetadataV2Object TrackingResource() => ContingentResource() with
     {
@@ -294,9 +283,9 @@ public sealed class Wfs20EditGateTests
         SchemaFields =
         [
             .. ContingentResource().SchemaFields,
-            new() { Name = "creator", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
+            EditableStringField("creator"),
             new() { Name = "created", Type = MetadataV2FieldType.DateTime, Editable = true, Nullable = true },
-            new() { Name = "editor", Type = MetadataV2FieldType.String, Editable = true, Nullable = true },
+            EditableStringField("editor"),
             new() { Name = "updated", Type = MetadataV2FieldType.DateTime, Editable = true, Nullable = true },
         ],
     };
@@ -311,16 +300,29 @@ public sealed class Wfs20EditGateTests
         {
             ApplyCount++;
             LastBatch = editBatch;
-            var rows = FeatureEditRows.Enumerate(editBatch);
-            ImmutableArray<EditOperationResult> Results(FeatureEditOperationKind kind)
-                => [.. rows.Where(row => row.Kind == kind).Select(row => EditOperationResult.Success(row.ObjectId ?? 101))];
-            return Task.FromResult(FeatureEditResult.Success(
-                rows.Count(static row => row.Kind == FeatureEditOperationKind.Create),
-                rows.Count(static row => row.Kind == FeatureEditOperationKind.Update),
-                rows.Count(static row => row.Kind == FeatureEditOperationKind.Delete),
-                createResults: Results(FeatureEditOperationKind.Create),
-                updateResults: Results(FeatureEditOperationKind.Update),
-                deleteResults: Results(FeatureEditOperationKind.Delete)));
+            return Task.FromResult(BuildRecordedResult(editBatch));
+        }
+
+        private static FeatureEditResult BuildRecordedResult(FeatureEditBatch editBatch)
+        {
+            var creates = ImmutableArray.CreateBuilder<EditOperationResult>();
+            var updates = ImmutableArray.CreateBuilder<EditOperationResult>();
+            var deletes = ImmutableArray.CreateBuilder<EditOperationResult>();
+            foreach (var row in FeatureEditRows.Enumerate(editBatch))
+            {
+                var outcome = EditOperationResult.Success(row.ObjectId ?? 101);
+                if (row.Kind == FeatureEditOperationKind.Create) creates.Add(outcome);
+                else if (row.Kind == FeatureEditOperationKind.Update) updates.Add(outcome);
+                else if (row.Kind == FeatureEditOperationKind.Delete) deletes.Add(outcome);
+            }
+
+            return FeatureEditResult.Success(
+                creates.Count,
+                updates.Count,
+                deletes.Count,
+                createResults: creates.ToImmutable(),
+                updateResults: updates.ToImmutable(),
+                deleteResults: deletes.ToImmutable());
         }
 
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)

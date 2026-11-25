@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -37,57 +38,18 @@ public enum StatisticType
 
 public static class StatisticTypeParser
 {
-    public static bool TryParse(string? type, out StatisticType result)
-    {
-        if (string.IsNullOrEmpty(type))
+    private static readonly FrozenDictionary<string, StatisticType> ByName =
+        new Dictionary<string, StatisticType>(StringComparer.OrdinalIgnoreCase)
         {
-            result = default;
-            return false;
-        }
+            ["count"] = StatisticType.Count,
+            ["sum"] = StatisticType.Sum,
+            ["min"] = StatisticType.Min,
+            ["max"] = StatisticType.Max,
+            ["avg"] = StatisticType.Avg,
+            ["stddev"] = StatisticType.Stddev,
+            ["var"] = StatisticType.Var,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-        if (string.Equals(type, "count", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Count;
-            return true;
-        }
-
-        if (string.Equals(type, "sum", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Sum;
-            return true;
-        }
-
-        if (string.Equals(type, "min", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Min;
-            return true;
-        }
-
-        if (string.Equals(type, "max", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Max;
-            return true;
-        }
-
-        if (string.Equals(type, "avg", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Avg;
-            return true;
-        }
-
-        if (string.Equals(type, "stddev", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Stddev;
-            return true;
-        }
-
-        if (string.Equals(type, "var", StringComparison.OrdinalIgnoreCase))
-        {
-            result = StatisticType.Var;
-            return true;
-        }
-
-        result = default;
-        return false;
-    }
+    public static StatisticType? TryParse(string? type)
+        => !string.IsNullOrEmpty(type) && ByName.TryGetValue(type, out var parsed) ? parsed : null;
 }

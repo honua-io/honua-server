@@ -132,51 +132,7 @@ public sealed class FeatureAttributeValidatorTests
     [UnitTest]
     public void CodedValueDomainAndBinaryValidation_EnforceAllowedCodesAndBase64()
     {
-        var resource = new MetadataV2Object
-        {
-            SchemaFields =
-            [
-                new()
-                {
-                    Name = "status",
-                    Type = MetadataV2FieldType.String,
-                    Editable = true,
-                    Nullable = false,
-                    Domain = new MetadataV2FieldDomain
-                    {
-                        Type = "codedValue",
-                        CodedValues =
-                        [
-                            new() { Code = JsonSerializer.SerializeToElement("OPEN"), Name = "Open" },
-                            new() { Code = JsonSerializer.SerializeToElement("CLOSED"), Name = "Closed" },
-                        ]
-                    }
-                },
-                new()
-                {
-                    Name = "code",
-                    Type = MetadataV2FieldType.Integer,
-                    Editable = true,
-                    Nullable = false,
-                    Domain = new MetadataV2FieldDomain
-                    {
-                        Type = "codedValue",
-                        CodedValues =
-                        [
-                            new() { Code = JsonSerializer.SerializeToElement(1), Name = "One" },
-                            new() { Code = JsonSerializer.SerializeToElement(2), Name = "Two" },
-                        ]
-                    }
-                },
-                new()
-                {
-                    Name = "payload",
-                    Type = MetadataV2FieldType.Binary,
-                    Editable = true,
-                    Nullable = true,
-                }
-            ]
-        };
+        var resource = CreateCodedDomainAndBinaryResource();
 
         var valid = FeatureAttributeValidator.Validate(resource, new Dictionary<string, object?>
         {
@@ -196,6 +152,39 @@ public sealed class FeatureAttributeValidatorTests
         invalidCode.ErrorMessage.Should().Contain("status");
         invalidCode.ErrorMessage.Should().Contain("code");
         invalidCode.ErrorMessage.Should().Contain("Base64");
+    }
+
+    private static MetadataV2Object CreateCodedDomainAndBinaryResource() => new()
+    {
+        SchemaFields =
+        [
+            CreateCodedField("status", MetadataV2FieldType.String, ("OPEN", "Open"), ("CLOSED", "Closed")),
+            CreateCodedField("code", MetadataV2FieldType.Integer, (1, "One"), (2, "Two")),
+            new() { Name = "payload", Type = MetadataV2FieldType.Binary, Editable = true, Nullable = true }
+        ]
+    };
+
+    private static MetadataV2Field CreateCodedField(
+        string name,
+        MetadataV2FieldType type,
+        params (object Code, string Name)[] entries)
+    {
+        return new MetadataV2Field
+        {
+            Name = name,
+            Type = type,
+            Editable = true,
+            Nullable = false,
+            Domain = new MetadataV2FieldDomain
+            {
+                Type = "codedValue",
+                CodedValues = [.. entries.Select(static e => new MetadataV2CodedValue
+                {
+                    Code = JsonSerializer.SerializeToElement(e.Code),
+                    Name = e.Name
+                })]
+            }
+        };
     }
 
     private static MetadataV2Object Resource(MetadataV2FieldType type) => new()

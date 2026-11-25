@@ -253,15 +253,19 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         try
         {
             var result = await _subsetReader.ReadSubsetAsync(
-                    rangeReader,
-                    registration.Bucket,
-                    registration.RootPath,
-                    metadata,
-                    new ZarrSubsetRequest { Variable = array.Name, Start = start, Stop = stop },
+                    new ZarrSubsetReadParameters
+                    {
+                        Reader = rangeReader,
+                        Bucket = registration.Bucket,
+                        RootPath = registration.RootPath,
+                        Metadata = metadata,
+                        Request = new ZarrSubsetRequest { Variable = array.Name, Start = start, Stop = stop },
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!ZarrValueDecoder.TryDecodeWithFill(result.Data, result.DataType, array.FillValue, out var value))
+            var decoded = ZarrValueDecoder.DecodeWithFill(result.Data, result.DataType, array.FillValue);
+            if (!decoded.IsDecoded)
             {
                 return CreateResult(
                     ZarrPointSliceReadStatus.InvalidSelection,
@@ -269,7 +273,7 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
                     error: $"Variable '{array.Name}' uses a data type that cannot be sampled.");
             }
 
-            return CreateResult(ZarrPointSliceReadStatus.Success, value, array.Name);
+            return CreateResult(ZarrPointSliceReadStatus.Success, decoded.Value, array.Name);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

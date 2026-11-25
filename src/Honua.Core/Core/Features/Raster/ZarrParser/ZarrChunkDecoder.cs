@@ -8,69 +8,43 @@ using ICSharpCode.SharpZipLib.Zip.Compression;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
+internal readonly record struct ZarrChunkDecodeRequest
+{
+    public required byte[] Raw { get; init; }
+
+    public string? Compressor { get; init; }
+
+    public required byte[] Destination { get; init; }
+
+    public int DestinationLength { get; init; }
+}
+
 internal static class ZarrChunkDecoder
 {
     private const int InflateBlockBytes = 64 * 1024;
     private const int MaxGzipMembers = 4096;
 
-    internal static void Decode(byte[] raw, string? compressor, byte[] destination, CancellationToken cancellationToken)
-        => Decode(raw, compressor, destination, destination.Length, cancellationToken);
-
-    internal static void Decode(
-        byte[] raw,
-        string? compressor,
-        byte[] destination,
-        int destinationLength,
-        CancellationToken cancellationToken)
+    internal static void Decode(ZarrChunkDecodeRequest request, CancellationToken cancellationToken)
     {
-        if (compressor is null)
+        if (request.Compressor is null)
         {
-            if (raw.Length != destinationLength)
-                throw new InvalidDataException("Zarr uncompressed chunk length does not match its declared shape.");
-            Buffer.BlockCopy(raw, 0, destination, 0, destinationLength);
+            CopyUncompressed(request);
             return;
         }
-        if (raw.Length == 0)
+
+        if (request.Raw.Length == 0)
             throw new InvalidDataException("Zarr compressed chunks must contain a complete encoded stream.");
+
         try
         {
-            var written = 0;
-            if (compressor == "zlib")
+            var written = request.Compressor switch
             {
-                var consumed = Inflate(raw, 0, new Inflater(), destination, destinationLength, ref written, cancellationToken);
-                if (consumed != raw.Length)
-                    throw new InvalidDataException("Zarr zlib chunk contains trailing bytes.");
-            }
-            else if (compressor == "gzip")
-            {
-                var position = 0;
-                var members = 0;
-                var inflater = new Inflater(noHeader: true);
-                while (position < raw.Length)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (++members > MaxGzipMembers)
-                        throw new ZarrSubsetValidationException($"Zarr gzip chunk exceeds the {MaxGzipMembers}-member decoding limit.");
-                    position = ReadGzipHeader(raw, position, cancellationToken);
-                    var memberStart = written;
-                    inflater.Reset();
-                    position += Inflate(raw, position, inflater, destination, destinationLength, ref written, cancellationToken);
-                    RequireAvailable(raw, position, 8);
-                    var checksum = new Crc32();
-                    UpdateChecksum(checksum, destination, memberStart, written - memberStart, cancellationToken);
-                    var expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(position, 4));
-                    var expectedSize = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(position + 4, 4));
-                    if ((uint)checksum.Value != expectedCrc || expectedSize != (uint)(written - memberStart))
-                        throw new InvalidDataException("Zarr gzip chunk has an invalid CRC32 or uncompressed size.");
-                    position += 8;
-                }
-            }
-            else
-            {
-                throw new ZarrSubsetValidationException($"Zarr compressor '{compressor}' is not supported.");
-            }
-            if (written != destinationLength)
-                throw new InvalidDataException($"Zarr chunk decoded to {written} bytes; expected {destinationLength}.");
+                "zlib" => DecodeZlib(request, cancellationToken),
+                "gzip" => DecodeGzip(request, cancellationToken),
+                _ => throw new ZarrSubsetValidationException($"Zarr compressor '{request.Compressor}' is not supported."),
+            };
+            if (written != request.DestinationLength)
+                throw new InvalidDataException($"Zarr chunk decoded to {written} bytes; expected {request.DestinationLength}.");
         }
         catch (SharpZipBaseException exception)
         {
@@ -78,10 +52,84 @@ internal static class ZarrChunkDecoder
         }
     }
 
-    private static int Inflate(byte[] raw, int start, Inflater inflater, byte[] destination, int destinationLength, ref int written,
+    private static void CopyUncompressed(ZarrChunkDecodeRequest request)
+    {
+        if (request.Raw.Length != request.DestinationLength)
+            throw new InvalidDataException("Zarr uncompressed chunk length does not match its declared shape.");
+        Buffer.BlockCopy(request.Raw, 0, request.Destination, 0, request.DestinationLength);
+    }
+
+    private static int DecodeZlib(ZarrChunkDecodeRequest request, CancellationToken cancellationToken)
+    {
+        var result = Inflate(
+            new InflateRequest
+            {
+                Raw = request.Raw,
+                Start = 0,
+                Inflater = new Inflater(),
+                Destination = request.Destination,
+                DestinationLength = request.DestinationLength,
+                Written = 0,
+            },
+            cancellationToken);
+        if (result.Consumed != request.Raw.Length)
+            throw new InvalidDataException("Zarr zlib chunk contains trailing bytes.");
+        return result.Written;
+    }
+
+    private static int DecodeGzip(ZarrChunkDecodeRequest request, CancellationToken cancellationToken)
+    {
+        var position = 0;
+        var written = 0;
+        var members = 0;
+        var inflater = new Inflater(noHeader: true);
+        while (position < request.Raw.Length)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (++members > MaxGzipMembers)
+                throw new ZarrSubsetValidationException($"Zarr gzip chunk exceeds the {MaxGzipMembers}-member decoding limit.");
+            position = ReadGzipHeader(request.Raw, position, cancellationToken);
+            var memberStart = written;
+            inflater.Reset();
+            var result = Inflate(
+                new InflateRequest
+                {
+                    Raw = request.Raw,
+                    Start = position,
+                    Inflater = inflater,
+                    Destination = request.Destination,
+                    DestinationLength = request.DestinationLength,
+                    Written = written,
+                },
+                cancellationToken);
+            position += result.Consumed;
+            written = result.Written;
+            RequireAvailable(request.Raw, position, 8);
+            var memberSegment = new ArraySegment<byte>(request.Destination, memberStart, written - memberStart);
+            ValidateGzipFooter(request.Raw.AsSpan(position, 8), memberSegment, cancellationToken);
+            position += 8;
+        }
+        return written;
+    }
+
+    private static void ValidateGzipFooter(
+        ReadOnlySpan<byte> footer,
+        ArraySegment<byte> memberSegment,
         CancellationToken cancellationToken)
     {
-        var supplied = start;
+        var checksum = new Crc32();
+        UpdateChecksum(checksum, memberSegment.Array!, memberSegment.Offset, memberSegment.Count, cancellationToken);
+        var expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(footer[..4]);
+        var expectedSize = BinaryPrimitives.ReadUInt32LittleEndian(footer.Slice(4, 4));
+        if ((uint)checksum.Value != expectedCrc || expectedSize != (uint)memberSegment.Count)
+            throw new InvalidDataException("Zarr gzip chunk has an invalid CRC32 or uncompressed size.");
+    }
+
+    private static InflateResult Inflate(InflateRequest request, CancellationToken cancellationToken)
+    {
+        var supplied = request.Start;
+        var written = request.Written;
+        var inflater = request.Inflater;
         var probe = new byte[1];
         while (!inflater.IsFinished)
         {
@@ -90,16 +138,16 @@ internal static class ZarrChunkDecoder
                 throw new InvalidDataException("Zarr chunks requiring an external compression dictionary are not supported.");
             if (inflater.IsNeedingInput)
             {
-                if (supplied == raw.Length)
+                if (supplied == request.Raw.Length)
                     throw new InvalidDataException("Zarr compressed chunk ended before its stream was complete.");
-                var count = Math.Min(InflateBlockBytes, raw.Length - supplied);
-                inflater.SetInput(raw, supplied, count);
+                var count = Math.Min(InflateBlockBytes, request.Raw.Length - supplied);
+                inflater.SetInput(request.Raw, supplied, count);
                 supplied += count;
             }
             var beforeInput = inflater.TotalIn;
-            var remaining = destinationLength - written;
+            var remaining = request.DestinationLength - written;
             var emitted = remaining > 0
-                ? inflater.Inflate(destination, written, Math.Min(remaining, InflateBlockBytes))
+                ? inflater.Inflate(request.Destination, written, Math.Min(remaining, InflateBlockBytes))
                 : inflater.Inflate(probe, 0, 1);
             if (remaining == 0 && emitted > 0)
                 throw new InvalidDataException("Zarr chunk decoded beyond its declared shape.");
@@ -108,7 +156,7 @@ internal static class ZarrChunkDecoder
                 !inflater.IsNeedingDictionary && inflater.TotalIn == beforeInput)
                 throw new InvalidDataException("Zarr compressed chunk could not make decoding progress.");
         }
-        return checked((int)inflater.TotalIn);
+        return new InflateResult { Consumed = checked((int)inflater.TotalIn), Written = written };
     }
 
     private static int ReadGzipHeader(byte[] raw, int position, CancellationToken cancellationToken)
@@ -167,5 +215,27 @@ internal static class ZarrChunkDecoder
     {
         if (position < 0 || count > raw.Length - position)
             throw new InvalidDataException("Zarr gzip chunk has a truncated header or footer.");
+    }
+
+    private readonly record struct InflateRequest
+    {
+        public required byte[] Raw { get; init; }
+
+        public required int Start { get; init; }
+
+        public required Inflater Inflater { get; init; }
+
+        public required byte[] Destination { get; init; }
+
+        public required int DestinationLength { get; init; }
+
+        public required int Written { get; init; }
+    }
+
+    private readonly record struct InflateResult
+    {
+        public required int Consumed { get; init; }
+
+        public required int Written { get; init; }
     }
 }

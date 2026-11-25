@@ -497,7 +497,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             var values = table.GetValues();
             for (var i = 0; i < names.Length; i++)
             {
-                SinkFeatureEncoder.WriteAttribute(writer, names[i], values[i], writeNonFiniteAsNull: true);
+                SinkFeatureEncoder.WriteAttributeWithNullNonFinite(writer, names[i], values[i]);
             }
         }
 

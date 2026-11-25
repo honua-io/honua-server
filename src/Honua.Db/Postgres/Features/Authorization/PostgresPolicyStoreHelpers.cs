@@ -8,54 +8,68 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
+internal sealed class EffectivePolicyQuery<TPolicy>
+{
+    public required IAdoNetDatabaseConnectionProvider ConnectionProvider { get; init; }
+    public required string Table { get; init; }
+    public required string SelectColumns { get; init; }
+    public required IReadOnlyList<string> Roles { get; init; }
+    public required string Service { get; init; }
+    public required string Layer { get; init; }
+    public required Func<NpgsqlCommand, CancellationToken, Task<IReadOnlyList<TPolicy>>> ReadPoliciesAsync { get; init; }
+}
+
 internal static class PostgresPolicyStoreHelpers
 {
     public static async Task<IReadOnlyList<TPolicy>> GetEffectivePoliciesAsync<TPolicy>(
-        IAdoNetDatabaseConnectionProvider connectionProvider,
-        string table,
-        string selectColumns,
-        IReadOnlyList<string> roles,
-        string service,
-        string layer,
-        Func<NpgsqlCommand, CancellationToken, Task<IReadOnlyList<TPolicy>>> readPoliciesAsync,
+        EffectivePolicyQuery<TPolicy> query,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(roles);
-        ArgumentException.ThrowIfNullOrWhiteSpace(service);
-        ArgumentException.ThrowIfNullOrWhiteSpace(layer);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(query.Roles);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.Service);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.Layer);
 
-        // Resolve every policy whose scope matches the (service, layer) — including
-        // "*" wildcards — and whose role is "*" or one of the principal's roles
-        // (case-insensitive). A single set-based query keeps this cheap and correct
-        // under concurrent writes; role filtering uses a lowered-name ANY match.
+        await using var connection = await query.ConnectionProvider
+            .OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = CreateEffectivePolicyCommand(connection, query);
+
+        try
+        {
+            return await query.ReadPoliciesAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            return [];
+        }
+    }
+
+    private static NpgsqlCommand CreateEffectivePolicyCommand<TPolicy>(
+        NpgsqlConnection connection,
+        EffectivePolicyQuery<TPolicy> query)
+    {
+        // Resolve every policy whose scope matches (service, layer) including "*" wildcards
+        // and whose role is "*" or one of the principal's roles (case-insensitive).
         var sql = $"""
-            SELECT {selectColumns}
-            FROM {table}
+            SELECT {query.SelectColumns}
+            FROM {query.Table}
             WHERE (service = '*' OR LOWER(service) = LOWER(@service))
               AND (layer = '*' OR LOWER(layer) = LOWER(@layer))
               AND (role = '*' OR LOWER(role) = ANY(@role_names))
             ORDER BY created_at
             """;
 
-        var loweredNames = roles
+        var loweredNames = query.Roles
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .Select(static name => name.Trim().ToLowerInvariant())
             .Distinct()
             .ToArray();
 
-        await using var connection = await connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("service", NpgsqlDbType.Varchar, service);
-        command.Parameters.AddWithValue("layer", NpgsqlDbType.Varchar, layer);
+        var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("service", NpgsqlDbType.Varchar, query.Service);
+        command.Parameters.AddWithValue("layer", NpgsqlDbType.Varchar, query.Layer);
         command.Parameters.AddWithValue("role_names", NpgsqlDbType.Array | NpgsqlDbType.Text, loweredNames);
-
-        try
-        {
-            return await readPoliciesAsync(command, cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
-        {
-            return [];
-        }
+        return command;
     }
 }

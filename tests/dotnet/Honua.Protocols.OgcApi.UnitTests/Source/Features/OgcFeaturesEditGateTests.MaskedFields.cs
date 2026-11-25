@@ -29,37 +29,12 @@ public sealed partial class OgcFeaturesEditGateTests
         reader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(1, [Row(42, "red", "S")])));
 
-        var singleReplace = new OgcFeaturesEditRequest
-        {
-            Operation = OgcFeaturesEditOperation.Replace,
-            ObjectId = 42,
-            Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("color", "red")),
-        };
-        var batchReplace = new OgcFeaturesEditRequest
-        {
-            Operation = OgcFeaturesEditOperation.Batch,
-            BatchOperations =
-            [
-                new OgcFeaturesBatchEditOperation
-                {
-                    Operation = OgcFeaturesEditOperation.Replace,
-                    ObjectId = 42,
-                    Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("color", "red")),
-                }
-            ],
-        };
-
-        foreach (var request in new[] { singleReplace, batchReplace })
+        foreach (var request in CreateReplaceRequests(objectId: 42, color: "red"))
         {
             var writer = new CountingWriter();
             var handlers = CreateHandlers(writer, reader);
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-            services.AddSingleton(masks);
-            var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-
-            var result = await handlers.Transaction.ExecuteEditAsync(context, 7, Resource(), request, CancellationToken.None);
+            var result = await handlers.Transaction.ExecuteEditAsync(
+                CreateMaskedContext(masks), 7, Resource(), request, CancellationToken.None);
 
             result.IsSuccess.Should().BeTrue();
             writer.ApplyCount.Should().Be(1);
@@ -70,5 +45,41 @@ public sealed partial class OgcFeaturesEditGateTests
             written.PreserveOmittedMaskedAttributes.Should().BeFalse();
             written.PreservedAttributeNames.Should().Contain("size");
         }
+    }
+
+    private static OgcFeaturesEditRequest[] CreateReplaceRequests(long objectId, string color)
+    {
+        var feature = Feature.Create(objectId, null, ImmutableDictionary<string, object?>.Empty.Add("color", color));
+        return
+        [
+            new OgcFeaturesEditRequest
+            {
+                Operation = OgcFeaturesEditOperation.Replace,
+                ObjectId = objectId,
+                Feature = feature,
+            },
+            new OgcFeaturesEditRequest
+            {
+                Operation = OgcFeaturesEditOperation.Batch,
+                BatchOperations =
+                [
+                    new OgcFeaturesBatchEditOperation
+                    {
+                        Operation = OgcFeaturesEditOperation.Replace,
+                        ObjectId = objectId,
+                        Feature = feature,
+                    }
+                ],
+            },
+        ];
+    }
+
+    private static DefaultHttpContext CreateMaskedContext(IFieldMaskSource masks)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
+        services.AddSingleton(masks);
+        return new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
     }
 }

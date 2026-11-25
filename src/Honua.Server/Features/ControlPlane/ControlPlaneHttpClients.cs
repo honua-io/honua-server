@@ -37,30 +37,48 @@ internal static class ControlPlaneHttpClients
         Func<ControlPlaneOptions?> getOptions,
         Func<string, CancellationToken, Task<IPAddress[]>>? resolver = null)
     {
+        var connector = new TelemetryConnectionCallback(getOptions, resolver);
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             UseProxy = false,
             UseCookies = false,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            ConnectCallback = ConnectAsync
+            ConnectCallback = connector.ConnectAsync
         };
+    }
 
-        async ValueTask<Stream> ConnectAsync(
+    private sealed class TelemetryConnectionCallback(
+        Func<ControlPlaneOptions?> getOptions,
+        Func<string, CancellationToken, Task<IPAddress[]>>? resolver)
+    {
+        public async ValueTask<Stream> ConnectAsync(
             SocketsHttpConnectionContext context,
             CancellationToken cancellationToken)
         {
             var requestUri = context.InitialRequestMessage.RequestUri
                 ?? throw new HttpRequestException("Telemetry destination URI is missing.");
-            var allowPrivateNetworks = IsPrivateNetworkAllowedForRequest(getOptions(), requestUri);
+            var addresses = await ResolveValidatedAddressesAsync(context, requestUri, cancellationToken)
+                .ConfigureAwait(false);
 
+            return await TelemetryConnector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        private async Task<IPAddress[]> ResolveValidatedAddressesAsync(
+            SocketsHttpConnectionContext context,
+            Uri requestUri,
+            CancellationToken cancellationToken)
+        {
+            var allowPrivateNetworks = IsPrivateNetworkAllowedForRequest(getOptions(), requestUri);
+            var resolveHost = resolver ?? Dns.GetHostAddressesAsync;
             IPAddress[]? addresses = null;
-            async Task<IPAddress[]> ResolveAsync(string host, CancellationToken token)
-                => addresses ??= await (resolver ?? Dns.GetHostAddressesAsync)(host, token).ConfigureAwait(false);
+            async Task<IPAddress[]> ResolveOnceAsync(string host, CancellationToken token)
+                => addresses ??= await resolveHost(host, token).ConfigureAwait(false);
 
             var validation = await OutboundHttpUrlValidator.ValidateAsync(
                     requestUri.AbsoluteUri,
-                    ResolveAsync,
+                    ResolveOnceAsync,
                     allowPrivateNetworks,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -69,22 +87,16 @@ internal static class ControlPlaneHttpClients
                 throw new HttpRequestException(validation.ErrorMessage ?? "Telemetry destination is not allowed.");
             }
 
-            // Connect only to the validated addresses (no second DNS lookup for public destinations).
-            if (addresses is null)
-            {
-                addresses = IPAddress.TryParse(context.DnsEndPoint.Host, out var literalAddress)
-                    ? [literalAddress]
-                    : await (resolver ?? Dns.GetHostAddressesAsync)(context.DnsEndPoint.Host, cancellationToken)
-                        .ConfigureAwait(false);
-            }
+            addresses ??= IPAddress.TryParse(context.DnsEndPoint.Host, out var literalAddress)
+                ? [literalAddress]
+                : await resolveHost(context.DnsEndPoint.Host, cancellationToken).ConfigureAwait(false);
 
             if (addresses.Length == 0)
             {
                 throw new HttpRequestException("Could not resolve telemetry destination.");
             }
 
-            return await TelemetryConnector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
-                .ConfigureAwait(false);
+            return addresses;
         }
     }
 

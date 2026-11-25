@@ -491,11 +491,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
-        var distanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes);
-        var attributesReader = new FeatureAttributeReadContext();
+        var rowContext = new MappedFeatureRowContext
+        {
+            NativeAttributes = session.NativeAttributes,
+            AttributesReader = new FeatureAttributeReadContext(),
+            DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+        };
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, session.NativeAttributes, attributesReader, distanceOrdinal);
+            yield return ReadFeature(reader, rowContext);
         }
     }
 
@@ -547,11 +551,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         try
         {
             var reader = session.Reader!;
-            var distanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes);
-            var attributesReader = new FeatureAttributeReadContext();
+            var rowContext = new MappedFeatureRowContext
+            {
+                NativeAttributes = session.NativeAttributes,
+                AttributesReader = new FeatureAttributeReadContext(),
+                DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+            };
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader, distanceOrdinal));
+                rows.Add(ReadFeature(reader, rowContext));
             }
 
             return rows;
@@ -1634,11 +1642,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return -1;
     }
 
-    private Feature ReadFeature(
-        NpgsqlDataReader reader,
-        NativeAttributeDecoder? nativeAttributes,
-        FeatureAttributeReadContext attributesReader,
-        int? distanceOrdinal = null)
+    private readonly struct MappedFeatureRowContext
+    {
+        public NativeAttributeDecoder? NativeAttributes { get; init; }
+        public required FeatureAttributeReadContext AttributesReader { get; init; }
+        public int? DistanceOrdinal { get; init; }
+    }
+
+    private Feature ReadFeature(NpgsqlDataReader reader, MappedFeatureRowContext context)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1646,18 +1657,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
+            if (!reader.IsDBNull(2) && (context.NativeAttributes is null || context.NativeAttributes.HasJsonFallback))
             {
-                attributesReader.ReadInto(reader, 2, attributesDictionary);
+                context.AttributesReader.ReadInto(reader, 2, attributesDictionary);
             }
 
-            nativeAttributes?.ReadInto(reader, attributesDictionary);
+            context.NativeAttributes?.ReadInto(reader, attributesDictionary);
             if (_injectObjectId)
             {
                 attributesDictionary[FieldNames.ObjectId] = id;
             }
 
-            var resolvedDistanceOrdinal = distanceOrdinal ?? ResolveDistanceOrdinal(reader, nativeAttributes);
+            var resolvedDistanceOrdinal = context.DistanceOrdinal ?? ResolveDistanceOrdinal(reader, context.NativeAttributes);
             if (resolvedDistanceOrdinal >= 0)
             {
                 attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(resolvedDistanceOrdinal)

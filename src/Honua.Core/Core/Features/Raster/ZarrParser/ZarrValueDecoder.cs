@@ -7,6 +7,13 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
+internal readonly record struct ZarrBufferDecodeSpec
+{
+    public required string NormalizedDtype { get; init; }
+
+    public object? FillValue { get; init; }
+}
+
 public static class ZarrValueDecoder
 {
     public static bool TryDecodeFirst(ZarrSubsetResult result, out double value)
@@ -92,131 +99,204 @@ public static class ZarrValueDecoder
 
     // Honua's nodata policy is explicit at each caller. Compare source scalars before
     // widening integers: adjacent int64/uint64 values can share one double value.
-    internal static bool TryDecodeWithFill(ReadOnlySpan<byte> data, string dtype, object? fillValue, out double? value)
+    internal static DecodedScalar DecodeWithFill(ReadOnlySpan<byte> data, string dtype, object? fillValue)
     {
-        value = null;
         var kind = NormalizeDataType(dtype);
+        return kind switch
+        {
+            "i1" or "i2" or "i4" or "i8" => DecodeSignedScalar(data, kind, fillValue),
+            "b1" or "u1" or "u2" or "u4" or "u8" => DecodeUnsignedScalar(data, kind, fillValue),
+            "f4" or "f8" => DecodeFloatingScalar(data, kind, fillValue),
+            _ => DecodedScalar.Failed,
+        };
+    }
+
+    internal static bool TryDecodeBufferWithFill(
+        ReadOnlySpan<byte> data,
+        ZarrBufferDecodeSpec spec,
+        Span<double> destination)
+        => spec.NormalizedDtype switch
+        {
+            "i1" or "i2" or "i4" or "i8" => TryDecodeSignedBuffer(data, spec, destination),
+            "u1" or "b1" or "u2" or "u4" or "u8" => TryDecodeUnsignedBuffer(data, spec, destination),
+            "f4" or "f8" => TryDecodeFloatingBuffer(data, spec, destination),
+            _ => false,
+        };
+
+    private static DecodedScalar DecodeSignedScalar(ReadOnlySpan<byte> data, string kind, object? fillValue)
+    {
+        long scalar;
         switch (kind)
         {
             case "i1":
-                if (data.Length < 1) return false;
-                var i1 = (sbyte)data[0];
-                if (fillValue is not null && TrySignedFill(fillValue, out var i1Fill) && i1 == i1Fill) return true;
-                value = i1;
-                return true;
+                if (data.Length < 1) return DecodedScalar.Failed;
+                scalar = (sbyte)data[0];
+                break;
             case "i2":
-                if (data.Length < 2) return false;
-                var i2 = BinaryPrimitives.ReadInt16LittleEndian(data);
-                if (fillValue is not null && TrySignedFill(fillValue, out var i2Fill) && i2 == i2Fill) return true;
-                value = i2;
-                return true;
+                if (data.Length < 2) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadInt16LittleEndian(data);
+                break;
             case "i4":
-                if (data.Length < 4) return false;
-                var i4 = BinaryPrimitives.ReadInt32LittleEndian(data);
-                if (fillValue is not null && TrySignedFill(fillValue, out var i4Fill) && i4 == i4Fill) return true;
-                value = i4;
-                return true;
+                if (data.Length < 4) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadInt32LittleEndian(data);
+                break;
             case "i8":
-                if (data.Length < 8) return false;
-                var i8 = BinaryPrimitives.ReadInt64LittleEndian(data);
-                if (fillValue is not null && TrySignedFill(fillValue, out var i8Fill) && i8 == i8Fill) return true;
-                value = i8;
-                return true;
+                if (data.Length < 8) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadInt64LittleEndian(data);
+                break;
+            default:
+                return DecodedScalar.Failed;
+        }
+
+        return fillValue is not null && TrySignedFill(fillValue, out var fill) && scalar == fill
+            ? DecodedScalar.NullValue
+            : DecodedScalar.Of(scalar);
+    }
+
+    private static DecodedScalar DecodeUnsignedScalar(ReadOnlySpan<byte> data, string kind, object? fillValue)
+    {
+        ulong scalar;
+        switch (kind)
+        {
             case "b1":
             case "u1":
-                if (data.Length < 1) return false;
-                var u1 = data[0];
-                if (fillValue is not null && TryUnsignedFill(fillValue, out var u1Fill) && u1 == u1Fill) return true;
-                value = u1;
-                return true;
+                if (data.Length < 1) return DecodedScalar.Failed;
+                scalar = data[0];
+                break;
             case "u2":
-                if (data.Length < 2) return false;
-                var u2 = BinaryPrimitives.ReadUInt16LittleEndian(data);
-                if (fillValue is not null && TryUnsignedFill(fillValue, out var u2Fill) && u2 == u2Fill) return true;
-                value = u2;
-                return true;
+                if (data.Length < 2) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadUInt16LittleEndian(data);
+                break;
             case "u4":
-                if (data.Length < 4) return false;
-                var u4 = BinaryPrimitives.ReadUInt32LittleEndian(data);
-                if (fillValue is not null && TryUnsignedFill(fillValue, out var u4Fill) && u4 == u4Fill) return true;
-                value = u4;
-                return true;
+                if (data.Length < 4) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadUInt32LittleEndian(data);
+                break;
             case "u8":
-                if (data.Length < 8) return false;
-                var u8 = BinaryPrimitives.ReadUInt64LittleEndian(data);
-                if (fillValue is not null && TryUnsignedFill(fillValue, out var u8Fill) && u8 == u8Fill) return true;
-                value = u8;
+                if (data.Length < 8) return DecodedScalar.Failed;
+                scalar = BinaryPrimitives.ReadUInt64LittleEndian(data);
+                break;
+            default:
+                return DecodedScalar.Failed;
+        }
+
+        return fillValue is not null && TryUnsignedFill(fillValue, out var fill) && scalar == fill
+            ? DecodedScalar.NullValue
+            : DecodedScalar.Of(scalar);
+    }
+
+    private static DecodedScalar DecodeFloatingScalar(ReadOnlySpan<byte> data, string kind, object? fillValue)
+    {
+        double scalar;
+        if (kind == "f4")
+        {
+            if (data.Length < 4) return DecodedScalar.Failed;
+            scalar = BinaryPrimitives.ReadSingleLittleEndian(data);
+        }
+        else
+        {
+            if (data.Length < 8) return DecodedScalar.Failed;
+            scalar = BinaryPrimitives.ReadDoubleLittleEndian(data);
+        }
+
+        if (fillValue is not null && TryGetFiniteFillValue(fillValue, out var fill) && scalar.CompareTo(fill) == 0)
+        {
+            return DecodedScalar.NullValue;
+        }
+
+        return double.IsFinite(scalar) ? DecodedScalar.Of(scalar) : DecodedScalar.NullValue;
+    }
+
+    private static bool TryDecodeSignedBuffer(
+        ReadOnlySpan<byte> data,
+        ZarrBufferDecodeSpec spec,
+        Span<double> destination)
+    {
+        var count = destination.Length;
+        switch (spec.NormalizedDtype)
+        {
+            case "i1":
+                if (data.Length < count) return false;
+                DecodeSignedByteBuffer(data[..count], spec.FillValue, destination);
                 return true;
-            case "f4":
-                if (data.Length < 4) return false;
-                double f4 = BinaryPrimitives.ReadSingleLittleEndian(data);
-                if (fillValue is not null && TryGetFiniteFillValue(fillValue, out var f4Fill) && f4.CompareTo(f4Fill) == 0) return true;
-                if (double.IsFinite(f4)) value = f4;
+            case "i2":
+                if (data.Length < count * 2) return false;
+                DecodeInt16Buffer(data[..(count * 2)], spec.FillValue, destination);
                 return true;
-            case "f8":
-                if (data.Length < 8) return false;
-                var f8 = BinaryPrimitives.ReadDoubleLittleEndian(data);
-                if (fillValue is not null && TryGetFiniteFillValue(fillValue, out var f8Fill) && f8.CompareTo(f8Fill) == 0) return true;
-                if (double.IsFinite(f8)) value = f8;
+            case "i4":
+                if (data.Length < count * 4) return false;
+                DecodeInt32Buffer(data[..(count * 4)], spec.FillValue, destination);
+                return true;
+            case "i8":
+                if (data.Length < count * 8) return false;
+                DecodeInt64Buffer(data[..(count * 8)], spec.FillValue, destination);
                 return true;
             default:
                 return false;
         }
     }
 
-    internal static bool TryDecodeBufferWithFill(
+    private static bool TryDecodeUnsignedBuffer(
         ReadOnlySpan<byte> data,
-        string normalizedDtype,
-        object? fillValue,
+        ZarrBufferDecodeSpec spec,
         Span<double> destination)
     {
         var count = destination.Length;
-        switch (normalizedDtype)
+        switch (spec.NormalizedDtype)
         {
-            case "i1":
-                if (data.Length < count) return false;
-                DecodeSignedByteBuffer(data[..count], fillValue, destination);
-                return true;
             case "u1":
             case "b1":
                 if (data.Length < count) return false;
-                DecodeUnsignedByteBuffer(data[..count], fillValue, destination);
-                return true;
-            case "i2":
-                if (data.Length < count * 2) return false;
-                DecodeInt16Buffer(data[..(count * 2)], fillValue, destination);
+                DecodeUnsignedByteBuffer(data[..count], spec.FillValue, destination);
                 return true;
             case "u2":
                 if (data.Length < count * 2) return false;
-                DecodeUInt16Buffer(data[..(count * 2)], fillValue, destination);
-                return true;
-            case "i4":
-                if (data.Length < count * 4) return false;
-                DecodeInt32Buffer(data[..(count * 4)], fillValue, destination);
+                DecodeUInt16Buffer(data[..(count * 2)], spec.FillValue, destination);
                 return true;
             case "u4":
                 if (data.Length < count * 4) return false;
-                DecodeUInt32Buffer(data[..(count * 4)], fillValue, destination);
-                return true;
-            case "i8":
-                if (data.Length < count * 8) return false;
-                DecodeInt64Buffer(data[..(count * 8)], fillValue, destination);
+                DecodeUInt32Buffer(data[..(count * 4)], spec.FillValue, destination);
                 return true;
             case "u8":
                 if (data.Length < count * 8) return false;
-                DecodeUInt64Buffer(data[..(count * 8)], fillValue, destination);
-                return true;
-            case "f4":
-                if (data.Length < count * 4) return false;
-                DecodeFloat32Buffer(data[..(count * 4)], fillValue, destination);
-                return true;
-            case "f8":
-                if (data.Length < count * 8) return false;
-                DecodeFloat64Buffer(data[..(count * 8)], fillValue, destination);
+                DecodeUInt64Buffer(data[..(count * 8)], spec.FillValue, destination);
                 return true;
             default:
                 return false;
         }
+    }
+
+    private static bool TryDecodeFloatingBuffer(
+        ReadOnlySpan<byte> data,
+        ZarrBufferDecodeSpec spec,
+        Span<double> destination)
+    {
+        var count = destination.Length;
+        switch (spec.NormalizedDtype)
+        {
+            case "f4":
+                if (data.Length < count * 4) return false;
+                DecodeFloat32Buffer(data[..(count * 4)], spec.FillValue, destination);
+                return true;
+            case "f8":
+                if (data.Length < count * 8) return false;
+                DecodeFloat64Buffer(data[..(count * 8)], spec.FillValue, destination);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    internal readonly record struct DecodedScalar
+    {
+        public bool IsDecoded { get; init; }
+
+        public double? Value { get; init; }
+
+        public static DecodedScalar Failed => new() { IsDecoded = false };
+
+        public static DecodedScalar NullValue => new() { IsDecoded = true, Value = null };
+
+        public static DecodedScalar Of(double value) => new() { IsDecoded = true, Value = value };
     }
 
     private static void DecodeSignedByteBuffer(ReadOnlySpan<byte> bytes, object? fillValue, Span<double> destination)

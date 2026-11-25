@@ -171,17 +171,7 @@ public sealed class QueuedOperationReconcilerTests
         executor.GetStatusAsync(Arg.Is<OperationHandle>(h => h.OperationInstanceId == poison.OperationInstanceId), Arg.Any<CancellationToken>())
             .Returns<Task<OperationStatus>>(_ => throw new InvalidOperationException("downstream failure"));
         executor.GetStatusAsync(Arg.Is<OperationHandle>(h => h.OperationInstanceId == healthy.OperationInstanceId), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(new OperationStatus
-            {
-                OperationInstanceId = call.Arg<OperationHandle>().OperationInstanceId,
-                OperationId = call.Arg<OperationHandle>().OperationId,
-                CorrelationId = call.Arg<OperationHandle>().CorrelationId,
-                AuditId = call.Arg<OperationHandle>().AuditId,
-                CreatedAt = call.Arg<OperationHandle>().CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                Status = OperationHandleStatus.Completed,
-                JobId = call.Arg<OperationHandle>().JobId,
-            }));
+            .Returns(call => Task.FromResult(CreateCompletedStatus(call.Arg<OperationHandle>())));
 
         await using var services = new ServiceCollection()
             .AddScoped<IAuditLog>(_ => audit)
@@ -198,6 +188,18 @@ public sealed class QueuedOperationReconcilerTests
         (await store.GetAsync(poison.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Queued);
         (await store.GetAsync(healthy.OperationInstanceId))!.Status.Should().Be(OperationHandleStatus.Completed);
     }
+
+    private static OperationStatus CreateCompletedStatus(OperationHandle handle) => new()
+    {
+        OperationInstanceId = handle.OperationInstanceId,
+        OperationId = handle.OperationId,
+        CorrelationId = handle.CorrelationId,
+        AuditId = handle.AuditId,
+        CreatedAt = handle.CreatedAt,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Status = OperationHandleStatus.Completed,
+        JobId = handle.JobId,
+    };
 
     private static OperationHandle Handle() => new()
     {

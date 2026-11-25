@@ -3,7 +3,6 @@
 
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Antiforgery;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -26,7 +25,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Honua.Server.Features.Admin;
 
 // Provider connection details stay server-side; the anonymous client receives only provider labels.
-internal static class AdminAuthEndpoints
+internal static partial class AdminAuthEndpoints
 {
     internal const string AdminAuthHttpClient = "AdminAuthOidc";
     private const string AuthorizationCodeGrantType = "authorization_code";
@@ -264,26 +263,11 @@ internal static class AdminAuthEndpoints
         [FromServices] AdminAuthSessionStore sessionStore,
         [FromServices] OperatorBearerTokenService bearerTokenService)
     {
-        // Fail-closed: a forwardable operator bearer is only minted for a live,
-        // authenticated admin session. The bearer carries the session's claims, so
-        // the principal it produces on the request path resolves to the same RBAC.
-        var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];
-        var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
-        if (session is null || session.Claims is null || session.Claims.Length == 0)
+        var (sessionId, session, unauthorized) = await ResolveAuthenticatedAdminSessionAsync(context, sessionStore)
+            .ConfigureAwait(false);
+        if (unauthorized is not null)
         {
-            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
-            return StandardErrorHelpers.CreateUnauthorized(
-                context,
-                "An authenticated admin session is required to issue an operator bearer.");
-        }
-
-        if (context.User.Identity?.IsAuthenticated != true)
-        {
-            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
-            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
-            return StandardErrorHelpers.CreateUnauthorized(
-                context,
-                "An authenticated admin session is required to issue an operator bearer.");
+            return unauthorized;
         }
 
         if (!bearerTokenService.Enabled)
@@ -293,9 +277,9 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session.ExpiresAt, context.RequestAborted)
+        var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session!.ExpiresAt, context.RequestAborted)
             .ConfigureAwait(false);
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, new OperatorBearerBinding(Session: binding));
+        var issuance = bearerTokenService.Issue(session.Claims!, session.ExpiresAt, new OperatorBearerBinding(Session: binding));
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -304,6 +288,31 @@ internal static class AdminAuthEndpoints
         }
 
         return TypedResults.Ok(CreateOperatorBearerResponse(issuance));
+    }
+
+    private static async Task<(string? SessionId, AdminAuthAuthenticatedSession? Session, IResult? Unauthorized)>
+        ResolveAuthenticatedAdminSessionAsync(HttpContext context, AdminAuthSessionStore sessionStore)
+    {
+        var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];
+        var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+        if (session is null || session.Claims is null || session.Claims.Length == 0)
+        {
+            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
+            return (null, null, StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "An authenticated admin session is required to issue an operator bearer."));
+        }
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
+            return (null, null, StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "An authenticated admin session is required to issue an operator bearer."));
+        }
+
+        return (sessionId, session, null);
     }
 
     internal static AdminOperatorBearerResponse CreateOperatorBearerResponse(OperatorBearerIssuance issuance) =>
@@ -348,9 +357,10 @@ internal static class AdminAuthEndpoints
                 provider.Authority!,
                 context.RequestAborted).ConfigureAwait(false);
 
-            if (!PortalOAuthBroker.IsValidBrowserRedirectEndpoint(
-                    discovery.AuthorizationEndpoint,
-                    oidcOptions.Value.RequireHttps))
+            var isValidAuthorizeEndpoint = oidcOptions.Value.RequireHttps
+                ? PortalOAuthBroker.IsValidHttpsBrowserRedirectEndpoint(discovery.AuthorizationEndpoint)
+                : PortalOAuthBroker.IsValidHttpOrHttpsBrowserRedirectEndpoint(discovery.AuthorizationEndpoint);
+            if (!isValidAuthorizeEndpoint)
             {
                 AdminAuthLog.MissingAuthorizationEndpoint(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(
@@ -385,13 +395,15 @@ internal static class AdminAuthEndpoints
             pendingCookieOptions.SameSite = SameSiteMode.Lax;
             SetCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName, pendingSessionId, pendingCookieOptions);
 
-            var authorizeUrl = BuildAuthorizeUrl(
-                discovery.AuthorizationEndpoint,
-                provider,
-                ResolveAdminCallbackUri(context, oidcOptions.Value),
-                state,
-                nonce,
-                challenge);
+            var authorizeUrl = BuildAuthorizeUrl(new AdminAuthorizeUrlParameters
+            {
+                AuthorizationEndpoint = discovery.AuthorizationEndpoint,
+                Provider = provider,
+                RedirectUri = ResolveAdminCallbackUri(context, oidcOptions.Value),
+                State = state,
+                Nonce = nonce,
+                CodeChallenge = challenge
+            });
 
             return TypedResults.Ok(new AdminAuthAuthorizeUrlResponse
             {
@@ -443,7 +455,7 @@ internal static class AdminAuthEndpoints
         }
 
         var codeVerifier = pendingSession.CodeVerifier;
-        var allowPrivateNetworks = AllowPrivateDiscoveryNetworks(context);
+        var networkPolicy = ResolveDiscoveryNetworkPolicy(context);
 
         var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
         if (baseUrlRequirement != null)
@@ -458,10 +470,11 @@ internal static class AdminAuthEndpoints
                 provider.Authority!,
                 context.RequestAborted).ConfigureAwait(false);
 
+            var tokenPolicy = (oidcOptions.Value.RequireHttps ? DiscoveryEndpointPolicy.Strict : DiscoveryEndpointPolicy.AllowHttp)
+                | (networkPolicy == DiscoveryNetworkPolicy.AllowPrivate ? DiscoveryEndpointPolicy.AllowPrivateNetworks : DiscoveryEndpointPolicy.Strict);
             if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
                     discovery.TokenEndpoint,
-                    oidcOptions.Value.RequireHttps,
-                    allowPrivateNetworks,
+                    tokenPolicy,
                     context.RequestAborted).ConfigureAwait(false))
             {
                 AdminAuthLog.MissingTokenEndpoint(logger, provider.Key);
@@ -472,12 +485,15 @@ internal static class AdminAuthEndpoints
             }
 
             using var response = await RequestTokenAsync(
-                httpClientFactory,
-                discovery.TokenEndpoint,
-                provider,
-                request,
-                codeVerifier,
-                ResolveAdminCallbackUri(context, oidcOptions.Value),
+                new AdminTokenExchangeContext
+                {
+                    HttpClientFactory = httpClientFactory,
+                    TokenEndpoint = discovery.TokenEndpoint,
+                    Provider = provider,
+                    Request = request,
+                    CodeVerifier = codeVerifier,
+                    RedirectUri = ResolveAdminCallbackUri(context, oidcOptions.Value)
+                },
                 context.RequestAborted).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -500,13 +516,16 @@ internal static class AdminAuthEndpoints
             }
 
             var validatedClaims = await ValidateAdminSessionIdTokenAsync(
-                httpClientFactory,
-                discovery,
-                provider,
-                oidcOptions.Value,
-                tokenResponse.IdToken,
-                pendingSession.Nonce,
-                allowPrivateNetworks,
+                new AdminIdTokenValidationContext
+                {
+                    HttpClientFactory = httpClientFactory,
+                    Discovery = discovery,
+                    Provider = provider,
+                    OidcOptions = oidcOptions.Value,
+                    IdToken = tokenResponse.IdToken,
+                    ExpectedNonce = pendingSession.Nonce,
+                    NetworkPolicy = networkPolicy
+                },
                 context.RequestAborted).ConfigureAwait(false);
             if (validatedClaims is null ||
                 !AdminAuthClaimsProjector.TryProjectValidatedClaims(validatedClaims, out var sessionClaims))
@@ -518,54 +537,23 @@ internal static class AdminAuthEndpoints
                     retryable: true);
             }
 
-            var expiresIn = tokenResponse.ExpiresIn > 0 ? tokenResponse.ExpiresIn : 300;
-            var now = DateTimeOffset.UtcNow;
-            var sessionExpiresAt = now.AddSeconds(expiresIn);
-
-            // Clamp the session's effective lifetime to the earlier of the provider's
-            // declared ExpiresIn and the ID token's own `exp` claim. Already-expired ID
-            // tokens are rejected rather than extended into a short-lived session.
-            var idTokenExpiry = TryGetIdTokenExpiry(validatedClaims);
-            if (idTokenExpiry.HasValue && idTokenExpiry.Value < sessionExpiresAt)
-            {
-                sessionExpiresAt = idTokenExpiry.Value;
-            }
-
-            var cookieLifetime = sessionExpiresAt - now;
-            if (cookieLifetime <= TimeSpan.Zero)
+            var persistResult = await PersistInteractiveOidcSessionAsync(
+                context,
+                sessionStore,
+                new AdminTokenSessionInput
+                {
+                    Provider = provider,
+                    TokenResponse = tokenResponse,
+                    ValidatedClaims = validatedClaims,
+                    SessionClaims = sessionClaims,
+                    PendingSessionId = pendingSessionId
+                }).ConfigureAwait(false);
+            if (persistResult is not Microsoft.AspNetCore.Http.HttpResults.NoContent)
             {
                 AdminAuthLog.InvalidTokenProjection(logger, provider.Key);
-                return StandardErrorHelpers.CreateServiceUnavailable(
-                    context,
-                    "Identity provider is temporarily unavailable.",
-                    retryable: true);
             }
 
-            var authSessionId = await sessionStore.CreateAuthenticatedSessionAsync(
-                new AdminAuthAuthenticatedSession
-                {
-                    ProviderKey = provider.Key,
-                    AccessToken = tokenResponse.AccessToken,
-                    IdToken = tokenResponse.IdToken,
-                    Claims = sessionClaims.ToArray(),
-                    ExpiresAt = sessionExpiresAt,
-                    Origin = AdminAuthSessionOrigin.InteractiveOidc
-                }, context.RequestAborted).ConfigureAwait(false);
-
-            SetCookie(
-                context.Response,
-                AdminAuthSessionStore.AuthSessionCookieName,
-                authSessionId,
-                CreateAdminAuthCookieOptions(context, cookieLifetime));
-
-            if (!string.IsNullOrWhiteSpace(pendingSessionId))
-            {
-                await sessionStore.RemovePendingSessionAsync(pendingSessionId, context.RequestAborted).ConfigureAwait(false);
-            }
-
-            DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
-
-            return TypedResults.NoContent();
+            return persistResult;
         }
         catch (OperationCanceledException)
         {
@@ -581,12 +569,7 @@ internal static class AdminAuthEndpoints
         }
         finally
         {
-            if (!string.IsNullOrWhiteSpace(pendingSessionId))
-            {
-                await sessionStore.RemovePendingSessionAsync(pendingSessionId, context.RequestAborted).ConfigureAwait(false);
-            }
-
-            DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
+            await CleanupPendingSessionAsync(context, sessionStore, pendingSessionId).ConfigureAwait(false);
         }
     }
 
@@ -629,13 +612,15 @@ internal static class AdminAuthEndpoints
             return baseUrlRequirement;
         }
 
-        var logoutUrl = await TryBuildLogoutUrlAsync(
-            provider,
-            session.IdToken,
-            oidcOptions.Value.RequireHttps,
-            context,
-            httpClientFactory,
-            logger).ConfigureAwait(false);
+        var logoutUrl = await TryBuildLogoutUrlAsync(new AdminLogoutUrlContext
+        {
+            Provider = provider,
+            IdTokenHint = session.IdToken,
+            HttpsPolicy = ResolveRedirectHttpsPolicy(oidcOptions.Value),
+            HttpContext = context,
+            HttpClientFactory = httpClientFactory,
+            Logger = logger
+        }).ConfigureAwait(false);
 
         return TypedResults.Ok(new AdminAuthLogoutUrlResponse
         {
@@ -662,13 +647,15 @@ internal static class AdminAuthEndpoints
             return baseUrlRequirement;
         }
 
-        var logoutUrl = await TryBuildLogoutUrlAsync(
-            provider,
-            idTokenHint,
-            oidcOptions.Value.RequireHttps,
-            context,
-            httpClientFactory,
-            logger).ConfigureAwait(false);
+        var logoutUrl = await TryBuildLogoutUrlAsync(new AdminLogoutUrlContext
+        {
+            Provider = provider,
+            IdTokenHint = idTokenHint,
+            HttpsPolicy = ResolveRedirectHttpsPolicy(oidcOptions.Value),
+            HttpContext = context,
+            HttpClientFactory = httpClientFactory,
+            Logger = logger
+        }).ConfigureAwait(false);
 
         return TypedResults.Ok(new AdminAuthLogoutUrlResponse
         {
@@ -704,242 +691,6 @@ internal static class AdminAuthEndpoints
 
         error = string.Empty;
         return true;
-    }
-
-    private static async Task<AdminAuthOidcDiscoveryDocument> GetDiscoveryDocumentAsync(
-        IHttpClientFactory httpClientFactory,
-        string authority,
-        CancellationToken cancellationToken)
-    {
-        var discoveryUrl = authority.TrimEnd('/') + "/.well-known/openid-configuration";
-        var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
-        using var response = await client.GetAsync(discoveryUrl, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        return await response.Content.ReadFromJsonAsync(
-                AdminAuthJsonContext.Default.AdminAuthOidcDiscoveryDocument,
-                cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new InvalidOperationException("OIDC discovery document response was empty.");
-    }
-
-    // Reads the standard JWT `exp` claim (seconds since Unix epoch) and returns the
-    // corresponding UTC DateTimeOffset. Returns null when the claim is missing or
-    // malformed — callers treat that as "no extra ceiling".
-    private static DateTimeOffset? TryGetIdTokenExpiry(IReadOnlyList<Claim> claims)
-    {
-        foreach (var claim in claims)
-        {
-            if (!string.Equals(claim.Type, "exp", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (long.TryParse(
-                    claim.Value,
-                    System.Globalization.NumberStyles.Integer,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var epoch))
-            {
-                return DateTimeOffset.FromUnixTimeSeconds(epoch);
-            }
-        }
-
-        return null;
-    }
-
-    private static async Task<IReadOnlyList<Claim>?> ValidateAdminSessionIdTokenAsync(
-        IHttpClientFactory httpClientFactory,
-        AdminAuthOidcDiscoveryDocument discovery,
-        OidcProviderRegistration provider,
-        OidcAuthenticationOptions oidcOptions,
-        string? idToken,
-        string? expectedNonce,
-        bool allowPrivateNetworks,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(idToken) ||
-            string.IsNullOrWhiteSpace(expectedNonce) ||
-            string.IsNullOrWhiteSpace(discovery.Issuer) ||
-            string.IsNullOrWhiteSpace(discovery.JwksUri) ||
-            string.IsNullOrWhiteSpace(provider.ClientId))
-        {
-            return null;
-        }
-
-        var discoveryIssuer = discovery.Issuer.Trim();
-        if (!IsAllowedDiscoveryIssuer(discoveryIssuer, provider, oidcOptions))
-        {
-            return null;
-        }
-
-        if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
-                discovery.JwksUri,
-                oidcOptions.RequireHttps,
-                allowPrivateNetworks,
-                cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        var handler = new JwtSecurityTokenHandler();
-        if (!handler.CanReadToken(idToken))
-        {
-            return null;
-        }
-
-        var signingKeys = await GetOidcSigningKeysAsync(
-            httpClientFactory,
-            discovery.JwksUri,
-            cancellationToken).ConfigureAwait(false);
-        if (signingKeys.Count == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            var principal = handler.ValidateToken(
-                idToken,
-                new TokenValidationParameters
-                {
-                    RequireSignedTokens = true,
-                    RequireExpirationTime = true,
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKeys = signingKeys,
-                    ValidAlgorithms = AllowedIdTokenAlgorithms,
-                    ValidateIssuer = true,
-                    ValidIssuer = discoveryIssuer,
-                    ValidateAudience = true,
-                    ValidAudience = provider.ClientId,
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(2)
-                },
-                out _);
-
-            var claims = principal.Claims.ToArray();
-            var tokenNonce = claims
-                .FirstOrDefault(static claim => string.Equals(claim.Type, JwtRegisteredClaimNames.Nonce, StringComparison.Ordinal))
-                ?.Value;
-            if (!PortalOAuthBroker.CryptographicEquals(expectedNonce, tokenNonce))
-            {
-                return null;
-            }
-
-            return claims;
-        }
-        catch (SecurityTokenException)
-        {
-            return null;
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
-    }
-
-    internal static bool IsAllowedDiscoveryIssuer(
-        string discoveryIssuer,
-        OidcProviderRegistration provider,
-        OidcAuthenticationOptions oidcOptions)
-    {
-        var normalizedDiscovery = discoveryIssuer.Trim().TrimEnd('/');
-        if (string.IsNullOrEmpty(normalizedDiscovery))
-        {
-            return false;
-        }
-
-        var baseParameters = OidcTokenValidationParametersFactory.Build(oidcOptions).Parameters;
-        var narrowed = OidcTokenValidationParametersFactory.NarrowToProvider(baseParameters, provider, oidcOptions);
-        var allowedIssuers = (narrowed.ValidIssuers ?? [])
-            .Where(static issuer => !string.IsNullOrWhiteSpace(issuer));
-        if (allowedIssuers.Any(candidate =>
-                string.Equals(candidate.Trim().TrimEnd('/'), normalizedDiscovery, StringComparison.Ordinal)))
-        {
-            return true;
-        }
-
-        return OidcProviderDiscoveryProbe.IsExpectedIssuer(provider.Authority, provider.Type, discoveryIssuer);
-    }
-
-    private static bool AllowPrivateDiscoveryNetworks(HttpContext context)
-        => context.RequestServices.GetService<IHostEnvironment>() is { } environment
-            && (environment.IsDevelopment() || environment.IsEnvironment("Test"));
-
-    private static async Task<IReadOnlyList<SecurityKey>> GetOidcSigningKeysAsync(
-        IHttpClientFactory httpClientFactory,
-        string jwksUri,
-        CancellationToken cancellationToken)
-    {
-        var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
-        using var response = await client.GetAsync(jwksUri, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return [];
-        }
-
-        var jwksJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(jwksJson))
-        {
-            return [];
-        }
-
-        var keySet = new JsonWebKeySet(jwksJson);
-        return keySet.GetSigningKeys().ToArray();
-    }
-
-    private static async Task<HttpResponseMessage> RequestTokenAsync(
-        IHttpClientFactory httpClientFactory,
-        string tokenEndpoint,
-        OidcProviderRegistration provider,
-        AdminAuthTokenRequest request,
-        string codeVerifier,
-        string redirectUri,
-        CancellationToken cancellationToken)
-    {
-        var formValues = new Dictionary<string, string>
-        {
-            ["grant_type"] = AuthorizationCodeGrantType,
-            ["code"] = request.Code!,
-            ["code_verifier"] = codeVerifier,
-            ["redirect_uri"] = redirectUri,
-            ["client_id"] = provider.ClientId!
-        };
-
-        if (!string.IsNullOrWhiteSpace(provider.ClientSecret))
-        {
-            formValues["client_secret"] = provider.ClientSecret;
-        }
-
-        var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
-        using var content = new FormUrlEncodedContent(formValues);
-        return await client.PostAsync(
-            tokenEndpoint,
-            content,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string BuildAuthorizeUrl(
-        string authorizationEndpoint,
-        OidcProviderRegistration provider,
-        string redirectUri,
-        string state,
-        string nonce,
-        string codeChallenge)
-    {
-        var parameters = new Dictionary<string, string?>
-        {
-            ["response_type"] = "code",
-            ["client_id"] = provider.ClientId,
-            ["redirect_uri"] = redirectUri,
-            ["scope"] = string.Join(" ", provider.Scopes),
-            ["state"] = state,
-            ["nonce"] = nonce,
-            ["code_challenge"] = codeChallenge,
-            ["code_challenge_method"] = "S256"
-        };
-
-        return QueryHelpers.AddQueryString(authorizationEndpoint, parameters);
     }
 
     private static string BuildAbsoluteUri(HttpContext context, string path)
@@ -1014,73 +765,5 @@ internal static class AdminAuthEndpoints
         return StandardErrorHelpers.CreateServiceUnavailable(
             context,
             "Admin OIDC requires Public:BaseUrl to be configured outside development and test environments.");
-    }
-
-    private static async Task<string?> TryBuildLogoutUrlAsync(
-        OidcProviderRegistration provider,
-        string? idTokenHint,
-        bool requireHttps,
-        HttpContext context,
-        IHttpClientFactory httpClientFactory,
-        ILogger<AdminAuthEndpointsLog> logger)
-    {
-        try
-        {
-            var logoutEndpoint = provider.LogoutEndpoint;
-            if (string.IsNullOrWhiteSpace(logoutEndpoint))
-            {
-                var discovery = await GetDiscoveryDocumentAsync(
-                    httpClientFactory,
-                    provider.Authority!,
-                    context.RequestAborted).ConfigureAwait(false);
-                logoutEndpoint = discovery.EndSessionEndpoint;
-            }
-
-            if (!PortalOAuthBroker.IsValidBrowserRedirectEndpoint(logoutEndpoint, requireHttps))
-            {
-                return null;
-            }
-
-            var redirectUri = BuildAbsoluteUri(context, AdminPostLogoutRedirectPath);
-            var parameters = provider.UseCognitoLogout
-                ? new Dictionary<string, string?>
-                {
-                    ["client_id"] = provider.ClientId,
-                    ["logout_uri"] = redirectUri
-                }
-                : new Dictionary<string, string?>
-                {
-                    ["post_logout_redirect_uri"] = redirectUri
-                };
-
-            if (!provider.UseCognitoLogout && !string.IsNullOrWhiteSpace(idTokenHint))
-            {
-                parameters["id_token_hint"] = idTokenHint;
-            }
-
-            return QueryHelpers.AddQueryString(logoutEndpoint!, parameters);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
-        {
-            AdminAuthLog.CreateLogoutUrlFailed(logger, provider.Key, ex);
-            return null;
-        }
-    }
-
-    private static string GenerateRandomString(int length)
-    {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-        var bytes = RandomNumberGenerator.GetBytes(length);
-        var result = new char[length];
-        for (int i = 0; i < length; i++)
-        {
-            result[i] = chars[bytes[i] % chars.Length];
-        }
-
-        return new string(result);
     }
 }

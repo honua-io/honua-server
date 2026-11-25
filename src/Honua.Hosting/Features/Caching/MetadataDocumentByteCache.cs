@@ -179,14 +179,7 @@ internal sealed class MetadataDocumentByteCache
         var schema = SchemaContext.AmbientCurrentSchema
             ?? context.RequestServices?.GetService<ISchemaContext>()?.CurrentSchema
             ?? "default";
-
-        var testSchema = string.Empty;
-        if (context.RequestServices?.GetService<IConfiguration>()?.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS") == true
-            && context.Request.Headers.TryGetValue("X-Honua-Test-Schema", out var headerSchema))
-        {
-            testSchema = headerSchema.ToString().Trim();
-        }
-
+        var testSchema = ResolveTestSchemaHeader(context);
         var licenseSnapshot = context.RequestServices?.GetService<ILicenseEntitlementService>()?.GetSnapshot();
         var sb = PooledTextBuilder.Rent();
         try
@@ -213,6 +206,17 @@ internal sealed class MetadataDocumentByteCache
         {
             PooledTextBuilder.Return(sb);
         }
+    }
+
+    private static string ResolveTestSchemaHeader(HttpContext context)
+    {
+        if (context.RequestServices?.GetService<IConfiguration>()?.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS") == true
+            && context.Request.Headers.TryGetValue("X-Honua-Test-Schema", out var headerSchema))
+        {
+            return headerSchema.ToString().Trim();
+        }
+
+        return string.Empty;
     }
 
     // Must match the query keys BaseUrlResolver.PreserveToken copies into document links.

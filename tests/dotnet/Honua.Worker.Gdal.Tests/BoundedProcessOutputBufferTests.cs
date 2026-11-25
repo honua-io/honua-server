@@ -44,7 +44,7 @@ public sealed class BoundedProcessOutputBufferTests
     public void AppendLine_WithoutTruncationMarker_OmitsMarkerAndBoundsLength()
     {
         const int limit = 64;
-        var buffer = new BoundedProcessOutputBuffer(maxChars: limit, appendTruncationMarker: false);
+        var buffer = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(maxChars: limit);
 
         for (var i = 0; i < 1000; i++)
         {

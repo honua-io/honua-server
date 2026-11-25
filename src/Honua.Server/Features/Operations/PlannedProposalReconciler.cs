@@ -28,10 +28,13 @@ internal sealed partial class PlannedProposalReconciler(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
         => PeriodicBackgroundLoop.RunAsync(
-            SweepInterval,
-            clock,
-            SweepOnceAsync,
-            ex => Log.SweepFailed(logger, ex),
+            new PeriodicBackgroundLoopOptions
+            {
+                Interval = SweepInterval,
+                TimeProvider = clock,
+                ExecuteIterationAsync = SweepOnceAsync,
+                OnIterationError = ex => Log.SweepFailed(logger, ex)
+            },
             stoppingToken);
 
     internal async Task SweepOnceAsync(CancellationToken cancellationToken = default)
@@ -44,36 +47,19 @@ internal sealed partial class PlannedProposalReconciler(
         }
 
         using var sweepCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
-            LeaseId,
-            LeaseRenewInterval,
-            sweepCancellation,
-            ct => proposalStore.RenewLeaseAsync(LeaseId, _ownerId, LeaseDuration, ct),
-            logger,
-            clock);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(new LeaseRenewalRequest
+        {
+            LeaseId = LeaseId,
+            RenewInterval = LeaseRenewInterval,
+            ReconciliationCancellation = sweepCancellation,
+            RenewLeaseAsync = ct => proposalStore.RenewLeaseAsync(LeaseId, _ownerId, LeaseDuration, ct),
+            Logger = logger,
+            Clock = clock
+        });
 
         try
         {
-            var cutoff = clock.GetUtcNow() - StaleAge;
-            var active = await proposalStore.ListActiveAsync(cancellationToken: sweepCancellation.Token)
-                .ConfigureAwait(false);
-            foreach (var candidate in active.Where(proposal =>
-                         proposal.Status == OperationProposalStatus.Planned && proposal.UpdatedAt <= cutoff))
-            {
-                sweepCancellation.Token.ThrowIfCancellationRequested();
-                try
-                {
-                    await CompensateAsync(candidate.ProposalId, cutoff, sweepCancellation.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (sweepCancellation.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    Log.ProposalCompensationFailed(logger, candidate.ProposalId, ex);
-                }
-            }
+            await CompensateStaleProposalsAsync(sweepCancellation).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (sweepCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -81,12 +67,38 @@ internal sealed partial class PlannedProposalReconciler(
         }
         finally
         {
-            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
-                LeaseId,
-                sweepCancellation,
-                renewalTask,
-                ct => proposalStore.ReleaseLeaseAsync(LeaseId, _ownerId, ct),
-                logger).ConfigureAwait(false);
+            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(new LeaseReleaseRequest
+            {
+                LeaseId = LeaseId,
+                ReconciliationCancellation = sweepCancellation,
+                RenewalTask = renewalTask,
+                ReleaseLeaseAsync = ct => proposalStore.ReleaseLeaseAsync(LeaseId, _ownerId, ct),
+                Logger = logger
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task CompensateStaleProposalsAsync(CancellationTokenSource sweepCancellation)
+    {
+        var cutoff = clock.GetUtcNow() - StaleAge;
+        var active = await proposalStore.ListActiveAsync(cancellationToken: sweepCancellation.Token)
+            .ConfigureAwait(false);
+        foreach (var candidate in active.Where(proposal =>
+                     proposal.Status == OperationProposalStatus.Planned && proposal.UpdatedAt <= cutoff))
+        {
+            sweepCancellation.Token.ThrowIfCancellationRequested();
+            try
+            {
+                await CompensateAsync(candidate.ProposalId, cutoff, sweepCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (sweepCancellation.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.ProposalCompensationFailed(logger, candidate.ProposalId, ex);
+            }
         }
     }
 

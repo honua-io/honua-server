@@ -48,34 +48,33 @@ internal sealed partial class GeometryConvexHullJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing convex-hull inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadSingleGeometryInputs(parameters, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadSingleGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {inputRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
-            inputs.WkbBytes,
-            inputs.Srid,
-            out var geometry,
-            out var wkbError,
-            out var isEmpty,
-            out var sridError))
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            if (wkbError is not null)
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
             {
-                Log.InvalidWkb(_logger, job.OperationId, wkbError);
+                Log.InvalidWkb(_logger, job.OperationId, decodeResult.Error!);
                 return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: WKB payload could not be decoded.");
             }
 
-            if (isEmpty)
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
             {
                 return JobExecutionResult.InvalidInput("Invalid convex-hull inputs: geometry is empty.");
             }
 
-            Log.InvalidInputs(_logger, job.OperationId, sridError!);
-            return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {sridError}.");
+            Log.InvalidInputs(_logger, job.OperationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid convex-hull inputs: {decodeResult.Error}.");
         }
+
+        var geometry = decodeResult.Geometry!;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing convex hull", cancellationToken).ConfigureAwait(false);

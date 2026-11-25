@@ -56,25 +56,23 @@ internal static class ImageServerCogStatistics
         }
 
         var bands = SelectBands(request.Bands, registrations);
-        if (Refuse(context, request, new CogSelection(registrations, bands)) is { } refusal)
+        var selection = new CogSelection(registrations, bands);
+        if (Refuse(context, request, selection) is { } refusal)
         {
             return new ImageServerCogStatisticsResult([], [], refusal);
         }
 
         var cache = context.RequestServices.GetService<IMemoryCache>();
-        var key = CacheKey(context, registrations, bands, request.BinCount);
+        var key = CacheKey(context, selection, request.BinCount);
         if (cache?.TryGetValue(key, out ImageServerCogStatisticsResult? cached) == true && cached is not null)
         {
             return cached;
         }
 
-        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(ImageServerCogStatistics).FullName!)
-            ?? NullLogger.Instance;
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(ImageServerCogStatistics).FullName!) ?? NullLogger.Instance;
         var source = new ImageServerCogExport.CogTileSource(resolver!, logger) { Format = RasterFormat.Raw };
         var blocks = await ReadBlocksAsync(source, registrations, cancellationToken).ConfigureAwait(false);
         var result = Compute(blocks, bands, request.BinCount);
-
-        // A failed tile read leaves the statistics partial; answer them, but do not keep them.
         if (blocks.Count == registrations.Sum(registration => OverviewTiles(registration).Count))
         {
             cache?.Set(key, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheLifetime, Size = 1 });
@@ -113,7 +111,7 @@ internal static class ImageServerCogStatistics
             null);
     }
 
-    private sealed record CogSelection(CogRegistration[] Registrations, int[] Bands);
+    internal sealed record CogSelection(CogRegistration[] Registrations, int[] Bands);
 
     private static IResult? Refuse(HttpContext context, ImageServerCogStatisticsRequest request, CogSelection selection)
     {
@@ -139,7 +137,7 @@ internal static class ImageServerCogStatistics
             : Enumerable.Range(1, shared).ToArray();
     }
 
-    internal static string CacheKey(HttpContext context, CogRegistration[] registrations, int[] bands, int binCount)
+    internal static string CacheKey(HttpContext context, CogSelection selection, int binCount)
     {
         var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>";
         var schema = SchemaContext.AmbientCurrentSchema
@@ -147,7 +145,7 @@ internal static class ImageServerCogStatistics
             ?? "default";
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"imageserver-cog-statistics:t={Uri.EscapeDataString(tenantId)}|s={Uri.EscapeDataString(schema)}|{string.Join(',', registrations.Select(static registration => $"{registration.Id}@{registration.MetadataScannedAt?.UtcTicks}:{Uri.EscapeDataString(registration.Bucket ?? string.Empty)}:{Uri.EscapeDataString(registration.ObjectKey ?? string.Empty)}"))}|{string.Join(',', bands)}|{binCount}");
+            $"imageserver-cog-statistics:t={Uri.EscapeDataString(tenantId)}|s={Uri.EscapeDataString(schema)}|{string.Join(',', selection.Registrations.Select(static registration => $"{registration.Id}@{registration.MetadataScannedAt?.UtcTicks}:{Uri.EscapeDataString(registration.Bucket ?? string.Empty)}:{Uri.EscapeDataString(registration.ObjectKey ?? string.Empty)}"))}|{string.Join(',', selection.Bands)}|{binCount}");
     }
 
     private static List<ImageServerCogExport.TileAddress> OverviewTiles(CogRegistration registration)

@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -30,7 +29,7 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
         maskSource.ResolveAsync(relatedResource, Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
 
-        var dataAccess = new RecordingFeatureDataAccess();
+        var dataAccess = CreateDataAccess();
         var store = CreateStore(dataAccess, maskSource, originResource, relatedResource);
         var query = RelatedQuery.ForObjects([1L], 20, "secretkey", "parent_id");
 
@@ -38,7 +37,7 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
 
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*relationship key*");
-        dataAccess.QueryRelatedCallCount.Should().Be(0);
+        await dataAccess.DidNotReceive().QueryRelatedAsync(Arg.Any<int>(), Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -52,7 +51,7 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
         maskSource.ResolveAsync(relatedResource, Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("Parent_Id"));
 
-        var dataAccess = new RecordingFeatureDataAccess();
+        var dataAccess = CreateDataAccess();
         var store = CreateStore(dataAccess, maskSource, originResource, relatedResource);
         var query = RelatedQuery.ForObjects([1L], 20, "objectid", "parent_id");
 
@@ -60,7 +59,7 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
 
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*relationship key*");
-        dataAccess.QueryRelatedCallCount.Should().Be(0);
+        await dataAccess.DidNotReceive().QueryRelatedAsync(Arg.Any<int>(), Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -71,7 +70,8 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
         maskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("ssn", "salary"));
 
-        var dataAccess = new RecordingFeatureDataAccess();
+        Feature? updatedFeature = null;
+        var dataAccess = CreateDataAccess(feature => updatedFeature = feature);
         var store = CreateStore(dataAccess, maskSource, resource);
         var incoming = Feature.Create(
             5,
@@ -83,8 +83,23 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
 
         await store.UpdateAsync(10, incoming);
 
-        dataAccess.LastUpdatedFeature.Should().NotBeNull();
-        dataAccess.LastUpdatedFeature!.Value.PreservedAttributeNames.Should().BeEquivalentTo(["existing_field", "SSN", "salary"]);
+        updatedFeature.Should().NotBeNull();
+        updatedFeature!.Value.PreservedAttributeNames.Should().BeEquivalentTo(["existing_field", "SSN", "salary"]);
+    }
+
+    private static IFeatureDataAccess CreateDataAccess(Action<Feature>? onUpdate = null)
+    {
+        var dataAccess = Substitute.For<IFeatureDataAccess>();
+        dataAccess.QueryRelatedAsync(Arg.Any<int>(), Arg.Any<RelatedQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Empty());
+        dataAccess.UpdateFeatureAsync(Arg.Any<int>(), Arg.Any<Feature>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var feature = call.ArgAt<Feature>(1);
+                onUpdate?.Invoke(feature);
+                return Task.FromResult(feature);
+            });
+        return dataAccess;
     }
 
     private static MetadataV2Object CreateResource(int layerId) => new()
@@ -136,98 +151,5 @@ public sealed class PostgresFeatureStoreSecurityHardeningTests
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == snapshot.Graph.Revision ? snapshot : null);
-    }
-
-    private sealed class RecordingFeatureDataAccess : IFeatureDataAccess
-    {
-        public int QueryRelatedCallCount { get; private set; }
-
-        public Feature? LastUpdatedFeature { get; private set; }
-
-        public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty);
-
-        public Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<Feature>.Empty);
-
-        public Task<long> ExecuteCountQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(0L);
-
-        public Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<ProjectedPoint>.Empty);
-
-        public Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<GmlFeature>.Empty);
-
-        public Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<EncodedGeoJsonFeature>.Empty);
-
-        public Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<RawGeoJsonFeature>.Empty);
-
-        public Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<KmlFeature>.Empty);
-
-        public Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult<byte[]?>(null);
-
-        public Task<byte[]?> ExecuteSelectGeobufQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult<byte[]?>(null);
-
-        public Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
-            ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
-            => Task.FromResult(ImmutableArray<long>.Empty);
-
-        public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
-        {
-            QueryRelatedCallCount++;
-            return Task.FromResult(QueryResult<Feature>.Empty());
-        }
-
-        public Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
-        {
-            LastUpdatedFeature = feature;
-            return Task.FromResult(feature);
-        }
-
-        public Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
-            => Task.FromResult<Feature?>(null);
-
-        public Task<FeatureExtent?> GetExtentAsync(int layerId, ParameterizedQuery? query, FeatureQuery featureQuery, CancellationToken cancellationToken)
-            => Task.FromResult<FeatureExtent?>(null);
-
-        public Task<TemporalExtentResult?> GetTemporalExtentAsync(int layerId, ParameterizedQuery? query, CancellationToken cancellationToken)
-            => Task.FromResult<TemporalExtentResult?>(null);
-
-        public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
-            => Task.FromResult<byte[]?>(null);
-
-        public async IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
     }
 }

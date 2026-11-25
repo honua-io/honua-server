@@ -19,9 +19,6 @@ namespace Honua.Protocols.OData.Services;
 
 internal sealed partial class ODataAggregationHandler
 {
-    private const int MaxApplyExpressionLength = 4096;
-    private const int RegexTimeoutMilliseconds = 100;
-
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore? _streamingFeatureStore;
     private readonly ODataQueryService _queryService;
@@ -178,73 +175,16 @@ internal sealed partial class ODataAggregationHandler
         }
 
         var trimmed = expression.Trim();
-
         try
         {
-            // Handle aggregate(...) pattern
-            // Example: aggregate(population with sum as TotalPop, area with avg as AvgArea)
-            var aggregateMatch = AggregateExpressionRegex().Match(trimmed);
-            if (aggregateMatch.Success)
+            if (TryParseAggregateOrGroupBy(trimmed) is { } aggregated)
             {
-                var aggregates = ParseAggregateExpressions(aggregateMatch.Groups[1].Value);
-                return new ParsedAggregation
-                {
-                    Type = AggregationType.Aggregate,
-                    Aggregates = aggregates.ToImmutableArray()
-                };
+                return aggregated;
             }
 
-            // Handle groupby((field1, field2), aggregate(...)) pattern
-            // Example: groupby((state, county), aggregate(population with sum as TotalPop))
-            var groupbyMatch = GroupByExpressionRegex().Match(trimmed);
-            if (groupbyMatch.Success)
+            if (TryParseFilterOrCompute(trimmed) is { } transformed)
             {
-                var rawGroupByFields = groupbyMatch.Groups[1].Value;
-                if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(rawGroupByFields))
-                {
-                    throw new ArgumentException("groupby contains an empty field expression.");
-                }
-
-                var groupByFields = rawGroupByFields
-                    .Split(',', StringSplitOptions.TrimEntries)
-                    .ToImmutableArray();
-
-                ImmutableArray<AggregateExpression>? aggregates = null;
-                if (groupbyMatch.Groups[2].Success && !string.IsNullOrWhiteSpace(groupbyMatch.Groups[2].Value))
-                {
-                    aggregates = ParseAggregateExpressions(groupbyMatch.Groups[2].Value).ToImmutableArray();
-                }
-
-                return new ParsedAggregation
-                {
-                    Type = AggregationType.GroupBy,
-                    GroupByFields = groupByFields,
-                    Aggregates = aggregates
-                };
-            }
-
-            // Handle filter(...) pattern
-            // Example: filter(population gt 1000)
-            var filterMatch = FilterExpressionRegex().Match(trimmed);
-            if (filterMatch.Success)
-            {
-                return new ParsedAggregation
-                {
-                    Type = AggregationType.Filter,
-                    FilterExpression = filterMatch.Groups[1].Value
-                };
-            }
-
-            // Handle compute(...) pattern
-            // Example: compute(price mul qty as total)
-            var computeMatch = ComputeExpressionRegex().Match(trimmed);
-            if (computeMatch.Success)
-            {
-                return new ParsedAggregation
-                {
-                    Type = AggregationType.Compute,
-                    FilterExpression = computeMatch.Groups[1].Value // Store the compute expression
-                };
+                return transformed;
             }
         }
         catch (RegexMatchTimeoutException)
@@ -789,34 +729,6 @@ internal sealed partial class ODataAggregationHandler
         }
     }
 
-    private static void ValidateNoHiddenFields(ParsedAggregation aggregation, IReadOnlySet<string> hiddenFields)
-    {
-        if (hiddenFields.Count == 0)
-        {
-            return;
-        }
-
-        if (aggregation.Aggregates.HasValue)
-        {
-            foreach (var aggregate in aggregation.Aggregates.Value)
-            {
-                if (aggregate.Field != "*" && hiddenFields.Contains(aggregate.Field))
-                {
-                    throw new ArgumentException($"Unknown field '{aggregate.Field}' in $apply.");
-                }
-            }
-        }
-
-        if (aggregation.GroupByFields.HasValue)
-        {
-            var hiddenGroupField = aggregation.GroupByFields.Value.FirstOrDefault(hiddenFields.Contains);
-            if (hiddenGroupField is not null)
-            {
-                throw new ArgumentException($"Unknown field '{hiddenGroupField}' in $apply.");
-            }
-        }
-    }
-
     private static Dictionary<string, object?> FeatureToDictionary(
         Feature feature,
         IReadOnlySet<string>? hiddenFields = null)
@@ -850,22 +762,4 @@ internal sealed partial class ODataAggregationHandler
         var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, resource, publicLayerId);
         return ODataSqlFragmentMergeHelper.Merge(query, sqlFragment);
     }
-
-    [GeneratedRegex(@"^aggregate\((.+)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex AggregateExpressionRegex();
-
-    [GeneratedRegex(@"^groupby\s*\(\s*\(([^)]+)\)\s*(?:,\s*aggregate\((.+)\))?\s*\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex GroupByExpressionRegex();
-
-    [GeneratedRegex(@"^filter\((.+)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex FilterExpressionRegex();
-
-    [GeneratedRegex(@"^compute\((.+)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex ComputeExpressionRegex();
-
-    [GeneratedRegex(@"^(\w+)\s+with\s+(\w+)\s+as\s+(\w+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex AggregateWithAsRegex();
-
-    [GeneratedRegex(@"^\$count\s+as\s+(\w+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: RegexTimeoutMilliseconds)]
-    private static partial Regex AggregateCountAsRegex();
 }

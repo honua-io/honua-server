@@ -5,31 +5,30 @@ using System.Text.Json;
 
 namespace Honua.Core.Serialization;
 
+public readonly record struct JsonStringPropertyResult
+{
+    public bool IsValid { get; init; }
+
+    public string? Value { get; init; }
+
+    public static JsonStringPropertyResult Invalid => new() { IsValid = false };
+
+    public static JsonStringPropertyResult Valid(string? value) => new() { IsValid = true, Value = value };
+}
+
 public static class JsonElementHelpers
 {
-    public static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
+    public static JsonStringPropertyResult ReadStringProperty(JsonElement element, string propertyName)
     {
         ArgumentNullException.ThrowIfNull(propertyName);
 
-        if (!element.TryGetProperty(propertyName, out var property))
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null)
         {
-            value = null;
-            return true;
+            return JsonStringPropertyResult.Valid(null);
         }
 
-        if (property.ValueKind == JsonValueKind.Null)
-        {
-            value = null;
-            return true;
-        }
-
-        if (property.ValueKind != JsonValueKind.String)
-        {
-            value = null;
-            return false;
-        }
-
-        value = property.GetString();
-        return true;
+        return property.ValueKind == JsonValueKind.String
+            ? JsonStringPropertyResult.Valid(property.GetString())
+            : JsonStringPropertyResult.Invalid;
     }
 }

@@ -183,73 +183,14 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // the join layer's parent service so it is safe to read its metadata.
         var joinLayerSrid = joinLayerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
-        // Predicate (default: intersects).
-        var predicateStr = GetValueString(values, SpatialAnalyticsParameters.Predicate);
-        SpatialJoinPredicate predicate;
-        if (string.IsNullOrWhiteSpace(predicateStr))
+        // Predicate and distance (DWithin only).
+        var (predicate, distanceMeters, predicateError) = ParseSpatialJoinPredicateAndDistance(context, values, analyticsLimits);
+        if (predicateError is not null)
         {
-            predicate = SpatialJoinPredicate.Intersects;
-        }
-        else
-        {
-            switch (predicateStr.ToLowerInvariant())
-            {
-                case "intersects":
-                    predicate = SpatialJoinPredicate.Intersects;
-                    break;
-                // This endpoint's wire vocabulary is TARGET-SUBJECT:
-                // `contains` means the target layer (the layer named in the route)
-                // contains the join geometry and `within` means the target sits inside
-                // the join geometry, matching the "target features / join features"
-                // reading used by mainstream spatial-join tooling. Behavior is unchanged;
-                // only the canonical member names now spell the operand order out.
-                case "contains":
-                    predicate = SpatialJoinPredicate.TargetContainsJoin;
-                    break;
-                case "within":
-                    predicate = SpatialJoinPredicate.JoinContainsTarget;
-                    break;
-                case "dwithin":
-                    predicate = SpatialJoinPredicate.DWithin;
-                    break;
-                default:
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        "Invalid predicate",
-                        ["predicate must be one of: intersects, contains, within, dwithin."]);
-            }
+            return predicateError;
         }
 
         activity?.SetTag("spatialJoin.predicate", predicate.ToString());
-
-        // Distance (DWithin only).
-        double? distanceMeters = null;
-        var distanceStr = GetValueString(values, SpatialAnalyticsParameters.Distance);
-        if (!string.IsNullOrWhiteSpace(distanceStr))
-        {
-            if (!double.TryParse(distanceStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var distanceValue) ||
-                double.IsNaN(distanceValue) || double.IsInfinity(distanceValue) || distanceValue <= 0d)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid distance",
-                    ["distance must be a positive number of meters."]);
-            }
-
-            if (distanceValue > analyticsLimits.MaxDWithinDistanceMeters)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid distance",
-                    [$"distance must not exceed {analyticsLimits.MaxDWithinDistanceMeters} meters."]);
-            }
-
-            distanceMeters = distanceValue;
-        }
-
-        if (predicate == SpatialJoinPredicate.DWithin && !distanceMeters.HasValue)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "distance parameter is required",
-                ["distance (meters) is required when predicate is 'dwithin'."]);
-        }
 
         // carryFields (optional comma-separated list).
         ImmutableArray<string>? carryFields = null;
@@ -261,7 +202,12 @@ internal static partial class SpatialAnalyticsRequestHandlers
             if (parsed.Length > 0)
             {
                 var fieldError = ValidateFieldNameList(context, "carryFields", parsed)
-                    ?? ValidateFieldsVisible(context, "carryFields", parsed, joinLayerValidation.Resource!);
+                    ?? ValidateFieldsVisible(context, new FieldVisibilityCheck
+                    {
+                        ParameterName = "carryFields",
+                        Fields = parsed,
+                        Resource = joinLayerValidation.Resource!
+                    });
                 if (fieldError != null)
                 {
                     return fieldError;
@@ -369,20 +315,90 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return WriteAnalyticsResponse(response);
     }
 
-    private static IResult? ValidateFieldsVisible(
-        HttpContext context,
-        string parameterName,
-        string[] fields,
-        MetadataV2Object resource)
+    private sealed class FieldVisibilityCheck
     {
-        for (var i = 0; i < fields.Length; i++)
+        public required string ParameterName { get; init; }
+        public required string[] Fields { get; init; }
+        public required MetadataV2Object Resource { get; init; }
+    }
+
+    private static (SpatialJoinPredicate Predicate, double? DistanceMeters, IResult? Error) ParseSpatialJoinPredicateAndDistance(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values,
+        AnalyticsLimits analyticsLimits)
+    {
+        var predicateStr = GetValueString(values, SpatialAnalyticsParameters.Predicate);
+        var predicate = SpatialJoinPredicate.Intersects;
+        if (!string.IsNullOrWhiteSpace(predicateStr))
         {
-            if (resource.IsHiddenSchemaField(fields[i]))
+            switch (predicateStr.ToLowerInvariant())
+            {
+                case "intersects": predicate = SpatialJoinPredicate.Intersects; break;
+                case "contains": predicate = SpatialJoinPredicate.TargetContainsJoin; break;
+                case "within": predicate = SpatialJoinPredicate.JoinContainsTarget; break;
+                case "dwithin": predicate = SpatialJoinPredicate.DWithin; break;
+                default:
+                    return (default, null, StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid predicate",
+                        ["predicate must be one of: intersects, contains, within, dwithin."]));
+            }
+        }
+
+        var (distanceMeters, distanceError) = ParseDWithinDistance(context, values, analyticsLimits);
+        if (distanceError is not null)
+        {
+            return (default, null, distanceError);
+        }
+
+        if (predicate == SpatialJoinPredicate.DWithin && !distanceMeters.HasValue)
+        {
+            return (default, null, StandardErrorHelpers.CreateBadRequest(context,
+                "distance parameter is required",
+                ["distance (meters) is required when predicate is 'dwithin'."]));
+        }
+
+        return (predicate, distanceMeters, null);
+    }
+
+    private static (double? DistanceMeters, IResult? Error) ParseDWithinDistance(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values,
+        AnalyticsLimits analyticsLimits)
+    {
+        var distanceStr = GetValueString(values, SpatialAnalyticsParameters.Distance);
+        if (string.IsNullOrWhiteSpace(distanceStr))
+        {
+            return (null, null);
+        }
+
+        if (!double.TryParse(distanceStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var distanceValue) ||
+            double.IsNaN(distanceValue) || double.IsInfinity(distanceValue) || distanceValue <= 0d)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid distance",
+                ["distance must be a positive number of meters."]));
+        }
+
+        if (distanceValue > analyticsLimits.MaxDWithinDistanceMeters)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid distance",
+                [$"distance must not exceed {analyticsLimits.MaxDWithinDistanceMeters} meters."]));
+        }
+
+        return (distanceValue, null);
+    }
+
+    private static IResult? ValidateFieldsVisible(HttpContext context, FieldVisibilityCheck check)
+    {
+        for (var i = 0; i < check.Fields.Length; i++)
+        {
+            if (check.Resource.IsHiddenSchemaField(check.Fields[i]))
             {
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
-                    $"Invalid {parameterName}",
-                    [$"Unknown field '{fields[i]}' in {parameterName}."]);
+                    $"Invalid {check.ParameterName}",
+                    [$"Unknown field '{check.Fields[i]}' in {check.ParameterName}."]);
             }
         }
 

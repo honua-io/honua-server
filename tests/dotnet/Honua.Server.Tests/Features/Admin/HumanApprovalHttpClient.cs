@@ -102,12 +102,14 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
             var authorization = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
             var authorizeQuery = QueryHelpers.ParseQuery(new Uri(authorization!.AuthorizeUrl).Query);
             var state = authorizeQuery["state"].ToString();
-            provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(
-                identity.Subject,
-                identity.Subject,
-                identity.Roles,
-                identity.TenantId,
-                nonce: authorizeQuery["nonce"].ToString());
+            provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdToken(new AdminAuthEndpointsTests.IdTokenSpec
+            {
+                Subject = identity.Subject,
+                Name = identity.Subject,
+                Roles = identity.Roles,
+                TenantId = identity.TenantId,
+                Nonce = authorizeQuery["nonce"].ToString(),
+            });
             using var token = await client.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/token", new
             {
                 grantType = "authorization_code",

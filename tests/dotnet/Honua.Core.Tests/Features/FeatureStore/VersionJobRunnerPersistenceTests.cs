@@ -69,14 +69,15 @@ public sealed class VersionJobRunnerPersistenceTests
         services.AddSingleton(manager);
         services.AddSingleton(store);
         await using var provider = services.BuildServiceProvider();
-        var runner = new VersionJobRunner(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            store,
-            NullLogger<VersionJobRunner>.Instance,
-            lifetime: null,
-            maxTerminalSaveAttempts: 3,
-            initialTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(5),
-            maxTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(20));
+        var runner = new VersionJobRunner(new VersionJobRunnerOptions
+        {
+            ScopeFactory = provider.GetRequiredService<IServiceScopeFactory>(),
+            JobStore = store,
+            Logger = NullLogger<VersionJobRunner>.Instance,
+            MaxTerminalSaveAttempts = 3,
+            InitialTerminalSaveRetryDelay = TimeSpan.FromMilliseconds(5),
+            MaxTerminalSaveRetryDelay = TimeSpan.FromMilliseconds(20)
+        });
 
         await runner.StartPostAsync("svc", Guid.NewGuid());
         await runner.WaitForInFlightJobsAsync().WaitAsync(TimeSpan.FromSeconds(5));
@@ -108,14 +109,15 @@ public sealed class VersionJobRunnerPersistenceTests
         services.AddSingleton(manager);
         services.AddSingleton(store);
         await using var provider = services.BuildServiceProvider();
-        var runner = new VersionJobRunner(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            store,
-            NullLogger<VersionJobRunner>.Instance,
-            lifetime: null,
-            maxTerminalSaveAttempts: 5,
-            initialTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(50),
-            maxTerminalSaveRetryDelay: TimeSpan.FromMilliseconds(100));
+        var runner = new VersionJobRunner(new VersionJobRunnerOptions
+        {
+            ScopeFactory = provider.GetRequiredService<IServiceScopeFactory>(),
+            JobStore = store,
+            Logger = NullLogger<VersionJobRunner>.Instance,
+            MaxTerminalSaveAttempts = 5,
+            InitialTerminalSaveRetryDelay = TimeSpan.FromMilliseconds(50),
+            MaxTerminalSaveRetryDelay = TimeSpan.FromMilliseconds(100)
+        });
 
         await runner.StartPostAsync("svc", Guid.NewGuid());
         await runner.WaitForInFlightJobsAsync().WaitAsync(TimeSpan.FromSeconds(5));

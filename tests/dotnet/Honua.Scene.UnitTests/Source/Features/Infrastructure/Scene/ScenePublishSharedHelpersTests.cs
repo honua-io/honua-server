@@ -31,18 +31,21 @@ public sealed class ScenePublishSharedHelpersTests
     {
         var result = await CityGmlScenePublishExecutor.TryRegisterSceneAsync(
             registration: null,
-            Guid.NewGuid(),
-            "scene-null",
-            "Null Scene",
-            null,
-            "/tmp/scene-null",
-            null,
-            SceneContentKind.PointCloud,
-            [-122.5, 37.7, -122.4, 37.8],
-            3600,
-            null,
-            requiresAuth: false,
-            "publisher",
+            new SceneRegistrationRequest
+            {
+                DatasetId = Guid.NewGuid(),
+                SceneId = "scene-null",
+                DisplayName = "Null Scene",
+                Description = null,
+                OutputDirectory = "/tmp/scene-null",
+                AssetStoragePrefix = null,
+                ContentKind = SceneContentKind.PointCloud,
+                Bounds = [-122.5, 37.7, -122.4, 37.8],
+                CacheMaxAgeSeconds = 3600,
+                EditionGate = null,
+                RequiresAuth = false,
+                CreatedBy = "publisher",
+            },
             CancellationToken.None);
 
         result.Should().BeNull();
@@ -54,21 +57,7 @@ public sealed class ScenePublishSharedHelpersTests
         var registration = new StubRegistrationService();
         var datasetId = Guid.NewGuid();
 
-        var registered = await CityGmlScenePublishExecutor.TryRegisterSceneAsync(
-            registration,
-            datasetId,
-            "pc-scene",
-            "Point Cloud Scene",
-            "lidar",
-            "/tmp/pc-scene",
-            "prefix/pc-scene",
-            SceneContentKind.PointCloud,
-            [-122.5, 37.7, -122.4, 37.8],
-            1800,
-            "pro",
-            requiresAuth: true,
-            "alice",
-            CancellationToken.None);
+        var registered = await RegisterProtectedPointCloudAsync(registration, datasetId);
 
         registered.Should().Be(datasetId);
         registration.Records.Should().ContainSingle();
@@ -80,23 +69,49 @@ public sealed class ScenePublishSharedHelpersTests
         record.IsPublic.Should().BeFalse();
 
         registration.RejectNextRegistration = true;
-        var conflictAct = async () => await CityGmlScenePublishExecutor.TryRegisterSceneAsync(
-            registration,
-            Guid.NewGuid(),
-            "pc-scene",
-            "Point Cloud Scene",
-            null,
-            "/tmp/pc-scene",
-            null,
-            SceneContentKind.Buildings,
-            [-122.5, 37.7, -122.4, 37.8],
-            1800,
-            null,
-            requiresAuth: false,
-            "alice",
-            CancellationToken.None);
+        var conflictAct = () => RegisterPublicBuildingsAsync(registration);
 
         (await conflictAct.Should().ThrowAsync<ValidationException>())
             .Which.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
     }
+
+    private static Task<Guid?> RegisterProtectedPointCloudAsync(StubRegistrationService registration, Guid datasetId)
+        => CityGmlScenePublishExecutor.TryRegisterSceneAsync(
+            registration,
+            new SceneRegistrationRequest
+            {
+                DatasetId = datasetId,
+                SceneId = "pc-scene",
+                DisplayName = "Point Cloud Scene",
+                Description = "lidar",
+                OutputDirectory = "/tmp/pc-scene",
+                AssetStoragePrefix = "prefix/pc-scene",
+                ContentKind = SceneContentKind.PointCloud,
+                Bounds = [-122.5, 37.7, -122.4, 37.8],
+                CacheMaxAgeSeconds = 1800,
+                EditionGate = "pro",
+                RequiresAuth = true,
+                CreatedBy = "alice",
+            },
+            CancellationToken.None);
+
+    private static Task<Guid?> RegisterPublicBuildingsAsync(StubRegistrationService registration)
+        => CityGmlScenePublishExecutor.TryRegisterSceneAsync(
+            registration,
+            new SceneRegistrationRequest
+            {
+                DatasetId = Guid.NewGuid(),
+                SceneId = "pc-scene",
+                DisplayName = "Point Cloud Scene",
+                Description = null,
+                OutputDirectory = "/tmp/pc-scene",
+                AssetStoragePrefix = null,
+                ContentKind = SceneContentKind.Buildings,
+                Bounds = [-122.5, 37.7, -122.4, 37.8],
+                CacheMaxAgeSeconds = 1800,
+                EditionGate = null,
+                RequiresAuth = false,
+                CreatedBy = "alice",
+            },
+            CancellationToken.None);
 }

@@ -152,48 +152,20 @@ public sealed class FeatureQueryBuilderBinsValidationTests
     {
         var builder = CreateBuilder();
 
-        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = null
-        }));
-
-        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = [10.0]
-        }));
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = [0.0, double.NaN, 10.0]
-        }));
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = [0.0, double.PositiveInfinity]
-        }));
-
-        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = [0.0, 10.0, 10.0]
-        }));
-
-        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), new BinDefinition
-        {
-            Type = BinType.FixedBoundaries,
-            Field = "price",
-            Boundaries = [10.0, 5.0]
-        }));
+        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries(null)));
+        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries([10.0])));
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries([0.0, double.NaN, 10.0])));
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries([0.0, double.PositiveInfinity])));
+        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries([0.0, 10.0, 10.0])));
+        Assert.Throws<ArgumentException>(() => builder.BuildBinsQuery(1, new FeatureQuery(), FixedBoundaries([10.0, 5.0])));
     }
+
+    private static BinDefinition FixedBoundaries(double[]? boundaries) => new()
+    {
+        Type = BinType.FixedBoundaries,
+        Field = "price",
+        Boundaries = boundaries is null ? null : [.. boundaries]
+    };
 
     [UnitTest]
     public void BuildBinsAndDateBinsQueries_InvalidStatisticAlias_ThrowsArgumentException()
@@ -269,11 +241,8 @@ public sealed class FeatureQueryBuilderBinsValidationTests
         cache.TryAddCachedStatementForTest(connectionId, sql, fresh).Should().BeTrue();
         cache.RemoveStaleCachedStatementForTest(connectionId, sql, stale);
 
-        cache.ContainsCachedStatementForTest(connectionId, sql, out var current).Should().BeTrue();
-        using (current)
-        {
-            current.Should().BeSameAs(fresh);
-        }
+        using var current = cache.GetCachedStatementForTest(connectionId, sql);
+        current.Should().BeSameAs(fresh);
         cache.GetConnectionCountForTest(connectionId).Should().Be(1);
     }
 }

@@ -259,24 +259,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     public void CreateMaterializedFeatureCollectionPayload_SinglePassSerializationMatchesSchemaAndStablePrefix()
     {
         var etagService = new ETagService();
-        var feature = new GeoJsonFeature
-        {
-            Id = 7,
-            Properties = new Dictionary<string, object?> { ["category"] = "park" },
-        };
-        var links = ImmutableArray.Create(Link.Create("https://example.test/items", "self", "application/geo+json", "Items"));
-        var first = new FeatureCollection
-        {
-            Features = [feature],
-            NumberMatched = 1,
-            NumberReturned = 1,
-            Links = links,
-            TimeStamp = new DateTimeOffset(2026, 11, 22, 8, 0, 0, TimeSpan.Zero),
-        };
-        var second = first with
-        {
-            TimeStamp = new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero),
-        };
+        var first = CreateMaterializedSampleCollection(new DateTimeOffset(2026, 11, 22, 8, 0, 0, TimeSpan.Zero));
+        var second = first with { TimeStamp = new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero) };
 
         var payload1 = OgcFeaturesQueryHandler.CreateMaterializedFeatureCollectionPayload(first);
         var payload2 = OgcFeaturesQueryHandler.CreateMaterializedFeatureCollectionPayload(second);
@@ -298,6 +282,15 @@ public sealed class OgcFeaturesRawGeoJsonTests
         doc.RootElement.GetProperty("links")[0].GetProperty("rel").GetString().Should().Be("self");
         doc.RootElement.GetProperty("timeStamp").GetString().Should().Be("2026-11-22T08:00:00.0000000Z");
     }
+
+    private static FeatureCollection CreateMaterializedSampleCollection(DateTimeOffset timeStamp) => new()
+    {
+        Features = [new GeoJsonFeature { Id = 7, Properties = new Dictionary<string, object?> { ["category"] = "park" } }],
+        NumberMatched = 1,
+        NumberReturned = 1,
+        Links = ImmutableArray.Create(Link.Create("https://example.test/items", "self", "application/geo+json", "Items")),
+        TimeStamp = timeStamp,
+    };
 
     private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => new()

@@ -966,26 +966,7 @@ public sealed partial class QueryFormatterTests
         var guid = Guid.Parse("11111111-2222-3333-4444-555555555555");
         var timestamp = new DateTimeOffset(2024, 6, 15, 12, 30, 0, TimeSpan.Zero);
         using var jsonDoc = JsonDocument.Parse("""{"nested":[1,2]}""");
-        var feature = new GeoServicesFeature
-        {
-            Attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["objectid"] = 7L,
-                ["name"] = "alpha",
-                ["count"] = 3,
-                ["ratio"] = 2.5d,
-                ["flagTrue"] = true,
-                ["flagFalse"] = false,
-                ["empty"] = null,
-                ["id"] = guid,
-                ["when"] = timestamp,
-                ["payload"] = jsonDoc.RootElement.Clone(),
-                ["tags"] = new object[] { "a", 1 }
-            },
-            IncludeGeometry = true,
-            Geometry = new GeoServicesGeometry { X = 1.5, Y = 2.5 },
-            Centroid = new GeoServicesGeometry { X = 1.5, Y = 2.5 }
-        };
+        var feature = CreateRichGeoServicesFeature(guid, timestamp, jsonDoc.RootElement.Clone());
 
         var json = JsonSerializer.Serialize(feature, FeatureServerJsonContext.Default.GeoServicesFeature);
         using var parsed = JsonDocument.Parse(json);
@@ -1006,6 +987,27 @@ public sealed partial class QueryFormatterTests
         root.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(1.5);
         root.GetProperty("centroid").GetProperty("y").GetDouble().Should().Be(2.5);
     }
+
+    private static GeoServicesFeature CreateRichGeoServicesFeature(Guid guid, DateTimeOffset timestamp, JsonElement payload) => new()
+    {
+        Attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectid"] = 7L,
+            ["name"] = "alpha",
+            ["count"] = 3,
+            ["ratio"] = 2.5d,
+            ["flagTrue"] = true,
+            ["flagFalse"] = false,
+            ["empty"] = null,
+            ["id"] = guid,
+            ["when"] = timestamp,
+            ["payload"] = payload,
+            ["tags"] = new object[] { "a", 1 }
+        },
+        IncludeGeometry = true,
+        Geometry = new GeoServicesGeometry { X = 1.5, Y = 2.5 },
+        Centroid = new GeoServicesGeometry { X = 1.5, Y = 2.5 }
+    };
 
     private static byte[] CreateMeasuredPointGeometry(double x, double y, double z, double m)
     {

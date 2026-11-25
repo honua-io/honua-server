@@ -184,21 +184,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             try
             {
                 await using var sourceLifetime = source;
-                await foreach (var delivery in _deliveries.Reader.ReadAllAsync(DisconnectToken).ConfigureAwait(false))
-                {
-                    if (delivery is RealtimeDelivery.Reset reset)
-                    {
-                        Reset = reset;
-                        break;
-                    }
-
-                    if (delivery is RealtimeDelivery.Event { Value.Kind: "alert" } notification)
-                    {
-                        var alert = notification.Value.Payload.Deserialize(StreamingOperationsJsonContext.Default.AlertEventEnvelope)
-                            ?? throw new JsonException("An alert event envelope is required.");
-                        await _handler(alert, notification.Value.Position, DisconnectToken).ConfigureAwait(false);
-                    }
-                }
+                await PumpDeliveriesAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (DisconnectToken.IsCancellationRequested)
             {
@@ -206,19 +192,42 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                // A failed or overflowing subscriber closes without interrupting other streams.
                 LogSubscriptionFailure(_owner._logger, exception);
             }
             finally
             {
-                Dispose();
-                _owner._subscriptions.TryRemove(SubscriberId, out _);
-                await observeClosure.ConfigureAwait(false);
-                lock (_cancellationGate)
+                await FinalizeSubscriptionAsync(observeClosure).ConfigureAwait(false);
+            }
+        }
+
+        private async Task PumpDeliveriesAsync()
+        {
+            await foreach (var delivery in _deliveries.Reader.ReadAllAsync(DisconnectToken).ConfigureAwait(false))
+            {
+                if (delivery is RealtimeDelivery.Reset reset)
                 {
-                    _cancellationDisposed = true;
-                    _cancellation.Dispose();
+                    Reset = reset;
+                    break;
                 }
+
+                if (delivery is RealtimeDelivery.Event { Value.Kind: "alert" } notification)
+                {
+                    var alert = notification.Value.Payload.Deserialize(StreamingOperationsJsonContext.Default.AlertEventEnvelope)
+                        ?? throw new JsonException("An alert event envelope is required.");
+                    await _handler(alert, notification.Value.Position, DisconnectToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        private async Task FinalizeSubscriptionAsync(Task observeClosure)
+        {
+            Dispose();
+            _owner._subscriptions.TryRemove(SubscriberId, out _);
+            await observeClosure.ConfigureAwait(false);
+            lock (_cancellationGate)
+            {
+                _cancellationDisposed = true;
+                _cancellation.Dispose();
             }
         }
         // Reader.Completion waits for buffered deliveries to drain. Observe the

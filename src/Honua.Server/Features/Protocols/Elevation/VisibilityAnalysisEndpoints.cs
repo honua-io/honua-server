@@ -214,11 +214,10 @@ internal static partial class VisibilityAnalysisEndpoints
     private static async Task<IResult> HandleViewshed(
         string datasetId,
         HttpContext context,
-        VisibilityAnalysisService visibilityService,
-        [FromServices] IOptions<LimitsOptions> limitsOptions,
-        CancellationToken cancellationToken)
+        VisibilityAnalysisService visibilityService)
     {
         var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
         var logger = context.RequestServices.GetService<ILoggerFactory>()?
             .CreateLogger("Honua.Elevation.Visibility");
 
@@ -228,106 +227,16 @@ internal static partial class VisibilityAnalysisEndpoints
             return gate;
         }
 
-        ViewshedRequest? request;
-        try
+        var (request, parseError) = await ReadViewshedRequestAsync(context, datasetId, logger).ConfigureAwait(false);
+        if (parseError is not null)
         {
-            request = await context.Request.ReadFromJsonAsync(
-                VisibilityJsonContext.Default.ViewshedRequest,
-                effectiveToken);
-        }
-        // Intentional broad catch: this is the request-body parse boundary for the viewshed
-        // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
-            {
-                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
-                LogViewshedRequestParseFailed(logger, sanitizedDatasetId, ex);
-            }
-            return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
+            return parseError;
         }
 
-        if (request is null)
+        var (validated, validationError) = ValidateViewshedParameters(context, request!, limitsOptions.Value.Elevation.MaxSampleCount);
+        if (validationError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
-        }
-
-        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
-        if (!observerLonValid)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                "Observer 'observerLon' and 'observerLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
-        }
-
-        if (request.RadiusMeters is not { } radius || !double.IsFinite(radius) || radius <= 0)
-        {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "'radiusMeters' is required and must be a positive finite distance in meters.");
-        }
-
-        if (radius > MaxViewshedRadiusMeters)
-        {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                $"'radiusMeters' ({radius}) exceeds the configured maximum of {MaxViewshedRadiusMeters} meters.");
-        }
-
-        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
-        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
-        if (!observerHeightValid || !targetHeightValid)
-        {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                "Height offsets must be finite, non-negative values in meters.");
-        }
-
-        var maxSampleCount = limitsOptions.Value.Elevation.MaxSampleCount;
-        var maxTotalSamples = (long)maxSampleCount * MaxViewshedSampleBudgetMultiplier;
-
-        if (request.RayCount is { } rayCount)
-        {
-            if (rayCount < 1)
-            {
-                return StandardErrorHelpers.CreateUnprocessableEntity(
-                    context,
-                    "'rayCount' must be at least 1 when supplied.");
-            }
-
-            if (rayCount > MaxViewshedRayCount)
-            {
-                return StandardErrorHelpers.CreateUnprocessableEntity(
-                    context,
-                    $"'rayCount' ({rayCount}) exceeds the configured maximum of {MaxViewshedRayCount}.");
-            }
-        }
-
-        if (request.SamplesPerRay is { } samplesPerRay)
-        {
-            if (samplesPerRay < 2)
-            {
-                return StandardErrorHelpers.CreateUnprocessableEntity(
-                    context,
-                    "'samplesPerRay' must be at least 2 when supplied.");
-            }
-
-            if (samplesPerRay > maxSampleCount)
-            {
-                return StandardErrorHelpers.CreateUnprocessableEntity(
-                    context,
-                    $"'samplesPerRay' ({samplesPerRay}) exceeds the configured maximum of {maxSampleCount}.");
-            }
-        }
-
-        var effectiveRayCount = Math.Max(request.RayCount ?? VisibilityAnalysisService.DefaultRayCount, VisibilityAnalysisService.MinRayCount);
-        var effectiveSamplesPerRay = request.SamplesPerRay ?? Math.Min(VisibilityAnalysisService.DefaultSamplesPerRay, maxSampleCount);
-        var totalSamples = (long)effectiveRayCount * effectiveSamplesPerRay;
-        if (totalSamples > maxTotalSamples)
-        {
-            return StandardErrorHelpers.CreateUnprocessableEntity(
-                context,
-                $"Total viewshed samples ({totalSamples}) exceeds the configured maximum of {maxTotalSamples}.");
+            return validationError;
         }
 
         var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, effectiveToken);
@@ -338,7 +247,7 @@ internal static partial class VisibilityAnalysisEndpoints
 
         var resource = validation.Resource!;
         var layerId = validation.LayerId;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request!.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.viewshed");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
@@ -348,19 +257,10 @@ internal static partial class VisibilityAnalysisEndpoints
 
         try
         {
-            var options = new ViewshedOptions
-            {
-                RadiusMeters = radius,
-                RayCount = request.RayCount ?? effectiveRayCount,
-                SamplesPerRay = request.SamplesPerRay ?? effectiveSamplesPerRay,
-                ObserverHeightOffsetMeters = observerHeight,
-                TargetHeightOffsetMeters = targetHeight
-            };
-
             var result = await visibilityService.ComputeViewshedAsync(
                 layerId,
-                new VisibilityPoint { Longitude = observerLon, Latitude = observerLat, HeightOffsetMeters = observerHeight },
-                options,
+                validated!.Observer,
+                validated.Options,
                 mergeStrategy,
                 effectiveToken);
 
@@ -375,6 +275,163 @@ internal static partial class VisibilityAnalysisEndpoints
             HonuaTelemetry.RecordException(activity, ex);
             return MapElevationException(context, ex);
         }
+    }
+
+    private sealed class ValidatedViewshedInput
+    {
+        public required VisibilityPoint Observer { get; init; }
+        public required ViewshedOptions Options { get; init; }
+    }
+
+    private static async Task<(ViewshedRequest? Request, IResult? Error)> ReadViewshedRequestAsync(
+        HttpContext context,
+        string datasetId,
+        ILogger? logger)
+    {
+        var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        try
+        {
+            var request = await context.Request.ReadFromJsonAsync(
+                VisibilityJsonContext.Default.ViewshedRequest,
+                effectiveToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context, "Request body is required."));
+            }
+
+            return (request, null);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
+            {
+                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
+                LogViewshedRequestParseFailed(logger, sanitizedDatasetId, ex);
+            }
+
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON."));
+        }
+    }
+
+    private static (ValidatedViewshedInput? Input, IResult? Error) ValidateViewshedParameters(
+        HttpContext context,
+        ViewshedRequest request,
+        int maxSampleCount)
+    {
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context,
+                "Observer 'observerLon' and 'observerLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90]."));
+        }
+
+        var (radius, radiusError) = ValidateViewshedRadius(context, request.RadiusMeters);
+        if (radiusError is not null)
+        {
+            return (null, radiusError);
+        }
+
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
+        if (!observerHeightValid || !targetHeightValid)
+        {
+            return (null, StandardErrorHelpers.CreateUnprocessableEntity(context, "Height offsets must be finite, non-negative values in meters."));
+        }
+
+        var (effectiveRayCount, effectiveSamplesPerRay, budgetError) = ValidateViewshedSamplingBudget(context, request, maxSampleCount);
+        if (budgetError is not null)
+        {
+            return (null, budgetError);
+        }
+
+        return (new ValidatedViewshedInput
+        {
+            Observer = new VisibilityPoint { Longitude = observerLon, Latitude = observerLat, HeightOffsetMeters = observerHeight },
+            Options = new ViewshedOptions
+            {
+                RadiusMeters = radius,
+                RayCount = request.RayCount ?? effectiveRayCount,
+                SamplesPerRay = request.SamplesPerRay ?? effectiveSamplesPerRay,
+                ObserverHeightOffsetMeters = observerHeight,
+                TargetHeightOffsetMeters = targetHeight
+            }
+        }, null);
+    }
+
+    private static (double Radius, IResult? Error) ValidateViewshedRadius(HttpContext context, double? radiusMeters)
+    {
+        if (radiusMeters is not { } radius || !double.IsFinite(radius) || radius <= 0)
+        {
+            return (0, StandardErrorHelpers.CreateUnprocessableEntity(
+                context,
+                "'radiusMeters' is required and must be a positive finite distance in meters."));
+        }
+
+        if (radius > MaxViewshedRadiusMeters)
+        {
+            return (0, StandardErrorHelpers.CreateUnprocessableEntity(
+                context,
+                $"'radiusMeters' ({radius}) exceeds the configured maximum of {MaxViewshedRadiusMeters} meters."));
+        }
+
+        return (radius, null);
+    }
+
+    private static (int RayCount, int SamplesPerRay, IResult? Error) ValidateViewshedSamplingBudget(
+        HttpContext context,
+        ViewshedRequest request,
+        int maxSampleCount)
+    {
+        if (ValidateRayAndSampleBounds(context, request, maxSampleCount) is { } boundsError)
+        {
+            return (0, 0, boundsError);
+        }
+
+        var effectiveRayCount = Math.Max(request.RayCount ?? VisibilityAnalysisService.DefaultRayCount, VisibilityAnalysisService.MinRayCount);
+        var effectiveSamplesPerRay = request.SamplesPerRay ?? Math.Min(VisibilityAnalysisService.DefaultSamplesPerRay, maxSampleCount);
+        var maxTotalSamples = (long)maxSampleCount * MaxViewshedSampleBudgetMultiplier;
+        var totalSamples = (long)effectiveRayCount * effectiveSamplesPerRay;
+        if (totalSamples > maxTotalSamples)
+        {
+            return (0, 0, StandardErrorHelpers.CreateUnprocessableEntity(
+                context,
+                $"Total viewshed samples ({totalSamples}) exceeds the configured maximum of {maxTotalSamples}."));
+        }
+
+        return (effectiveRayCount, effectiveSamplesPerRay, null);
+    }
+
+    private static IResult? ValidateRayAndSampleBounds(HttpContext context, ViewshedRequest request, int maxSampleCount)
+    {
+        if (request.RayCount is { } rayCount)
+        {
+            if (rayCount < 1)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(context, "'rayCount' must be at least 1 when supplied.");
+            }
+
+            if (rayCount > MaxViewshedRayCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context, $"'rayCount' ({rayCount}) exceeds the configured maximum of {MaxViewshedRayCount}.");
+            }
+        }
+
+        if (request.SamplesPerRay is { } samplesPerRay)
+        {
+            if (samplesPerRay < 2)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(context, "'samplesPerRay' must be at least 2 when supplied.");
+            }
+
+            if (samplesPerRay > maxSampleCount)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context, $"'samplesPerRay' ({samplesPerRay}) exceeds the configured maximum of {maxSampleCount}.");
+            }
+        }
+
+        return null;
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

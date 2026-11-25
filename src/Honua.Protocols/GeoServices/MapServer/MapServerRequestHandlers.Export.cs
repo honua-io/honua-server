@@ -396,18 +396,21 @@ internal static partial class MapServerEndpoints
                 layerDefs.TryGetValue(layer.PublicLayerId, out var layerDef);
                 var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
-                if (!GeoServicesLayerTimeResolver.TryGetEffectiveTimeParameters(
-                        timeValue,
-                        timeRelationValue,
-                        new LayerTimeTarget(renderLayer.Id, renderLayer.Layer.PublicLayerId),
-                        layerTimeOptions,
-                        out var effectiveTime,
-                        out var effectiveTimeRelation,
-                        out var timeError))
+                var timeResolution = GeoServicesLayerTimeResolver.ResolveEffectiveTimeParameters(new EffectiveTimeRequest
+                {
+                    GlobalTime = timeValue,
+                    GlobalTimeRelation = timeRelationValue,
+                    Target = new LayerTimeTarget(renderLayer.Id, renderLayer.Layer.PublicLayerId),
+                    LayerTimeOptions = layerTimeOptions
+                });
+                if (!timeResolution.IsValid)
                 {
                     return CreateExportBadRequest(context, responseFormat,
-                        timeError ?? "Invalid time parameter.");
+                        timeResolution.Error ?? "Invalid time parameter.");
                 }
+
+                var effectiveTime = timeResolution.EffectiveTime;
+                var effectiveTimeRelation = timeResolution.EffectiveTimeRelation;
 
                 if (!TryBuildLayerSqlFilter(
                         filterExpressionService,
@@ -979,13 +982,15 @@ internal static partial class MapServerEndpoints
                     }
                 }
 
-                layerTimeOptions[layerId] = new LayerTimeOptions(
-                    useTime,
-                    timeDataCumulative,
-                    timeOffset,
-                    timeOffsetUnits,
-                    string.IsNullOrWhiteSpace(time) ? null : time,
-                    string.IsNullOrWhiteSpace(timeRelation) ? null : timeRelation);
+                layerTimeOptions[layerId] = new LayerTimeOptions
+                {
+                    UseTime = useTime,
+                    TimeDataCumulative = timeDataCumulative,
+                    TimeOffset = timeOffset,
+                    TimeOffsetUnits = timeOffsetUnits,
+                    Time = string.IsNullOrWhiteSpace(time) ? null : time,
+                    TimeRelation = string.IsNullOrWhiteSpace(timeRelation) ? null : timeRelation
+                };
             }
 
             return true;

@@ -40,7 +40,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         var source = context.Features;
         var distance = inputs.ReadDistance();
         var distanceMeters = distance * inputs.ReadUnitFactor();
-        var dissolve = inputs.ReadBool("dissolve", defaultValue: true);
+        var dissolve = inputs.ReadBoolDefaultTrue("dissolve");
         var groupByFields = ReadGroupByFields(inputs);
         var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
         StatisticsSupport.EnsureNoOutputCollisions(stats, [.. groupByFields, CountAttribute]);

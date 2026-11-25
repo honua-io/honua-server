@@ -234,11 +234,17 @@ internal readonly struct StepInputReader(IReadOnlyDictionary<string, string> par
         return value;
     }
 
-    public bool ReadBool(string name, bool defaultValue)
+    public bool ReadBoolDefaultTrue(string name)
+        => ParseOptionalBool(name) ?? true;
+
+    public bool ReadBoolDefaultFalse(string name)
+        => ParseOptionalBool(name) ?? false;
+
+    private bool? ParseOptionalBool(string name)
     {
         if (!TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
         {
-            return defaultValue;
+            return null;
         }
 
         return raw.Trim().ToLowerInvariant() switch

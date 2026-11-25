@@ -20,13 +20,31 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Determine correlation ID using order of precedence
         string correlationId = GetOrGenerateCorrelationId(context);
-
-        // Set correlation ID in HttpContext for framework integration
         context.TraceIdentifier = correlationId;
+        AttachCorrelationIdHeader(context, correlationId);
+        EnrichActivityWithCorrelationId(correlationId);
 
-        // Add correlation ID to response headers and re-apply in OnStarting so a cleared response keeps it.
+        using (LogContext.PushProperty(CorrelationIdLogProperty, correlationId))
+        {
+            var requestPath = context.Request.Path.Value ?? string.Empty;
+            InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, requestPath);
+
+            var startTimestamp = Stopwatch.GetTimestamp();
+            try
+            {
+                await _next(context);
+            }
+            finally
+            {
+                EnrichActivityWithRequestContext(context);
+                RecordServingRequestMetric(context, startTimestamp);
+            }
+        }
+    }
+
+    private static void AttachCorrelationIdHeader(HttpContext context, string correlationId)
+    {
         context.Response.Headers[CorrelationIdHeader] = correlationId;
         context.Response.OnStarting(static state =>
         {
@@ -34,35 +52,6 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             httpContext.Response.Headers.TryAdd(CorrelationIdHeader, id);
             return Task.CompletedTask;
         }, (context, correlationId));
-
-        // Enrich current Activity with correlation ID early for tracing/log correlation.
-        EnrichActivityWithCorrelationId(correlationId);
-
-        // Push correlation ID to Serilog LogContext for all log entries in this request
-        using (LogContext.PushProperty(CorrelationIdLogProperty, correlationId))
-        {
-            // Log correlation ID establishment for debugging (verbose level)
-            var requestPath = context.Request.Path.Value ?? string.Empty;
-            InfrastructureLog.CorrelationIdEstablished(_logger, correlationId, requestPath);
-
-            var startTimestamp = Stopwatch.GetTimestamp();
-            try
-            {
-                // Continue to next middleware
-                await _next(context);
-            }
-            finally
-            {
-                // Populate standardized tags once routing has resolved route values.
-                EnrichActivityWithRequestContext(context);
-
-                // Emit the GIS-aware serving latency histogram once per request, keyed by the
-                // classified protocol/operation. Skipped for unclassified paths and for the
-                // non-serving-plane protocols (health probes, metrics scrape) so the metric stays
-                // low-cardinality and usable as an SLO denominator.
-                RecordServingRequestMetric(context, startTimestamp);
-            }
-        }
     }
 
     private static void EnrichActivityWithCorrelationId(string correlationId)

@@ -29,22 +29,7 @@ internal sealed partial class CdnInvalidationService
     // not claimed and a busy CDN is not waited for: a purge sent twice costs less than one lost.
     internal async Task FlushPendingAsync()
     {
-        PurgeBatch[] pending;
-        string[] paths;
-        lock (_gate)
-        {
-            _stopping = true;
-            foreach (var batch in _delivery.TakeAll())
-            {
-                AddPendingPurges(batch.Paths, batch.Cause);
-            }
-
-            pending = PurgeBatch.Group(_pendingEditPaths);
-            paths = [.. _pendingEditPaths.Keys];
-            _pendingEditPaths.Clear();
-            _windowClosesAt = null;
-        }
-
+        var (pending, paths) = DrainPendingForShutdown();
         CancelBackgroundTimers();
 
         if (paths.Length == 0 || !CdnConfigured)
@@ -57,30 +42,53 @@ internal sealed partial class CdnInvalidationService
         {
             foreach (var batch in pending)
             {
-                try
-                {
-                    var batches = await SendWithinLimitsAsync(batch.Paths, batch.Cause.AsShutdown(), deadline.Token)
-                        .ConfigureAwait(false);
-                    if (batches.Result.Failed)
-                    {
-                        Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
-                    }
-                }
-                catch (OperationCanceledException) when (deadline.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    Log.BackgroundPurgeFailed(logger, ex);
-                    _reliability?.RecordFailedPurge();
-                    Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
-                }
+                await FlushShutdownBatchAsync(batch, deadline.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
             Log.ShutdownPurgesNotSent(logger, paths.Length, string.Join(' ', paths));
+        }
+    }
+
+    private (PurgeBatch[] Pending, string[] Paths) DrainPendingForShutdown()
+    {
+        lock (_gate)
+        {
+            _stopping = true;
+            foreach (var batch in _delivery.TakeAll())
+            {
+                AddPendingPurges(batch.Paths, batch.Cause);
+            }
+
+            var pending = PurgeBatch.Group(_pendingEditPaths);
+            var paths = _pendingEditPaths.Keys.ToArray();
+            _pendingEditPaths.Clear();
+            _windowClosesAt = null;
+            return (pending, paths);
+        }
+    }
+
+    private async Task FlushShutdownBatchAsync(PurgeBatch batch, CancellationToken deadlineToken)
+    {
+        try
+        {
+            var batches = await SendWithinLimitsAsync(batch.Paths, batch.Cause.AsShutdown(), deadlineToken)
+                .ConfigureAwait(false);
+            if (batches.Result.Failed)
+            {
+                Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
+            }
+        }
+        catch (OperationCanceledException) when (deadlineToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.BackgroundPurgeFailed(logger, ex);
+            _reliability?.RecordFailedPurge();
+            Log.ShutdownPurgesNotSent(logger, batch.Paths.Length, string.Join(' ', batch.Paths));
         }
     }
 

@@ -497,7 +497,7 @@ internal static class WorkflowPackageEndpoints
 
     internal static IResult MapWorkflowInvalidOperationException(HttpContext context, InvalidOperationException ex)
     {
-        if (TryMapKnownWorkflowConflict(ex, out var safeDetail))
+        if (ResolveKnownWorkflowConflictDetail(ex) is { } safeDetail)
         {
             return Conflict(context, safeDetail);
         }
@@ -510,31 +510,27 @@ internal static class WorkflowPackageEndpoints
             "The workflow package operation could not be completed.");
     }
 
-    private static bool TryMapKnownWorkflowConflict(InvalidOperationException ex, out string safeDetail)
+    private static string? ResolveKnownWorkflowConflictDetail(InvalidOperationException ex)
     {
         var message = ex.Message;
         if (string.Equals(message, "Schedule publication requires a schedule declaration.", StringComparison.Ordinal))
         {
-            safeDetail = "Schedule publication requires a schedule declaration.";
-            return true;
+            return "Schedule publication requires a schedule declaration.";
         }
 
         if (message.StartsWith("Workflow publication '", StringComparison.Ordinal)
             && message.EndsWith("' is disabled.", StringComparison.Ordinal))
         {
-            safeDetail = "The workflow publication is disabled.";
-            return true;
+            return "The workflow publication is disabled.";
         }
 
         if (message.StartsWith("Workflow publication '", StringComparison.Ordinal)
             && message.EndsWith("' was removed before its schedule could be armed.", StringComparison.Ordinal))
         {
-            safeDetail = "The workflow publication was removed before its schedule could be armed.";
-            return true;
+            return "The workflow publication was removed before its schedule could be armed.";
         }
 
-        safeDetail = string.Empty;
-        return false;
+        return null;
     }
 
     private static string? ValidateSaveRequest(SaveWorkflowPackageRequest request)

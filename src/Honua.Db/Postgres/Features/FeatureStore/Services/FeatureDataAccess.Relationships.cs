@@ -168,10 +168,10 @@ internal sealed partial class FeatureDataAccess
             ? null
             : new HashSet<string>(relatedEnforcedMaskedFields, StringComparer.OrdinalIgnoreCase);
 
-        var attributesReader = new FeatureAttributeReadContext();
+        var rowContext = new FeatureRowReadContext { AttributesReader = new FeatureAttributeReadContext() };
         while (await reader.ReadAsync(cancellationToken))
         {
-            var feature = ReadFeature(reader, attributesReader);
+            var feature = ReadFeature(reader, rowContext);
 
             // Resolve the origin object id(s) this related row belongs to BEFORE field
             // filtering so the destination key is still available, then re-stamp the

@@ -343,11 +343,26 @@ internal static class ElevationEndpoints
         return supported ? new SridResolutionResult(srid, true) : SridResolutionResult.Unsupported;
     }
 
-    private readonly record struct ValidatedElevationDataset(
-        bool IsValid,
-        int StorageLayerId,
-        MetadataV2Object? Resource,
-        IResult? ErrorResult);
+    private readonly record struct ValidatedElevationDataset
+    {
+        public bool IsValid { get; init; }
+        public int StorageLayerId { get; init; }
+        public MetadataV2Object? Resource { get; init; }
+        public IResult? ErrorResult { get; init; }
+
+        public static ValidatedElevationDataset Valid(int storageLayerId, MetadataV2Object? resource) => new()
+        {
+            IsValid = true,
+            StorageLayerId = storageLayerId,
+            Resource = resource
+        };
+
+        public static ValidatedElevationDataset Invalid(IResult? errorResult) => new()
+        {
+            IsValid = false,
+            ErrorResult = errorResult
+        };
+    }
 
     private static async Task<ValidatedElevationDataset> ValidateDatasetAsync(
         HttpContext context,
@@ -370,7 +385,7 @@ internal static class ElevationEndpoints
 
         if (!validation.IsValid)
         {
-            return new ValidatedElevationDataset(false, 0, null, validation.ErrorResult);
+            return ValidatedElevationDataset.Invalid(validation.ErrorResult);
         }
 
         var storageLayerId = validation.Snapshot is not null && validation.Publication is not null
@@ -378,14 +393,11 @@ internal static class ElevationEndpoints
             : validation.Publication?.LayerIndex;
         if (!storageLayerId.HasValue)
         {
-            return new ValidatedElevationDataset(
-                false,
-                0,
-                null,
+            return ValidatedElevationDataset.Invalid(
                 StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
         }
 
-        return new ValidatedElevationDataset(true, storageLayerId.Value, validation.Resource, null);
+        return ValidatedElevationDataset.Valid(storageLayerId.Value, validation.Resource);
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

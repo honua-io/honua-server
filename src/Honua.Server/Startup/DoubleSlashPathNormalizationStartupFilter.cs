@@ -41,56 +41,49 @@ internal sealed class DoubleSlashPathNormalizationStartupFilter : IStartupFilter
 
     internal static string CollapseConsecutiveSlashes(string path)
     {
-        var normalizedLength = 0;
-        var previousWasSlash = false;
-        for (var i = 0; i < path.Length; i++)
-        {
-            var c = path[i];
-            if (c == '/')
-            {
-                if (previousWasSlash)
-                {
-                    continue;
-                }
-
-                previousWasSlash = true;
-            }
-            else
-            {
-                previousWasSlash = false;
-            }
-
-            normalizedLength++;
-        }
-
+        var normalizedLength = CountCollapsedLength(path);
         if (normalizedLength == path.Length)
         {
             return path;
         }
 
-        return string.Create(normalizedLength, path, static (destination, source) =>
+        return string.Create(normalizedLength, path, CopyWithoutConsecutiveSlashes);
+    }
+
+    private static int CountCollapsedLength(string path)
+    {
+        var normalizedLength = 0;
+        var previousWasSlash = false;
+        for (var i = 0; i < path.Length; i++)
         {
-            var writeIndex = 0;
-            var lastWasSlash = false;
-            for (var i = 0; i < source.Length; i++)
+            var isSlash = path[i] == '/';
+            if (isSlash && previousWasSlash)
             {
-                var c = source[i];
-                if (c == '/')
-                {
-                    if (lastWasSlash)
-                    {
-                        continue;
-                    }
-
-                    lastWasSlash = true;
-                }
-                else
-                {
-                    lastWasSlash = false;
-                }
-
-                destination[writeIndex++] = c;
+                continue;
             }
-        });
+
+            previousWasSlash = isSlash;
+            normalizedLength++;
+        }
+
+        return normalizedLength;
+    }
+
+    private static void CopyWithoutConsecutiveSlashes(Span<char> destination, string source)
+    {
+        var writeIndex = 0;
+        var lastWasSlash = false;
+        for (var i = 0; i < source.Length; i++)
+        {
+            var c = source[i];
+            var isSlash = c == '/';
+            if (isSlash && lastWasSlash)
+            {
+                continue;
+            }
+
+            lastWasSlash = isSlash;
+            destination[writeIndex++] = c;
+        }
     }
 }

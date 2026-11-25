@@ -29,31 +29,32 @@ internal sealed partial class MetadataReleaseReconciler(
 
     internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
-    public async Task ReconcileMetadataReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+    public Task ReconcileMetadataReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+        => WorkflowOperationLeaseRunner.RunAsync(
+            new WorkflowLeaseExecutionOptions
+            {
+                WorkflowStore = workflowStore,
+                OperationId = operationId,
+                OwnerId = _ownerId,
+                LeaseDuration = LeaseDuration,
+                LeaseRenewInterval = LeaseRenewInterval,
+                Logger = logger,
+                ExecuteAsync = reconciliationCancellation =>
+                    ReconcileLeasedOperationAsync(operationId, reconciliationCancellation, cancellationToken),
+                OnLeaseLost = () => Log.MetadataReleaseLeaseLost(logger, operationId)
+            },
+            cancellationToken);
+
+    private async Task ReconcileLeasedOperationAsync(
+        string operationId,
+        CancellationTokenSource reconciliationCancellation,
+        CancellationToken callerCancellation)
     {
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            return;
-        }
-
-        var leaseAcquired = await workflowStore.TryAcquireLeaseAsync(operationId, _ownerId, LeaseDuration, cancellationToken).ConfigureAwait(false);
-        if (!leaseAcquired)
-        {
-            return;
-        }
-
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
-            operationId,
-            LeaseRenewInterval,
-            reconciliationCancellation,
-            ct => workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, ct),
-            logger);
-
         WorkflowOperationRecord? reconciledVersion = null;
         try
         {
-            var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var token = reconciliationCancellation.Token;
+            var operation = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
             reconciledVersion = operation;
             if (operation is null ||
                 operation.Kind != WorkflowOperationKind.MetadataRelease ||
@@ -64,54 +65,45 @@ internal sealed partial class MetadataReleaseReconciler(
                 return;
             }
 
-            var token = reconciliationCancellation.Token;
             var updated = operation.Status == WorkflowOperationStatus.RollbackRequested
                 ? await ExecuteRollbackAsync(operation, token).ConfigureAwait(false)
                 : await AdvanceForwardAsync(operation, token).ConfigureAwait(false);
 
             if (!ReferenceEquals(updated, operation) && !Equals(updated, operation))
             {
-                var persisted = await workflowStore.TrySetAsync(updated, cancellationToken: token).ConfigureAwait(false);
-                if (!persisted)
-                {
-                    var latest = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
-                    if (latest is null ||
-                        IsTerminal(latest.Status) ||
-                        (operation.Status != WorkflowOperationStatus.RollbackRequested &&
-                         latest.Status == WorkflowOperationStatus.RollbackRequested))
-                    {
-                        return;
-                    }
-
-                    await workflowStore.TrySetAsync(updated with { Version = latest.Version }, cancellationToken: token).ConfigureAwait(false);
-                }
-
-                Log.MetadataReleaseReconciled(logger, operationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
+                await PersistReconciledReleaseAsync(operation, updated, token).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-        {
-            Log.MetadataReleaseLeaseLost(logger, operationId);
-            return;
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException ||
+            (!callerCancellation.IsCancellationRequested && !reconciliationCancellation.IsCancellationRequested))
         {
             await MarkFailedAsync(reconciledVersion, ex, reconciliationCancellation).ConfigureAwait(false);
             throw;
         }
-        finally
+    }
+
+    private async Task PersistReconciledReleaseAsync(
+        WorkflowOperationRecord original,
+        WorkflowOperationRecord updated,
+        CancellationToken cancellationToken)
+    {
+        var persisted = await workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!persisted)
         {
-            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
-                operationId,
-                reconciliationCancellation,
-                renewalTask,
-                ct => workflowStore.ReleaseLeaseAsync(operationId, _ownerId, ct),
-                logger).ConfigureAwait(false);
+            var latest = await workflowStore.GetAsync(original.OperationId, cancellationToken).ConfigureAwait(false);
+            if (latest is null ||
+                IsTerminal(latest.Status) ||
+                (original.Status != WorkflowOperationStatus.RollbackRequested &&
+                 latest.Status == WorkflowOperationStatus.RollbackRequested))
+            {
+                return;
+            }
+
+            await workflowStore.TrySetAsync(updated with { Version = latest.Version }, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
+
+        Log.MetadataReleaseReconciled(logger, original.OperationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
     }
 
     private async Task<WorkflowOperationRecord> AdvanceForwardAsync(

@@ -31,10 +31,13 @@ internal sealed partial class QueuedOperationReconciler(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
         => PeriodicBackgroundLoop.RunAsync(
-            SweepInterval,
-            clock,
-            SweepOnceAsync,
-            ex => Log.SweepFailed(logger, ex),
+            new PeriodicBackgroundLoopOptions
+            {
+                Interval = SweepInterval,
+                TimeProvider = clock,
+                ExecuteIterationAsync = SweepOnceAsync,
+                OnIterationError = ex => Log.SweepFailed(logger, ex)
+            },
             stoppingToken);
 
     internal async Task SweepOnceAsync(CancellationToken cancellationToken = default)
@@ -45,33 +48,12 @@ internal sealed partial class QueuedOperationReconciler(
             return;
         }
 
-        // Bound each sweep well below the lease duration because IOperationInstanceStore has no
-        // lease-renewal operation; any remaining items are picked up by the next sweep.
         using var sweepBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         sweepBudget.CancelAfter(SweepTimeBudget);
 
         try
         {
-            var queued = (await instanceStore.ListActiveAsync(sweepBudget.Token).ConfigureAwait(false))
-                .Where(envelope => envelope.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running)
-                .Take(MaxItemsPerSweep)
-                .ToArray();
-            foreach (var envelope in queued)
-            {
-                sweepBudget.Token.ThrowIfCancellationRequested();
-                try
-                {
-                    await ReconcileAsync(envelope, sweepBudget.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (sweepBudget.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    Log.ItemReconcileFailed(logger, envelope.OperationInstanceId, envelope.OperationId, ex);
-                }
-            }
+            await ReconcileActiveEnvelopesAsync(sweepBudget).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (sweepBudget.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -83,6 +65,30 @@ internal sealed partial class QueuedOperationReconciler(
                 LeaseId,
                 ct => instanceStore.ReleaseLeaseAsync(LeaseId, _ownerId, ct),
                 logger).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ReconcileActiveEnvelopesAsync(CancellationTokenSource sweepBudget)
+    {
+        var queued = (await instanceStore.ListActiveAsync(sweepBudget.Token).ConfigureAwait(false))
+            .Where(envelope => envelope.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running)
+            .Take(MaxItemsPerSweep)
+            .ToArray();
+        foreach (var envelope in queued)
+        {
+            sweepBudget.Token.ThrowIfCancellationRequested();
+            try
+            {
+                await ReconcileAsync(envelope, sweepBudget.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (sweepBudget.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.ItemReconcileFailed(logger, envelope.OperationInstanceId, envelope.OperationId, ex);
+            }
         }
     }
 

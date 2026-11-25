@@ -443,13 +443,16 @@ public sealed class BackpressureContractMatrixTests
             {
                 var limiter = new RateLimitingMiddleware(
                     next,
-                    policyStore,
-                    Options.Create(new RateLimitingOptions
+                    new RateLimitingDependencies
                     {
-                        Enabled = true,
-                        GlobalRequestsPerMinute = 1,
-                    }),
-                    NullLogger<RateLimitingMiddleware>.Instance);
+                        PolicyStore = policyStore,
+                        Options = Options.Create(new RateLimitingOptions
+                        {
+                            Enabled = true,
+                            GlobalRequestsPerMinute = 1,
+                        }),
+                        Logger = NullLogger<RateLimitingMiddleware>.Instance,
+                    });
                 return limiter.InvokeAsync;
             });
         }

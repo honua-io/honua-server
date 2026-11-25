@@ -83,7 +83,9 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildSelect(mapping, query);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
+        var features = await _dataAccess.ExecuteSelectAsync(
+            new DatabricksLayerQuery { Mapping = mapping, Statement = statement, DataConnection = _binding?.Connection },
+            cancellationToken).ConfigureAwait(false);
 
         // When a non-empty page is smaller than the requested limit, the result is complete and
         // offset + page length is the total. When the page is full, or an empty page was returned
@@ -127,7 +129,9 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var statement = DatabricksFeatureQueryBuilder.BuildExtent(mapping, query);
-        return await _dataAccess.ExecuteExtentAsync(mapping, statement, cancellationToken, _binding?.Connection).ConfigureAwait(false);
+        return await _dataAccess.ExecuteExtentAsync(
+            new DatabricksLayerQuery { Mapping = mapping, Statement = statement, DataConnection = _binding?.Connection },
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)

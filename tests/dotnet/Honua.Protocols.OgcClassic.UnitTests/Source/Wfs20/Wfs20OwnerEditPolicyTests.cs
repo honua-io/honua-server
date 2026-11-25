@@ -132,11 +132,14 @@ public sealed class Wfs20OwnerEditPolicyTests
         var handler = Wfs20HandlerTestFactory.Create(reader, writer);
         var result = await handler.ExecutePreparedEditAsync(
             context,
-            layerId: 7,
-            resource: Resource(policy),
-            operations: ImmutableArray.Create(operation),
-            requestGeometryChangedFlags: ImmutableArray.Create(false),
-            rollbackOnFailure: true,
+            new Wfs20Handler.WfsPreparedEditRequest
+            {
+                LayerId = 7,
+                Resource = Resource(policy),
+                Operations = ImmutableArray.Create(operation),
+                RequestGeometryChangedFlags = ImmutableArray.Create(false),
+                RollbackOnFailure = true,
+            },
             CancellationToken.None);
         return (result, writer, reader);
     }

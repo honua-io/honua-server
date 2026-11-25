@@ -95,16 +95,9 @@ internal sealed class SqlServerFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "sqlserver.feature.count",
-            dbSystem: null,
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "count", Mapping = mapping, Query = query, DataConnection = dataConnection },
             RelationalFeatureStoreHelpers.ReadCountAsync,
-            ex => SqlServerFeatureLog.QueryFailed(_logger, "count", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "count", ex),
             cancellationToken);
 
     public Task<FeatureExtent?> ExecuteExtentAsync(
@@ -112,16 +105,9 @@ internal sealed class SqlServerFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "sqlserver.feature.extent",
-            dbSystem: null,
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "extent", Mapping = mapping, Query = query, DataConnection = dataConnection },
             (cmd, ct) => RelationalFeatureStoreHelpers.ReadExtentAsync(cmd, mapping.Srid ?? 0, ct),
-            ex => SqlServerFeatureLog.QueryFailed(_logger, "extent", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "extent", ex),
             cancellationToken);
 
     public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
@@ -129,16 +115,35 @@ internal sealed class SqlServerFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "sqlserver.feature.objectids",
-            dbSystem: null,
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "objectids", Mapping = mapping, Query = query, DataConnection = dataConnection },
             RelationalFeatureStoreHelpers.ReadObjectIdsAsync,
-            ex => SqlServerFeatureLog.QueryFailed(_logger, "objectids", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "objectids", ex),
+            cancellationToken);
+
+    private sealed class SqlServerOperationContext
+    {
+        public required string Operation { get; init; }
+        public required SqlServerLayerMapping Mapping { get; init; }
+        public required ParameterizedQuery Query { get; init; }
+        public DataConnection? DataConnection { get; init; }
+    }
+
+    private Task<TResult> ExecuteOperationAsync<TResult>(
+        SqlServerOperationContext context,
+        Func<SqlCommand, CancellationToken, Task<TResult>> execute,
+        CancellationToken cancellationToken)
+        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
+            new QueryOperationRequest<SqlConnection, SqlCommand, TResult>
+            {
+                ActivitySource = _activitySource,
+                ActivityName = $"sqlserver.feature.{context.Operation}",
+                LayerId = context.Mapping.LayerId,
+                OpenConnection = ct => _connectionFactory.OpenAsync(context.DataConnection, ct),
+                CreateCommand = conn => CreateCommand(conn, context.Query),
+                Execute = execute,
+                LogFailure = ex => SqlServerFeatureLog.QueryFailed(_logger, context.Operation, context.Mapping.LayerId, ex),
+                WrapException = ex => WrapException(context.Mapping.LayerId, context.Operation, ex),
+            },
             cancellationToken);
 
     private static Exception WrapException(int layerId, string operationType, Exception ex)

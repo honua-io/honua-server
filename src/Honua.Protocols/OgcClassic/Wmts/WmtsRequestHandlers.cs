@@ -42,7 +42,7 @@ using Honua.Core.Features.Metadata.Services;
 
 namespace Honua.Protocols.Ogc.Classic.Wmts;
 
-internal static class WmtsRequestHandlers
+internal static partial class WmtsRequestHandlers
 {
     private const double WebMercatorOrigin = SpatialConstants.WebMercatorExtent;
     private const int WmtsMaxZoom = 22;
@@ -822,7 +822,10 @@ internal static class WmtsRequestHandlers
         var fallbackFeatureReader = context.RequestServices.GetService<IFeatureReader>();
         var temporalFeatureReader = fallbackFeatureReader is null
             ? null
-            : await ResolveLayerReaderAsync(context, service, layer, fallbackFeatureReader, cancellationToken).ConfigureAwait(false);
+            : await ResolveLayerReaderAsync(
+                context,
+                new WmtsLayerReaderTarget(service, layer, fallbackFeatureReader),
+                cancellationToken).ConfigureAwait(false);
         var (featureInfoTemporalFilter, featureInfoTemporalFilterError) = await TryBuildWmtsLayerTemporalFilterAsync(
             context,
             query,
@@ -1005,103 +1008,37 @@ internal static class WmtsRequestHandlers
 
         var defaultFeatureReader = fallbackFeatureReader ?? context.RequestServices.GetRequiredService<IFeatureReader>();
         var featureReader = temporalFeatureReader
-            ?? await ResolveLayerReaderAsync(context, service, layer, defaultFeatureReader, cancellationToken).ConfigureAwait(false);
+            ?? await ResolveLayerReaderAsync(
+                context,
+                new WmtsLayerReaderTarget(service, layer, defaultFeatureReader),
+                cancellationToken).ConfigureAwait(false);
         var spatialFilter = CreateBboxSpatialFilter(clickExtent, serviceSrid);
         var remaining = Math.Min(featureCount, 1000);
-
-        var plainText = new StringBuilder();
-        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
-        var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
-        var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
-
-        FeatureQuery featureQuery;
-        var queryProcessor = context.RequestServices.GetService<IQueryProcessor>();
-        if (queryProcessor is not null)
-        {
-            var unifiedQuery = new UnifiedQuery
+        var (featureQuery, queryError) = BuildWmtsFeatureInfoQuery(
+            context,
+            layer,
+            new WmtsFeatureInfoQueryInput
             {
                 SpatialFilter = spatialFilter,
-                OutputCrs = QueryCrs.Create(serviceSrid),
-                Limit = remaining
-            };
-            var validation = queryProcessor.ValidateQuery(unifiedQuery, layer.Resource);
-            if (!validation.IsValid)
-            {
-                return CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
-                    "GetFeatureInfo",
-                    validation.ErrorMessage ?? "Invalid feature query.");
-            }
-
-            featureQuery = queryProcessor.ToFeatureQuery(unifiedQuery, layer.Resource) with
-            {
-                SpatialReferenceSrid = serviceSrid,
-                OutputSrid = serviceSrid,
-                TemporalFilter = featureInfoTemporalFilter
-            };
-        }
-        else
-        {
-            featureQuery = new FeatureQuery
-            {
-                SpatialFilter = spatialFilter,
-                SpatialReferenceSrid = serviceSrid,
-                OutputSrid = serviceSrid,
+                ServiceSrid = serviceSrid,
                 Limit = remaining,
                 TemporalFilter = featureInfoTemporalFilter
-            };
+            });
+        if (queryError is not null)
+        {
+            return queryError;
         }
 
-        // IFeatureReader.QueryAsync is keyed by the int storage layer handle. The V2 graph
-        // resolves that through the publication's storage binding; passing publication.LayerIndex
-        // here would address the wrong table when the protocol-facing index differs from
-        // the storage handle (the common case once a graph has migrated its bindings).
         var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
-        foreach (var item in queryResult.Items)
-        {
-            if (remaining <= 0)
+        return FormatWmtsFeatureInfoResponse(
+            queryResult.Items,
+            new WmtsFeatureInfoFormatOptions
             {
-                break;
-            }
-
-            remaining--;
-            var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
-            if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
-            {
-                jsonFeatures.Add(new OgcClassicFeatureInfoFeature
-                {
-                    Layer = layerName,
-                    Attributes = attributes
-                });
-                continue;
-            }
-
-            plainText.Append("Layer=").Append(layerName).AppendLine();
-            foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                plainText.Append(attribute.Key)
-                    .Append('=')
-                    .Append(FormatFeatureInfoValue(attribute.Value))
-                    .AppendLine();
-            }
-
-            plainText.AppendLine();
-        }
-
-        if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
-        {
-            var payload = new OgcClassicFeatureInfoResponse
-            {
-                Features = [.. jsonFeatures]
-            };
-
-            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
-        }
-
-        var body = plainText.Length > 0
-            ? plainText.ToString().TrimEnd()
-            : "No features found.";
-        return Results.Content(body, PlainTextMimeType);
+                LayerName = GetWmsLayerName(layer.Resource, layer.Publication),
+                HiddenFields = layer.Resource.HiddenSchemaFieldNames(),
+                InfoFormat = infoFormat,
+                Limit = remaining
+            });
     }
 
     private static WmtsLayer[] ResolveWmtsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
@@ -1164,7 +1101,10 @@ internal static class WmtsRequestHandlers
             target.Layer.Snapshot is { } snapshot &&
             snapshot.Index.ServicesById.TryGetValue(target.Layer.Publication.ServiceId, out var service))
         {
-            reader = await ResolveLayerReaderAsync(context, service, target.Layer, fallbackReader, cancellationToken).ConfigureAwait(false);
+            reader = await ResolveLayerReaderAsync(
+                context,
+                new WmtsLayerReaderTarget(service, target.Layer, fallbackReader),
+                cancellationToken).ConfigureAwait(false);
         }
 
         return await TryBuildWmtsLayerTemporalFilterAsync(
@@ -1173,33 +1113,6 @@ internal static class WmtsRequestHandlers
             target.Layer,
             reader,
             cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<IFeatureReader> ResolveLayerReaderAsync(
-        HttpContext context,
-        MetadataV2Service service,
-        WmtsLayer layer,
-        IFeatureReader fallback,
-        CancellationToken cancellationToken)
-    {
-        var router = context.RequestServices.GetService<FeatureProviderQueryRouter>();
-        if (router is null || layer.Snapshot is null)
-        {
-            return fallback;
-        }
-
-        var read = await StorageBoundFeatureReader.ResolveAsync(
-                fallback,
-                router,
-                layer.Snapshot,
-                service,
-                layer.Resource,
-                layer.Publication,
-                layer.StorageLayerId,
-                FeatureProviderReadOperation.Query,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return read.UseInjectedReader ? fallback : read.Reader;
     }
 
     private static async Task<IResult> RenderWmtsRasterTileResultAsync(

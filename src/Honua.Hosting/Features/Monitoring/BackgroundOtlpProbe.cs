@@ -30,6 +30,19 @@ internal sealed record OtlpProbeSnapshot
     public string? LastError { get; init; }
 }
 
+internal sealed class OtlpProbeDependencies
+{
+    public required IOptions<TracingOptions> TracingOptions { get; init; }
+
+    public required IConfiguration Configuration { get; init; }
+
+    public required IHttpClientFactory HttpClientFactory { get; init; }
+
+    public TimeProvider? TimeProvider { get; init; }
+
+    public ILogger<BackgroundOtlpProbe>? Logger { get; init; }
+}
+
 internal sealed partial class BackgroundOtlpProbe : BackgroundService
 {
     internal static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(60);
@@ -44,30 +57,20 @@ internal sealed partial class BackgroundOtlpProbe : BackgroundService
 
     private OtlpProbeSnapshot _snapshot = new() { State = OtlpProbeState.Unknown };
 
-    public BackgroundOtlpProbe(
-        IOptions<TracingOptions> tracingOptions,
-        IConfiguration configuration,
-        IHttpClientFactory httpClientFactory,
-        TimeProvider timeProvider,
-        ILogger<BackgroundOtlpProbe>? logger = null)
-        : this(tracingOptions, configuration, httpClientFactory, timeProvider, DefaultInterval, logger)
+    public BackgroundOtlpProbe(OtlpProbeDependencies dependencies)
+        : this(dependencies, DefaultInterval)
     {
     }
 
-    internal BackgroundOtlpProbe(
-        IOptions<TracingOptions> tracingOptions,
-        IConfiguration configuration,
-        IHttpClientFactory httpClientFactory,
-        TimeProvider timeProvider,
-        TimeSpan interval,
-        ILogger<BackgroundOtlpProbe>? logger = null)
+    internal BackgroundOtlpProbe(OtlpProbeDependencies dependencies, TimeSpan interval)
     {
-        _tracingOptions = tracingOptions ?? throw new ArgumentNullException(nameof(tracingOptions));
-        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-        _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        ArgumentNullException.ThrowIfNull(dependencies);
+        _tracingOptions = dependencies.TracingOptions ?? throw new ArgumentNullException(nameof(dependencies));
+        _configuration = dependencies.Configuration ?? throw new ArgumentNullException(nameof(dependencies));
+        _httpClientFactory = dependencies.HttpClientFactory ?? throw new ArgumentNullException(nameof(dependencies));
+        _timeProvider = dependencies.TimeProvider ?? TimeProvider.System;
         _interval = interval > TimeSpan.Zero ? interval : DefaultInterval;
-        _logger = logger;
+        _logger = dependencies.Logger;
     }
 
     public const string HttpClientName = "honua-otlp-probe";

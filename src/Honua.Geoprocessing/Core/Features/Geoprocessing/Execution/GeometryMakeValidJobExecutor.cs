@@ -49,34 +49,33 @@ internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing make-valid inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadSingleGeometryInputs(parameters, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadSingleGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {inputRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeWkbAndValidateSrid(
-            inputs.WkbBytes,
-            inputs.Srid,
-            out var geometry,
-            out var wkbError,
-            out var isEmpty,
-            out var sridError))
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            if (wkbError is not null)
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
             {
-                Log.InvalidWkb(_logger, job.OperationId, wkbError);
+                Log.InvalidWkb(_logger, job.OperationId, decodeResult.Error!);
                 return JobExecutionResult.InvalidInput("Invalid make-valid inputs: WKB payload could not be decoded.");
             }
 
-            if (isEmpty)
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
             {
                 return JobExecutionResult.InvalidInput("Invalid make-valid inputs: geometry is empty.");
             }
 
-            Log.InvalidInputs(_logger, job.OperationId, sridError!);
-            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {sridError}.");
+            Log.InvalidInputs(_logger, job.OperationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {decodeResult.Error}.");
         }
+
+        var geometry = decodeResult.Geometry!;
         var wasValid = geometry.IsValid;
 
         cancellationToken.ThrowIfCancellationRequested();

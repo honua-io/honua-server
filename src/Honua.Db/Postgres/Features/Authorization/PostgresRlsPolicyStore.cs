@@ -107,13 +107,16 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         string layer,
         CancellationToken cancellationToken = default)
         => PostgresPolicyStoreHelpers.GetEffectivePoliciesAsync(
-            _connectionProvider,
-            _table,
-            "policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry",
-            roles,
-            service,
-            layer,
-            ReadPoliciesAsync,
+            new EffectivePolicyQuery<RlsPolicy>
+            {
+                ConnectionProvider = _connectionProvider,
+                Table = _table,
+                SelectColumns = "policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry",
+                Roles = roles,
+                Service = service,
+                Layer = layer,
+                ReadPoliciesAsync = ReadPoliciesAsync
+            },
             cancellationToken);
 
     private static async Task<IReadOnlyList<RlsPolicy>> ReadPoliciesAsync(

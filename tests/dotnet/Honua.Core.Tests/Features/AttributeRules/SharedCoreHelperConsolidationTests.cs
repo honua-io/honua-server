@@ -79,9 +79,12 @@ public sealed class SharedCoreHelperConsolidationTests
         {
             using var doc = await OgcApiFeaturesImportService.GetJsonDocumentAsync(
                 httpClient,
-                new Uri("https://example.test/ogc/collections"),
-                "application/json",
-                "application/geo+json",
+                new OgcApiFeaturesImportService.JsonDocumentFetchRequest
+                {
+                    Uri = new Uri("https://example.test/ogc/collections"),
+                    PrimaryAccept = "application/json",
+                    SecondaryAccept = "application/geo+json"
+                },
                 CancellationToken.None);
 
             doc.RootElement.GetProperty("ok").GetBoolean().Should().BeTrue();

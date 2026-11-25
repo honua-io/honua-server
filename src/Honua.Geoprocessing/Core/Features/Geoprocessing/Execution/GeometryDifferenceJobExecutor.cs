@@ -48,38 +48,24 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing difference inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadPairGeometryInputs(parameters, "targetWkb", "eraserWkb", out var inputs, out var inputError))
+        var pairRead = GeometryExecutorSupport.ReadAndDecodeValidatedPair(
+            parameters,
+            new PairGeometryInputNames("targetWkb", "eraserWkb"));
+        if (!pairRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid difference inputs: {inputError}");
+            if (pairRead.FailedField is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, pairRead.FailedField, pairRead.LogReason!);
+            }
+            else
+            {
+                Log.InvalidInputs(_logger, job.OperationId, pairRead.LogReason!);
+            }
+
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: {pairRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.FirstWkb, out var target, out var decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid difference inputs: targetWkb {decodeError}");
-        }
-
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.SecondWkb, out var eraser, out decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "eraserWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid difference inputs: eraserWkb {decodeError}");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.InvalidInput($"Invalid difference inputs: targetWkb {targetSridError}.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(eraser, inputs.Srid, out var eraserSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "eraserWkb", eraserSridError);
-            return JobExecutionResult.InvalidInput($"Invalid difference inputs: eraserWkb {eraserSridError}.");
-        }
-
-        target.SRID = inputs.Srid;
-        eraser.SRID = inputs.Srid;
+        var (target, eraser, srid) = (pairRead.Pair.First, pairRead.Pair.Second, pairRead.Pair.Srid);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, "Computing difference geometry", cancellationToken).ConfigureAwait(false);
@@ -101,7 +87,7 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
                 "Difference computation produced an empty geometry; the eraser may fully cover the target.");
         }
 
-        difference.SRID = inputs.Srid;
+        difference.SRID = srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding difference artifact", cancellationToken).ConfigureAwait(false);
@@ -111,7 +97,7 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
             HandledProcessId,
             new[]
             {
-                ("inputSrid", (object)inputs.Srid),
+                ("inputSrid", (object)srid),
             });
 
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;

@@ -32,7 +32,7 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
         CancellationToken cancellationToken)
     {
         var tolerance = ReadTolerance(inputs);
-        var preserveTopology = inputs.ReadBool("preserveTopology", defaultValue: true);
+        var preserveTopology = inputs.ReadBoolDefaultTrue("preserveTopology");
 
         var vertices = LayerComputationBudget.CountVertices(source);
         LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);

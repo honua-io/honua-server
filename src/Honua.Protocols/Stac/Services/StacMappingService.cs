@@ -338,7 +338,7 @@ internal sealed class StacMappingService
         var attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         var properties = new Dictionary<string, object?>(attributes.Count + 3);
         PopulateTemporalPropertiesV2(attributes, context, properties);
-        CopyIncludedAttributes(attributes, context.SelectedPropertiesLookup, context.HiddenFields, properties);
+        CopyIncludedAttributes(attributes, context, properties);
 
         var (geometry, bbox) = MapGeometryAndBbox(feature.Geometry, context.GeometrySrid);
         var links = ImmutableArray.Create(
@@ -387,10 +387,11 @@ internal sealed class StacMappingService
 
     private static void CopyIncludedAttributes(
         IReadOnlyDictionary<string, object?> attributes,
-        HashSet<string>? selectedPropertiesLookup,
-        IReadOnlySet<string> hiddenFields,
+        StacItemMappingContext context,
         Dictionary<string, object?> properties)
     {
+        var selectedPropertiesLookup = context.SelectedPropertiesLookup;
+        var hiddenFields = context.HiddenFields;
         foreach (var kvp in attributes)
         {
             var key = kvp.Key;

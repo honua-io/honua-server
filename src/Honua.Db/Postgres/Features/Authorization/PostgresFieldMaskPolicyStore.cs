@@ -110,13 +110,16 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         string layer,
         CancellationToken cancellationToken = default)
         => PostgresPolicyStoreHelpers.GetEffectivePoliciesAsync(
-            _connectionProvider,
-            _table,
-            "policy_id, role, service, layer, attribute, description, created_at, updated_at",
-            roles,
-            service,
-            layer,
-            ReadPoliciesAsync,
+            new EffectivePolicyQuery<FieldMaskPolicy>
+            {
+                ConnectionProvider = _connectionProvider,
+                Table = _table,
+                SelectColumns = "policy_id, role, service, layer, attribute, description, created_at, updated_at",
+                Roles = roles,
+                Service = service,
+                Layer = layer,
+                ReadPoliciesAsync = ReadPoliciesAsync
+            },
             cancellationToken);
 
     private static async Task<IReadOnlyList<FieldMaskPolicy>> ReadPoliciesAsync(

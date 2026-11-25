@@ -175,75 +175,105 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
 
         var stopwatch = Stopwatch.StartNew();
         var batchId = Guid.NewGuid().ToString("N");
-        var uploadedFiles = new List<CloudFile>();
-        var failedFiles = new Dictionary<string, string>();
-
-        PruneBatchIndex();
-        var batchFiles = new ConcurrentDictionary<string, byte>();
-        BatchIndex[batchId] = batchFiles;
-        _batchTrackedAt[batchId] = DateTimeOffset.UtcNow;
-
+        var state = new BatchUploadState(batchId, RegisterBatchIndexEntry(batchId));
         var completedNormally = false;
         try
         {
-            foreach (var file in request.Files)
+            var failureResult = await UploadBatchFilesAsync(request, state, cancellationToken);
+            if (failureResult is not null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var metadata = file.Metadata.Add("BatchId", batchId);
-                var result = await UploadAsync(new FileUploadRequest
-                {
-                    Content = file.Content,
-                    FileName = file.FileName,
-                    ContentType = file.ContentType,
-                    CachePolicy = request.CachePolicy,
-                    SizeBytes = file.SizeBytes,
-                    TimeToLive = request.TimeToLive,
-                    Metadata = metadata,
-                    Folder = request.Folder ?? batchId
-                }, cancellationToken);
-
-                if (result.Success && result.File is not null)
-                {
-                    uploadedFiles.Add(result.File);
-                    _ = batchFiles.TryAdd(result.File.FileId, 0);
-                }
-                else
-                {
-                    failedFiles[file.FileName] = "File upload failed.";
-
-                    if (!request.ContinueOnError)
-                    {
-                        foreach (var uploaded in uploadedFiles)
-                        {
-                            await DeleteBatchFileAsync(uploaded.FileId, cancellationToken);
-                        }
-
-                        RemoveBatchIndexEntry(batchId);
-                        stopwatch.Stop();
-                        return BatchUploadResult.CreateFailure(batchId, failedFiles, stopwatch.Elapsed);
-                    }
-                }
+                stopwatch.Stop();
+                return BatchUploadResult.CreateFailure(batchId, state.FailedFiles, stopwatch.Elapsed);
             }
 
             completedNormally = true;
         }
         finally
         {
-            if (!completedNormally || uploadedFiles.Count == 0)
+            if (!completedNormally || state.UploadedFiles.Count == 0)
             {
                 RemoveBatchIndexEntry(batchId);
             }
         }
 
         stopwatch.Stop();
+        return state.FailedFiles.Count > 0
+            ? BatchUploadResult.CreatePartialSuccess(batchId, state.UploadedFiles, state.FailedFiles, stopwatch.Elapsed)
+            : BatchUploadResult.CreateSuccess(batchId, state.UploadedFiles, stopwatch.Elapsed);
+    }
 
-        if (failedFiles.Count > 0)
+    private ConcurrentDictionary<string, byte> RegisterBatchIndexEntry(string batchId)
+    {
+        PruneBatchIndex();
+        var batchFiles = new ConcurrentDictionary<string, byte>();
+        BatchIndex[batchId] = batchFiles;
+        _batchTrackedAt[batchId] = DateTimeOffset.UtcNow;
+        return batchFiles;
+    }
+
+    private async Task<BatchUploadResult?> UploadBatchFilesAsync(
+        BatchUploadRequest request,
+        BatchUploadState state,
+        CancellationToken cancellationToken)
+    {
+        foreach (var file in request.Files)
         {
-            return BatchUploadResult.CreatePartialSuccess(batchId, uploadedFiles, failedFiles, stopwatch.Elapsed);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await UploadAsync(CreateBatchFileUploadRequest(request, file, state.BatchId), cancellationToken);
+            if (result.Success && result.File is not null)
+            {
+                state.UploadedFiles.Add(result.File);
+                _ = state.BatchFiles.TryAdd(result.File.FileId, 0);
+                continue;
+            }
+
+            state.FailedFiles[file.FileName] = "File upload failed.";
+            if (!request.ContinueOnError)
+            {
+                await RollbackBatchUploadsAsync(state.BatchId, state.UploadedFiles, cancellationToken);
+                return BatchUploadResult.CreateFailure(state.BatchId, state.FailedFiles, TimeSpan.Zero);
+            }
         }
 
-        return BatchUploadResult.CreateSuccess(batchId, uploadedFiles, stopwatch.Elapsed);
+        return null;
+    }
+
+    private static FileUploadRequest CreateBatchFileUploadRequest(
+        BatchUploadRequest request,
+        BatchFileItem file,
+        string batchId)
+        => new()
+        {
+            Content = file.Content,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            CachePolicy = request.CachePolicy,
+            SizeBytes = file.SizeBytes,
+            TimeToLive = request.TimeToLive,
+            Metadata = file.Metadata.Add("BatchId", batchId),
+            Folder = request.Folder ?? batchId
+        };
+
+    private async Task RollbackBatchUploadsAsync(
+        string batchId,
+        List<CloudFile> uploadedFiles,
+        CancellationToken cancellationToken)
+    {
+        foreach (var uploaded in uploadedFiles)
+        {
+            await DeleteBatchFileAsync(uploaded.FileId, cancellationToken);
+        }
+
+        RemoveBatchIndexEntry(batchId);
+    }
+
+    private sealed class BatchUploadState(string batchId, ConcurrentDictionary<string, byte> batchFiles)
+    {
+        public string BatchId { get; } = batchId;
+        public ConcurrentDictionary<string, byte> BatchFiles { get; } = batchFiles;
+        public List<CloudFile> UploadedFiles { get; } = [];
+        public Dictionary<string, string> FailedFiles { get; } = [];
     }
 
     public virtual async Task<int> DeleteBatchAsync(string batchId, CancellationToken cancellationToken = default)

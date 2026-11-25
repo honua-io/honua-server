@@ -103,7 +103,7 @@ internal sealed class ETagService : IETagService
         }
 
         // If-None-Match uses weak comparison for GET/HEAD.
-        var currentValue = ParseETag(currentETag.AsSpan(), out _);
+        var currentValue = ParseETag(currentETag.AsSpan()).Value;
         foreach (var range in headerSpan.Split(','))
         {
             var candidate = headerSpan[range].Trim();
@@ -112,7 +112,7 @@ internal sealed class ETagService : IETagService
                 continue;
             }
 
-            if (ParseETag(candidate, out _).SequenceEqual(currentValue))
+            if (ParseETag(candidate).Value.SequenceEqual(currentValue))
             {
                 return false; // ETag matches, resource not modified
             }
@@ -136,8 +136,8 @@ internal sealed class ETagService : IETagService
         }
 
         // If-Match requires strong comparison; weak tags never match.
-        var currentValue = ParseETag(currentETag.AsSpan(), out var currentIsWeak);
-        if (currentIsWeak)
+        var current = ParseETag(currentETag.AsSpan());
+        if (current.IsWeak)
         {
             return false;
         }
@@ -150,8 +150,8 @@ internal sealed class ETagService : IETagService
                 continue;
             }
 
-            var candidateValue = ParseETag(candidate, out var candidateIsWeak);
-            if (!candidateIsWeak && candidateValue.SequenceEqual(currentValue))
+            var candidateTag = ParseETag(candidate);
+            if (!candidateTag.IsWeak && candidateTag.Value.SequenceEqual(current.Value))
             {
                 return true; // ETag matches, precondition passes
             }
@@ -181,15 +181,15 @@ internal sealed class ETagService : IETagService
         }
     }
 
-    private static ReadOnlySpan<char> ParseETag(ReadOnlySpan<char> etag, out bool isWeak)
+    private static ParsedETag ParseETag(ReadOnlySpan<char> etag)
     {
-        isWeak = false;
         var trimmed = etag.Trim();
         if (trimmed.IsEmpty)
         {
-            return ReadOnlySpan<char>.Empty;
+            return ParsedETag.Strong(ReadOnlySpan<char>.Empty);
         }
 
+        var isWeak = false;
         if (trimmed.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
         {
             isWeak = true;
@@ -201,6 +201,17 @@ internal sealed class ETagService : IETagService
             trimmed = trimmed[1..^1];
         }
 
-        return trimmed;
+        return isWeak ? ParsedETag.Weak(trimmed) : ParsedETag.Strong(trimmed);
+    }
+
+    private readonly ref struct ParsedETag
+    {
+        public ReadOnlySpan<char> Value { get; init; }
+
+        public bool IsWeak { get; init; }
+
+        public static ParsedETag Strong(ReadOnlySpan<char> value) => new() { Value = value };
+
+        public static ParsedETag Weak(ReadOnlySpan<char> value) => new() { Value = value, IsWeak = true };
     }
 }

@@ -11,6 +11,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
+internal sealed class AzureKeyVaultResolverOptions
+{
+    public required HttpClient HttpClient { get; init; }
+    public required HttpClient MetadataClient { get; init; }
+    public required ILogger<AzureKeyVaultResolver> Logger { get; init; }
+    public Func<int, CancellationToken, Task>? RetryDelay { get; init; }
+}
+
 internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDisposable
 {
     private const string ProviderType = "azure";
@@ -46,23 +54,22 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     public string ProviderName => ProviderType;
 
     public AzureKeyVaultResolver(IHttpClientFactory httpClientFactory, ILogger<AzureKeyVaultResolver> logger)
-        : this(
-            (httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory))).CreateClient(ClientName),
-            httpClientFactory.CreateClient(ManagedIdentityClientName),
-            logger)
+        : this(new AzureKeyVaultResolverOptions
+        {
+            HttpClient = (httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory))).CreateClient(ClientName),
+            MetadataClient = httpClientFactory.CreateClient(ManagedIdentityClientName),
+            Logger = logger
+        })
     {
     }
 
-    internal AzureKeyVaultResolver(
-        HttpClient httpClient,
-        HttpClient metadataClient,
-        ILogger<AzureKeyVaultResolver> logger,
-        Func<int, CancellationToken, Task>? retryDelay = null)
+    internal AzureKeyVaultResolver(AzureKeyVaultResolverOptions options)
     {
-        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _metadataClient = metadataClient ?? throw new ArgumentNullException(nameof(metadataClient));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _retryDelay = retryDelay ?? DefaultRetryDelay;
+        ArgumentNullException.ThrowIfNull(options);
+        _httpClient = options.HttpClient ?? throw new ArgumentNullException(nameof(options));
+        _metadataClient = options.MetadataClient ?? throw new ArgumentNullException(nameof(options));
+        _logger = options.Logger ?? throw new ArgumentNullException(nameof(options));
+        _retryDelay = options.RetryDelay ?? DefaultRetryDelay;
     }
 
     public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
@@ -152,10 +159,13 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
     public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
         => ConnectionStringSecretTemplateExpander.ExpandAsync(
-            connectionStringTemplate,
-            KeyVaultPrefix,
-            CanResolve,
-            ResolveSecretAsync,
+            new SecretTemplateExpansionRequest
+            {
+                ConnectionStringTemplate = connectionStringTemplate,
+                DirectPrefix = KeyVaultPrefix,
+                CanResolve = CanResolve,
+                ResolveSecretAsync = ResolveSecretAsync
+            },
             cancellationToken);
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)

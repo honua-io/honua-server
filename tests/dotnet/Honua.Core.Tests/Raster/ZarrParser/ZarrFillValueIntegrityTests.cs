@@ -157,7 +157,6 @@ public class ZarrFillValueIntegrityTests
         objects.Remove(Root + (v3 ? "/c/0/0" : "/0.0"));
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        return await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "fill", Start = [0, 0], Stop = [2, 2] });
+        return await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "fill", Start = [0, 0], Stop = [2, 2] } });
     }
 }

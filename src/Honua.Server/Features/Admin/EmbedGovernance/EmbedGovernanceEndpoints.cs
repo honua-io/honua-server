@@ -24,6 +24,12 @@ internal static partial class EmbedGovernanceEndpoints
 
     public static void MapEmbedGovernanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        MapEmbedKeyEndpoints(endpoints);
+        MapEmbedUsageEndpoints(endpoints);
+    }
+
+    private static void MapEmbedKeyEndpoints(IEndpointRouteBuilder endpoints)
+    {
         var keys = endpoints.MapGroup("/api/v{version:apiVersion}/admin/embed/keys")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
@@ -56,7 +62,10 @@ internal static partial class EmbedGovernanceEndpoints
             .WithDisplayName("Revoke Embed Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .RequireAdminCredentialManagementAuthorization();
+    }
 
+    private static void MapEmbedUsageEndpoints(IEndpointRouteBuilder endpoints)
+    {
         var usage = endpoints.MapGroup("/api/v{version:apiVersion}/admin/embed/usage")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()

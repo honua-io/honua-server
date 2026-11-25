@@ -768,85 +768,6 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return editBatch with { RowSecurityWriteCheck = writeCheck };
     }
 
-    internal static FeatureEditBatch ApplyMaskedFieldsToEditBatch(
-        FeatureEditBatch editBatch,
-        ImmutableArray<string> maskedFields)
-    {
-        if (!editBatch.Preconditions.IsDefaultOrEmpty)
-        {
-            editBatch = editBatch with
-            {
-                Preconditions = editBatch.Preconditions
-                    .Select(precondition => precondition with { MaskedFields = maskedFields })
-                    .ToImmutableArray()
-            };
-        }
-
-        if (maskedFields.IsDefaultOrEmpty)
-        {
-            return editBatch;
-        }
-
-        if (!editBatch.Updates.IsDefaultOrEmpty)
-        {
-            editBatch = editBatch with
-            {
-                Updates = editBatch.Updates
-                    .Select(feature => MergePreservedAttributeNames(feature, maskedFields))
-                    .ToImmutableArray()
-            };
-        }
-
-        if (!editBatch.Operations.IsDefaultOrEmpty)
-        {
-            var updatedOperations = ImmutableArray.CreateBuilder<FeatureEditOperation>(editBatch.Operations.Length);
-            var changed = false;
-            foreach (var operation in editBatch.Operations)
-            {
-                if (operation.Kind == FeatureEditOperationKind.Update && operation.Feature.HasValue)
-                {
-                    updatedOperations.Add(operation with
-                    {
-                        Feature = MergePreservedAttributeNames(operation.Feature.Value, maskedFields)
-                    });
-                    changed = true;
-                }
-                else
-                {
-                    updatedOperations.Add(operation);
-                }
-            }
-
-            if (changed)
-            {
-                editBatch = editBatch with { Operations = updatedOperations.MoveToImmutable() };
-            }
-        }
-
-        return editBatch;
-    }
-
-    private static Feature MergePreservedAttributeNames(Feature feature, ImmutableArray<string> maskedFields)
-    {
-        if (feature.PreservedAttributeNames.IsDefaultOrEmpty)
-        {
-            return feature with { PreservedAttributeNames = maskedFields };
-        }
-
-        var seen = new HashSet<string>(feature.PreservedAttributeNames, StringComparer.OrdinalIgnoreCase);
-        var builder = ImmutableArray.CreateBuilder<string>(feature.PreservedAttributeNames.Length + maskedFields.Length);
-        builder.AddRange(feature.PreservedAttributeNames);
-        foreach (var maskedField in maskedFields)
-        {
-            if (seen.Add(maskedField))
-            {
-                builder.Add(maskedField);
-            }
-        }
-
-        return feature with { PreservedAttributeNames = builder.ToImmutable() };
-    }
-
     private sealed class SecuredWriterTransaction(
         PostgresFeatureStoreRefactored owner,
         IFeatureWriterTransaction inner) : IFeatureWriterTransaction
@@ -933,10 +854,13 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         // relationship: hidden origin rows and masked key fields must not resolve foreign keys,
         // and hidden related rows or masked attributes must not be readable through queryRelatedRecords.
         var security = await ResolveRelatedReadSecurityAsync(
-            layerId,
-            query.RelatedLayerId,
-            query.OriginForeignKeyField,
-            query.DestinationForeignKeyField,
+            new RelatedReadSecurityRequest
+            {
+                OriginLayerId = layerId,
+                RelatedLayerId = query.RelatedLayerId,
+                OriginForeignKeyField = query.OriginForeignKeyField,
+                DestinationForeignKeyField = query.DestinationForeignKeyField
+            },
             cancellationToken).ConfigureAwait(false);
         if (_dataAccess is FeatureDataAccess postgresDataAccess &&
             (security.OriginFilter is not null || security.RelatedFilter is not null || !security.RelatedMasks.IsDefaultOrEmpty))
@@ -1053,54 +977,32 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         CancellationToken cancellationToken)
     {
         var optimizedQuery = _queryBuilder.BuildOptimizedSelectQuery(layerId, query, geometryStorageType);
-
         if (_dataAccess is FeatureDataAccess postgresDataAccess)
         {
-            var (items, windowTotal) = await postgresDataAccess
-                .ExecuteOptimizedSelectQueryAsync(optimizedQuery, query, layerId, cancellationToken)
-                .ConfigureAwait(false);
-            if (items.Length == 0)
+            var request = new SelectQueryRequest { Query = optimizedQuery, FeatureQuery = query, LayerId = layerId };
+            return await ExecutePostgresOptimizedQueryAsync(
+                postgresDataAccess,
+                new OptimizedQueryContext<Feature>
+                {
+                    LayerId = layerId,
+                    Query = query,
+                    GeometryStorageType = geometryStorageType,
+                    ExecuteAsync = access => access.ExecuteOptimizedSelectQueryAsync(request, cancellationToken)
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await ExecuteStreamOptimizedFallbackAsync(
+            new StreamOptimizedFallbackContext<Feature>
             {
-                return await CountEmptyPageAsync<Feature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-            }
-
-            var total = windowTotal ?? items.Length;
-            var pageOffset = query.Offset ?? 0;
-            return QueryResult<Feature>.Create(total, items, total > pageOffset + items.Length);
-        }
-
-        var capacity = query.Limit is > 0 and < int.MaxValue ? Math.Min(query.Limit.Value, 1024) : 256;
-        var features = ImmutableArray.CreateBuilder<Feature>(capacity);
-        long totalCount = 0;
-        var hasCountColumn = false;
-
-        await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, optimizedQuery, query, cancellationToken))
-        {
-            // Extract total count from first row if available
-            if (!hasCountColumn &&
-                feature.Attributes.TryGetValue(FeatureQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
-                totalCountValue is not null)
-            {
-                totalCount = Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
-                hasCountColumn = true;
-            }
-
-            features.Add(RemoveInternalAttributes(feature));
-        }
-
-        if (!hasCountColumn)
-        {
-            totalCount = features.Count;
-        }
-
-        if (features.Count == 0)
-        {
-            return await CountEmptyPageAsync<Feature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-        }
-
-        var offset = query.Offset ?? 0;
-        var hasMoreResults = totalCount > offset + features.Count;
-        return QueryResult<Feature>.Create(totalCount, features.DrainToImmutable(), hasMoreResults);
+                LayerId = layerId,
+                Query = query,
+                GeometryStorageType = geometryStorageType,
+                Stream = _dataAccess.StreamFeaturesAsync(layerId, optimizedQuery, query, cancellationToken),
+                GetAttributes = static feature => feature.Attributes,
+                RemoveInternal = RemoveInternalAttributes
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<QueryResult<GmlFeature>> QueryOptimizedGmlAsync(
@@ -1110,54 +1012,32 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         CancellationToken cancellationToken)
     {
         var optimizedQuery = _queryBuilder.BuildOptimizedSelectGmlQuery(layerId, query, geometryStorageType);
-
         if (_dataAccess is FeatureDataAccess postgresDataAccess)
         {
-            var (items, windowTotal) = await postgresDataAccess
-                .ExecuteOptimizedSelectGmlQueryAsync(optimizedQuery, query, layerId, cancellationToken)
-                .ConfigureAwait(false);
-            if (items.Length == 0)
+            var request = new SelectQueryRequest { Query = optimizedQuery, FeatureQuery = query, LayerId = layerId };
+            return await ExecutePostgresOptimizedQueryAsync(
+                postgresDataAccess,
+                new OptimizedQueryContext<GmlFeature>
+                {
+                    LayerId = layerId,
+                    Query = query,
+                    GeometryStorageType = geometryStorageType,
+                    ExecuteAsync = access => access.ExecuteOptimizedSelectGmlQueryAsync(request, cancellationToken)
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await ExecuteStreamOptimizedFallbackAsync(
+            new StreamOptimizedFallbackContext<GmlFeature>
             {
-                return await CountEmptyPageAsync<GmlFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-            }
-
-            var total = windowTotal ?? items.Length;
-            var pageOffset = query.Offset ?? 0;
-            return QueryResult<GmlFeature>.Create(total, items, total > pageOffset + items.Length);
-        }
-
-        var capacity = query.Limit is > 0 and < int.MaxValue ? Math.Min(query.Limit.Value, 1024) : 256;
-        var features = ImmutableArray.CreateBuilder<GmlFeature>(capacity);
-        long totalCount = 0;
-        var hasCountColumn = false;
-
-        await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, optimizedQuery, query, cancellationToken))
-        {
-            // Extract total count from first row if available
-            if (!hasCountColumn &&
-                feature.Attributes.TryGetValue(FeatureQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
-                totalCountValue is not null)
-            {
-                totalCount = Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
-                hasCountColumn = true;
-            }
-
-            features.Add(RemoveInternalAttributes(feature));
-        }
-
-        if (!hasCountColumn)
-        {
-            totalCount = features.Count;
-        }
-
-        if (features.Count == 0)
-        {
-            return await CountEmptyPageAsync<GmlFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-        }
-
-        var offset = query.Offset ?? 0;
-        var hasMoreResults = totalCount > offset + features.Count;
-        return QueryResult<GmlFeature>.Create(totalCount, features.DrainToImmutable(), hasMoreResults);
+                LayerId = layerId,
+                Query = query,
+                GeometryStorageType = geometryStorageType,
+                Stream = _dataAccess.StreamGmlFeaturesAsync(layerId, optimizedQuery, query, cancellationToken),
+                GetAttributes = static feature => feature.Attributes,
+                RemoveInternal = RemoveInternalAttributes
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<QueryResult<EncodedGeoJsonFeature>> QueryOptimizedGeoJsonAsync(
@@ -1167,20 +1047,19 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         CancellationToken cancellationToken)
     {
         var optimizedQuery = _queryBuilder.BuildOptimizedSelectGeoJsonQuery(layerId, query, geometryStorageType);
-
         if (_dataAccess is FeatureDataAccess postgresDataAccess)
         {
-            var (items, windowTotal) = await postgresDataAccess
-                .ExecuteOptimizedSelectGeoJsonQueryAsync(optimizedQuery, query, layerId, cancellationToken)
-                .ConfigureAwait(false);
-            if (items.Length == 0)
-            {
-                return await CountEmptyPageAsync<EncodedGeoJsonFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-            }
-
-            var total = windowTotal ?? items.Length;
-            var pageOffset = query.Offset ?? 0;
-            return QueryResult<EncodedGeoJsonFeature>.Create(total, items, total > pageOffset + items.Length);
+            var request = new SelectQueryRequest { Query = optimizedQuery, FeatureQuery = query, LayerId = layerId };
+            return await ExecutePostgresOptimizedQueryAsync(
+                postgresDataAccess,
+                new OptimizedQueryContext<EncodedGeoJsonFeature>
+                {
+                    LayerId = layerId,
+                    Query = query,
+                    GeometryStorageType = geometryStorageType,
+                    ExecuteAsync = access => access.ExecuteOptimizedSelectGeoJsonQueryAsync(request, cancellationToken)
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
         var features = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(optimizedQuery, query, layerId, cancellationToken);
@@ -1204,20 +1083,19 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         CancellationToken cancellationToken)
     {
         var optimizedQuery = _queryBuilder.BuildOptimizedSelectKmlQuery(layerId, query, geometryStorageType);
-
         if (_dataAccess is FeatureDataAccess postgresDataAccess)
         {
-            var (items, windowTotal) = await postgresDataAccess
-                .ExecuteOptimizedSelectKmlQueryAsync(optimizedQuery, query, layerId, cancellationToken)
-                .ConfigureAwait(false);
-            if (items.Length == 0)
-            {
-                return await CountEmptyPageAsync<KmlFeature>(layerId, query, geometryStorageType, cancellationToken).ConfigureAwait(false);
-            }
-
-            var total = windowTotal ?? items.Length;
-            var pageOffset = query.Offset ?? 0;
-            return QueryResult<KmlFeature>.Create(total, items, total > pageOffset + items.Length);
+            var request = new SelectQueryRequest { Query = optimizedQuery, FeatureQuery = query, LayerId = layerId };
+            return await ExecutePostgresOptimizedQueryAsync(
+                postgresDataAccess,
+                new OptimizedQueryContext<KmlFeature>
+                {
+                    LayerId = layerId,
+                    Query = query,
+                    GeometryStorageType = geometryStorageType,
+                    ExecuteAsync = access => access.ExecuteOptimizedSelectKmlQueryAsync(request, cancellationToken)
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
         var features = await _dataAccess.ExecuteSelectKmlQueryAsync(optimizedQuery, query, layerId, cancellationToken);

@@ -193,14 +193,18 @@ internal sealed partial class EdrHandler
         }
 
         var coords = context.Request.Query["coords"].ToString();
-        if (!TryParsePositions(coords, out var positions, out var isMultiPoint, out var exceededMaxPositions))
+        var parsedPositions = ParsePositions(coords);
+        if (!parsedPositions.IsValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                exceededMaxPositions
+                parsedPositions.ExceededMaxPositions
                     ? $"Query parameter 'coords' MULTIPOINT may contain at most {MaxPositionPoints} positions."
                     : "Query parameter 'coords' must be a WKT POINT or MULTIPOINT, e.g. coords=POINT(-122.4 37.8) or coords=MULTIPOINT((-122.4 37.8),(-122.3 37.7)).");
         }
+
+        var positions = parsedPositions.Positions;
+        var isMultiPoint = parsedPositions.IsMultiPoint;
 
         // coords are CRS84 lon/lat while RasterInfo.Extent is in the raster's storage CRS, so the
         // gate compares against the CRS84-transformed extent. Every MULTIPOINT member is
@@ -722,91 +726,101 @@ internal sealed partial class EdrHandler
 
     // ---- parsing helpers ----
 
-    private static bool TryParsePositions(
-        string coords,
-        out (double Lon, double Lat)[] positions,
-        out bool isMultiPoint,
-        out bool exceededMaxPositions)
+    private readonly record struct PositionParseResult
     {
-        positions = [];
-        isMultiPoint = false;
-        exceededMaxPositions = false;
+        public bool IsValid { get; init; }
+        public (double Lon, double Lat)[] Positions { get; init; }
+        public bool IsMultiPoint { get; init; }
+        public bool ExceededMaxPositions { get; init; }
+    }
+
+    private static PositionParseResult ParsePositions(string coords)
+    {
         if (string.IsNullOrWhiteSpace(coords))
         {
-            return false;
+            return new PositionParseResult { Positions = [] };
         }
 
         var trimmed = coords.Trim();
         if (!trimmed.StartsWith("MULTIPOINT", StringComparison.OrdinalIgnoreCase))
         {
-            if (!TryParsePoint(trimmed, out var lon, out var lat))
-            {
-                return false;
-            }
-
-            positions = [(lon, lat)];
-            return true;
+            return TryParsePoint(trimmed, out var lon, out var lat)
+                ? new PositionParseResult { IsValid = true, Positions = [(lon, lat)] }
+                : new PositionParseResult { Positions = [] };
         }
 
-        isMultiPoint = true;
         var open = trimmed.IndexOf('(');
         if (open < "MULTIPOINT".Length || trimmed[^1] != ')')
         {
-            return false;
+            return new PositionParseResult { Positions = [], IsMultiPoint = true };
         }
 
         var qualifier = trimmed["MULTIPOINT".Length..open].Trim();
         if (qualifier.Length > 0 && !string.Equals(qualifier, "Z", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return new PositionParseResult { Positions = [], IsMultiPoint = true };
         }
 
-        var body = trimmed[open..];
+        return ParseMultiPointBody(trimmed[open..]);
+    }
+
+    private static PositionParseResult ParseMultiPointBody(string body)
+    {
         if (body.Length < 2 || body[0] != '(' || body[^1] != ')')
         {
-            return false;
+            return new PositionParseResult { Positions = [], IsMultiPoint = true };
         }
 
         var rawMembers = body[1..^1].Split(',', StringSplitOptions.TrimEntries);
         if (rawMembers.Length > MaxPositionPoints)
         {
-            exceededMaxPositions = true;
-            return false;
+            return new PositionParseResult { Positions = [], IsMultiPoint = true, ExceededMaxPositions = true };
         }
-        var parsed = new List<(double Lon, double Lat)>();
+
+        var parsed = new List<(double Lon, double Lat)>(rawMembers.Length);
         foreach (var rawMember in rawMembers)
         {
-            if (string.IsNullOrWhiteSpace(rawMember))
+            if (ParseMultiPointMember(rawMember) is not { } position)
             {
-                return false;
+                return new PositionParseResult { Positions = [], IsMultiPoint = true };
             }
 
-            string inner;
-            if (rawMember.StartsWith('(') || rawMember.EndsWith(')'))
-            {
-                if (!rawMember.StartsWith('(') || !rawMember.EndsWith(')') || rawMember.Length < 2)
-                {
-                    return false;
-                }
-
-                inner = rawMember[1..^1].Trim();
-            }
-            else
-            {
-                inner = rawMember;
-            }
-
-            if (inner.Contains('(') || inner.Contains(')') || inner.Contains(',')
-                || !TryParseOrdinates(inner.Split(' ', StringSplitOptions.RemoveEmptyEntries), out var lon, out var lat))
-            {
-                return false;
-            }
-
-            parsed.Add((lon, lat));
+            parsed.Add(position);
         }
 
-        positions = [.. parsed];
-        return positions.Length > 0;
+        var positions = parsed.ToArray();
+        return new PositionParseResult { IsValid = positions.Length > 0, Positions = positions, IsMultiPoint = true };
+    }
+
+    private static (double Lon, double Lat)? ParseMultiPointMember(string rawMember)
+    {
+        if (string.IsNullOrWhiteSpace(rawMember))
+        {
+            return null;
+        }
+
+        string inner;
+        if (rawMember.StartsWith('(') || rawMember.EndsWith(')'))
+        {
+            if (!rawMember.StartsWith('(') || !rawMember.EndsWith(')') || rawMember.Length < 2)
+            {
+                return null;
+            }
+
+            inner = rawMember[1..^1].Trim();
+        }
+        else
+        {
+            inner = rawMember;
+        }
+
+        if (inner.Contains('(') || inner.Contains(')') || inner.Contains(',')
+            || !TryParseOrdinates(inner.Split(' ', StringSplitOptions.RemoveEmptyEntries), out var lon, out var lat))
+        {
+            return null;
+        }
+
+        return (lon, lat);
     }
 
     private static bool TryParsePoint(string coords, out double lon, out double lat)

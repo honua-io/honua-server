@@ -206,7 +206,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             if (parsed.Length > 0)
             {
                 var fieldError = ValidateFieldNameList(context, "groupByFields", parsed)
-                    ?? ValidateFieldsVisible(context, "groupByFields", parsed, resource);
+                    ?? ValidateFieldsVisible(context, new FieldVisibilityCheck { ParameterName = "groupByFields", Fields = parsed, Resource = resource });
                 if (fieldError != null)
                 {
                     return fieldError;

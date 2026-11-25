@@ -5,47 +5,48 @@ using System.Globalization;
 
 namespace Honua.Server.Features.Admin.Scene;
 
+internal readonly struct FormFieldParseResult<T>
+{
+    public T Value { get; init; }
+    public string? Error { get; init; }
+    public bool IsValid => Error is null;
+
+    public static FormFieldParseResult<T> Success(T value) => new() { Value = value };
+
+    public static FormFieldParseResult<T> Failure(string error) => new() { Value = default!, Error = error };
+}
+
 internal static class SceneIngestFormHelpers
 {
-    public static bool TryParseOptionalInt(
-        IFormCollection form, string key, out int? value, out string? error)
+    public static FormFieldParseResult<int?> ParseOptionalInt(IFormCollection form, string key)
     {
-        value = null;
-        error = null;
         var raw = form[key];
         if (raw.Count == 0 || string.IsNullOrWhiteSpace(raw[0]))
         {
-            return true;
+            return FormFieldParseResult<int?>.Success(null);
         }
 
         if (!int.TryParse(raw[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
         {
-            error = $"{key} must be an integer.";
-            return false;
+            return FormFieldParseResult<int?>.Failure($"{key} must be an integer.");
         }
 
-        value = parsed;
-        return true;
+        return FormFieldParseResult<int?>.Success(parsed);
     }
 
-    public static bool TryParseOptionalBool(
-        IFormCollection form, string key, out bool? value, out string? error)
+    public static FormFieldParseResult<bool?> ParseOptionalBool(IFormCollection form, string key)
     {
-        value = null;
-        error = null;
         var raw = form[key];
         if (raw.Count == 0 || string.IsNullOrWhiteSpace(raw[0]))
         {
-            return true;
+            return FormFieldParseResult<bool?>.Success(null);
         }
 
         if (!bool.TryParse(raw[0], out var parsed))
         {
-            error = $"{key} must be 'true' or 'false'.";
-            return false;
+            return FormFieldParseResult<bool?>.Failure($"{key} must be 'true' or 'false'.");
         }
 
-        value = parsed;
-        return true;
+        return FormFieldParseResult<bool?>.Success(parsed);
     }
 }

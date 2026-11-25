@@ -262,11 +262,11 @@ public sealed class ImageServerCogStatisticsTests
                 services.AddSingleton(schemaContext);
             });
 
-        var baseline = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), [baseRegistration], [1], 4);
-        var differentTenant = ImageServerCogStatistics.CacheKey(BuildContext("tenant-b", "schema_a"), [baseRegistration], [1], 4);
-        var differentSchema = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_b"), [baseRegistration], [1], 4);
-        var differentBucket = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), [otherBucket], [1], 4);
-        var differentObject = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), [otherObjectKey], [1], 4);
+        var baseline = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([baseRegistration], [1]), 4);
+        var differentTenant = ImageServerCogStatistics.CacheKey(BuildContext("tenant-b", "schema_a"), new([baseRegistration], [1]), 4);
+        var differentSchema = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_b"), new([baseRegistration], [1]), 4);
+        var differentBucket = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([otherBucket], [1]), 4);
+        var differentObject = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([otherObjectKey], [1]), 4);
 
         new[] { baseline, differentTenant, differentSchema, differentBucket, differentObject }
             .Should().OnlyHaveUniqueItems();

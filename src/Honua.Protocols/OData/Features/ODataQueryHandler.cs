@@ -635,7 +635,13 @@ internal sealed partial class ODataQueryHandler(
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, hiddenFields);
+                var dict = ODataUtilityService.BuildFeaturePayload(new ODataUtilityService.ODataFeaturePayloadRequest
+                {
+                    LayerId = publicLayerId,
+                    Feature = f,
+                    Geometry = geometry,
+                    HiddenFields = hiddenFields
+                });
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))

@@ -30,7 +30,7 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
-internal sealed class OgcCoveragesHandler
+internal sealed partial class OgcCoveragesHandler
 {
     private const int MaxScaleSize = 8192;
     private const string CoverageItemType = "coverage";
@@ -455,15 +455,8 @@ internal sealed class OgcCoveragesHandler
 
             if (resolution.ZarrRegistration is { } zarrRegistration)
             {
-                var zarrResult = await _zarrCoverages.GetCoverageAsync(
-                        context,
-                        collectionId,
-                        zarrRegistration,
-                        f,
-                        cancellationToken)
+                return await ServeZarrCoverageAsync(context, (collectionId, zarrRegistration, f, telemetry), cancellationToken)
                     .ConfigureAwait(false);
-                telemetry.SetSuccess(1);
-                return zarrResult;
             }
 
             var parameterError = ValidateCoverageQueryParameters(context);
@@ -495,21 +488,23 @@ internal sealed class OgcCoveragesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, queryError);
             }
 
-            var scalingResult = await TryApplyScalingAsync(
-                    context,
-                    resolution.Raster!.Value,
-                    supportedCrs,
-                    storageSrid,
-                    rasterQuery,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!scalingResult.Success)
+            var (scaledQuery, scalingError) = await ApplyCoverageScalingStepAsync(
+                context,
+                new CoverageScalingInput
+                {
+                    CollectionId = collectionId,
+                    Raster = resolution.Raster!.Value,
+                    SupportedCrs = supportedCrs,
+                    StorageSrid = storageSrid,
+                    Query = rasterQuery
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (scalingError is not null)
             {
-                OgcCoveragesLog.ValidationFailed(_logger, collectionId, scalingResult.Error);
-                return StandardErrorHelpers.CreateBadRequest(context, scalingResult.Error);
+                return scalingError;
             }
 
-            rasterQuery = scalingResult.Query;
+            rasterQuery = scaledQuery;
 
             telemetry
                 .WithTag(HonuaTelemetry.Tags.LayerId, resolution.StorageLayerId!.Value)
@@ -518,20 +513,13 @@ internal sealed class OgcCoveragesHandler
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
                 .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster!.Value.BandCount);
 
-            var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
-            RasterRenderCapacityLimiter.Lease? renderLease = null;
-            if (limiter is not null)
+            var (renderLease, capacityError) = await TryAcquireCoverageRenderLeaseAsync(
+                context,
+                (rasterQuery, resolution.Raster!.Value),
+                cancellationToken).ConfigureAwait(false);
+            if (capacityError is not null)
             {
-                var renderWidth = Math.Max(1, rasterQuery.OutputWidth ?? resolution.Raster!.Value.Width);
-                var renderHeight = Math.Max(1, rasterQuery.OutputHeight ?? resolution.Raster!.Value.Height);
-                renderLease = await limiter.TryAcquireAsync(renderWidth, renderHeight, cancellationToken).ConfigureAwait(false);
-                if (renderLease is null)
-                {
-                    return StandardErrorHelpers.CreateServiceUnavailable(
-                        context,
-                        RasterRenderCapacityLimiter.CapacityExceededMessage,
-                        RasterRenderCapacityLimiter.RetryAfterSeconds);
-                }
+                return capacityError;
             }
 
             await using (renderLease)

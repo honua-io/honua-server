@@ -452,7 +452,7 @@ internal static class ConsoleShareEndpoints
     {
         try
         {
-            if (!ConsoleRequestValidationHelpers.TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }

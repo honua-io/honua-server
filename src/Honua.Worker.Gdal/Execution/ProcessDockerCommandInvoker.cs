@@ -127,10 +127,9 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         }
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new BoundedProcessOutputBuffer(
-            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars,
-            appendTruncationMarker: false);
-        var stderr = new BoundedProcessOutputBuffer();
+        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
+            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
 
         process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
         process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
@@ -174,18 +173,8 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         {
             using var rmProcess = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = executable,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                },
+                StartInfo = CreateForceRemoveStartInfo(executable, containerName),
             };
-            rmProcess.StartInfo.ArgumentList.Add("rm");
-            rmProcess.StartInfo.ArgumentList.Add("-f");
-            rmProcess.StartInfo.ArgumentList.Add(containerName);
             rmProcess.OutputDataReceived += static (_, _) => { };
             rmProcess.ErrorDataReceived += static (_, _) => { };
             if (!rmProcess.Start())
@@ -210,6 +199,22 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         {
             // Best-effort cleanup; the container may have already exited with --rm.
         }
+    }
+
+    private static ProcessStartInfo CreateForceRemoveStartInfo(string executable, string containerName)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("rm");
+        startInfo.ArgumentList.Add("-f");
+        startInfo.ArgumentList.Add(containerName);
+        return startInfo;
     }
 
     private static partial class Log

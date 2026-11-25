@@ -12,12 +12,26 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
+internal sealed record VersionJobRunnerOptions
+{
+    public required IServiceScopeFactory ScopeFactory { get; init; }
+
+    public required IVersionJobStore JobStore { get; init; }
+
+    public required ILogger<VersionJobRunner> Logger { get; init; }
+
+    public IHostApplicationLifetime? Lifetime { get; init; }
+
+    public int MaxTerminalSaveAttempts { get; init; } = 8;
+
+    public TimeSpan InitialTerminalSaveRetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    public TimeSpan MaxTerminalSaveRetryDelay { get; init; } = TimeSpan.FromSeconds(30);
+}
+
 public sealed partial class VersionJobRunner : IVersionJobRunner
 {
     private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
-    private const int DefaultMaxTerminalSaveAttempts = 8;
-    private static readonly TimeSpan DefaultInitialTerminalSaveRetryDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan DefaultMaxTerminalSaveRetryDelay = TimeSpan.FromSeconds(30);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IVersionJobStore _jobStore;
@@ -33,37 +47,36 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         IVersionJobStore jobStore,
         ILogger<VersionJobRunner> logger,
         IHostApplicationLifetime? lifetime = null)
-        : this(
-            scopeFactory,
-            jobStore,
-            logger,
-            lifetime,
-            DefaultMaxTerminalSaveAttempts,
-            DefaultInitialTerminalSaveRetryDelay,
-            DefaultMaxTerminalSaveRetryDelay)
+        : this(new VersionJobRunnerOptions
+        {
+            ScopeFactory = scopeFactory,
+            JobStore = jobStore,
+            Logger = logger,
+            Lifetime = lifetime,
+        })
     {
     }
 
-    internal VersionJobRunner(
-        IServiceScopeFactory scopeFactory,
-        IVersionJobStore jobStore,
-        ILogger<VersionJobRunner> logger,
-        IHostApplicationLifetime? lifetime,
-        int maxTerminalSaveAttempts,
-        TimeSpan initialTerminalSaveRetryDelay,
-        TimeSpan maxTerminalSaveRetryDelay)
+    internal VersionJobRunner(VersionJobRunnerOptions options)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxTerminalSaveAttempts, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(initialTerminalSaveRetryDelay, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxTerminalSaveRetryDelay, initialTerminalSaveRetryDelay);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxTerminalSaveAttempts, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.InitialTerminalSaveRetryDelay, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(
+            options.MaxTerminalSaveRetryDelay,
+            options.InitialTerminalSaveRetryDelay);
 
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _lifetime = lifetime;
-        _maxTerminalSaveAttempts = maxTerminalSaveAttempts;
-        _initialTerminalSaveRetryDelay = initialTerminalSaveRetryDelay;
-        _maxTerminalSaveRetryDelay = maxTerminalSaveRetryDelay;
+        ArgumentNullException.ThrowIfNull(options.ScopeFactory);
+        ArgumentNullException.ThrowIfNull(options.JobStore);
+        ArgumentNullException.ThrowIfNull(options.Logger);
+
+        _scopeFactory = options.ScopeFactory;
+        _jobStore = options.JobStore;
+        _logger = options.Logger;
+        _lifetime = options.Lifetime;
+        _maxTerminalSaveAttempts = options.MaxTerminalSaveAttempts;
+        _initialTerminalSaveRetryDelay = options.InitialTerminalSaveRetryDelay;
+        _maxTerminalSaveRetryDelay = options.MaxTerminalSaveRetryDelay;
     }
 
     internal async Task WaitForInFlightJobsAsync(CancellationToken cancellationToken = default)
@@ -115,7 +128,13 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             ConflictDetection: detection);
 
         await _jobStore.SaveAsync(job, cancellationToken).ConfigureAwait(false);
+        TrackBackgroundExecution(job);
 
+        return job;
+    }
+
+    private void TrackBackgroundExecution(VersionJob job)
+    {
         // Detach the execution from the request: the background task owns its own DI scope and
         // cancellation so the job completes even after the start response returns, while still
         // being tracked so callers or graceful shutdown can observe pending work.
@@ -139,8 +158,6 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
                 _inFlightJobs.TryRemove(job.JobId, out _);
             }
         }
-
-        return job;
     }
 
     private async Task ExecuteAsync(VersionJob job)

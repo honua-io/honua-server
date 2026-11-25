@@ -164,34 +164,36 @@ internal static class TerrainEndpoints
         }
     }
 
-    internal readonly record struct ValidatedTerrainDataset(
-        bool IsValid,
-        int StorageLayerId,
-        MetadataV2Object? Resource,
-        IResult? ErrorResult);
+    internal readonly record struct ValidatedTerrainDataset
+    {
+        public bool IsValid { get; init; }
+        public int StorageLayerId { get; init; }
+        public MetadataV2Object? Resource { get; init; }
+        public IResult? ErrorResult { get; init; }
+
+        public static ValidatedTerrainDataset Valid(int storageLayerId, MetadataV2Object? resource) => new()
+        {
+            IsValid = true,
+            StorageLayerId = storageLayerId,
+            Resource = resource
+        };
+
+        public static ValidatedTerrainDataset Invalid(IResult? errorResult) => new()
+        {
+            IsValid = false,
+            ErrorResult = errorResult
+        };
+    }
 
     internal static async Task<ValidatedTerrainDataset> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
     {
-        var validation = int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
-            ? await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-                context,
-                layerId,
-                AccessScope.Read,
-                TerrainProtocolName,
-                cancellationToken).ConfigureAwait(false)
-            : await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context,
-                datasetId,
-                AccessScope.Read,
-                TerrainProtocolName,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
+        var validation = await ResolveTerrainLayerValidationAsync(context, datasetId, cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
-            return new ValidatedTerrainDataset(false, 0, null, validation.ErrorResult);
+            return ValidatedTerrainDataset.Invalid(validation.ErrorResult);
         }
 
         var storageLayerId = validation.Snapshot is not null && validation.Publication is not null
@@ -199,10 +201,7 @@ internal static class TerrainEndpoints
             : validation.Publication?.LayerIndex;
         if (!storageLayerId.HasValue)
         {
-            return new ValidatedTerrainDataset(
-                false,
-                0,
-                null,
+            return ValidatedTerrainDataset.Invalid(
                 StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
         }
 
@@ -211,8 +210,18 @@ internal static class TerrainEndpoints
             context.Response.Headers.Append(HeaderNames.Vary, "Authorization, X-API-Key");
         }
 
-        return new ValidatedTerrainDataset(true, storageLayerId.Value, validation.Resource, null);
+        return ValidatedTerrainDataset.Valid(storageLayerId.Value, validation.Resource);
     }
+
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ResolveTerrainLayerValidationAsync(
+        HttpContext context,
+        string datasetId,
+        CancellationToken cancellationToken)
+        => int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+            ? LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+                context, layerId, AccessScope.Read, TerrainProtocolName, cancellationToken)
+            : LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context, datasetId, AccessScope.Read, TerrainProtocolName, cancellationToken: cancellationToken);
 
     internal static (int MinZoom, int MaxZoom) ResolveZoomLimits(TileLimits tileLimits)
     {

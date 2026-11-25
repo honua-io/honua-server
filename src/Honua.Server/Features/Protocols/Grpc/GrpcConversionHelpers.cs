@@ -22,7 +22,7 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-internal static class GrpcConversionHelpers
+internal static partial class GrpcConversionHelpers
 {
     private static readonly GeometryFactory _geoFactory = new();
 
@@ -202,53 +202,16 @@ internal static class GrpcConversionHelpers
         string? objectIdFieldName = null,
         IReadOnlySet<string>? hiddenFields = null,
         IReadOnlyList<MetadataV2Field>? fields = null)
-        => ToProtoFeature(
+        => ToProtoFeatureWithOptions(
             feature,
-            includeGeometry,
-            geometryLimits,
-            objectIdFieldName,
-            hiddenFields,
-            GrpcTypedValues.BuildExactFieldTypeMap(fields));
-
-    public static Proto.Feature ToProtoFeature(
-        Feature feature,
-        bool includeGeometry,
-        GeometryLimits? geometryLimits,
-        string? objectIdFieldName,
-        IReadOnlySet<string>? hiddenFields,
-        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes)
-    {
-        var proto = new Proto.Feature { Id = feature.Id };
-
-        foreach (var (key, value) in feature.Attributes)
-        {
-            if (FeatureAttributeVisibility.IsInternalAttribute(key) || hiddenFields?.Contains(key) == true)
+            new ProtoFeatureConversionOptions
             {
-                continue;
-            }
-
-            if (objectIdFieldName is { Length: > 0 } && IsRepeatedObjectId(key, value, feature.Id, objectIdFieldName))
-            {
-                continue;
-            }
-
-            MetadataV2FieldType? fieldType = exactFieldTypes is not null && exactFieldTypes.TryGetValue(key, out var resolvedType)
-                ? resolvedType
-                : null;
-            proto.Attributes[key] = ToAttributeValue(value, fieldType);
-        }
-
-        if (includeGeometry && feature.Geometry is { Length: > 0 })
-        {
-            var geometry = ToProtoGeometry(feature.Geometry, geometryLimits);
-            if (geometry.ShapeCase != Proto.Geometry.ShapeOneofCase.None)
-            {
-                proto.Geometry = geometry;
-            }
-        }
-
-        return proto;
-    }
+                IncludeGeometry = includeGeometry,
+                GeometryLimits = geometryLimits,
+                ObjectIdFieldName = objectIdFieldName,
+                HiddenFields = hiddenFields,
+                ExactFieldTypes = GrpcTypedValues.BuildExactFieldTypeMap(fields)
+            });
 
     private const string StorageObjectIdColumn = "objectid";
 

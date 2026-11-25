@@ -647,20 +647,12 @@ internal static partial class MapServerEndpoints
         var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = parseResult.ErrorMessage ?? "Invalid filter parameter."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = parseResult.ErrorMessage ?? "Invalid filter parameter." };
         }
 
         if (parseResult.Expression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(parseResult.Expression))
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = "Invalid where clause."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = "Invalid where clause." };
         }
 
         var translationResult = filterExpressionService.Translate(
@@ -668,18 +660,10 @@ internal static partial class MapServerEndpoints
             resource.WithoutHiddenSchemaFields());
         if (!translationResult.IsSuccess)
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = translationResult.ErrorMessage ?? "Invalid filter parameter."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = translationResult.ErrorMessage ?? "Invalid filter parameter." };
         }
 
-        return new FindFilterTranslation
-        {
-            IsSuccess = true,
-            SqlFilter = translationResult.SqlFilter
-        };
+        return new FindFilterTranslation { IsSuccess = true, SqlFilter = translationResult.SqlFilter };
     }
 
     internal readonly record struct FindFilterTranslation

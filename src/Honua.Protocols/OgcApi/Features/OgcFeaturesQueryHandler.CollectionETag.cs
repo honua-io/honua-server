@@ -131,6 +131,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         var propertyLookup = propertyFields.Length > 0
             ? new Dictionary<string, JsonElement>(propertyFields.Length, StringComparer.OrdinalIgnoreCase)
             : null;
+        var schemaWriter = new SchemaPropertyWriter(propertyFields, encodedPropertyFields, propertyLookup);
         var publicIdPropertyName = ResolveRawPublicIdPropertyName(context.Resource);
         var buffer = new ArrayBufferWriter<byte>(
             EstimateRawFeatureCollectionPayloadCapacity(features, propertyFields, context.Links));
@@ -150,7 +151,7 @@ internal sealed partial class OgcFeaturesQueryHandler
             writer.WritePropertyName("geometry");
             WriteValidatedRawGeometry(writer, feature.GeometryGeoJson);
             writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields, encodedPropertyFields, propertyLookup);
+            WriteSchemaProperties(writer, propertiesElement, schemaWriter);
             writer.WriteEndObject();
         }
 
@@ -166,6 +167,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         var propertyLookup = propertyFields.Length > 0
             ? new Dictionary<string, JsonElement>(propertyFields.Length, StringComparer.OrdinalIgnoreCase)
             : null;
+        var schemaWriter = new SchemaPropertyWriter(propertyFields, encodedPropertyFields, propertyLookup);
         var publicIdPropertyName = ResolveRawPublicIdPropertyName(context.Resource);
         var buffer = new ArrayBufferWriter<byte>(
             EstimateRawPointFeatureCollectionPayloadCapacity(features, propertyFields, context.Links));
@@ -185,7 +187,7 @@ internal sealed partial class OgcFeaturesQueryHandler
             writer.WritePropertyName("geometry");
             WriteRawPointGeometry(writer, feature);
             writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, propertiesElement, propertyFields, encodedPropertyFields, propertyLookup);
+            WriteSchemaProperties(writer, propertiesElement, schemaWriter);
             writer.WriteEndObject();
         }
 

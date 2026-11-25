@@ -129,11 +129,20 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         [FromServices] ILogger<NetworkTopologyEditAdminLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (!NetworkTopologyAdminRequestHelpers.TryResolveIdempotencyKey(context, out var idempotencyKey, out var headerError) ||
-            !NetworkTopologyAdminRequestHelpers.TryResolveExpectedRowVersion(context, out var expectedRowVersion, out headerError))
+        var idempotencyKeyResult = NetworkTopologyAdminRequestHelpers.ResolveIdempotencyKey(context);
+        if (!idempotencyKeyResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, idempotencyKeyResult.Error);
         }
+
+        var rowVersionResult = NetworkTopologyAdminRequestHelpers.ResolveExpectedRowVersion(context);
+        if (!rowVersionResult.IsValid)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, rowVersionResult.Error);
+        }
+
+        var idempotencyKey = idempotencyKeyResult.Value!;
+        var expectedRowVersion = rowVersionResult.Value;
 
         NetworkTopologyGeneration? targetGeneration;
         try

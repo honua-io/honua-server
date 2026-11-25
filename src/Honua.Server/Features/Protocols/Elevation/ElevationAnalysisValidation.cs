@@ -11,11 +11,26 @@ namespace Honua.Server.Features.Protocols.Elevation;
 
 internal static class ElevationAnalysisValidation
 {
-    internal readonly record struct ValidatedElevationDataset(
-        bool IsValid,
-        int LayerId,
-        MetadataV2Object? Resource,
-        IResult? ErrorResult);
+    internal readonly record struct ValidatedElevationDataset
+    {
+        public bool IsValid { get; init; }
+        public int LayerId { get; init; }
+        public MetadataV2Object? Resource { get; init; }
+        public IResult? ErrorResult { get; init; }
+
+        public static ValidatedElevationDataset Valid(int layerId, MetadataV2Object? resource) => new()
+        {
+            IsValid = true,
+            LayerId = layerId,
+            Resource = resource
+        };
+
+        public static ValidatedElevationDataset Invalid(IResult? errorResult) => new()
+        {
+            IsValid = false,
+            ErrorResult = errorResult
+        };
+    }
     internal static (bool IsValid, double Longitude, double Latitude) ResolveCoordinate(double? lon, double? lat)
     {
         if (lon is not { } x || lat is not { } y)
@@ -73,7 +88,7 @@ internal static class ElevationAnalysisValidation
 
         if (!validation.IsValid)
         {
-            return new ValidatedElevationDataset(false, 0, null, validation.ErrorResult);
+            return ValidatedElevationDataset.Invalid(validation.ErrorResult);
         }
 
         // Fail closed when the publication has no storage layer or layer index rather than defaulting to layer 0.
@@ -82,13 +97,10 @@ internal static class ElevationAnalysisValidation
             : validation.Publication?.LayerIndex;
         if (!resolvedLayerId.HasValue)
         {
-            return new ValidatedElevationDataset(
-                false,
-                0,
-                null,
+            return ValidatedElevationDataset.Invalid(
                 StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
         }
 
-        return new ValidatedElevationDataset(true, resolvedLayerId.Value, validation.Resource, null);
+        return ValidatedElevationDataset.Valid(resolvedLayerId.Value, validation.Resource);
     }
 }

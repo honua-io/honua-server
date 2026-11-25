@@ -46,6 +46,11 @@ internal static class InvestigationEndpoints
             .WithDisplayName("Update Investigation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
 
+        MapInvestigationSubresourceEndpoints(group);
+    }
+
+    private static void MapInvestigationSubresourceEndpoints(IEndpointRouteBuilder group)
+    {
         group.MapPost("/{investigationId}/pins", HandleAddPin)
             .WithDisplayName("Pin Event To Investigation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));

@@ -95,16 +95,9 @@ internal sealed class OwnerIdentityScope
         }
 
         var tenant = ResolveBindingTenantSegment(principal, tenantOptions);
-
         if (CanonicalSecurityActor.Resolve(principal) is { } actor)
         {
-            var subjectIssuer = CanonicalSecurityActor.FindStampedValue(principal, SubjectIssuerClaim);
-            if (!string.IsNullOrWhiteSpace(subjectIssuer) && !string.IsNullOrWhiteSpace(actor.SubjectId))
-            {
-                return $"{actor.AuthenticationScheme}:subject:{Uri.EscapeDataString(subjectIssuer.Trim())}:{Uri.EscapeDataString(actor.SubjectId)}:tenant:{tenant}";
-            }
-
-            return $"{actor.ActorId}:tenant:{tenant}";
+            return FormatActorBindingKey(principal, actor, tenant);
         }
 
         var scheme = CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.AuthenticationSchemeClaim)?.Trim().ToLowerInvariant()
@@ -114,6 +107,28 @@ internal sealed class OwnerIdentityScope
             return null;
         }
 
+        return TryResolveIdentityBindingKey(identity, scheme, tenant);
+    }
+
+    private static string FormatActorBindingKey(
+        ClaimsPrincipal principal,
+        CanonicalSecurityActorIdentity actor,
+        string tenant)
+    {
+        var subjectIssuer = CanonicalSecurityActor.FindStampedValue(principal, SubjectIssuerClaim);
+        if (!string.IsNullOrWhiteSpace(subjectIssuer) && !string.IsNullOrWhiteSpace(actor.SubjectId))
+        {
+            return $"{actor.AuthenticationScheme}:subject:{Uri.EscapeDataString(subjectIssuer.Trim())}:{Uri.EscapeDataString(actor.SubjectId)}:tenant:{tenant}";
+        }
+
+        return $"{actor.ActorId}:tenant:{tenant}";
+    }
+
+    private static string? TryResolveIdentityBindingKey(
+        ClaimsIdentity identity,
+        string scheme,
+        string tenant)
+    {
         var apiKeyId = identity.FindFirst("api_key_id")?.Value?.Trim();
         if (!string.IsNullOrEmpty(apiKeyId))
         {

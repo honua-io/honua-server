@@ -3,36 +3,41 @@
 
 namespace Honua.ControlPlane;
 
+internal sealed class LeaseRenewalRequest
+{
+    public required string LeaseId { get; init; }
+    public required TimeSpan RenewInterval { get; init; }
+    public required CancellationTokenSource ReconciliationCancellation { get; init; }
+    public required Func<CancellationToken, Task<bool>> RenewLeaseAsync { get; init; }
+    public required ILogger Logger { get; init; }
+    public TimeProvider? Clock { get; init; }
+}
+
+internal sealed class LeaseReleaseRequest
+{
+    public required string LeaseId { get; init; }
+    public required CancellationTokenSource ReconciliationCancellation { get; init; }
+    public required Task RenewalTask { get; init; }
+    public required Func<CancellationToken, Task> ReleaseLeaseAsync { get; init; }
+    public required ILogger Logger { get; init; }
+}
+
 internal static partial class ReconcilerLeaseHelper
 {
     internal static readonly TimeSpan LeaseCleanupTimeout = TimeSpan.FromSeconds(5);
 
-    public static async Task RenewLeaseUntilCancelledAsync(
-        string leaseId,
-        TimeSpan renewInterval,
-        CancellationTokenSource reconciliationCancellation,
-        Func<CancellationToken, Task<bool>> renewLeaseAsync,
-        ILogger logger,
-        TimeProvider? clock = null)
+    public static async Task RenewLeaseUntilCancelledAsync(LeaseRenewalRequest request)
     {
-        var cancellationToken = reconciliationCancellation.Token;
+        var cancellationToken = request.ReconciliationCancellation.Token;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                if (clock is null)
-                {
-                    await Task.Delay(renewInterval, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await Task.Delay(renewInterval, clock, cancellationToken).ConfigureAwait(false);
-                }
-
-                var renewed = await renewLeaseAsync(cancellationToken).ConfigureAwait(false);
+                await DelayForRenewalAsync(request.RenewInterval, request.Clock, cancellationToken).ConfigureAwait(false);
+                var renewed = await request.RenewLeaseAsync(cancellationToken).ConfigureAwait(false);
                 if (!renewed)
                 {
-                    CancelBestEffort(reconciliationCancellation);
+                    CancelBestEffort(request.ReconciliationCancellation);
                     return;
                 }
             }
@@ -42,38 +47,38 @@ internal static partial class ReconcilerLeaseHelper
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                Log.LeaseRenewalFailed(logger, leaseId, exception.GetType().Name);
-                CancelBestEffort(reconciliationCancellation);
+                Log.LeaseRenewalFailed(request.Logger, request.LeaseId, exception.GetType().Name);
+                CancelBestEffort(request.ReconciliationCancellation);
                 return;
             }
         }
     }
 
-    public static async Task StopAndReleaseLeaseAsync(
-        string leaseId,
-        CancellationTokenSource reconciliationCancellation,
-        Task renewalTask,
-        Func<CancellationToken, Task> releaseLeaseAsync,
-        ILogger logger)
+    public static async Task StopAndReleaseLeaseAsync(LeaseReleaseRequest request)
     {
         try
         {
-            CancelBestEffort(reconciliationCancellation);
-            await renewalTask.WaitAsync(LeaseCleanupTimeout).ConfigureAwait(false);
+            CancelBestEffort(request.ReconciliationCancellation);
+            await request.RenewalTask.WaitAsync(LeaseCleanupTimeout).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (request.ReconciliationCancellation.IsCancellationRequested)
         {
             // Normal teardown of the renewal loop after cancellation.
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            Log.LeaseCleanupFailed(logger, leaseId, exception.GetType().Name);
+            Log.LeaseCleanupFailed(request.Logger, request.LeaseId, exception.GetType().Name);
         }
         finally
         {
-            await ReleaseLeaseBestEffortAsync(leaseId, releaseLeaseAsync, logger).ConfigureAwait(false);
+            await ReleaseLeaseBestEffortAsync(request.LeaseId, request.ReleaseLeaseAsync, request.Logger).ConfigureAwait(false);
         }
     }
+
+    private static Task DelayForRenewalAsync(TimeSpan renewInterval, TimeProvider? clock, CancellationToken cancellationToken)
+        => clock is null
+            ? Task.Delay(renewInterval, cancellationToken)
+            : Task.Delay(renewInterval, clock, cancellationToken);
 
     public static async Task ReleaseLeaseBestEffortAsync(
         string leaseId,

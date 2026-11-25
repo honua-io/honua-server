@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -38,11 +39,7 @@ internal sealed partial class FeatureQueryBuilder
     private static string BuildNullableBinNumericExpression(string fieldExpr)
         => $"NULLIF(({fieldExpr})::text, '')::numeric";
 
-    private CoreParameterizedQuery BuildFixedIntervalBinsQuery(
-        int layerId,
-        FeatureQuery query,
-        BinDefinition bin,
-        CoreGeometryStorageType geometryStorageType)
+    private static (double Start, double End, double IntervalSize, int NumBuckets) ValidateFixedIntervalBin(BinDefinition bin)
     {
         var start = bin.IntervalStart ?? 0;
         var end = bin.IntervalEnd ?? 0;
@@ -73,7 +70,16 @@ internal sealed partial class FeatureQueryBuilder
             throw new ArgumentOutOfRangeException(nameof(bin), intervalSize, "Interval range produces too many buckets.");
         }
 
-        var numBuckets = Math.Max(1, (int)rawBuckets);
+        return (start, end, intervalSize, Math.Max(1, (int)rawBuckets));
+    }
+
+    private CoreParameterizedQuery BuildFixedIntervalBinsQuery(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition bin,
+        CoreGeometryStorageType geometryStorageType)
+    {
+        var (start, end, intervalSize, numBuckets) = ValidateFixedIntervalBin(bin);
 
         var sql = _stringBuilderPool.Get();
         try
@@ -179,11 +185,7 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    private CoreParameterizedQuery BuildFixedBoundariesBinsQuery(
-        int layerId,
-        FeatureQuery query,
-        BinDefinition bin,
-        CoreGeometryStorageType geometryStorageType)
+    private static ImmutableArray<double> ValidateFixedBoundaries(BinDefinition bin)
     {
         if (!bin.Boundaries.HasValue || bin.Boundaries.Value.IsDefault || bin.Boundaries.Value.Length < 2)
         {
@@ -204,6 +206,54 @@ internal sealed partial class FeatureQueryBuilder
             }
         }
 
+        return boundaries;
+    }
+
+    private static void AppendFixedBoundaryCases(StringBuilder sql, string numericExpr, ImmutableArray<double> boundaries)
+    {
+        sql.Append("SELECT CASE ");
+        for (var i = 0; i < boundaries.Length - 1; i++)
+        {
+            var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
+            var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"WHEN {numericExpr} >= {lower} AND {numericExpr} < {upper} THEN {i} ");
+        }
+
+        var lastLower = boundaries[^2].ToString(CultureInfo.InvariantCulture);
+        var lastUpper = boundaries[^1].ToString(CultureInfo.InvariantCulture);
+        sql.Append(CultureInfo.InvariantCulture,
+            $"WHEN {numericExpr} >= {lastLower} AND {numericExpr} <= {lastUpper} THEN {boundaries.Length - 2} END AS bin_idx, CASE ");
+        for (var i = 0; i < boundaries.Length - 1; i++)
+        {
+            var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
+            var op = i == boundaries.Length - 2 ? "<=" : "<";
+            var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"WHEN {numericExpr} >= {lower} AND {numericExpr} {op} {upper} THEN {lower}::numeric ");
+        }
+
+        sql.Append("END AS \"lowerBoundary\", CASE ");
+        for (var i = 0; i < boundaries.Length - 1; i++)
+        {
+            var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
+            var op = i == boundaries.Length - 2 ? "<=" : "<";
+            var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"WHEN {numericExpr} >= {lower} AND {numericExpr} {op} {upper} THEN {upper}::numeric ");
+        }
+
+        sql.Append("END AS \"upperBoundary\"");
+    }
+
+    private CoreParameterizedQuery BuildFixedBoundariesBinsQuery(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition bin,
+        CoreGeometryStorageType geometryStorageType)
+    {
+        var boundaries = ValidateFixedBoundaries(bin);
+
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -212,45 +262,7 @@ internal sealed partial class FeatureQueryBuilder
             var fieldExpr = GetFieldExpression(bin.Field);
             var numericExpr = BuildNullableBinNumericExpression(fieldExpr);
 
-            // Build CASE expression for bin assignment
-            sql.Append("SELECT CASE ");
-            for (var i = 0; i < boundaries.Length - 1; i++)
-            {
-                var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
-                var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"WHEN {numericExpr} >= {lower} AND {numericExpr} < {upper} THEN {i} ");
-            }
-
-            // Last bucket includes upper bound
-            var lastLower = boundaries[^2].ToString(CultureInfo.InvariantCulture);
-            var lastUpper = boundaries[^1].ToString(CultureInfo.InvariantCulture);
-            sql.Append(CultureInfo.InvariantCulture,
-                $"WHEN {numericExpr} >= {lastLower} AND {numericExpr} <= {lastUpper} THEN {boundaries.Length - 2} ");
-            sql.Append("END AS bin_idx");
-
-            // Add boundary columns
-            sql.Append(", CASE ");
-            for (var i = 0; i < boundaries.Length - 1; i++)
-            {
-                var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"WHEN {numericExpr} >= {lower} AND {numericExpr} {(i == boundaries.Length - 2 ? "<=" : "<")} {boundaries[i + 1].ToString(CultureInfo.InvariantCulture)} THEN {lower}::numeric ");
-            }
-
-            sql.Append("END AS \"lowerBoundary\"");
-
-            sql.Append(", CASE ");
-            for (var i = 0; i < boundaries.Length - 1; i++)
-            {
-                var lower = boundaries[i].ToString(CultureInfo.InvariantCulture);
-                var upper = boundaries[i + 1].ToString(CultureInfo.InvariantCulture);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $"WHEN {numericExpr} >= {lower} AND {numericExpr} {(i == boundaries.Length - 2 ? "<=" : "<")} {upper} THEN {upper}::numeric ");
-            }
-
-            sql.Append("END AS \"upperBoundary\"");
-
+            AppendFixedBoundaryCases(sql, numericExpr, boundaries);
             AppendBinStatisticsColumns(sql, bin);
 
             sql.Append(CultureInfo.InvariantCulture,

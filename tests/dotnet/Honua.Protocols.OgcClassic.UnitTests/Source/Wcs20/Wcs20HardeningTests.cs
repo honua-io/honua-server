@@ -89,11 +89,34 @@ public sealed class Wcs20HardeningTests
         RasterRenderCapacityLimiter? limiter = null)
     {
         var infoCalls = 0;
+        var store = CreateRasterStore(() => infoCalls++);
+        var crs = Substitute.For<ICrsRegistry>();
+#pragma warning disable CA2012
+        crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(true));
+#pragma warning restore CA2012
+
+        var handler = new Wcs20Handler(
+            new TestMetadataV2GraphProvider(CreateSecuredImageryGraph()),
+            new Wcs20CoverageBackend(store, Substitute.For<IZarrStore>(), Substitute.For<IZarrRasterSliceReader>()),
+            crs,
+            Substitute.For<ILogger<Wcs20Handler>>());
+
+        await using var provider = BuildServiceProvider(limiter);
+        var context = CreateWcsHttpContext(provider, principal, queryString);
+
+        var result = await handler.HandleAsync(context, Wcs20RouteScope.ForService("imagery"));
+        await result.ExecuteAsync(context);
+        var body = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
+        return (context.Response.StatusCode, body, context.Response.Headers, infoCalls);
+    }
+
+    private static IRasterStore CreateRasterStore(Action onInfoRead)
+    {
         var store = Substitute.For<IRasterStore>();
         var extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 4, YMax = 4, Srid = 4326 };
         store.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(call =>
         {
-            infoCalls++;
+            onInfoRead();
             return Task.FromResult<RasterInfo?>(new RasterInfo
             {
                 Id = call.ArgAt<int>(0),
@@ -110,12 +133,11 @@ public sealed class Wcs20HardeningTests
         });
         store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new RasterResult { Data = [0x89, 0x50, 0x4e, 0x47], ContentType = "image/png", Width = 4, Height = 4, Srid = 4326, Extent = extent }));
+        return store;
+    }
 
-        var crs = Substitute.For<ICrsRegistry>();
-#pragma warning disable CA2012
-        crs.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(true));
-#pragma warning restore CA2012
-
+    private static MetadataV2Graph CreateSecuredImageryGraph()
+    {
         var policy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] };
         var resource = new MetadataV2Object
         {
@@ -125,7 +147,7 @@ public sealed class Wcs20HardeningTests
             PrimaryStorageBindingId = "binding-1",
             AccessPolicy = policy,
         };
-        var graph = new MetadataV2Graph
+        return new MetadataV2Graph
         {
             Services =
             [
@@ -139,35 +161,13 @@ public sealed class Wcs20HardeningTests
                 }
             ],
             Resources = [resource],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-1", Name = "binding-1" },
-                    ResourceId = resource.Metadata.Id,
-                    StorageLayerId = 101,
-                }
-            ],
-            Publications =
-            [
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "publication-1", Name = resource.Metadata.Name },
-                    ServiceId = "service-imagery",
-                    ResourceId = resource.Metadata.Id,
-                    StorageBindingId = "binding-1",
-                    LayerIndex = 1,
-                    Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true },
-                }
-            ],
+            StorageBindings = [new MetadataV2StorageBinding { Metadata = new() { Id = "binding-1", Name = "binding-1" }, ResourceId = resource.Metadata.Id, StorageLayerId = 101 }],
+            Publications = [new MetadataV2Layer { Metadata = new() { Id = "publication-1", Name = resource.Metadata.Name }, ServiceId = "service-imagery", ResourceId = resource.Metadata.Id, StorageBindingId = "binding-1", LayerIndex = 1, Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true } }],
         };
+    }
 
-        var handler = new Wcs20Handler(
-            new TestMetadataV2GraphProvider(graph),
-            new Wcs20CoverageBackend(store, Substitute.For<IZarrStore>(), Substitute.For<IZarrRasterSliceReader>()),
-            crs,
-            Substitute.For<ILogger<Wcs20Handler>>());
-
+    private static ServiceProvider BuildServiceProvider(RasterRenderCapacityLimiter? limiter)
+    {
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("local");
         var services = new ServiceCollection()
@@ -181,17 +181,17 @@ public sealed class Wcs20HardeningTests
             services.AddSingleton(limiter);
         }
 
-        await using var provider = services.BuildServiceProvider();
+        return services.BuildServiceProvider();
+    }
+
+    private static DefaultHttpContext CreateWcsHttpContext(IServiceProvider provider, ClaimsPrincipal principal, string queryString)
+    {
         var context = new DefaultHttpContext { RequestServices = provider, User = principal };
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("wcs.test");
         context.Request.Path = "/ogc/wcs/imagery";
         context.Request.QueryString = new QueryString(queryString);
         context.Response.Body = new MemoryStream();
-
-        var result = await handler.HandleAsync(context, Wcs20RouteScope.ForService("imagery"));
-        await result.ExecuteAsync(context);
-        var body = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
-        return (context.Response.StatusCode, body, context.Response.Headers, infoCalls);
+        return context;
     }
 }

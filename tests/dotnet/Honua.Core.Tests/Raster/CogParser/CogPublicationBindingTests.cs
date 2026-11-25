@@ -13,60 +13,7 @@ public sealed class CogPublicationBindingTests
     [UnitTest]
     public void Resolve_WithTenantFilter_ResolvesSingleUnambiguousMatchingTenantPublication()
     {
-        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var graph = new MetadataV2Graph
-        {
-            Resources =
-            [
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-a", Name = "a", Tenant = "tenant-a" },
-                    Status = active,
-                    Type = MetadataV2ObjectType.RasterDataset
-                },
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-b", Name = "b", Tenant = "tenant-b" },
-                    Status = active,
-                    Type = MetadataV2ObjectType.RasterDataset
-                }
-            ],
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-a", Name = "svc-a", Tenant = "tenant-a" },
-                    Status = active
-                },
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-b", Name = "svc-b", Tenant = "tenant-b" },
-                    Status = active
-                }
-            ],
-            Publications =
-            [
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-a", Tenant = "tenant-a" },
-                    Status = active,
-                    ServiceId = "svc-a",
-                    ResourceId = "res-a",
-                    LayerIndex = 5,
-                    PublicationType = MetadataV2LayerType.EsriImageLayer
-                },
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-b", Tenant = "tenant-b" },
-                    Status = active,
-                    ServiceId = "svc-b",
-                    ResourceId = "res-b",
-                    LayerIndex = 6,
-                    PublicationType = MetadataV2LayerType.EsriImageLayer
-                }
-            ]
-        };
-        var snapshot = new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
+        var snapshot = CreateTwoTenantSnapshot(layerIndexA: 5, layerIndexB: 6);
 
         CogPublicationBinding.Resolve(snapshot, 5, "tenant-a")!.Metadata.Id.Should().Be("pub-a");
         CogPublicationBinding.Resolve(snapshot, 5, "tenant-b").Should().BeNull();
@@ -78,64 +25,45 @@ public sealed class CogPublicationBindingTests
     [UnitTest]
     public void Resolve_WithCrossTenantLayerIndexCollision_FailsClosedForAllTenants()
     {
-        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var graph = new MetadataV2Graph
-        {
-            Resources =
-            [
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-a", Name = "a", Tenant = "tenant-a" },
-                    Status = active,
-                    Type = MetadataV2ObjectType.RasterDataset
-                },
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-b", Name = "b", Tenant = "tenant-b" },
-                    Status = active,
-                    Type = MetadataV2ObjectType.RasterDataset
-                }
-            ],
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-a", Name = "svc-a", Tenant = "tenant-a" },
-                    Status = active
-                },
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-b", Name = "svc-b", Tenant = "tenant-b" },
-                    Status = active
-                }
-            ],
-            Publications =
-            [
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-a", Tenant = "tenant-a" },
-                    Status = active,
-                    ServiceId = "svc-a",
-                    ResourceId = "res-a",
-                    LayerIndex = 5,
-                    PublicationType = MetadataV2LayerType.EsriImageLayer
-                },
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-b", Tenant = "tenant-b" },
-                    Status = active,
-                    ServiceId = "svc-b",
-                    ResourceId = "res-b",
-                    LayerIndex = 5,
-                    PublicationType = MetadataV2LayerType.EsriImageLayer
-                }
-            ]
-        };
-        var snapshot = new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
+        var snapshot = CreateTwoTenantSnapshot(layerIndexA: 5, layerIndexB: 5);
 
         CogPublicationBinding.Resolve(snapshot, 5, "tenant-a").Should().BeNull();
         CogPublicationBinding.Resolve(snapshot, 5, "tenant-b").Should().BeNull();
         CogPublicationBinding.Resolve(snapshot, 5, tenantId: null).Should().BeNull();
         CogPublicationBinding.Resolve(snapshot, 5).Should().BeNull();
     }
+
+    private static MetadataV2GraphSnapshot CreateTwoTenantSnapshot(int layerIndexA, int layerIndexB)
+    {
+        var graph = new MetadataV2Graph
+        {
+            Resources = [CreateTenantResource("a"), CreateTenantResource("b")],
+            Services = [CreateTenantService("a"), CreateTenantService("b")],
+            Publications = [CreateTenantPublication("a", layerIndexA), CreateTenantPublication("b", layerIndexB)]
+        };
+        return new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
+    }
+
+    private static MetadataV2Object CreateTenantResource(string key) => new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = $"res-{key}", Name = key, Tenant = $"tenant-{key}" },
+        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+        Type = MetadataV2ObjectType.RasterDataset
+    };
+
+    private static MetadataV2Service CreateTenantService(string key) => new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = $"svc-{key}", Name = $"svc-{key}", Tenant = $"tenant-{key}" },
+        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+    };
+
+    private static MetadataV2Layer CreateTenantPublication(string key, int layerIndex) => new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{key}", Tenant = $"tenant-{key}" },
+        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+        ServiceId = $"svc-{key}",
+        ResourceId = $"res-{key}",
+        LayerIndex = layerIndex,
+        PublicationType = MetadataV2LayerType.EsriImageLayer
+    };
 }

@@ -23,7 +23,24 @@ internal static class CdnTileRegionTags
             return [];
         }
 
-        if (count == 3
+        var segments = ranges[..count];
+        if (TryMatchSpecialNativeTileTag(pathSpan, segments) is { } specialTags)
+        {
+            return specialTags;
+        }
+
+        if (ParseStandardMvtPath(pathSpan, segments) is not { } parsed)
+        {
+            return [];
+        }
+
+        var extent = options.TileExtent > 0 ? options.TileExtent : 4096;
+        return ForTile(parsed.LayerId, parsed.Tile, Math.Max(0, options.TileBuffer) / (double)extent);
+    }
+
+    private static string[]? TryMatchSpecialNativeTileTag(ReadOnlySpan<char> pathSpan, ReadOnlySpan<Range> ranges)
+    {
+        if (ranges.Length == 3
             && pathSpan[ranges[2]].Equals("tile.json", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var metadataLayerId))
         {
@@ -32,7 +49,7 @@ internal static class CdnTileRegionTags
 
         // H3 hexagons cross tile edges by up to a cell, so an H3 tile is purged with every regional purge
         // of its layer through the buffered tag rather than by its own cells.
-        if (count == 6
+        if (ranges.Length == 6
             && pathSpan[ranges[2]].Equals("h3", StringComparison.OrdinalIgnoreCase)
             && pathSpan[ranges[5]].EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h3LayerId))
@@ -40,9 +57,14 @@ internal static class CdnTileRegionTags
             return [Buffered(h3LayerId)];
         }
 
-        if (count != 5)
+        return null;
+    }
+
+    private static (int LayerId, TileAddress Tile)? ParseStandardMvtPath(ReadOnlySpan<char> pathSpan, ReadOnlySpan<Range> ranges)
+    {
+        if (ranges.Length != 5)
         {
-            return [];
+            return null;
         }
 
         var rowSpan = pathSpan[ranges[4]];
@@ -53,11 +75,10 @@ internal static class CdnTileRegionTags
             || !int.TryParse(rowSpan[..^4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row)
             || zoom is < 0 or > 30 || column < 0 || row < 0 || column >= (1 << zoom) || row >= (1 << zoom))
         {
-            return [];
+            return null;
         }
 
-        var extent = options.TileExtent > 0 ? options.TileExtent : 4096;
-        return ForTile(layerId, new(zoom, column, row), Math.Max(0, options.TileBuffer) / (double)extent);
+        return (layerId, new TileAddress(zoom, column, row));
     }
 
     internal static string[] ForTile(int layerId, TileAddress tile, double bufferFraction = 0d)

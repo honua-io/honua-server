@@ -320,7 +320,9 @@ public sealed class GrpcTypedValueTests
             .Add("amount", "12.50")
             .Add("signedat", "2026-11-14T08:30:00Z")
             .Add("name", "ok"));
-        var wire = GrpcConversionHelpers.ToProtoFeature(feature, true, null, null, null, map);
+        var wire = GrpcConversionHelpers.ToProtoFeatureWithOptions(
+            feature,
+            new GrpcConversionHelpers.ProtoFeatureConversionOptions { IncludeGeometry = true, ExactFieldTypes = map });
         wire.Attributes["amount"].DecimalValue.Should().Be("12.50");
         wire.Attributes["signedat"].TimestampOffsetValue.Should().Be("2026-11-14T08:30:00Z");
         wire.Attributes["name"].StringValue.Should().Be("ok");

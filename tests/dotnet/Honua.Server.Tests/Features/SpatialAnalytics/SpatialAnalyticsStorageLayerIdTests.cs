@@ -101,33 +101,9 @@ public sealed class SpatialAnalyticsStorageLayerIdTests
 
     private static async Task<DefaultHttpContext> BuildJsonPostContextAsync(string bodyJson, ISpatialAnalyticsReader reader)
     {
-        var provider = new TestMetadataV2GraphBuilder()
-            .AddResource("res-target", "target", MetadataV2ObjectType.FeatureDataset,
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddResource("res-join", "join", MetadataV2ObjectType.FeatureDataset,
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddStorageBinding("bind-target", "res-target", "target", storageLayerId: TargetStorageLayerId)
-            .AddStorageBinding("bind-join", "res-join", "join", storageLayerId: JoinStorageLayerId)
-            .AddService("svc-analytics", "svc-analytics", protocols: ["FeatureServer", "OgcFeatures"])
-            .AddPublication("pub-target", "svc-analytics", "res-target",
-                layerIndex: PublishedTargetLayerIndex, isPrimary: true, storageBindingId: "bind-target")
-            .AddPublication("pub-join", "svc-analytics", "res-join",
-                layerIndex: PublishedJoinLayerIndex, isPrimary: true, storageBindingId: "bind-join")
-            .BuildProvider();
-
+        var provider = CreateAnalyticsGraphProvider();
         var snapshot = await provider.GetCurrentAsync();
-        var targetPub = snapshot.Graph.Publications.Single(p => p.Metadata.Id == "pub-target");
-        var targetRes = snapshot.Index.ResourcesById["res-target"];
-        var service = snapshot.Index.ServicesById["svc-analytics"];
-
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateServiceLayerV2Async("svc-analytics", PublishedTargetLayerIndex, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(
-                new MetadataV2ServiceLayerTriple(service, targetPub, targetRes)
-                {
-                    StorageLayerId = TargetStorageLayerId,
-                    Snapshot = snapshot
-                }));
+        var validator = CreateTargetLayerValidator(snapshot);
 
         var services = new ServiceCollection()
             .AddLogging()
@@ -153,6 +129,38 @@ public sealed class SpatialAnalyticsStorageLayerIdTests
             },
             Response = { Body = new MemoryStream() }
         };
+    }
+
+    private static TestMetadataV2GraphProvider CreateAnalyticsGraphProvider()
+        => new TestMetadataV2GraphBuilder()
+            .AddResource("res-target", "target", MetadataV2ObjectType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddResource("res-join", "join", MetadataV2ObjectType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding("bind-target", "res-target", "target", storageLayerId: TargetStorageLayerId)
+            .AddStorageBinding("bind-join", "res-join", "join", storageLayerId: JoinStorageLayerId)
+            .AddService("svc-analytics", "svc-analytics", protocols: ["FeatureServer", "OgcFeatures"])
+            .AddPublication("pub-target", "svc-analytics", "res-target",
+                layerIndex: PublishedTargetLayerIndex, isPrimary: true, storageBindingId: "bind-target")
+            .AddPublication("pub-join", "svc-analytics", "res-join",
+                layerIndex: PublishedJoinLayerIndex, isPrimary: true, storageBindingId: "bind-join")
+            .BuildProvider();
+
+    private static IResourceValidator CreateTargetLayerValidator(MetadataV2GraphSnapshot snapshot)
+    {
+        var targetPub = snapshot.Graph.Publications.Single(p => p.Metadata.Id == "pub-target");
+        var targetRes = snapshot.Index.ResourcesById["res-target"];
+        var service = snapshot.Index.ServicesById["svc-analytics"];
+
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceLayerV2Async("svc-analytics", PublishedTargetLayerIndex, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(
+                new MetadataV2ServiceLayerTriple(service, targetPub, targetRes)
+                {
+                    StorageLayerId = TargetStorageLayerId,
+                    Snapshot = snapshot
+                }));
+        return validator;
     }
 
     private sealed class ProLicenseProvider : ILicenseStatusProvider

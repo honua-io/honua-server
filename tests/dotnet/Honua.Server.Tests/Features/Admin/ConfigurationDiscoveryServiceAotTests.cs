@@ -25,31 +25,7 @@ public sealed class ConfigurationDiscoveryServiceAotTests
     [UnitTest]
     public void RedactAndNormalizeValue_ConvertsNonPrimitiveValuesToAotSerializablePrimitives()
     {
-        var result = new ConfigurationDiscoveryResult
-        {
-            DiscoveredTypes =
-            [
-                new ConfigurationTypeInfo
-                {
-                    SectionName = "Sample",
-                    TypeName = "SampleOptions",
-                    FullTypeName = "Sample.SampleOptions",
-                    Assembly = "Honua.Server",
-                    IsRegisteredInDi = true,
-                    CurrentValues = new Dictionary<string, object?>
-                    {
-                        ["Mode"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Mode", SampleMode.Strict),
-                        ["Nested"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Nested", new NestedSampleOptions()),
-                        ["Endpoint"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("BaseUri", new Uri("https://example.test/api")),
-                        ["Id"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Id", Guid.Parse("11111111-1111-1111-1111-111111111111")),
-                        ["Timestamp"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Timestamp", DateTimeOffset.UnixEpoch),
-                        ["Tags"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Tags", new List<string> { "alpha", "beta" }),
-                        ["ApiPassword"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("ApiPassword", "super-secret-value"),
-                        ["Count"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Count", 42),
-                    }
-                }
-            ]
-        };
+        var result = CreateSampleDiscoveryResult();
 
         var json = JsonSerializer.Serialize(result, ConfigurationDiscoveryJsonContext.Default.ConfigurationDiscoveryResult);
         using var document = JsonDocument.Parse(json);
@@ -64,4 +40,30 @@ public sealed class ConfigurationDiscoveryServiceAotTests
         values.GetProperty("Count").GetInt32().Should().Be(42);
         json.Should().NotContain("super-secret-value");
     }
+
+    private static ConfigurationDiscoveryResult CreateSampleDiscoveryResult() => new()
+    {
+        DiscoveredTypes =
+        [
+            new ConfigurationTypeInfo
+            {
+                SectionName = "Sample",
+                TypeName = "SampleOptions",
+                FullTypeName = "Sample.SampleOptions",
+                Assembly = "Honua.Server",
+                IsRegisteredInDi = true,
+                CurrentValues = new Dictionary<string, object?>
+                {
+                    ["Mode"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Mode", SampleMode.Strict),
+                    ["Nested"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Nested", new NestedSampleOptions()),
+                    ["Endpoint"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("BaseUri", new Uri("https://example.test/api")),
+                    ["Id"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Id", Guid.Parse("11111111-1111-1111-1111-111111111111")),
+                    ["Timestamp"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Timestamp", DateTimeOffset.UnixEpoch),
+                    ["Tags"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Tags", new List<string> { "alpha", "beta" }),
+                    ["ApiPassword"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("ApiPassword", "super-secret-value"),
+                    ["Count"] = ConfigurationDiscoveryService.RedactAndNormalizeValue("Count", 42),
+                }
+            }
+        ]
+    };
 }

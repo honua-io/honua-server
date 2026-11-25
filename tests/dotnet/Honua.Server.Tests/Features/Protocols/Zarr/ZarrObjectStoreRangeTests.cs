@@ -51,17 +51,19 @@ public sealed class ZarrObjectStoreRangeTests
         array.DataType.Should().Be("<f4");
 
         recorder.Reset();
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            recorder,
-            options.BucketName,
-            root,
-            metadata,
-            new ZarrSubsetRequest
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters
+        {
+            Reader = recorder,
+            Bucket = options.BucketName,
+            RootPath = root,
+            Metadata = metadata,
+            Request = new ZarrSubsetRequest
             {
                 Variable = "temperature",
                 Start = [Chunk, Chunk],
                 Stop = [Grid, Grid],
-            });
+            }
+        });
 
         subset.Shape.Should().Equal(Chunk, Chunk);
         for (var row = 0; row < Chunk; row++)
@@ -132,17 +134,19 @@ public sealed class ZarrObjectStoreRangeTests
 
         var reader = CreateRangeReader(options);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, options.BucketName, root);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            reader,
-            options.BucketName,
-            root,
-            metadata,
-            new ZarrSubsetRequest
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters
+        {
+            Reader = reader,
+            Bucket = options.BucketName,
+            RootPath = root,
+            Metadata = metadata,
+            Request = new ZarrSubsetRequest
             {
                 Variable = "temperature",
                 Start = [0, 0],
                 Stop = [Grid, Grid],
-            });
+            }
+        });
 
         for (var row = 0; row < Grid; row++)
         {

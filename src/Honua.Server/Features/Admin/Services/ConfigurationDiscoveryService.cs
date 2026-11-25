@@ -188,16 +188,14 @@ public sealed class ConfigurationDiscoveryService
     private static bool IsSecretPropertyName(string propertyName)
         => ConfigurationSecretRedactor.IsSensitiveName(propertyName);
 
-    // A credential-shaped value is masked even when its property name looks ordinary, and non-primitive
-    // runtime values are normalized so source-generated JSON serialization never requires reflection.
-    internal static object? RedactAndNormalizeValue(string propertyName, object? value, bool isSecret = false)
+    internal static object? RedactAndNormalizeValue(string propertyName, object? value)
     {
         if (value is null)
         {
             return null;
         }
 
-        if (isSecret || IsSecretPropertyName(propertyName))
+        if (IsSecretPropertyName(propertyName))
         {
             return ConfigurationSecretRedactor.Mask;
         }
@@ -212,6 +210,9 @@ public sealed class ConfigurationDiscoveryService
 
         return NormalizeForAotJson(redacted);
     }
+
+    private static string? MaskSecretValue(object? value)
+        => value is null ? null : ConfigurationSecretRedactor.Mask;
 
     internal static object? NormalizeForAotJson(object? value)
         => value switch
@@ -267,12 +268,16 @@ public sealed class ConfigurationDiscoveryService
                     if (instance is not null && accessorByName.TryGetValue(prop.Name, out var accessor))
                     {
                         var value = accessor.GetValue(instance);
-                        values[prop.Name] = RedactAndNormalizeValue(prop.Name, value, isSecret);
+                        values[prop.Name] = isSecret
+                            ? MaskSecretValue(value)
+                            : RedactAndNormalizeValue(prop.Name, value);
                     }
                     else
                     {
                         var configValue = section[prop.Name];
-                        values[prop.Name] = RedactAndNormalizeValue(prop.Name, configValue, isSecret);
+                        values[prop.Name] = isSecret
+                            ? MaskSecretValue(configValue)
+                            : RedactAndNormalizeValue(prop.Name, configValue);
                     }
                 }
                 // Intentional catch-all: per-property loop for the admin diagnostics view. One property

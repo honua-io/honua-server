@@ -32,7 +32,7 @@ internal static class RbacRoleClaims
         // every authorization decision so applying or expiring a license takes
         // effect without a restart. Normalized and default role claims remain
         // available in every edition.
-        var customClaimType = ResolveCustomClaimType(options, roleClaimSelectionEntitled);
+        var customClaimType = roleClaimSelectionEntitled ? ResolveCustomClaimType(options) : null;
         var roles = new List<string>();
         foreach (var claim in principal.Claims)
         {
@@ -78,7 +78,7 @@ internal static class RbacRoleClaims
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
 
-        var customClaimType = ResolveCustomClaimType(options, roleClaimSelectionEntitled);
+        var customClaimType = roleClaimSelectionEntitled ? ResolveCustomClaimType(options) : null;
         foreach (var claim in principal.Claims)
         {
             if (IsAcceptedRoleClaimType(claim.Type, customClaimType)
@@ -91,13 +91,8 @@ internal static class RbacRoleClaims
         return false;
     }
 
-    private static string? ResolveCustomClaimType(RbacOptions options, bool roleClaimSelectionEntitled)
+    private static string? ResolveCustomClaimType(RbacOptions options)
     {
-        if (!roleClaimSelectionEntitled)
-        {
-            return null;
-        }
-
         var configuredClaimType = options.EffectiveRoleClaimType;
         if (string.Equals(configuredClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase)
             || string.Equals(configuredClaimType, RbacOptions.DefaultRoleClaimType, StringComparison.OrdinalIgnoreCase))

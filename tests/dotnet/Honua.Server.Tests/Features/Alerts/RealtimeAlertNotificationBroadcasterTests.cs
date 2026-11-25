@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data.Common;
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -20,8 +19,8 @@ public sealed class RealtimeAlertNotificationBroadcasterTests
     [UnitTest]
     public async Task Subscription_DisposeAsync_WaitsForInFlightHandlerCompletionBeforeReturning()
     {
-        var sourceSub = Substitute.For<IRealtimeSubscription>();
-        var fanout = new StubRealtimeFanoutProvider(sourceSub);
+        ChannelWriter<RealtimeDelivery>? capturedWriter = null;
+        var fanout = CreateCapturingFanout(Substitute.For<IRealtimeSubscription>(), writer => capturedWriter = writer);
 
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             fanout,
@@ -39,20 +38,8 @@ public sealed class RealtimeAlertNotificationBroadcasterTests
                 Volatile.Write(ref handlerCompleted, true);
             });
 
-        var alert = new AlertEventEnvelope
-        {
-            DedupeKey = "dedupe-1",
-            RuleId = 1,
-            ServiceId = "svc-1",
-            LayerId = 1,
-            ObjectId = 10,
-            TriggerType = AlertTriggerType.Enter,
-            Generation = 1,
-            Severity = AlertSeverity.Warning,
-            OccurredAt = DateTimeOffset.UtcNow
-        };
-        var payload = JsonSerializer.SerializeToElement(alert, StreamingOperationsJsonContext.Default.AlertEventEnvelope);
-        fanout.CapturedWriter!.TryWrite(new RealtimeDelivery.Event(
+        var payload = JsonSerializer.SerializeToElement(CreateSampleAlert(), StreamingOperationsJsonContext.Default.AlertEventEnvelope);
+        capturedWriter!.TryWrite(new RealtimeDelivery.Event(
             new RealtimeEvent(RealtimeFamily.Alerts, 1, "svc-1", "alert", payload, DateTimeOffset.UtcNow)))
             .Should().BeTrue();
 
@@ -67,36 +54,34 @@ public sealed class RealtimeAlertNotificationBroadcasterTests
         Volatile.Read(ref handlerCompleted).Should().BeTrue();
     }
 
-    private sealed class StubRealtimeFanoutProvider(IRealtimeSubscription subscription) : IRealtimeFanoutProvider
+    private static IRealtimeFanoutProvider CreateCapturingFanout(
+        IRealtimeSubscription subscription,
+        Action<ChannelWriter<RealtimeDelivery>> onSubscribe)
     {
-        public ChannelWriter<RealtimeDelivery>? CapturedWriter { get; private set; }
-
-        public RealtimeProviderCapabilities Capabilities => new(
-            CrossNode: false,
-            OrderedPerFamily: false,
-            Resumable: false);
-
-        public ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken)
-            => ValueTask.FromResult(new RealtimePosition(draft.Family, 0));
-
-        public void Enqueue(RealtimeEventDraft draft)
+        var fanout = Substitute.For<IRealtimeFanoutProvider>();
+        fanout.Capabilities.Returns(new RealtimeProviderCapabilities(CrossNode: false, OrderedPerFamily: false, Resumable: false));
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
+        fanout.GetWindowAsync(Arg.Any<RealtimeFamily>(), Arg.Any<CancellationToken>())
+            .Returns(call => ValueTask.FromResult(new RealtimeLogWindow(call.Arg<RealtimeFamily>(), 0, 0)));
+#pragma warning restore CA2012
+        fanout.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(call =>
         {
-        }
-
-        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request)
-        {
-            CapturedWriter = request.Writer;
+            onSubscribe(call.Arg<RealtimeSubscriptionRequest>().Writer);
             return subscription;
-        }
-
-        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
-            => ValueTask.FromResult(new RealtimeLogWindow(family, 0, 0));
-
-        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
-            string scopeKey, long after, long through, CancellationToken cancellationToken)
-            => ValueTask.FromResult<IReadOnlyList<RealtimeEvent>>([]);
-
-        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
-            => ValueTask.FromResult<IRealtimeStreamLease?>(null);
+        });
+        return fanout;
     }
+
+    private static AlertEventEnvelope CreateSampleAlert() => new()
+    {
+        DedupeKey = "dedupe-1",
+        RuleId = 1,
+        ServiceId = "svc-1",
+        LayerId = 1,
+        ObjectId = 10,
+        TriggerType = AlertTriggerType.Enter,
+        Generation = 1,
+        Severity = AlertSeverity.Warning,
+        OccurredAt = DateTimeOffset.UtcNow
+    };
 }

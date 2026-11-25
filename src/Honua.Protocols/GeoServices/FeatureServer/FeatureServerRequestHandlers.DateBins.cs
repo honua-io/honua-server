@@ -424,7 +424,7 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                if (!StatisticTypeParser.TryParse(statisticType, out var parsedType))
+                if (StatisticTypeParser.TryParse(statisticType) is not { } parsedType)
                 {
                     error = $"Unsupported statisticType: {statisticType}.";
                     return false;

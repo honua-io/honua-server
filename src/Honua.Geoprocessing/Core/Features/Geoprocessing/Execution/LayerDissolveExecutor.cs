@@ -30,7 +30,7 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
         CancellationToken cancellationToken)
     {
         var groupByFields = StatisticsSupport.ParseFieldList(inputs.GetOrDefault("groupByFields", string.Empty));
-        var dissolve = inputs.ReadBool("dissolve", defaultValue: true);
+        var dissolve = inputs.ReadBoolDefaultTrue("dissolve");
         var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
         StatisticsSupport.EnsureNoOutputCollisions(stats, [.. groupByFields, CountAttribute]);
 

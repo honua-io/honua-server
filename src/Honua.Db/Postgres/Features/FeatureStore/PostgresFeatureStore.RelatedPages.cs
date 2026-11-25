@@ -11,6 +11,14 @@ internal sealed partial class PostgresFeatureStoreRefactored
 {
     public bool SupportsRelatedPages => _dataAccess is FeatureDataAccess;
 
+    private sealed class RelatedReadSecurityRequest
+    {
+        public required int OriginLayerId { get; init; }
+        public int? RelatedLayerId { get; init; }
+        public string? OriginForeignKeyField { get; init; }
+        public string? DestinationForeignKeyField { get; init; }
+    }
+
     public async Task<RelatedFeaturePage> QueryRelatedPageAsync(
         int layerId, RelatedPageQuery query, CancellationToken cancellationToken = default)
     {
@@ -21,38 +29,38 @@ internal sealed partial class PostgresFeatureStoreRefactored
         }
         var relatedLayerId = query.Relationship.RelatedLayerId!.Value;
         var security = await ResolveRelatedReadSecurityAsync(
-            layerId,
-            relatedLayerId,
-            query.Relationship.OriginForeignKeyField,
-            query.Relationship.DestinationForeignKeyField,
+            new RelatedReadSecurityRequest
+            {
+                OriginLayerId = layerId,
+                RelatedLayerId = relatedLayerId,
+                OriginForeignKeyField = query.Relationship.OriginForeignKeyField,
+                DestinationForeignKeyField = query.Relationship.DestinationForeignKeyField
+            },
             cancellationToken).ConfigureAwait(false);
         return await postgres.QueryRelatedPageAsync(new RelatedPageReadRequest(layerId, query, security), cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<RelatedPageReadSecurity> ResolveRelatedReadSecurityAsync(
-        int originLayerId,
-        int? relatedLayerId,
-        string? originForeignKeyField,
-        string? destinationForeignKeyField,
+        RelatedReadSecurityRequest request,
         CancellationToken cancellationToken)
     {
-        var originMasks = await ResolveMaskedFieldsAsync(originLayerId, cancellationToken).ConfigureAwait(false);
-        var relatedMasks = relatedLayerId is int targetLayerId
+        var originMasks = await ResolveMaskedFieldsAsync(request.OriginLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedMasks = request.RelatedLayerId is int targetLayerId
             ? await ResolveMaskedFieldsAsync(targetLayerId, cancellationToken).ConfigureAwait(false)
             : ImmutableArray<string>.Empty;
-        if (!string.IsNullOrWhiteSpace(originForeignKeyField))
+        if (!string.IsNullOrWhiteSpace(request.OriginForeignKeyField))
         {
-            RejectMaskedRelationshipKey(originMasks, originForeignKeyField);
+            RejectMaskedRelationshipKey(originMasks, request.OriginForeignKeyField);
         }
 
-        if (!string.IsNullOrWhiteSpace(destinationForeignKeyField))
+        if (!string.IsNullOrWhiteSpace(request.DestinationForeignKeyField))
         {
-            RejectMaskedRelationshipKey(relatedMasks, destinationForeignKeyField);
+            RejectMaskedRelationshipKey(relatedMasks, request.DestinationForeignKeyField);
         }
 
-        var originFilter = await ResolveEnforcedSqlFilterAsync(originLayerId, cancellationToken).ConfigureAwait(false);
-        var relatedFilter = relatedLayerId is int filterLayerId
+        var originFilter = await ResolveEnforcedSqlFilterAsync(request.OriginLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedFilter = request.RelatedLayerId is int filterLayerId
             ? await ResolveEnforcedSqlFilterAsync(filterLayerId, cancellationToken).ConfigureAwait(false)
             : null;
         return new RelatedPageReadSecurity(originFilter, relatedFilter, relatedMasks);

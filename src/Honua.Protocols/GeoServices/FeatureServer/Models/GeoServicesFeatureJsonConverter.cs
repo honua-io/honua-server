@@ -102,6 +102,11 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
 
     private static void WriteNormalizedAttribute(Utf8JsonWriter writer, string name, object? value)
     {
+        if (TryWriteNumericAttribute(writer, name, value))
+        {
+            return;
+        }
+
         switch (value)
         {
             case null:
@@ -109,39 +114,6 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
                 break;
             case string s:
                 writer.WriteString(name, s);
-                break;
-            case int i:
-                writer.WriteNumber(name, i);
-                break;
-            case long l:
-                writer.WriteNumber(name, l);
-                break;
-            case double d:
-                writer.WriteNumber(name, d);
-                break;
-            case float f:
-                writer.WriteNumber(name, f);
-                break;
-            case decimal dec:
-                writer.WriteNumber(name, dec);
-                break;
-            case short sh:
-                writer.WriteNumber(name, (int)sh);
-                break;
-            case ushort ush:
-                writer.WriteNumber(name, (uint)ush);
-                break;
-            case uint ui:
-                writer.WriteNumber(name, ui);
-                break;
-            case ulong ul:
-                writer.WriteNumber(name, ul);
-                break;
-            case byte b:
-                writer.WriteNumber(name, (int)b);
-                break;
-            case sbyte sb:
-                writer.WriteNumber(name, (int)sb);
                 break;
             case bool b:
                 writer.WriteBoolean(name, b);
@@ -159,6 +131,25 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
                 writer.WritePropertyName(name);
                 JsonSerializer.Serialize(writer, value, _objectTypeInfo);
                 break;
+        }
+    }
+
+    private static bool TryWriteNumericAttribute(Utf8JsonWriter writer, string name, object? value)
+    {
+        switch (value)
+        {
+            case int i: writer.WriteNumber(name, i); return true;
+            case long l: writer.WriteNumber(name, l); return true;
+            case double d: writer.WriteNumber(name, d); return true;
+            case float f: writer.WriteNumber(name, f); return true;
+            case decimal dec: writer.WriteNumber(name, dec); return true;
+            case short sh: writer.WriteNumber(name, (int)sh); return true;
+            case ushort ush: writer.WriteNumber(name, (uint)ush); return true;
+            case uint ui: writer.WriteNumber(name, ui); return true;
+            case ulong ul: writer.WriteNumber(name, ul); return true;
+            case byte b: writer.WriteNumber(name, (int)b); return true;
+            case sbyte sb: writer.WriteNumber(name, (int)sb); return true;
+            default: return false;
         }
     }
 }

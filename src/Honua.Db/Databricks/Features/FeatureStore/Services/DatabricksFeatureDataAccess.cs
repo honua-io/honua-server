@@ -10,13 +10,18 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
+internal sealed class DatabricksLayerQuery
+{
+    public required DatabricksLayerMapping Mapping { get; init; }
+    public required DatabricksSqlStatement Statement { get; init; }
+    public DataConnection? DataConnection { get; init; }
+}
+
 internal interface IDatabricksFeatureDataAccess
 {
     Task<ImmutableArray<Feature>> ExecuteSelectAsync(
-        DatabricksLayerMapping mapping,
-        DatabricksSqlStatement statement,
-        CancellationToken cancellationToken,
-        DataConnection? dataConnection = null);
+        DatabricksLayerQuery request,
+        CancellationToken cancellationToken);
 
     Task<long> ExecuteCountAsync(
         DatabricksSqlStatement statement,
@@ -24,10 +29,8 @@ internal interface IDatabricksFeatureDataAccess
         DataConnection? dataConnection = null);
 
     Task<FeatureExtent?> ExecuteExtentAsync(
-        DatabricksLayerMapping mapping,
-        DatabricksSqlStatement statement,
-        CancellationToken cancellationToken,
-        DataConnection? dataConnection = null);
+        DatabricksLayerQuery request,
+        CancellationToken cancellationToken);
 
     Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
         DatabricksSqlStatement statement,
@@ -49,14 +52,21 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
-    public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
+    public Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken,
-        DataConnection? dataConnection = null)
+        CancellationToken cancellationToken)
+        => ExecuteSelectAsync(
+            new DatabricksLayerQuery { Mapping = mapping, Statement = statement },
+            cancellationToken);
+
+    public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
+        DatabricksLayerQuery request,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(mapping);
-        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Mapping);
+        var resultSet = await _client.ExecuteAsync(request.Statement, request.DataConnection, cancellationToken).ConfigureAwait(false);
 
         var idIndex = IndexOf(resultSet.Columns, DatabricksFeatureQueryBuilder.IdColumn);
         var geomIndex = IndexOf(resultSet.Columns, DatabricksFeatureQueryBuilder.GeometryHexColumn);
@@ -87,14 +97,21 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
         return ReadId(resultSet.Rows[0][0]);
     }
 
-    public async Task<FeatureExtent?> ExecuteExtentAsync(
+    public Task<FeatureExtent?> ExecuteExtentAsync(
         DatabricksLayerMapping mapping,
         DatabricksSqlStatement statement,
-        CancellationToken cancellationToken,
-        DataConnection? dataConnection = null)
+        CancellationToken cancellationToken)
+        => ExecuteExtentAsync(
+            new DatabricksLayerQuery { Mapping = mapping, Statement = statement },
+            cancellationToken);
+
+    public async Task<FeatureExtent?> ExecuteExtentAsync(
+        DatabricksLayerQuery request,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(mapping);
-        var resultSet = await _client.ExecuteAsync(statement, dataConnection, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Mapping);
+        var resultSet = await _client.ExecuteAsync(request.Statement, request.DataConnection, cancellationToken).ConfigureAwait(false);
         if (resultSet.Rows.Count == 0 || resultSet.Rows[0].Length < 4)
         {
             return null;
@@ -106,7 +123,7 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
             && TryReadDouble(row[2], out var maxX)
             && TryReadDouble(row[3], out var maxY))
         {
-            return FeatureExtent.Create(minX, minY, maxX, maxY, mapping.Srid);
+            return FeatureExtent.Create(minX, minY, maxX, maxY, request.Mapping.Srid);
         }
 
         return null;

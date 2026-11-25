@@ -31,7 +31,10 @@ internal static partial class RealtimeNotificationEndpoints
             return Results.NotFound();
         }
         var serviceId = service.Metadata.Id;
-        var initialReadable = await ReadableLayersAsync(context, initial, serviceId, context.RequestAborted).ConfigureAwait(false);
+        var initialReadable = await ReadableLayersAsync(
+            context,
+            new LayerAccessScope { Snapshot = initial, ServiceId = serviceId },
+            context.RequestAborted).ConfigureAwait(false);
         if (initialReadable.Count == 0)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -71,7 +74,10 @@ internal static partial class RealtimeNotificationEndpoints
         var changed = ChangedLayers(previous, next, state.ServiceId);
         // Resolve current permissions even when replaying older definitions.
         var current = await state.Graphs.GetCurrentAsync(token).ConfigureAwait(false);
-        var readable = await ReadableLayersAsync(state.Context, current, state.ServiceId, token).ConfigureAwait(false);
+        var readable = await ReadableLayersAsync(
+            state.Context,
+            new LayerAccessScope { Snapshot = current, ServiceId = state.ServiceId },
+            token).ConfigureAwait(false);
         var visibleChanges = changed.Where(readable.Contains).ToArray();
         for (var i = 0; i < visibleChanges.Length; i++)
         {
@@ -118,23 +124,28 @@ internal static partial class RealtimeNotificationEndpoints
                     JsonSerializer.Serialize(snapshot.ResolveResource(item.Publication), MetadataV2JsonContext.Default.MetadataV2Object))));
     }
 
+    private readonly struct LayerAccessScope
+    {
+        public required MetadataV2GraphSnapshot Snapshot { get; init; }
+        public required string ServiceId { get; init; }
+    }
+
     private static async Task<HashSet<int>> ReadableLayersAsync(
         HttpContext context,
-        MetadataV2GraphSnapshot snapshot,
-        string serviceId,
+        LayerAccessScope scope,
         CancellationToken cancellationToken)
     {
         var readable = new HashSet<int>();
-        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
+        if (!scope.Snapshot.Index.ServicesById.TryGetValue(scope.ServiceId, out var service))
         {
             return readable;
         }
 
-        foreach (var publication in snapshot.Index.PublicationsByService[serviceId])
+        foreach (var publication in scope.Snapshot.Index.PublicationsByService[scope.ServiceId])
         {
-            var resource = snapshot.ResolveResource(publication);
-            var layerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
-            if (resource is not null && layerId.HasValue && snapshot.IsRoutable(publication) &&
+            var resource = scope.Snapshot.ResolveResource(publication);
+            var layerId = publication.LayerIndex ?? scope.Snapshot.ResolveStorageLayerId(publication);
+            if (resource is not null && layerId.HasValue && scope.Snapshot.IsRoutable(publication) &&
                 await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     resource,

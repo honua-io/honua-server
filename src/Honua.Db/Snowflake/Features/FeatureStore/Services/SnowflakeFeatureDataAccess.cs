@@ -21,6 +21,14 @@ internal sealed class SnowflakeFeatureDataAccess
     private readonly IOptions<SnowflakeOptions> _options;
     private readonly ILogger<SnowflakeFeatureDataAccess> _logger;
 
+    private sealed class SnowflakeOperationContext
+    {
+        public required string Operation { get; init; }
+        public required SnowflakeLayerMapping Mapping { get; init; }
+        public required ParameterizedQuery Query { get; init; }
+        public DataConnection? DataConnection { get; init; }
+    }
+
     public SnowflakeFeatureDataAccess(
         ISnowflakeConnectionFactory connectionFactory,
         IOptions<SnowflakeOptions> options,
@@ -31,86 +39,35 @@ internal sealed class SnowflakeFeatureDataAccess
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
+    public Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         SnowflakeLayerMapping mapping,
         ParameterizedQuery query,
         IReadOnlyList<string> attributeColumns,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("snowflake.feature.select");
-        activity?.SetTag("db.system", "snowflake");
-        activity?.SetTag("layer.id", mapping.LayerId);
-
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var canonicalAttributeNames = attributeColumns.Count == 0
-                ? null
-                : attributeColumns.ToDictionary(static c => c, static c => c, StringComparer.OrdinalIgnoreCase);
-
-            var features = ImmutableArray.CreateBuilder<Feature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (reader.IsDBNull(0))
+        => ExecuteOperationAsync(
+            new SnowflakeOperationContext { Operation = "select", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            (cmd, ct) => RelationalFeatureStoreHelpers.ReadFeaturesAsync(
+                cmd,
+                new FeatureReadOptions
                 {
-                    throw new InvalidOperationException(
-                        $"Snowflake select for layer {mapping.LayerId} returned a NULL object id (column '{mapping.PrimaryKeyColumn}'); object id must be a non-null key.");
-                }
-
-                var id = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
-                byte[]? wkb = reader.IsDBNull(1) ? null : ReadWkb(reader, 1);
-
-                var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
-                for (var i = 2; i < reader.FieldCount; i++)
-                {
-                    // Map each attribute by its actual reader column name (normalized to the
-                    // canonical schema casing when declared) because OutFields projects a subset.
-                    var rawName = reader.GetName(i);
-                    var name = canonicalAttributeNames is not null
-                        && canonicalAttributeNames.TryGetValue(rawName, out var canonicalName)
-                        ? canonicalName
-                        : rawName;
-
-                    attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                }
-
-                features.Add(Feature.Create(id, wkb, attrs.ToImmutable()));
-            }
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return features.ToImmutable();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            SnowflakeFeatureLog.QueryFailed(_logger, "select", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "select", ex);
-        }
-    }
+                    ProviderName = "Snowflake",
+                    LayerId = mapping.LayerId,
+                    PrimaryKeyColumn = mapping.PrimaryKeyColumn,
+                    AttributeColumns = attributeColumns,
+                    ReadGeometry = ReadWkb,
+                },
+                ct),
+            cancellationToken);
 
     public Task<long> ExecuteCountAsync(
         SnowflakeLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "snowflake.feature.count",
-            "snowflake",
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SnowflakeOperationContext { Operation = "count", Mapping = mapping, Query = query, DataConnection = dataConnection },
             RelationalFeatureStoreHelpers.ReadCountAsync,
-            ex => SnowflakeFeatureLog.QueryFailed(_logger, "count", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "count", ex),
             cancellationToken);
 
     public Task<FeatureExtent?> ExecuteExtentAsync(
@@ -118,16 +75,9 @@ internal sealed class SnowflakeFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "snowflake.feature.extent",
-            "snowflake",
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SnowflakeOperationContext { Operation = "extent", Mapping = mapping, Query = query, DataConnection = dataConnection },
             (cmd, ct) => RelationalFeatureStoreHelpers.ReadExtentAsync(cmd, mapping.Srid ?? 0, ct),
-            ex => SnowflakeFeatureLog.QueryFailed(_logger, "extent", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "extent", ex),
             cancellationToken);
 
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
@@ -135,16 +85,9 @@ internal sealed class SnowflakeFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "snowflake.feature.statistics",
-            "snowflake",
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SnowflakeOperationContext { Operation = "statistics", Mapping = mapping, Query = query, DataConnection = dataConnection },
             RelationalFeatureStoreHelpers.ReadStatisticRowsAsync,
-            ex => SnowflakeFeatureLog.QueryFailed(_logger, "statistics", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "statistics", ex),
             cancellationToken);
 
     public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
@@ -152,16 +95,28 @@ internal sealed class SnowflakeFeatureDataAccess
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
-            _activitySource,
-            "snowflake.feature.objectids",
-            "snowflake",
-            mapping.LayerId,
-            ct => _connectionFactory.OpenAsync(dataConnection, ct),
-            conn => CreateCommand(conn, query),
+        => ExecuteOperationAsync(
+            new SnowflakeOperationContext { Operation = "objectids", Mapping = mapping, Query = query, DataConnection = dataConnection },
             RelationalFeatureStoreHelpers.ReadObjectIdsAsync,
-            ex => SnowflakeFeatureLog.QueryFailed(_logger, "objectids", mapping.LayerId, ex),
-            ex => WrapException(mapping.LayerId, "objectids", ex),
+            cancellationToken);
+
+    private Task<TResult> ExecuteOperationAsync<TResult>(
+        SnowflakeOperationContext context,
+        Func<DbCommand, CancellationToken, Task<TResult>> execute,
+        CancellationToken cancellationToken)
+        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
+            new QueryOperationRequest<DbConnection, DbCommand, TResult>
+            {
+                ActivitySource = _activitySource,
+                ActivityName = $"snowflake.feature.{context.Operation}",
+                DbSystem = "snowflake",
+                LayerId = context.Mapping.LayerId,
+                OpenConnection = ct => _connectionFactory.OpenAsync(context.DataConnection, ct),
+                CreateCommand = conn => CreateCommand(conn, context.Query),
+                Execute = execute,
+                LogFailure = ex => SnowflakeFeatureLog.QueryFailed(_logger, context.Operation, context.Mapping.LayerId, ex),
+                WrapException = ex => WrapException(context.Mapping.LayerId, context.Operation, ex),
+            },
             cancellationToken);
 
     // ST_ASWKB returns BINARY. The Snowflake ADO.NET connector surfaces BINARY columns either as a

@@ -11,7 +11,6 @@ using FluentAssertions.Execution;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -530,22 +529,7 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
         var host = await _baseHost.GetGenericOidcHostAsync();
         using var oidcClient = host.CreateBrowser();
 
-        var authorizeResponse = await oidcClient.PostAsJsonAsync(
-            "/api/v1/admin/auth/providers/oidc/authorize-url",
-            new { });
-        var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-        var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
-        var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
-        host.Stub!.NonceOverride = authorizeParameters["nonce"].ToString();
-
-        var tokenResponse = await oidcClient.PostAsJsonAsync(
-            "/api/v1/admin/auth/providers/oidc/token",
-            new
-            {
-                grantType = "authorization_code",
-                code = "code-123",
-                state = authorizeParameters["state"].ToString()
-            });
+        var tokenResponse = await ExchangeDefaultGenericOidcTokenAsync(oidcClient, host.Stub!);
 
         tokenResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
@@ -564,6 +548,27 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
         raw.Should().NotContain("access_token");
         raw.Should().NotContain("refresh_token");
         raw.Should().NotContain("id_token");
+    }
+
+    private static async Task<HttpResponseMessage> ExchangeDefaultGenericOidcTokenAsync(
+        HttpClient oidcClient,
+        StubHttpClientFactory stub)
+    {
+        var authorizeResponse = await oidcClient.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/authorize-url",
+            new { });
+        var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+        var authorizeParameters = QueryHelpers.ParseQuery(new Uri(authorizeContent!.AuthorizeUrl).Query);
+        stub.NonceOverride = authorizeParameters["nonce"].ToString();
+
+        return await oidcClient.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/token",
+            new
+            {
+                grantType = "authorization_code",
+                code = "code-123",
+                state = authorizeParameters["state"].ToString()
+            });
     }
 
     private static async Task AssertInteractiveSessionOriginAsync(WebAppFixture fixture, HttpResponseMessage response)
@@ -596,12 +601,7 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
             var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
             var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
             var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
-            stubFactory.IdTokenOverride = CreateIdTokenForSubject(
-                "admin-user",
-                "Opaque Token Admin",
-                ["admin"],
-                tenantId: null,
-                nonce: authorizeParameters["nonce"].ToString());
+            stubFactory.IdTokenOverride = CreateIdToken(new IdTokenSpec { Name = "Opaque Token Admin", Nonce = authorizeParameters["nonce"].ToString() });
 
             var tokenResponse = await oidcClient.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/token",
@@ -686,178 +686,13 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_WithExpiredIdTokenWithinClockSkew_IsRejectedWithoutCreatingSession()
-    {
-        var host = await _baseHost.GetGenericOidcHostAsync();
-        var stubFactory = host.Stub!;
-
-        try
-        {
-            using var oidcClient = host.CreateBrowser();
-            var authorizeResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/authorize-url",
-                new { });
-            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var authorizeParameters = QueryHelpers.ParseQuery(new Uri(authorizeContent!.AuthorizeUrl).Query);
-            stubFactory.IdTokenOverride = CreateIdTokenForSubject(
-                "admin-user",
-                "Expired Admin",
-                ["admin"],
-                tenantId: null,
-                nonce: authorizeParameters["nonce"].ToString(),
-                expires: DateTimeOffset.UtcNow.AddSeconds(-30));
-
-            var tokenResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/token",
-                new
-                {
-                    grantType = "authorization_code",
-                    code = "code-123",
-                    state = authorizeParameters["state"].ToString()
-                });
-
-            tokenResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
-            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeFalse();
-        }
-        finally
-        {
-            stubFactory.Reset();
-        }
-    }
-
-    [IntegrationTheory]
-    [InlineData(null)]
-    [InlineData("wrong-nonce")]
-    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_WithMissingOrMismatchedNonce_IsRejected(string? tokenNonce)
-    {
-        var host = await _baseHost.GetGenericOidcHostAsync();
-        var stubFactory = host.Stub!;
-
-        try
-        {
-            using var oidcClient = host.CreateBrowser();
-            var authorizeResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/authorize-url",
-                new { });
-            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var authorizeParameters = QueryHelpers.ParseQuery(new Uri(authorizeContent!.AuthorizeUrl).Query);
-            stubFactory.IdTokenOverride = CreateIdTokenForSubject(
-                "admin-user",
-                "Nonce Mismatch Admin",
-                ["admin"],
-                tenantId: null,
-                nonce: tokenNonce);
-
-            var tokenResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/token",
-                new
-                {
-                    grantType = "authorization_code",
-                    code = "code-123",
-                    state = authorizeParameters["state"].ToString()
-                });
-
-            tokenResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
-            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeFalse();
-        }
-        finally
-        {
-            stubFactory.Reset();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_WithUntrustedDiscoveryIssuer_IsRejected()
-    {
-        var host = await _baseHost.GetGenericOidcHostAsync();
-        var stubFactory = host.Stub!;
-
-        try
-        {
-            using var oidcClient = host.CreateBrowser();
-            var authorizeResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/authorize-url",
-                new { });
-            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            var authorizeParameters = QueryHelpers.ParseQuery(new Uri(authorizeContent!.AuthorizeUrl).Query);
-            stubFactory.IssuerOverride = "https://untrusted-issuer.example";
-            stubFactory.NonceOverride = authorizeParameters["nonce"].ToString();
-
-            var tokenResponse = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/oidc/token",
-                new
-                {
-                    grantType = "authorization_code",
-                    code = "code-123",
-                    state = authorizeParameters["state"].ToString()
-                });
-
-            tokenResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
-            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeFalse();
-        }
-        finally
-        {
-            stubFactory.Reset();
-        }
-    }
-
-    [UnitTest]
-    public void IsAllowedDiscoveryIssuer_MatchesConfiguredAuthorityAndValidIssuersOnly()
-    {
-        var oidcOptions = new OidcAuthenticationOptions
-        {
-            Enabled = true,
-            Generic = new GenericOidcProviderOptions
-            {
-                Enabled = true,
-                Authority = "https://auth.example.com",
-                ClientId = "generic-client-id",
-            },
-            TokenValidation = new TokenValidationOptions
-            {
-                ValidIssuers = ["https://alias.example.com"],
-            },
-        };
-        OidcProviderCatalog.TryResolveProvider(oidcOptions, "oidc", out var provider).Should().BeTrue();
-
-        AdminAuthEndpoints.IsAllowedDiscoveryIssuer("https://auth.example.com", provider, oidcOptions).Should().BeTrue();
-        AdminAuthEndpoints.IsAllowedDiscoveryIssuer("https://auth.example.com/", provider, oidcOptions).Should().BeTrue();
-        AdminAuthEndpoints.IsAllowedDiscoveryIssuer("https://alias.example.com", provider, oidcOptions).Should().BeFalse();
-        AdminAuthEndpoints.IsAllowedDiscoveryIssuer("https://evil.example.com", provider, oidcOptions).Should().BeFalse();
-    }
-
-    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_WithUnknownProvider_DoesNotClearAuthenticatedSession()
     {
         var host = await _baseHost.GetGenericOidcHostAsync();
         using var oidcClient = host.CreateBrowser();
 
-        var authorizeResponse = await oidcClient.PostAsJsonAsync(
-            "/api/v1/admin/auth/providers/oidc/authorize-url",
-            new { });
-        var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-        var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
-        var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
-        host.Stub!.NonceOverride = authorizeParameters["nonce"].ToString();
-
-        var tokenResponse = await oidcClient.PostAsJsonAsync(
-            "/api/v1/admin/auth/providers/oidc/token",
-            new
-            {
-                grantType = "authorization_code",
-                code = "code-123",
-                state = authorizeParameters["state"].ToString()
-            });
+        var tokenResponse = await ExchangeDefaultGenericOidcTokenAsync(oidcClient, host.Stub!);
 
         tokenResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
@@ -924,40 +759,6 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
             parameters["logout_uri"].ToString().Should().Be("https://public.example.com/honua/admin");
             parameters.Should().NotContainKey("post_logout_redirect_uri");
             parameters.Should().NotContainKey("id_token_hint");
-        }
-        finally
-        {
-            await oidcFixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTheory]
-    [InlineData("javascript:alert(1)")]
-    [InlineData("http://login.example.com/logout")]
-    [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
-    public async Task GetLogoutUrl_WithUnsafeDiscoveryLogoutEndpoint_ReturnsNullLogoutUrl(string unsafeEndpoint)
-    {
-        using var stubFactory = new StubHttpClientFactory(
-            "https://auth.example.com/.well-known/openid-configuration",
-            new StubOidcEndpoints(
-                "https://auth.example.com/authorize",
-                "https://auth.example.com/token",
-                unsafeEndpoint));
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua");
-            });
-        try
-        {
-            await oidcFixture.InitializeAsync();
-            var response = await oidcFixture.CreateClient().GetAsync(
-                "/api/v1/admin/auth/providers/oidc/logout-url");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var content = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthLogoutUrlResponse);
-            content.Should().NotBeNull();
-            content!.LogoutUrl.Should().BeNull();
         }
         finally
         {
@@ -1310,13 +1111,7 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
                     var accessToken = owner.AccessTokenOverride ?? owner._accessToken;
                     var idToken = owner.IdTokenOverride
                         ?? owner._idToken
-                        ?? CreateIdTokenForSubject(
-                            "admin-user",
-                            "Test Admin",
-                            ["admin"],
-                            tenantId: null,
-                            nonce: owner.NonceOverride,
-                            issuer: owner.IssuerOverride);
+                        ?? CreateIdToken(new IdTokenSpec { Nonce = owner.NonceOverride, Issuer = owner.IssuerOverride });
                     var idTokenJson = $"\"{idToken}\"";
                     var tokenJson = $$"""
                         {
@@ -1363,32 +1158,36 @@ public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEnd
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles) =>
-        CreateIdTokenForSubject(subject, name, roles, tenantId: null);
+    internal sealed record IdTokenSpec
+    {
+        public string Subject { get; init; } = "admin-user";
+        public string Name { get; init; } = "Test Admin";
+        public IReadOnlyList<string> Roles { get; init; } = ["admin"];
+        public string? TenantId { get; init; }
+        public string? Nonce { get; init; }
+        public DateTimeOffset? Expires { get; init; }
+        public string? Issuer { get; init; }
+    }
 
-    internal static string CreateIdTokenForSubject(
-        string subject,
-        string name,
-        IReadOnlyList<string> roles,
-        string? tenantId,
-        string? nonce = null,
-        DateTimeOffset? expires = null,
-        string? issuer = null)
+    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles) =>
+        CreateIdToken(new IdTokenSpec { Subject = subject, Name = name, Roles = roles });
+
+    internal static string CreateIdToken(IdTokenSpec spec)
     {
         var claims = new List<Claim>
         {
-            new("sub", subject),
-            new("name", name)
+            new("sub", spec.Subject),
+            new("name", spec.Name)
         };
 
-        if (tenantId is not null) claims.Add(new Claim("tenant_id", tenantId));
-        if (nonce is not null) claims.Add(new Claim(JwtRegisteredClaimNames.Nonce, nonce));
-        claims.AddRange(roles.Select(static role => new Claim("roles", role)));
+        if (spec.TenantId is not null) claims.Add(new Claim("tenant_id", spec.TenantId));
+        if (spec.Nonce is not null) claims.Add(new Claim(JwtRegisteredClaimNames.Nonce, spec.Nonce));
+        claims.AddRange(spec.Roles.Select(static role => new Claim("roles", role)));
 
-        var expiryUtc = (expires ?? DateTimeOffset.UtcNow.AddHours(1)).UtcDateTime;
+        var expiryUtc = (spec.Expires ?? DateTimeOffset.UtcNow.AddHours(1)).UtcDateTime;
         var notBeforeUtc = expiryUtc <= DateTime.UtcNow ? expiryUtc.AddMinutes(-5) : DateTime.UtcNow.AddMinutes(-1);
         var token = new JwtSecurityToken(
-            issuer: issuer ?? TestOidcIssuer,
+            issuer: spec.Issuer ?? TestOidcIssuer,
             audience: TestOidcAudience,
             claims: claims,
             notBefore: notBeforeUtc,

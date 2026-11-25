@@ -28,7 +28,7 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-internal sealed class ImageServerExportHandler
+internal sealed partial class ImageServerExportHandler
 {
     private const string InlineImageFormat = "image";
     private const int DefaultOutputDimension = 400;
@@ -162,20 +162,13 @@ internal sealed class ImageServerExportHandler
             // is Raw only when the format parsed as a layout, so the layout is read only then.
             _ = ImageServerPixelBlockEncoder.TryParseLayout(request.Format, out var pixelBlockLayout);
 
-            var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
-            await using var renderLease = limiter is null
-                ? null
-                : await limiter.TryAcquireAsync(
-                    Math.Max(1, exportQuery.OutputWidth ?? DefaultOutputDimension),
-                    Math.Max(1, exportQuery.OutputHeight ?? DefaultOutputDimension),
-                    cancellationToken).ConfigureAwait(false);
-            if (limiter is not null && renderLease is null)
+            var (renderLease, capacityRefusal) = await TryAcquireExportRenderLeaseAsync(context, exportQuery, cancellationToken)
+                .ConfigureAwait(false);
+            if (capacityRefusal is not null)
             {
-                return StandardErrorHelpers.CreateServiceUnavailable(
-                    context,
-                    RasterRenderCapacityLimiter.CapacityExceededMessage,
-                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+                return capacityRefusal;
             }
+            await using var renderLeaseScope = renderLease;
 
             if (dimensionConstraints.Count > 0)
             {
@@ -343,42 +336,19 @@ internal sealed class ImageServerExportHandler
                 result = ImageServerPixelBlockEncoder.Encode(result, pixelBlockLayout, requireAllBandsValid);
             }
 
-            if (WantsInlineImageResponse(request.F))
-            {
-                ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
-                scope.SetSuccess(1);
-                return EncodedRasterResults.File(result.Data, result.ContentType);
-            }
-
-            var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
-                result.Data,
-                result.ContentType,
-                TimeSpan.FromHours(1),
-                principal: context.User,
-                cancellationToken: cancellationToken);
-
-            var extent = result.Extent ?? aggregateExtent;
-            if (extent == null && selectedRasters.Length == 1)
-            {
-                extent = await _exportBackend.GetExtentAsync(storageLayerId, selectedRasters[0].Id, cancellationToken);
-            }
-
-            // Esri exportImage is expected to echo the export extent. When the raster store
-            // returns no real extent, fall back to the requested bbox (what callers asked to
-            // render) rather than emitting a fabricated [0,0,1,1] box. If neither is available,
-            // omit the extent entirely instead of inventing a 1×1 envelope.
-            var exportResponse = new ExportImageResponse
-            {
-                Href = imageUrl,
-                Width = result.Width,
-                Height = result.Height,
-                Extent = BuildExtent(extent, request.Bbox, bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr), result.Srid),
-            };
-
-            ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
-            scope.SetSuccess(1);
-
-            return Results.Json(exportResponse, ImageServerJsonContext.Default.ExportImageResponse);
+            return await CreateExportResponseAsync(
+                context,
+                new ExportResponseContext
+                {
+                    LayerId = layerId,
+                    StorageLayerId = storageLayerId,
+                    Request = request,
+                    Result = result,
+                    AggregateExtent = aggregateExtent,
+                    SelectedRasters = selectedRasters,
+                    Scope = scope
+                },
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

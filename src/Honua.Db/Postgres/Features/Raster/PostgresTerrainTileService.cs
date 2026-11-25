@@ -122,55 +122,47 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             request.Y,
             cancellationToken).ConfigureAwait(false);
 
-        if (rasterIds.Length == 0)
-        {
-            PostgresTerrainLog.TerrainTileGenerated(
-                _logger,
-                request.LayerId,
-                request.Z,
-                request.X,
-                request.Y,
-                rasterCount: 0,
-                EmptyTerrainRgbPng.Length,
-                allNoData: true);
-            return new TerrainTileResult
-            {
-                Data = EmptyTerrainRgbPng,
-                SelectedRasterCount = 0,
-                IsAllNoData = true
-            };
-        }
+        return rasterIds.Length == 0
+            ? CreateEmptyTerrainTileResult(request)
+            : await RenderTerrainRgbTileAsync(request, rasterIds, cancellationToken).ConfigureAwait(false);
+    }
 
+    private TerrainTileResult CreateEmptyTerrainTileResult(TerrainTileRequest request)
+    {
+        PostgresTerrainLog.TerrainTileGenerated(
+            _logger,
+            request.LayerId,
+            request.Z,
+            request.X,
+            request.Y,
+            rasterCount: 0,
+            EmptyTerrainRgbPng.Length,
+            allNoData: true);
+        return new TerrainTileResult
+        {
+            Data = EmptyTerrainRgbPng,
+            SelectedRasterCount = 0,
+            IsAllNoData = true
+        };
+    }
+
+    private async Task<TerrainTileResult> RenderTerrainRgbTileAsync(
+        TerrainTileRequest request,
+        long[] rasterIds,
+        CancellationToken cancellationToken)
+    {
         var rgbaLength = TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 4;
         var rgba = ArrayPool<byte>.Shared.Rent(rgbaLength);
         try
         {
             rgba.AsSpan(0, rgbaLength).Clear();
-            var hasData = await PopulateTerrainRgbAsync(
-                request,
-                rasterIds,
-                rgba,
-                cancellationToken).ConfigureAwait(false);
+            var hasData = await PopulateTerrainRgbAsync(request, rasterIds, rgba, cancellationToken).ConfigureAwait(false);
             var png = hasData
                 ? PngEncoder.EncodeRgba(rgba.AsSpan(0, rgbaLength), TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize)
                 : EmptyTerrainRgbPng;
-
             PostgresTerrainLog.TerrainTileGenerated(
-                _logger,
-                request.LayerId,
-                request.Z,
-                request.X,
-                request.Y,
-                rasterIds.Length,
-                png.Length,
-                allNoData: !hasData);
-
-            return new TerrainTileResult
-            {
-                Data = png,
-                SelectedRasterCount = rasterIds.Length,
-                IsAllNoData = !hasData
-            };
+                _logger, request.LayerId, request.Z, request.X, request.Y, rasterIds.Length, png.Length, allNoData: !hasData);
+            return new TerrainTileResult { Data = png, SelectedRasterCount = rasterIds.Length, IsAllNoData = !hasData };
         }
         finally
         {
@@ -476,7 +468,14 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
 
             using var png = new MemoryStream();
             png.Write([137, 80, 78, 71, 13, 10, 26, 10]);
+            WriteIhdrChunk(png, width, height);
+            WriteIdatChunk(png, rgba, width * 4);
+            WriteChunk(png, "IEND", ReadOnlySpan<byte>.Empty);
+            return png.ToArray();
+        }
 
+        private static void WriteIhdrChunk(Stream png, int width, int height)
+        {
             Span<byte> ihdr = stackalloc byte[13];
             BinaryPrimitives.WriteInt32BigEndian(ihdr[..4], width);
             BinaryPrimitives.WriteInt32BigEndian(ihdr.Slice(4, 4), height);
@@ -486,8 +485,11 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             ihdr[11] = 0; // filter
             ihdr[12] = 0; // interlace
             WriteChunk(png, "IHDR", ihdr);
+        }
 
-            var stride = width * 4;
+        private static void WriteIdatChunk(Stream png, ReadOnlySpan<byte> rgba, int stride)
+        {
+            var height = stride == 0 ? 0 : rgba.Length / stride;
             var rawLength = (stride + 1) * height;
             var raw = ArrayPool<byte>.Shared.Rent(rawLength);
             try
@@ -511,9 +513,6 @@ internal sealed partial class PostgresTerrainTileService : ITerrainTileService
             {
                 ArrayPool<byte>.Shared.Return(raw);
             }
-
-            WriteChunk(png, "IEND", ReadOnlySpan<byte>.Empty);
-            return png.ToArray();
         }
 
         private static void WriteChunk(Stream stream, string type, ReadOnlySpan<byte> data)

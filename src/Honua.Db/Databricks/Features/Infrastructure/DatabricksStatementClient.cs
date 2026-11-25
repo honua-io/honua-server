@@ -93,71 +93,86 @@ internal sealed class DatabricksStatementClient
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
-        if (dataConnection is not null)
+        if (dataConnection is null)
         {
-            string? connectionString = null;
-            if (dataConnection.ConnectionId != Guid.Empty && _connectionResolver is not null)
-            {
-                connectionString = await _connectionResolver
-                    .ResolveConnectionStringAsync(dataConnection.ConnectionId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(connectionString))
-                {
-                    throw new InvalidOperationException(
-                        $"Bound Databricks connection '{dataConnection.ConnectionId}' could not be resolved to a connection string.");
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(dataConnection.ConnectionString))
-            {
-                if (dataConnection.IsEncrypted)
-                {
-                    throw new InvalidOperationException(
-                        "Bound Databricks connection has an encrypted connection string that cannot be resolved without ISecureConnectionResolver.");
-                }
-
-                connectionString = dataConnection.ConnectionString;
-            }
-
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
-                var (endpoint, warehouseId, token) = DatabricksConnectionDriver.ParseConnectionString(connectionString);
-                return new ExecutionTarget(endpoint, warehouseId, token);
-            }
-
-            // Fail closed before comparing against the default workspace whenever the bound
-            // DataConnection carries an unresolved secret reference or encrypted credential
-            // payload so it can never silently execute under the host's default token.
-            if (!string.IsNullOrWhiteSpace(dataConnection.SecretRef))
-            {
-                throw new InvalidOperationException(
-                    "Bound Databricks connection has a secret reference that cannot be resolved without ISecureConnectionResolver.");
-            }
-
-            if (dataConnection.EncryptedConnectionString.Length > 0)
-            {
-                throw new InvalidOperationException(
-                    "Bound Databricks connection has encrypted credentials that cannot be resolved without ISecureConnectionResolver.");
-            }
-
-            // Fail closed if the bound DataConnection names a different workspace host or warehouse
-            // than the default options without providing resolvable credentials.
-            var fallback = ResolveDefaultTarget();
-            if (!MatchesDefaultTarget(dataConnection, fallback))
-            {
-                if (dataConnection.IsEncrypted)
-                {
-                    throw new InvalidOperationException(
-                        "Bound Databricks connection has encrypted credentials that cannot be resolved.");
-                }
-
-                throw new InvalidOperationException(
-                    $"Bound Databricks connection '{dataConnection.Name}' could not be resolved to workspace credentials.");
-            }
-
-            return fallback;
+            return ResolveDefaultTarget();
         }
 
-        return ResolveDefaultTarget();
+        var connectionString = await ResolveBoundConnectionStringAsync(dataConnection, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            var (endpoint, warehouseId, token) = DatabricksConnectionDriver.ParseConnectionString(connectionString);
+            return new ExecutionTarget(endpoint, warehouseId, token);
+        }
+
+        return ResolveBoundFallbackTarget(dataConnection);
+    }
+
+    private async Task<string?> ResolveBoundConnectionStringAsync(
+        DataConnection dataConnection,
+        CancellationToken cancellationToken)
+    {
+        if (dataConnection.ConnectionId != Guid.Empty && _connectionResolver is not null)
+        {
+            var connectionString = await _connectionResolver
+                .ResolveConnectionStringAsync(dataConnection.ConnectionId, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    $"Bound Databricks connection '{dataConnection.ConnectionId}' could not be resolved to a connection string.");
+            }
+
+            return connectionString;
+        }
+
+        if (string.IsNullOrWhiteSpace(dataConnection.ConnectionString))
+        {
+            return null;
+        }
+
+        if (dataConnection.IsEncrypted)
+        {
+            throw new InvalidOperationException(
+                "Bound Databricks connection has an encrypted connection string that cannot be resolved without ISecureConnectionResolver.");
+        }
+
+        return dataConnection.ConnectionString;
+    }
+
+    private ExecutionTarget ResolveBoundFallbackTarget(DataConnection dataConnection)
+    {
+        // Fail closed before comparing against the default workspace whenever the bound
+        // DataConnection carries an unresolved secret reference or encrypted credential
+        // payload so it can never silently execute under the host's default token.
+        if (!string.IsNullOrWhiteSpace(dataConnection.SecretRef))
+        {
+            throw new InvalidOperationException(
+                "Bound Databricks connection has a secret reference that cannot be resolved without ISecureConnectionResolver.");
+        }
+
+        if (dataConnection.EncryptedConnectionString.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Bound Databricks connection has encrypted credentials that cannot be resolved without ISecureConnectionResolver.");
+        }
+
+        // Fail closed if the bound DataConnection names a different workspace host or warehouse
+        // than the default options without providing resolvable credentials.
+        var fallback = ResolveDefaultTarget();
+        if (!MatchesDefaultTarget(dataConnection, fallback))
+        {
+            if (dataConnection.IsEncrypted)
+            {
+                throw new InvalidOperationException(
+                    "Bound Databricks connection has encrypted credentials that cannot be resolved.");
+            }
+
+            throw new InvalidOperationException(
+                $"Bound Databricks connection '{dataConnection.Name}' could not be resolved to workspace credentials.");
+        }
+
+        return fallback;
     }
 
     private ExecutionTarget ResolveDefaultTarget()

@@ -10,35 +10,56 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-internal static class RelationalFeatureStoreHelpers
+internal sealed class QueryOperationRequest<TConnection, TCommand, TResult>
+    where TConnection : DbConnection
+    where TCommand : DbCommand
+{
+    public required ActivitySource ActivitySource { get; init; }
+    public required string ActivityName { get; init; }
+    public string? DbSystem { get; init; }
+    public required int LayerId { get; init; }
+    public required Func<CancellationToken, Task<TConnection>> OpenConnection { get; init; }
+    public required Func<TConnection, TCommand> CreateCommand { get; init; }
+    public required Func<TCommand, CancellationToken, Task<TResult>> Execute { get; init; }
+    public required Action<Exception> LogFailure { get; init; }
+    public required Func<Exception, Exception> WrapException { get; init; }
+}
+
+internal sealed class FeatureReadOptions
+{
+    private static readonly Func<DbDataReader, int, byte[]> DefaultGeometryReader =
+        static (reader, ordinal) => (byte[])reader.GetValue(ordinal);
+
+    public required string ProviderName { get; init; }
+    public required int LayerId { get; init; }
+    public required string PrimaryKeyColumn { get; init; }
+    public required IReadOnlyList<string> AttributeColumns { get; init; }
+    public Func<DbDataReader, int, byte[]> ReadGeometry { get; init; } = DefaultGeometryReader;
+}
+
+internal sealed class StatisticsOrderByRequest
+{
+    public required StringBuilder Sql { get; init; }
+    public required ImmutableArray<StatisticDefinition> Statistics { get; init; }
+    public required IReadOnlyList<string> ResolvedGroupByColumns { get; init; }
+    public required FeatureQuery Query { get; init; }
+    public required Func<string, string> QuoteAttribute { get; init; }
+}
+
+internal static partial class RelationalFeatureStoreHelpers
 {
     public static async Task<TResult> ExecuteQueryOperationAsync<TConnection, TCommand, TResult>(
-        ActivitySource activitySource,
-        string activityName,
-        string? dbSystem,
-        int layerId,
-        Func<CancellationToken, Task<TConnection>> openConnection,
-        Func<TConnection, TCommand> createCommand,
-        Func<TCommand, CancellationToken, Task<TResult>> execute,
-        Action<Exception> logFailure,
-        Func<Exception, Exception> wrapException,
+        QueryOperationRequest<TConnection, TCommand, TResult> request,
         CancellationToken cancellationToken)
         where TConnection : DbConnection
         where TCommand : DbCommand
     {
-        using var activity = activitySource.StartActivity(activityName);
-        if (dbSystem is not null)
-        {
-            activity?.SetTag("db.system", dbSystem);
-        }
-
-        activity?.SetTag("layer.id", layerId);
-
+        using var activity = StartQueryActivity(request);
         try
         {
-            await using var connection = await openConnection(cancellationToken).ConfigureAwait(false);
-            await using var command = createCommand(connection);
-            var result = await execute(command, cancellationToken).ConfigureAwait(false);
+            await using var connection = await request.OpenConnection(cancellationToken).ConfigureAwait(false);
+            await using var command = request.CreateCommand(connection);
+            var result = await request.Execute(command, cancellationToken).ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Ok);
             return result;
         }
@@ -49,9 +70,34 @@ internal static class RelationalFeatureStoreHelpers
         catch (Exception ex) when (ex is DbException or TimeoutException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            logFailure(ex);
-            throw wrapException(ex);
+            request.LogFailure(ex);
+            throw request.WrapException(ex);
         }
+    }
+
+    public static async Task<ImmutableArray<Feature>> ReadFeaturesAsync(
+        DbCommand command,
+        FeatureReadOptions options,
+        CancellationToken cancellationToken)
+    {
+        var canonicalNames = BuildCanonicalAttributeMap(options.AttributeColumns);
+        var features = ImmutableArray.CreateBuilder<Feature>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.IsDBNull(0))
+            {
+                throw new InvalidOperationException(
+                    $"{options.ProviderName} select for layer {options.LayerId} returned a NULL object id (column '{options.PrimaryKeyColumn}'); object id must be a non-null key.");
+            }
+
+            var id = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+            byte[]? wkb = reader.IsDBNull(1) ? null : options.ReadGeometry(reader, 1);
+            var attrs = ReadCanonicalAttributes(reader, canonicalNames);
+            features.Add(Feature.Create(id, wkb, attrs));
+        }
+
+        return features.ToImmutable();
     }
 
     public static async Task<long> ReadCountAsync(DbCommand command, CancellationToken cancellationToken)
@@ -125,14 +171,9 @@ internal static class RelationalFeatureStoreHelpers
         return rows.ToImmutable();
     }
 
-    public static void AppendStatisticsOrderBy(
-        StringBuilder sb,
-        ImmutableArray<StatisticDefinition> statistics,
-        IReadOnlyList<string> resolvedGroupByColumns,
-        FeatureQuery query,
-        Func<string, string> quoteAttribute)
+    public static void AppendStatisticsOrderBy(StatisticsOrderByRequest request)
     {
-        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
+        if (request.Query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
         {
             return;
         }
@@ -140,32 +181,69 @@ internal static class RelationalFeatureStoreHelpers
         var terms = new List<string>(orderBy.Length);
         foreach (var clause in orderBy)
         {
-            var expression = ResolveStatisticsOrderBy(clause.Field, statistics, resolvedGroupByColumns, quoteAttribute);
+            var expression = ResolveStatisticsOrderBy(clause.Field, request);
             terms.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}");
         }
 
-        sb.Append(" ORDER BY ").Append(string.Join(", ", terms));
+        request.Sql.Append(" ORDER BY ").Append(string.Join(", ", terms));
     }
 
-    private static string ResolveStatisticsOrderBy(
-        string field,
-        ImmutableArray<StatisticDefinition> statistics,
-        IReadOnlyList<string> resolvedGroupByColumns,
-        Func<string, string> quoteAttribute)
+    private static Activity? StartQueryActivity<TConnection, TCommand, TResult>(
+        QueryOperationRequest<TConnection, TCommand, TResult> request)
+        where TConnection : DbConnection
+        where TCommand : DbCommand
     {
-        foreach (var stat in statistics)
+        var activity = request.ActivitySource.StartActivity(request.ActivityName);
+        if (request.DbSystem is not null)
+        {
+            activity?.SetTag("db.system", request.DbSystem);
+        }
+
+        activity?.SetTag("layer.id", request.LayerId);
+        return activity;
+    }
+
+    private static Dictionary<string, string>? BuildCanonicalAttributeMap(IReadOnlyList<string> attributeColumns)
+        => attributeColumns.Count == 0
+            ? null
+            : attributeColumns.ToDictionary(static c => c, static c => c, StringComparer.OrdinalIgnoreCase);
+
+    private static ImmutableDictionary<string, object?> ReadCanonicalAttributes(
+        DbDataReader reader,
+        Dictionary<string, string>? canonicalNames)
+    {
+        var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
+        for (var i = 2; i < reader.FieldCount; i++)
+        {
+            // Map each attribute by its actual reader column name (normalized to the
+            // canonical schema casing when declared) because OutFields projects a subset.
+            var rawName = reader.GetName(i);
+            var name = canonicalNames is not null
+                && canonicalNames.TryGetValue(rawName, out var canonicalName)
+                ? canonicalName
+                : rawName;
+
+            attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+        }
+
+        return attrs.ToImmutable();
+    }
+
+    private static string ResolveStatisticsOrderBy(string field, StatisticsOrderByRequest request)
+    {
+        foreach (var stat in request.Statistics)
         {
             if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
-                return quoteAttribute(stat.OutStatisticFieldName);
+                return request.QuoteAttribute(stat.OutStatisticFieldName);
             }
         }
 
-        foreach (var groupField in resolvedGroupByColumns)
+        foreach (var groupField in request.ResolvedGroupByColumns)
         {
             if (groupField.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
-                return quoteAttribute(groupField);
+                return request.QuoteAttribute(groupField);
             }
         }
 

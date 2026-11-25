@@ -1329,15 +1329,18 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
     }
 
+    private readonly record struct SchemaPropertyWriter(
+        string[] PropertyFields,
+        JsonEncodedText[] EncodedPropertyFields,
+        Dictionary<string, JsonElement>? Lookup);
+
     private static void WriteSchemaProperties(
         Utf8JsonWriter writer,
         JsonElement? propertiesElement,
-        string[] propertyFields,
-        JsonEncodedText[] encodedPropertyFields,
-        Dictionary<string, JsonElement>? lookup)
+        SchemaPropertyWriter schema)
     {
         writer.WriteStartObject();
-        if (!propertiesElement.HasValue || propertyFields.Length == 0 || lookup is null)
+        if (!propertiesElement.HasValue || schema.PropertyFields.Length == 0 || schema.Lookup is null)
         {
             writer.WriteEndObject();
             return;
@@ -1346,17 +1349,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
         // Reuse the hoisted case-insensitive name->value lookup across features.
         // TryAdd keeps the first occurrence of a duplicate-case property name,
         // matching the original scan's "first match wins" semantics.
-        lookup.Clear();
+        schema.Lookup.Clear();
         foreach (var candidate in propertiesElement.Value.EnumerateObject())
         {
-            lookup.TryAdd(candidate.Name, candidate.Value);
+            schema.Lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        for (var fieldIndex = 0; fieldIndex < propertyFields.Length; fieldIndex++)
+        for (var fieldIndex = 0; fieldIndex < schema.PropertyFields.Length; fieldIndex++)
         {
-            if (lookup.TryGetValue(propertyFields[fieldIndex], out var value))
+            if (schema.Lookup.TryGetValue(schema.PropertyFields[fieldIndex], out var value))
             {
-                writer.WritePropertyName(encodedPropertyFields[fieldIndex]);
+                writer.WritePropertyName(schema.EncodedPropertyFields[fieldIndex]);
                 value.WriteTo(writer);
             }
         }

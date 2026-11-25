@@ -287,8 +287,11 @@ internal static partial class CollaborationSessionStreamEndpoint
             {
                 await CloseWebSocketBoundedAsync(
                     webSocket,
-                    WebSocketCloseStatus.NormalClosure,
-                    "Collaboration session closed.",
+                    new WebSocketCloseSpec
+                    {
+                        Status = WebSocketCloseStatus.NormalClosure,
+                        Description = "Collaboration session closed."
+                    },
                     context.RequestAborted).ConfigureAwait(false);
                 webSocket.Dispose();
             }
@@ -346,17 +349,29 @@ internal static partial class CollaborationSessionStreamEndpoint
         return new SnapshotTail([], sinceCursor, ResyncRequired: true, resyncMessage, windowBase);
     }
 
+    private readonly struct WebSocketCloseSpec
+    {
+        public required WebSocketCloseStatus Status { get; init; }
+        public required string Description { get; init; }
+    }
+
     // The resync event ends the handshake without a snapshot the client could not trust.
     private static Task CloseWithErrorAsync(
         WebSocket webSocket,
         string reason,
         CancellationToken cancellationToken)
-        => CloseWebSocketBoundedAsync(webSocket, WebSocketCloseStatus.InternalServerError, reason, cancellationToken);
+        => CloseWebSocketBoundedAsync(
+            webSocket,
+            new WebSocketCloseSpec
+            {
+                Status = WebSocketCloseStatus.InternalServerError,
+                Description = reason
+            },
+            cancellationToken);
 
     private static async Task CloseWebSocketBoundedAsync(
         WebSocket webSocket,
-        WebSocketCloseStatus status,
-        string description,
+        WebSocketCloseSpec closeSpec,
         CancellationToken cancellationToken)
     {
         if (webSocket.State is not (WebSocketState.Open or WebSocketState.CloseReceived))
@@ -368,7 +383,7 @@ internal static partial class CollaborationSessionStreamEndpoint
         closeCts.CancelAfter(CloseTimeout);
         try
         {
-            await webSocket.CloseOutputAsync(status, description, closeCts.Token).ConfigureAwait(false);
+            await webSocket.CloseOutputAsync(closeSpec.Status, closeSpec.Description, closeCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or OperationCanceledException or InvalidOperationException or IOException)
         {
@@ -492,17 +507,9 @@ internal static partial class CollaborationSessionStreamEndpoint
         {
             // Normal shutdown.
         }
-        catch (WebSocketException)
+        catch (Exception ex) when (ex is WebSocketException or IOException or ObjectDisposedException)
         {
-            // Client disconnected.
-        }
-        catch (IOException)
-        {
-            // Underlying transport closed.
-        }
-        catch (ObjectDisposedException)
-        {
-            // Socket disposed.
+            // Client disconnected or socket closed.
         }
     }
 

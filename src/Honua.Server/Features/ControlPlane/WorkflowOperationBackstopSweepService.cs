@@ -14,7 +14,7 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
     IWorkflowOperationStore workflowStore,
     IOperationReconcileDispatcher dispatcher,
     IOptions<ControlPlaneTriggerOptions> options,
-    ILogger<WorkflowOperationBackstopSweepService> logger) : BackgroundService
+    ILogger<WorkflowOperationBackstopSweepService> logger) : BackstopSweepBackgroundService(options)
 {
     private static readonly (WorkflowOperationKind StoreKind, OperationKind OperationKind)[] SweptKinds =
     [
@@ -24,25 +24,14 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
         (WorkflowOperationKind.PreMigrationRestore, OperationKind.PreMigrationRestore)
     ];
 
-    private readonly ControlPlaneTriggerOptions _options = options.Value;
+    protected override void LogBackstopStarted(int intervalSeconds, int staleSeconds)
+        => Log.BackstopStarted(logger, intervalSeconds, staleSeconds);
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var interval = _options.BackstopInterval > TimeSpan.Zero
-            ? _options.BackstopInterval
-            : TimeSpan.FromMinutes(2);
-        var staleThreshold = _options.StaleThreshold > TimeSpan.Zero
-            ? _options.StaleThreshold
-            : TimeSpan.FromSeconds(90);
+    protected override void LogBackstopSweepFailed(Exception exception)
+        => Log.BackstopSweepFailed(logger, exception);
 
-        Log.BackstopStarted(logger, (int)interval.TotalSeconds, (int)staleThreshold.TotalSeconds);
-
-        return PeriodicBackgroundLoop.RunAsync(
-            interval,
-            ct => SweepOnceAsync(staleThreshold, ct),
-            ex => Log.BackstopSweepFailed(logger, ex),
-            stoppingToken);
-    }
+    protected override Task ExecuteSweepAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
+        => SweepOnceAsync(staleThreshold, cancellationToken);
 
     internal async Task SweepOnceAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
     {

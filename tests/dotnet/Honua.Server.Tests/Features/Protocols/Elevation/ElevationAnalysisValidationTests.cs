@@ -23,8 +23,25 @@ public sealed class ElevationAnalysisValidationTests
     [Operation(Operations.ErrorHandling)]
     public async Task ValidateDatasetAsync_PublicationWithoutLayerIndexOrStorageBinding_ReturnsNotFoundInsteadOfLayerZero()
     {
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(CreateUnboundElevationGraph()))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+
+        var result = await ElevationAnalysisValidation.ValidateDatasetAsync(context, "dem-unbound", CancellationToken.None);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorResult.Should().NotBeNull();
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    private static MetadataV2Graph CreateUnboundElevationGraph()
+    {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var graph = new MetadataV2Graph
+        return new MetadataV2Graph
         {
             Resources =
             [
@@ -57,19 +74,5 @@ public sealed class ElevationAnalysisValidationTests
                 }
             ]
         };
-
-        var services = new ServiceCollection()
-            .AddLogging()
-            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
-            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
-            .BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = services };
-
-        var result = await ElevationAnalysisValidation.ValidateDatasetAsync(context, "dem-unbound", CancellationToken.None);
-
-        result.IsValid.Should().BeFalse();
-        result.ErrorResult.Should().NotBeNull();
-        await result.ErrorResult!.ExecuteAsync(context);
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 }

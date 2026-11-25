@@ -177,40 +177,40 @@ internal static class SharedCacheResponse
 
         Span<char> buffer = stackalloc char[160];
         var pos = 0;
-        AppendLiteral(buffer, ref pos, "public, max-age=");
-        AppendNonNegativeSeconds(buffer, ref pos, lifetime.MaxAgeSeconds);
-        AppendLiteral(buffer, ref pos, ", s-maxage=");
-        AppendNonNegativeSeconds(buffer, ref pos, lifetime.SharedMaxAgeSeconds);
+        pos += AppendLiteral(buffer[pos..], "public, max-age=");
+        pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.MaxAgeSeconds);
+        pos += AppendLiteral(buffer[pos..], ", s-maxage=");
+        pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.SharedMaxAgeSeconds);
 
         if (lifetime.StaleWhileRevalidateSeconds > 0)
         {
-            AppendLiteral(buffer, ref pos, ", stale-while-revalidate=");
-            AppendNonNegativeSeconds(buffer, ref pos, lifetime.StaleWhileRevalidateSeconds);
+            pos += AppendLiteral(buffer[pos..], ", stale-while-revalidate=");
+            pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.StaleWhileRevalidateSeconds);
         }
 
         if (cacheClass is (ResponseCacheClass.Tile or ResponseCacheClass.FeatureQuery) && options.StaleIfErrorSeconds > 0)
         {
-            AppendLiteral(buffer, ref pos, ", stale-if-error=");
-            AppendNonNegativeSeconds(buffer, ref pos, options.StaleIfErrorSeconds);
+            pos += AppendLiteral(buffer[pos..], ", stale-if-error=");
+            pos += AppendNonNegativeSeconds(buffer[pos..], options.StaleIfErrorSeconds);
         }
 
         return new string(buffer[..pos]);
     }
 
-    private static void AppendLiteral(Span<char> buffer, ref int pos, ReadOnlySpan<char> literal)
+    private static int AppendLiteral(Span<char> destination, ReadOnlySpan<char> literal)
     {
-        literal.CopyTo(buffer[pos..]);
-        pos += literal.Length;
+        literal.CopyTo(destination);
+        return literal.Length;
     }
 
-    private static void AppendNonNegativeSeconds(Span<char> buffer, ref int pos, int seconds)
+    private static int AppendNonNegativeSeconds(Span<char> destination, int seconds)
     {
-        if (!Math.Max(0, seconds).TryFormat(buffer[pos..], out var written, provider: CultureInfo.InvariantCulture))
+        if (!Math.Max(0, seconds).TryFormat(destination, out var written, provider: CultureInfo.InvariantCulture))
         {
             throw new InvalidOperationException("Cache-Control formatting buffer exhausted.");
         }
 
-        pos += written;
+        return written;
     }
 
     private static SharedCacheOptions CurrentOptions(HttpContext context)

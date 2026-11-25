@@ -99,7 +99,8 @@ public sealed class TemporaryFileEndpointTests : IDisposable
         [
             new Claim(ClaimTypes.Name, "admin"),
             new Claim(ClaimTypes.Role, "admin"),
-            new Claim("auth_type", "admin")
+            new Claim("auth_type", "admin"),
+            new Claim("api_key_id", ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString("D"))
         ], AuthenticationExtensions.ApiKeyScheme));
     }
 

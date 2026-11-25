@@ -22,31 +22,32 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
     internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
-    public async Task ReconcileCoordinatedReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+    public Task ReconcileCoordinatedReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+        => WorkflowOperationLeaseRunner.RunAsync(
+            new WorkflowLeaseExecutionOptions
+            {
+                WorkflowStore = workflowStore,
+                OperationId = operationId,
+                OwnerId = _ownerId,
+                LeaseDuration = LeaseDuration,
+                LeaseRenewInterval = LeaseRenewInterval,
+                Logger = logger,
+                ExecuteAsync = reconciliationCancellation =>
+                    ReconcileLeasedOperationAsync(operationId, reconciliationCancellation, cancellationToken),
+                OnLeaseLost = () => Log.CoordinatedReleaseLeaseLost(logger, operationId)
+            },
+            cancellationToken);
+
+    private async Task ReconcileLeasedOperationAsync(
+        string operationId,
+        CancellationTokenSource reconciliationCancellation,
+        CancellationToken callerCancellation)
     {
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            return;
-        }
-
-        var leaseAcquired = await workflowStore.TryAcquireLeaseAsync(operationId, _ownerId, LeaseDuration, cancellationToken).ConfigureAwait(false);
-        if (!leaseAcquired)
-        {
-            return;
-        }
-
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
-            operationId,
-            LeaseRenewInterval,
-            reconciliationCancellation,
-            ct => workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, ct),
-            logger);
-
         WorkflowOperationRecord? reconciledVersion = null;
         try
         {
-            var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var token = reconciliationCancellation.Token;
+            var operation = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
             reconciledVersion = operation;
             if (operation is null ||
                 operation.Kind != WorkflowOperationKind.CoordinatedRelease ||
@@ -57,7 +58,6 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 return;
             }
 
-            var token = reconciliationCancellation.Token;
             var updated = operation.Status == WorkflowOperationStatus.RollbackRequested
                 ? await UnwindAsync(operation, token).ConfigureAwait(false)
                 : await AdvanceForwardAsync(operation, token).ConfigureAwait(false);
@@ -67,28 +67,11 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 await PersistProgressAsync(operation, updated, token).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-        {
-            Log.CoordinatedReleaseLeaseLost(logger, operationId);
-            return;
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException ||
+            (!callerCancellation.IsCancellationRequested && !reconciliationCancellation.IsCancellationRequested))
         {
             await MarkFailedAsync(reconciledVersion, ex, reconciliationCancellation).ConfigureAwait(false);
             throw;
-        }
-        finally
-        {
-            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
-                operationId,
-                reconciliationCancellation,
-                renewalTask,
-                ct => workflowStore.ReleaseLeaseAsync(operationId, _ownerId, ct),
-                logger).ConfigureAwait(false);
         }
     }
 

@@ -1113,7 +1113,7 @@ public sealed class GeoServicesSqlParser
                         return;
                     }
 
-                    var startWidth = IdentifierRuneWidth(_start, isStart: true);
+                    var startWidth = IdentifierStartRuneWidth(_start);
                     if (startWidth > 0)
                     {
                         _current = _start + startWidth;
@@ -1128,7 +1128,7 @@ public sealed class GeoServicesSqlParser
         private void ScanIdentifier()
         {
             int width;
-            while ((width = IdentifierRuneWidth(_current, isStart: false)) > 0)
+            while ((width = IdentifierPartRuneWidth(_current)) > 0)
             {
                 _current += width;
             }
@@ -1307,7 +1307,7 @@ public sealed class GeoServicesSqlParser
         // supplementary-plane letter (a surrogate pair) is one identifier character, exactly
         // as SqlIdentifier.IsUnicodeIdentifier judges the column name.
         // Returns the UTF-16 width of the accepted scalar at index, or 0 when none is accepted.
-        private int IdentifierRuneWidth(int index, bool isStart)
+        private int IdentifierStartRuneWidth(int index)
         {
             if (index >= _source.Length)
             {
@@ -1317,21 +1317,32 @@ public sealed class GeoServicesSqlParser
             var c = _source[index];
             if (c <= 0x7F)
             {
-                var accepted = isStart
-                    ? c == '_' || char.IsAsciiLetter(c)
-                    : c == '_' || char.IsAsciiLetterOrDigit(c);
-                return accepted ? 1 : 0;
+                return c == '_' || char.IsAsciiLetter(c) ? 1 : 0;
             }
 
-            if (Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) != OperationStatus.Done)
+            return Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) == OperationStatus.Done &&
+                SqlIdentifier.IsIdentifierStart(rune)
+                ? consumed
+                : 0;
+        }
+
+        private int IdentifierPartRuneWidth(int index)
+        {
+            if (index >= _source.Length)
             {
                 return 0;
             }
 
-            var unicodeAccepted = isStart
-                ? SqlIdentifier.IsIdentifierStart(rune)
-                : SqlIdentifier.IsIdentifierPart(rune);
-            return unicodeAccepted ? consumed : 0;
+            var c = _source[index];
+            if (c <= 0x7F)
+            {
+                return c == '_' || char.IsAsciiLetterOrDigit(c) ? 1 : 0;
+            }
+
+            return Rune.DecodeFromUtf16(_source.AsSpan(index), out var rune, out var consumed) == OperationStatus.Done &&
+                SqlIdentifier.IsIdentifierPart(rune)
+                ? consumed
+                : 0;
         }
 
         private void AddToken(TokenType type) => AddToken(type, null);

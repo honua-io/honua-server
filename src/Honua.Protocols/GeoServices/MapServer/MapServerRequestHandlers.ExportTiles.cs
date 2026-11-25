@@ -375,10 +375,12 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, levelsError ?? "Invalid levels parameter."));
         }
 
-        if (!GeoServicesExportTilesExtentParser.TryParseMaxTiles(GetValue(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        var maxTilesResult = GeoServicesExportTilesExtentParser.ParseMaxTiles(GetValue(values, "maxTiles"), limits);
+        if (!maxTilesResult.IsValid)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
+            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesResult.Error ?? "Invalid maxTiles parameter."));
         }
+        var maxTiles = maxTilesResult.MaxTiles;
 
         var (mapExport, exportError) = await ResolveAuthorizedMapServerExportAsync(
             context, new(serviceId, values), cancellationToken).ConfigureAwait(false);
@@ -474,7 +476,11 @@ internal static partial class MapServerEndpoints
         var trimmed = extentValue.Trim();
         if (trimmed.StartsWith('{'))
         {
-            return GeoServicesExportTilesExtentParser.TryParseJsonExtent(trimmed, fallbackSridValue, out extent, out srid, out error);
+            var parsedExtent = GeoServicesExportTilesExtentParser.ParseJsonExtent(trimmed, fallbackSridValue);
+            extent = parsedExtent.Extent;
+            srid = parsedExtent.Srid;
+            error = parsedExtent.Error;
+            return parsedExtent.IsValid;
         }
 
         var parsedSrid = SpatialReferenceHelpers.TryParseSrid(fallbackSridValue);

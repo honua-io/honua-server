@@ -13,9 +13,13 @@ public static partial class FeatureAttributeValidator
     private static string? ValidateAgainstDomain(
         MetadataV2Field field,
         object value,
-        MetadataV2FieldDomain domain,
         CompiledResourceFieldIndex index)
     {
+        if (field.Domain is not { } domain)
+        {
+            return null;
+        }
+
         if (string.Equals(domain.Type, "codedValue", StringComparison.OrdinalIgnoreCase))
         {
             if (domain.CodedValues.Count == 0)

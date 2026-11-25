@@ -91,14 +91,20 @@ internal static partial class SceneBimIngestEndpoints
                 $"CityGML document exceeds the {MaxUploadBytes}-byte upload limit.");
         }
 
-        if (!SceneIngestFormHelpers.TryParseOptionalInt(form, "cacheMaxAgeSeconds", out var cacheMaxAge, out var cacheError))
+        var cacheMaxAgeResult = SceneIngestFormHelpers.ParseOptionalInt(form, "cacheMaxAgeSeconds");
+        if (!cacheMaxAgeResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, cacheError!);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, cacheMaxAgeResult.Error!);
         }
-        if (!SceneIngestFormHelpers.TryParseOptionalBool(form, "requiresAuth", out var requiresAuth, out var authError))
+
+        var requiresAuthResult = SceneIngestFormHelpers.ParseOptionalBool(form, "requiresAuth");
+        if (!requiresAuthResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, authError!);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, requiresAuthResult.Error!);
         }
+
+        var cacheMaxAge = cacheMaxAgeResult.Value;
+        var requiresAuth = requiresAuthResult.Value;
 
         var asyncRequested = SceneIngestRequestHelpers.IsAsyncRequested(context, form);
         if (asyncRequested && !SceneIngestRequestHelpers.IsExperimentalAsyncEnabled(context))

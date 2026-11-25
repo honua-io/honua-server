@@ -3,47 +3,43 @@
 
 namespace Honua.Server.Features.Infrastructure;
 
+internal sealed class PeriodicBackgroundLoopOptions
+{
+    public required TimeSpan Interval { get; init; }
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+    public required Func<CancellationToken, Task> ExecuteIterationAsync { get; init; }
+    public required Action<Exception> OnIterationError { get; init; }
+}
+
 internal static class PeriodicBackgroundLoop
 {
-    internal static Task RunAsync(
-        TimeSpan interval,
-        Func<CancellationToken, Task> executeIterationAsync,
-        Action<Exception> onIterationError,
-        CancellationToken stoppingToken)
-        => RunAsync(interval, TimeProvider.System, executeIterationAsync, onIterationError, stoppingToken);
-
     internal static async Task RunAsync(
-        TimeSpan interval,
-        TimeProvider timeProvider,
-        Func<CancellationToken, Task> executeIterationAsync,
-        Action<Exception> onIterationError,
+        PeriodicBackgroundLoopOptions options,
         CancellationToken stoppingToken)
     {
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(executeIterationAsync);
-        ArgumentNullException.ThrowIfNull(onIterationError);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.TimeProvider);
+        ArgumentNullException.ThrowIfNull(options.ExecuteIterationAsync);
+        ArgumentNullException.ThrowIfNull(options.OnIterationError);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await executeIterationAsync(stoppingToken).ConfigureAwait(false);
+                await options.ExecuteIterationAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
-            // Intentionally generic: long-running background polling loops must survive
-            // transient single-iteration failures, log them via the caller callback, and
-            // continue on the next interval.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                onIterationError(ex);
+                options.OnIterationError(ex);
             }
 
             try
             {
-                await Task.Delay(interval, timeProvider, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(options.Interval, options.TimeProvider, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

@@ -55,38 +55,7 @@ public sealed class AdminPlatformScopeGuardTests
         var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.Exists(featuresRoot).Should().BeTrue($"expected features directory at {FeaturesRelativePath}");
 
-        var guardedCount = 0;
-        var unguarded = new List<string>();
-
-        foreach (var file in Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(repoRoot, file).Replace('\\', '/');
-            if (IsBuildOutput(relativePath))
-            {
-                continue;
-            }
-
-            var content = StripComments(File.ReadAllText(file));
-            if (!RouteMappingRegex.IsMatch(content) || !AdminRoutePolicyRegex.IsMatch(content))
-            {
-                continue;
-            }
-
-            if (!HostGlobalSurfaceRegex.IsMatch(content))
-            {
-                continue;
-            }
-
-            if (PlatformGuardMarkerRegex.IsMatch(content))
-            {
-                guardedCount++;
-                continue;
-            }
-
-            unguarded.Add(relativePath);
-        }
-
-        unguarded.Sort(StringComparer.Ordinal);
+        var (guardedCount, unguarded) = ScanEndpointFiles(repoRoot, featuresRoot);
         var reviewedSet = new HashSet<string>(ReviewedExceptions, StringComparer.Ordinal);
         var gaps = unguarded.Where(path => !reviewedSet.Contains(path)).ToList();
         var stale = ReviewedExceptions.Where(path => !unguarded.Contains(path, StringComparer.Ordinal)).ToList();
@@ -101,6 +70,38 @@ public sealed class AdminPlatformScopeGuardTests
             + "store must explicitly declare RequirePlatformAdminAuthority, RequirePlatformAdminAuthorization, "
             + "AlertAdminIsolationFilter, or PlatformDeployAuthority. Unguarded files: "
             + string.Join("; ", gaps));
+    }
+
+    private static (int GuardedCount, List<string> Unguarded) ScanEndpointFiles(string repoRoot, string featuresRoot)
+    {
+        var guardedCount = 0;
+        var unguarded = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(repoRoot, file).Replace('\\', '/');
+            if (IsBuildOutput(relativePath))
+            {
+                continue;
+            }
+
+            var content = StripComments(File.ReadAllText(file));
+            if (!RouteMappingRegex.IsMatch(content) || !AdminRoutePolicyRegex.IsMatch(content) || !HostGlobalSurfaceRegex.IsMatch(content))
+            {
+                continue;
+            }
+
+            if (PlatformGuardMarkerRegex.IsMatch(content))
+            {
+                guardedCount++;
+                continue;
+            }
+
+            unguarded.Add(relativePath);
+        }
+
+        unguarded.Sort(StringComparer.Ordinal);
+        return (guardedCount, unguarded);
     }
 
     private static bool IsBuildOutput(string relativePath)

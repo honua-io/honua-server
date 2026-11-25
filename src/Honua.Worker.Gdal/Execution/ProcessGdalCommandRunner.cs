@@ -67,10 +67,9 @@ internal sealed partial class ProcessGdalCommandRunner(
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new BoundedProcessOutputBuffer(
-            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars,
-            appendTruncationMarker: false);
-        var stderr = new BoundedProcessOutputBuffer();
+        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
+            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
 
         process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
         process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
@@ -187,21 +186,42 @@ internal sealed partial class ProcessGdalCommandRunner(
     }
 }
 
-internal sealed class BoundedProcessOutputBuffer(
-    int maxChars = BoundedProcessOutputBuffer.DefaultMaxChars,
-    bool appendTruncationMarker = true)
+internal sealed class BoundedProcessOutputBuffer
 {
     internal const int DefaultMaxChars = 256 * 1024;
     internal const int DefaultStandardOutputMaxChars = 50 * 1024 * 1024;
     internal const string TruncationMarker = "... [output truncated]";
 
-    private readonly int _maxChars = maxChars > 0
-        ? maxChars
-        : throw new ArgumentOutOfRangeException(nameof(maxChars), "Maximum character limit must be positive.");
-    private readonly bool _appendTruncationMarker = appendTruncationMarker;
+    private enum TruncationMarkerMode
+    {
+        Append,
+        Omit,
+    }
+
+    private readonly int _maxChars;
+    private readonly TruncationMarkerMode _truncationMarkerMode;
     private readonly Lock _sync = new();
     private readonly StringBuilder _builder = new();
     private bool _truncated;
+
+    public BoundedProcessOutputBuffer(int maxChars = DefaultMaxChars)
+        : this(maxChars, TruncationMarkerMode.Append)
+    {
+    }
+
+    private BoundedProcessOutputBuffer(int maxChars, TruncationMarkerMode truncationMarkerMode)
+    {
+        _maxChars = maxChars > 0
+            ? maxChars
+            : throw new ArgumentOutOfRangeException(nameof(maxChars), "Maximum character limit must be positive.");
+        _truncationMarkerMode = truncationMarkerMode;
+    }
+
+    public static BoundedProcessOutputBuffer CreateWithTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Append);
+
+    public static BoundedProcessOutputBuffer CreateWithoutTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Omit);
 
     public bool Truncated
     {
@@ -241,7 +261,7 @@ internal sealed class BoundedProcessOutputBuffer(
                 _builder.Append(line, 0, Math.Min(line.Length, remaining));
             }
 
-            if (_appendTruncationMarker)
+            if (_truncationMarkerMode == TruncationMarkerMode.Append)
             {
                 _builder.AppendLine();
                 _builder.Append(TruncationMarker);

@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Data;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -36,13 +35,7 @@ internal sealed partial class FeatureDataAccess
     {
         var versionId = version.VersionId
             ?? throw new InvalidOperationException("Versioned edit batch is missing a version id.");
-
-        var singleUpdate = editBatch.Updates.Length == 1 &&
-            editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
-            editBatch.Operations.IsDefaultOrEmpty;
-        var isolationLevel = singleUpdate || (!editBatch.Preconditions.IsDefaultOrEmpty && editBatch.Preconditions.Any(p => p.ExpectedRowAbsent))
-            ? IsolationLevel.ReadCommitted
-            : IsolationLevel.RepeatableRead;
+        var isolationLevel = ResolveVersionedIsolationLevel(editBatch);
         var (txConnection, dbTransaction) = await _connectionProvider
             .OpenTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
         await using var _ = txConnection;
@@ -53,100 +46,16 @@ internal sealed partial class FeatureDataAccess
         try
         {
             await SetVersionGucAsync(connection, transaction, versionId, cancellationToken).ConfigureAwait(false);
-
-            var preconditions = BuildPreconditionMap(editBatch);
-            var createdIds = ImmutableArray.CreateBuilder<long>();
-            var createResults = ImmutableArray.CreateBuilder<EditOperationResult>();
-            var updateResults = ImmutableArray.CreateBuilder<EditOperationResult>();
-            var deleteResults = ImmutableArray.CreateBuilder<EditOperationResult>();
-
-            var failed = false;
-
-            if (!editBatch.Operations.IsDefaultOrEmpty)
+            var session = new VersionedBatchSession
             {
-                foreach (var operation in editBatch.Operations)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var ok = await ApplyVersionedOperationAsync(
-                        layerId, versionId, operation, editBatch.RowSecurityWriteCheck, editBatch.OwnerGuards, preconditions, connection, transaction,
-                        createdIds, createResults, updateResults, deleteResults, cancellationToken).ConfigureAwait(false);
-                    if (!ok)
-                    {
-                        failed = true;
-                        if (editBatch.RollbackOnFailure)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                foreach (var feature in editBatch.Creates)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (!await TryVersionedCreateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false))
-                    {
-                        failed = true;
-                        if (editBatch.RollbackOnFailure) break;
-                    }
-                }
-
-                if (!(failed && editBatch.RollbackOnFailure))
-                {
-                    foreach (var feature in editBatch.Updates)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (!await TryVersionedUpdateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, OwnerEditGuard.Find(editBatch.OwnerGuards, feature.Id), preconditions, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false))
-                        {
-                            failed = true;
-                            if (editBatch.RollbackOnFailure) break;
-                        }
-                    }
-                }
-
-                if (!(failed && editBatch.RollbackOnFailure))
-                {
-                    foreach (var objectId in editBatch.Deletes)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        FeatureEditPrecondition precondition = default;
-                        var hasPrecondition = preconditions?.TryGetValue(objectId, out precondition) == true;
-                        if (!await TryVersionedDeleteAsync(
-                            new(new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, objectId))),
-                                editBatch.RowSecurityWriteCheck,
-                                OwnerEditGuard.Find(editBatch.OwnerGuards, objectId),
-                                hasPrecondition ? precondition : null),
-                            deleteResults, cancellationToken).ConfigureAwait(false))
-                        {
-                            failed = true;
-                            if (editBatch.RollbackOnFailure) break;
-                        }
-                    }
-                }
-            }
-
-            if (failed && editBatch.RollbackOnFailure)
-            {
-                await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
-                return FeatureEditResult.Rollback(
-                    createResults.ToImmutable(), updateResults.ToImmutable(), deleteResults.ToImmutable());
-            }
-
-            var immutableCreateResults = createResults.ToImmutable();
-            var immutableUpdateResults = updateResults.ToImmutable();
-            var immutableDeleteResults = deleteResults.ToImmutable();
-            var versionedResult = FeatureEditResult.Success(
-                immutableCreateResults.Count(static r => r.IsSuccess),
-                immutableUpdateResults.Count(static r => r.IsSuccess),
-                immutableDeleteResults.Count(static r => r.IsSuccess),
-                createdIds.ToImmutable(),
-                immutableCreateResults,
-                immutableUpdateResults,
-                immutableDeleteResults,
-                wasRolledBack: false);
-            return await CommitStagedResultAsync(connection, transaction, versionedResult, cancellationToken)
-                .ConfigureAwait(false);
+                LayerId = layerId,
+                VersionId = versionId,
+                EditBatch = editBatch,
+                Preconditions = BuildPreconditionMap(editBatch),
+                Connection = connection,
+                Transaction = transaction
+            };
+            return await ExecuteVersionedBatchBodyAsync(session, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -159,61 +68,31 @@ internal sealed partial class FeatureDataAccess
             // report every operation as failed.
             Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
             await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
-            var commitOutcomeUnknown = ex is FeatureEditCommitOutcomeUnknownException;
-            var errorMessage = commitOutcomeUnknown
-                ? "Versioned transaction commit outcome is unknown."
-                : "Versioned edit batch failed.";
-            var (c, u, d) = CreateFailedOperationResults(editBatch, errorMessage, commitOutcomeUnknown);
-            return commitOutcomeUnknown
-                ? FeatureEditResult.FailureWithUnknownCommitOutcome(c, u, d)
-                : FeatureEditResult.Rollback(c, u, d);
+            return BuildVersionedFailureResult(editBatch, ex);
         }
     }
 
-    private async Task<bool> ApplyVersionedOperationAsync(
-        int layerId,
-        Guid versionId,
+    private Task<bool> ApplyVersionedOperationAsync(
+        VersionedBatchSession session,
         FeatureEditOperation operation,
-        SqlFragment? writeCheck,
-        ImmutableArray<OwnerEditGuard> ownerGuards,
-        Dictionary<long, FeatureEditPrecondition>? preconditions,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ImmutableArray<long>.Builder createdIds,
-        ImmutableArray<EditOperationResult>.Builder createResults,
-        ImmutableArray<EditOperationResult>.Builder updateResults,
-        ImmutableArray<EditOperationResult>.Builder deleteResults,
         CancellationToken cancellationToken)
     {
-        switch (operation.Kind)
+        return operation.Kind switch
         {
-            case FeatureEditOperationKind.Create:
-                return await TryVersionedCreateAsync(
-                    layerId, versionId,
-                    operation.Feature ?? throw new InvalidOperationException("Ordered create is missing the feature payload."),
-                    writeCheck, connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false);
-            case FeatureEditOperationKind.Update:
-                var updateFeature = operation.Feature ?? throw new InvalidOperationException("Ordered update is missing the feature payload.");
-                return await TryVersionedUpdateAsync(
-                    layerId, versionId,
-                    updateFeature,
-                    writeCheck,
-                    OwnerEditGuard.Find(ownerGuards, updateFeature.Id),
-                    preconditions,
-                    connection, transaction, updateResults, cancellationToken).ConfigureAwait(false);
-            case FeatureEditOperationKind.Delete:
-                var deleteObjectId = operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id.");
-                FeatureEditPrecondition precondition = default;
-                var hasPrecondition = preconditions?.TryGetValue(deleteObjectId, out precondition) == true;
-                return await TryVersionedDeleteAsync(
-                    new(new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, deleteObjectId))),
-                        writeCheck,
-                        OwnerEditGuard.Find(ownerGuards, deleteObjectId),
-                        hasPrecondition ? precondition : null),
-                    deleteResults, cancellationToken).ConfigureAwait(false);
-            default:
-                throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.");
-        }
+            FeatureEditOperationKind.Create => TryVersionedCreateAsync(
+                session,
+                operation.Feature ?? throw new InvalidOperationException("Ordered create is missing the feature payload."),
+                cancellationToken),
+            FeatureEditOperationKind.Update => TryVersionedUpdateAsync(
+                session,
+                operation.Feature ?? throw new InvalidOperationException("Ordered update is missing the feature payload."),
+                cancellationToken),
+            FeatureEditOperationKind.Delete => TryVersionedDeleteAsync(
+                session,
+                operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id."),
+                cancellationToken),
+            _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
+        };
     }
 
     private static async Task<TResult> RunVersionedRowWithSavepointAsync<TResult>(
@@ -254,69 +133,16 @@ internal sealed partial class FeatureDataAccess
     }
 
     private async Task<bool> TryVersionedCreateAsync(
-        int layerId,
-        Guid versionId,
+        VersionedBatchSession session,
         Feature feature,
-        SqlFragment? writeCheck,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ImmutableArray<long>.Builder createdIds,
-        ImmutableArray<EditOperationResult>.Builder createResults,
         CancellationToken cancellationToken)
     {
         try
         {
-            var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-            var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
-            ValidateGeometrySrid(feature.Geometry, layerSrid);
-            var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "$3", layerSrid);
-            var attributesJson = SerializeToJsonString(feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
-
-            // Allocate a fresh objectid from the base features sequence so a later post can insert the
-            // branch-created row into DEFAULT without colliding with concurrently created DEFAULT rows.
-            var sql = string.Create(CultureInfo.InvariantCulture, $@"
-                INSERT INTO {VersionEditsTableName}
-                    (version_id, layer_id, objectid, operation, geometry, attributes, base_geometry, base_attributes)
-                VALUES (
-                    $1, $2,
-                    nextval(pg_get_serial_sequence('{_tableName}', 'objectid')),
-                    1, {geometryValueExpression}, $4, NULL, NULL)
-                RETURNING objectid");
-
-            var (newId, operationResult) = await RunVersionedRowWithSavepointAsync(
-                transaction,
-                async () =>
-                {
-                    await using var command = new NpgsqlCommand(sql, connection) { Transaction = transaction };
-                    ApplyCommandTimeout(command, _queryTimeoutSeconds);
-                    command.Parameters.AddWithValue(versionId);
-                    command.Parameters.AddWithValue(layerId);
-                    command.Parameters.Add(new NpgsqlParameter { Value = feature.Geometry ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
-                    command.Parameters.Add(new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
-
-                    await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    var createdId = await RunRowSecurityCheckedWriteAsync(
-                        writeCheck,
-                        connection,
-                        transaction,
-                        VersionEditsTableName,
-                        layerId,
-                        versionId,
-                        async () =>
-                        {
-                            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                            var id = Convert.ToInt64(result, CultureInfo.InvariantCulture);
-                            return (id, id);
-                        },
-                        cancellationToken).ConfigureAwait(false);
-                    var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    var opResult = EditOperationResult.Success(createdId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence };
-                    return (createdId, opResult);
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            createdIds.Add(newId);
-            createResults.Add(operationResult);
+            var (newId, operationResult) = await InsertVersionedRowAsync(session, feature, cancellationToken)
+                .ConfigureAwait(false);
+            session.CreatedIds.Add(newId);
+            session.CreateResults.Add(operationResult);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -325,81 +151,34 @@ internal sealed partial class FeatureDataAccess
         }
         catch (RowSecurityWriteCheckFailedException ex)
         {
-            createResults.Add(CreateFailedOperationResult(ex, "Create"));
+            session.CreateResults.Add(CreateFailedOperationResult(ex, "Create"));
             return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.
-            createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+            session.CreateResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             return false;
         }
     }
 
     private async Task<bool> TryVersionedUpdateAsync(
-        int layerId,
-        Guid versionId,
+        VersionedBatchSession session,
         Feature feature,
-        SqlFragment? writeCheck,
-        OwnerEditGuard? ownerGuard,
-        Dictionary<long, FeatureEditPrecondition>? preconditions,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ImmutableArray<EditOperationResult>.Builder updateResults,
         CancellationToken cancellationToken)
     {
-        FeatureEditPrecondition precondition = default;
-        var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
+        var precondition = session.FindPrecondition(feature.Id);
         try
         {
-            var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-            var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
-            ValidateGeometrySrid(feature.Geometry, layerSrid);
-
-            var (writtenFeature, operationResult) = await RunVersionedRowWithSavepointAsync(
-                transaction,
-                async () =>
-                {
-                    var update = await PrepareVersionedUpdateAsync(feature, new(
-                        new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, feature.Id))),
-                        writeCheck,
-                        hasPrecondition ? precondition : null), cancellationToken).ConfigureAwait(false);
-
-                    await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    var committedFeature = await RunRowSecurityCheckedWriteAsync(
-                        writeCheck,
-                        connection,
-                        transaction,
-                        VersionEditsTableName,
-                        layerId,
-                        versionId,
-                        async () =>
-                        {
-                            var returnedFeature = await UpsertOverlayRowAsync(
-                                layerId, versionId, feature.Id, operation: 2, update.Geometry, update.Attributes,
-                                geometryStorageType, layerSrid, isDelete: false, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
-                            if (!returnedFeature.HasValue)
-                            {
-                                throw new ResourceNotFoundException($"Feature {feature.Id} not found");
-                            }
-
-                            return (feature.Id, returnedFeature.Value);
-                        },
-                        cancellationToken).ConfigureAwait(false);
-
-                    var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    var opResult = EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()) with { OperationEvidence = evidence };
-                    return (committedFeature, opResult);
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            if (hasPrecondition)
+            var (writtenFeature, operationResult) = await ExecuteVersionedUpdateRowAsync(session, feature, cancellationToken)
+                .ConfigureAwait(false);
+            if (precondition.HasValue)
             {
-                preconditions![feature.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(writtenFeature) };
+                session.Preconditions![feature.Id] = precondition.Value with { ExpectedStateToken = FeatureStateToken.Compute(writtenFeature) };
             }
 
-            updateResults.Add(operationResult);
+            session.UpdateResults.Add(operationResult);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -408,24 +187,24 @@ internal sealed partial class FeatureDataAccess
         }
         catch (FeatureEditPreconditionFailedException ex)
         {
-            updateResults.Add(EditOperationResult.PreconditionFailed(feature.Id) with { PreconditionFailureFeature = ex.CurrentFeature });
+            session.UpdateResults.Add(EditOperationResult.PreconditionFailed(feature.Id) with { PreconditionFailureFeature = ex.CurrentFeature });
             return false;
         }
         catch (RowSecurityWriteCheckFailedException ex)
         {
-            updateResults.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
+            session.UpdateResults.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
             return false;
         }
         catch (ResourceNotFoundException)
         {
-            updateResults.Add(EditOperationResult.Failure($"Feature {feature.Id} not found", objectId: feature.Id));
+            session.UpdateResults.Add(EditOperationResult.Failure($"Feature {feature.Id} not found", objectId: feature.Id));
             return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.
-            updateResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
+            session.UpdateResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             return false;
         }
     }
@@ -471,73 +250,16 @@ internal sealed partial class FeatureDataAccess
         return PreserveOmittedAttributes(feature, current.Feature.Value);
     }
 
-    private sealed record VersionDeleteOperation(
-        RowSecurityContext Context,
-        SqlFragment? WriteCheck,
-        OwnerEditGuard? OwnerGuard,
-        FeatureEditPrecondition? Precondition);
-
     private async Task<bool> TryVersionedDeleteAsync(
-        VersionDeleteOperation operation,
-        ImmutableArray<EditOperationResult>.Builder deleteResults,
+        VersionedBatchSession session,
+        long objectId,
         CancellationToken cancellationToken)
     {
-        var (context, writeCheck, ownerGuard, precondition) = operation;
-        var connection = context.Connection;
-        var transaction = context.Transaction!;
-        var layerId = context.Target.LayerId;
-        var versionId = context.Target.Row.VersionId!.Value;
-        var objectId = context.Target.Row.ObjectId;
         try
         {
-            var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-            var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
-
-            var deleteResult = await RunVersionedRowWithSavepointAsync(
-                transaction,
-                async () =>
-                {
-                    if (precondition is { ExpectedRowAbsent: true })
-                    {
-                        await ReserveExpectedAbsenceKeyAsync(
-                            new RowSecurityContext(connection, transaction, new(VersionEditsTableName, layerId, (versionId, objectId))),
-                            cancellationToken).ConfigureAwait(false);
-                    }
-
-                    var current = await ReadEffectiveVersionRowForUpdateAsync(new RowSecurityContext(connection, transaction,
-                        new(VersionEditsTableName, layerId, (versionId, objectId))), cancellationToken).ConfigureAwait(false);
-                    if (precondition is { ExpectedRowAbsent: true } && !current.Feature.HasValue)
-                    {
-                        return EditOperationResult.Success(objectId);
-                    }
-
-                    await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(connection, transaction,
-                        new(current.TableName, layerId, (current.VersionId, objectId))), cancellationToken).ConfigureAwait(false);
-                    if (precondition.HasValue)
-                    {
-                        ValidatePreconditionAgainstRow(layerId, objectId, current.Feature, precondition.Value);
-                    }
-                    else if (!current.Feature.HasValue)
-                    {
-                        return EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId);
-                    }
-
-                    await BeginOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    var deletedRow = await UpsertOverlayRowAsync(
-                        layerId, versionId, objectId, operation: 3, geometry: null, attributes: null,
-                        geometryStorageType, layerSrid, isDelete: true, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                    if (!deletedRow.HasValue)
-                    {
-                        return EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId);
-                    }
-
-                    var evidence = await ReadOperationEvidenceAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                    return EditOperationResult.Success(objectId) with { OperationEvidence = evidence };
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            deleteResults.Add(deleteResult);
+            var deleteResult = await ExecuteVersionedDeleteRowAsync(session, objectId, cancellationToken)
+                .ConfigureAwait(false);
+            session.DeleteResults.Add(deleteResult);
             return deleteResult.IsSuccess;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -546,24 +268,24 @@ internal sealed partial class FeatureDataAccess
         }
         catch (FeatureEditPreconditionFailedException ex)
         {
-            deleteResults.Add(EditOperationResult.PreconditionFailed(objectId) with { PreconditionFailureFeature = ex.CurrentFeature });
+            session.DeleteResults.Add(EditOperationResult.PreconditionFailed(objectId) with { PreconditionFailureFeature = ex.CurrentFeature });
             return false;
         }
         catch (RowSecurityWriteCheckFailedException ex)
         {
-            deleteResults.Add(CreateFailedOperationResult(ex, "Delete", objectId));
+            session.DeleteResults.Add(CreateFailedOperationResult(ex, "Delete", objectId));
             return false;
         }
         catch (ResourceNotFoundException)
         {
-            deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
+            session.DeleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
             return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.
-            deleteResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: objectId));
+            session.DeleteResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: objectId));
             return false;
         }
     }

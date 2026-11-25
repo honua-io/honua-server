@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
@@ -13,6 +12,24 @@ namespace Honua.Db.Snowflake.Features.FeatureStore.Services;
 
 internal static partial class SnowflakeFeatureQueryBuilder
 {
+    private sealed class SnowflakeQueryContext
+    {
+        public required StringBuilder Sql { get; init; }
+        public required SnowflakeLayerMapping Mapping { get; init; }
+        public IReadOnlyList<string>? AttributeColumns { get; init; }
+        public required FeatureQuery Query { get; init; }
+        public required List<object> Parameters { get; init; }
+
+        public DeclaredFieldScope CreateFieldScope()
+            => SnowflakeFeatureQueryBuilder.CreateFieldScope(Mapping, AttributeColumns);
+
+        public string AddParameter(object value)
+        {
+            Parameters.Add(value);
+            return "?";
+        }
+    }
+
     public static ParameterizedQuery BuildSelectQuery(SnowflakeLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
@@ -20,8 +37,8 @@ internal static partial class SnowflakeFeatureQueryBuilder
         GuardUnsupportedTemporalFilter(query);
         GuardUnsupportedOutputSrid(mapping, query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
 
@@ -33,13 +50,13 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, mapping, attributeColumns, query);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
+        AppendOrderByClause(context);
         AppendPagination(sb, mapping, query);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildCountQuery(
@@ -50,17 +67,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildObjectIdsQuery(
@@ -71,20 +88,20 @@ internal static partial class SnowflakeFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, mapping, attributeColumns, query);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
+        AppendOrderByClause(context);
         AppendPagination(sb, mapping, query);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildExtentQuery(
@@ -100,8 +117,12 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 $"Layer {mapping.LayerId} has no geometry column configured; extent is not available.");
         }
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var effective = query ?? new FeatureQuery();
+        GuardUnsupportedTemporalFilter(effective);
+        GuardUnsupportedOutputSrid(mapping, effective);
+
+        var context = CreateQueryContext(mapping, attributeColumns, effective);
+        var sb = context.Sql;
         var geometryColumn = mapping.QuotedGeometryColumn!;
 
         sb.Append("SELECT ");
@@ -112,14 +133,11 @@ internal static partial class SnowflakeFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
-        var effective = query ?? new FeatureQuery();
-        GuardUnsupportedTemporalFilter(effective);
-        GuardUnsupportedOutputSrid(mapping, effective);
-        AppendWhereClause(sb, mapping, attributeColumns, effective, parameters);
-        AppendObjectIdsFilter(sb, mapping, effective, parameters);
-        AppendSpatialFilter(sb, mapping, effective, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, effective, context.Parameters);
+        AppendSpatialFilter(sb, mapping, effective, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildStatistics(
@@ -136,38 +154,28 @@ internal static partial class SnowflakeFeatureQueryBuilder
             return new ParameterizedQuery("SELECT 1 WHERE FALSE", new List<object>());
         }
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
         var resolvedGroupByColumns = ResolveGroupByColumns(mapping, attributeColumns, query);
         var groupByColumns = resolvedGroupByColumns.Select(SnowflakeIdentifier.QuoteAttribute).ToList();
 
-        sb.Append("SELECT ");
-        if (groupByColumns.Count > 0)
+        RelationalFeatureStoreHelpers.AppendStatisticsBody(new()
         {
-            sb.Append(string.Join(", ", groupByColumns)).Append(", ");
-        }
+            Sql = sb,
+            QuotedTableReference = mapping.QuotedTableReference,
+            QuotedGroupByColumns = groupByColumns,
+            StatisticColumnsSql = BuildStatisticColumns(mapping, attributeColumns, statistics),
+            AppendFilters = () =>
+            {
+                AppendWhereClause(context);
+                AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+                AppendSpatialFilter(sb, mapping, query, context.Parameters);
+            },
+        });
 
-        sb.Append(BuildStatisticColumns(mapping, attributeColumns, statistics));
-        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
-        sb.Append(" WHERE 1=1");
-
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-
-        if (groupByColumns.Count > 0)
-        {
-            sb.Append(" GROUP BY ").Append(string.Join(", ", groupByColumns));
-        }
-
-        AppendStatisticsHaving(sb, mapping, attributeColumns, query, parameters);
+        AppendStatisticsHaving(context);
         var hasOrderBy = query.OrderBy is { IsDefaultOrEmpty: false };
-        RelationalFeatureStoreHelpers.AppendStatisticsOrderBy(
-            sb,
-            statistics,
-            resolvedGroupByColumns,
-            query,
-            SnowflakeIdentifier.QuoteAttribute);
+        RelationalFeatureStoreHelpers.AppendStatisticsOrderBy(new() { Sql = sb, Statistics = statistics, ResolvedGroupByColumns = resolvedGroupByColumns, Query = query, QuoteAttribute = SnowflakeIdentifier.QuoteAttribute });
         // LIMIT / OFFSET are inline integer literals, matching SELECT, so positional ? binds
         // stay aligned with WhereParameters. OFFSET without ORDER BY is rejected by Snowflake,
         // and the primary key is not in the grouped projection, so fall back to the first
@@ -177,151 +185,32 @@ internal static partial class SnowflakeFeatureQueryBuilder
             : SnowflakeIdentifier.QuoteAttribute(statistics[0].OutStatisticFieldName);
         AppendStatisticsPagination(sb, query, fallbackOrder, hasOrderBy);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
-    public static ParameterizedQuery BuildH3AggregationQuery(
+    private static SnowflakeQueryContext CreateQueryContext(
         SnowflakeLayerMapping mapping,
-        FeatureQuery query,
-        H3AggregationQuery h3Query,
-        IReadOnlyList<string>? attributeColumns = null)
-    {
-        h3Query.RejectSummaryDefinitions();
-
-        ArgumentNullException.ThrowIfNull(mapping);
-        GuardUnsupportedTemporalFilter(query);
-
-        if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query)
+        => new()
         {
-            throw new InvalidOperationException(
-                $"Layer {mapping.LayerId} has no geometry column configured; H3 aggregation is not available.");
-        }
+            Sql = new StringBuilder(),
+            Mapping = mapping,
+            AttributeColumns = attributeColumns,
+            Query = query,
+            Parameters = new List<object>(),
+        };
 
-        if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
+    private static DeclaredFieldScope CreateFieldScope(
+        SnowflakeLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns)
+        => new()
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(h3Query),
-                $"H3 resolution must be between {H3AggregationQuery.MinResolution} and {H3AggregationQuery.MaxResolution}.");
-        }
-
-        if (h3Query.KRingDistance is < 0 or > H3AggregationQuery.MaxKRingDistance)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(h3Query),
-                $"H3 k-ring distance must be between 0 and {H3AggregationQuery.MaxKRingDistance}.");
-        }
-
-        if (mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geometry
-            && mapping.Srid is > 0 and not 4326)
-        {
-            throw new NotSupportedException(
-                $"Snowflake H3 aggregation requires WGS 84 (EPSG:4326) geometry or GEOGRAPHY; layer {mapping.LayerId} uses SRID {mapping.Srid.Value}.");
-        }
-
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
-        var geomCol = mapping.QuotedGeometryColumn!;
-        var polyfillCteLength = 0;
-
-        if (h3Query.PolyfillGeometry is { Length: > 0 })
-        {
-            if (h3Query.PolyfillSrid is > 0 and not 4326)
-            {
-                throw new NotSupportedException(
-                    $"Snowflake H3 polyfill requires WGS 84 (EPSG:4326) geometry; received SRID {h3Query.PolyfillSrid.Value}.");
-            }
-
-            parameters.Add(h3Query.PolyfillGeometry);
-            parameters.Add(h3Query.Resolution);
-            sb.Append("WITH polyfill_cells AS (SELECT VALUE::VARCHAR AS cell FROM TABLE(FLATTEN(INPUT => H3_POLYGON_TO_CELLS_STRINGS(TO_GEOGRAPHY(?, TRUE), ?))))");
-            polyfillCteLength = sb.Length;
-            sb.Append(' ');
-        }
-
-        parameters.Add(h3Query.Resolution);
-        var cellExpr = mapping.GeometryColumnType == SnowflakeGeometryColumnType.Geography
-            ? $"H3_POINT_TO_CELL_STRING(ST_CENTROID({geomCol}), ?)"
-            : $"H3_LATLNG_TO_CELL_STRING(ST_Y(ST_CENTROID({geomCol})), ST_X(ST_CENTROID({geomCol})), ?)";
-
-        sb.Append("SELECT _h3cell AS \"cellIndex\", ST_ASGEOJSON(H3_CELL_TO_BOUNDARY(_h3cell)) AS \"cellGeometry\"");
-        if (h3Query.OutStatistics is { IsDefaultOrEmpty: false } stats)
-        {
-            sb.Append(", ").Append(BuildStatisticColumns(mapping, attributeColumns, stats));
-        }
-        else
-        {
-            sb.Append(", COUNT(").Append(mapping.QuotedPrimaryKeyColumn).Append(") AS \"count\"");
-        }
-
-        sb.Append(" FROM (SELECT *, ").Append(cellExpr).Append(" AS _h3cell FROM ").Append(mapping.QuotedTableReference);
-        sb.Append(" WHERE ").Append(geomCol).Append(" IS NOT NULL");
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-        sb.Append(") _src");
-
-        if (polyfillCteLength > 0)
-        {
-            sb.Append(" WHERE _h3cell IN (SELECT cell FROM polyfill_cells)");
-        }
-
-        sb.Append(" GROUP BY _h3cell");
-
-        if (h3Query.KRingDistance is > 0)
-        {
-            var innerSql = sb.ToString();
-            sb.Clear();
-            if (polyfillCteLength > 0)
-            {
-                sb.Append(innerSql[..polyfillCteLength]);
-                sb.Append(", aggregated AS (");
-                sb.Append(innerSql[(polyfillCteLength + 1)..]);
-            }
-            else
-            {
-                sb.Append("WITH aggregated AS (");
-                sb.Append(innerSql);
-            }
-
-            parameters.Add(h3Query.KRingDistance.Value);
-            sb.Append(") SELECT k.VALUE::VARCHAR AS \"cellIndex\", ST_ASGEOJSON(H3_CELL_TO_BOUNDARY(k.VALUE::VARCHAR)) AS \"cellGeometry\"");
-            AppendH3KRingReaggregateColumns(sb, h3Query);
-            sb.Append(" FROM aggregated a, LATERAL FLATTEN(INPUT => H3_GRID_DISK(a.\"cellIndex\", ?)) k GROUP BY k.VALUE::VARCHAR");
-        }
-        else
-        {
-            sb.Append(" ORDER BY COUNT(*) DESC");
-        }
-
-        if (h3Query.MaxCells is > 0)
-        {
-            sb.Append(" LIMIT ").Append(h3Query.MaxCells.Value.ToString(CultureInfo.InvariantCulture));
-        }
-
-        return new ParameterizedQuery(sb.ToString(), parameters);
-    }
-
-    private static void AppendH3KRingReaggregateColumns(StringBuilder sb, H3AggregationQuery h3Query)
-    {
-        if (h3Query.OutStatistics is not { IsDefaultOrEmpty: false } stats)
-        {
-            sb.Append(", SUM(a.\"count\") AS \"count\"");
-            return;
-        }
-
-        foreach (var stat in stats)
-        {
-            var alias = SnowflakeIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
-            var agg = stat.StatisticType switch
-            {
-                StatisticType.Count or StatisticType.Sum => $"SUM(a.{alias})",
-                StatisticType.Min => $"MIN(a.{alias})",
-                StatisticType.Max => $"MAX(a.{alias})",
-                _ => $"AVG(a.{alias})",
-            };
-            sb.Append(", ").Append(agg).Append(" AS ").Append(alias);
-        }
-    }
+            LayerId = mapping.LayerId,
+            PrimaryKeyColumn = mapping.PrimaryKeyColumn,
+            GeometryColumn = mapping.GeometryColumn,
+            AttributeColumns = attributeColumns,
+        };
 
     private static List<string> ResolveGroupByColumns(
         SnowflakeLayerMapping mapping,
@@ -333,11 +222,12 @@ internal static partial class SnowflakeFeatureQueryBuilder
             return [];
         }
 
+        var scope = CreateFieldScope(mapping, attributeColumns);
         var columns = new List<string>(groupBy.Length);
         foreach (var field in groupBy)
         {
             _ = SnowflakeIdentifier.QuoteAttribute(field);
-            columns.Add(ResolveDeclaredField(mapping, attributeColumns, field, "GROUP BY"));
+            columns.Add(RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, field, "GROUP BY"));
         }
 
         return columns;
@@ -348,11 +238,12 @@ internal static partial class SnowflakeFeatureQueryBuilder
         IReadOnlyList<string>? attributeColumns,
         ImmutableArray<StatisticDefinition> statistics)
     {
+        var scope = CreateFieldScope(mapping, attributeColumns);
         var columns = new List<string>(statistics.Length);
         foreach (var stat in statistics)
         {
             _ = SnowflakeIdentifier.QuoteAttribute(stat.OnStatisticField);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, stat.OnStatisticField, "OutStatistics");
+            var resolved = RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, stat.OnStatisticField, "OutStatistics");
             var fieldExpr = SnowflakeIdentifier.QuoteAttribute(resolved);
             var alias = SnowflakeIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
             columns.Add($"{StatisticExpression(stat.StatisticType, fieldExpr)} AS {alias}");
@@ -361,37 +252,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return string.Join(", ", columns);
     }
 
-    private static void AppendStatisticsHaving(
-        StringBuilder sb,
-        SnowflakeLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query,
-        List<object> parameters)
-    {
-        if (query.Having is not { IsDefaultOrEmpty: false } having)
+    private static void AppendStatisticsHaving(SnowflakeQueryContext context)
+        => RelationalFeatureStoreHelpers.AppendStatisticsHaving(new StatisticsHavingRequest
         {
-            return;
-        }
-
-        sb.Append(" HAVING ");
-        for (var i = 0; i < having.Length; i++)
-        {
-            if (i > 0)
-            {
-                sb.Append(" AND ");
-            }
-
-            var condition = having[i];
-            _ = SnowflakeIdentifier.QuoteAttribute(condition.OnStatisticField);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, condition.OnStatisticField, "HAVING");
-            var fieldExpr = SnowflakeIdentifier.QuoteAttribute(resolved);
-            parameters.Add(condition.BoundValue());
-            sb.Append(StatisticExpression(condition.StatisticType, fieldExpr))
-                .Append(' ')
-                .Append(HavingOperator(condition.Operator))
-                .Append(" ?");
-        }
-    }
+            Sql = context.Sql,
+            FieldScope = context.CreateFieldScope(),
+            Query = context.Query,
+            QuoteAttribute = SnowflakeIdentifier.QuoteAttribute,
+            AddParameter = context.AddParameter,
+            FormatStatistic = StatisticExpression,
+            FormatOperator = HavingOperator,
+        });
 
     private static void AppendStatisticsPagination(
         StringBuilder sb,
@@ -512,43 +383,44 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
-    private static void AppendWhereClause(
-        StringBuilder sb,
-        SnowflakeLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query,
-        List<object> parameters)
+    private static void AppendWhereClause(SnowflakeQueryContext context)
     {
-        if (query.EnforcedSqlFilter is not null)
+        if (context.Query.EnforcedSqlFilter is not null)
         {
             throw new NotSupportedException(
                 "Snowflake provider does not support EnforcedSqlFilter. Layers with server-enforced " +
                 "definition or security filters cannot be served by this provider in this slice.");
         }
 
-        if (query.TextSearch is { } search)
+        if (context.Query.TextSearch is { } search)
         {
-            var predicate = FeatureTextSearchSql.Build(search, field =>
-            {
-                _ = SnowflakeIdentifier.QuoteAttribute(field);
-                var resolved = ResolveDeclaredField(mapping, attributeColumns, field, "TextSearch");
-                return SnowflakeIdentifier.QuoteAttribute(resolved);
-            }, text =>
-            {
-                var marker = "?";
-                parameters.Add(text);
-                return marker;
-            }, (column, value) => $"POSITION({value}, {column})");
-            sb.Append(" AND ").Append(predicate);
+            AppendTextSearchPredicate(context, search);
         }
 
+        AppendWhereOrRejectSqlFilter(context);
+    }
+
+    private static void AppendTextSearchPredicate(SnowflakeQueryContext context, FeatureTextSearch search)
+    {
+        var scope = context.CreateFieldScope();
+        var predicate = FeatureTextSearchSql.Build(
+            search,
+            field =>
+            {
+                _ = SnowflakeIdentifier.QuoteAttribute(field);
+                var resolved = RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, field, "TextSearch");
+                return SnowflakeIdentifier.QuoteAttribute(resolved);
+            },
+            context.AddParameter,
+            (column, value) => $"POSITION({value}, {column})");
+        context.Sql.Append(" AND ").Append(predicate);
+    }
+
+    private static void AppendWhereOrRejectSqlFilter(SnowflakeQueryContext context)
+    {
         // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
-        // ISqlFilterTranslator pipeline, which only registers a Postgres translator today.
-        // Passing a Postgres-emitted fragment through here would yield invalid Snowflake SQL, so
-        // we re-parse Where using this provider's own Snowflake-aware parser whenever it is supplied.
-        // A supplemental fragment (time filter or object ids that were not forwarded) is not
-        // represented by Where; executing Where alone would drop those predicates.
-        if (query.SqlFilterSupplementsWhere)
+        // Postgres translator, which emits fragments that are not valid Snowflake SQL.
+        if (context.Query.SqlFilterSupplementsWhere)
         {
             throw new NotSupportedException(
                 "Translated FeatureQuery.SqlFilter fragments are not executable against the Snowflake provider. " +
@@ -557,20 +429,15 @@ internal static partial class SnowflakeFeatureQueryBuilder
                 "were re-parsed alone.");
         }
 
-        if (!string.IsNullOrWhiteSpace(query.Where))
+        if (!string.IsNullOrWhiteSpace(context.Query.Where))
         {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), mapping, attributeColumns, parameters);
-            sb.Append(" AND (").Append(parameterized).Append(')');
+            var parameterized = ParseAndParameterizeWhereClause(context.Query.Where!.Trim(), context);
+            context.Sql.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
 
-        if (query.SqlFilter is not null)
+        if (context.Query.SqlFilter is not null)
         {
-            // The shared ISqlFilterTranslator pipeline registers a PostgreSQL translator; the
-            // SqlFilter it produces contains Postgres-specific SQL (JSONB ->> operators, ::casts,
-            // ST_* signatures, double-quoted identifiers) that is not valid Snowflake SQL. The
-            // SqlServer/Oracle providers document and enforce the same restriction. Reject here so
-            // callers receive a clear, actionable error instead of an opaque driver exception.
             throw new NotSupportedException(
                 "Translated FeatureQuery.SqlFilter fragments are not executable against the Snowflake provider. " +
                 "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL which is not valid Snowflake SQL. " +
@@ -669,28 +536,14 @@ internal static partial class SnowflakeFeatureQueryBuilder
         return $"{mapping.SpatialConstructor}(?, TRUE)";
     }
 
-    private static void AppendOrderByClause(
-        StringBuilder sb,
-        SnowflakeLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query)
-    {
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+    private static void AppendOrderByClause(SnowflakeQueryContext context)
+        => RelationalFeatureStoreHelpers.AppendDeclaredOrderBy(new DeclaredOrderByRequest
         {
-            return;
-        }
-
-        var clauses = new List<string>(query.OrderBy.Value.Length);
-        foreach (var orderBy in query.OrderBy.Value)
-        {
-            _ = SnowflakeIdentifier.QuoteAttribute(orderBy.Field);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, orderBy.Field, "ORDER BY");
-            var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{SnowflakeIdentifier.QuoteAttribute(resolved)} {direction}");
-        }
-
-        sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
-    }
+            Sql = context.Sql,
+            FieldScope = context.CreateFieldScope(),
+            Query = context.Query,
+            QuoteAttribute = SnowflakeIdentifier.QuoteAttribute,
+        });
 
     private static void AppendPagination(StringBuilder sb, SnowflakeLayerMapping mapping, FeatureQuery query)
     {
@@ -720,94 +573,13 @@ internal static partial class SnowflakeFeatureQueryBuilder
         }
     }
 
-    private static string ParseAndParameterizeWhereClause(
-        string whereClause,
-        SnowflakeLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        List<object> parameters)
-    {
-        var rendered = new List<string>();
-        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
-        {
-            if (expression.Kind == LegacyWhereExpressionKind.True)
+    private static string ParseAndParameterizeWhereClause(string whereClause, SnowflakeQueryContext context)
+        => RelationalFeatureStoreHelpers.RenderWarehouseWhereClause(
+            whereClause,
+            new WarehouseWhereClauseRequest
             {
-                rendered.Add("1=1");
-                continue;
-            }
-
-            var nullMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
-            {
-                var field = nullMatch.Groups["field"].Value;
-                _ = SnowflakeIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var notToken = nullMatch.Groups["not"].Value;
-                var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
-                continue;
-            }
-
-            var inMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.In)
-            {
-                var field = inMatch.Groups["field"].Value;
-                _ = SnowflakeIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var placeholders = new List<string>();
-                foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
-                {
-                    placeholders.Add("?");
-                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
-                }
-                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} IN ({string.Join(", ", placeholders)})");
-                continue;
-            }
-
-            var compMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
-            {
-                var field = compMatch.Groups["field"].Value;
-                _ = SnowflakeIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
-                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value, LegacyWhereValuePolicy.NumericRequired);
-
-                parameters.Add(value);
-                rendered.Add($"{SnowflakeIdentifier.QuoteAttribute(field)} {op} ?");
-                continue;
-            }
-
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        return string.Join(" AND ", rendered);
-    }
-
-    private static string ResolveDeclaredField(
-        SnowflakeLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        string field,
-        string clause)
-    {
-        if (mapping.PrimaryKeyColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
-        {
-            return mapping.PrimaryKeyColumn;
-        }
-
-        if (mapping.GeometryColumn is { } geometryColumn &&
-            geometryColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
-        {
-            return geometryColumn;
-        }
-
-        if (attributeColumns is null)
-        {
-            return field;
-        }
-
-        var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
-        return declared ?? throw new ArgumentException(
-            $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
-    }
-
+                FieldScope = context.CreateFieldScope(),
+                QuoteAttribute = SnowflakeIdentifier.QuoteAttribute,
+                AddParameter = context.AddParameter,
+            });
 }

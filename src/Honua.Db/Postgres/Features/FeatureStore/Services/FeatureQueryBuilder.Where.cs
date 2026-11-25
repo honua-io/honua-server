@@ -277,47 +277,55 @@ internal sealed partial class FeatureQueryBuilder
     {
         var span = whereClause.AsSpan();
         var segmentStart = 0;
-        var inQuotes = false;
-        var quoteChar = '\0';
 
         for (var i = 0; i < span.Length; i++)
         {
-            var c = span[i];
-            if (!inQuotes && (c == '\'' || c == '"'))
+            if (span[i] is not ('\'' or '"'))
             {
-                if (i > segmentStart)
-                {
-                    var match = FindDangerousPatternInSegment(span, segmentStart, i - segmentStart);
-                    if (match is not null)
-                    {
-                        return match;
-                    }
-                }
+                continue;
+            }
 
-                inQuotes = true;
-                quoteChar = c;
-            }
-            else if (inQuotes && c == quoteChar)
+            if (i > segmentStart &&
+                FindDangerousPatternInSegment(span, segmentStart, i - segmentStart) is { } match)
             {
-                if (i + 1 < span.Length && span[i + 1] == quoteChar)
-                {
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    quoteChar = '\0';
-                    segmentStart = i + 1;
-                }
+                return match;
             }
+
+            var closeIndex = FindClosingQuoteIndex(span, i);
+            if (closeIndex >= span.Length)
+            {
+                return null;
+            }
+
+            i = closeIndex;
+            segmentStart = closeIndex + 1;
         }
 
-        if (!inQuotes && segmentStart < span.Length)
+        return segmentStart < span.Length
+            ? FindDangerousPatternInSegment(span, segmentStart, span.Length - segmentStart)
+            : null;
+    }
+
+    private static int FindClosingQuoteIndex(ReadOnlySpan<char> span, int openQuoteIndex)
+    {
+        var quoteChar = span[openQuoteIndex];
+        for (var i = openQuoteIndex + 1; i < span.Length; i++)
         {
-            return FindDangerousPatternInSegment(span, segmentStart, span.Length - segmentStart);
+            if (span[i] != quoteChar)
+            {
+                continue;
+            }
+
+            if (i + 1 < span.Length && span[i + 1] == quoteChar)
+            {
+                i++;
+                continue;
+            }
+
+            return i;
         }
 
-        return null;
+        return span.Length;
     }
 
     private static string? FindDangerousPatternInSegment(
@@ -337,29 +345,41 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             var hitPos = searchPos + relativeHit;
-            var remaining = fullInput.Slice(hitPos, segmentEnd - hitPos);
-            var beforeChar = hitPos > 0 ? fullInput[hitPos - 1] : ' ';
-
-            foreach (var (pattern, isWordPattern) in DangerousPatternEntries)
+            if (MatchDangerousPatternAt(fullInput, hitPos, segmentEnd) is { } match)
             {
-                if (remaining.Length >= pattern.Length &&
-                    remaining.Slice(0, pattern.Length).Equals(pattern, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!isWordPattern)
-                    {
-                        return pattern;
-                    }
-
-                    var afterPos = hitPos + pattern.Length;
-                    var afterChar = afterPos < fullInput.Length ? fullInput[afterPos] : ' ';
-                    if (!IsIdentifierChar(beforeChar) && !IsIdentifierChar(afterChar))
-                    {
-                        return pattern;
-                    }
-                }
+                return match;
             }
 
             searchPos = hitPos + 1;
+        }
+
+        return null;
+    }
+
+    private static string? MatchDangerousPatternAt(ReadOnlySpan<char> fullInput, int hitPos, int segmentEnd)
+    {
+        var remaining = fullInput.Slice(hitPos, segmentEnd - hitPos);
+        var beforeChar = hitPos > 0 ? fullInput[hitPos - 1] : ' ';
+
+        foreach (var (pattern, isWordPattern) in DangerousPatternEntries)
+        {
+            if (remaining.Length < pattern.Length ||
+                !remaining.Slice(0, pattern.Length).Equals(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!isWordPattern)
+            {
+                return pattern;
+            }
+
+            var afterPos = hitPos + pattern.Length;
+            var afterChar = afterPos < fullInput.Length ? fullInput[afterPos] : ' ';
+            if (!IsIdentifierChar(beforeChar) && !IsIdentifierChar(afterChar))
+            {
+                return pattern;
+            }
         }
 
         return null;

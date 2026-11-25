@@ -3,65 +3,67 @@
 
 namespace Honua.Server.Features.Admin.Routing;
 
+internal readonly struct HeaderResolutionResult<T>
+{
+    public T? Value { get; init; }
+    public string Error { get; init; }
+    public bool IsValid => string.IsNullOrEmpty(Error);
+
+    public static HeaderResolutionResult<T> Success(T value) => new() { Value = value, Error = string.Empty };
+
+    public static HeaderResolutionResult<T> Failure(string error) => new() { Value = default, Error = error };
+}
+
 internal static class NetworkTopologyAdminRequestHelpers
 {
     private const string IdempotencyKeyHeader = "Idempotency-Key";
     private const string IfMatchHeader = "If-Match";
     private const int MaxIdempotencyKeyLength = 200;
 
-    public static bool TryResolveIdempotencyKey(HttpContext context, out string key, out string error)
+    public static HeaderResolutionResult<string> ResolveIdempotencyKey(HttpContext context)
     {
-        key = string.Empty;
-        error = string.Empty;
-
         if (!context.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var values) || values.Count == 0)
         {
-            error = $"{IdempotencyKeyHeader} header is required.";
-            return false;
+            return HeaderResolutionResult<string>.Failure($"{IdempotencyKeyHeader} header is required.");
         }
 
         var raw = values[0];
         if (string.IsNullOrWhiteSpace(raw))
         {
-            error = $"{IdempotencyKeyHeader} header must not be empty.";
-            return false;
+            return HeaderResolutionResult<string>.Failure($"{IdempotencyKeyHeader} header must not be empty.");
         }
 
         var trimmed = raw.Trim();
         if (trimmed.Length > MaxIdempotencyKeyLength)
         {
-            error = $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.";
-            return false;
+            return HeaderResolutionResult<string>.Failure(
+                $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.");
         }
 
         if (trimmed.Any(char.IsControl))
         {
-            error = $"{IdempotencyKeyHeader} header must not contain control characters.";
-            return false;
+            return HeaderResolutionResult<string>.Failure(
+                $"{IdempotencyKeyHeader} header must not contain control characters.");
         }
 
-        key = trimmed;
-        return true;
+        return HeaderResolutionResult<string>.Success(trimmed);
     }
 
-    public static bool TryResolveExpectedRowVersion(HttpContext context, out long rowVersion, out string error)
+    public static HeaderResolutionResult<long> ResolveExpectedRowVersion(HttpContext context)
     {
-        rowVersion = 0;
-        error = string.Empty;
-
         if (!context.Request.Headers.TryGetValue(IfMatchHeader, out var values) || values.Count == 0)
         {
-            error = $"{IfMatchHeader} header is required and must carry the generation's current row version.";
-            return false;
+            return HeaderResolutionResult<long>.Failure(
+                $"{IfMatchHeader} header is required and must carry the generation's current row version.");
         }
 
         var raw = values[0]?.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(raw) || !long.TryParse(raw, out rowVersion) || rowVersion <= 0)
+        if (string.IsNullOrWhiteSpace(raw) || !long.TryParse(raw, out var rowVersion) || rowVersion <= 0)
         {
-            error = $"{IfMatchHeader} header must be a positive integer row version.";
-            return false;
+            return HeaderResolutionResult<long>.Failure(
+                $"{IfMatchHeader} header must be a positive integer row version.");
         }
 
-        return true;
+        return HeaderResolutionResult<long>.Success(rowVersion);
     }
 }

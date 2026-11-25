@@ -174,16 +174,19 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var result = await reader.QueryAsync(
             layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
 
+        var conversionOptions = new GrpcConversionHelpers.ProtoFeatureConversionOptions
+        {
+            IncludeGeometry = queryContext.ReturnGeometry,
+            GeometryLimits = queryContext.GeometryLimits,
+            ObjectIdFieldName = query.Distinct ? null : pkField,
+            HiddenFields = queryContext.AttributeHiddenFields,
+            ExactFieldTypes = queryContext.ExactFieldTypes
+        };
+
         foreach (var feature in result.Items)
         {
             response.Features.Add(WithGlobalId(
-                GrpcConversionHelpers.ToProtoFeature(
-                    feature,
-                    queryContext.ReturnGeometry,
-                    queryContext.GeometryLimits,
-                    query.Distinct ? null : pkField,
-                    queryContext.AttributeHiddenFields,
-                    queryContext.ExactFieldTypes),
+                GrpcConversionHelpers.ToProtoFeatureWithOptions(feature, conversionOptions),
                 feature,
                 queryContext.GlobalIdField));
         }
@@ -224,17 +227,20 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             .StreamFeaturesAsync(layer.StorageLayerId, query, context.CancellationToken)
             .GetAsyncEnumerator(context.CancellationToken);
 
+        var conversionOptions = new GrpcConversionHelpers.ProtoFeatureConversionOptions
+        {
+            IncludeGeometry = queryContext.ReturnGeometry,
+            GeometryLimits = queryContext.GeometryLimits,
+            ObjectIdFieldName = query.Distinct ? null : pkField,
+            HiddenFields = queryContext.AttributeHiddenFields,
+            ExactFieldTypes = queryContext.ExactFieldTypes
+        };
+
         var hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
         while (hasCurrent)
         {
             batch.Add(WithGlobalId(
-                GrpcConversionHelpers.ToProtoFeature(
-                    enumerator.Current,
-                    queryContext.ReturnGeometry,
-                    queryContext.GeometryLimits,
-                    query.Distinct ? null : pkField,
-                    queryContext.AttributeHiddenFields,
-                    queryContext.ExactFieldTypes),
+                GrpcConversionHelpers.ToProtoFeatureWithOptions(enumerator.Current, conversionOptions),
                 enumerator.Current,
                 queryContext.GlobalIdField));
 

@@ -51,31 +51,20 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
     {
         await using var harness = await CreateHarnessAsync();
         using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Partner", "spiffe://partner/reader");
+        using var otherAnchor = ClientCertificateValidationTests.CreateCertificate("CN=OtherPartner", "spiffe://other/reader");
+        var anchorPem = certificate.ExportCertificatePem();
         var original = TrustOptions();
-        original.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-a"];
+        original.Value.TrustProfiles[0].AcceptedIssuerThumbprints = [certificate.Thumbprint];
+        original.Value.TrustProfiles[0].CustomTrustAnchorCertificates = [anchorPem];
         original.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
         var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), original);
         await taskA.ListProfilesAsync();
-        var monitor = new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
-        {
-            Mode = ClientCertificateAuthenticationMode.Optional,
-            EnvironmentId = "production"
-        });
-        var validator = new ClientCertificateValidator(monitor, taskA);
+        var validator = CreateValidator(taskA);
         var baseline = await validator.ValidateAsync(certificate);
         baseline.Succeeded.Should().BeTrue(baseline.Detail);
-        var changed = TrustOptions();
-        changed.Value.TrustProfilesRevision = 2;
-        changed.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
-        if (disjointAnchors)
-        {
-            changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-b"];
-        }
-        else
-        {
-            changed.Value.TrustProfiles[0].AcceptedIssuerThumbprints = ["BB"];
-            changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-a"];
-        }
+        var changed = disjointAnchors
+            ? BuildDisjointAnchorOptions(certificate, otherAnchor)
+            : BuildMismatchedThumbprintOptions(certificate, anchorPem);
 
         await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed).ListProfilesAsync();
 
@@ -85,6 +74,37 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
         seen.AcceptedIssuerSubjects.Should().Equal(ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Issuer));
         (await validator.ValidateAsync(certificate)).Succeeded.Should().BeFalse();
         seen.Enabled.Should().BeFalse();
+    }
+
+    private static ClientCertificateValidator CreateValidator(PostgresClientCertificateTrustStore store)
+        => new(new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "production"
+        }), store);
+
+    private static IOptions<ClientCertificateAuthenticationOptions> BuildDisjointAnchorOptions(
+        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate,
+        System.Security.Cryptography.X509Certificates.X509Certificate2 otherAnchor)
+    {
+        var changed = TrustOptions();
+        changed.Value.TrustProfilesRevision = 2;
+        changed.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
+        changed.Value.TrustProfiles[0].AcceptedIssuerThumbprints = [certificate.Thumbprint];
+        changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = [otherAnchor.ExportCertificatePem()];
+        return changed;
+    }
+
+    private static IOptions<ClientCertificateAuthenticationOptions> BuildMismatchedThumbprintOptions(
+        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate,
+        string anchorPem)
+    {
+        var changed = TrustOptions();
+        changed.Value.TrustProfilesRevision = 2;
+        changed.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
+        changed.Value.TrustProfiles[0].AcceptedIssuerThumbprints = ["BB"];
+        changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = [anchorPem];
+        return changed;
     }
 
     [IntegrationTheory]

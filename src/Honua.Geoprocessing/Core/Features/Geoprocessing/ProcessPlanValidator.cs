@@ -2261,9 +2261,13 @@ internal static partial class ProcessPlanValidator
                 // tokens, so syntactically valid JSON with the wrong value kind
                 // would otherwise escape as an unhandled exception (500) rather
                 // than surface as INVALID_PARAMETER_VALUE.
-                if (!JsonElementHelpers.TryReadStringProperty(element, "statisticType", out var statisticType)
-                    || !JsonElementHelpers.TryReadStringProperty(element, "onStatisticField", out var onField)
-                    || !JsonElementHelpers.TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                var statisticTypeProp = JsonElementHelpers.ReadStringProperty(element, "statisticType");
+                var onFieldProp = JsonElementHelpers.ReadStringProperty(element, "onStatisticField");
+                var outFieldNameProp = JsonElementHelpers.ReadStringProperty(element, "outStatisticFieldName");
+                var statisticType = statisticTypeProp.Value;
+                var onField = onFieldProp.Value;
+                var outFieldName = outFieldNameProp.Value;
+                if (!statisticTypeProp.IsValid || !onFieldProp.IsValid || !outFieldNameProp.IsValid)
                 {
                     error = "each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName";
                     return false;

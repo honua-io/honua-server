@@ -136,197 +136,211 @@ internal sealed partial class DeployWorkflowReconciler(
 
     internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
-    public async Task ReconcileWorkflowOperationAsync(
+    public Task ReconcileWorkflowOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default)
+        => WorkflowOperationLeaseRunner.RunAsync(
+            new WorkflowLeaseExecutionOptions
+            {
+                WorkflowStore = workflowStore,
+                OperationId = operationId,
+                OwnerId = _ownerId,
+                LeaseDuration = LeaseDuration,
+                LeaseRenewInterval = LeaseRenewInterval,
+                Logger = logger,
+                ExecuteAsync = reconciliationCancellation =>
+                    ReconcileLeasedOperationAsync(operationId, reconciliationCancellation, cancellationToken),
+                OnLeaseLost = () => Log.WorkflowOperationLeaseLost(logger, operationId),
+                CallerCancellation = CallerCancellationBehavior.Ignore
+            },
+            cancellationToken);
+
+    private async Task ReconcileLeasedOperationAsync(
+        string operationId,
+        CancellationTokenSource reconciliationCancellation,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            return;
-        }
-
-        var leaseAcquired = await workflowStore.TryAcquireLeaseAsync(operationId, _ownerId, LeaseDuration, cancellationToken).ConfigureAwait(false);
-        if (!leaseAcquired)
-        {
-            return;
-        }
-
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(
-            operationId,
-            LeaseRenewInterval,
-            reconciliationCancellation,
-            ct => workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, ct),
-            logger);
         WorkflowOperationRecord? reconciledVersion = null;
 
         try
         {
-            var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var token = reconciliationCancellation.Token;
+            var operation = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
             reconciledVersion = operation;
-            if (operation == null ||
-                operation.Kind != WorkflowOperationKind.Deploy ||
-                operation.Deploy == null ||
-                IsTerminal(operation.Status) ||
-                operation.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested))
+            if (!IsReconcilableDeployOperation(operation))
             {
                 return;
             }
 
-            var target = await targetRegistry.GetAsync(operation.Deploy.TargetId, reconciliationCancellation.Token).ConfigureAwait(false);
-            WorkflowOperationRecord updated;
-
-            if (target == null || !_backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
-            {
-                updated = operation with
-                {
-                    Status = WorkflowOperationStatus.ManualInterventionRequired,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Deploy reconciliation requires manual intervention because no backend is registered for this target.",
-                    ErrorMessage = $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend})."
-                };
-            }
-            else
-            {
-                if (operation.Deploy.ManualPromotionPending && operation.Status != WorkflowOperationStatus.RollbackRequested)
-                {
-                    await ObserveManualPromotionAsync(operation, backend, reconciliationCancellation.Token).ConfigureAwait(false);
-                    return;
-                }
-
-                if (backend is ICheckpointedDeployBackend checkpointed &&
-                    checkpointed.RequiresCheckpoint(operation) &&
-                    operation.Status != WorkflowOperationStatus.RollbackRequested &&
-                    operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
-                        ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
-                        ICheckpointedDeployBackend.CutoverPhase or ICheckpointedDeployBackend.RampPhase)
-                {
-                    await ReconcileCheckpointAsync(operation, checkpointed, reconciliationCancellation.Token).ConfigureAwait(false);
-                    return;
-                }
-
-                var observation = await backend.ObserveAsync(operation, reconciliationCancellation.Token).ConfigureAwait(false);
-                var stagesCandidateWithoutTraffic = await backend.GetCapabilitiesAsync(reconciliationCancellation.Token).ConfigureAwait(false)
-                    is { StagesCandidateWithoutTraffic: true };
-                updated = operation with
-                {
-                    Status = observation.Status,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = IsTerminal(observation.Status) ? DateTimeOffset.UtcNow : null,
-                    ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
-                    CurrentPhase = observation.Message ?? operation.CurrentPhase,
-                    ObservedState = observation.ObservedRevision ?? operation.ObservedState,
-                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed
-                        ? observation.Message ?? operation.ErrorMessage
-                        : null,
-                    Deploy = operation.Deploy with
-                    {
-                        CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
-                            ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
-                            : operation.Deploy.CurrentRevision,
-                        TrafficExposedAt = StampTrafficExposure(operation, observation.Status, stagesCandidateWithoutTraffic)
-                    }
-                };
-
-                if (operation.Status == WorkflowOperationStatus.Reconciling &&
-                    operation.Deploy.Protection is { Phase: DeployProtectionPhase.Observing } &&
-                    updated.Status != WorkflowOperationStatus.Failed)
-                {
-                    // An open post-activation observation window already recorded the successful
-                    // promotion; only a triggered rollback or the window's own deadline may end it
-                    // (below), never the backend's routine "nothing left to observe" verdict. Without
-                    // this, a backend whose ObserveAsync simply re-reports Succeeded once cutover is
-                    // done would end the operation before the window elapses, and it would stop being
-                    // reconciled while the window is still open. Scoped to the
-                    // PREVIOUSLY-persisted status being Reconciling (not, say, RollbackRequested from an
-                    // out-of-band rollback such as DeployWorkflowService.RequestRollbackAsync): once a
-                    // rollback is already underway this must never mask its real settlement status.
-                    updated = updated with { Status = WorkflowOperationStatus.Reconciling, CompletedAt = null };
-                }
-
-                updated = await ApplyRollbackSignalsAsync(
-                        operation,
-                        updated,
-                        backend,
-                        stagesCandidateWithoutTraffic,
-                        observation.PromotionRecommended,
-                        observation.RollbackRecommended,
-                        observation.Message,
-                        telemetrySignalEvaluator,
-                        reconciliationCancellation.Token)
-                    .ConfigureAwait(false);
-
-                updated = ApplyRollbackObservationTimeout(operation, updated, observation);
-
-                // Uniform catch-all: some backends (Argo Rollouts, GitOps) decide
-                // "fully promoted" entirely inside ObserveAsync and report Succeeded directly, never
-                // going through AdvanceOrPromoteAsync above. Gating this on Status transitioning to
-                // Succeeded rather than on the promotion branch means every backend's success path opens
-                // the same observation window, not just the staged-rollout ones.
-                updated = BeginPostActivationObservationIfPromoted(updated);
-                updated = await ApplyPostActivationProtectionWindowAsync(updated, backend, reconciliationCancellation.Token)
-                    .ConfigureAwait(false);
-                updated = ClearProtectionOnSettledRollback(updated);
-            }
-
-            if (!Equals(updated, operation)
-                && await workflowStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
+            var updated = await EvaluateDeployOperationAsync(operation!, token).ConfigureAwait(false);
+            if (updated is not null && !Equals(updated, operation)
+                && await workflowStore.TrySetAsync(updated, cancellationToken: token).ConfigureAwait(false))
             {
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
         }
         catch (DeployAdmissionBlockedException ex)
         {
-            // Admission refused before mutation; keep the operation open so retry and rollback remain available.
             Log.DeployAdmissionRefused(logger, operationId, ex.Message);
             await RecordAdmissionRefusalAsync(reconciledVersion, ex, reconciliationCancellation.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OperationCanceledException ||
+            (!cancellationToken.IsCancellationRequested && !reconciliationCancellation.IsCancellationRequested))
         {
-            // Update/rollback may stop the very host driving it. Keep the durable phase
-            // nonterminal so the replacement controller can continue the same operation.
-        }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-        {
-            Log.WorkflowOperationLeaseLost(logger, operationId);
-            return;
-        }
-        catch (Exception ex)
-        {
-            // Use the version this reconciliation actually observed. Re-reading here would consume a
-            // newer concurrent RollbackRequested claim and let this stale failure overwrite it.
-            var operation = reconciledVersion;
-            if (operation is
-                {
-                    Kind: WorkflowOperationKind.Deploy,
-                    Deploy: not null
-                } &&
-                !IsTerminal(operation.Status))
-            {
-                var failedAt = DateTimeOffset.UtcNow;
-                var failedOperation = operation with
-                {
-                    Status = WorkflowOperationStatus.ManualInterventionRequired,
-                    UpdatedAt = failedAt,
-                    CompletedAt = failedAt,
-                    CurrentPhase = "Deploy reconciliation failed and requires manual intervention.",
-                    ErrorMessage = $"Deploy reconciliation failed due to {ex.GetType().Name}."
-                };
-
-                await workflowStore.TrySetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
-
+            await MarkDeployReconciliationFailedAsync(reconciledVersion, ex, cancellationToken).ConfigureAwait(false);
             throw;
         }
-        finally
+    }
+
+    private static bool IsReconcilableDeployOperation(WorkflowOperationRecord? operation)
+        => operation is { Kind: WorkflowOperationKind.Deploy, Deploy: not null }
+            && !IsTerminal(operation.Status)
+            && operation.Status is WorkflowOperationStatus.Submitted
+                or WorkflowOperationStatus.Reconciling
+                or WorkflowOperationStatus.RollbackRequested;
+
+    private async Task<WorkflowOperationRecord?> EvaluateDeployOperationAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken)
+    {
+        var target = await targetRegistry.GetAsync(operation.Deploy!.TargetId, cancellationToken).ConfigureAwait(false);
+        if (target == null || !_backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
         {
-            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(
-                operationId,
-                reconciliationCancellation,
-                renewalTask,
-                ct => workflowStore.ReleaseLeaseAsync(operationId, _ownerId, ct),
-                logger).ConfigureAwait(false);
+            return CreateMissingBackendRecord(operation);
+        }
+
+        if (operation.Deploy.ManualPromotionPending && operation.Status != WorkflowOperationStatus.RollbackRequested)
+        {
+            await ObserveManualPromotionAsync(operation, backend, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        if (FindCheckpointedBackend(operation, backend) is { } checkpointed)
+        {
+            await ReconcileCheckpointAsync(operation, checkpointed, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        return await ObserveAndApplyDeploySignalsAsync(operation, backend, cancellationToken).ConfigureAwait(false);
+    }
+
+    private enum CandidateTrafficStaging
+    {
+        DirectTraffic,
+        StagesWithoutTraffic
+    }
+
+    private static WorkflowOperationRecord CreateMissingBackendRecord(WorkflowOperationRecord operation) => operation with
+    {
+        Status = WorkflowOperationStatus.ManualInterventionRequired,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        CompletedAt = DateTimeOffset.UtcNow,
+        CurrentPhase = "Deploy reconciliation requires manual intervention because no backend is registered for this target.",
+        ErrorMessage = $"No deploy backend is registered for target '{operation.Deploy!.TargetId}' ({operation.Deploy.Backend})."
+    };
+
+    private static ICheckpointedDeployBackend? FindCheckpointedBackend(
+        WorkflowOperationRecord operation,
+        IDeployBackend backend)
+    {
+        if (backend is ICheckpointedDeployBackend candidate &&
+            candidate.RequiresCheckpoint(operation) &&
+            operation.Status != WorkflowOperationStatus.RollbackRequested &&
+            operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
+                ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+                ICheckpointedDeployBackend.CutoverPhase or ICheckpointedDeployBackend.RampPhase)
+        {
+            return candidate;
+        }
+
+        return null;
+    }
+
+    private async Task<WorkflowOperationRecord> ObserveAndApplyDeploySignalsAsync(
+        WorkflowOperationRecord operation,
+        IDeployBackend backend,
+        CancellationToken cancellationToken)
+    {
+        var observation = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+        var stagesCandidateWithoutTraffic = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false)
+            is { StagesCandidateWithoutTraffic: true };
+        var staging = stagesCandidateWithoutTraffic
+            ? CandidateTrafficStaging.StagesWithoutTraffic
+            : CandidateTrafficStaging.DirectTraffic;
+        var updated = BuildObservedRecord(operation, observation, staging);
+
+        updated = await ApplyRollbackSignalsAsync(
+                operation,
+                updated,
+                backend,
+                stagesCandidateWithoutTraffic,
+                observation.PromotionRecommended,
+                observation.RollbackRecommended,
+                observation.Message,
+                telemetrySignalEvaluator,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        updated = ApplyRollbackObservationTimeout(operation, updated, observation);
+        updated = BeginPostActivationObservationIfPromoted(updated);
+        updated = await ApplyPostActivationProtectionWindowAsync(updated, backend, cancellationToken).ConfigureAwait(false);
+        return ClearProtectionOnSettledRollback(updated);
+    }
+
+    private static WorkflowOperationRecord BuildObservedRecord(
+        WorkflowOperationRecord operation,
+        DeployObservation observation,
+        CandidateTrafficStaging staging)
+    {
+        var stagesWithoutTraffic = staging == CandidateTrafficStaging.StagesWithoutTraffic;
+        var updated = operation with
+        {
+            Status = observation.Status,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = IsTerminal(observation.Status) ? DateTimeOffset.UtcNow : null,
+            ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
+            CurrentPhase = observation.Message ?? operation.CurrentPhase,
+            ObservedState = observation.ObservedRevision ?? operation.ObservedState,
+            ErrorMessage = observation.Status == WorkflowOperationStatus.Failed
+                ? observation.Message ?? operation.ErrorMessage
+                : null,
+            Deploy = operation.Deploy! with
+            {
+                CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
+                    ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
+                    : operation.Deploy.CurrentRevision,
+                TrafficExposedAt = StampTrafficExposure(operation, observation.Status, stagesWithoutTraffic)
+            }
+        };
+
+        if (operation.Status == WorkflowOperationStatus.Reconciling &&
+            operation.Deploy.Protection is { Phase: DeployProtectionPhase.Observing } &&
+            updated.Status != WorkflowOperationStatus.Failed)
+        {
+            updated = updated with { Status = WorkflowOperationStatus.Reconciling, CompletedAt = null };
+        }
+
+        return updated;
+    }
+
+    private async Task MarkDeployReconciliationFailedAsync(
+        WorkflowOperationRecord? operation,
+        Exception ex,
+        CancellationToken cancellationToken)
+    {
+        if (operation is { Kind: WorkflowOperationKind.Deploy, Deploy: not null } && !IsTerminal(operation.Status))
+        {
+            var failedAt = DateTimeOffset.UtcNow;
+            var failedOperation = operation with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = failedAt,
+                CompletedAt = failedAt,
+                CurrentPhase = "Deploy reconciliation failed and requires manual intervention.",
+                ErrorMessage = $"Deploy reconciliation failed due to {ex.GetType().Name}."
+            };
+
+            await workflowStore.TrySetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
     }
 

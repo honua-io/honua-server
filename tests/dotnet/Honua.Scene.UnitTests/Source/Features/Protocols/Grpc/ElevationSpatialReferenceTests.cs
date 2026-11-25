@@ -140,7 +140,7 @@ public sealed class ElevationSpatialReferenceTests
 
         var act = () => service.GetElevation(
             PointRequest(new Proto.SpatialReference { Wkt = "PROJCS[\"Web Mercator\", AUTHORITY[\"EPSG\",\"3857\"]]" }),
-            CreateCallContext(allowAnonymous: false));
+            CreateProtectedCallContext());
 
         var exception = await act.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
@@ -230,14 +230,20 @@ public sealed class ElevationSpatialReferenceTests
             SpatialReference = spatialReference,
         };
 
-    private static TestServerCallContext CreateCallContext(bool allowAnonymous = true, int storageLayerId = 1)
+    private static TestServerCallContext CreateCallContext(int storageLayerId = 1)
+        => BuildCallContext(new AccessPolicy { AllowAnonymous = true }, storageLayerId);
+
+    private static TestServerCallContext CreateProtectedCallContext(int storageLayerId = 1)
+        => BuildCallContext(new AccessPolicy { AllowAnonymous = false }, storageLayerId);
+
+    private static TestServerCallContext BuildCallContext(AccessPolicy accessPolicy, int storageLayerId)
     {
         var provider = new TestMetadataV2GraphBuilder()
             .AddResource(
                 "dem",
                 "dem",
                 MetadataV2ObjectType.RasterDataset,
-                accessPolicy: new AccessPolicy { AllowAnonymous = allowAnonymous })
+                accessPolicy: accessPolicy)
             .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: storageLayerId)
             .AddService("imagery", "imagery", protocols: [ServiceProtocols.Elevation])
             .AddPublication("dem-publication", "imagery", "dem", layerIndex: 1, isPrimary: true)

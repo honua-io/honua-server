@@ -58,10 +58,13 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
         [FromServices] ILogger<NetworkTopologyRebuildAdminLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (!NetworkTopologyAdminRequestHelpers.TryResolveExpectedRowVersion(context, out var expectedRowVersion, out var headerError))
+        var rowVersionResult = NetworkTopologyAdminRequestHelpers.ResolveExpectedRowVersion(context);
+        if (!rowVersionResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, rowVersionResult.Error);
         }
+
+        var expectedRowVersion = rowVersionResult.Value;
 
         NetworkTopologyGeneration? target;
         try

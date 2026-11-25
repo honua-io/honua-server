@@ -50,38 +50,24 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing clip inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!GeometryExecutorSupport.TryReadPairGeometryInputs(parameters, "targetWkb", "clipEnvelopeWkb", out var inputs, out var inputError))
+        var pairRead = GeometryExecutorSupport.ReadAndDecodeValidatedPair(
+            parameters,
+            new PairGeometryInputNames("targetWkb", "clipEnvelopeWkb"));
+        if (!pairRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {inputError}");
+            if (pairRead.FailedField is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, pairRead.FailedField, pairRead.LogReason!);
+            }
+            else
+            {
+                Log.InvalidInputs(_logger, job.OperationId, pairRead.LogReason!);
+            }
+
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {pairRead.Error}");
         }
 
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.FirstWkb, out var target, out var decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {decodeError}");
-        }
-
-        if (!GeometryExecutorSupport.TryDecodeGeometry(inputs.SecondWkb, out var clip, out decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {decodeError}");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {targetSridError}.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(clip, inputs.Srid, out var clipSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", clipSridError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {clipSridError}.");
-        }
-
-        target.SRID = inputs.Srid;
-        clip.SRID = inputs.Srid;
+        var (target, clip, srid) = (pairRead.Pair.First, pairRead.Pair.Second, pairRead.Pair.Srid);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, "Computing clip geometry", cancellationToken).ConfigureAwait(false);
@@ -101,7 +87,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             }
 
             var envelopeGeometry = target.Factory.ToGeometry(envelope);
-            envelopeGeometry.SRID = inputs.Srid;
+            envelopeGeometry.SRID = srid;
             clipped = target.Intersection(envelopeGeometry);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -116,7 +102,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
                 "Clip computation produced an empty geometry; verify that the target intersects the clip envelope.");
         }
 
-        clipped.SRID = inputs.Srid;
+        clipped.SRID = srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding clip artifact", cancellationToken).ConfigureAwait(false);
@@ -126,7 +112,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             HandledProcessId,
             new[]
             {
-                ("inputSrid", (object)inputs.Srid),
+                ("inputSrid", (object)srid),
             });
 
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;

@@ -310,10 +310,13 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
     public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
         => ConnectionStringSecretTemplateExpander.ExpandAsync(
-            connectionStringTemplate,
-            SecretsManagerPrefix,
-            CanResolve,
-            ResolveSecretAsync,
+            new SecretTemplateExpansionRequest
+            {
+                ConnectionStringTemplate = connectionStringTemplate,
+                DirectPrefix = SecretsManagerPrefix,
+                CanResolve = CanResolve,
+                ResolveSecretAsync = ResolveSecretAsync
+            },
             cancellationToken);
 
     private static byte[] BuildPayload(string secretId, string? versionStage, string? versionId)

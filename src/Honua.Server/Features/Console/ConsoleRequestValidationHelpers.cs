@@ -7,16 +7,14 @@ namespace Honua.Server.Features.Console;
 
 internal static class ConsoleRequestValidationHelpers
 {
-    public static bool TryValidate<TRequest>(TRequest request, out string error) where TRequest : notnull
+    public static string? Validate<TRequest>(TRequest request) where TRequest : notnull
     {
         var validationResults = new List<ValidationResult>();
         if (Validator.TryValidateObject(request, new ValidationContext(request), validationResults, validateAllProperties: true))
         {
-            error = string.Empty;
-            return true;
+            return null;
         }
 
-        error = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-        return false;
+        return string.Join(", ", validationResults.Select(r => r.ErrorMessage));
     }
 }

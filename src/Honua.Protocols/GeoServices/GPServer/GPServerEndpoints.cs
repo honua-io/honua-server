@@ -2089,7 +2089,8 @@ internal static partial class GPServerEndpoints
         }
 
         var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(GPServerEndpoints));
-        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr, logger);
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(
+            new() { Value = value, FromSrid = workingSrid, OutSrid = outSr, Logger = logger });
         if (outcome.Reprojected)
         {
             value = outcome.Value ?? value;

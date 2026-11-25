@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
@@ -13,14 +12,33 @@ namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 internal static partial class RedshiftFeatureQueryBuilder
 {
+    private sealed class RedshiftQueryContext
+    {
+        public required StringBuilder Sql { get; init; }
+        public required RedshiftLayerMapping Mapping { get; init; }
+        public IReadOnlyList<string>? AttributeColumns { get; init; }
+        public required FeatureQuery Query { get; init; }
+        public required List<object> Parameters { get; init; }
+
+        public DeclaredFieldScope CreateFieldScope()
+            => RedshiftFeatureQueryBuilder.CreateFieldScope(Mapping, AttributeColumns);
+
+        public string AddParameter(object value)
+        {
+            var marker = "@p" + Parameters.Count.ToString(CultureInfo.InvariantCulture);
+            Parameters.Add(value);
+            return marker;
+        }
+    }
+
     public static ParameterizedQuery BuildSelectQuery(RedshiftLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(attributeColumns);
         GuardUnsupportedFilters(query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
 
@@ -32,13 +50,13 @@ internal static partial class RedshiftFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, mapping, attributeColumns, query);
-        AppendPagination(sb, query, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
+        AppendOrderByClause(context);
+        AppendPagination(sb, query, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildCountQuery(
@@ -49,17 +67,17 @@ internal static partial class RedshiftFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedFilters(query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildObjectIdsQuery(
@@ -70,20 +88,20 @@ internal static partial class RedshiftFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedFilters(query);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, mapping, attributeColumns, query);
-        AppendPagination(sb, query, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+        AppendSpatialFilter(sb, mapping, query, context.Parameters);
+        AppendOrderByClause(context);
+        AppendPagination(sb, query, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildExtentQuery(
@@ -102,8 +120,8 @@ internal static partial class RedshiftFeatureQueryBuilder
         var effective = query ?? new FeatureQuery();
         GuardUnsupportedFilters(effective);
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, effective);
+        var sb = context.Sql;
         var geometryExpr = BuildExtentGeometryExpression(mapping);
 
         sb.Append("SELECT ");
@@ -114,11 +132,11 @@ internal static partial class RedshiftFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(mapping.QuotedGeometryColumn!).Append(" IS NOT NULL");
 
-        AppendWhereClause(sb, mapping, attributeColumns, effective, parameters);
-        AppendObjectIdsFilter(sb, mapping, effective, parameters);
-        AppendSpatialFilter(sb, mapping, effective, parameters);
+        AppendWhereClause(context);
+        AppendObjectIdsFilter(sb, mapping, effective, context.Parameters);
+        AppendSpatialFilter(sb, mapping, effective, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
 
     public static ParameterizedQuery BuildStatistics(
@@ -135,43 +153,57 @@ internal static partial class RedshiftFeatureQueryBuilder
             return new ParameterizedQuery("SELECT 1 WHERE FALSE", new List<object>());
         }
 
-        var sb = new StringBuilder();
-        var parameters = new List<object>();
+        var context = CreateQueryContext(mapping, attributeColumns, query);
+        var sb = context.Sql;
         var resolvedGroupByColumns = ResolveGroupByColumns(mapping, attributeColumns, query);
         var groupByColumns = resolvedGroupByColumns.Select(RedshiftIdentifier.QuoteAttribute).ToList();
 
-        sb.Append("SELECT ");
-        if (groupByColumns.Count > 0)
+        RelationalFeatureStoreHelpers.AppendStatisticsBody(new()
         {
-            sb.Append(string.Join(", ", groupByColumns)).Append(", ");
-        }
+            Sql = sb,
+            QuotedTableReference = mapping.QuotedTableReference,
+            QuotedGroupByColumns = groupByColumns,
+            StatisticColumnsSql = BuildStatisticColumns(mapping, attributeColumns, statistics),
+            AppendFilters = () =>
+            {
+                AppendWhereClause(context);
+                AppendObjectIdsFilter(sb, mapping, query, context.Parameters);
+                AppendSpatialFilter(sb, mapping, query, context.Parameters);
+            },
+        });
 
-        sb.Append(BuildStatisticColumns(mapping, attributeColumns, statistics));
-        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
-        sb.Append(" WHERE 1=1");
-
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
-        AppendObjectIdsFilter(sb, mapping, query, parameters);
-        AppendSpatialFilter(sb, mapping, query, parameters);
-
-        if (groupByColumns.Count > 0)
-        {
-            sb.Append(" GROUP BY ").Append(string.Join(", ", groupByColumns));
-        }
-
-        AppendStatisticsHaving(sb, mapping, attributeColumns, query, parameters);
-        RelationalFeatureStoreHelpers.AppendStatisticsOrderBy(
-            sb,
-            statistics,
-            resolvedGroupByColumns,
-            query,
-            RedshiftIdentifier.QuoteAttribute);
+        AppendStatisticsHaving(context);
+        RelationalFeatureStoreHelpers.AppendStatisticsOrderBy(new() { Sql = sb, Statistics = statistics, ResolvedGroupByColumns = resolvedGroupByColumns, Query = query, QuoteAttribute = RedshiftIdentifier.QuoteAttribute });
         // Same LIMIT / OFFSET binding as SELECT. FeatureServer sends MaxRecordCount+1 so the
         // warehouse, not the server, bounds the grouped row set.
-        AppendPagination(sb, query, parameters);
+        AppendPagination(sb, query, context.Parameters);
 
-        return new ParameterizedQuery(sb.ToString(), parameters);
+        return new ParameterizedQuery(sb.ToString(), context.Parameters);
     }
+
+    private static RedshiftQueryContext CreateQueryContext(
+        RedshiftLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        FeatureQuery query)
+        => new()
+        {
+            Sql = new StringBuilder(),
+            Mapping = mapping,
+            AttributeColumns = attributeColumns,
+            Query = query,
+            Parameters = new List<object>(),
+        };
+
+    private static DeclaredFieldScope CreateFieldScope(
+        RedshiftLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns)
+        => new()
+        {
+            LayerId = mapping.LayerId,
+            PrimaryKeyColumn = mapping.PrimaryKeyColumn,
+            GeometryColumn = mapping.GeometryColumn,
+            AttributeColumns = attributeColumns,
+        };
 
     private static List<string> ResolveGroupByColumns(
         RedshiftLayerMapping mapping,
@@ -183,11 +215,12 @@ internal static partial class RedshiftFeatureQueryBuilder
             return [];
         }
 
+        var scope = CreateFieldScope(mapping, attributeColumns);
         var columns = new List<string>(groupBy.Length);
         foreach (var field in groupBy)
         {
             _ = RedshiftIdentifier.QuoteAttribute(field);
-            columns.Add(ResolveDeclaredField(mapping, attributeColumns, field, "GROUP BY"));
+            columns.Add(RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, field, "GROUP BY"));
         }
 
         return columns;
@@ -198,11 +231,12 @@ internal static partial class RedshiftFeatureQueryBuilder
         IReadOnlyList<string>? attributeColumns,
         ImmutableArray<StatisticDefinition> statistics)
     {
+        var scope = CreateFieldScope(mapping, attributeColumns);
         var columns = new List<string>(statistics.Length);
         foreach (var stat in statistics)
         {
             _ = RedshiftIdentifier.QuoteAttribute(stat.OnStatisticField);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, stat.OnStatisticField, "OutStatistics");
+            var resolved = RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, stat.OnStatisticField, "OutStatistics");
             var fieldExpr = RedshiftIdentifier.QuoteAttribute(resolved);
             var alias = RedshiftIdentifier.QuoteAttribute(stat.OutStatisticFieldName);
             columns.Add($"{StatisticExpression(stat.StatisticType, fieldExpr)} AS {alias}");
@@ -211,39 +245,17 @@ internal static partial class RedshiftFeatureQueryBuilder
         return string.Join(", ", columns);
     }
 
-    private static void AppendStatisticsHaving(
-        StringBuilder sb,
-        RedshiftLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query,
-        List<object> parameters)
-    {
-        if (query.Having is not { IsDefaultOrEmpty: false } having)
+    private static void AppendStatisticsHaving(RedshiftQueryContext context)
+        => RelationalFeatureStoreHelpers.AppendStatisticsHaving(new StatisticsHavingRequest
         {
-            return;
-        }
-
-        sb.Append(" HAVING ");
-        for (var i = 0; i < having.Length; i++)
-        {
-            if (i > 0)
-            {
-                sb.Append(" AND ");
-            }
-
-            var condition = having[i];
-            _ = RedshiftIdentifier.QuoteAttribute(condition.OnStatisticField);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, condition.OnStatisticField, "HAVING");
-            var fieldExpr = RedshiftIdentifier.QuoteAttribute(resolved);
-            var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-            parameters.Add(condition.BoundValue());
-            sb.Append(StatisticExpression(condition.StatisticType, fieldExpr))
-                .Append(' ')
-                .Append(HavingOperator(condition.Operator))
-                .Append(' ')
-                .Append(marker);
-        }
-    }
+            Sql = context.Sql,
+            FieldScope = context.CreateFieldScope(),
+            Query = context.Query,
+            QuoteAttribute = RedshiftIdentifier.QuoteAttribute,
+            AddParameter = context.AddParameter,
+            FormatStatistic = StatisticExpression,
+            FormatOperator = HavingOperator,
+        });
 
     private static string StatisticExpression(StatisticType statisticType, string fieldExpr)
     {
@@ -326,44 +338,44 @@ internal static partial class RedshiftFeatureQueryBuilder
         }
     }
 
-    private static void AppendWhereClause(
-        StringBuilder sb,
-        RedshiftLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query,
-        List<object> parameters)
+    private static void AppendWhereClause(RedshiftQueryContext context)
     {
-        if (query.EnforcedSqlFilter is not null)
+        if (context.Query.EnforcedSqlFilter is not null)
         {
             throw new NotSupportedException(
                 "Redshift provider does not support EnforcedSqlFilter. Layers with server-enforced " +
                 "definition or security filters cannot be served by this provider in this slice.");
         }
 
-        if (query.TextSearch is { } search)
+        if (context.Query.TextSearch is { } search)
         {
-            var predicate = FeatureTextSearchSql.Build(search, field =>
-            {
-                _ = RedshiftIdentifier.QuoteAttribute(field);
-                var resolved = ResolveDeclaredField(mapping, attributeColumns, field, "TextSearch");
-                return RedshiftIdentifier.QuoteAttribute(resolved);
-            }, text =>
-            {
-                var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-                parameters.Add(text);
-                return marker;
-            }, (column, value) => $"STRPOS({column}, {value})");
-            sb.Append(" AND ").Append(predicate);
+            AppendTextSearchPredicate(context, search);
         }
 
+        AppendWhereOrRejectSqlFilter(context);
+    }
+
+    private static void AppendTextSearchPredicate(RedshiftQueryContext context, FeatureTextSearch search)
+    {
+        var scope = context.CreateFieldScope();
+        var predicate = FeatureTextSearchSql.Build(
+            search,
+            field =>
+            {
+                _ = RedshiftIdentifier.QuoteAttribute(field);
+                var resolved = RelationalFeatureStoreHelpers.ResolveDeclaredField(scope, field, "TextSearch");
+                return RedshiftIdentifier.QuoteAttribute(resolved);
+            },
+            context.AddParameter,
+            (column, value) => $"STRPOS({column}, {value})");
+        context.Sql.Append(" AND ").Append(predicate);
+    }
+
+    private static void AppendWhereOrRejectSqlFilter(RedshiftQueryContext context)
+    {
         // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
-        // ISqlFilterTranslator pipeline, which only registers a Postgres (PostGIS) translator
-        // today. PostGIS-emitted fragments use JSONB operators, ::casts, and PostGIS-only spatial
-        // functions that Redshift does not implement, so we re-parse Where here using this
-        // provider's own parser whenever it is supplied, and reject translated SqlFilter fragments.
-        // A supplemental fragment (time filter or object ids that were not forwarded) is not
-        // represented by Where; executing Where alone would drop those predicates.
-        if (query.SqlFilterSupplementsWhere)
+        // PostGIS translator, which emits fragments Redshift's spatial layer does not implement.
+        if (context.Query.SqlFilterSupplementsWhere)
         {
             throw new NotSupportedException(
                 "Translated FeatureQuery.SqlFilter fragments are not executable against the Redshift provider. " +
@@ -372,14 +384,14 @@ internal static partial class RedshiftFeatureQueryBuilder
                 "dropped if Where were re-parsed alone.");
         }
 
-        if (!string.IsNullOrWhiteSpace(query.Where))
+        if (!string.IsNullOrWhiteSpace(context.Query.Where))
         {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), mapping, attributeColumns, parameters);
-            sb.Append(" AND (").Append(parameterized).Append(')');
+            var parameterized = ParseAndParameterizeWhereClause(context.Query.Where!.Trim(), context);
+            context.Sql.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
 
-        if (query.SqlFilter is not null)
+        if (context.Query.SqlFilter is not null)
         {
             throw new NotSupportedException(
                 "Translated FeatureQuery.SqlFilter fragments are not executable against the Redshift provider. " +
@@ -489,28 +501,14 @@ internal static partial class RedshiftFeatureQueryBuilder
         return $"ST_GeomFromWKB({wkbParam}, {sridLiteral})";
     }
 
-    private static void AppendOrderByClause(
-        StringBuilder sb,
-        RedshiftLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        FeatureQuery query)
-    {
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+    private static void AppendOrderByClause(RedshiftQueryContext context)
+        => RelationalFeatureStoreHelpers.AppendDeclaredOrderBy(new DeclaredOrderByRequest
         {
-            return;
-        }
-
-        var clauses = new List<string>(query.OrderBy.Value.Length);
-        foreach (var orderBy in query.OrderBy.Value)
-        {
-            var direction = orderBy.Ascending ? "ASC" : "DESC";
-            _ = RedshiftIdentifier.QuoteAttribute(orderBy.Field);
-            var resolved = ResolveDeclaredField(mapping, attributeColumns, orderBy.Field, "ORDER BY");
-            clauses.Add($"{RedshiftIdentifier.QuoteAttribute(resolved)} {direction}");
-        }
-
-        sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
-    }
+            Sql = context.Sql,
+            FieldScope = context.CreateFieldScope(),
+            Query = context.Query,
+            QuoteAttribute = RedshiftIdentifier.QuoteAttribute,
+        });
 
     private static void AppendPagination(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
@@ -552,95 +550,13 @@ internal static partial class RedshiftFeatureQueryBuilder
         }
     }
 
-    private static string ParseAndParameterizeWhereClause(
-        string whereClause,
-        RedshiftLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        List<object> parameters)
-    {
-        var rendered = new List<string>();
-        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Warehouse))
-        {
-            if (expression.Kind == LegacyWhereExpressionKind.True)
+    private static string ParseAndParameterizeWhereClause(string whereClause, RedshiftQueryContext context)
+        => RelationalFeatureStoreHelpers.RenderWarehouseWhereClause(
+            whereClause,
+            new WarehouseWhereClauseRequest
             {
-                rendered.Add("1=1");
-                continue;
-            }
-
-            var nullMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
-            {
-                var field = nullMatch.Groups["field"].Value;
-                _ = RedshiftIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var notToken = nullMatch.Groups["not"].Value;
-                var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{RedshiftIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
-                continue;
-            }
-
-            var inMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.In)
-            {
-                var field = inMatch.Groups["field"].Value;
-                _ = RedshiftIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var placeholders = new List<string>();
-                foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
-                {
-                    placeholders.Add("@p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
-                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
-                }
-                rendered.Add($"{RedshiftIdentifier.QuoteAttribute(field)} IN ({string.Join(", ", placeholders)})");
-                continue;
-            }
-
-            var compMatch = expression.Match;
-            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
-            {
-                var field = compMatch.Groups["field"].Value;
-                _ = RedshiftIdentifier.QuoteAttribute(field);
-                field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
-                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
-                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value, LegacyWhereValuePolicy.NumericRequired);
-
-                var paramName = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-                parameters.Add(value);
-                rendered.Add($"{RedshiftIdentifier.QuoteAttribute(field)} {op} {paramName}");
-                continue;
-            }
-
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        return string.Join(" AND ", rendered);
-    }
-
-    private static string ResolveDeclaredField(
-        RedshiftLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns,
-        string field,
-        string clause)
-    {
-        if (mapping.PrimaryKeyColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
-        {
-            return mapping.PrimaryKeyColumn;
-        }
-
-        if (mapping.GeometryColumn is { } geometryColumn &&
-            geometryColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
-        {
-            return geometryColumn;
-        }
-
-        if (attributeColumns is null)
-        {
-            return field;
-        }
-
-        var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
-        return declared ?? throw new ArgumentException(
-            $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
-    }
-
+                FieldScope = context.CreateFieldScope(),
+                QuoteAttribute = RedshiftIdentifier.QuoteAttribute,
+                AddParameter = context.AddParameter,
+            });
 }
