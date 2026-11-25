@@ -96,6 +96,9 @@ public sealed class FeatureIdConverter : JsonConverter<object?>
     }
 
     public override void Write(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
+        => WriteId(writer, value);
+
+    internal static void WriteId(Utf8JsonWriter writer, object? value)
     {
         switch (value)
         {

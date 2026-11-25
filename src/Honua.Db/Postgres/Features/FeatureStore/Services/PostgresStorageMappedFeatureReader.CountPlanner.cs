@@ -82,9 +82,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         var maxX = sql.AddParameter(filter.EnvelopeMaxX!.Value);
         var maxY = sql.AddParameter(filter.EnvelopeMaxY!.Value);
         var srid = filter.Srid ?? _storageSrid;
-        return $"{geometryColumn} && ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid}) " +
-               $"AND ST_X({geometryColumn}) >= {minX} AND ST_X({geometryColumn}) <= {maxX} " +
-               $"AND ST_Y({geometryColumn}) >= {minY} AND ST_Y({geometryColumn}) <= {maxY}";
+        var envelope = BuildFilterGeometryExpression(query, sql);
+        // Source-backed geometry columns can contain a different SRID from the published metadata.
+        return $"{geometryColumn} && {envelope} " +
+               $"AND CASE WHEN ST_SRID({geometryColumn}) = {srid} THEN " +
+               $"ST_X({geometryColumn}) >= {minX} AND ST_X({geometryColumn}) <= {maxX} " +
+               $"AND ST_Y({geometryColumn}) >= {minY} AND ST_Y({geometryColumn}) <= {maxY} " +
+               $"ELSE ST_Intersects({geometryColumn}, {envelope}) END";
     }
 
     private static bool IsNonPointGeometryCountError(PostgresException exception) =>
