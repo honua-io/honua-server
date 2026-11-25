@@ -13,24 +13,15 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
-    private volatile bool _hasNonPointGeometry;
-
     private enum CountScope
     {
         Standalone,
         AssociatedFeatureRead
     }
 
-    private enum CountSpatialPredicate
-    {
-        Default,
-        PointEnvelope
-    }
-
     private readonly record struct CountExecutionOptions(
         CountScope Scope,
-        CancellationToken CancellationToken,
-        CountSpatialPredicate SpatialPredicate = CountSpatialPredicate.Default);
+        CancellationToken CancellationToken);
 
     private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query, bool isAssociatedFeatureRead) =>
         _preferSerialSourceSpatialCounts is { } preferSerial
@@ -61,72 +52,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         } &&
         Transaction.Current == null;
 
-    // For source-backed Point layers, ST_Intersects(point, envelope) inflates PostgreSQL's
-    // planner cost above parallel/JIT thresholds (~179K on 100K points). The GiST bbox operator
-    // plus exact float8 ST_X/ST_Y bounds matches ST_Intersects bit-for-bit on 2D Points (including
-    // POINT EMPTY and collapsed boxes) at ~46x lower cost with zero JIT and zero GEOS overhead.
-    private bool CanUsePointEnvelopeCountPredicate(FeatureQuery query) =>
-        !_hasNonPointGeometry &&
-        !query.IncludeNullGeometry &&
-        CanUseScopedSourceSpatialCount(query) &&
-        query.SpatialFilter is { AntimeridianSplit: false, SpatialRelationship: SpatialRelationship.Intersects } filter &&
-        (filter.Srid ?? _storageSrid) == _storageSrid &&
-        query.SpatialFilterDatumTransformation is null;
-
-    private string BuildPointEnvelopeCountFilter(FeatureQuery query, SqlBuilder sql)
-    {
-        var filter = query.SpatialFilter!.Value;
-        var geometryColumn = $"{_geometryColumn}::geometry";
-        var minX = sql.AddParameter(filter.EnvelopeMinX!.Value);
-        var minY = sql.AddParameter(filter.EnvelopeMinY!.Value);
-        var maxX = sql.AddParameter(filter.EnvelopeMaxX!.Value);
-        var maxY = sql.AddParameter(filter.EnvelopeMaxY!.Value);
-        var srid = filter.Srid ?? _storageSrid;
-        var envelope = BuildFilterGeometryExpression(query, sql);
-        // Source-backed geometry columns can contain a different SRID from the published metadata.
-        return $"{geometryColumn} && {envelope} " +
-               $"AND CASE WHEN ST_SRID({geometryColumn}) = {srid} THEN " +
-               $"ST_X({geometryColumn}) >= {minX} AND ST_X({geometryColumn}) <= {maxX} " +
-               $"AND ST_Y({geometryColumn}) >= {minY} AND ST_Y({geometryColumn}) <= {maxY} " +
-               $"ELSE ST_Intersects({geometryColumn}, {envelope}) END";
-    }
-
-    private static bool IsNonPointGeometryCountError(PostgresException exception) =>
-        exception.SqlState == PostgresErrorCodes.InternalError &&
-        (exception.MessageText.Contains("ST_X", StringComparison.Ordinal) ||
-         exception.MessageText.Contains("ST_Y", StringComparison.Ordinal));
-
     private async Task<long> ExecuteCountOnConnectionAsync(
         NpgsqlConnectionLease connection,
         FeatureQuery query,
         CountExecutionOptions options)
     {
-        var usePointEnvelope = connection.Transaction is null && CanUsePointEnvelopeCountPredicate(query);
-        var initialPredicate = usePointEnvelope ? CountSpatialPredicate.PointEnvelope : CountSpatialPredicate.Default;
-        try
-        {
-            return await ExecuteCountSqlAsync(connection, query, options with { SpatialPredicate = initialPredicate })
-                .ConfigureAwait(false);
-        }
-        catch (PostgresException ex) when (
-            usePointEnvelope &&
-            !options.CancellationToken.IsCancellationRequested &&
-            IsNonPointGeometryCountError(ex))
-        {
-            _hasNonPointGeometry = true;
-            return await ExecuteCountSqlAsync(connection, query, options with { SpatialPredicate = CountSpatialPredicate.Default })
-                .ConfigureAwait(false);
-        }
-    }
-
-    private async Task<long> ExecuteCountSqlAsync(
-        NpgsqlConnectionLease connection,
-        FeatureQuery query,
-        CountExecutionOptions options)
-    {
-        var sql = options.SpatialPredicate == CountSpatialPredicate.PointEnvelope
-            ? BuildPointEnvelopeCountSql(query)
-            : BuildCountSql(query);
+        var sql = BuildCountSql(query);
         // A caller-owned transaction would retain SET LOCAL beyond this count.
         var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, options.Scope == CountScope.AssociatedFeatureRead);
         var disableJit = ShouldDisableJitForSpatialCount(query);

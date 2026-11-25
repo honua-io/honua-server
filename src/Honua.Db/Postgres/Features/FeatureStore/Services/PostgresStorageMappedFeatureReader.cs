@@ -301,14 +301,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return sql;
     }
 
-    private SqlBuilder BuildPointEnvelopeCountSql(FeatureQuery query)
-    {
-        var sql = new SqlBuilder { UsePointEnvelopeCountFilter = true };
-        sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
-        AppendFilter(sql, query);
-        return sql;
-    }
-
     private async Task<long> CountCoreAsync(
         FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
     {
@@ -850,9 +842,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.SpatialFilter.HasValue && _geometryColumn != null)
         {
-            conditions.Add(sql.UsePointEnvelopeCountFilter
-                ? BuildPointEnvelopeCountFilter(query, sql)
-                : BuildSpatialFilter(query, sql));
+            conditions.Add(BuildSpatialFilter(query, sql));
         }
 
         if (query.TemporalFilter.HasValue)
@@ -2118,8 +2108,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         public string[] NativeAttributeNames { get; set; } = [];
 
         public bool HasJsonAttributeFields { get; set; } = true;
-
-        public bool UsePointEnvelopeCountFilter { get; init; }
 
         public void Append(string value) => _text.Append(value);
 
