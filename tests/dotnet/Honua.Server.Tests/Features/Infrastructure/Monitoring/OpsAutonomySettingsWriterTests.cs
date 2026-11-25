@@ -275,18 +275,19 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
                 return Task.CompletedTask;
             },
         };
+        var clock = new TransitionClock();
+        var timerRegistered = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var services = new ServiceCollection()
+            .AddSingleton(ObserveRetryTimer(clock, timerRegistered))
             .AddScoped(_ => new OpsAutonomySettingsWriter(_postgres.DataSource, _store, watchdog))
             .BuildServiceProvider();
-        var clock = new RetryClock();
         using var reconciliation = new OpsWatchdogStartupReconciliation(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            services,
             Options.Create(new OpsAutonomyOptions()),
-            clock,
             NullLogger<OpsWatchdogStartupReconciliation>.Instance);
 
         await reconciliation.StartAsync(CancellationToken.None);
-        Assert.Equal(TimeSpan.FromSeconds(5), await clock.TimerRegistered.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(TimeSpan.FromSeconds(5), await timerRegistered.Task.WaitAsync(TimeSpan.FromSeconds(30)));
         Assert.Equal(1, Volatile.Read(ref attempts));
         clock.Advance(TimeSpan.FromSeconds(5));
         await suspended.Task.WaitAsync(TimeSpan.FromSeconds(30));
@@ -296,20 +297,18 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
         Assert.Null(reconciliation.ExecuteTask?.Exception);
     }
 
-    private sealed class RetryClock : TimeProvider
+    private static TimeProvider ObserveRetryTimer(TransitionClock clock, TaskCompletionSource<TimeSpan> timerRegistered)
     {
-        private readonly TransitionClock _clock = new();
-
-        public TaskCompletionSource<TimeSpan> TimerRegistered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = _clock.CreateTimer(callback, state, dueTime, period);
-            TimerRegistered.TrySetResult(dueTime);
-            return timer;
-        }
-
-        public void Advance(TimeSpan duration) => _clock.Advance(duration);
+        var provider = Substitute.For<TimeProvider>();
+        provider.CreateTimer(Arg.Any<TimerCallback>(), Arg.Any<object?>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>())
+            .Returns(call =>
+            {
+                var dueTime = call.ArgAt<TimeSpan>(2);
+                var timer = clock.CreateTimer(call.ArgAt<TimerCallback>(0), call.ArgAt<object?>(1), dueTime, call.ArgAt<TimeSpan>(3));
+                timerRegistered.TrySetResult(dueTime);
+                return timer;
+            });
+        return provider;
     }
 
     private static void CancelRequestWhenAuditRecords(IAuditLog audit, CancellationTokenSource request, string committedValue)
