@@ -1,5 +1,7 @@
 # CI Gate Model
 
+The GeoServices protocol test project owns `GeometryServiceAdmissionEndpointTests`. The residual `GeoServices Geometry VectorTile and Versioning 6` shard runs the class.
+
 The prior-reader compatibility job was removed on 22 November 2026. Migrations are forward-only, idempotent and tested on an installed stack; CI does not certify rolling rollback to an older reader. Required check names and the remaining PR Gate dependencies are unchanged.
 
 Every source path has at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a path's owners are all over budget.
