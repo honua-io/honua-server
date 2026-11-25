@@ -653,7 +653,7 @@ class RealMirrorContractTierTests(unittest.TestCase):
         # pair this repository does not emit must be reported as an absent lane or
         # surface, and a pair it does emit must be reported as a version mismatch.
         emitted = {(pair["client_lane"], pair["protocol"])
-                   for pair in EXPECTED_PAIRS["expected_pairs"]}
+                   for pair in EXPECTED_PAIRS["expected_pairs"] if not pair.get("nightly_only")}
         emitted_lanes = {lane for lane, _ in emitted}
 
         baseline_versions = {
