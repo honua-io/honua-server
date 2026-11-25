@@ -7689,7 +7689,11 @@
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
-        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.ServeErrors_PublicRoutesFailWhileProbesStayHealthy",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.SettingAbsent_FaultIsInert",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_AfterTheRecoveryRestart_ServesNormally",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_DeepProbeAndPublicRoutesFailWhileLoadBalancerProbesStayHealthy"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
