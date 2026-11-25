@@ -181,6 +181,11 @@ def load_scenarios(path: Path) -> list[EvalScenario]:
     return scenarios
 
 
+def _safe_read_body(stream: object) -> str:
+    """Read an HTTP response stream without letting read timeouts crash the probe."""
+    return stream.read().decode("utf-8", errors="replace")
+
+
 def probe_live_server(base_url: str, timeout_seconds: float = 5.0) -> SignalInput:
     """Probe a live Honua Server readiness endpoint and collect safe diagnostics."""
     ready_url = f"{base_url.rstrip('/')}/healthz/ready"
@@ -188,20 +193,27 @@ def probe_live_server(base_url: str, timeout_seconds: float = 5.0) -> SignalInpu
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             headers = dict(response.headers.items())
-            body = response.read().decode("utf-8", errors="replace")
+            body = _safe_read_body(response)
             return SignalInput(response.status, body, headers, [])
     except urllib.error.HTTPError as err:
         headers = dict(err.headers.items())
-        body = err.read().decode("utf-8", errors="replace")
+        try:
+            body = _safe_read_body(err)
+        except (TimeoutError, OSError):
+            body = ""
         reason = headers.get("X-Honua-Readiness-Reason", "unknown")
         return SignalInput(err.code, body, headers, [f"X-Honua-Readiness-Reason: {reason}"])
-    except urllib.error.URLError as err:
-        return SignalInput(0, "", {}, [f"Probe connection error: {err.reason}"])
+    except (urllib.error.URLError, TimeoutError, OSError) as err:
+        return SignalInput(0, "", {}, [f"Probe transport error ({type(err).__name__}): {err}"])
 
 
-def run_live_eval(base_url: str, thresholds: EvalThresholds = DEFAULT_THRESHOLDS) -> dict[str, object]:
+def run_live_eval(
+    base_url: str,
+    thresholds: EvalThresholds = DEFAULT_THRESHOLDS,
+    timeout_seconds: float = 5.0,
+) -> dict[str, object]:
     """Run Operator Doctor evaluation against a live Honua Server instance."""
-    signal = probe_live_server(base_url)
+    signal = probe_live_server(base_url, timeout_seconds=timeout_seconds)
     diagnosis = diagnose_signal(signal)
     leaked = find_secret_leaks(diagnosis, [])
     redaction_ok = len(leaked) == 0

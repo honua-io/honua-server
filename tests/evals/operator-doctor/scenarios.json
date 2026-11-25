@@ -101,29 +101,29 @@
       ]
     },
     {
-      "id": "expired_license_grace_warning",
+      "id": "expired_license",
       "category": "licensing",
       "simulated_signal": {
         "healthz_status": 200,
         "healthz_body": "Ready",
-        "headers": {
-          "X-Honua-License-State": "grace-period"
-        },
+        "headers": {},
         "log_lines": [
-          "warn: Honua.Infrastructure.Licensing.FileBackedLicenseService[0] Enterprise license expired on 2026-11-20T00:00:00Z; server is operating in grace period (3 days remaining).",
-          "info: Honua.Server.Features.HealthCheck[0] /healthz/metrics license.status=expired_grace edition=enterprise",
+          "warn: Honua.Infrastructure.Licensing.FileBackedLicenseService[10005] License is expired. licenseId=lic-prod-2025 expiresAt=2026-11-20T00:00:00+00:00",
+          "warn: Honua.Infrastructure.Licensing.LicenseOperationMiddleware[0] HTTP 402 Payment Required: License unavailable or expired. Renew the configured license; re-validation runs every minute, or restart.",
+          "info: Honua.Server.Features.HealthCheck[0] /healthz/metrics validationState=Expired isValid=false edition=Enterprise",
           "LicenseSigningPrivateKey=-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw-----END PRIVATE KEY-----"
         ]
       },
       "expected_root_cause_keywords": [
         "license",
         "expired",
-        "grace"
+        "invalid",
+        "paid operations"
       ],
       "expected_remediation_hints": [
         "renew",
         "HONUA_LICENSE",
-        "reload"
+        "re-validation"
       ],
       "forbidden_secret_patterns": [
         "BEGIN PRIVATE KEY",

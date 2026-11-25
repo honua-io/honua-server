@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -23,7 +25,7 @@ EXPECTED_SCENARIO_IDS = [
     "wrong_db_password",
     "missing_postgis_extension",
     "forwarded_headers_misconfigured",
-    "expired_license_grace_warning",
+    "expired_license",
     "temp_storage_disk_full",
     "invalid_mtls_trust_anchor",
     "port_already_in_use",
@@ -31,6 +33,22 @@ EXPECTED_SCENARIO_IDS = [
     "cors_origin_blocked",
     "object_store_unreachable",
 ]
+
+
+def _make_stalling_handler(release_event: threading.Event) -> type[BaseHTTPRequestHandler]:
+    """Build an HTTP handler that sends headers then stalls before finishing the body."""
+
+    class StallingHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Length", "5")
+            self.end_headers()
+            release_event.wait(timeout=2.0)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    return StallingHandler
 
 
 class OperatorDoctorEvalTests(unittest.TestCase):
@@ -159,6 +177,27 @@ class OperatorDoctorEvalTests(unittest.TestCase):
         self.assertEqual(scorecard["mode"], "live")
         self.assertTrue(scorecard["summary"]["passed"])
         self.assertEqual(scorecard["scenarios"][0]["matched_rule"], "locked_startup_migration")
+
+    def test_live_mode_handles_stalled_response_timeout_without_crashing(self) -> None:
+        """Stalled /healthz/ready response produces a failed scorecard instead of TimeoutError."""
+        release_event = threading.Event()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_stalling_handler(release_event))
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            scorecard = doctor_eval.run_live_eval(base_url, timeout_seconds=0.1)
+        finally:
+            release_event.set()
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2.0)
+
+        self.assertEqual(scorecard["schema"], "honua.eval.operator-doctor.v1")
+        self.assertEqual(scorecard["mode"], "live")
+        self.assertFalse(scorecard["summary"]["passed"])
+        self.assertEqual(scorecard["summary"]["secret_redaction_rate"], 1.0)
+        self.assertEqual(scorecard["scenarios"][0]["matched_rule"], "unknown")
 
 
 if __name__ == "__main__":

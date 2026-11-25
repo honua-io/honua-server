@@ -90,14 +90,19 @@ DIAGNOSTIC_RULES: tuple[DiagnosticRule, ...] = (
         ),
     ),
     DiagnosticRule(
-        "expired_license_grace_warning",
+        "expired_license",
         "licensing",
-        (r"grace-period", r"license.*expired.*grace", r"license\.status=expired_grace"),
-        "The Honua Enterprise license has expired and the server is running in its temporary grace period.",
         (
-            "Renew the license and update the HONUA_LICENSE secret or mounted license file.",
-            "Trigger a configuration reload or rolling restart so the refreshed license takes effect.",
-            "Confirm /healthz/metrics reports an active license status before grace expiration.",
+            r"License is expired\.",
+            r"licenseId=[^\s]+.*expiresAt=",
+            r"License unavailable or expired",
+            r"validationState[=:\s\"']+Expired",
+        ),
+        "The configured Honua license is expired and invalid; paid operations (including reads and exports) have stopped and return HTTP 402 until a valid license is installed.",
+        (
+            "Renew or replace the license and update the HONUA_LICENSE secret or mounted license file.",
+            "Wait up to one minute for automatic license re-validation or restart Honua Server to load the replacement immediately.",
+            "Confirm /healthz/metrics reports validationState=Valid and isValid=true for the renewed license.",
         ),
     ),
     DiagnosticRule(
