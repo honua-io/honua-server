@@ -161,7 +161,8 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        return (process.ExitCode, stdout.ToString(), stderr.ToString());
+        var result = BoundedProcessOutputBuffer.BuildCommandResult(process.ExitCode, stdout, stderr);
+        return (result.ExitCode, result.StandardOutput, result.StandardError);
     }
 
     private static async Task TryForceRemoveContainerAsync(string executable, string containerName)

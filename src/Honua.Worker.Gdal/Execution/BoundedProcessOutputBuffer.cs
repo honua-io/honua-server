@@ -9,6 +9,7 @@ internal sealed class BoundedProcessOutputBuffer
 {
     public const int DefaultMaxOutputChars = 4 * 1024 * 1024;
     public const int DefaultMaxErrorChars = 64 * 1024;
+    public const string StdoutOverflowMessage = "GDAL command standard output exceeded the configured buffer limit.";
 
     private readonly object _sync = new();
     private readonly StringBuilder _builder = new();
@@ -84,6 +85,33 @@ internal sealed class BoundedProcessOutputBuffer
         {
             return _builder.ToString();
         }
+    }
+
+    public static GdalCommandResult BuildCommandResult(
+        int exitCode,
+        BoundedProcessOutputBuffer stdout,
+        BoundedProcessOutputBuffer stderr)
+    {
+        if (exitCode == 0 && stdout.IsTruncated)
+        {
+            var existingError = stderr.ToString().Trim();
+            var message = string.IsNullOrEmpty(existingError)
+                ? StdoutOverflowMessage
+                : $"{StdoutOverflowMessage} {existingError}";
+            return new GdalCommandResult
+            {
+                ExitCode = 1,
+                StandardOutput = string.Empty,
+                StandardError = message,
+            };
+        }
+
+        return new GdalCommandResult
+        {
+            ExitCode = exitCode,
+            StandardOutput = stdout.ToString(),
+            StandardError = stderr.ToString(),
+        };
     }
 
     private void AppendWithinRemaining(string line, int remaining)

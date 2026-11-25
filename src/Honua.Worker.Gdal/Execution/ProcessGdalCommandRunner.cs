@@ -72,6 +72,8 @@ internal sealed partial class ProcessGdalCommandRunner(
         "SIGNING_KEY"
     ];
 
+    internal int MaxOutputChars { get; set; } = BoundedProcessOutputBuffer.DefaultMaxOutputChars;
+
     public async Task<GdalCommandResult> RunAsync(
         string tool,
         IReadOnlyList<string> arguments,
@@ -120,7 +122,7 @@ internal sealed partial class ProcessGdalCommandRunner(
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new BoundedProcessOutputBuffer(BoundedProcessOutputBuffer.DefaultMaxOutputChars);
+        var stdout = new BoundedProcessOutputBuffer(MaxOutputChars);
         var stderr = new BoundedProcessOutputBuffer(BoundedProcessOutputBuffer.DefaultMaxErrorChars);
 
         process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
@@ -131,12 +133,7 @@ internal sealed partial class ProcessGdalCommandRunner(
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        var result = new GdalCommandResult
-        {
-            ExitCode = process.ExitCode,
-            StandardOutput = stdout.ToString(),
-            StandardError = stderr.ToString()
-        };
+        var result = BoundedProcessOutputBuffer.BuildCommandResult(process.ExitCode, stdout, stderr);
 
         Log.ToolCompleted(logger, tool, result.ExitCode);
         return result;

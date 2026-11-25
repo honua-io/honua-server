@@ -148,6 +148,24 @@ public sealed class WorkerCrashIsolationAndQuarantineTests : IDisposable
     }
 
     [UnitTest]
+    public async Task ProcessRunner_StdoutOverflowWithZeroExitCode_FailsInsteadOfReturningTruncatedStdout()
+    {
+        var runner = CreateProcessRunner();
+        runner.MaxOutputChars = 512;
+        var (tool, args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", (IReadOnlyList<string>)["/c", "for /L %i in (1,1,60) do @echo {\"band\":1,\"value\":\"0123456789abcdef\"}"])
+            : ("/bin/sh", ["-c", "awk 'BEGIN{for(i=0;i<60;i++) print \"{\\\"band\\\":1,\\\"value\\\":\\\"0123456789abcdef\\\"}\"}'"]);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var result = await runner.RunAsync(tool, args, _scratchRoot, cts.Token);
+
+        result.Succeeded.Should().BeFalse("truncated stdout must never be surfaced as a successful command");
+        result.ExitCode.Should().NotBe(0);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain(BoundedProcessOutputBuffer.StdoutOverflowMessage);
+    }
+
+    [UnitTest]
     public async Task PoisonPillInputs_RejectedBeforeNativeExecution_AndSubsequentValidJobSucceeds()
     {
         var runner = FakeGdalCommandRunner.Succeeding(TiffHeaderBuilder.Classic(16, 16, bands: 1, bits: 8));
