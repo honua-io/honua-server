@@ -2420,17 +2420,7 @@
       ],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [
-        {
-          "clientLane": "cli",
-          "protocol": "wcs",
-          "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
-          }
-        }
-      ],
+      "interop": [],
       "geobench": [
         "wcs"
       ]
@@ -2513,7 +2503,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 34,
+      "provingTestCount": 33,
       "maturity": {
         "implemented": 1
       },
