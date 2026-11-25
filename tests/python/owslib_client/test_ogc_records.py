@@ -53,10 +53,10 @@ def test_reads_first_page_and_record(records_client, records_collector, timer):
 
 
 @pytest.mark.cert("CERT-PAGE-02")
-def test_follows_next_page_link(base_url, records_client, records_collector, timer):
+def test_follows_next_page_link(records_client, records_collector, timer):
     first = records_client.collection_items(CATALOG_ID, limit=1)
     [next_link] = [link["href"] for link in first["links"] if link["rel"] == "next"]
-    items_url = f"{base_url}/ogc/records/collections/{CATALOG_ID}/items"
+    items_url = f"{records_client.url}collections/{CATALOG_ID}/items"
     response = http_get(urljoin(items_url, next_link), headers=records_client.headers, timeout=30)
     response.raise_for_status()
     second = response.json()

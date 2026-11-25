@@ -400,11 +400,8 @@ def strip_crs_brackets(value: str | None) -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def _write_cert_evidence(
-    oaf_collector: CertificationEvidenceCollector,
-    records_collector: CertificationEvidenceCollector,
-    wfs_collector: CertificationEvidenceCollector,
-    wms_collector: CertificationEvidenceCollector,
-    wmts_collector: CertificationEvidenceCollector,
+    lane_runtime: LaneRuntime,
+    owslib_version: str,
 ) -> Generator[None, None, None]:
     """Persist one ``.cert.json`` envelope per protocol at session teardown.
 
@@ -414,6 +411,10 @@ def _write_cert_evidence(
     so ``scripts/client-compat/refresh-baselines.sh`` can strip the prefix up to
     the first ``-`` and promote the file under its stable name.
     """
+    collectors = {
+        protocol: _collector(lane_runtime, owslib_version, protocol)
+        for protocol in PROTOCOL_SPECS
+    }
     yield
     override = os.environ.get("HONUA_OWSLIB_OUTPUT_DIR")
     results_dir = Path(override) if override else canonical_fixture.TEST_RESULTS_ROOT
@@ -422,13 +423,7 @@ def _write_cert_evidence(
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
 
-    for protocol, collector in (
-        ("ogc-features", oaf_collector),
-        ("ogc-api-records", records_collector),
-        ("wfs", wfs_collector),
-        ("wms", wms_collector),
-        ("wmts", wmts_collector),
-    ):
+    for protocol, collector in collectors.items():
         path = results_dir / f"{run_id}-{CLIENT_LANE}-{protocol}{suffix}.cert.json"
         collector.write_envelope(path)
 
