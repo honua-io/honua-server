@@ -1275,7 +1275,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 91,
+      "provingTestCount": 95,
       "maturity": {
         "implemented": 21
       },
@@ -2362,7 +2362,7 @@
       "geoservicesAssess": [],
       "interop": [
         {
-          "clientLane": "cli-gdal",
+          "clientLane": "cli",
           "protocol": "wcs",
           "freshness": {
             "state": "unknown",
@@ -2453,7 +2453,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 33,
+      "provingTestCount": 34,
       "maturity": {
         "implemented": 1
       },

@@ -9,14 +9,18 @@ import os
 import pytest
 
 
+WCS_SERVICE = os.getenv("HONUA_GDAL_WCS_SERVICE")
+
+
 @pytest.mark.integration
 @pytest.mark.gdal
-def test_wcs_reads_seeded_pixels(base_url, ogr_run, tmp_path, evidence_collector):
-    service = os.getenv("HONUA_GDAL_WCS_SERVICE")
-    if not service:
-        pytest.skip("HONUA_GDAL_WCS_SERVICE requires the client compatibility seed")
-
-    connection = f"WCS:{base_url}/ogc/wcs/{service}?version=2.0.1&coverage=coverage_2000"
+@pytest.mark.skipif(
+    not WCS_SERVICE,
+    reason="HONUA_GDAL_WCS_SERVICE requires the client compatibility seed",
+)
+def test_wcs_reads_seeded_pixels(request, ogr_run, tmp_path):
+    base_url = request.getfixturevalue("base_url")
+    connection = f"WCS:{base_url}/ogc/wcs/{WCS_SERVICE}?version=2.0.1&coverage=coverage_2000"
     cache = tmp_path / "wcs-cache"
     cache.mkdir()
     raster = tmp_path / "coverage.tif"
@@ -29,4 +33,5 @@ def test_wcs_reads_seeded_pixels(base_url, ogr_run, tmp_path, evidence_collector
     assert info["size"] == [64, 64]
     band, = info["bands"]
     assert (band["computedMin"], band["computedMax"]) == (180.0, 180.0)
+    evidence_collector = request.getfixturevalue("evidence_collector")
     evidence_collector.record("test_wcs_reads_seeded_pixels", "wcs", "read", "pass")

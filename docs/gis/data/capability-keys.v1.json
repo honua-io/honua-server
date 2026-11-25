@@ -933,7 +933,7 @@
     ],
     "interop": [
       {
-        "clientLane": "cli-gdal",
+        "clientLane": "cli",
         "protocol": "wcs",
         "capability": "serve.wcs"
       },
