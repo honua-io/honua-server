@@ -21,6 +21,30 @@ def run_staging(artifacts: Path, output: Path, selection: str = "") -> subproces
 
 
 class ClientInteropArtifactStagingTests(unittest.TestCase):
+    def test_stub_requires_all_additional_surface_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lane = "geoservices-rest-stub"
+            source = root / "artifacts" / f"run-evidence-client-compat-{lane}"
+            source.mkdir(parents=True)
+            protocols = (
+                "featureserver", "mapserver", "portal", "geocode-server", "geometry-service",
+                "image-server", "geoservices-root", "vector-tile-server", "i3s",
+            )
+            for protocol in protocols:
+                receipt = source / f"{protocol}.cert.json"
+                receipt.write_text(json.dumps({"client_lane": lane, "protocol": protocol}))
+
+            output = root / "output"
+            staged = run_staging(source.parent, output, lane)
+            self.assertEqual(0, staged.returncode, staged.stderr)
+            self.assertEqual(len(protocols), len(list((output / lane).glob("*.cert.json"))))
+
+            (source / "i3s.cert.json").unlink()
+            missing = run_staging(source.parent, output, lane)
+            self.assertNotEqual(0, missing.returncode)
+            self.assertIn("Missing geoservices-rest-stub receipts: i3s", missing.stderr)
+
     def test_baseline_refresh_preserves_smoke_receipts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

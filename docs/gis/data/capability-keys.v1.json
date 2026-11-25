@@ -1033,6 +1033,36 @@
         "capability": "serve.geoservices-mapserver"
       },
       {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geocode-server",
+        "capability": "serve.geoservices-geocodeserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geometry-service",
+        "capability": "serve.geoservices-geometry-service"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "image-server",
+        "capability": "serve.geoservices-imageserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geoservices-root",
+        "capability": "serve.geoservices-root"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "vector-tile-server",
+        "capability": "serve.geoservices-vectortileserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "i3s",
+        "capability": "serve.i3s-scene"
+      },
+      {
         "clientLane": "cli",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"

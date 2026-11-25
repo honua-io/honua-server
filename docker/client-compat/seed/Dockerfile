@@ -15,6 +15,7 @@ RUN apt-get update \
 WORKDIR /workspace
 
 COPY docker/client-compat/seed/run.sh /usr/local/bin/run-seed
+COPY docker/client-compat/seed/geoservices-surfaces.sql /usr/local/share/geoservices-surfaces.sql
 # Publishes the PMTiles archive through the running server at the end of the
 # seed. Stdlib only - this image has no curl, which is how the first attempt
 # failed with 127.
@@ -26,4 +27,5 @@ COPY docker/client-compat/seed/publish-cog.py /usr/local/bin/publish-cog.py
 COPY docker/client-compat/seed/publish-attachments.py /usr/local/bin/publish-attachments.py
 RUN chmod +x /usr/local/bin/run-seed /usr/local/bin/publish-pmtiles.py /usr/local/bin/publish-scene.py /usr/local/bin/publish-cog.py
 
-ENTRYPOINT ["/usr/local/bin/run-seed"]
+# Apply the Compose-only protocol overlay after the frozen fixture is loaded.
+ENTRYPOINT ["/bin/bash", "-ec", "/usr/local/bin/run-seed && psql -v ON_ERROR_STOP=1 -f /usr/local/share/geoservices-surfaces.sql"]

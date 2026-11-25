@@ -128,6 +128,10 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      Geocoding__Enabled: "true"
+      Geocoding__LocatorName: World
+      # The compatibility container runs as a non-root user.
+      SceneGeneration__OutputRoot: /tmp/honua-client-compat-scenes
       # The scene publisher and both client read surfaces are opt-in routes.
       Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
       Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
