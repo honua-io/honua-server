@@ -179,6 +179,26 @@ class RunAotSoakTests(unittest.TestCase):
         self.assertFalse(scorecard["summary"]["passed"])
         self.assertFalse(scorecard["gates"]["zero_restarts_ok"])
 
+    def test_missing_container_telemetry_fails_gates_when_container_name_set(self) -> None:
+        base_url = self._start_server(FakeSoakState())
+        deps = self.mod.SoakDeps(
+            rss_reader=lambda _name: None,
+            restart_reader=lambda _name: None,
+        )
+        cfg = self.mod.SoakConfig(
+            base_url=base_url,
+            container_name="missing-aot-container",
+            duration=0.15,
+            concurrency=2,
+            sample_interval=0.05,
+        )
+        outcome = self.mod.run_soak(cfg, deps)
+        scorecard = self.mod.build_scorecard(cfg, outcome)
+        self.assertFalse(scorecard["summary"]["passed"])
+        self.assertFalse(scorecard["gates"]["rss_drift_ok"])
+        self.assertFalse(scorecard["gates"]["zero_restarts_ok"])
+        self.assertIsNone(scorecard["summary"]["restart_count"])
+
     def test_parse_mem_usage_mb_handles_docker_units(self) -> None:
         self.assertEqual(self.mod.parse_mem_usage_mb("128.5MiB / 512MiB"), 128.5)
         self.assertEqual(self.mod.parse_mem_usage_mb("0.5GiB / 2GiB"), 512.0)

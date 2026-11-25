@@ -76,6 +76,13 @@ def _allocate_port() -> int:
         return int(sock.getsockname()[1])
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SEED_SQL_PATHS = (
+    REPO_ROOT / "docker" / "cng" / "seed.sql",
+    REPO_ROOT / "scripts" / "ci" / "seed-serving-formats.sql",
+)
+
+
 def _run_docker_checked(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], capture_output=True, text=True, check=True)
 
@@ -84,8 +91,27 @@ def _run_docker_unchecked(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], capture_output=True, text=True, check=False)
 
 
+def _apply_seed_sql(pg_container: str, sql_path: Path) -> None:
+    sql_text = sql_path.read_text(encoding="utf-8")
+    subprocess.run(
+        ["docker", "exec", "-i", pg_container, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "honua_cng"],
+        input=sql_text,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _seed_cng_fixtures(session: DockerSession, boot_timeout: float) -> None:
+    _run_docker_checked(["stop", session.app_container])
+    for sql_path in SEED_SQL_PATHS:
+        _apply_seed_sql(session.pg_container, sql_path)
+    _run_docker_checked(["start", session.app_container])
+    _wait_for_ready(session.base_url, boot_timeout)
+
+
 def start_container_stack(cfg: ParityConfig) -> DockerSession:
-    """Boot PostGIS and the target NativeAOT image on an isolated bridge network."""
+    """Boot PostGIS and the target NativeAOT image, seed CNG fixtures, and wait ready."""
     assert cfg.image is not None
     tag = f"honua-aot-parity-{int(time.time())}-{_allocate_port()}"
     port = _allocate_port()
@@ -96,6 +122,7 @@ def start_container_stack(cfg: ParityConfig) -> DockerSession:
         _wait_for_postgis(session.pg_container, cfg.boot_timeout)
         _start_app_container(session, cfg.image, port)
         _wait_for_ready(session.base_url, cfg.boot_timeout)
+        _seed_cng_fixtures(session, cfg.boot_timeout)
         return session
     except Exception:
         stop_container_stack(session)
@@ -120,7 +147,12 @@ def _start_app_container(session: DockerSession, image: str, port: int) -> None:
         "-p", f"127.0.0.1:{port}:8080", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
         "--tmpfs", "/tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750",
-        "-e", "ASPNETCORE_ENVIRONMENT=Test", "-e", "DataSource__Provider=postgres",
+        "-e", "ASPNETCORE_ENVIRONMENT=Test",
+        "-e", "HONUA_REGISTER_TEST_INFRASTRUCTURE=true",
+        "-e", "Experimental__Features__RedshiftProvider=false",
+        "-e", "Experimental__Features__SnowflakeProvider=false",
+        "-e", "Experimental__Features__DatabricksProvider=false",
+        "-e", "DataSource__Provider=postgres",
         "-e", f"ConnectionStrings__DefaultConnection={conn}",
         "-e", f"ConnectionStrings__honua={conn}",
         "-e", "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!", image,

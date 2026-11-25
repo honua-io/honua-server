@@ -202,13 +202,22 @@ def _check_xml(body: bytes) -> tuple[bool, str]:
     return (True, "ok") if text.startswith("<") else (False, "response is not XML")
 
 
+def _extract_mcp_json_text(text: str) -> str:
+    if text.startswith(("{", "[")):
+        return text
+    data_lines = [
+        line[5:].strip()
+        for line in text.splitlines()
+        if line.startswith("data:") and line[5:].strip()
+    ]
+    return "\n".join(data_lines) if data_lines else text
+
+
 def _check_mcp_tools(body: bytes) -> tuple[bool, str]:
-    text = body.decode("utf-8", errors="replace").strip()
-    if text.startswith("data:"):
-        lines = [ln[5:].strip() for ln in text.splitlines() if ln.startswith("data:")]
-        text = lines[0] if lines else ""
+    raw_text = body.decode("utf-8", errors="replace").strip()
+    json_text = _extract_mcp_json_text(raw_text)
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(json_text)
     except json.JSONDecodeError as exc:
         return False, f"invalid MCP JSON-RPC response: {exc}"
     result = parsed.get("result") if isinstance(parsed, dict) else None

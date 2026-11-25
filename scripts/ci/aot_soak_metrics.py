@@ -83,7 +83,7 @@ class SoakOutcome:
 
     samples: list[RequestSample]
     rss_samples: list[RssSample]
-    restart_count: int
+    restart_count: int | None
     elapsed_s: float
 
 
@@ -228,16 +228,29 @@ def _serialize_config(cfg: SoakConfig) -> dict[str, object]:
     }
 
 
+def _evaluate_container_gates(
+    cfg: SoakConfig, outcome: SoakOutcome, rss: RssAnalysis
+) -> tuple[bool, bool]:
+    if cfg.container_name is None:
+        rss_ok = rss.drift_pct is None or rss.drift_pct <= cfg.max_rss_drift_pct
+        restarts_ok = outcome.restart_count in (None, 0)
+        return rss_ok, restarts_ok
+    rss_ok = rss.drift_pct is not None and rss.drift_pct <= cfg.max_rss_drift_pct
+    restarts_ok = outcome.restart_count is not None and outcome.restart_count == 0
+    return rss_ok, restarts_ok
+
+
 def build_scorecard(cfg: SoakConfig, outcome: SoakOutcome) -> dict[str, object]:
     """Build the honua.eval.aot-soak.v1 JSON scorecard and evaluate gates."""
     total = len(outcome.samples)
     errors = sum(1 for s in outcome.samples if not s.ok)
     error_rate = (errors / total) if total > 0 else 1.0
     rss = analyze_rss_drift(outcome.rss_samples, cfg.duration)
+    rss_drift_ok, zero_restarts_ok = _evaluate_container_gates(cfg, outcome, rss)
     gates = {
         "error_rate_ok": total > 0 and error_rate <= cfg.max_error_rate,
-        "rss_drift_ok": rss.drift_pct is None or rss.drift_pct <= cfg.max_rss_drift_pct,
-        "zero_restarts_ok": outcome.restart_count == 0,
+        "rss_drift_ok": rss_drift_ok,
+        "zero_restarts_ok": zero_restarts_ok,
     }
     return {
         "schema": SCHEMA_VERSION,

@@ -59,6 +59,7 @@ class FakeServerState:
     corrupt_png: bool = False
     fail_odata_500: bool = False
     leak_reflection_in_error: bool = False
+    mcp_sse_response: bool = False
 
 
 def _make_handler(state: FakeServerState):
@@ -74,7 +75,8 @@ def _make_handler(state: FakeServerState):
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b""
             ctype = self.headers.get("Content-Type", "")
-            status, out_ctype, body = _route_post(self.path, ctype, raw)
+            req = PostRequest(self.path, ctype, raw)
+            status, out_ctype, body = _route_post(req, state)
             self._reply(status, out_ctype, body)
 
         def _reply(self, status: int, ctype: str, body: bytes) -> None:
@@ -129,14 +131,26 @@ def _route_featureserver(path: str) -> tuple[int, str, bytes]:
     return 200, "application/json", b'{"type":"FeatureCollection","features":[]}'
 
 
-def _route_post(path: str, ctype: str, raw: bytes) -> tuple[int, str, bytes]:
-    if path == "/mcp":
+@dataclass(frozen=True)
+class PostRequest:
+    """Captured POST request inputs for fake server routing."""
+
+    path: str
+    content_type: str
+    body: bytes
+
+
+def _route_post(req: PostRequest, state: FakeServerState) -> tuple[int, str, bytes]:
+    if req.path == "/mcp":
         payload = b'{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"list_layers"}]}}'
+        if state.mcp_sse_response:
+            sse = b"event: message\ndata: " + payload + b"\n\n"
+            return 200, "text/event-stream", sse
         return 200, "application/json", payload
-    if path == "/stac/search":
-        if "text/plain" in ctype:
+    if req.path == "/stac/search":
+        if "text/plain" in req.content_type:
             return 415, "application/json", b'{"title":"Unsupported Media Type","status":415}'
-        if raw.startswith(b"{invalid"):
+        if req.body.startswith(b"{invalid"):
             return 400, "application/json", b'{"title":"Bad Request","status":400}'
         return 200, "application/json", b'{"type":"FeatureCollection","features":[]}'
     return 404, "application/json", b'{"error":"not found"}'
@@ -210,6 +224,15 @@ class VerifyAotRuntimeParityTests(unittest.TestCase):
         self.assertFalse(scorecard["summary"]["passed"])
         self.assertFalse(scorecard["gates"]["zero_reflection_errors"])
         self.assertGreaterEqual(scorecard["summary"]["reflection_error_count"], 1)
+
+    def test_mcp_sse_event_framed_response_passes_parity(self) -> None:
+        base_url = self._start_server(FakeServerState(mcp_sse_response=True))
+        cfg = self.mod.ParityConfig(base_url=base_url)
+        scorecard = self.mod.run_parity_suite(cfg)
+        self.assertTrue(scorecard["summary"]["passed"])
+        mcp_probe = next(p for p in scorecard["probes"] if p["name"] == "mcp_tools_list")
+        self.assertTrue(mcp_probe["passed"])
+        self.assertIn("1 tools", mcp_probe["detail"])
 
     def test_scan_reflection_errors_detects_all_required_patterns(self) -> None:
         sample = (

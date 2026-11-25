@@ -34,7 +34,7 @@ class SoakDeps:
     """Injectable container samplers for unit testing without Docker."""
 
     rss_reader: Callable[[str], float | None]
-    restart_reader: Callable[[str], int]
+    restart_reader: Callable[[str], int | None]
 
 
 def build_routes(cfg: SoakConfig) -> list[RouteSpec]:
@@ -68,8 +68,8 @@ def sample_container_rss(container_name: str) -> float | None:
     return parse_mem_usage_mb(proc.stdout.strip())
 
 
-def read_restart_count(container_name: str) -> int:
-    """Read Docker container RestartCount via `docker inspect`."""
+def read_restart_count(container_name: str) -> int | None:
+    """Read Docker container RestartCount via `docker inspect`, or None on failure."""
     proc = subprocess.run(
         ["docker", "inspect", "--format", "{{.RestartCount}}", container_name],
         capture_output=True,
@@ -77,9 +77,9 @@ def read_restart_count(container_name: str) -> int:
         check=False,
     )
     if proc.returncode != 0:
-        return 0
+        return None
     text = proc.stdout.strip()
-    return int(text) if text.isdigit() else 0
+    return int(text) if text.isdigit() else None
 
 
 def default_deps() -> SoakDeps:
