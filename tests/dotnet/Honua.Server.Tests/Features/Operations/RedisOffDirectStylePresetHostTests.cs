@@ -60,16 +60,16 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
         _catalog.AssociatePrimaryLayerAsync(StorageLayerId, StyleId, Arg.Any<CancellationToken>()).Returns(preset);
 
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-redis-off-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
+            .AddResource("res-direct-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
                 Bbox = new MetadataV2Bbox { West = -10, South = -10, East = 10, North = 10 },
             })
-            .AddStorageBinding("bind-redis-off-style", "res-redis-off-style", "public.flood", storageLayerId: StorageLayerId)
+            .AddStorageBinding("bind-direct-style", "res-direct-style", "public.flood", storageLayerId: StorageLayerId)
             .AddService(ServiceId, "Flood")
-            .AddPublication(PublicationId, ServiceId, "res-redis-off-style",
-                layerIndex: LayerIndex, storageBindingId: "bind-redis-off-style")
+            .AddPublication(PublicationId, ServiceId, "res-direct-style",
+                layerIndex: LayerIndex, storageBindingId: "bind-direct-style")
             .BuildProvider();
 
         _fixture

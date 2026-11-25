@@ -307,7 +307,7 @@ internal abstract partial class StudioDraftToolBase
             ex is InvalidOperationException or GeoprocessingPreconditionFailedException
             && string.Equals(ex.Message, StudioDraftGenerationConflictException.ConflictMessage, StringComparison.Ordinal))
         {
-            throw await ReadGenerationConflictAsync(httpContext, principal, draftId, cancellationToken).ConfigureAwait(false);
+            throw await ReadGenerationConflictAsync(httpContext, new(principal, draftId), cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
