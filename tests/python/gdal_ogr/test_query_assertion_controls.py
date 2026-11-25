@@ -19,6 +19,9 @@ from .test_wfs_export import TestWfsExport as WfsExports
 from .test_wfs_query import TestWfsQuery as WfsQueries
 
 
+GDAL_LANE_TOOLS = ("ogrinfo", "ogr2ogr", "gdalinfo", "gdal_translate")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def gdal_available():
     """Pure assertion controls execute even where the native client is unavailable."""
@@ -255,12 +258,12 @@ def test_actual_attribute_and_empty_window_probes_accept_correct_results(monkeyp
 
 
 
-@pytest.mark.parametrize("missing", ["ogrinfo", "ogr2ogr"])
+@pytest.mark.parametrize("missing", GDAL_LANE_TOOLS)
 def test_canonical_lane_refuses_missing_native_tool_before_connecting(tmp_path, missing):
     import os
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in GDAL_LANE_TOOLS:
         if tool != missing:
             executable = tmp_path / tool
             executable.write_text("#!/bin/sh\nexit 0\n")
@@ -276,9 +279,10 @@ def test_canonical_lane_refuses_unusable_native_client_before_connecting(tmp_pat
     import os
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in GDAL_LANE_TOOLS:
         executable = tmp_path / tool
-        executable.write_text("#!/bin/sh\nexit 9\n")
+        exit_code = 9 if tool == "ogrinfo" else 0
+        executable.write_text(f"#!/bin/sh\nexit {exit_code}\n")
         executable.chmod(0o755)
     script = canonical_lane_script()
     result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
@@ -291,7 +295,7 @@ def test_canonical_lane_does_not_swallow_failed_assertion_controls(tmp_path):
     import shlex
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in GDAL_LANE_TOOLS:
         executable = tmp_path / tool
         executable.write_text("#!/bin/sh\nexit 0\n")
         executable.chmod(0o755)
