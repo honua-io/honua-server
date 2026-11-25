@@ -9,7 +9,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
-using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
@@ -19,12 +18,7 @@ public sealed class SpatialAnalyticsAuthorizationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro)
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
+        .WithTestAuthorization();
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 

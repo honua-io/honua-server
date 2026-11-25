@@ -11,7 +11,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,12 +21,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisReportEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
-    {
-        builder.UseEnvironment("Test");
-        builder.UseSetting("HONUA_DEV_AUTH", "false");
-        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-    });
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestAuthorization();
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()

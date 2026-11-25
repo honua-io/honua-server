@@ -10,7 +10,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Hosting;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
@@ -22,12 +22,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro)
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
+        .WithTestAuthorization();
 
     public async Task InitializeAsync()
     {

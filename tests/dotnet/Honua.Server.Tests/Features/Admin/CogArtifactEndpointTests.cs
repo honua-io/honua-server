@@ -15,9 +15,9 @@ using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Honua.Server.Features.Protocols.Rasters.CogArtifacts;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -69,11 +69,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
             });
 
         _fixture.ReplaceService<IRasterStore>(_rasterStore);
-        _fixture.ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
+        _fixture.WithTestAuthorization();
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
     }
