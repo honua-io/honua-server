@@ -18,7 +18,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-11-23T20:16:07.831211Z",
+    "anchor": "2026-11-25T06:59:10.470000Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 440,
-      "provingTestCount": 2081,
+      "provingTestCount": 2085,
       "maturity": {
         "implemented": 438,
         "experimental": 2
@@ -139,7 +139,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 179,
+      "provingTestCount": 185,
       "maturity": {
         "implemented": 4
       },
@@ -277,7 +277,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 12,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 1
       },
@@ -295,7 +295,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 16,
+      "provingTestCount": 17,
       "maturity": {
         "implemented": 1
       },
@@ -331,7 +331,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 1
       },
@@ -349,7 +349,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 36,
+      "provingTestCount": 38,
       "maturity": {
         "implemented": 4
       },
@@ -367,7 +367,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 7,
+      "provingTestCount": 8,
       "maturity": {
         "implemented": 1
       },
@@ -385,7 +385,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 6,
+      "provingTestCount": 8,
       "maturity": {
         "implemented": 2
       },
@@ -403,7 +403,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 5,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },
@@ -421,7 +421,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 11,
+      "provingTestCount": 12,
       "maturity": {
         "implemented": 1
       },
@@ -439,7 +439,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 5,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },
@@ -457,7 +457,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 6,
+      "provingTestCount": 7,
       "maturity": {
         "implemented": 1
       },
@@ -1197,7 +1197,7 @@
       "entryCount": 5,
       "provingTestCount": 18,
       "maturity": {
-        "implemented": 5
+        "preview": 5
       },
       "noSurface": null,
       "cite": [],
@@ -1213,7 +1213,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 53,
+      "provingTestCount": 58,
       "maturity": {
         "implemented": 10
       },
@@ -1563,7 +1563,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 17,
+      "provingTestCount": 21,
       "maturity": {
         "implemented": 2
       },
@@ -1677,7 +1677,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 29,
+      "provingTestCount": 34,
       "maturity": {
         "implemented": 2
       },
@@ -1685,7 +1685,17 @@
       "cite": [],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "js-cesium",
+          "protocol": "elevation",
+          "freshness": {
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T06:59:10.470000Z"
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -1735,7 +1745,7 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T07:15:30.096120Z"
           }
         },
@@ -1744,7 +1754,7 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "fresh",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T20:16:07.831211Z"
           }
         },
@@ -1916,7 +1926,7 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T07:15:30.298080Z"
           }
         },
@@ -1925,7 +1935,7 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "fresh",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         },
@@ -2164,7 +2174,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 385,
+      "provingTestCount": 389,
       "maturity": {
         "implemented": 19
       },
@@ -2186,7 +2196,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:39.990000Z"
           }
         },
@@ -2195,7 +2205,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 93,
+            "ageDays": 95,
             "runDate": "2026-08-22T02:57:06.792964Z"
           }
         },
@@ -2204,7 +2214,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "fresh",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         },
@@ -2245,7 +2255,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:39.755000Z"
           }
         },
@@ -2254,7 +2264,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2276,7 +2286,17 @@
       "cite": [],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "py-owslib",
+          "protocol": "ogc-api-records",
+          "freshness": {
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T05:36:49.261006Z"
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -2308,7 +2328,7 @@
           "protocol": "ogc-tiles",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2348,7 +2368,17 @@
       "cite": [],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "py-pystac",
+          "protocol": "stac",
+          "freshness": {
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T04:12:19.678816Z"
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -2358,7 +2388,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 8,
+      "provingTestCount": 26,
       "maturity": {
         "implemented": 2
       },
@@ -2366,7 +2396,17 @@
       "cite": [],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "js-cesium",
+          "protocol": "quantized-mesh",
+          "freshness": {
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T06:52:57.496000Z"
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -2390,7 +2430,7 @@
           "protocol": "mvt",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:52.394000Z"
           }
         }
@@ -2468,7 +2508,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:40.991000Z"
           }
         },
@@ -2477,7 +2517,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 93,
+            "ageDays": 95,
             "runDate": "2026-08-22T02:57:06.793352Z"
           }
         },
@@ -2486,7 +2526,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "fresh",
-            "ageDays": 0,
+            "ageDays": 1,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         }
@@ -2525,7 +2565,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:39.001000Z"
           }
         },
@@ -2534,7 +2574,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
@@ -2584,7 +2624,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:37.557000Z"
           }
         },
@@ -2593,7 +2633,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 200,
+            "ageDays": 201,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
@@ -2728,7 +2768,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 10,
+      "provingTestCount": 25,
       "maturity": {
         "implemented": 2
       },
@@ -2808,7 +2848,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 17,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 1
       },
@@ -2844,7 +2884,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 12,
+      "provingTestCount": 22,
       "maturity": {
         "implemented": 2
       },

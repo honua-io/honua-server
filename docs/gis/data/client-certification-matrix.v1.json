@@ -224,6 +224,10 @@
       "category": "CESIUM"
     },
     {
+      "id": "JS-CES-ELEV-01",
+      "category": "CESIUM"
+    },
+    {
       "id": "DSK-EXT-01",
       "category": "DESKTOP"
     },
@@ -1321,7 +1325,8 @@
       "requiredTier": "nightly",
       "automated": [
         "JS-CES-IMG-01",
-        "JS-CES-TILE-01"
+        "JS-CES-TILE-01",
+        "JS-CES-ELEV-01"
       ],
       "manual": [
         "CERT-*"

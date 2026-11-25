@@ -19,6 +19,16 @@
       "protocol": "ogc-maps"
     },
     {
+      "client_lane": "js-cesium",
+      "protocol": "elevation",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "js-cesium",
+      "protocol": "quantized-mesh",
+      "nightly_only": true
+    },
+    {
       "client_lane": "js",
       "protocol": "ogc-features"
     },
