@@ -10,6 +10,7 @@ using Honua.Core.Features.Observability.Services;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -277,17 +278,38 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
         await using var services = new ServiceCollection()
             .AddScoped(_ => new OpsAutonomySettingsWriter(_postgres.DataSource, _store, watchdog))
             .BuildServiceProvider();
+        var clock = new RetryClock();
         using var reconciliation = new OpsWatchdogStartupReconciliation(
             services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new OpsAutonomyOptions()),
+            clock,
             NullLogger<OpsWatchdogStartupReconciliation>.Instance);
 
         await reconciliation.StartAsync(CancellationToken.None);
+        Assert.Equal(TimeSpan.FromSeconds(5), await clock.TimerRegistered.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, Volatile.Read(ref attempts));
+        clock.Advance(TimeSpan.FromSeconds(5));
         await suspended.Task.WaitAsync(TimeSpan.FromSeconds(30));
         await reconciliation.StopAsync(CancellationToken.None);
 
         Assert.Equal(2, attempts);
         Assert.Null(reconciliation.ExecuteTask?.Exception);
+    }
+
+    private sealed class RetryClock : TimeProvider
+    {
+        private readonly TransitionClock _clock = new();
+
+        public TaskCompletionSource<TimeSpan> TimerRegistered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = _clock.CreateTimer(callback, state, dueTime, period);
+            TimerRegistered.TrySetResult(dueTime);
+            return timer;
+        }
+
+        public void Advance(TimeSpan duration) => _clock.Advance(duration);
     }
 
     private static void CancelRequestWhenAuditRecords(IAuditLog audit, CancellationTokenSource request, string committedValue)

@@ -9,6 +9,7 @@ namespace Honua.Infrastructure.Monitoring;
 internal sealed partial class OpsWatchdogStartupReconciliation(
     IServiceScopeFactory scopeFactory,
     IOptions<OpsAutonomyOptions> options,
+    TimeProvider clock,
     ILogger<OpsWatchdogStartupReconciliation> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -33,7 +34,7 @@ internal sealed partial class OpsWatchdogStartupReconciliation(
                 ReconciliationFailed(logger, exception);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(5), clock, stoppingToken).ConfigureAwait(false);
         }
     }
 
