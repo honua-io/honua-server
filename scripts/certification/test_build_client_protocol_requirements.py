@@ -149,10 +149,10 @@ class ProducerBindingTests(unittest.TestCase):
         cls.pairs = module.emitted_pairs(ROOT)
         cls.roster = module.roster_cells(ROOT)
 
-    def test_emitted_pairs_are_exactly_the_contracted_pairs(self):
+    def test_emitted_pairs_match_the_contracted_candidate_pairs(self):
         self.assertEqual(
             sorted((pair["client_lane"], pair["protocol"])
-                   for pair in EXPECTED_PAIRS["expected_pairs"]),
+                   for pair in EXPECTED_PAIRS["expected_pairs"] if not pair.get("nightly_only")),
             sorted(self.pairs))
 
     def test_every_contracted_pair_has_a_committed_baseline_version(self):
@@ -172,6 +172,19 @@ class ProducerBindingTests(unittest.TestCase):
         unproduced = [row["test_ids"] for row in MIRROR["requirements"]
                       if module.classify_producer(row, self.pairs, self.roster)["status"] != "present"]
         self.assertEqual([], unproduced)
+
+    def test_records_nightly_envelope_cannot_replace_a_missing_roster_cell(self):
+        row = next(row for row in MIRROR["requirements"]
+                   if (row["client_lane"], row["surface"]) == ("py-owslib", "ogc-api-records"))
+        self.assertIn({"client_lane": "py-owslib", "protocol": "ogc-api-records", "nightly_only": True},
+                      EXPECTED_PAIRS["expected_pairs"])
+        produced = module.classify_producer(row, self.pairs, self.roster)
+        self.assertEqual(module.ROSTER_WORKFLOW_RELATIVE_PATH, produced["producer"].get("workflow"))
+        without_records = {test_id: pins for test_id, pins in self.roster.items()
+                           if test_id not in row["test_ids"]}
+        absent = module.classify_producer(row, self.pairs, without_records)
+        self.assertEqual("absent", absent["status"])
+        self.assertEqual("surface-not-emitted", absent["reasonCode"])
 
     def test_no_two_governed_rows_claim_the_same_test_id(self):
         self.assertEqual({}, module.ambiguous_test_ids(MIRROR["requirements"]))

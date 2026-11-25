@@ -1121,6 +1121,16 @@
         "clientLane": "bi-excel",
         "protocol": "odata",
         "capability": "serve.odata"
+      },
+      {
+        "clientLane": "py-owslib",
+        "protocol": "ogc-api-records",
+        "capability": "serve.ogc-api-records"
+      },
+      {
+        "clientLane": "py-pystac",
+        "protocol": "stac",
+        "capability": "serve.stac"
       }
     ],
     "geoservicesCompatMatrix": [
