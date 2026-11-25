@@ -20,9 +20,9 @@ namespace Honua.Protocols.SensorThings;
 
 internal static partial class SensorThingsEndpoints
 {
-    internal const int MaxExpandedEntities = 10_000;
+    internal const int MaxExpandedEntities = 2_000;
 
-    internal const int MaxExpansionQueries = 8_192;
+    internal const int MaxExpansionQueries = 256;
 
     private sealed record Resource(string Set, long? Id, string? ParentSet = null, long? ParentId = null, string? Navigation = null, string? Property = null, bool Raw = false, bool Reference = false);
 
@@ -211,8 +211,11 @@ internal static partial class SensorThingsEndpoints
             if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
             var resource = await ResolveResourceAsync(context, store).ConfigureAwait(false);
             ValidateCoreQuery(context.Request, resource.Id is null);
-            planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(resource.Set), translator);
-            if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
+            if (!string.Equals(resource.Set, shape.Set, StringComparison.Ordinal))
+            {
+                planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(resource.Set), translator);
+                if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
+            }
             var plan = planResult.Plan!;
             var budget = new ExpansionBudget();
             if (resource.Id is { } id)
@@ -272,7 +275,7 @@ internal static partial class SensorThingsEndpoints
 
     private static async Task<JsonObject> ShapeEntityAsync(HttpContext context, ISensorThingsEntityStore store, StaFilterTranslator translator, string set, JsonElement entity, StaQueryPlan plan, int depth, ExpansionBudget budget)
     {
-        if (depth > SensorThingsRelationships.MaxRelationshipDepth) throw new SensorThingsValidationException("$expand exceeds the maximum depth.");
+        if (depth > StaQueryPlan.MaxExpansionDepth) throw new SensorThingsValidationException("$expand exceeds the maximum depth.");
         var result = JsonNode.Parse(entity.GetRawText())!.AsObject();
         var id = entity.GetProperty("@iot.id").GetInt64();
         var self = $"{StaBase(context)}/{set}({id.ToString(CultureInfo.InvariantCulture)})";
@@ -281,16 +284,8 @@ internal static partial class SensorThingsEndpoints
         foreach (var expansion in plan.Expansions)
         {
             var relationship = SensorThingsRelationships.For(set)[expansion.Navigation];
-            var nestedRequest = new DefaultHttpContext().Request;
-            var nestedQuery = ExpansionQuery(expansion);
-            nestedRequest.QueryString = new QueryString(QueryHelpers.AddQueryString(string.Empty, nestedQuery));
-            var nestedResult = StaQueryPlan.Create(nestedRequest, StaEntitySchema.For(relationship.Target), translator);
-            if (!nestedResult.IsSuccess)
-            {
-                if (nestedResult.StatusCode == StatusCodes.Status501NotImplemented) throw new UnsupportedQueryOptionException(nestedResult.Error ?? "Unsupported nested query.");
-                throw new SensorThingsValidationException(nestedResult.Error ?? "Invalid nested query.");
-            }
-            var nestedPlan = nestedResult.Plan!;
+            var nestedPlan = expansion.NestedPlan
+                ?? throw new SensorThingsValidationException("Invalid nested query.");
             budget.ChargeQuery();
             var page = await store.QueryEntitiesAsync(relationship.Target, new(expansion.WhereSql, expansion.WhereParameters, expansion.OrderBySql,
                 expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation, expansion.Count,
@@ -483,8 +478,9 @@ internal static partial class SensorThingsEndpoints
             }
             var id = await store.CreateEntityAsync(resource.Set, body, context.RequestAborted).ConfigureAwait(false);
             var entity = await store.GetEntityAsync(resource.Set, id, context.RequestAborted).ConfigureAwait(false);
-            var plan = StaQueryPlan.Create(new DefaultHttpContext().Request, StaEntitySchema.For(resource.Set), context.RequestServices.GetRequiredService<StaFilterTranslator>()).Plan!;
-            var shaped = await ShapeEntityAsync(context, store, context.RequestServices.GetRequiredService<StaFilterTranslator>(), resource.Set, entity!.Value, plan, 0, new ExpansionBudget()).ConfigureAwait(false);
+            var translator = context.RequestServices.GetRequiredService<StaFilterTranslator>();
+            var plan = StaQueryPlan.CreateFromOptions(new StaQueryOptions(), StaEntitySchema.For(resource.Set), translator).Plan!;
+            var shaped = await ShapeEntityAsync(context, store, translator, resource.Set, entity!.Value, plan, 0, new ExpansionBudget()).ConfigureAwait(false);
             context.Response.Headers.Location = $"{StaBase(context)}/{resource.Set}({id.ToString(CultureInfo.InvariantCulture)})";
             CoreMutationLog.Completed(logger, context.Request.Method, resource.Set, id);
             return JsonResponse(shaped, 201);

@@ -7,6 +7,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Middleware;
+using Honua.Server.Features.Admin;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -20,7 +21,8 @@ internal static partial class EnhancedPerformanceEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Enhanced Performance Monitoring")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         // Database query performance endpoints
         group.MapGet("/database/query-performance", GetQueryPerformanceStatistics)

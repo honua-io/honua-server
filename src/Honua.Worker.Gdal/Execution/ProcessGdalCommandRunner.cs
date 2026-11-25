@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Subprocesses;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,61 +19,6 @@ internal sealed partial class ProcessGdalCommandRunner(
     ILogger<ProcessGdalCommandRunner> logger,
     IConfiguration? configuration = null) : IGdalCommandRunner
 {
-    private static readonly string[] InheritedCloudCredentialVariables =
-    [
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-        "AWS_PROFILE",
-        "AWS_WEB_IDENTITY_TOKEN_FILE",
-        "AWS_ROLE_ARN",
-        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
-        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-        "AZURE_STORAGE_CONNECTION_STRING",
-        "AZURE_STORAGE_ACCOUNT",
-        "AZURE_STORAGE_ACCESS_KEY",
-        "AZURE_STORAGE_SAS_TOKEN",
-        "AZURE_CLIENT_ID",
-        "AZURE_CLIENT_SECRET",
-        "AZURE_TENANT_ID",
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "PGPASSWORD",
-        "PGPASSFILE",
-        "PGUSER",
-        "PGHOST",
-        "PGDATABASE"
-    ];
-
-    private static readonly string[] SensitiveVariablePrefixes =
-    [
-        "ConnectionStrings__",
-        "Database__",
-        "Postgres__",
-        "Honua__",
-        "HONUA_",
-        "Security__",
-        "License__",
-        "FileStorage__",
-        "OTEL_"
-    ];
-
-    private static readonly string[] SensitiveVariableSubstrings =
-    [
-        "SECRET",
-        "PASSWORD",
-        "PASSWD",
-        "TOKEN",
-        "API_KEY",
-        "APIKEY",
-        "PRIVATE_KEY",
-        "CONNECTION_STRING",
-        "CONNECTIONSTRING",
-        "CREDENTIAL",
-        "LICENSE_KEY",
-        "ENCRYPTION_KEY",
-        "SIGNING_KEY"
-    ];
-
     public async Task<GdalCommandResult> RunAsync(
         string tool,
         IReadOnlyList<string> arguments,
@@ -121,23 +67,12 @@ internal sealed partial class ProcessGdalCommandRunner(
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
+        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
+            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
 
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stdout.AppendLine(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stderr.AppendLine(e.Data);
-            }
-        };
+        process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
+        process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
 
         await RunProcessAsync(process, nativeEntry, cancellationToken).ConfigureAwait(false);
 
@@ -148,7 +83,8 @@ internal sealed partial class ProcessGdalCommandRunner(
         {
             ExitCode = process.ExitCode,
             StandardOutput = stdout.ToString(),
-            StandardError = stderr.ToString()
+            StandardError = stderr.ToString(),
+            StandardOutputTruncated = stdout.Truncated
         };
 
         Log.ToolCompleted(logger, tool, result.ExitCode);
@@ -180,7 +116,7 @@ internal sealed partial class ProcessGdalCommandRunner(
         {
             // Any launch/reader/handshake/IO failure must kill a child held before main,
             // not just operator cancellation. Reap is bounded and preserves the original error.
-            TryKill(process);
+            SubprocessEnvironmentScrubber.TryKill(process);
             try
             {
                 await process.WaitForExitAsync(CancellationToken.None)
@@ -206,51 +142,25 @@ internal sealed partial class ProcessGdalCommandRunner(
         ArgumentNullException.ThrowIfNull(s3Options);
         ArgumentNullException.ThrowIfNull(azureOptions);
 
-        var sensitiveNames = new HashSet<string>(InheritedCloudCredentialVariables, StringComparer.OrdinalIgnoreCase);
-        AddEnvironmentReference(sensitiveNames, s3Options.AccessKeyId);
-        AddEnvironmentReference(sensitiveNames, s3Options.SecretAccessKey);
-        AddEnvironmentReference(sensitiveNames, azureOptions.ConnectionString);
+        var additionalSensitiveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddEnvironmentReference(additionalSensitiveNames, s3Options.AccessKeyId);
+        AddEnvironmentReference(additionalSensitiveNames, s3Options.SecretAccessKey);
+        AddEnvironmentReference(additionalSensitiveNames, azureOptions.ConnectionString);
         if (configuration is not null)
         {
-            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:AccessKeyId"]);
-            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:SecretAccessKey"]);
-            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AzureBlob:ConnectionString"]);
+            AddEnvironmentReference(additionalSensitiveNames, configuration["FileStorage:AwsS3:AccessKeyId"]);
+            AddEnvironmentReference(additionalSensitiveNames, configuration["FileStorage:AwsS3:SecretAccessKey"]);
+            AddEnvironmentReference(additionalSensitiveNames, configuration["FileStorage:AzureBlob:ConnectionString"]);
         }
 
         // Strip inherited cloud credentials, configured secret references, and host secrets
         // before re-adding only the values BuildEnvironment authorized for this invocation.
-        foreach (var inheritedName in environment.Keys
-                     .Where(name => sensitiveNames.Contains(name) || IsSensitiveHostVariable(name))
-                     .ToArray())
-        {
-            environment.Remove(inheritedName);
-        }
+        SubprocessEnvironmentScrubber.Scrub(environment, additionalSensitiveNames);
 
         foreach (var kvp in hardeningEnvironment)
         {
             environment[kvp.Key] = kvp.Value;
         }
-    }
-
-    private static bool IsSensitiveHostVariable(string name)
-    {
-        foreach (var prefix in SensitiveVariablePrefixes)
-        {
-            if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        foreach (var token in SensitiveVariableSubstrings)
-        {
-            if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static void AddEnvironmentReference(HashSet<string> sensitiveNames, string? configuredValue)
@@ -266,25 +176,6 @@ internal sealed partial class ProcessGdalCommandRunner(
         }
     }
 
-    private static void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // Process already exited between the check and the kill.
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            // Permission/race killing the process; nothing more we can do.
-        }
-    }
-
     private static partial class Log
     {
         [LoggerMessage(9200, LogLevel.Information, "Running GDAL tool {Tool} {Arguments}")]
@@ -292,5 +183,99 @@ internal sealed partial class ProcessGdalCommandRunner(
 
         [LoggerMessage(9201, LogLevel.Information, "GDAL tool {Tool} exited with code {ExitCode}")]
         public static partial void ToolCompleted(ILogger logger, string tool, int exitCode);
+    }
+}
+
+internal sealed class BoundedProcessOutputBuffer
+{
+    internal const int DefaultMaxChars = 256 * 1024;
+    internal const int DefaultStandardOutputMaxChars = 50 * 1024 * 1024;
+    internal const string TruncationMarker = "... [output truncated]";
+
+    private enum TruncationMarkerMode
+    {
+        Append,
+        Omit,
+    }
+
+    private readonly int _maxChars;
+    private readonly TruncationMarkerMode _truncationMarkerMode;
+    private readonly Lock _sync = new();
+    private readonly StringBuilder _builder = new();
+    private bool _truncated;
+
+    public BoundedProcessOutputBuffer(int maxChars = DefaultMaxChars)
+        : this(maxChars, TruncationMarkerMode.Append)
+    {
+    }
+
+    private BoundedProcessOutputBuffer(int maxChars, TruncationMarkerMode truncationMarkerMode)
+    {
+        _maxChars = maxChars > 0
+            ? maxChars
+            : throw new ArgumentOutOfRangeException(nameof(maxChars), "Maximum character limit must be positive.");
+        _truncationMarkerMode = truncationMarkerMode;
+    }
+
+    public static BoundedProcessOutputBuffer CreateWithTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Append);
+
+    public static BoundedProcessOutputBuffer CreateWithoutTruncationMarker(int maxChars = DefaultMaxChars)
+        => new(maxChars, TruncationMarkerMode.Omit);
+
+    public bool Truncated
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _truncated;
+            }
+        }
+    }
+
+    public void AppendLine(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            if (_truncated)
+            {
+                return;
+            }
+
+            var remaining = _maxChars - _builder.Length;
+            var lineLengthWithNewLine = line.Length + Environment.NewLine.Length;
+            if (lineLengthWithNewLine <= remaining)
+            {
+                _builder.AppendLine(line);
+                return;
+            }
+
+            if (remaining > 0)
+            {
+                _builder.Append(line, 0, Math.Min(line.Length, remaining));
+            }
+
+            if (_truncationMarkerMode == TruncationMarkerMode.Append)
+            {
+                _builder.AppendLine();
+                _builder.Append(TruncationMarker);
+            }
+
+            _truncated = true;
+        }
+    }
+
+    public override string ToString()
+    {
+        lock (_sync)
+        {
+            return _builder.ToString();
+        }
     }
 }

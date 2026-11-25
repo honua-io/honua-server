@@ -212,7 +212,7 @@ internal sealed partial class ODataBatchHandler
             layer.Srid,
             axisOrder);
         var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
-        var payload = ODataUtilityService.BuildFeaturePayload(layer.PublicLayerId, feature, geometry, attributes);
+        var payload = ODataUtilityService.BuildFeaturePayload(new() { LayerId = layer.PublicLayerId, Feature = feature, Geometry = geometry, Attributes = attributes, HiddenFields = layer.Resource.HiddenSchemaFieldNames() });
         var etag = ComputeFeatureEtag(payload);
 
         if (!string.IsNullOrWhiteSpace(ifMatch) &&

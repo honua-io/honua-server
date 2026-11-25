@@ -653,7 +653,7 @@ class RealMirrorContractTierTests(unittest.TestCase):
         # pair this repository does not emit must be reported as an absent lane or
         # surface, and a pair it does emit must be reported as a version mismatch.
         emitted = {(pair["client_lane"], pair["protocol"])
-                   for pair in EXPECTED_PAIRS["expected_pairs"]}
+                   for pair in EXPECTED_PAIRS["expected_pairs"] if not pair.get("nightly_only")}
         emitted_lanes = {lane for lane, _ in emitted}
 
         baseline_versions = {
@@ -692,14 +692,15 @@ class RealMirrorContractTierTests(unittest.TestCase):
             if code.startswith("producer-"):
                 self.assertEqual("honua-io/honua-server", owner)
 
-    def test_the_only_governed_pairs_the_nightly_matrix_emits_are_qgis_vector_and_pystac(self):
+    def test_the_nightly_matrix_emits_the_expected_governed_pairs(self):
         emitted = {(pair["client_lane"], pair["protocol"])
                    for pair in EXPECTED_PAIRS["expected_pairs"]}
         governed_pairs_emitted = sorted(
             (row["client_lane"], row["surface"]) for row in MIRROR["requirements"]
             if (row["client_lane"], row["surface"]) in emitted)
         self.assertEqual(
-            [("desktop-qgis", "ogc-features"), ("desktop-qgis", "wfs"), ("py-pystac", "stac")],
+            [("desktop-qgis", "ogc-features"), ("desktop-qgis", "wfs"),
+             ("py-owslib", "ogc-api-records"), ("py-pystac", "stac")],
             governed_pairs_emitted)
 
     def test_those_pairs_now_join_on_the_exact_client_version_and_wait_only_for_a_candidate(self):
@@ -708,6 +709,7 @@ class RealMirrorContractTierTests(unittest.TestCase):
         # exactly, so the emitted and governed versions must be identical strings.
         for lane, surface, version in (("desktop-qgis", "ogc-features", "3.44.13-Solothurn"),
                                        ("desktop-qgis", "wfs", "3.44.13-Solothurn"),
+                                       ("py-owslib", "ogc-api-records", "0.36.0"),
                                        ("py-pystac", "stac", "pystac=1.15.2;pystac-client=0.9.0")):
             row = next(r for r in MIRROR["requirements"]
                        if r["client_lane"] == lane and r["surface"] == surface)
@@ -762,7 +764,7 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         cls.verdicts = module.verify_release(MIRROR, cls.receipts, candidate())
 
     def test_the_committed_baselines_are_real_envelopes(self):
-        self.assertEqual(29, len(self.receipts))
+        self.assertEqual(32, len(self.receipts))
 
     def test_no_committed_baseline_certifies_any_governed_cell(self):
         summary = module.summarize(self.verdicts)

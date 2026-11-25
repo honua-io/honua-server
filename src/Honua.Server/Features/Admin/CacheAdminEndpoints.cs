@@ -22,16 +22,17 @@ internal static class CacheAdminEndpoints
     public static void MapCacheAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/cache")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Cache")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         var status = AdminHttpOperationRouteBinding.ForOperate("admin.cache.status", "/cache");
         group.MapMethods(status.RoutePattern, status.Methods, HandleGetCacheStatus)
             .WithAdminOperation(status.Definition)
             .WithDisplayName("Get Cache Status")
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatusResponse>>();
 
         var invalidate = AdminHttpOperationRouteBinding.ForOperate("admin.cache.invalidate", "/cache");
@@ -181,7 +182,7 @@ internal static class CacheAdminEndpoints
         IMetadataV2GraphProvider GraphProvider,
         CancellationToken CancellationToken);
 
-    private static async Task<int[]> ResolveServiceLayerIdsAsync(
+    internal static async Task<int[]> ResolveServiceLayerIdsAsync(
         IMetadataV2GraphProvider graphProvider,
         string serviceId,
         CancellationToken cancellationToken)

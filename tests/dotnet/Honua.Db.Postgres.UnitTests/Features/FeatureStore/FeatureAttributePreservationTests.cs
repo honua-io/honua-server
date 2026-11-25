@@ -88,6 +88,64 @@ public sealed class FeatureAttributePreservationTests
         Assert.Equal(3, preserved.Attributes.Count);
         Assert.True(current.Attributes.ContainsKey(idField));
     }
+
+    [UnitTest]
+    public void ApplyMaskedFieldsToEditBatch_MergesMaskedFieldsIntoUpdateAndOrderedUpdatePreservedNames()
+    {
+        var unorderedUpdate = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "a")) with
+        {
+            PreservedAttributeNames = ["globalid"],
+            PreserveOmittedMaskedAttributes = false
+        };
+        var orderedUpdate = Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty.Add("name", "b")) with
+        {
+            PreserveOmittedMaskedAttributes = false
+        };
+        var batch = FeatureEditBatch.Create(
+            updates: [unorderedUpdate],
+            operations: [FeatureEditOperation.Update(orderedUpdate)],
+            preconditions: [new FeatureEditPrecondition { ObjectId = 1, ExpectedStateToken = "tok" }]);
+
+        var prepared = Honua.Db.Postgres.Features.FeatureStore.PostgresFeatureStoreRefactored
+            .ApplyMaskedFieldsToEditBatch(batch, ["ssn", "globalid"]);
+
+        Assert.Equal(["globalid", "ssn"], prepared.Updates[0].PreservedAttributeNames.OrderBy(static n => n, StringComparer.Ordinal));
+        Assert.Equal(["globalid", "ssn"], prepared.Operations[0].Feature!.Value.PreservedAttributeNames.OrderBy(static n => n, StringComparer.Ordinal));
+        Assert.Equal(["globalid", "ssn"], prepared.Preconditions[0].MaskedFields.OrderBy(static n => n, StringComparer.Ordinal));
+
+        // Replacement update with PreserveOmittedMaskedAttributes = false still preserves masked fields.
+        var current = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", "old")
+            .Add("ssn", "123-45-6789")
+            .Add("globalid", "gid-1")
+            .Add("notes", "drop-me"));
+        var merged = FeatureDataAccess.PreserveOmittedAttributes(prepared.Updates[0], current);
+        Assert.Equal("a", merged.Attributes["name"]);
+        Assert.Equal("123-45-6789", merged.Attributes["ssn"]);
+        Assert.Equal("gid-1", merged.Attributes["globalid"]);
+        Assert.False(merged.Attributes.ContainsKey("notes"));
+    }
+
+    [UnitTest]
+    public void ValidatePreconditionAgainstRow_MismatchedToken_ThrowsWithMaskedConflictFeature()
+    {
+        var current = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", "visible")
+            .Add("secret", "hidden"));
+        var precondition = new FeatureEditPrecondition
+        {
+            ObjectId = 7,
+            ExpectedStateToken = "stale-token",
+            MaskedFields = ["secret"]
+        };
+
+        var ex = Assert.Throws<FeatureEditPreconditionFailedException>(() =>
+            FeatureDataAccess.ValidatePreconditionAgainstRow(1, 7, current, precondition));
+
+        Assert.Equal(7, ex.ObjectId);
+        Assert.Equal("visible", ex.CurrentFeature.Attributes["name"]);
+        Assert.False(ex.CurrentFeature.Attributes.ContainsKey("secret"));
+    }
 }
 
 [JsonSerializable(typeof(Feature))]

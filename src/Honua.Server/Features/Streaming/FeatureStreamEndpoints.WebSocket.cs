@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Realtime;
 using Honua.Core.Queries.Filters;
@@ -454,39 +455,22 @@ internal static partial class FeatureStreamEndpoints
         {
             sessionManager.DisconnectSession(session.SessionId);
         }
-        catch (WebSocketException ex)
+        catch (Exception ex) when (ex is WebSocketException or IOException or ObjectDisposedException)
         {
             FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
         }
-        catch (ObjectDisposedException ex)
+        finally
         {
-            FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
-        }
-
-        // Signal writer to stop and wait for it.
-        await linkedCts.CancelAsync().ConfigureAwait(false);
-        await writerTask.ConfigureAwait(false);
-        await restartClose.ConfigureAwait(false);
-
-        // Graceful close.
-        if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-        {
-            try
+            await TeardownWebSocketSessionAsync(new WebSocketSessionTeardown
             {
-                var (status, description) = session.ServiceRestart
-                    ? (RealtimeStreamAdmission.ServiceRestart, RealtimeStreamAdmission.ServiceRestartDescription)
-                    : (WebSocketCloseStatus.NormalClosure,
-                        session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.");
-                await webSocket.CloseAsync(status, description, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (WebSocketException ex)
-            {
-                FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
-            }
-            catch (ObjectDisposedException ex)
-            {
-                FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
-            }
+                Context = context,
+                WebSocket = webSocket,
+                Session = session,
+                LinkedCts = linkedCts,
+                WriterTask = writerTask,
+                RestartClose = restartClose,
+                Logger = logger
+            }).ConfigureAwait(false);
         }
     }
 
@@ -702,6 +686,10 @@ internal static partial class FeatureStreamEndpoints
         catch (WebSocketException)
         {
             // Client gone.
+        }
+        catch (IOException)
+        {
+            // Transport disconnected.
         }
         catch (ObjectDisposedException)
         {
@@ -1240,7 +1228,8 @@ internal static partial class FeatureStreamEndpoints
                     authService = layer.Service;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, authService))
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context, layer.Resource, authService, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
                 }
@@ -1255,21 +1244,14 @@ internal static partial class FeatureStreamEndpoints
         }
         else if (service is not null)
         {
-            var serviceLayers = ResolveServiceStreamLayers(snapshot, service).ToArray();
-            if (serviceLayers.Length == 0)
+            var (resolvedServiceLayers, serviceLayerError) = await ResolveAuthorizedControlServiceLayersAsync(
+                context, snapshot, service).ConfigureAwait(false);
+            if (serviceLayerError is not null)
             {
-                return (null, $"Service '{service.Metadata.Name}' has no routable layers.");
+                return (null, serviceLayerError);
             }
 
-            foreach (var layer in serviceLayers)
-            {
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                {
-                    return (null, "Access to the requested stream service is forbidden.");
-                }
-            }
-
-            layerIds = serviceLayers.Select(static layer => layer.LayerId).Distinct().ToArray();
+            layerIds = resolvedServiceLayers;
         }
 
         double[]? bbox = null;
@@ -1404,6 +1386,29 @@ internal static partial class FeatureStreamEndpoints
         return DescribeMaskedFilterField(filter) is { } maskedFieldError
             ? (null, maskedFieldError)
             : (filter, null);
+    }
+
+    private static async Task<(int[]? LayerIds, string? Error)> ResolveAuthorizedControlServiceLayersAsync(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var serviceLayers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+        if (serviceLayers.Length == 0)
+        {
+            return (null, $"Service '{service.Metadata.Name}' has no routable layers.");
+        }
+
+        foreach (var layer in serviceLayers)
+        {
+            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, layer.Resource, service, AuthorizationOperation.Query, context.RequestAborted).ConfigureAwait(false))
+            {
+                return (null, "Access to the requested stream service is forbidden.");
+            }
+        }
+
+        return (serviceLayers.Select(static layer => layer.LayerId).Distinct().ToArray(), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

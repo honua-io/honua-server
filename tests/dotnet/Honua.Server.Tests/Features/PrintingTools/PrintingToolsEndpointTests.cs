@@ -113,7 +113,52 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
     [IntegrationTest]
     [Operation(Operations.Print)]
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
+    public async Task Execute_AnonymousPdfRequestWithoutGrant_RequiresPdfEntitlement()
+    {
+        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "Community");
+        try
+        {
+            await fixture.InitializeAsync();
+            using var response = await RequestPdfAsync(fixture.Client);
+
+            await response.AssertGeoServicesErrorAsync(402);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("printing.pdf-output");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
     public async Task Execute_PdfFormat_ReturnsPdfDocument()
+    {
+        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "Pro");
+        try
+        {
+            await fixture.InitializeAsync();
+            using var response = await RequestPdfAsync(fixture.Client);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            Assert.Equal("application/pdf", response.Content.Headers.ContentType?.MediaType);
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            bytes.Should().StartWith("%PDF-"u8.ToArray());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static WebAppFixture CreateAnonymousPdfFixture(string devGrantEdition)
+        => new WebAppFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("Licensing:Mode", "Enabled")
+                .UseSetting("Licensing:DevGrantEdition", devGrantEdition));
+
+    private static async Task<HttpResponseMessage> RequestPdfAsync(HttpClient client)
     {
         var webMapJson = CreateMinimalWebMapJson();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -123,29 +168,9 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        using var response = await _client.PostAsync(
+        return await client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
-
-        // PDF may be blocked by entitlement gating (Community edition in tests).
-        // Accept either a PDF document or a Payment Required GeoServices error from
-        // license gating. A GeoServices error is signalled with HTTP 200 +
-        // an {"error":{"code":402}} body, so branch on the produced content type (a
-        // real PDF) rather than the HTTP status.
-        if (response.Content.Headers.ContentType?.MediaType == "application/pdf")
-        {
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            bytes.Length.Should().BeGreaterThan(0);
-            // Verify PDF magic bytes
-            bytes[0].Should().Be(0x25); // %
-            bytes[1].Should().Be(0x50); // P
-            bytes[2].Should().Be(0x44); // D
-            bytes[3].Should().Be(0x46); // F
-        }
-        else
-        {
-            await response.AssertGeoServicesErrorAsync(402);
-        }
     }
 
     [IntegrationTest]

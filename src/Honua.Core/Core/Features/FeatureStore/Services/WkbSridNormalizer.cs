@@ -16,17 +16,22 @@ public static class WkbSridNormalizer
     {
         ArgumentNullException.ThrowIfNull(wkb);
 
-        using var output = new MemoryStream(wkb.Length);
+        ReadOnlySpan<byte> input = wkb;
         var offset = 0;
-        var changed = false;
+        var sridBytesRemoved = 0;
         var hasZ = false;
         var hasM = false;
-        if (!TryCopyGeometry(wkb, ref offset, output, ref changed, ref hasZ, ref hasM) || offset != wkb.Length)
+        if (!TryInspectGeometry(input, ref offset, ref sridBytesRemoved, ref hasZ, ref hasM) ||
+            offset != input.Length ||
+            sridBytesRemoved == 0)
         {
             return wkb;
         }
 
-        return changed ? output.ToArray() : wkb;
+        var output = new byte[input.Length - sridBytesRemoved];
+        var stripper = new WkbSridStripper(input, output);
+        stripper.CopyGeometry();
+        return output;
     }
 
     public static bool TryGetDeclaredOrdinates(byte[] wkb, out bool hasZ, out bool hasM)
@@ -39,9 +44,9 @@ public static class WkbSridNormalizer
         }
 
         var offset = 0;
-        var changed = false;
-        if (TryCopyGeometry(wkb, ref offset, Stream.Null, ref changed, ref hasZ, ref hasM,
-                maximumDepth: 128) && offset == wkb.Length)
+        var sridBytesRemoved = 0;
+        if (TryInspectGeometry(wkb, ref offset, ref sridBytesRemoved, ref hasZ, ref hasM, maximumDepth: 128) &&
+            offset == wkb.Length)
         {
             return true;
         }
@@ -55,9 +60,10 @@ public static class WkbSridNormalizer
     {
         ArgumentNullException.ThrowIfNull(wkb);
 
+        ReadOnlySpan<byte> input = wkb;
         var offset = 0;
-        if (!TryReadByteOrderRaw(wkb, ref offset, out var littleEndian) ||
-            !TryReadUInt32Raw(wkb, ref offset, littleEndian, out var rawType))
+        if (!TryReadByteOrder(input, ref offset, out var littleEndian) ||
+            !TryReadUInt32(input, ref offset, littleEndian, out var rawType))
         {
             return false;
         }
@@ -70,39 +76,10 @@ public static class WkbSridNormalizer
         return ordinateCount > 2;
     }
 
-    private static bool TryReadByteOrderRaw(byte[] input, ref int offset, out bool littleEndian)
-    {
-        if (offset >= input.Length || input[offset] is not (0 or 1))
-        {
-            littleEndian = false;
-            return false;
-        }
-
-        littleEndian = input[offset++] == 1;
-        return true;
-    }
-
-    private static bool TryReadUInt32Raw(byte[] input, ref int offset, bool littleEndian, out uint value)
-    {
-        if (input.Length - offset < sizeof(uint))
-        {
-            value = 0;
-            return false;
-        }
-
-        var bytes = input.AsSpan(offset, sizeof(uint));
-        value = littleEndian
-            ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
-            : BinaryPrimitives.ReadUInt32BigEndian(bytes);
-        offset += sizeof(uint);
-        return true;
-    }
-
-    private static bool TryCopyGeometry(
-        byte[] input,
+    private static bool TryInspectGeometry(
+        ReadOnlySpan<byte> input,
         ref int offset,
-        Stream output,
-        ref bool changed,
+        ref int sridBytesRemoved,
         ref bool hasZ,
         ref bool hasM,
         uint? expectedGeometryType = null,
@@ -110,23 +87,20 @@ public static class WkbSridNormalizer
         int maximumDepth = int.MaxValue)
     {
         if (depth >= maximumDepth ||
-            !TryReadByteOrder(input, ref offset, output, out var littleEndian) ||
+            !TryReadByteOrder(input, ref offset, out var littleEndian) ||
             !TryReadUInt32(input, ref offset, littleEndian, out var rawType))
         {
             return false;
         }
 
-        var hasSrid = (rawType & EwkbSridFlag) != 0;
-        WriteUInt32(output, rawType & ~EwkbSridFlag, littleEndian);
-
-        if (hasSrid)
+        if ((rawType & EwkbSridFlag) != 0)
         {
             if (!TrySkip(input, ref offset, sizeof(uint)))
             {
                 return false;
             }
 
-            changed = true;
+            sridBytesRemoved += sizeof(uint);
         }
 
         if (!TryResolveType(rawType, out var geometryType, out var ordinateCount, out var nodeHasZ, out var nodeHasM))
@@ -144,16 +118,15 @@ public static class WkbSridNormalizer
 
         return geometryType switch
         {
-            1 => TryCopyCoordinates(input, ref offset, output, 1, ordinateCount),
-            2 => TryCopyCoordinateSequence(input, ref offset, output, littleEndian, ordinateCount),
-            3 => TryCopyPolygon(input, ref offset, output, littleEndian, ordinateCount),
-            4 or 5 or 6 or 7 => TryCopyCollection(
+            1 => TrySkipCoordinates(input, ref offset, 1, ordinateCount),
+            2 => TryInspectCoordinateSequence(input, ref offset, littleEndian, ordinateCount),
+            3 => TryInspectPolygon(input, ref offset, littleEndian, ordinateCount),
+            4 or 5 or 6 or 7 => TryInspectCollection(
                 input,
                 ref offset,
-                output,
                 littleEndian,
                 geometryType == 7 ? null : geometryType - 3,
-                ref changed,
+                ref sridBytesRemoved,
                 ref hasZ,
                 ref hasM,
                 depth + 1,
@@ -162,21 +135,20 @@ public static class WkbSridNormalizer
         };
     }
 
-    private static bool TryCopyPolygon(
-        byte[] input,
+    private static bool TryInspectPolygon(
+        ReadOnlySpan<byte> input,
         ref int offset,
-        Stream output,
         bool littleEndian,
         int ordinateCount)
     {
-        if (!TryReadAndCopyCount(input, ref offset, output, littleEndian, out var ringCount))
+        if (!TryReadUInt32(input, ref offset, littleEndian, out var ringCount))
         {
             return false;
         }
 
         for (uint ring = 0; ring < ringCount; ring++)
         {
-            if (!TryCopyCoordinateSequence(input, ref offset, output, littleEndian, ordinateCount))
+            if (!TryInspectCoordinateSequence(input, ref offset, littleEndian, ordinateCount))
             {
                 return false;
             }
@@ -185,26 +157,25 @@ public static class WkbSridNormalizer
         return true;
     }
 
-    private static bool TryCopyCollection(
-        byte[] input,
+    private static bool TryInspectCollection(
+        ReadOnlySpan<byte> input,
         ref int offset,
-        Stream output,
         bool littleEndian,
         uint? expectedChildType,
-        ref bool changed,
+        ref int sridBytesRemoved,
         ref bool hasZ,
         ref bool hasM,
         int depth,
         int maximumDepth)
     {
-        if (!TryReadAndCopyCount(input, ref offset, output, littleEndian, out var geometryCount))
+        if (!TryReadUInt32(input, ref offset, littleEndian, out var geometryCount))
         {
             return false;
         }
 
         for (uint geometry = 0; geometry < geometryCount; geometry++)
         {
-            if (!TryCopyGeometry(input, ref offset, output, ref changed, ref hasZ, ref hasM,
+            if (!TryInspectGeometry(input, ref offset, ref sridBytesRemoved, ref hasZ, ref hasM,
                     expectedChildType, depth, maximumDepth))
             {
                 return false;
@@ -214,31 +185,137 @@ public static class WkbSridNormalizer
         return true;
     }
 
-    private static bool TryCopyCoordinateSequence(
-        byte[] input,
+    private static bool TryInspectCoordinateSequence(
+        ReadOnlySpan<byte> input,
         ref int offset,
-        Stream output,
         bool littleEndian,
         int ordinateCount)
     {
-        return TryReadAndCopyCount(input, ref offset, output, littleEndian, out var coordinateCount) &&
-            TryCopyCoordinates(input, ref offset, output, coordinateCount, ordinateCount);
+        return TryReadUInt32(input, ref offset, littleEndian, out var coordinateCount) &&
+            TrySkipCoordinates(input, ref offset, coordinateCount, ordinateCount);
     }
 
-    private static bool TryCopyCoordinates(
-        byte[] input,
+    private static bool TrySkipCoordinates(
+        ReadOnlySpan<byte> input,
         ref int offset,
-        Stream output,
         uint coordinateCount,
         int ordinateCount)
     {
         var byteCount = (long)coordinateCount * ordinateCount * sizeof(double);
-        if (byteCount > int.MaxValue || !TryCopy(input, ref offset, output, (int)byteCount))
+        if (byteCount > int.MaxValue || !TrySkip(input, ref offset, (int)byteCount))
         {
             return false;
         }
 
         return true;
+    }
+
+    private enum WkbByteOrder : byte
+    {
+        BigEndian = 0,
+        LittleEndian = 1,
+    }
+
+    private ref struct WkbSridStripper
+    {
+        private readonly ReadOnlySpan<byte> _input;
+        private readonly Span<byte> _output;
+        private int _readOffset;
+        private int _writeOffset;
+
+        public WkbSridStripper(ReadOnlySpan<byte> input, Span<byte> output)
+        {
+            _input = input;
+            _output = output;
+        }
+
+        public void CopyGeometry()
+        {
+            var rawByteOrder = _input[_readOffset++];
+            _output[_writeOffset++] = rawByteOrder;
+            var byteOrder = rawByteOrder == 1 ? WkbByteOrder.LittleEndian : WkbByteOrder.BigEndian;
+
+            var rawType = ReadAndRewriteGeometryType(byteOrder);
+            TryResolveType(rawType, out var geometryType, out var ordinateCount);
+            CopyGeometryPayload(geometryType, ordinateCount, byteOrder);
+        }
+
+        private uint ReadAndRewriteGeometryType(WkbByteOrder byteOrder)
+        {
+            var rawType = ReadUInt32(_input.Slice(_readOffset, sizeof(uint)), byteOrder);
+            _readOffset += sizeof(uint);
+
+            WriteUInt32(_output.Slice(_writeOffset, sizeof(uint)), rawType & ~EwkbSridFlag, byteOrder);
+            _writeOffset += sizeof(uint);
+
+            if ((rawType & EwkbSridFlag) != 0)
+            {
+                _readOffset += sizeof(uint);
+            }
+
+            return rawType;
+        }
+
+        private void CopyGeometryPayload(uint geometryType, int ordinateCount, WkbByteOrder byteOrder)
+        {
+            switch (geometryType)
+            {
+                case 1:
+                    CopyBytes(ordinateCount * sizeof(double));
+                    break;
+                case 2:
+                    CopyCoordinateSequence(byteOrder, ordinateCount);
+                    break;
+                case 3:
+                    CopyPolygonRings(byteOrder, ordinateCount);
+                    break;
+                case 4 or 5 or 6 or 7:
+                    CopyCollectionChildren(byteOrder);
+                    break;
+            }
+        }
+
+        private void CopyPolygonRings(WkbByteOrder byteOrder, int ordinateCount)
+        {
+            var ringCount = CopyCount(byteOrder);
+            for (uint ring = 0; ring < ringCount; ring++)
+            {
+                CopyCoordinateSequence(byteOrder, ordinateCount);
+            }
+        }
+
+        private void CopyCollectionChildren(WkbByteOrder byteOrder)
+        {
+            var geometryCount = CopyCount(byteOrder);
+            for (uint geometry = 0; geometry < geometryCount; geometry++)
+            {
+                CopyGeometry();
+            }
+        }
+
+        private void CopyCoordinateSequence(WkbByteOrder byteOrder, int ordinateCount)
+        {
+            var coordinateCount = CopyCount(byteOrder);
+            var byteCount = (int)((long)coordinateCount * ordinateCount * sizeof(double));
+            CopyBytes(byteCount);
+        }
+
+        private uint CopyCount(WkbByteOrder byteOrder)
+        {
+            var slice = _input.Slice(_readOffset, sizeof(uint));
+            var count = ReadUInt32(slice, byteOrder);
+            slice.CopyTo(_output.Slice(_writeOffset, sizeof(uint)));
+            _readOffset += sizeof(uint);
+            _writeOffset += sizeof(uint);
+            return count;
+        }
+
+        private void CopyBytes(int byteCount)
+        {
+            _input.Slice(_readOffset, byteCount).CopyTo(_output.Slice(_writeOffset, byteCount));
+            _readOffset += byteCount;
+            _writeOffset += byteCount;
+        }
     }
 
     private static bool TryResolveType(uint rawType, out uint geometryType, out int ordinateCount)
@@ -265,11 +342,7 @@ public static class WkbSridNormalizer
         return geometryType is >= 1 and <= 7;
     }
 
-    private static bool TryReadByteOrder(
-        byte[] input,
-        ref int offset,
-        Stream output,
-        out bool littleEndian)
+    private static bool TryReadByteOrder(ReadOnlySpan<byte> input, ref int offset, out bool littleEndian)
     {
         if (offset >= input.Length || input[offset] is not (0 or 1))
         {
@@ -277,29 +350,11 @@ public static class WkbSridNormalizer
             return false;
         }
 
-        var byteOrder = input[offset++];
-        output.WriteByte(byteOrder);
-        littleEndian = byteOrder == 1;
+        littleEndian = input[offset++] == 1;
         return true;
     }
 
-    private static bool TryReadAndCopyCount(
-        byte[] input,
-        ref int offset,
-        Stream output,
-        bool littleEndian,
-        out uint count)
-    {
-        if (!TryReadUInt32(input, ref offset, littleEndian, out count))
-        {
-            return false;
-        }
-
-        WriteUInt32(output, count, littleEndian);
-        return true;
-    }
-
-    private static bool TryReadUInt32(byte[] input, ref int offset, bool littleEndian, out uint value)
+    private static bool TryReadUInt32(ReadOnlySpan<byte> input, ref int offset, bool littleEndian, out uint value)
     {
         if (input.Length - offset < sizeof(uint))
         {
@@ -307,44 +362,32 @@ public static class WkbSridNormalizer
             return false;
         }
 
-        var bytes = input.AsSpan(offset, sizeof(uint));
-        value = littleEndian
-            ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
-            : BinaryPrimitives.ReadUInt32BigEndian(bytes);
+        var byteOrder = littleEndian ? WkbByteOrder.LittleEndian : WkbByteOrder.BigEndian;
+        value = ReadUInt32(input.Slice(offset, sizeof(uint)), byteOrder);
         offset += sizeof(uint);
         return true;
     }
 
-    private static void WriteUInt32(Stream output, uint value, bool littleEndian)
+    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, WkbByteOrder byteOrder)
+        => byteOrder == WkbByteOrder.LittleEndian
+            ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
+            : BinaryPrimitives.ReadUInt32BigEndian(bytes);
+
+    private static void WriteUInt32(Span<byte> destination, uint value, WkbByteOrder byteOrder)
     {
-        Span<byte> bytes = stackalloc byte[sizeof(uint)];
-        if (littleEndian)
+        if (byteOrder == WkbByteOrder.LittleEndian)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+            BinaryPrimitives.WriteUInt32LittleEndian(destination, value);
         }
         else
         {
-            BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+            BinaryPrimitives.WriteUInt32BigEndian(destination, value);
         }
-
-        output.Write(bytes);
     }
 
-    private static bool TryCopy(byte[] input, ref int offset, Stream output, int byteCount)
+    private static bool TrySkip(ReadOnlySpan<byte> input, ref int offset, int byteCount)
     {
         if (byteCount < 0 || input.Length - offset < byteCount)
-        {
-            return false;
-        }
-
-        output.Write(input, offset, byteCount);
-        offset += byteCount;
-        return true;
-    }
-
-    private static bool TrySkip(byte[] input, ref int offset, int byteCount)
-    {
-        if (input.Length - offset < byteCount)
         {
             return false;
         }

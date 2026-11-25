@@ -11,6 +11,8 @@ public static class StartupDatabaseResilience
 {
     private static readonly string[] TransientSqlStates =
     [
+        "57P01",
+        "57P02",
         "57P03",
     ];
 

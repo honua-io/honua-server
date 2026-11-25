@@ -259,6 +259,8 @@ internal sealed class PortalOAuthBrokerSession : PortalOAuthRecord
     public required string IdpState { get; init; }
 
     public required string IdpCodeVerifier { get; init; }
+
+    public string? IdpNonce { get; init; }
 }
 
 internal sealed class PortalOAuthAuthorizationCode : PortalOAuthRecord

@@ -21,29 +21,41 @@ internal sealed partial class MetadataReleaseReconciler(
 {
     internal const int MaxRebaseAttempts = 3;
     private const int MaxRevertAttempts = 5;
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
-    public async Task ReconcileMetadataReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+    internal TimeSpan LeaseDuration { get; init; } = DefaultLeaseDuration;
+
+    internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
+
+    public Task ReconcileMetadataReleaseAsync(string operationId, CancellationToken cancellationToken = default)
+        => WorkflowOperationLeaseRunner.RunAsync(
+            new WorkflowLeaseExecutionOptions
+            {
+                WorkflowStore = workflowStore,
+                OperationId = operationId,
+                OwnerId = _ownerId,
+                LeaseDuration = LeaseDuration,
+                LeaseRenewInterval = LeaseRenewInterval,
+                Logger = logger,
+                ExecuteAsync = reconciliationCancellation =>
+                    ReconcileLeasedOperationAsync(operationId, reconciliationCancellation, cancellationToken),
+                OnLeaseLost = () => Log.MetadataReleaseLeaseLost(logger, operationId)
+            },
+            cancellationToken);
+
+    private async Task ReconcileLeasedOperationAsync(
+        string operationId,
+        CancellationTokenSource reconciliationCancellation,
+        CancellationToken callerCancellation)
     {
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            return;
-        }
-
-        var leaseAcquired = await workflowStore.TryAcquireLeaseAsync(operationId, _ownerId, LeaseDuration, cancellationToken).ConfigureAwait(false);
-        if (!leaseAcquired)
-        {
-            return;
-        }
-
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
-
+        WorkflowOperationRecord? reconciledVersion = null;
         try
         {
-            var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var token = reconciliationCancellation.Token;
+            var operation = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
+            reconciledVersion = operation;
             if (operation is null ||
                 operation.Kind != WorkflowOperationKind.MetadataRelease ||
                 operation.MetadataRelease is null ||
@@ -53,56 +65,45 @@ internal sealed partial class MetadataReleaseReconciler(
                 return;
             }
 
-            var token = reconciliationCancellation.Token;
             var updated = operation.Status == WorkflowOperationStatus.RollbackRequested
                 ? await ExecuteRollbackAsync(operation, token).ConfigureAwait(false)
                 : await AdvanceForwardAsync(operation, token).ConfigureAwait(false);
 
             if (!ReferenceEquals(updated, operation) && !Equals(updated, operation))
             {
-                var persisted = await workflowStore.TrySetAsync(updated, cancellationToken: token).ConfigureAwait(false);
-                if (!persisted)
-                {
-                    var latest = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
-                    if (latest is null ||
-                        IsTerminal(latest.Status) ||
-                        (operation.Status != WorkflowOperationStatus.RollbackRequested &&
-                         latest.Status == WorkflowOperationStatus.RollbackRequested))
-                    {
-                        return;
-                    }
-
-                    await workflowStore.TrySetAsync(updated with { Version = latest.Version }, cancellationToken: token).ConfigureAwait(false);
-                }
-
-                Log.MetadataReleaseReconciled(logger, operationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
+                await PersistReconciledReleaseAsync(operation, updated, token).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OperationCanceledException ||
+            (!callerCancellation.IsCancellationRequested && !reconciliationCancellation.IsCancellationRequested))
         {
-            Log.MetadataReleaseLeaseLost(logger, operationId);
-            return;
-        }
-        catch (Exception ex)
-        {
-            await MarkFailedAsync(operationId, ex, cancellationToken).ConfigureAwait(false);
+            await MarkFailedAsync(reconciledVersion, ex, reconciliationCancellation).ConfigureAwait(false);
             throw;
         }
-        finally
+    }
+
+    private async Task PersistReconciledReleaseAsync(
+        WorkflowOperationRecord original,
+        WorkflowOperationRecord updated,
+        CancellationToken cancellationToken)
+    {
+        var persisted = await workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!persisted)
         {
-            reconciliationCancellation.Cancel();
-            try
+            var latest = await workflowStore.GetAsync(original.OperationId, cancellationToken).ConfigureAwait(false);
+            if (latest is null ||
+                IsTerminal(latest.Status) ||
+                (original.Status != WorkflowOperationStatus.RollbackRequested &&
+                 latest.Status == WorkflowOperationStatus.RollbackRequested))
             {
-                await renewalTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                // Expected: the Cancel() call above is what stops the lease-renewal loop,
-                // so its resulting OperationCanceledException is normal shutdown, not an error.
+                return;
             }
 
-            await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+            await workflowStore.TrySetAsync(updated with { Version = latest.Version }, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
+
+        Log.MetadataReleaseReconciled(logger, original.OperationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
     }
 
     private async Task<WorkflowOperationRecord> AdvanceForwardAsync(
@@ -576,30 +577,17 @@ internal sealed partial class MetadataReleaseReconciler(
             resource.SchemaFields.Any(field => string.Equals(field.Name, plan.NewFieldName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
+    private async Task MarkFailedAsync(
+        WorkflowOperationRecord? operation,
+        Exception ex,
+        CancellationTokenSource reconciliationCancellation)
     {
-        while (!reconciliationCancellation.IsCancellationRequested)
+        if (reconciliationCancellation.IsCancellationRequested)
         {
-            try
-            {
-                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
-                var renewed = await workflowStore.RenewLeaseAsync(operationId, _ownerId, LeaseDuration, reconciliationCancellation.Token).ConfigureAwait(false);
-                if (!renewed)
-                {
-                    reconciliationCancellation.Cancel();
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                return;
-            }
+            return;
         }
-    }
 
-    private async Task MarkFailedAsync(string operationId, Exception ex, CancellationToken cancellationToken)
-    {
-        var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        // Use the version observed under this lease rather than re-reading and adopting a new lease owner's Version.
         if (operation is { Kind: WorkflowOperationKind.MetadataRelease, MetadataRelease: not null } && !IsTerminal(operation.Status))
         {
             var failedAt = DateTimeOffset.UtcNow;
@@ -615,7 +603,14 @@ internal sealed partial class MetadataReleaseReconciler(
                 MetadataRelease = operation.MetadataRelease with { CurrentStage = MetadataReleaseStage.Failed }
             };
 
-            await workflowStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await workflowStore.TrySetAsync(failed, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            {
+                // Lease or caller cancellation won the race; skip writing stale failure state.
+            }
         }
     }
 
@@ -795,6 +790,10 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                     try
                     {
                         await reconciler.ReconcileMetadataReleaseAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {

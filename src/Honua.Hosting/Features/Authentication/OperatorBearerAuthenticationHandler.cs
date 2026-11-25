@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,6 +71,16 @@ internal sealed class OperatorBearerAuthenticationHandler(
                 // concrete handler validated. Reintroduce that validator-owned value after
                 // projection; no token/session claim can choose it.
                 identity.AddClaim(new Claim("iss", _tokenService.ValidatedIssuer));
+
+                // Re-stamp the upstream IdP issuer from the signed bearer so managed-user
+                // revalidation and owner qualification resolve the original issuer-scoped account.
+                if (!string.IsNullOrWhiteSpace(validation.SubjectIssuer))
+                {
+                    CanonicalSecurityActor.StampFrameworkClaim(
+                        identity,
+                        OwnerIdentityScope.SubjectIssuerClaim,
+                        validation.SubjectIssuer);
+                }
             }
 
             var expiry = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(token).ValidTo;

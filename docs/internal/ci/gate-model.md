@@ -1,5 +1,9 @@
 # CI Gate Model
 
+The GeoServices protocol test project owns `GeometryServiceAdmissionEndpointTests`. The residual `GeoServices Geometry VectorTile and Versioning 6` shard runs the class.
+
+The `GeoServices Geometry VectorTile and Versioning 1` shard runs `GeometryServiceProjectTests`. Its datum projection cases share one PostGIS instance per PROJ grid profile, with a fresh application fixture for each case.
+
 The prior-reader compatibility job was removed on 22 November 2026. Migrations are forward-only, idempotent and tested on an installed stack; CI does not certify rolling rollback to an older reader. Required check names and the remaining PR Gate dependencies are unchanged.
 
 Every source path has at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a path's owners are all over budget.
@@ -211,6 +215,9 @@ its issue closes only when all signals recover. GitHub can report a workflow as 
 while its children execute. For these runs the watchdog checks paginated, latest-attempt
 job evidence: runner assignment proves a scheduled start, while child jobs waiting
 over 45 minutes still alert. A queued job's `started_at` alone does not prove execution.
+The watchdog follows all Actions jobs pages at 25 jobs per page and retries HTTP 500, 502, 503
+and 504 twice on the affected page. If a jobs request still fails, the watchdog reports the API
+error with its run and page before evaluating or changing the stale-signal issue.
 
 Stage 3 details:
 
@@ -1649,8 +1656,8 @@ Core package or Postgres compatibility job still does. All trusted affected
 indices use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
 except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full runs
-(the `run-name` rule) put every server-test index on free standard
-`ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
+(the `run-name` rule) put every server-test index on the label set by
+`HONUA_CI_HEAVY_RUNNER`, defaulting to standard `ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
 server phase there, against 193-327 minutes on the six heavy runners. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
@@ -3003,6 +3010,10 @@ makes that one retry due now, the state the backoff would reach on its own. The
 real worker still claims, runs and fails every attempt, and the terminal status,
 attempt count, error and empty artifacts are asserted as before.
 
+The GeoServices GPServer and NAServer 1 fixture signals the production worker
+after each committed retry visibility update. The update loop still handles
+the worker's two-write requeue and checks the original retry schedule.
+
 `EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
 took 86 seconds in STAC API Governance 2. It built a path regex for every
 (registry endpoint, test method body) pair through `Regex.IsMatch`, whose static
@@ -3792,3 +3803,45 @@ one runner before and after. On scheduled full run 45038465540 the shard spent
 Every case remains in the same selected PR shard and twice-daily full trunk runs.
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
+
+### MCP LLM smoke credential admission
+
+The advisory full-CI `MCP LLM Smoke Tests` job checks the configured Bedrock role
+before checkout, server setup or SDK builds. Without
+`HONUA_BEDROCK_SMOKE_ROLE_ARN`, PostgreSQL is not started and the job reports an
+explicit skip in its log and summary. With a role, the existing authenticated
+server, SDK smoke command, OIDC credentials and transcript upload remain active.
+The job retains its certification dependency and advisory status.
+
+Run 45159280398/job 137667996720 spent 572 seconds in MCP setup and 22 seconds
+starting PostgreSQL before discovering the smoke script was absent. The previous
+ten-minute cap cancelled post-action cleanup. The 33-minute job limit now gives
+MCP setup 14 minutes, the smoke command six minutes with ten seconds to exit
+before forced termination, and transcript upload two minutes. The smoke step has
+a seven-minute runner limit. The configured-role path reserves four minutes
+outside its step limits for runner and service startup and post-job cleanup.
+With a role and an SDK ref that lacks the smoke script, the job reports the skip
+after checking the SDK manifest. It skips the Python, Honua Server and SDK build
+setup, role assumption and transcript upload. Certification mode still uses the
+SDK certification script. A hosted after-change duration still requires a
+qualifying run.
+
+### Tile Export Durable Recovery fixture
+
+The durable recovery fixture uses the production queue wake signal to notify its
+worker when PostgreSQL jobs are queued. The recovery and retry cases still
+exercise the real queue, worker, reconciler, and durable stores in Server
+Features Miscellaneous 7 on selected PR runs and full trunk runs.
+
+### Watchdog startup reconciliation retry timing
+
+The retry test waits for the five-second timer to be registered, verifies the
+first attempt reached the retry delay, and advances virtual time before checking
+that the second suspend attempt succeeds and the reconciliation task has no exception. The server still uses a five-second retry interval.
+
+A paired build-host benchmark measured the original virtual-time change
+(`68374d7713`), with one runner execution per revision. The filtered
+infrastructure cohort had 3,396 passes and five skips on each revision.
+The settings writer class used 5.174 and 0.172 summed case seconds before and
+after. Test-command wall time was 179.00 and 163.64 seconds, a difference of 0.26
+runner-minutes for the measured cohort. Full shard timing remains unmeasured.

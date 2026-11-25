@@ -281,8 +281,8 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
                 // Bind the keys to the discovery issuer and to the authority URL. A union
                 // assigned to IssuerSigningKeys would let issuer A's token validate with
                 // issuer B's key, and a null resolver result falls back to that union.
-                AddIssuerKeys(keysByIssuer, configuration.Issuer, signingKeys);
-                AddIssuerKeys(keysByIssuer, authority, signingKeys);
+                MultiAuthorityConfigurationManager.AddIssuerKeys(keysByIssuer, configuration.Issuer, signingKeys);
+                MultiAuthorityConfigurationManager.AddIssuerKeys(keysByIssuer, authority, signingKeys);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -319,38 +319,5 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             return keysByIssuer.TryGetValue(trimmed, out matched) ? matched : [];
         };
         return merged;
-    }
-
-    private static void AddIssuerKeys(
-        Dictionary<string, List<SecurityKey>> keysByIssuer,
-        string? issuer,
-        List<SecurityKey> signingKeys)
-    {
-        if (string.IsNullOrWhiteSpace(issuer))
-        {
-            return;
-        }
-
-        foreach (var candidate in new[] { issuer.Trim(), issuer.Trim().TrimEnd('/') })
-        {
-            if (candidate.Length == 0)
-            {
-                continue;
-            }
-
-            if (!keysByIssuer.TryGetValue(candidate, out var list))
-            {
-                list = [];
-                keysByIssuer[candidate] = list;
-            }
-
-            foreach (var key in signingKeys)
-            {
-                if (!list.Contains(key))
-                {
-                    list.Add(key);
-                }
-            }
-        }
     }
 }

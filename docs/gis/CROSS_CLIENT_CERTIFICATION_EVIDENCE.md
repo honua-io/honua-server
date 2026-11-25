@@ -22,7 +22,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "server_config_revision": "sha256:<digest of the executed server configuration>",
   "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|geoservices-rest-stub|py-geopandas|py-owslib|duckdb|r-sf|py-pystac>",
   "client_version": "<client tool version>",
-  "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|stac|portal|admin-api>",
+  "protocol": "<featureserver|mapserver|ogc-features|ogc-api-records|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|elevation|quantized-mesh|stac|portal|admin-api>",
   "protocol_version": "<protocol version the client negotiated, e.g. 2.0.0 for WFS>",
   "environment": "<local|ci|staging>",
   "results": [
@@ -64,7 +64,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `geoservices-rest-stub`, `py-geopandas`, `py-owslib`, `duckdb`, `r-sf`, `py-pystac`. The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-server/issues/3392)) each name the client library rather than its host language runtime, so a second Python client cannot silently reuse another's lane identity. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `geoservices-rest-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
 | `client_version` | string | Yes | Version of the client tool under test. Lanes that exercise more than one library pin all of them in one string, semicolon-separated (e.g. `geopandas=1.0.1;pyogrio=0.10.0;GDAL=3.9.3`). |
 | `protocol_version` | string | No | The protocol version the client actually negotiated (e.g. `2.0.0` for WFS, `1.3.0` for WMS, `1.0` for OGC API Features). Emitted by the PyQGIS lane and by every canonical analyst lane; lets a receipt distinguish a WFS 1.1.0 pass from a WFS 2.0 pass. |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. `portal` is emitted by the ArcGIS Portal/Sharing facade lane and `stac` by the pystac-client lane. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-api-records`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `elevation`, `quantized-mesh`, `stac`, `portal`, `admin-api`. OWSLib emits `ogc-api-records`, the ArcGIS Portal/Sharing facade lane emits `portal`, and the pystac-client lane emits `stac`. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |
@@ -196,7 +196,7 @@ The `client-interop-nightly.yml` workflow (added by ticket [`#806`](https://gith
 
 ```
 artifacts/client-interop/
-  cesium/        <run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json
+  cesium/        <run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps,elevation,quantized-mesh}.cert.json
   openlayers/    <run-id>-js-{ogc-features,ogc-maps,mvt,wfs,wms,wmts}.cert.json
   pyqgis/        <run-id>-desktop-qgis-{ogc-features,wfs}.cert.json
   gdal/          gdal-ogr-results.json
@@ -204,12 +204,12 @@ artifacts/client-interop/
   geoservices-rest-stub/   <run-id>-geoservices-rest-stub-{featureserver,mapserver}.cert.json
 ```
 
-The full scheduled matrix is contractually complete only when these 16
+The full scheduled matrix is contractually complete only when these 18
 `(client_lane, protocol)` pairs have current envelopes and committed baselines:
 
 | client_lane | Protocols |
 |---|---|
-| `js-cesium` | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` |
+| `js-cesium` | `wms`, `wmts`, `ogc-tiles`, `ogc-maps`, `elevation`, `quantized-mesh` |
 | `js` | `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, `wmts` |
 | `desktop-qgis` | `ogc-features`, `wfs` |
 | `cli` | `ogc-features`, `wfs` |
@@ -246,7 +246,7 @@ This section describes how each evidence source will map to the evidence envelop
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/maplibre/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
-| Playwright CesiumJS suite | JS — Cesium (`js-cesium`) | Automated: `tests/js-browser/cesium/` exercises CesiumJS imagery providers (WMS, WMTS, OGC API Tiles, OGC API Maps) under `docker/client-compat/cesium/` in `client-interop-nightly.yml`; emits one envelope per protocol (`<run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json`). Vector-feature CERT-\* IDs and the visual / style slice IDs are recorded as `not-applicable` because Cesium imagery providers consume server-rendered raster output. |
+| Playwright CesiumJS suite | JS — Cesium (`js-cesium`) | Automated: `tests/js-browser/cesium/` exercises CesiumJS imagery providers (WMS, WMTS, OGC API Tiles, OGC API Maps), an Elevation API point query, and quantized-mesh terrain decoding under `docker/client-compat/cesium/` in `client-interop-nightly.yml`; emits one envelope per protocol (`<run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps,elevation,quantized-mesh}.cert.json`). The Elevation and quantized-mesh pairs provide nightly evidence. Cesium imagery providers consume server-rendered raster output, so their vector-feature and visual/style slice IDs are recorded as `not-applicable`. |
 | ArcGIS Pro REST stub | `geoservices-rest-stub` | REST-only lane, distinct from a desktop client. Evidence identifiers: `*-geoservices-rest-stub-featureserver.cert.json` and `*-geoservices-rest-stub-mapserver.cert.json`. FeatureServer render IDs `CERT-RNDR-01`, `CERT-RNDR-02`, and `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01` are `skip`. `CERT-RNDR-SPR-01` is `not-applicable` (MVT-only). |
 | GDAL/OGR pytest suite | CLI (`cli` via converter) | Automated: `tests/python/gdal_ogr/conftest.py:EvidenceCollector` writes `gdal-ogr-results.json`; the `gdal` lane runner invokes `scripts/client-compat/convert-gdal-results.py` to emit one cert envelope per protocol (`<run-id>-cli-gdal-ogc-features.cert.json`, `<run-id>-cli-gdal-wfs.cert.json`, `<run-id>-cli-gdal-featureserver.cert.json`, `<run-id>-cli-gdal-mapserver.cert.json`). The converter maps the GDAL category labels many-to-one onto CERT-* IDs with worst-status aggregation (`fail > pass > skip > not-applicable`): `discovery`/`feature_count` → CERT-DISC-01, `schema_introspection` → CERT-SCHM-01, `feature_read`/`read` → CERT-CONN-01, `attribute_query`/`spatial_query`/`query` → CERT-QFLT-01. The `export_*` categories cover vector serialization and are intentionally unmapped. CERT-RNDR-01 and CERT-RNDR-02 are `not-applicable` for the feature protocols. MapServer certifies CERT-RNDR-01 through the WMS driver AGS minidriver. Unknown labels surface as `::warning::` so test-side additions stay visible. |
 

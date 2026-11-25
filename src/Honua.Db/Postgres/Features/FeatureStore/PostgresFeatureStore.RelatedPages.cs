@@ -11,6 +11,14 @@ internal sealed partial class PostgresFeatureStoreRefactored
 {
     public bool SupportsRelatedPages => _dataAccess is FeatureDataAccess;
 
+    private sealed class RelatedReadSecurityRequest
+    {
+        public required int OriginLayerId { get; init; }
+        public int? RelatedLayerId { get; init; }
+        public string? OriginForeignKeyField { get; init; }
+        public string? DestinationForeignKeyField { get; init; }
+    }
+
     public async Task<RelatedFeaturePage> QueryRelatedPageAsync(
         int layerId, RelatedPageQuery query, CancellationToken cancellationToken = default)
     {
@@ -20,16 +28,42 @@ internal sealed partial class PostgresFeatureStoreRefactored
             throw new NotSupportedException("The provider does not support bounded relationship pages.");
         }
         var relatedLayerId = query.Relationship.RelatedLayerId!.Value;
-        var originMasks = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var relatedMasks = await ResolveMaskedFieldsAsync(relatedLayerId, cancellationToken).ConfigureAwait(false);
-        RejectMaskedRelationshipKey(originMasks, query.Relationship.OriginForeignKeyField!);
-        RejectMaskedRelationshipKey(relatedMasks, query.Relationship.DestinationForeignKeyField!);
-        var security = new RelatedPageReadSecurity(
-            await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false),
-            await ResolveEnforcedSqlFilterAsync(relatedLayerId, cancellationToken).ConfigureAwait(false),
-            relatedMasks);
+        var security = await ResolveRelatedReadSecurityAsync(
+            new RelatedReadSecurityRequest
+            {
+                OriginLayerId = layerId,
+                RelatedLayerId = relatedLayerId,
+                OriginForeignKeyField = query.Relationship.OriginForeignKeyField,
+                DestinationForeignKeyField = query.Relationship.DestinationForeignKeyField
+            },
+            cancellationToken).ConfigureAwait(false);
         return await postgres.QueryRelatedPageAsync(new RelatedPageReadRequest(layerId, query, security), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<RelatedPageReadSecurity> ResolveRelatedReadSecurityAsync(
+        RelatedReadSecurityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var originMasks = await ResolveMaskedFieldsAsync(request.OriginLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedMasks = request.RelatedLayerId is int targetLayerId
+            ? await ResolveMaskedFieldsAsync(targetLayerId, cancellationToken).ConfigureAwait(false)
+            : ImmutableArray<string>.Empty;
+        if (!string.IsNullOrWhiteSpace(request.OriginForeignKeyField))
+        {
+            RejectMaskedRelationshipKey(originMasks, request.OriginForeignKeyField);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DestinationForeignKeyField))
+        {
+            RejectMaskedRelationshipKey(relatedMasks, request.DestinationForeignKeyField);
+        }
+
+        var originFilter = await ResolveEnforcedSqlFilterAsync(request.OriginLayerId, cancellationToken).ConfigureAwait(false);
+        var relatedFilter = request.RelatedLayerId is int filterLayerId
+            ? await ResolveEnforcedSqlFilterAsync(filterLayerId, cancellationToken).ConfigureAwait(false)
+            : null;
+        return new RelatedPageReadSecurity(originFilter, relatedFilter, relatedMasks);
     }
 
     private static string NormalizeRelationshipKey(string field) =>

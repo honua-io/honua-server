@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Diagnostics;
 using System.Security.Claims;
@@ -20,11 +21,15 @@ namespace Honua.Server.Features.Orchestration;
 
 internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordinator
 {
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan CancelLeaseRetryInterval = TimeSpan.FromMilliseconds(100);
     private const int CancelLeaseMaxAttempts = 30;
+
+    internal TimeSpan LeaseDuration { get; init; } = DefaultLeaseDuration;
+
+    internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
 
     private readonly IWorkflowRunStore _runStore;
     private readonly IWorkflowDefinitionStore _definitionStore;
@@ -367,7 +372,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
         finally
         {
-            await _runStore.ReleaseLeaseAsync(runId, _ownerId, CancellationToken.None).ConfigureAwait(false);
+            await ReconcilerLeaseHelper.ReleaseLeaseBestEffortAsync(
+                runId,
+                ct => _runStore.ReleaseLeaseAsync(runId, _ownerId, ct),
+                _logger).ConfigureAwait(false);
         }
     }
 
@@ -388,7 +396,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
-        var renewalTask = RenewLeaseUntilCancelledAsync(runId, reconciliationCancellation);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(new LeaseRenewalRequest
+        {
+            LeaseId = runId,
+            RenewInterval = LeaseRenewInterval,
+            ReconciliationCancellation = reconciliationCancellation,
+            RenewLeaseAsync = ct => _runStore.RenewLeaseAsync(runId, _ownerId, LeaseDuration, ct),
+            Logger = _logger
+        });
 
         using var activity = OrchestrationTelemetry.StartReconcileRunActivity(runId, string.Empty, 0);
 
@@ -520,7 +535,11 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 await PersistRunAsync(failed, CancellationToken.None).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
         {
             OrchestrationLog.ReconciliationLeaseLost(_logger, runId);
             return;
@@ -533,17 +552,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
         finally
         {
-            reconciliationCancellation.Cancel();
-            try
+            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(new LeaseReleaseRequest
             {
-                await renewalTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                // Expected: the renewal loop observes the cancellation we just requested above.
-            }
-
-            await _runStore.ReleaseLeaseAsync(runId, _ownerId, CancellationToken.None).ConfigureAwait(false);
+                LeaseId = runId,
+                ReconciliationCancellation = reconciliationCancellation,
+                RenewalTask = renewalTask,
+                ReleaseLeaseAsync = ct => _runStore.ReleaseLeaseAsync(runId, _ownerId, ct),
+                Logger = _logger
+            }).ConfigureAwait(false);
         }
     }
 
@@ -1318,31 +1334,6 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 1,
                 new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.RunStatus, run.Status.ToString()));
             OrchestrationLog.WorkflowRunCompleted(_logger, run.RunId, run.Status.ToString(), completed, totalSteps);
-        }
-    }
-
-    private async Task RenewLeaseUntilCancelledAsync(string runId, CancellationTokenSource reconciliationCancellation)
-    {
-        while (!reconciliationCancellation.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
-                var renewed = await _runStore.RenewLeaseAsync(
-                    runId,
-                    _ownerId,
-                    LeaseDuration,
-                    reconciliationCancellation.Token).ConfigureAwait(false);
-                if (!renewed)
-                {
-                    reconciliationCancellation.Cancel();
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
-            {
-                return;
-            }
         }
     }
 

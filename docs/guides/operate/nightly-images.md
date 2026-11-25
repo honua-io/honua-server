@@ -26,6 +26,20 @@ each of the newest candidates. Nothing is published. To image one specific sha, 
 workflow on trunk with `candidate_sha=<full sha>`. That sha must itself be
 certified.
 
+## ECS-only candidate publication
+
+To publish an official ECS candidate, dispatch Nightly Container Build on
+`trunk` with `ecs_only=true`, the full certified `candidate_sha`, and the
+intended `release_version`. The selected commit must include the ECS-only
+workflow. If the workflow hands off to `nightly-candidate-<sha7>`, use that
+run for the image digests and provenance.
+
+This dispatch publishes the signed multi-architecture AOT serving image and
+its Compose executor from the same commit. It mirrors only the AOT base
+images and skips Lambda and JIT. The complete scheduled nightly remains the
+source for consumers that require every image variant. Existing immutable
+ECS tags must match the candidate and release version.
+
 ## Data-store variants
 
 The default serving images contain the PostGIS store. Import and export formats remain

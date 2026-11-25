@@ -41,7 +41,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 6, 6 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/temp", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/temp", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(4, 4);
         subset.DataType.Should().Be("<f4");
@@ -85,7 +85,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 5, 5 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/grid", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/grid", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(5, 5);
         for (var r = 0; r < 5; r++)
@@ -121,7 +121,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 6, 6 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/v3temp", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/v3temp", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(4, 4);
         subset.DataType.Should().Be("<f4");
@@ -159,8 +159,7 @@ public class ZarrSubsetReaderTests
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", root);
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", root, metadata,
-            new ZarrSubsetRequest { Variable = "single-byte", Start = [0, 0], Stop = [2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "single-byte", Start = [0, 0], Stop = [2, 2] } });
 
         subset.Data.Should().Equal(1, 2, 3, 4);
     }
@@ -189,8 +188,7 @@ public class ZarrSubsetReaderTests
         var act = async () =>
         {
             var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", root);
-            await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", root, metadata,
-                new ZarrSubsetRequest { Variable = "double-gzip", Start = [0, 0], Stop = [2, 2] });
+            await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "double-gzip", Start = [0, 0], Stop = [2, 2] } });
         };
 
         await act.Should().ThrowAsync<InvalidDataException>();
@@ -219,7 +217,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 5, 5 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/v3gzip", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/v3gzip", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(5, 5);
         for (var r = 0; r < 5; r++)
@@ -254,7 +252,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 5, 5 }
         };
 
-        var act = () => new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/bounds", metadata, request);
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/bounds", Metadata = metadata, Request = request });
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -282,7 +280,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 4, 4 }
         };
 
-        var act = () => new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/huge", metadata, request);
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/huge", Metadata = metadata, Request = request });
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*chunk size*exceeds*");
@@ -321,7 +319,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 4, 4 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/int64", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/int64", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(4, 4);
         subset.DataType.Should().Be("<i8");
@@ -359,8 +357,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 4, 4 }
         };
 
-        await new ZarrSubsetReader().ReadSubsetAsync(
-            trackingReader, "bucket", "datasets/ceiling", metadata, request);
+        await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = trackingReader, Bucket = "bucket", RootPath = "datasets/ceiling", Metadata = metadata, Request = request });
 
         const int expectedChunkBytes = 4 * 4 * sizeof(float); // 64 bytes
         trackingReader.RecordedLengths.Should().AllSatisfy(length =>
@@ -399,8 +396,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 2, 2 }
         };
 
-        var act = () => new ZarrSubsetReader().ReadSubsetAsync(
-            trackingReader, "bucket", "datasets/oversized", metadata, request);
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = trackingReader, Bucket = "bucket", RootPath = "datasets/oversized", Metadata = metadata, Request = request });
 
         await act.Should().ThrowAsync<InvalidDataException>();
         trackingReader.RecordedLengths.Should().BeEmpty(
@@ -429,7 +425,7 @@ public class ZarrSubsetReaderTests
             Stop = new[] { 2, 2 }
         };
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "datasets/uint64", metadata, request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/uint64", Metadata = metadata, Request = request });
 
         subset.Shape.Should().Equal(2, 2);
         subset.DataType.Should().Be("<u8");
@@ -455,12 +451,7 @@ public class ZarrSubsetReaderTests
         var metadata = await new ZarrMetadataExtractor()
             .ReadMetadataAsync(new InMemoryZarrRangeReader(objects), "bucket", "datasets/nan");
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            new InMemoryZarrRangeReader(objects),
-            "bucket",
-            "datasets/nan",
-            metadata,
-            new ZarrSubsetRequest { Variable = "nan", Start = [0, 0], Stop = [2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = new InMemoryZarrRangeReader(objects), Bucket = "bucket", RootPath = "datasets/nan", Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "nan", Start = [0, 0], Stop = [2, 2] } });
 
         for (var i = 0; i < 4; i++)
         {
@@ -487,12 +478,7 @@ public class ZarrSubsetReaderTests
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/nested");
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            reader,
-            "bucket",
-            "datasets/nested",
-            metadata,
-            new ZarrSubsetRequest { Variable = "nested", Start = [0, 0], Stop = [2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/nested", Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "nested", Start = [0, 0], Stop = [2, 2] } });
 
         subset.Data.Should().Equal(raw);
     }
@@ -523,14 +509,57 @@ public class ZarrSubsetReaderTests
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/random");
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            reader,
-            "bucket",
-            "datasets/random",
-            metadata,
-            new ZarrSubsetRequest { Variable = "random", Start = [0, 0], Stop = [256, 256] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/random", Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "random", Start = [0, 0], Stop = [256, 256] } });
 
         subset.Data.Should().Equal(uncompressed);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadSubsetAsync_CustomPerChunkLimitExceeded_ThrowsZarrSubsetValidationException()
+    {
+        var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
+            root: "datasets/chunkcap",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => (float)r * 8 + c);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/chunkcap");
+
+        // 4x4 float32 chunk is 64 bytes; cap at 32 bytes to prove caller limits are enforced upfront.
+        var limits = new ZarrSubsetReadLimits(MaxOutputBytes: 4096, MaxChunkBytes: 32, MaxWorkingSetBytes: 128);
+        var request = new ZarrSubsetRequest { Variable = "chunkcap", Start = [0, 0], Stop = [4, 4] };
+
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/chunkcap", Metadata = metadata, Request = request, Limits = limits });
+
+        await act.Should().ThrowAsync<ZarrSubsetValidationException>()
+            .WithMessage("*chunk size*exceeds*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadSubsetAsync_TightWorkingSetBudget_StillDecodesMultiChunkSubsetSequentially()
+    {
+        var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
+            root: "datasets/workingset",
+            rows: 8,
+            cols: 8,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => (float)r * 10 + c);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/workingset");
+
+        // 64-byte chunks with 64-byte working-set budget forces MaxDegreeOfParallelism = 1.
+        var limits = new ZarrSubsetReadLimits(MaxOutputBytes: 1024, MaxChunkBytes: 128, MaxWorkingSetBytes: 64);
+        var request = new ZarrSubsetRequest { Variable = "workingset", Start = [0, 0], Stop = [8, 8] };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "datasets/workingset", Metadata = metadata, Request = request, Limits = limits });
+
+        subset.Shape.Should().Equal(8, 8);
+        BitConverter.ToSingle(subset.Data, (7 * 8 + 7) * sizeof(float)).Should().Be(77f);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────

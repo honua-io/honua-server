@@ -933,6 +933,11 @@
     ],
     "interop": [
       {
+        "clientLane": "cli",
+        "protocol": "wcs",
+        "capability": "serve.wcs"
+      },
+      {
         "clientLane": "js",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
@@ -993,6 +998,16 @@
         "capability": "serve.ogc-api-maps"
       },
       {
+        "clientLane": "js-cesium",
+        "protocol": "elevation",
+        "capability": "serve.elevation"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "quantized-mesh",
+        "capability": "serve.terrain-quantized-mesh"
+      },
+      {
         "clientLane": "desktop-qgis",
         "protocol": "ogc-features",
         "capability": "serve.ogc-api-features"
@@ -1031,6 +1046,36 @@
         "clientLane": "geoservices-rest-stub",
         "protocol": "mapserver",
         "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geocode-server",
+        "capability": "serve.geoservices-geocodeserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geometry-service",
+        "capability": "serve.geoservices-geometry-service"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "image-server",
+        "capability": "serve.geoservices-imageserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "geoservices-root",
+        "capability": "serve.geoservices-root"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "vector-tile-server",
+        "capability": "serve.geoservices-vectortileserver"
+      },
+      {
+        "clientLane": "geoservices-rest-stub",
+        "protocol": "i3s",
+        "capability": "serve.i3s-scene"
       },
       {
         "clientLane": "cli",
@@ -1091,6 +1136,16 @@
         "clientLane": "bi-excel",
         "protocol": "odata",
         "capability": "serve.odata"
+      },
+      {
+        "clientLane": "py-owslib",
+        "protocol": "ogc-api-records",
+        "capability": "serve.ogc-api-records"
+      },
+      {
+        "clientLane": "py-pystac",
+        "protocol": "stac",
+        "capability": "serve.stac"
       }
     ],
     "geoservicesCompatMatrix": [

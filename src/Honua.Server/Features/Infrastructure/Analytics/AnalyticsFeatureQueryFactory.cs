@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices;
@@ -105,20 +106,10 @@ internal static class AnalyticsFeatureQueryFactory
             }
         }
 
-        FilterExpression? combinedExpression = whereExpression;
-        if (combinedExpression != null && temporalExpression != null)
+        SqlFragment? whereSqlFilter = null;
+        if (whereExpression != null)
         {
-            combinedExpression = new BinaryExpression(combinedExpression, BinaryOperator.And, temporalExpression);
-        }
-        else
-        {
-            combinedExpression ??= temporalExpression;
-        }
-
-        SqlFragment? sqlFilter = null;
-        if (combinedExpression != null)
-        {
-            var translationResult = filterService.Translate(combinedExpression, resource);
+            var translationResult = filterService.Translate(whereExpression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 return LayerSelectionTranslation.Failure(
@@ -126,8 +117,24 @@ internal static class AnalyticsFeatureQueryFactory
                     translationResult.ErrorMessage ?? "Invalid filter syntax.");
             }
 
-            sqlFilter = translationResult.SqlFilter;
+            whereSqlFilter = translationResult.SqlFilter;
         }
+
+        SqlFragment? temporalSqlFilter = null;
+        if (temporalExpression != null)
+        {
+            var temporalTranslation = filterService.Translate(temporalExpression, resource);
+            if (!temporalTranslation.IsSuccess)
+            {
+                return LayerSelectionTranslation.Failure(
+                    ErrorMessages.Validation.InvalidParameter,
+                    temporalTranslation.ErrorMessage ?? "Invalid filter syntax.");
+            }
+
+            temporalSqlFilter = temporalTranslation.SqlFilter;
+        }
+
+        var sqlFilter = SqlFragmentHelpers.CombineSqlFilters(whereSqlFilter, temporalSqlFilter);
 
         // ----- objectIds -----
         ImmutableArray<long>? objectIds = null;
@@ -234,6 +241,12 @@ internal static class AnalyticsFeatureQueryFactory
 
     private static bool TryResolveFieldType(MetadataV2Object resource, string fieldName, out MetadataV2FieldType fieldType)
     {
+        if (resource.IsHiddenSchemaField(fieldName))
+        {
+            fieldType = default;
+            return false;
+        }
+
         var objectIdField = resource.FindPrimaryIdField();
         if (string.Equals(fieldName, objectIdField?.Name, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fieldName, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
@@ -242,7 +255,7 @@ internal static class AnalyticsFeatureQueryFactory
             return true;
         }
 
-        var match = resource.SchemaFields.FirstOrDefault(field =>
+        var match = resource.VisibleSchemaFields().FirstOrDefault(field =>
             string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
         if (match is not null)
         {

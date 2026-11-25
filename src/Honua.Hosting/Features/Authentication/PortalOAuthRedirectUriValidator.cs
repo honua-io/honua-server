@@ -13,9 +13,10 @@ public static class PortalOAuthRedirectUriValidator
             return false;
         }
 
-        // A redirect_uri must be an absolute URI without a fragment (RFC 6749).
+        // A redirect_uri must be an absolute URI without a fragment or userinfo (RFC 6749).
         if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var candidate) ||
-            !string.IsNullOrEmpty(candidate.Fragment))
+            !string.IsNullOrEmpty(candidate.Fragment) ||
+            !string.IsNullOrEmpty(candidate.UserInfo))
         {
             return false;
         }
@@ -37,7 +38,8 @@ public static class PortalOAuthRedirectUriValidator
                 return true;
             }
 
-            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var allowed))
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var allowed) ||
+                !string.IsNullOrEmpty(allowed.UserInfo))
             {
                 continue;
             }
@@ -67,6 +69,7 @@ public static class PortalOAuthRedirectUriValidator
 
     private static bool IsOrigin(Uri uri)
         => IsHttpScheme(uri) &&
+           string.IsNullOrEmpty(uri.UserInfo) &&
            (string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/") &&
            string.IsNullOrEmpty(uri.Query) &&
            string.IsNullOrEmpty(uri.Fragment);

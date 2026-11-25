@@ -291,17 +291,21 @@ if (durableKeyRing)
         provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
         provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
     builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
-        .Configure<PostgresDataProtectionKeyRepository>(static (options, keyRepository) =>
-        {
-            keyRepository.EnsureAllElementsAreProtected();
-            options.XmlRepository = keyRepository;
-        });
+        .Configure<PostgresDataProtectionKeyRepository, Honua.Infrastructure.Monitoring.DegradedStartupContext>(
+            static (options, keyRepository, degradedContext) =>
+            {
+                options.XmlRepository = keyRepository;
+                if (!degradedContext.IsAwaitingDatabase)
+                {
+                    keyRepository.EnsureAllElementsAreProtected();
+                }
+            });
     var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate, or a random secret where no certificate can be made, is mandatory so a database
     // reader or backup cannot carry both halves. Lambda cannot mount the file, so a Secrets Manager
-    // bundle is written to a private temp file first.
+    // bundle is resolved and loaded directly in memory.
     OperationKeyRingProtector keyRingProtector;
     try
     {
@@ -335,9 +339,32 @@ if (durableKeyRing)
 
     keyRing.ProtectKeysWith(keyRingProtector);
     builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
-        .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
-            keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector));
+        .Configure<PostgresDataProtectionKeyRepository, Honua.Infrastructure.Monitoring.DegradedStartupContext>(
+            (_, keyRepository, degradedContext) =>
+            {
+                if (!degradedContext.IsAwaitingDatabase)
+                {
+                    keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector);
+                }
+            });
+    builder.Services.AddSingleton(provider => new Honua.Infrastructure.Monitoring.DeferredDatabaseRecoveryCheck(() =>
+    {
+        var keyRepository = provider.GetRequiredService<PostgresDataProtectionKeyRepository>();
+        keyRepository.EnsureAllElementsAreProtected();
+        keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector);
+    }));
 }
+
+#if HONUA_POSTGIS_ONLY
+builder.Services.AddSingleton(provider => new Honua.Infrastructure.Monitoring.DeferredDatabaseRecoveryCheck(async _ =>
+{
+    await using var recoveryScope = provider.CreateAsyncScope();
+    await DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(
+        recoveryScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
+        recoveryScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>())
+        .ConfigureAwait(false);
+}));
+#endif
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
 // Only a host with no system database can still be stopped here.
@@ -730,6 +757,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DeployPreflightMig
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();
+Honua.Server.Features.HealthCheck.QualificationFaultExtensions.AddQualificationFault(builder.Services);
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Edition guardrail ladder: resolves DirectExecute/RequiresApproval/Blocked
@@ -1081,10 +1109,9 @@ builder.Services.AddHonuaTenantLifecycle();
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddBrowserSessionSecurity();
 builder.Services.AddInputValidation(builder.Configuration);
-// App-level rate limiting services. Off by default — operators opt in via
-// RateLimiting:Enabled. Registers options validation, the policy store backing the admin
-// surface, and the partitioned middleware. Edge enforcement (ADR-0004) remains the
-// baseline; this is the opt-in identity-aware (tenant/user/API-key) enterprise slice.
+// App-level rate limiting services. Controlled via RateLimiting:Enabled (enabled by
+// appsettings.Security.json unless overridden by environment settings). Registers options
+// validation, the policy store backing the admin surface, and the partitioned middleware.
 builder.Services.AddRateLimiting(builder.Configuration);
 
 // Configure API versioning for admin endpoints
@@ -1109,6 +1136,7 @@ builder.Services.AddHonuaJsonContexts();
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
 // Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
 builder.Services.AddSingleton<IStartupFilter, GeoServicesPathBaseStartupFilter>();
+builder.Services.AddSingleton<IStartupFilter, DoubleSlashPathNormalizationStartupFilter>();
 builder.Services.AddSingleton<IStartupFilter, GeoServicesFolderPathStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
@@ -1196,6 +1224,10 @@ if (forwardedHeadersEnabled)
     app.UseForwardedHeaders();
 }
 
+// Apply security headers immediately after forwarded headers so host validation,
+// HTTPS redirection, and all early error responses carry HSTS/CSP/nosniff/X-Frame-Options.
+app.UseSecurityHeaders();
+
 app.UseHostValidation();
 
 // Add HTTPS redirection middleware to enforce HTTPS for all requests
@@ -1207,17 +1239,14 @@ if (!disableHttpsRedirection)
     app.UseHttpsRedirection();
 }
 
+// Empty connection-id segments are intentionally left un-normalized by
+// DoubleSlashPathNormalizationStartupFilter so they receive a clear 400 ProblemDetails response.
 app.Use((context, next) =>
 {
     var path = context.Request.Path.Value;
-    if (string.IsNullOrEmpty(path) || !path.Contains("//", StringComparison.Ordinal))
-    {
-        return next();
-    }
-
-    var trimmedPath = path.TrimEnd('/');
-    if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
-        trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
+    if (!string.IsNullOrEmpty(path) &&
+        path.Contains("//", StringComparison.Ordinal) &&
+        DoubleSlashPathNormalizationStartupFilter.IsMissingAdminConnectionIdPath(path))
     {
         return Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
                 context,
@@ -1226,13 +1255,6 @@ app.Use((context, next) =>
             .ExecuteAsync(context);
     }
 
-    var normalized = path;
-    while (normalized.Contains("//", StringComparison.Ordinal))
-    {
-        normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
-    }
-
-    context.Request.Path = new PathString(normalized);
     return next();
 });
 
@@ -1301,9 +1323,6 @@ ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
             oidcOpts.Auth0?.IsValid == true);
     }
 }
-
-// Add security headers middleware (first in pipeline for all requests)
-app.UseSecurityHeaders();
 
 // Some standards validators and older HTTP clients send only `Accept-Encoding: *`.
 // Prefer gzip/deflate for that wildcard so the response remains broadly decodable.
@@ -1514,6 +1533,9 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
+// Qualification gate stacks inject a serving fault here; without the setting this middleware is inert.
+Honua.Server.Features.HealthCheck.QualificationFaultExtensions.UseQualificationFault(app);
+
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
 
@@ -1571,10 +1593,6 @@ app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
 // enforcement granted before authentication could run.
 app.UseAnonymousImportPayloadClamp();
 
-// Required-authentication routes must see every validated credential type. Running
-// this before the portal bridge rejects valid SensorThings subscription tokens.
-app.UseAuthorization();
-
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
 // defense-in-depth for non-standard hosting pipelines.
@@ -1602,23 +1620,26 @@ app.UseWhen(
     });
 #endif
 
-// An agent changes admin and Console state only through the operations API or MCP. Runs after
-// the lineage attestation and the audit log, so a refusal is audited.
-app.UseMiddleware<Honua.Server.Features.Admin.AgentRouteAdmissionMiddleware>();
-
-// Runs after every credential type is hydrated and before tenant and schema resolution.
+// Runs after every credential type is hydrated and before tenant, rate-limit, and authorization work.
 app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
-// before any downstream feature handler reads ITenantContext.
+// before rate limiting and any downstream feature handler read ITenantContext.
 app.UseHonuaTenantContext();
 
-// App-level rate limiting. Runs after authentication and tenant resolution
-// so schema-routing failures also consume the tenant + authenticated user/API-key bucket
-// (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
-// posture is still edge enforcement (ADR-0004).
+// App-level rate limiting runs after authentication and tenant resolution (so buckets
+// partition by validated tenant + authenticated actor, or source IP for anonymous traffic)
+// and before authorization (so 401/403 brute-force traffic consumes caller buckets).
 app.UseRateLimiting();
+
+// Required-authentication routes must see every validated credential type and run after
+// rate limiting so 401/403 challenges cannot bypass configured rate-limit buckets.
+app.UseAuthorization();
+
+// An agent changes admin and Console state only through the operations API or MCP. Runs after
+// the lineage attestation, audit log, rate limiting, and authorization, so refusals are audited.
+app.UseMiddleware<Honua.Server.Features.Admin.AgentRouteAdmissionMiddleware>();
 
 // Route the resolved tenant to its PostgreSQL schema and record a usage signal.
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
@@ -1713,37 +1734,20 @@ catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdow
     return;
 }
 
-#if HONUA_POSTGIS_ONLY
-try
+if (!await StartupPostMigrationChecks.RunAsync(
+        app,
+        new StartupPostMigrationOptions
+        {
+            MigrationOwnership = hostManagesOwnMigrations
+                ? StartupMigrationOwnership.HostManagesMigrations
+                : StartupMigrationOwnership.ExternalMigrations,
+            KeyRingMode = durableKeyRing
+                ? StartupKeyRingMode.Durable
+                : StartupKeyRingMode.Ephemeral,
+            MigrationsAssembly = Assembly.GetExecutingAssembly()
+        }))
 {
-    await using var startupScope = app.Services.CreateAsyncScope();
-    await DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(
-        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
-        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
-}
-catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableException ex)
-{
-    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;
-}
-#endif
-
-// The key-ring checks (every key protected, every wrapped key readable with the configured secret)
-// run when KeyManagementOptions is first built. Left to the data-protection hosted service, a
-// refusal escapes app.Run unhandled and the AOT image aborts with exit 139, so build it here.
-if (durableKeyRing)
-{
-    try
-    {
-        _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<
-            Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>().Value;
-    }
-    catch (InvalidOperationException ex)
-        when (!Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
-    {
-        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
-        return;
-    }
 }
 
 // Configure health endpoints

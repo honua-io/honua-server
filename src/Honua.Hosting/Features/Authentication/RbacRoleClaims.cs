@@ -27,52 +27,84 @@ internal static class RbacRoleClaims
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
 
-        var acceptedClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ClaimTypes.Role,
-            RbacOptions.DefaultRoleClaimType,
-        };
-
-        var configuredClaimType = options.EffectiveRoleClaimType;
-        var isCustomClaimType = !string.Equals(
-                configuredClaimType,
-                ClaimTypes.Role,
-                StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(
-                configuredClaimType,
-                RbacOptions.DefaultRoleClaimType,
-                StringComparison.OrdinalIgnoreCase);
-
         // A non-default Rbac:RoleClaimType is role claim selection, just like OIDC's
         // provider-specific role claim configuration, and needs identity.oidc. Consult the live snapshot on
         // every authorization decision so applying or expiring a license takes
         // effect without a restart. Normalized and default role claims remain
         // available in every edition.
-        if (isCustomClaimType && roleClaimSelectionEntitled)
+        var customClaimType = roleClaimSelectionEntitled ? ResolveCustomClaimType(options) : null;
+        var roles = new List<string>();
+        foreach (var claim in principal.Claims)
         {
-            acceptedClaimTypes.Add(configuredClaimType);
+            if (!IsAcceptedRoleClaimType(claim.Type, customClaimType) || string.IsNullOrWhiteSpace(claim.Value))
+            {
+                continue;
+            }
+
+            var alreadyPresent = false;
+            for (var i = 0; i < roles.Count; i++)
+            {
+                if (string.Equals(roles[i], claim.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    alreadyPresent = true;
+                    break;
+                }
+            }
+
+            if (!alreadyPresent)
+            {
+                roles.Add(claim.Value);
+            }
         }
 
-        return principal.Claims
-            .Where(claim =>
-                acceptedClaimTypes.Contains(claim.Type) &&
-                !string.IsNullOrWhiteSpace(claim.Value))
-            .Select(claim => claim.Value)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return roles;
     }
 
     public static bool IsAdmin(
         ClaimsPrincipal principal,
         RbacOptions options,
         IServiceProvider? serviceProvider)
-        => Enumerate(principal, options, serviceProvider)
-            .Any(role => string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
+        => IsAdmin(
+            principal,
+            options,
+            serviceProvider is not null &&
+            LicenseGate.HasLiveEntitlement(serviceProvider, FeatureCatalog.OidcAuthenticationKey));
 
     public static bool IsAdmin(
         ClaimsPrincipal principal,
         RbacOptions options,
         bool roleClaimSelectionEntitled)
-        => Enumerate(principal, options, roleClaimSelectionEntitled)
-            .Any(role => string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var customClaimType = roleClaimSelectionEntitled ? ResolveCustomClaimType(options) : null;
+        foreach (var claim in principal.Claims)
+        {
+            if (IsAcceptedRoleClaimType(claim.Type, customClaimType)
+                && string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? ResolveCustomClaimType(RbacOptions options)
+    {
+        var configuredClaimType = options.EffectiveRoleClaimType;
+        if (string.Equals(configuredClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(configuredClaimType, RbacOptions.DefaultRoleClaimType, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return configuredClaimType;
+    }
+
+    private static bool IsAcceptedRoleClaimType(string claimType, string? customClaimType)
+        => string.Equals(claimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(claimType, RbacOptions.DefaultRoleClaimType, StringComparison.OrdinalIgnoreCase)
+           || (customClaimType is not null && string.Equals(claimType, customClaimType, StringComparison.OrdinalIgnoreCase));
 }

@@ -69,7 +69,7 @@ internal sealed class CustomCodeSubmitCoordinator(
         // Snapshot the submitter's reach from the LIVE principal and reject any
         // declared-scope entry the submitter cannot actually reach. The pinned scope
         // is therefore always ⊆ submitter; the token mint can only attenuate it.
-        var roles = SnapshotRoles(principal);
+        var roles = CustomCodeOwnerScopeCapture.SnapshotRoles(principal);
         var grants = SnapshotGrants(principal);
         if (!ScopedJobAttenuation.IsWithinOwner(roles, grants, globalDataEditorRoles: null, declaredScope, out var unreachable))
         {
@@ -176,23 +176,6 @@ internal sealed class CustomCodeSubmitCoordinator(
     {
         var trimmedRoot = string.IsNullOrWhiteSpace(root) ? "customcode/outputs" : root.TrimEnd('/');
         return string.Concat(trimmedRoot, "/", jobId);
-    }
-
-    private static List<string> SnapshotRoles(ClaimsPrincipal principal)
-    {
-        var roles = principal.FindAll(ClaimTypes.Role)
-            .Select(claim => claim.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToList();
-
-        foreach (var value in principal.FindAll("roles")
-            .Select(claim => claim.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value) && !roles.Contains(value)))
-        {
-            roles.Add(value);
-        }
-
-        return roles;
     }
 
     private static List<string> SnapshotGrants(ClaimsPrincipal principal) =>

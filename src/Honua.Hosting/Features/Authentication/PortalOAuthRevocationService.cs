@@ -33,7 +33,7 @@ internal sealed class PortalOAuthRevocationService(
         // reference. A forged/expired/wrong-audience JWT yields no reference, so the
         // access-token removal is skipped — but the refresh-token removal below still
         // runs in case the value is an opaque refresh token.
-        var accessReference = LooksLikeJwt(token)
+        var accessReference = PortalTokenIntrospectionService.LooksLikeJwt(token)
             ? await _jwtService.TryReadReferenceAsync(token).ConfigureAwait(false)
             : token;
 
@@ -46,23 +46,5 @@ internal sealed class PortalOAuthRevocationService(
         // OAuth store. Removing rotates the named user out of any further silent
         // re-issuance, closing the long-lived credential.
         await _store.RemoveRefreshTokenAsync(token, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static bool LooksLikeJwt(string token)
-    {
-        // A compact JWS has exactly two '.' separators (header.payload.signature).
-        var first = token.IndexOf('.', StringComparison.Ordinal);
-        if (first <= 0)
-        {
-            return false;
-        }
-
-        var second = token.IndexOf('.', first + 1);
-        if (second <= first + 1 || second >= token.Length - 1)
-        {
-            return false;
-        }
-
-        return token.IndexOf('.', second + 1) < 0;
     }
 }

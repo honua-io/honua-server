@@ -523,7 +523,7 @@ internal static class McpToolSchemas
         return builder.ToString();
     }
 
-    private static string JsonStringArray(IReadOnlyList<string> values)
+    internal static string JsonStringArray(IReadOnlyList<string> values)
     {
         var builder = new StringBuilder(2 + values.Count * 16);
         builder.Append('[');

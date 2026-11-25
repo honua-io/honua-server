@@ -15,6 +15,24 @@ LANES = {
     "r-sf": "r-sf", "pystac": "py-pystac",
 }
 ARTIFACT_MARKER = "evidence-client-compat-"
+REQUIRED_STUB_PROTOCOLS = {
+    "geocode-server", "geometry-service", "image-server", "geoservices-root",
+    "vector-tile-server", "i3s",
+}
+
+
+def require_stub_protocols(source: Path) -> None:
+    protocols = set()
+    for path in source.rglob("*.cert.json"):
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(envelope, dict) or envelope.get("client_lane") != LANES["geoservices-rest-stub"]:
+            raise ValueError(f"{path.name}: receipt client_lane does not match geoservices-rest-stub")
+        protocol = envelope.get("protocol")
+        if isinstance(protocol, str):
+            protocols.add(protocol)
+    missing = REQUIRED_STUB_PROTOCOLS - protocols
+    if missing:
+        raise ValueError(f"Missing geoservices-rest-stub receipts: {', '.join(sorted(missing))}")
 
 
 def stage(artifact_root: Path, output_root: Path, selection: str = "") -> int:
@@ -56,6 +74,8 @@ def stage(artifact_root: Path, output_root: Path, selection: str = "") -> int:
     empty = [lane for lane, source in sources.items() if not any(source.rglob("*.cert.json"))]
     if empty:
         raise ValueError(f"Downloaded lane artifact(s) staged zero .cert.json envelopes: {', '.join(empty)}")
+    if "geoservices-rest-stub" in sources:
+        require_stub_protocols(sources["geoservices-rest-stub"])
     total = 0
     for lane, source in sources.items():
         destination = output_root / lane

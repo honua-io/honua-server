@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Snowflake.Features.FeatureStore.Services;
 
@@ -24,6 +25,16 @@ internal static partial class SnowflakeIdentifier
     public static string Quote(string identifier)
     {
         EnsureValid(identifier, "identifier");
+        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    public static string QuoteAttribute(string identifier)
+    {
+        if (!FeatureFieldNameSyntax.IsValid(identifier))
+        {
+            throw new ArgumentException($"Invalid Snowflake attribute column '{identifier}'.");
+        }
+
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 

@@ -63,47 +63,80 @@ internal static class GrpcTypedValues
         return new(MetadataV2FieldType.TimestampOffset, value);
     }
 
+    public static IReadOnlyDictionary<string, MetadataV2FieldType>? BuildExactFieldTypeMap(
+        IReadOnlyList<MetadataV2Field>? fields)
+    {
+        if (fields is null || fields.Count == 0)
+        {
+            return null;
+        }
+
+        Dictionary<string, MetadataV2FieldType>? map = null;
+        for (var i = 0; i < fields.Count; i++)
+        {
+            var field = fields[i];
+            if (field.Type is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+            {
+                map ??= new Dictionary<string, MetadataV2FieldType>(StringComparer.OrdinalIgnoreCase);
+                map.TryAdd(field.Name, field.Type);
+            }
+        }
+
+        return map;
+    }
+
     // Exact values use JSON strings in canonical storage; schema types supply their meaning.
     // The wire discriminator must agree with the declared type before entering the writer.
     public static FeatureEditBatch EnsureStorable(MetadataV2Object resource, FeatureEditBatch batch)
-        => batch with
+    {
+        var exactFieldTypes = BuildExactFieldTypeMap(resource.SchemaFields);
+        return batch with
         {
-            Creates = NormalizeFeatures(resource, batch.Creates),
-            Updates = NormalizeFeatures(resource, batch.Updates),
+            Creates = NormalizeFeatures(exactFieldTypes, batch.Creates),
+            Updates = NormalizeFeatures(exactFieldTypes, batch.Updates),
             Operations = batch.Operations.IsDefault ? [] : batch.Operations.Select(operation => operation with
             {
-                Feature = operation.Feature is { } feature ? NormalizeFeature(resource, feature) : null
+                Feature = operation.Feature is { } feature ? NormalizeFeature(exactFieldTypes, feature) : null
             }).ToImmutableArray()
         };
+    }
 
-    private static ImmutableArray<Feature> NormalizeFeatures(MetadataV2Object resource, ImmutableArray<Feature> features)
-        => features.IsDefault ? [] : features.Select(feature => NormalizeFeature(resource, feature)).ToImmutableArray();
+    private static ImmutableArray<Feature> NormalizeFeatures(
+        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes,
+        ImmutableArray<Feature> features)
+        => features.IsDefault ? [] : features.Select(feature => NormalizeFeature(exactFieldTypes, feature)).ToImmutableArray();
 
-    private static Feature NormalizeFeature(MetadataV2Object resource, Feature feature)
+    private static Feature NormalizeFeature(
+        IReadOnlyDictionary<string, MetadataV2FieldType>? exactFieldTypes,
+        Feature feature)
     {
-        var attributes = feature.Attributes.ToBuilder();
+        ImmutableDictionary<string, object?>.Builder? attributes = null;
         foreach (var (name, value) in feature.Attributes)
         {
-            var field = resource.SchemaFields.FirstOrDefault(field => string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase));
+            MetadataV2FieldType? exactType = exactFieldTypes is not null && exactFieldTypes.TryGetValue(name, out var resolved)
+                ? resolved
+                : null;
             if (value is GrpcExactValue exact)
             {
-                if (field?.Type != exact.Type)
+                if (exactType != exact.Type)
                 {
                     throw CannotPreserve(name);
                 }
+                attributes ??= feature.Attributes.ToBuilder();
                 attributes[name] = exact.Text;
             }
             else if (value is decimal or DateTimeOffset)
             {
                 throw CannotPreserve(name);
             }
-            else if (value is not null && field?.Type is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+            else if (value is not null && exactType.HasValue)
             {
                 // Plain strings, numbers and legacy datetime values cannot substitute for an exact wire case.
                 throw CannotPreserve(name);
             }
         }
-        return feature with { Attributes = attributes.ToImmutable() };
+
+        return attributes is null ? feature : feature with { Attributes = attributes.ToImmutable() };
     }
 
     private static RpcException CannotPreserve(string name)

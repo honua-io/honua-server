@@ -913,4 +913,46 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains(42, result.WhereParameters.OfType<int>().Cast<object>());
         Assert.Contains("active", result.WhereParameters);
     }
+
+    [Fact]
+    public void BuildTemporalExtentQuery_WithSpatialFilter_AppendsSpatialPredicate()
+    {
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x01, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                spatialRelationship: SpatialRelationship.Intersects,
+                srid: 4326)
+        };
+
+        var result = _builder.BuildTemporalExtentQuery(TestLayerId, "name", TemporalPropertyType.DateTime, query);
+
+        Assert.Contains("ST_Intersects(", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildDateBinsQuery_SubSecondFixedInterval_ThrowsArgumentOutOfRange()
+    {
+        var dateBin = new DateBinDefinition
+        {
+            BinField = "name",
+            FixedInterval = TimeSpan.FromMilliseconds(500)
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => _builder.BuildDateBinsQuery(TestLayerId, new FeatureQuery(), dateBin));
+    }
+
+    [Fact]
+    public void BuildBinsQuery_NonFiniteIntervalStart_ThrowsArgumentOutOfRange()
+    {
+        var bin = new BinDefinition
+        {
+            Type = BinType.FixedInterval,
+            Field = "area",
+            IntervalStart = double.PositiveInfinity,
+            IntervalSize = 10
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => _builder.BuildBinsQuery(TestLayerId, new FeatureQuery(), bin));
+    }
 }

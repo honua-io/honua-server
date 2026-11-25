@@ -31,14 +31,14 @@ internal sealed partial class FeatureDataAccess
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var positions = ImmutableArray.CreateBuilder<RelatedFeaturePosition>();
-        var attributesReader = new FeatureAttributeReadContext();
+        var rowContext = new FeatureRowReadContext { AttributesReader = new FeatureAttributeReadContext() };
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             if (positions.Count == request.Query.PositionLimit)
             {
                 return new RelatedFeaturePage(positions.ToImmutable()) { HasMore = true };
             }
-            Feature? feature = reader.IsDBNull(0) ? null : ProjectRelatedFeature(ReadFeature(reader, attributesReader), request);
+            Feature? feature = reader.IsDBNull(0) ? null : ProjectRelatedFeature(ReadFeature(reader, rowContext), request);
             positions.Add(new RelatedFeaturePosition(reader.GetInt64(3), feature));
         }
         return new RelatedFeaturePage(positions.ToImmutable());

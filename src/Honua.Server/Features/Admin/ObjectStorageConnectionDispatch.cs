@@ -26,23 +26,38 @@ internal static partial class ObjectStorageConnectionDispatch
     public static async ValueTask<object?> CreateAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var request = context.Arguments.OfType<CreateSecureConnectionRequest>().FirstOrDefault();
-        return request is not null && IsObjectStorage(request.Kind)
-            ? await CreateObjectStorageAsync(request, context.HttpContext).ConfigureAwait(false)
-            : await next(context).ConfigureAwait(false);
+        if (request is null || !IsObjectStorage(request.Kind))
+        {
+            return await next(context).ConfigureAwait(false);
+        }
+
+        return PlatformDeployAuthority.Deny(context.HttpContext) is { } denial
+            ? denial
+            : await CreateObjectStorageAsync(request, context.HttpContext).ConfigureAwait(false);
     }
 
     public static async ValueTask<object?> TestDraftAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var request = context.Arguments.OfType<CreateSecureConnectionRequest>().FirstOrDefault();
-        return request is not null && IsObjectStorage(request.Kind)
-            ? await TestDraftObjectStorageAsync(request, context.HttpContext).ConfigureAwait(false)
-            : await next(context).ConfigureAwait(false);
+        if (request is null || !IsObjectStorage(request.Kind))
+        {
+            return await next(context).ConfigureAwait(false);
+        }
+
+        return PlatformDeployAuthority.Deny(context.HttpContext) is { } denial
+            ? denial
+            : await TestDraftObjectStorageAsync(request, context.HttpContext).ConfigureAwait(false);
     }
 
     public static async ValueTask<object?> ListAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var result = await next(context).ConfigureAwait(false);
         if (result is not INestedHttpResult { Result: Ok<ApiResponse<IReadOnlyList<SecureConnectionSummary>>> { Value.Data: { } rows } })
+        {
+            return result;
+        }
+
+        if (PlatformDeployAuthority.Deny(context.HttpContext) is not null)
         {
             return result;
         }
@@ -100,7 +115,8 @@ internal static partial class ObjectStorageConnectionDispatch
         Func<ObjectStorageConnection, HttpContext, Task<IResult>> handle)
     {
         var http = context.HttpContext;
-        if (!Guid.TryParse(http.Request.RouteValues["id"]?.ToString(), out var id))
+        if (PlatformDeployAuthority.Deny(http) is not null
+            || !Guid.TryParse(http.Request.RouteValues["id"]?.ToString(), out var id))
         {
             return await next(context).ConfigureAwait(false);
         }

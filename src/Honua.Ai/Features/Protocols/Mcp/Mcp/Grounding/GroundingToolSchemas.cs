@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
 
@@ -20,8 +21,8 @@ internal static class GroundingToolSchemas
 
     private static string BuildSchema(bool includeClarificationResponse)
     {
-        var workflowFamilyEnum = JsonStringArray(WorkflowFamilyNames);
-        var assumptionPolicyEnum = JsonStringArray(AssumptionPolicyNames);
+        var workflowFamilyEnum = McpToolSchemas.JsonStringArray(WorkflowFamilyNames);
+        var assumptionPolicyEnum = McpToolSchemas.JsonStringArray(AssumptionPolicyNames);
 
         // honua_ground_candidates always needs a goal text; honua_clarify_intent
         // re-runs grounding with the answers merged in, so it also needs the
@@ -133,24 +134,6 @@ internal static class GroundingToolSchemas
             }
             """);
 
-        return builder.ToString();
-    }
-
-    private static string JsonStringArray(IReadOnlyList<string> values)
-    {
-        var builder = new StringBuilder(2 + values.Count * 16);
-        builder.Append('[');
-        for (var i = 0; i < values.Count; i++)
-        {
-            if (i > 0)
-            {
-                builder.Append(", ");
-            }
-
-            builder.Append('"').Append(values[i]).Append('"');
-        }
-
-        builder.Append(']');
         return builder.ToString();
     }
 

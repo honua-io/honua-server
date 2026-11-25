@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Realtime;
@@ -30,7 +31,11 @@ internal static partial class RealtimeNotificationEndpoints
             return Results.NotFound();
         }
         var serviceId = service.Metadata.Id;
-        if (!ReadableLayers(context, initial, serviceId).Any())
+        var initialReadable = await ReadableLayersAsync(
+            context,
+            new LayerAccessScope { Snapshot = initial, ServiceId = serviceId },
+            context.RequestAborted).ConfigureAwait(false);
+        if (initialReadable.Count == 0)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -69,7 +74,10 @@ internal static partial class RealtimeNotificationEndpoints
         var changed = ChangedLayers(previous, next, state.ServiceId);
         // Resolve current permissions even when replaying older definitions.
         var current = await state.Graphs.GetCurrentAsync(token).ConfigureAwait(false);
-        var readable = ReadableLayers(state.Context, current, state.ServiceId).ToHashSet();
+        var readable = await ReadableLayersAsync(
+            state.Context,
+            new LayerAccessScope { Snapshot = current, ServiceId = state.ServiceId },
+            token).ConfigureAwait(false);
         var visibleChanges = changed.Where(readable.Contains).ToArray();
         for (var i = 0; i < visibleChanges.Length; i++)
         {
@@ -116,21 +124,39 @@ internal static partial class RealtimeNotificationEndpoints
                     JsonSerializer.Serialize(snapshot.ResolveResource(item.Publication), MetadataV2JsonContext.Default.MetadataV2Object))));
     }
 
-    private static IEnumerable<int> ReadableLayers(HttpContext context, MetadataV2GraphSnapshot snapshot, string serviceId)
+    private readonly struct LayerAccessScope
     {
-        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
+        public required MetadataV2GraphSnapshot Snapshot { get; init; }
+        public required string ServiceId { get; init; }
+    }
+
+    private static async Task<HashSet<int>> ReadableLayersAsync(
+        HttpContext context,
+        LayerAccessScope scope,
+        CancellationToken cancellationToken)
+    {
+        var readable = new HashSet<int>();
+        if (!scope.Snapshot.Index.ServicesById.TryGetValue(scope.ServiceId, out var service))
         {
-            yield break;
+            return readable;
         }
-        foreach (var publication in snapshot.Index.PublicationsByService[serviceId])
+
+        foreach (var publication in scope.Snapshot.Index.PublicationsByService[scope.ServiceId])
         {
-            var resource = snapshot.ResolveResource(publication);
-            var layerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
-            if (resource is not null && layerId.HasValue && snapshot.IsRoutable(publication) &&
-                AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            var resource = scope.Snapshot.ResolveResource(publication);
+            var layerId = publication.LayerIndex ?? scope.Snapshot.ResolveStorageLayerId(publication);
+            if (resource is not null && layerId.HasValue && scope.Snapshot.IsRoutable(publication) &&
+                await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context,
+                    resource,
+                    service,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false))
             {
-                yield return layerId.Value;
+                readable.Add(layerId.Value);
             }
         }
+
+        return readable;
     }
 }

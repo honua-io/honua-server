@@ -79,7 +79,7 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                items.Add(ReadRecord(reader));
+                items.Add(FieldSubmissionRecordReader.ReadRecord(reader));
             }
         }
 
@@ -245,7 +245,10 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
 
         if (!string.IsNullOrWhiteSpace(request.SyncStatus))
         {
-            command.Parameters.AddWithValue("sync_status", NpgsqlDbType.Text, MapSyncStatusToSubmissionStatus(request.SyncStatus));
+            command.Parameters.AddWithValue(
+                "sync_status",
+                NpgsqlDbType.Text,
+                FieldSubmissionRecordReader.MapSyncStatusToSubmissionStatus(request.SyncStatus));
         }
 
         if (request.HasConflict is bool hasConflict)
@@ -321,101 +324,5 @@ internal sealed class PostgresFieldExportStore : IFieldExportStore
             Filter = reader.IsDBNull(3) ? "{}" : reader.GetString(3),
             RequestedBy = reader.GetString(4),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(5)
-        };
-
-    private static FieldSubmissionRecord ReadRecord(NpgsqlDataReader reader)
-    {
-        var requestSummaryJson = reader.IsDBNull(9) ? null : reader.GetString(9);
-        var validationJson = reader.IsDBNull(10) ? null : reader.GetString(10);
-        var submissionStatus = reader.GetString(7);
-        var deviceId = ExtractStringMember(requestSummaryJson, "clientId");
-
-        return new FieldSubmissionRecord
-        {
-            SubmissionId = reader.GetGuid(0),
-            FormId = reader.GetString(1),
-            FormVersion = reader.GetInt32(2),
-            ServiceId = reader.GetString(3),
-            LayerId = reader.GetInt32(4),
-            TargetFeatureId = reader.IsDBNull(5) ? null : reader.GetInt64(5),
-            Operation = reader.GetString(6),
-            SyncStatus = MapSubmissionStatusToSyncStatus(submissionStatus),
-            HasValidationIssues = validationJson is not null,
-            Validation = ParseJson(validationJson),
-            Geometry = null,
-            SubmitterHash = reader.IsDBNull(8) ? null : reader.GetString(8),
-            DeviceId = deviceId,
-            AttachmentCount = (int)reader.GetInt64(20),
-            HasConflict = reader.GetBoolean(19),
-            SubmittedAt = reader.GetFieldValue<DateTimeOffset>(11),
-            Review = new FieldReviewState
-            {
-                Status = reader.GetString(12),
-                AssignedTo = reader.IsDBNull(13) ? null : reader.GetString(13),
-                DecidedBy = reader.IsDBNull(14) ? null : reader.GetString(14),
-                DecidedAt = reader.IsDBNull(15) ? null : reader.GetFieldValue<DateTimeOffset>(15),
-                DecisionNote = reader.IsDBNull(16) ? null : reader.GetString(16),
-                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(17),
-                ETag = reader.IsDBNull(18) ? string.Empty : reader.GetString(18)
-            }
-        };
-    }
-
-    private static JsonElement? ParseJson(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.Clone();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string? ExtractStringMember(string? json, string member)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty(member, out var value)
-                && value.ValueKind == JsonValueKind.String
-                    ? value.GetString()
-                    : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string MapSubmissionStatusToSyncStatus(string submissionStatus)
-        => submissionStatus switch
-        {
-            "accepted" => FieldSyncStatus.Synced,
-            "rejected" => FieldSyncStatus.Rejected,
-            "failed" => FieldSyncStatus.Failed,
-            _ => FieldSyncStatus.Pending
-        };
-
-    private static string MapSyncStatusToSubmissionStatus(string syncStatus)
-        => syncStatus switch
-        {
-            FieldSyncStatus.Synced => "accepted",
-            FieldSyncStatus.Rejected => "rejected",
-            FieldSyncStatus.Failed => "failed",
-            _ => "pending"
         };
 }

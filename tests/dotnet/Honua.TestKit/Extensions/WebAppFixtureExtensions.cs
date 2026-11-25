@@ -2,11 +2,24 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.TestKit.Extensions;
 
 public static class WebAppFixtureExtensions
 {
+    public static WebAppFixture WithTestAuthorization(this WebAppFixture fixture)
+    {
+        ArgumentNullException.ThrowIfNull(fixture);
+
+        return fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+    }
+
     public static async Task<long> InsertFeatureAsync(
         this WebAppFixture fixture,
         int layerId,

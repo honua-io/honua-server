@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
@@ -40,53 +41,32 @@ public static class ZarrTileRenderer
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputHeight);
 
-        var height = result.Shape[slice.YDimensionIndex];
-        var width = result.Shape[slice.XDimensionIndex];
-        if (width <= 0 || height <= 0)
+        var layout = ResolveGridLayout(result, slice);
+        var pixelByteCount = checked(outputWidth * outputHeight * 4);
+        var valuesPool = ArrayPool<double>.Shared.Rent(layout.ValueCount);
+        var pixelsPool = ArrayPool<byte>.Shared.Rent(pixelByteCount);
+        try
         {
-            throw new InvalidOperationException("Zarr tile slice has no spatial extent.");
+            var values = valuesPool.AsSpan(0, layout.ValueCount);
+            DecodeBufferInto(result, fillValue, values);
+
+            var grid = CreateDecodedGrid(values, layout);
+            var target = new NearestRenderTarget
+            {
+                Pixels = pixelsPool.AsSpan(0, pixelByteCount),
+                OutputWidth = outputWidth,
+                OutputHeight = outputHeight,
+                Colormap = colormap,
+                Ramp = colormap is null ? ResolveRange(values) : default,
+            };
+            RenderNearestGrid(grid, slice, target);
+            return PngEncoder.Encode(pixelsPool, outputWidth, outputHeight);
         }
-
-        // The decoded buffer is row-major over the full subset shape. Every
-        // non-spatial axis is length 1, so the linear position of grid cell (y, x)
-        // is y*strideY + x*strideX where the strides are the products of the trailing
-        // subset dimensions; computing them explicitly keeps the mapping correct
-        // regardless of where the Y and X axes sit in the dimension order.
-        var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
-        var values = DecodeBuffer(result, fillValue);
-
-        // Build the value->colour mapping. With a colormap, interpolate between stops;
-        // otherwise auto-ramp grayscale over the finite value range.
-        var ramp = colormap is null ? ResolveRange(values) : default;
-
-        var pixels = new byte[checked(outputWidth * outputHeight * 4)];
-        for (var py = 0; py < outputHeight; py++)
+        finally
         {
-            // Output images are north-up. Reverse the row lookup when the
-            // source stores rows south-to-north.
-            var displayRow = height == 1 ? 0 : (int)((long)py * height / outputHeight);
-            var gy = slice.YAxisAscending ? height - 1 - displayRow : displayRow;
-            if (gy >= height)
-            {
-                gy = height - 1;
-            }
-
-            for (var px = 0; px < outputWidth; px++)
-            {
-                var gx = width == 1 ? 0 : (int)((long)px * width / outputWidth);
-                if (gx >= width)
-                {
-                    gx = width - 1;
-                }
-
-                var index = (gy * strideY) + (gx * strideX);
-                var value = index >= 0 && index < values.Length ? values[index] : double.NaN;
-                var offset = ((py * outputWidth) + px) * 4;
-                WritePixel(pixels.AsSpan(offset), value, colormap, ramp);
-            }
+            ArrayPool<double>.Shared.Return(valuesPool);
+            ArrayPool<byte>.Shared.Return(pixelsPool);
         }
-
-        return PngEncoder.Encode(pixels, outputWidth, outputHeight);
     }
 
     public static byte[] RenderRgbaWithTypedFill(
@@ -100,11 +80,37 @@ public static class ZarrTileRenderer
         ArgumentNullException.ThrowIfNull(sampleY);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputHeight);
-        if (sampleX.Length != outputWidth * outputHeight || sampleY.Length != sampleX.Length)
-        {
+        var outputPixelCount = checked(outputWidth * outputHeight);
+        if (sampleX.Length != outputPixelCount || sampleY.Length != outputPixelCount)
             throw new ArgumentException("Sample coordinate buffers must match the output pixel count.", nameof(sampleX));
-        }
 
+        var layout = ResolveGridLayout(result, slice);
+        var valuesPool = ArrayPool<double>.Shared.Rent(layout.ValueCount);
+        try
+        {
+            var values = valuesPool.AsSpan(0, layout.ValueCount);
+            DecodeBufferInto(result, fillValue, values);
+            var range = stretchRange ?? ResolveRange(values);
+            var request = new RgbaSampleRequest
+            {
+                OutputPixelCount = outputPixelCount,
+                SampleX = sampleX,
+                SampleY = sampleY,
+                Resampling = resampling,
+                Colormap = colormap,
+                Lo = range.Min,
+                Hi = range.Max > range.Min ? range.Max : range.Min + 1,
+            };
+            return RenderSampledRgba(CreateDecodedGrid(values, layout), slice, request);
+        }
+        finally
+        {
+            ArrayPool<double>.Shared.Return(valuesPool);
+        }
+    }
+
+    private static GridLayout ResolveGridLayout(ZarrSubsetResult result, ZarrTileSlicePlan slice)
+    {
         var height = result.Shape[slice.YDimensionIndex];
         var width = result.Shape[slice.XDimensionIndex];
         if (width <= 0 || height <= 0)
@@ -112,29 +118,71 @@ public static class ZarrTileRenderer
             throw new InvalidOperationException("Zarr tile slice has no spatial extent.");
         }
 
+        // Every non-spatial axis is length 1, so cell (y, x) maps to y*strideY + x*strideX.
         var (strideY, strideX) = ComputeSpatialStrides(result.Shape, slice.YDimensionIndex, slice.XDimensionIndex);
-        var values = DecodeBuffer(result, fillValue);
-
-        // With an explicit stretch the display range is caller-supplied; otherwise auto-ramp
-        // grayscale (and, when a colormap is present, spread it across) the finite slice range.
-        var range = stretchRange ?? ResolveRange(values);
-        var lo = range.Min;
-        var hi = range.Max > range.Min ? range.Max : range.Min + 1;
-
-        var pixels = new byte[checked(outputWidth * outputHeight * 4)];
-        for (var index = 0; index < sampleX.Length; index++)
+        var dtype = Normalize(result.DataType);
+        var elementSize = ElementSize(dtype, result.DataType);
+        return new GridLayout
         {
-            var value = Sample(
-                values,
-                width,
-                height,
-                strideX,
-                strideY,
-                slice,
-                sampleX[index],
-                sampleY[index],
-                resampling);
-            WriteStretchedPixel(pixels.AsSpan(index * 4), value, colormap, lo, hi);
+            Width = width,
+            Height = height,
+            StrideX = strideX,
+            StrideY = strideY,
+            ValueCount = result.Data.Length / elementSize,
+        };
+    }
+
+    private static DecodedGrid CreateDecodedGrid(ReadOnlySpan<double> values, GridLayout layout)
+        => new()
+        {
+            Values = values,
+            Width = layout.Width,
+            Height = layout.Height,
+            StrideX = layout.StrideX,
+            StrideY = layout.StrideY,
+        };
+
+    private static void RenderNearestGrid(DecodedGrid grid, ZarrTileSlicePlan slice, NearestRenderTarget target)
+    {
+        for (var py = 0; py < target.OutputHeight; py++)
+        {
+            // Output images are north-up; reverse the row lookup when source rows run south-to-north.
+            var displayRow = grid.Height == 1 ? 0 : (int)((long)py * grid.Height / target.OutputHeight);
+            var gy = slice.YAxisAscending ? grid.Height - 1 - displayRow : displayRow;
+            if (gy >= grid.Height)
+            {
+                gy = grid.Height - 1;
+            }
+
+            for (var px = 0; px < target.OutputWidth; px++)
+            {
+                var gx = grid.Width == 1 ? 0 : (int)((long)px * grid.Width / target.OutputWidth);
+                if (gx >= grid.Width)
+                {
+                    gx = grid.Width - 1;
+                }
+
+                var index = (gy * grid.StrideY) + (gx * grid.StrideX);
+                var value = index >= 0 && index < grid.Values.Length ? grid.Values[index] : double.NaN;
+                var offset = ((py * target.OutputWidth) + px) * 4;
+                WritePixel(target.Pixels.Slice(offset, 4), value, target.Colormap, target.Ramp);
+            }
+        }
+    }
+
+    private static byte[] RenderSampledRgba(DecodedGrid grid, ZarrTileSlicePlan slice, RgbaSampleRequest request)
+    {
+        var pixels = new byte[checked(request.OutputPixelCount * 4)];
+        for (var index = 0; index < request.SampleX.Length; index++)
+        {
+            var query = new SampleQuery
+            {
+                X = request.SampleX[index],
+                Y = request.SampleY[index],
+                Resampling = request.Resampling,
+            };
+            var value = Sample(grid, slice, query);
+            WriteStretchedPixel(pixels.AsSpan(index * 4), value, request.Colormap, request.Lo, request.Hi);
         }
 
         return pixels;
@@ -144,36 +192,16 @@ public static class ZarrTileRenderer
     // resampling. Missing (NaN / fill) centres short-circuit to NaN so they render transparent;
     // non-finite neighbours in an interpolation kernel fall back to the centre value so an edge
     // pixel never smears NoData into valid output.
-    private static double Sample(
-        double[] values,
-        int width,
-        int height,
-        int strideX,
-        int strideY,
-        ZarrTileSlicePlan slice,
-        double x,
-        double y,
-        ResamplingAlgorithm resampling)
+    private static double Sample(DecodedGrid grid, ZarrTileSlicePlan slice, SampleQuery query)
     {
         // Fractional cell-centre position of the native coordinate within the subset grid.
-        var fx = ((x - slice.GridXMin) / slice.CellWidth) - 0.5;
+        var fx = ((query.X - slice.GridXMin) / slice.CellWidth) - 0.5;
         var fy = slice.YAxisAscending
-            ? ((y - (slice.GridYMax - (height * slice.CellHeight))) / slice.CellHeight) - 0.5
-            : ((slice.GridYMax - y) / slice.CellHeight) - 0.5;
+            ? ((query.Y - (slice.GridYMax - (grid.Height * slice.CellHeight))) / slice.CellHeight) - 0.5
+            : ((slice.GridYMax - query.Y) / slice.CellHeight) - 0.5;
 
-        double ValueAt(int gx, int gy)
-        {
-            gx = Math.Clamp(gx, 0, width - 1);
-            gy = Math.Clamp(gy, 0, height - 1);
-            var idx = (gy * strideY) + (gx * strideX);
-            var v = idx >= 0 && idx < values.Length ? values[idx] : double.NaN;
-            // Substitute a missing neighbour with the centre value so an interpolation kernel
-            // never smears NoData into valid output; the centre-missing case short-circuits above.
-            return !double.IsFinite(v) ? double.NaN : v;
-        }
-
-        var centre = ValueAt((int)Math.Round(fx), (int)Math.Round(fy));
-        if (resampling == ResamplingAlgorithm.NearestNeighbor || double.IsNaN(centre))
+        var centre = grid.ValueAt((int)Math.Round(fx), (int)Math.Round(fy));
+        if (query.Resampling == ResamplingAlgorithm.NearestNeighbor || double.IsNaN(centre))
         {
             return centre;
         }
@@ -183,32 +211,24 @@ public static class ZarrTileRenderer
         var tx = fx - x0;
         var ty = fy - y0;
 
-        if (resampling == ResamplingAlgorithm.Bilinear)
+        if (query.Resampling == ResamplingAlgorithm.Bilinear)
         {
-            var v00 = Coalesce(ValueAt(x0, y0), centre);
-            var v10 = Coalesce(ValueAt(x0 + 1, y0), centre);
-            var v01 = Coalesce(ValueAt(x0, y0 + 1), centre);
-            var v11 = Coalesce(ValueAt(x0 + 1, y0 + 1), centre);
+            var v00 = Coalesce(grid.ValueAt(x0, y0), centre);
+            var v10 = Coalesce(grid.ValueAt(x0 + 1, y0), centre);
+            var v01 = Coalesce(grid.ValueAt(x0, y0 + 1), centre);
+            var v11 = Coalesce(grid.ValueAt(x0 + 1, y0 + 1), centre);
             var top = v00 + ((v10 - v00) * tx);
             var bottom = v01 + ((v11 - v01) * tx);
             return top + ((bottom - top) * ty);
         }
 
         // Bicubic (and Lanczos, approximated as bicubic) via separable Catmull-Rom.
-        var c0 = SampleRow(ValueAt, x0, y0 - 1, tx, centre);
-        var c1 = SampleRow(ValueAt, x0, y0, tx, centre);
-        var c2 = SampleRow(ValueAt, x0, y0 + 1, tx, centre);
-        var c3 = SampleRow(ValueAt, x0, y0 + 2, tx, centre);
+        var rowContext = new RowSampleContext { Tx = tx, Centre = centre };
+        var c0 = grid.SampleRow(x0, y0 - 1, rowContext);
+        var c1 = grid.SampleRow(x0, y0, rowContext);
+        var c2 = grid.SampleRow(x0, y0 + 1, rowContext);
+        var c3 = grid.SampleRow(x0, y0 + 2, rowContext);
         return CatmullRom(c0, c1, c2, c3, ty);
-    }
-
-    private static double SampleRow(Func<int, int, double> valueAt, int x0, int gy, double tx, double centre)
-    {
-        var r0 = Coalesce(valueAt(x0 - 1, gy), centre);
-        var r1 = Coalesce(valueAt(x0, gy), centre);
-        var r2 = Coalesce(valueAt(x0 + 1, gy), centre);
-        var r3 = Coalesce(valueAt(x0 + 2, gy), centre);
-        return CatmullRom(r0, r1, r2, r3, tx);
     }
 
     private static double Coalesce(double value, double fallback)
@@ -283,23 +303,20 @@ public static class ZarrTileRenderer
         return (strideY, strideX);
     }
 
-    private static double[] DecodeBuffer(ZarrSubsetResult result, object? fillValue)
+    private static void DecodeBufferInto(ZarrSubsetResult result, object? fillValue, Span<double> destination)
     {
-        var dtype = Normalize(result.DataType);
-        var elementSize = ElementSize(dtype, result.DataType);
-        var count = result.Data.Length / elementSize;
-        var values = new double[count];
-        for (var index = 0; index < count; index++)
+        var spec = new ZarrBufferDecodeSpec
         {
-            var scalar = result.Data.AsSpan(index * elementSize, elementSize);
-            if (!ZarrValueDecoder.TryDecodeWithFill(scalar, dtype, fillValue, out var value))
-                throw new InvalidOperationException($"Zarr dtype '{result.DataType}' is not supported for tile rendering.");
-            values[index] = value ?? double.NaN;
+            NormalizedDtype = Normalize(result.DataType),
+            FillValue = fillValue,
+        };
+        if (!ZarrValueDecoder.TryDecodeBufferWithFill(result.Data, spec, destination))
+        {
+            throw new InvalidOperationException($"Zarr dtype '{result.DataType}' is not supported for tile rendering.");
         }
-        return values;
     }
 
-    private static (double Min, double Max) ResolveRange(double[] values)
+    private static (double Min, double Max) ResolveRange(ReadOnlySpan<double> values)
     {
         var min = double.PositiveInfinity;
         var max = double.NegativeInfinity;
@@ -416,4 +433,94 @@ public static class ZarrTileRenderer
 
     internal static string Normalize(string dtype)
         => dtype.Length > 0 && dtype[0] is '<' or '|' or '=' ? dtype[1..] : dtype;
+
+    private readonly record struct GridLayout
+    {
+        public required int Width { get; init; }
+
+        public required int Height { get; init; }
+
+        public required int StrideX { get; init; }
+
+        public required int StrideY { get; init; }
+
+        public required int ValueCount { get; init; }
+    }
+
+    private readonly ref struct DecodedGrid
+    {
+        public ReadOnlySpan<double> Values { get; init; }
+
+        public int Width { get; init; }
+
+        public int Height { get; init; }
+
+        public int StrideX { get; init; }
+
+        public int StrideY { get; init; }
+
+        public double ValueAt(int gx, int gy)
+        {
+            gx = Math.Clamp(gx, 0, Width - 1);
+            gy = Math.Clamp(gy, 0, Height - 1);
+            var idx = (gy * StrideY) + (gx * StrideX);
+            var v = idx >= 0 && idx < Values.Length ? Values[idx] : double.NaN;
+            return !double.IsFinite(v) ? double.NaN : v;
+        }
+
+        public double SampleRow(int x0, int gy, RowSampleContext context)
+        {
+            var r0 = Coalesce(ValueAt(x0 - 1, gy), context.Centre);
+            var r1 = Coalesce(ValueAt(x0, gy), context.Centre);
+            var r2 = Coalesce(ValueAt(x0 + 1, gy), context.Centre);
+            var r3 = Coalesce(ValueAt(x0 + 2, gy), context.Centre);
+            return CatmullRom(r0, r1, r2, r3, context.Tx);
+        }
+    }
+
+    private readonly ref struct NearestRenderTarget
+    {
+        public Span<byte> Pixels { get; init; }
+
+        public int OutputWidth { get; init; }
+
+        public int OutputHeight { get; init; }
+
+        public RasterColormap? Colormap { get; init; }
+
+        public (double Min, double Max) Ramp { get; init; }
+    }
+
+    private sealed class RgbaSampleRequest
+    {
+        public required int OutputPixelCount { get; init; }
+
+        public required double[] SampleX { get; init; }
+
+        public required double[] SampleY { get; init; }
+
+        public required ResamplingAlgorithm Resampling { get; init; }
+
+        public RasterColormap? Colormap { get; init; }
+
+        public required double Lo { get; init; }
+
+        public required double Hi { get; init; }
+    }
+
+    private readonly record struct SampleQuery
+    {
+        public required double X { get; init; }
+
+        public required double Y { get; init; }
+
+        public required ResamplingAlgorithm Resampling { get; init; }
+    }
+
+    private readonly record struct RowSampleContext
+    {
+        public required double Tx { get; init; }
+
+        public required double Centre { get; init; }
+    }
 }

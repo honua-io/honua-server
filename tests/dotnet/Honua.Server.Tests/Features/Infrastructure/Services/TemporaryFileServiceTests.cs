@@ -25,7 +25,7 @@ using System.Collections.Immutable;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
-public sealed class TemporaryFileServiceTests : IDisposable
+public sealed partial class TemporaryFileServiceTests : IDisposable
 {
     private readonly InMemorySecurityTokenStore _sharedTokens = new();
     private readonly string _storageDirectory = Path.Join(

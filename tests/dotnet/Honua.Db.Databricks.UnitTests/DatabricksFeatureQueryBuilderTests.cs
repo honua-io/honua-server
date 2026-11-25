@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Databricks.Tests;
 
@@ -297,6 +298,7 @@ public class DatabricksFeatureQueryBuilderTests
         var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(SpatialRelationship.Intersects) });
 
         Assert.Contains("st_intersects(`geom`, st_geomfromtext('POLYGON((", statement.Sql, StringComparison.Ordinal);
+        Assert.Contains("))', 4326))", statement.Sql, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -716,5 +718,26 @@ public class DatabricksFeatureQueryBuilderTests
 
         Assert.Equal("SELECT 1 WHERE FALSE", statement.Sql);
         Assert.Empty(statement.Parameters);
+    }
+
+    [UnitTest]
+    public void BuildSelect_TextSearchUndeclaredField_ThrowsAndDeclaredFieldQuotesCanonicalCase()
+    {
+        var mapping = Mapping("Name", "Owner");
+        var undeclaredQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["secret_col"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        Assert.Throws<ArgumentException>(() => DatabricksFeatureQueryBuilder.BuildSelect(mapping, undeclaredQuery));
+
+        var mixedCaseQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["name"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(mapping, mixedCaseQuery);
+        Assert.Contains("`Name`", statement.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`name`", statement.Sql, StringComparison.Ordinal);
     }
 }

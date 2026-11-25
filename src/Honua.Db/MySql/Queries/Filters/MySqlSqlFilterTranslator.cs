@@ -130,7 +130,9 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         {
             // Refer to MySqlFeatureQueryBuilder.Spatial for the same predicate→function mapping
             // applied to FeatureQuery.SpatialFilter; both paths use identical MySQL functions.
-            SpatialOperator.Intersects => $"MBRIntersects({left}, {right}) AND ST_Intersects({left}, {right})",
+            // Wrap the conjunction so outer comparisons or negations (e.g. `= FALSE`) bind to
+            // the whole spatial predicate rather than only ST_Intersects.
+            SpatialOperator.Intersects => $"(MBRIntersects({left}, {right}) AND ST_Intersects({left}, {right}))",
             SpatialOperator.Contains => $"ST_Contains({left}, {right})",
             SpatialOperator.Within => $"ST_Within({left}, {right})",
             SpatialOperator.Crosses => $"ST_Crosses({left}, {right})",

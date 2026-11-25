@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -349,15 +350,24 @@ internal static partial class OracleFeatureQueryBuilder
         };
     }
 
+    private const int MaxInListItems = 1_000;
+
     private static void AppendWhereClause(
         StringBuilder sb,
         FeatureQuery query,
         List<object> parameters,
         Func<string, string> resolveColumnName)
     {
+        if (query.EnforcedSqlFilter is not null)
+        {
+            throw new NotSupportedException(
+                "Oracle provider does not support EnforcedSqlFilter. Layers with server-enforced " +
+                "definition or security filters cannot be served by this provider in this slice.");
+        }
+
         if (query.TextSearch is { } search)
         {
-            var predicate = FeatureTextSearchSql.Build(search, field => OracleIdentifier.Quote(resolveColumnName(field)), text =>
+            var predicate = FeatureTextSearchSql.Build(search, field => OracleIdentifier.QuoteAttribute(resolveColumnName(field)), text =>
             {
                 var marker = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(text);
@@ -409,14 +419,61 @@ internal static partial class OracleFeatureQueryBuilder
                 $"The object id list of {ids.Length.ToString(CultureInfo.InvariantCulture)} values exceeds this provider's parameter limit of 65000.");
         }
 
-        var placeholders = new string[ids.Length];
-        for (var i = 0; i < ids.Length; i++)
+        // Oracle 12c-21c rejects IN lists with more than 1,000 expressions (ORA-01795).
+        // Chunk larger object id lists into parenthesized OR-joined IN lists of <= 1,000.
+        sb.Append(" AND ");
+        AppendChunkedInClause(new() { Sql = sb, QuotedColumn = mapping.QuotedPrimaryKeyColumn, Parameters = parameters }, ids.AsSpan());
+    }
+
+    private sealed class OracleInClauseTarget
+    {
+        public required StringBuilder Sql { get; init; }
+        public required string QuotedColumn { get; init; }
+        public required List<object> Parameters { get; init; }
+    }
+
+    private static void AppendChunkedInClause<T>(
+        OracleInClauseTarget target,
+        ReadOnlySpan<T> values)
+    {
+        if (values.Length <= MaxInListItems)
         {
-            placeholders[i] = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-            parameters.Add(ids[i]);
+            AppendInChunk(target, values);
+            return;
         }
 
-        sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn).Append(" IN (").Append(string.Join(", ", placeholders)).Append(')');
+        target.Sql.Append('(');
+        for (var offset = 0; offset < values.Length; offset += MaxInListItems)
+        {
+            if (offset > 0)
+            {
+                target.Sql.Append(" OR ");
+            }
+
+            var count = Math.Min(MaxInListItems, values.Length - offset);
+            AppendInChunk(target, values.Slice(offset, count));
+        }
+
+        target.Sql.Append(')');
+    }
+
+    private static void AppendInChunk<T>(
+        OracleInClauseTarget target,
+        ReadOnlySpan<T> values)
+    {
+        target.Sql.Append(target.QuotedColumn).Append(" IN (");
+        for (var i = 0; i < values.Length; i++)
+        {
+            if (i > 0)
+            {
+                target.Sql.Append(", ");
+            }
+
+            target.Sql.Append(":p").Append(target.Parameters.Count.ToString(CultureInfo.InvariantCulture));
+            target.Parameters.Add(values[i]!);
+        }
+
+        target.Sql.Append(')');
     }
 
     private static void AppendSpatialFilter(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
@@ -610,10 +667,9 @@ internal static partial class OracleFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = resolveColumnName(nullMatch.Groups["field"].Value);
-                OracleIdentifier.EnsureValid(field, "WHERE column");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{OracleIdentifier.Quote(field)} IS {notClause}NULL");
+                rendered.Add($"{OracleIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -621,14 +677,15 @@ internal static partial class OracleFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = resolveColumnName(inMatch.Groups["field"].Value);
-                OracleIdentifier.EnsureValid(field, "WHERE column");
-                var placeholders = new List<string>();
+                var values = new List<object>();
                 foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
                 {
-                    placeholders.Add(":p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
-                    parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
+                    values.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value, LegacyWhereValuePolicy.NumericRequired));
                 }
-                rendered.Add($"{OracleIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+
+                var inBuilder = new StringBuilder();
+                AppendChunkedInClause(new() { Sql = inBuilder, QuotedColumn = OracleIdentifier.QuoteAttribute(field), Parameters = parameters }, CollectionsMarshal.AsSpan(values));
+                rendered.Add(inBuilder.ToString());
                 continue;
             }
 
@@ -636,13 +693,12 @@ internal static partial class OracleFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = resolveColumnName(compMatch.Groups["field"].Value);
-                OracleIdentifier.EnsureValid(field, "WHERE column");
                 var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
                 var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value, LegacyWhereValuePolicy.NumericRequired);
 
                 var paramName = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
-                rendered.Add($"{OracleIdentifier.Quote(field)} {op} {paramName}");
+                rendered.Add($"{OracleIdentifier.QuoteAttribute(field)} {op} {paramName}");
                 continue;
             }
 

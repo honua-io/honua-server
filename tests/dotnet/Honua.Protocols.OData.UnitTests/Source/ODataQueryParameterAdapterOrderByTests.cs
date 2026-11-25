@@ -86,6 +86,31 @@ public sealed class ODataQueryParameterAdapterOrderByTests
         clause.NullOrdering.Should().Be(NullOrdering.Default);
     }
 
+    [Fact]
+    public async Task ConvertAsync_SelectOrOrderByHiddenField_FailsValidation()
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-hidden", Name = "HiddenTest" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "state", Type = MetadataV2FieldType.String, Hidden = false },
+                new MetadataV2Field { Name = "internal_secret", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+
+        var selectResult = await _adapter.ConvertAsync(
+            new ODataQueryParameters { Select = "internal_secret" },
+            resource);
+        var orderByResult = await _adapter.ConvertAsync(
+            new ODataQueryParameters { OrderBy = "internal_secret asc" },
+            resource);
+
+        selectResult.IsSuccess.Should().BeFalse();
+        orderByResult.IsSuccess.Should().BeFalse();
+    }
+
     private sealed class StubFilterExpressionService : IFilterExpressionService
     {
         public FilterParseResult Parse(FilterLanguage language, string? filter)

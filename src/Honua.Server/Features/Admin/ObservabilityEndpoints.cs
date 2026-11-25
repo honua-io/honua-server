@@ -36,7 +36,8 @@ internal static class ObservabilityEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/errors", HandleGetRecentErrors)
             .WithDisplayName("Get Recent Errors")
@@ -153,10 +154,10 @@ internal static class ObservabilityEndpoints
     {
         var response = new MigrationObservabilityResponse
         {
-            Status = GetMigrationStatusLabel(migrationState.Status),
+            Status = DeployPreflightProbe.GetMigrationStatusLabel(migrationState.Status),
             IsReady = migrationState.IsReady,
             IsFailed = migrationState.IsFailed,
-            Message = GetMigrationStatusMessage(migrationState),
+            Message = DeployPreflightProbe.GetMigrationStatusMessage(migrationState),
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
@@ -241,31 +242,5 @@ internal static class ObservabilityEndpoints
         }
 
         return otlpEndpointValid ? ExporterStateConfigured : ExporterStateMisconfigured;
-    }
-
-    private static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>
-        status switch
-        {
-            MigrationLifecycleStatus.Running => "running",
-            MigrationLifecycleStatus.Succeeded => "succeeded",
-            MigrationLifecycleStatus.Skipped => "skipped",
-            MigrationLifecycleStatus.Failed => "failed",
-            _ => "unknown"
-        };
-
-    private static string? GetMigrationStatusMessage(MigrationState migrationState)
-    {
-        if (!string.IsNullOrWhiteSpace(migrationState.StatusMessage))
-        {
-            return migrationState.StatusMessage;
-        }
-
-        return migrationState.Status switch
-        {
-            MigrationLifecycleStatus.Running => "Database migrations in progress.",
-            MigrationLifecycleStatus.Failed => "Database migrations failed.",
-            MigrationLifecycleStatus.Unknown => "Database migrations not completed.",
-            _ => null
-        };
     }
 }

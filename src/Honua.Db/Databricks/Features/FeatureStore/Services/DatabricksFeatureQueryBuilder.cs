@@ -147,12 +147,16 @@ internal static class DatabricksFeatureQueryBuilder
         var predicates = new List<string>();
         if (query.TextSearch is { } search)
         {
-            predicates.Add(FeatureTextSearchSql.Build(search, Dialect.QuoteIdentifier, text =>
-            {
-                var name = "search" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-                parameters.Add(new DatabricksSqlParameter(name, text, "STRING"));
-                return ":" + name;
-            }, (column, value) => $"INSTR({column}, {value})"));
+            predicates.Add(FeatureTextSearchSql.Build(
+                search,
+                field => Dialect.QuoteIdentifier(ResolveTextSearchField(mapping, field)),
+                text =>
+                {
+                    var name = "search" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                    parameters.Add(new DatabricksSqlParameter(name, text, "STRING"));
+                    return ":" + name;
+                },
+                (column, value) => $"INSTR({column}, {value})"));
         }
 
         var attributePredicate = TranslateWhere(mapping, query, parameters);
@@ -182,9 +186,11 @@ internal static class DatabricksFeatureQueryBuilder
                 && spatial.EnvelopeMaxX is double maxX
                 && spatial.EnvelopeMaxY is double maxY)
             {
+                var filterSrid = spatial.Srid.GetValueOrDefault();
+                var srid = filterSrid > 0 ? filterSrid : mapping.Srid;
                 var feature = Dialect.QuoteIdentifier(mapping.GeometryColumn);
                 var filter =
-                    $"st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))')";
+                    $"st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))', {srid.ToString(CultureInfo.InvariantCulture)})";
                 predicates.Add(FormatEnvelopePredicate(spatial.SpatialRelationship, feature, filter));
             }
             else if (!spatial.IsSimpleEnvelope)
@@ -692,6 +698,15 @@ internal static class DatabricksFeatureQueryBuilder
             or SpatialRelationship.Contains
             or SpatialRelationship.Within
             or SpatialRelationship.Disjoint;
+
+    private static string ResolveTextSearchField(DatabricksLayerMapping mapping, string field)
+    {
+        DatabricksIdentifier.ValidateAttributeName(field);
+        var declared = mapping.AttributeColumns.FirstOrDefault(
+            column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"Text search field '{field}' is not declared on layer {mapping.LayerId}.");
+    }
 
     private static string F(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

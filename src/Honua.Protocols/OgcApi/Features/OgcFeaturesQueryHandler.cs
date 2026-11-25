@@ -923,7 +923,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema), resource);
+            schema: schema), resource, schema);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -940,15 +940,23 @@ internal sealed partial class OgcFeaturesQueryHandler(
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema), resource);
+            schema: schema), resource, schema);
 
-    private static GeoJsonFeature OmitHiddenIdentifierProperty(GeoJsonFeature feature, MetadataV2Object resource)
+    private static GeoJsonFeature OmitHiddenIdentifierProperty(
+        GeoJsonFeature feature,
+        MetadataV2Object resource,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         // The shared builder preserves custom identifier properties. Publisher visibility
         // still applies to that attribute; the top-level feature identity remains intact.
-        if (resource.FindPrimaryIdField() is { Hidden: true } identifier)
+        var hiddenIdName = schema is not null
+            ? schema.HiddenPrimaryIdFieldName
+            : resource.FindPrimaryIdField() is { Hidden: true } identifier
+                ? identifier.Name
+                : null;
+        if (hiddenIdName is not null)
         {
-            feature.Properties.Remove(identifier.Name);
+            feature.Properties.Remove(hiddenIdName);
         }
 
         return feature;
@@ -1321,37 +1329,39 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
     }
 
-    private static void WriteSchemaProperties(Utf8JsonWriter writer, JsonElement? propertiesElement, string[] propertyFields)
+    private readonly record struct SchemaPropertyWriter(
+        string[] PropertyFields,
+        JsonEncodedText[] EncodedPropertyFields,
+        Dictionary<string, JsonElement>? Lookup);
+
+    private static void WriteSchemaProperties(
+        Utf8JsonWriter writer,
+        JsonElement? propertiesElement,
+        SchemaPropertyWriter schema)
     {
         writer.WriteStartObject();
-        if (!propertiesElement.HasValue || propertyFields.Length == 0)
+        if (!propertiesElement.HasValue || schema.PropertyFields.Length == 0 || schema.Lookup is null)
         {
             writer.WriteEndObject();
             return;
         }
 
-        // Build a case-insensitive name->value lookup once per feature instead of doing a
-        // linear EnumerateObject() scan per schema field: the previous approach was
-        // O(fields * json properties) per feature, which dominates raw fast-path encoding
-        // cost for wide schemas. TryAdd keeps the first occurrence of a duplicate-case
-        // property name, matching the original scan's "first match wins" semantics.
-        var lookup = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        // Reuse the hoisted case-insensitive name->value lookup across features.
+        // TryAdd keeps the first occurrence of a duplicate-case property name,
+        // matching the original scan's "first match wins" semantics.
+        schema.Lookup.Clear();
         foreach (var candidate in propertiesElement.Value.EnumerateObject())
         {
-            lookup.TryAdd(candidate.Name, candidate.Value);
+            schema.Lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        var fieldIndex = 0;
-        while (fieldIndex < propertyFields.Length)
+        for (var fieldIndex = 0; fieldIndex < schema.PropertyFields.Length; fieldIndex++)
         {
-            var fieldName = propertyFields[fieldIndex];
-            if (lookup.TryGetValue(fieldName, out var value))
+            if (schema.Lookup.TryGetValue(schema.PropertyFields[fieldIndex], out var value))
             {
-                writer.WritePropertyName(fieldName);
+                writer.WritePropertyName(schema.EncodedPropertyFields[fieldIndex]);
                 value.WriteTo(writer);
             }
-
-            fieldIndex++;
         }
 
         writer.WriteEndObject();
@@ -1359,10 +1369,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string propertyName, out JsonProperty property)
     {
-        foreach (var candidate in (element.EnumerateObject()).Where(candidate => candidate.NameEquals(propertyName) || string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
+        foreach (var candidate in element.EnumerateObject())
         {
-            property = candidate;
-            return true;
+            if (candidate.NameEquals(propertyName) ||
+                string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                property = candidate;
+                return true;
+            }
         }
 
         property = default;

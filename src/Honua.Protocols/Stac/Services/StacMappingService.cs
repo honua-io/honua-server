@@ -57,6 +57,7 @@ internal sealed class StacMappingService
                 : "unknown";
             DeclaredExtensions = options.Resource.ResolveDeclaredExtensions();
             GeometrySrid = options.GeometrySrid ?? options.Resource.ReadSrid() ?? 4326;
+            HiddenFields = options.Resource.HiddenSchemaFieldNames();
             SelectedPropertiesLookup = options.SelectedProperties is null
                 ? null
                 : options.SelectedProperties as HashSet<string> is { Comparer: { } comparer } existing && comparer.Equals(StringComparer.OrdinalIgnoreCase)
@@ -93,6 +94,7 @@ internal sealed class StacMappingService
         internal string FallbackDatetimeSource { get; }
         internal ImmutableArray<string>? DeclaredExtensions { get; }
         internal int GeometrySrid { get; }
+        internal IReadOnlySet<string> HiddenFields { get; }
         internal HashSet<string>? SelectedPropertiesLookup { get; }
         internal string ItemHrefPrefix { get; }
         internal string OgcItemHrefPrefix { get; }
@@ -336,7 +338,7 @@ internal sealed class StacMappingService
         var attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         var properties = new Dictionary<string, object?>(attributes.Count + 3);
         PopulateTemporalPropertiesV2(attributes, context, properties);
-        CopyIncludedAttributes(attributes, context.SelectedPropertiesLookup, properties);
+        CopyIncludedAttributes(attributes, context, properties);
 
         var (geometry, bbox) = MapGeometryAndBbox(feature.Geometry, context.GeometrySrid);
         var links = ImmutableArray.Create(
@@ -385,9 +387,11 @@ internal sealed class StacMappingService
 
     private static void CopyIncludedAttributes(
         IReadOnlyDictionary<string, object?> attributes,
-        HashSet<string>? selectedPropertiesLookup,
+        StacItemMappingContext context,
         Dictionary<string, object?> properties)
     {
+        var selectedPropertiesLookup = context.SelectedPropertiesLookup;
+        var hiddenFields = context.HiddenFields;
         foreach (var kvp in attributes)
         {
             var key = kvp.Key;
@@ -398,6 +402,7 @@ internal sealed class StacMappingService
                 string.Equals(key, "end_datetime", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(key, "honua:datetime_source", StringComparison.OrdinalIgnoreCase) ||
                 FeatureAttributeVisibility.IsInternalAttribute(key) ||
+                hiddenFields.Contains(key) ||
                 (selectedPropertiesLookup is not null && !selectedPropertiesLookup.Contains(key)) ||
                 (kvp.Value is null && selectedPropertiesLookup is null))
             {

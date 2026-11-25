@@ -205,6 +205,17 @@ public sealed class GPServerOutputReprojectionTests
         coords0[1].GetDouble().Should().BeApproximately(expectedY0, 1e-3);
     }
 
+    [UnitTest]
+    public void TryReprojectGeoJsonDataUri_MalformedJson_ReturnsStaticClientSafeMessage()
+    {
+        var dataUri = GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-valid-json"));
+
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(dataUri, 4326, 3857);
+
+        outcome.Reprojected.Should().BeFalse();
+        outcome.CapabilityMessage.Should().Be("env:outSR=3857 could not be applied: output geometry could not be reprojected.");
+    }
+
     private static string BuildFeatureDataUri(Geometry geometry) =>
         BuildFeatureDataUri(new GeoJsonWriter().Write(geometry));
 

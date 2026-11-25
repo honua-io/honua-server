@@ -8,6 +8,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Raster;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
@@ -95,6 +96,39 @@ public sealed class PostgresElevationServiceTests
             "rt_raster_from_two_rasters");
 
         PostgresElevationService.IsRasterAlignmentFailure(exception).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ResolveSourceMetadata_SinglePass_ComputesUniformAndConflictingFields()
+    {
+        var rasters = new[]
+        {
+            new RasterInfo { Id = 1, LayerId = 1, Name = "a", Width = 1, Height = 1, BandCount = 1, Srid = 4326, PixelType = "32BF", NoDataValue = -9999 },
+            new RasterInfo { Id = 2, LayerId = 1, Name = "b", Width = 1, Height = 1, BandCount = 1, Srid = 4326, PixelType = "32bf", NoDataValue = -9999 }
+        };
+
+        var uniform = PostgresElevationService.ResolveSourceMetadata(rasters);
+        uniform.SourceSrid.Should().Be(4326);
+        uniform.PixelType.Should().Be("32BF");
+        uniform.NoDataValue.Should().Be(-9999);
+
+        var mixed = PostgresElevationService.ResolveSourceMetadata(
+        [
+            rasters[0],
+            new RasterInfo { Id = 3, LayerId = 1, Name = "c", Width = 1, Height = 1, BandCount = 1, Srid = 3857, PixelType = "16BSI", NoDataValue = -1 }
+        ]);
+        mixed.SourceSrid.Should().BeNull();
+        mixed.PixelType.Should().BeNull();
+        mixed.NoDataValue.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void RasterMetadataHelpers_ResolveSingleValue_ReturnsSingleOrNull()
+    {
+        RasterMetadataHelpers.ResolveSingleValue<int>([null, 4326, 4326]).Should().Be(4326);
+        RasterMetadataHelpers.ResolveSingleValue<int>([4326, 3857]).Should().BeNull();
+        RasterMetadataHelpers.ResolveSingleString([null, "32BF", "32bf"]).Should().Be("32BF");
+        RasterMetadataHelpers.ResolveSingleString(["32BF", "16BSI"]).Should().BeNull();
     }
 
     private static PostgresException CreateInternalError(string message, string? routine)

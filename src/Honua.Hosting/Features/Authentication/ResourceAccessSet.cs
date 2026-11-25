@@ -10,8 +10,6 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class ResourceAccessSet
 {
     private readonly HttpContext _context;
-    private readonly MetadataV2Service? _service;
-    private readonly AccessScope _fallbackScope;
     private readonly Dictionary<MetadataV2Object, AccessDecision> _decisions;
 
     internal ResourceAccessSet(
@@ -20,9 +18,9 @@ internal sealed class ResourceAccessSet
         AccessScope fallbackScope,
         Dictionary<MetadataV2Object, AccessDecision> decisions)
     {
+        _ = service;
+        _ = fallbackScope;
         _context = context;
-        _service = service;
-        _fallbackScope = fallbackScope;
         _decisions = decisions;
     }
 
@@ -31,7 +29,8 @@ internal sealed class ResourceAccessSet
         ArgumentNullException.ThrowIfNull(resource);
         return _decisions.TryGetValue(resource, out var decision)
             ? decision
-            : AccessPolicyHelpers.EvaluateResourceAccess(_context, resource, _service, _fallbackScope);
+            : throw new InvalidOperationException(
+                $"Resource '{resource.Metadata.Id}' was not pre-evaluated in this ResourceAccessSet.");
     }
 
     public bool IsAccessible(MetadataV2Object resource) => Evaluate(resource).IsAllowed;

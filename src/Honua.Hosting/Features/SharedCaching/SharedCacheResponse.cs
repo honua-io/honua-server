@@ -161,6 +161,11 @@ internal static class SharedCacheResponse
             ? !ResponseAccessVerdict.Restricted(context)
             : ResponseAccessVerdict.GrantedToAnonymous(context);
 
+    private static readonly string[] TileVaryHeaders = [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding];
+    private static readonly string[] FeatureQueryVaryHeaders = [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, "Prefer"];
+    private static readonly string[] MetadataDocumentVaryHeaders = [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage];
+    private static readonly string[] DefaultVaryHeaders = [HeaderNames.Origin, HeaderNames.AcceptEncoding];
+
     // s-maxage is always written: the CDN's own minimum is 0, so the origin header is the only lifetime it has.
     private static string FormatCacheControl(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
@@ -170,24 +175,42 @@ internal static class SharedCacheResponse
             context.Items[PurgeBackedSentKey] = true;
         }
 
-        var directives = new List<string>
-        {
-            "public",
-            $"max-age={Seconds(lifetime.MaxAgeSeconds)}",
-            $"s-maxage={Seconds(lifetime.SharedMaxAgeSeconds)}",
-        };
+        Span<char> buffer = stackalloc char[160];
+        var pos = 0;
+        pos += AppendLiteral(buffer[pos..], "public, max-age=");
+        pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.MaxAgeSeconds);
+        pos += AppendLiteral(buffer[pos..], ", s-maxage=");
+        pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.SharedMaxAgeSeconds);
 
         if (lifetime.StaleWhileRevalidateSeconds > 0)
         {
-            directives.Add($"stale-while-revalidate={Seconds(lifetime.StaleWhileRevalidateSeconds)}");
+            pos += AppendLiteral(buffer[pos..], ", stale-while-revalidate=");
+            pos += AppendNonNegativeSeconds(buffer[pos..], lifetime.StaleWhileRevalidateSeconds);
         }
 
         if (cacheClass is (ResponseCacheClass.Tile or ResponseCacheClass.FeatureQuery) && options.StaleIfErrorSeconds > 0)
         {
-            directives.Add($"stale-if-error={Seconds(options.StaleIfErrorSeconds)}");
+            pos += AppendLiteral(buffer[pos..], ", stale-if-error=");
+            pos += AppendNonNegativeSeconds(buffer[pos..], options.StaleIfErrorSeconds);
         }
 
-        return string.Join(", ", directives);
+        return new string(buffer[..pos]);
+    }
+
+    private static int AppendLiteral(Span<char> destination, ReadOnlySpan<char> literal)
+    {
+        literal.CopyTo(destination);
+        return literal.Length;
+    }
+
+    private static int AppendNonNegativeSeconds(Span<char> destination, int seconds)
+    {
+        if (!Math.Max(0, seconds).TryFormat(destination, out var written, provider: CultureInfo.InvariantCulture))
+        {
+            throw new InvalidOperationException("Cache-Control formatting buffer exhausted.");
+        }
+
+        return written;
     }
 
     private static SharedCacheOptions CurrentOptions(HttpContext context)
@@ -239,18 +262,14 @@ internal static class SharedCacheResponse
         return reaches is true;
     }
 
-    private static string Seconds(int seconds)
-        => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);
-
     // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
     // A tile without an explicit format is PNG or vector by Accept.
     private static string[] VaryFor(ResponseCacheClass cacheClass) => cacheClass switch
     {
-        ResponseCacheClass.Tile => [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding],
-        ResponseCacheClass.FeatureQuery => [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, "Prefer"],
-        ResponseCacheClass.MetadataDocument =>
-            [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage],
-        _ => [HeaderNames.Origin, HeaderNames.AcceptEncoding],
+        ResponseCacheClass.Tile => TileVaryHeaders,
+        ResponseCacheClass.FeatureQuery => FeatureQueryVaryHeaders,
+        ResponseCacheClass.MetadataDocument => MetadataDocumentVaryHeaders,
+        _ => DefaultVaryHeaders,
     };
 }
 
@@ -268,10 +287,22 @@ internal sealed record SharedCacheSubject(string ServiceId, string? LayerId = nu
     // Most routes name their service and layer in the address, so a handler only declares a subject when the route does not.
     internal static SharedCacheSubject? FromRoute(RouteValueDictionary routeValues)
     {
-        var serviceId = ServiceRouteValues.Select(name => routeValues[name]?.ToString()).FirstOrDefault(value => value is not null);
+        string? serviceId = null;
+        foreach (var name in ServiceRouteValues)
+        {
+            if (routeValues.TryGetValue(name, out var raw) && raw?.ToString() is { } value)
+            {
+                serviceId = value;
+                break;
+            }
+        }
+
         return serviceId is null
             ? null
-            : new SharedCacheSubject(serviceId, routeValues["layerId"]?.ToString(), routeValues["styleId"]?.ToString());
+            : new SharedCacheSubject(
+                serviceId,
+                routeValues.TryGetValue("layerId", out var layerRaw) ? layerRaw?.ToString() : null,
+                routeValues.TryGetValue("styleId", out var styleRaw) ? styleRaw?.ToString() : null);
     }
 }
 

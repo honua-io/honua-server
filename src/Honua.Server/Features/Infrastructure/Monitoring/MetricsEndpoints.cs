@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Streaming;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,7 +24,8 @@ public static class MetricsEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Metrics")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/health", GetHealthMetrics)
             .WithName("GetHealthMetrics")

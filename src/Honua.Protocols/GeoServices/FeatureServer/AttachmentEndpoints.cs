@@ -225,7 +225,9 @@ internal static partial class AttachmentEndpoints
                 return;
             }
 
-            var translationResult = filterService.Translate(parseResult.Expression, resource.Value.Resource);
+            var translationResult = filterService.Translate(
+                parseResult.Expression,
+                resource.Value.Resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 await RouteValidationHelpers.WriteValidationErrorAsync(

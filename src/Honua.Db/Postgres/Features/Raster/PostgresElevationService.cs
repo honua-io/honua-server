@@ -10,7 +10,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-internal sealed class PostgresElevationService : IElevationService
+internal sealed partial class PostgresElevationService : IElevationService
 {
     private const int DefaultPointSrid = 4326;
     private const int Wgs84Srid = 4326;
@@ -43,30 +43,13 @@ internal sealed class PostgresElevationService : IElevationService
         RasterMergeStrategy mergeStrategy,
         CancellationToken cancellationToken = default)
     {
-        var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (rasters.Length == 0)
-        {
-            throw new ElevationQueryException(
-                ElevationFailureKind.SourceUnavailable,
-                "No raster data is registered for this elevation dataset.");
-        }
-
-        await ValidateSourceRastersAsync(rasters, cancellationToken).ConfigureAwait(false);
-
-        var sourceMetadata = ResolveSourceMetadata(rasters);
         var resolvedSrid = srid ?? DefaultPointSrid;
-
         var pointWkb = BuildPointWkb(x, y);
-        var matching = await _rasterStore.QueryRastersAsync(
-            layerId,
-            new RasterSelectionQuery
-            {
-                Geometry = pointWkb,
-                GeometrySrid = resolvedSrid
-            },
+        var (sourceMetadata, rasterIds) = await ResolveSourceAndIntersectingRastersAsync(
+            new RasterSelectionRequest { LayerId = layerId, GeometryWkb = pointWkb, GeometrySrid = resolvedSrid },
             cancellationToken).ConfigureAwait(false);
 
-        if (matching.Length == 0)
+        if (rasterIds.Length == 0)
         {
             PostgresElevationLog.ElevationPointQueried(_logger, layerId, x, y, resolvedSrid, 0, noData: true);
             return new ElevationPointResult
@@ -85,12 +68,6 @@ internal sealed class PostgresElevationService : IElevationService
                 VerticalUnit = sourceMetadata.VerticalUnit,
                 VerticalDatum = sourceMetadata.VerticalDatum
             };
-        }
-
-        var rasterIds = new long[matching.Length];
-        for (var i = 0; i < matching.Length; i++)
-        {
-            rasterIds[i] = matching[i].Id;
         }
 
         var pixel = await _rasterStore.IdentifyMosaicAsync(
@@ -149,31 +126,9 @@ internal sealed class PostgresElevationService : IElevationService
             throw new ArgumentException("SampleCount must be at least 2 when supplied.", nameof(options));
         }
 
-        var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (rasters.Length == 0)
-        {
-            throw new ElevationQueryException(
-                ElevationFailureKind.SourceUnavailable,
-                "No raster data is registered for this elevation dataset.");
-        }
-
-        await ValidateSourceRastersAsync(rasters, cancellationToken).ConfigureAwait(false);
-
-        var sourceMetadata = ResolveSourceMetadata(rasters);
-        var matching = await _rasterStore.QueryRastersAsync(
-            layerId,
-            new RasterSelectionQuery
-            {
-                Geometry = lineWkb,
-                GeometrySrid = lineSrid
-            },
+        var (sourceMetadata, rasterIds) = await ResolveSourceAndIntersectingRastersAsync(
+            new RasterSelectionRequest { LayerId = layerId, GeometryWkb = lineWkb, GeometrySrid = lineSrid },
             cancellationToken).ConfigureAwait(false);
-
-        var rasterIds = new long[matching.Length];
-        for (var i = 0; i < matching.Length; i++)
-        {
-            rasterIds[i] = matching[i].Id;
-        }
 
         var samples = new List<ElevationSample>(Math.Min(options.MaxSampleCount, options.SampleCount ?? options.DefaultSampleCount));
         var allNoData = true;
@@ -446,7 +401,7 @@ internal sealed class PostgresElevationService : IElevationService
         RasterInfo[] rasters,
         CancellationToken cancellationToken)
     {
-        var distinctSrids = new HashSet<int>();
+        int? firstSrid = null;
         foreach (var raster in rasters)
         {
             if (raster.Srid is not > 0)
@@ -456,17 +411,19 @@ internal sealed class PostgresElevationService : IElevationService
                     "One or more source rasters are missing a coordinate reference system (SRID 0 or unset). Re-import the raster with a valid CRS to enable elevation queries.");
             }
 
-            distinctSrids.Add(raster.Srid.Value);
+            if (!firstSrid.HasValue)
+            {
+                firstSrid = raster.Srid.Value;
+            }
+            else if (firstSrid.Value != raster.Srid.Value)
+            {
+                throw new ElevationQueryException(
+                    ElevationFailureKind.UnsupportedCrs,
+                    "Elevation queries require a single source coordinate reference system across all rasters in the dataset.");
+            }
         }
 
-        if (distinctSrids.Count > 1)
-        {
-            throw new ElevationQueryException(
-                ElevationFailureKind.UnsupportedCrs,
-                "Elevation queries require a single source coordinate reference system across all rasters in the dataset.");
-        }
-
-        var sourceSrid = distinctSrids.First();
+        var sourceSrid = firstSrid!.Value;
         var supported = await _crsRegistry
             .IsSridSupportedAsync(sourceSrid, cancellationToken)
             .ConfigureAwait(false);
@@ -478,36 +435,15 @@ internal sealed class PostgresElevationService : IElevationService
         }
     }
 
-    private static SourceMetadata ResolveSourceMetadata(RasterInfo[] rasters)
+    internal static SourceMetadata ResolveSourceMetadata(RasterInfo[] rasters)
     {
-        return new SourceMetadata
+        var accumulator = new SourceMetadataAccumulator();
+        foreach (var raster in rasters)
         {
-            SourceSrid = ResolveSingleValue(rasters.Select(static raster => raster.Srid)),
-            PixelType = ResolveSingleString(rasters.Select(static raster => raster.PixelType)),
-            NoDataValue = ResolveSingleValue(rasters.Select(static raster => raster.NoDataValue)),
-            VerticalUnit = null,
-            VerticalDatum = null
-        };
-    }
+            accumulator.Observe(raster);
+        }
 
-    private static T? ResolveSingleValue<T>(IEnumerable<T?> values)
-        where T : struct
-    {
-        var distinct = values
-            .Where(static value => value.HasValue)
-            .Select(static value => value!.Value)
-            .Distinct()
-            .ToArray();
-        return distinct.Length == 1 ? distinct[0] : null;
-    }
-
-    private static string? ResolveSingleString(IEnumerable<string> values)
-    {
-        var distinct = values
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return distinct.Length == 1 ? distinct[0] : null;
+        return accumulator.ToMetadata();
     }
 
     private static byte[] BuildPointWkb(double x, double y)
@@ -525,7 +461,7 @@ internal sealed class PostgresElevationService : IElevationService
         return buffer;
     }
 
-    private readonly record struct SourceMetadata
+    internal readonly record struct SourceMetadata
     {
         public int? SourceSrid { get; init; }
 

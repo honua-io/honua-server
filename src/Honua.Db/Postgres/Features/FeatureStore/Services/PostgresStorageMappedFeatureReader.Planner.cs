@@ -83,7 +83,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         var queryCommand = new NpgsqlBatchCommand("SELECT ALL" + commandText["SELECT".Length..]);
         foreach (var parameter in sql.Parameters)
         {
-            queryCommand.Parameters.AddWithValue(NormalizeParameterValue(parameter));
+            queryCommand.Parameters.AddWithValue(FeatureDataAccess.NormalizeParameterValue(parameter));
         }
 
         // One Sync/implicit transaction keeps SET LOCAL scoped to this batch,

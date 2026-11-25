@@ -15,9 +15,11 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
     private readonly ICloudFileStorage _storage;
     private readonly ILogger<SceneAssetHydrator> _logger;
 
-    // One lock per scene id so a thundering herd of first requests on a fresh node
-    // performs a single download; other callers wait, then observe the fresh marker.
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+    // One reference-counted lock per active scene id so a thundering herd of first requests
+    // performs a single download while idle locks are removed and disposed.
+    private readonly ConcurrentDictionary<string, SceneLockEntry> _locks = new(StringComparer.Ordinal);
+
+    internal int ActiveLockCount => _locks.Count;
 
     public SceneAssetHydrator(ICloudFileStorage storage, ILogger<SceneAssetHydrator> logger)
     {
@@ -47,23 +49,93 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
             return;
         }
 
-        var gate = _locks.GetOrAdd(record.Id, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var sceneLock = await AcquireSceneLockAsync(record.Id, cancellationToken).ConfigureAwait(false);
+
+        // Double-check under the lock: a concurrent caller may have hydrated
+        // while we waited, so only one download runs per version.
+        if (SceneAssetHydration.IsMarkerCurrent(localAssetRoot, token))
+        {
+            return;
+        }
+
+        await DownloadAndInstallAsync(record.Id, prefix, localAssetRoot, token, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<SceneLockLease> AcquireSceneLockAsync(string sceneId, CancellationToken cancellationToken)
+    {
+        var entry = RetainSceneLock(sceneId);
         try
         {
-            // Double-check under the lock: a concurrent caller may have hydrated
-            // while we waited, so only one download runs per version.
-            if (SceneAssetHydration.IsMarkerCurrent(localAssetRoot, token))
+            await entry.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ReleaseSceneLockReference(sceneId, entry);
+            throw;
+        }
+
+        return new SceneLockLease(this, sceneId, entry);
+    }
+
+    private SceneLockEntry RetainSceneLock(string sceneId)
+    {
+        while (true)
+        {
+            var entry = _locks.GetOrAdd(sceneId, static _ => new SceneLockEntry());
+            lock (entry)
+            {
+                if (!entry.Retired)
+                {
+                    entry.References++;
+                    return entry;
+                }
+            }
+        }
+    }
+
+    private void ReleaseSceneLockReference(string sceneId, SceneLockEntry entry)
+    {
+        var disposeSemaphore = false;
+        lock (entry)
+        {
+            if (--entry.References == 0)
+            {
+                entry.Retired = true;
+                _locks.TryRemove(KeyValuePair.Create(sceneId, entry));
+                disposeSemaphore = true;
+            }
+        }
+
+        if (disposeSemaphore)
+        {
+            entry.Semaphore.Dispose();
+        }
+    }
+
+    private sealed class SceneLockEntry
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+        public int References { get; set; }
+
+        public bool Retired { get; set; }
+    }
+
+    private sealed class SceneLockLease(SceneAssetHydrator owner, string sceneId, SceneLockEntry entry) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
             {
                 return;
             }
 
-            await DownloadAndInstallAsync(record.Id, prefix, localAssetRoot, token, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            gate.Release();
+            _released = true;
+            entry.Semaphore.Release();
+            owner.ReleaseSceneLockReference(sceneId, entry);
         }
     }
 

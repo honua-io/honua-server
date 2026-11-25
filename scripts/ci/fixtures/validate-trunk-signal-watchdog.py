@@ -14,11 +14,7 @@ DEFINITION = yaml.load(
     Loader=yaml.BaseLoader,
 )
 STEP = DEFINITION['jobs']['watch']['steps'][0]
-
-
-class WatchdogTests(unittest.TestCase):
-    def run_watchdog(self, scheduled, **responses):
-        harness = r'''
+WATCHDOG_HARNESS = r'''
 const vm = require('node:vm');
 const input = JSON.parse(process.argv[1]);
 const now = Date.parse('2026-11-11T12:00:00Z');
@@ -30,11 +26,23 @@ const sandbox = {
   context: {repo: {owner: 'example', repo: 'server'}},
   Date: class extends Date { static now() { return now; } },
   process: {env: input.env},
-  core: {info() {}, setFailed(message) { calls.push(['failed', message]); }},
-  github: {async paginate(method, params) { return (await method(params)).data.jobs; }, rest: {
+  setTimeout(resolve, delay) { calls.push(['delay', delay]); resolve(); },
+  core: {info() {}, warning(message) { calls.push(['warning', message]); },
+    setFailed(message) { calls.push(['failed', message]); }},
+  github: {rest: {
     actions: {async listJobsForWorkflowRun(params) {
       calls.push(['jobs', params]);
-      return {data: {jobs: input.jobs[String(params.run_id)] || []}};
+      const failures = input.jobErrors[`${params.run_id}:${params.page}`];
+      if (failures?.length) {
+        throw Object.assign(new Error('jobs request failed'), {status: failures.shift()});
+      }
+      const jobs = input.jobs[String(params.run_id)] || [];
+      const start = (params.page - 1) * params.per_page;
+      const end = start + params.per_page;
+      const links = [];
+      if (start > 0) links.push(`<https://example.test/jobs?page=${params.page - 1}>; rel="prev"`);
+      if (end < jobs.length) links.push(`<https://example.test/jobs?page=${params.page + 1}>; rel="next"`);
+      return {data: {jobs: jobs.slice(start, end)}, headers: {link: links.join(', ')}};
     }, async listWorkflowRuns(params) {
       calls.push(['query', params]);
       return {data: {workflow_runs: params.event === 'schedule' ? input.scheduled : (input.runs || [result])}};
@@ -48,15 +56,23 @@ const sandbox = {
   }},
 };
 vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
-  .then(() => process.stdout.write(JSON.stringify(calls)))
-  .catch(error => { console.error(error); process.exitCode = 1; });
+  .catch(error => { calls.push(['exception', error.message]); })
+  .then(() => process.stdout.write(JSON.stringify(calls)));
 '''
+
+
+class WatchdogTests(unittest.TestCase):
+    def run_watchdog(self, scheduled, **responses):
         payload = dict(scheduled=scheduled, issues=responses.get('issues', ()),
                        runs=responses.get('runs'), jobs=responses.get('jobs', {}),
+                       jobErrors=responses.get('job_errors', {}),
                        env=STEP['env'], script=STEP['with']['script'])
-        completed = subprocess.run(['node', '-e', harness, json.dumps(payload)],
+        completed = subprocess.run(['node', '-e', WATCHDOG_HARNESS, json.dumps(payload)],
                                    text=True, capture_output=True, check=True)
-        return json.loads(completed.stdout)
+        calls = json.loads(completed.stdout)
+        if 'job_errors' not in responses:
+            self.assertFalse(any(kind == 'exception' for kind, _ in calls), calls)
+        return calls
 
     def test_queued_schedule_with_assigned_jobs_has_started(self):
         queued = {'id': 42, 'status': 'queued', 'run_started_at': '2026-11-11T11:00:00Z',
@@ -128,7 +144,37 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
         self.assertFalse(any(kind == 'failed' for kind, _ in calls))
         query = [value for kind, value in calls if kind == 'jobs']
         self.assertEqual(query[0]['filter'], 'latest')
-        self.assertEqual(query[0]['per_page'], 100)
+        self.assertEqual(query[0]['per_page'], 25)
+
+    def test_page_two_retry_keeps_schedule_start_and_queue_alert(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'queued', 'runner_id': 0, 'started_at': '2026-11-11T11:50:00Z'},
+        ] * 25 + [
+            {'status': 'in_progress', 'runner_id': 12, 'started_at': '2026-11-11T11:55:00Z'},
+            {'status': 'queued', 'runner_id': 0, 'started_at': '2026-11-11T11:00:00Z',
+             'name': 'Stalled shard'},
+        ]}, job_errors={'42:2': [502]})
+        self.assertEqual([value['page'] for kind, value in calls if kind == 'jobs'], [1, 2, 2])
+        self.assertIn(['delay', 1000], calls)
+        self.assertTrue(any(kind == 'warning' and 'page 2 (status 502)' in value for kind, value in calls))
+        self.assertFalse(any(kind == 'exception' for kind, _ in calls))
+        problems = [value for kind, value in calls if kind == 'failed']
+        self.assertEqual(len(problems), 1)
+        self.assertIn('Stalled shard', problems[0])
+        self.assertNotIn('No scheduled full CI run', problems[0])
+
+    def test_jobs_retry_exhaustion_and_nontransient_failure_stay_visible(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z'}
+        for failures, delays in [([502, 503, 504], [1000, 2000]), ([403], [])]:
+            with self.subTest(failures=failures):
+                calls = self.run_watchdog([queued], job_errors={'42:1': failures})
+                self.assertEqual(sum(kind == 'jobs' for kind, _ in calls), len(failures))
+                self.assertEqual([value for kind, value in calls if kind == 'delay'], delays)
+                self.assertIn(['exception', f'Actions jobs API for run 42, page 1 (status {failures[-1]}): '
+                               'jobs request failed'], calls)
+                self.assertFalse(any(kind in {'create', 'comment', 'update'} for kind, _ in calls))
 
     def test_full_crons_are_twice_daily_off_hour(self):
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)

@@ -94,14 +94,20 @@ internal static partial class ScenePointCloudIngestEndpoints
                 $"LAS point cloud exceeds the {MaxUploadBytes}-byte upload limit.");
         }
 
-        if (!TryParseOptionalInt(form, "cacheMaxAgeSeconds", out var cacheMaxAge, out var cacheError))
+        var cacheMaxAgeResult = SceneIngestFormHelpers.ParseOptionalInt(form, "cacheMaxAgeSeconds");
+        if (!cacheMaxAgeResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, cacheError!);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, cacheMaxAgeResult.Error!);
         }
-        if (!TryParseOptionalBool(form, "requiresAuth", out var requiresAuth, out var authError))
+
+        var requiresAuthResult = SceneIngestFormHelpers.ParseOptionalBool(form, "requiresAuth");
+        if (!requiresAuthResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, authError!);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, requiresAuthResult.Error!);
         }
+
+        var cacheMaxAge = cacheMaxAgeResult.Value;
+        var requiresAuth = requiresAuthResult.Value;
         if (!TryParseSourceCrs(form, out var sourceCrs, out var crsError))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, crsError!);
@@ -439,44 +445,6 @@ internal static partial class ScenePointCloudIngestEndpoints
         // A geographic source needs no reprojection: leave the token null so the
         // dispatch only engages for projected sources (or compressed buffers).
         value = GeographicSrsTokens.Contains(token) ? null : token;
-        return true;
-    }
-
-    private static bool TryParseOptionalInt(
-        IFormCollection form, string key, out int? value, out string? error)
-    {
-        value = null;
-        error = null;
-        var raw = form[key];
-        if (raw.Count == 0 || string.IsNullOrWhiteSpace(raw[0]))
-        {
-            return true;
-        }
-        if (!int.TryParse(raw[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            error = $"{key} must be an integer.";
-            return false;
-        }
-        value = parsed;
-        return true;
-    }
-
-    private static bool TryParseOptionalBool(
-        IFormCollection form, string key, out bool? value, out string? error)
-    {
-        value = null;
-        error = null;
-        var raw = form[key];
-        if (raw.Count == 0 || string.IsNullOrWhiteSpace(raw[0]))
-        {
-            return true;
-        }
-        if (!bool.TryParse(raw[0], out var parsed))
-        {
-            error = $"{key} must be 'true' or 'false'.";
-            return false;
-        }
-        value = parsed;
         return true;
     }
 

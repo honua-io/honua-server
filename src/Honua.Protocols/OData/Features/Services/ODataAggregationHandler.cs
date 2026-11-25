@@ -17,7 +17,7 @@ using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 
-internal sealed class ODataAggregationHandler
+internal sealed partial class ODataAggregationHandler
 {
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore? _streamingFeatureStore;
@@ -61,8 +61,11 @@ internal sealed class ODataAggregationHandler
         var query = new FeatureQuery { Limit = _maxInputRows + 1 };
         query = ApplyODataFilter(query, filter, resource, publicLayerId);
 
+        var hiddenFields = resource.HiddenSchemaFieldNames();
+
         // The terminal (last) transform decides whether the result is an aggregation or features.
         var terminal = ParseApplyExpression(segments[^1]);
+        ValidateNoHiddenFields(terminal, hiddenFields);
         foreach (var parsed in (segments.Select(ParseApplyExpression)).Where(parsed => parsed.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(parsed.FilterExpression)))
         {
             // filter() narrows rows before aggregation; apply every filter segment to the query
@@ -84,7 +87,7 @@ internal sealed class ODataAggregationHandler
             {
                 throw InputLimitExceeded();
             }
-            aggregatedValues = ApplyAggregation(result.Items, terminal);
+            aggregatedValues = ApplyAggregation(result.Items, terminal, hiddenFields);
         }
 
         return new ODataAggregationResult
@@ -117,6 +120,10 @@ internal sealed class ODataAggregationHandler
     public static IReadOnlyList<string> SplitApplyTransforms(string applyExpression)
     {
         ArgumentNullException.ThrowIfNull(applyExpression);
+        if (applyExpression.Length > MaxApplyExpressionLength)
+        {
+            throw new ArgumentException($"$apply expression exceeds the maximum length of {MaxApplyExpressionLength} characters.");
+        }
 
         var segments = new List<string>();
         var depth = 0;
@@ -161,72 +168,28 @@ internal sealed class ODataAggregationHandler
 
     public static ParsedAggregation ParseApplyExpression(string expression)
     {
+        ArgumentNullException.ThrowIfNull(expression);
+        if (expression.Length > MaxApplyExpressionLength)
+        {
+            throw new ArgumentException($"$apply expression exceeds the maximum length of {MaxApplyExpressionLength} characters.");
+        }
+
         var trimmed = expression.Trim();
-
-        // Handle aggregate(...) pattern
-        // Example: aggregate(population with sum as TotalPop, area with avg as AvgArea)
-        var aggregateMatch = Regex.Match(trimmed, @"^aggregate\((.+)\)$", RegexOptions.IgnoreCase);
-        if (aggregateMatch.Success)
+        try
         {
-            var aggregates = ParseAggregateExpressions(aggregateMatch.Groups[1].Value);
-            return new ParsedAggregation
+            if (TryParseAggregateOrGroupBy(trimmed) is { } aggregated)
             {
-                Type = AggregationType.Aggregate,
-                Aggregates = aggregates.ToImmutableArray()
-            };
-        }
-
-        // Handle groupby((field1, field2), aggregate(...)) pattern
-        // Example: groupby((state, county), aggregate(population with sum as TotalPop))
-        var groupbyMatch = Regex.Match(trimmed, @"^groupby\s*\(\s*\(([^)]+)\)\s*(?:,\s*aggregate\((.+)\))?\s*\)$", RegexOptions.IgnoreCase);
-        if (groupbyMatch.Success)
-        {
-            var rawGroupByFields = groupbyMatch.Groups[1].Value;
-            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(rawGroupByFields))
-            {
-                throw new ArgumentException("groupby contains an empty field expression.");
+                return aggregated;
             }
 
-            var groupByFields = rawGroupByFields
-                .Split(',', StringSplitOptions.TrimEntries)
-                .ToImmutableArray();
-
-            ImmutableArray<AggregateExpression>? aggregates = null;
-            if (groupbyMatch.Groups[2].Success && !string.IsNullOrWhiteSpace(groupbyMatch.Groups[2].Value))
+            if (TryParseFilterOrCompute(trimmed) is { } transformed)
             {
-                aggregates = ParseAggregateExpressions(groupbyMatch.Groups[2].Value).ToImmutableArray();
+                return transformed;
             }
-
-            return new ParsedAggregation
-            {
-                Type = AggregationType.GroupBy,
-                GroupByFields = groupByFields,
-                Aggregates = aggregates
-            };
         }
-
-        // Handle filter(...) pattern
-        // Example: filter(population gt 1000)
-        var filterMatch = Regex.Match(trimmed, @"^filter\((.+)\)$", RegexOptions.IgnoreCase);
-        if (filterMatch.Success)
+        catch (RegexMatchTimeoutException)
         {
-            return new ParsedAggregation
-            {
-                Type = AggregationType.Filter,
-                FilterExpression = filterMatch.Groups[1].Value
-            };
-        }
-
-        // Handle compute(...) pattern
-        // Example: compute(price mul qty as total)
-        var computeMatch = Regex.Match(trimmed, @"^compute\((.+)\)$", RegexOptions.IgnoreCase);
-        if (computeMatch.Success)
-        {
-            return new ParsedAggregation
-            {
-                Type = AggregationType.Compute,
-                FilterExpression = computeMatch.Groups[1].Value // Store the compute expression
-            };
+            throw new ArgumentException("The $apply expression is too complex to evaluate.");
         }
 
         throw new ArgumentException($"Unsupported $apply expression: {expression}");
@@ -247,32 +210,39 @@ internal sealed class ODataAggregationHandler
                 throw new ArgumentException("aggregate contains an empty expression segment.");
             }
 
-            // Pattern: field with function as alias
-            // Example: population with sum as TotalPop
-            var withAsMatch = Regex.Match(trimmed, @"^(\w+)\s+with\s+(\w+)\s+as\s+(\w+)$", RegexOptions.IgnoreCase);
-            if (withAsMatch.Success)
+            try
             {
-                aggregates.Add(new AggregateExpression
+                // Pattern: field with function as alias
+                // Example: population with sum as TotalPop
+                var withAsMatch = AggregateWithAsRegex().Match(trimmed);
+                if (withAsMatch.Success)
                 {
-                    Field = withAsMatch.Groups[1].Value,
-                    Function = withAsMatch.Groups[2].Value.ToLowerInvariant(),
-                    Alias = withAsMatch.Groups[3].Value
-                });
-                continue;
-            }
+                    aggregates.Add(new AggregateExpression
+                    {
+                        Field = withAsMatch.Groups[1].Value,
+                        Function = withAsMatch.Groups[2].Value.ToLowerInvariant(),
+                        Alias = withAsMatch.Groups[3].Value
+                    });
+                    continue;
+                }
 
-            // Pattern: $count as alias
-            // Example: $count as TotalCount
-            var countMatch = Regex.Match(trimmed, @"^\$count\s+as\s+(\w+)$", RegexOptions.IgnoreCase);
-            if (countMatch.Success)
-            {
-                aggregates.Add(new AggregateExpression
+                // Pattern: $count as alias
+                // Example: $count as TotalCount
+                var countMatch = AggregateCountAsRegex().Match(trimmed);
+                if (countMatch.Success)
                 {
-                    Field = "*",
-                    Function = "count",
-                    Alias = countMatch.Groups[1].Value
-                });
-                continue;
+                    aggregates.Add(new AggregateExpression
+                    {
+                        Field = "*",
+                        Function = "count",
+                        Alias = countMatch.Groups[1].Value
+                    });
+                    continue;
+                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                throw new ArgumentException("The $apply expression is too complex to evaluate.");
             }
 
             throw new ArgumentException($"Unsupported aggregate expression: {part}");
@@ -324,7 +294,10 @@ internal sealed class ODataAggregationHandler
         return result;
     }
 
-    private static object[] ApplyAggregation(IEnumerable<Feature> features, ParsedAggregation aggregation)
+    private static object[] ApplyAggregation(
+        IEnumerable<Feature> features,
+        ParsedAggregation aggregation,
+        IReadOnlySet<string> hiddenFields)
     {
         var featureList = features.ToList();
 
@@ -341,10 +314,10 @@ internal sealed class ODataAggregationHandler
 
             case AggregationType.Filter:
                 // Filter is handled at query level, just return features
-                return featureList.Select(f => FeatureToDictionary(f)).ToArray();
+                return featureList.Select(f => FeatureToDictionary(f, hiddenFields)).ToArray();
 
             case AggregationType.Compute:
-                return ApplyCompute(featureList, aggregation.FilterExpression ?? "");
+                return ApplyCompute(featureList, aggregation.FilterExpression ?? "", hiddenFields);
 
             default:
                 throw new ArgumentException($"Unsupported aggregation type: {aggregation.Type}");
@@ -486,7 +459,10 @@ internal sealed class ODataAggregationHandler
         }
     }
 
-    private static object[] ApplyCompute(List<Feature> features, string computeExpression)
+    private static object[] ApplyCompute(
+        List<Feature> features,
+        string computeExpression,
+        IReadOnlySet<string> hiddenFields)
     {
         // Delegate to the shared compute grammar so $apply=compute(...) and the $compute
         // query option behave identically (including floor()/ceiling()/round() and the
@@ -494,12 +470,12 @@ internal sealed class ODataAggregationHandler
         // back to returning the raw features, preserving the previous lenient behavior.
         if (!ODataComputeService.TryParse(computeExpression, out var expressions, out _) || expressions.IsDefaultOrEmpty)
         {
-            return features.Select(f => (object)FeatureToDictionary(f)).ToArray();
+            return features.Select(f => (object)FeatureToDictionary(f, hiddenFields)).ToArray();
         }
 
         return features.Select(f =>
         {
-            var dict = FeatureToDictionary(f);
+            var dict = FeatureToDictionary(f, hiddenFields);
             ODataComputeService.ApplyCompute(dict, expressions);
             return (object)dict;
         }).ToArray();
@@ -753,7 +729,9 @@ internal sealed class ODataAggregationHandler
         }
     }
 
-    private static Dictionary<string, object?> FeatureToDictionary(Feature feature)
+    private static Dictionary<string, object?> FeatureToDictionary(
+        Feature feature,
+        IReadOnlySet<string>? hiddenFields = null)
     {
         var dict = new Dictionary<string, object?>
         {
@@ -762,7 +740,8 @@ internal sealed class ODataAggregationHandler
 
         foreach (var kvp in feature.Attributes)
         {
-            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) ||
+                (hiddenFields is not null && hiddenFields.Contains(kvp.Key)))
             {
                 continue;
             }

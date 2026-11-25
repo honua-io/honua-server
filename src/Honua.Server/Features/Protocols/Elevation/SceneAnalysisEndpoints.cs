@@ -165,7 +165,7 @@ internal static partial class SceneAnalysisEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var layerId = validation.LayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.sun_shadow");
@@ -294,7 +294,7 @@ internal static partial class SceneAnalysisEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var layerId = validation.LayerId;
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.slice");

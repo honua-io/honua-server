@@ -81,7 +81,7 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         // Publish through the spillable publisher: small results stay inline (back-compat),
         // large results spill to an NDJSON stream so the 50 MiB inline cap does not apply.
         var published = await FeatureStreamPublisher.PublishAsync(
-            ToAsync(features, cancellationToken),
+            FeatureStreamArtifact.ToAsync(features, cancellationToken),
             HandledProcessId,
             inputCount: features.Count,
             _options.CurrentValue.OutputRootDirectory,
@@ -93,18 +93,6 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
-    }
-
-    private static async IAsyncEnumerable<IFeature> ToAsync(
-        IReadOnlyList<IFeature> features,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        foreach (var feature in features)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return feature;
-            await Task.CompletedTask.ConfigureAwait(false);
-        }
     }
 
     private static List<IFeature> ParseCsv(string body, char delimiter, CancellationToken cancellationToken)

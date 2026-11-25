@@ -42,7 +42,7 @@ public sealed class PlannedProposalReconcilerTests
         audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>())
             .Returns("audit-janitor-1");
         await using var services = BuildServices(audit);
-        var reconciler = new PlannedProposalReconciler(
+        using var reconciler = new PlannedProposalReconciler(
             store,
             services.GetRequiredService<IServiceScopeFactory>(),
             new FixedTimeProvider(Now),
@@ -70,7 +70,49 @@ public sealed class PlannedProposalReconcilerTests
         await store.Received(1).ReleaseLeaseAsync(
             "operation-proposal-planned-janitor",
             Arg.Any<string>(),
-            CancellationToken.None);
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SweepOnceAsync_PoisonPillThrows_ContinuesCompensatingRemainingProposals()
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        var audit = Substitute.For<IAuditLog>();
+        var staleTime = Now - PlannedProposalReconciler.StaleAge - TimeSpan.FromSeconds(1);
+        var poison = Proposal(staleTime) with { ProposalId = "proposal-poison" };
+        var healthy = Proposal(staleTime) with { ProposalId = "proposal-healthy" };
+
+        store.TryAcquireLeaseAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        store.ListActiveAsync(null, Arg.Any<CancellationToken>())
+            .Returns([poison, healthy]);
+        store.GetAsync(poison.ProposalId, Arg.Any<CancellationToken>())
+            .Returns<Task<OperationProposal?>>(_ => throw new InvalidOperationException("poison failure"));
+        store.GetAsync(healthy.ProposalId, Arg.Any<CancellationToken>())
+            .Returns(healthy);
+        store.TrySetAsync(Arg.Any<OperationProposal>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>())
+            .Returns("audit-healthy");
+
+        await using var services = BuildServices(audit);
+        using var reconciler = new PlannedProposalReconciler(
+            store,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new FixedTimeProvider(Now),
+            NullLogger<PlannedProposalReconciler>.Instance);
+
+        await reconciler.SweepOnceAsync();
+
+        await store.Received(1).TrySetAsync(
+            Arg.Is<OperationProposal>(p => p.ProposalId == healthy.ProposalId && p.Status == OperationProposalStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await store.Received(1).ReleaseLeaseAsync(
+            "operation-proposal-planned-janitor",
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -85,7 +127,7 @@ public sealed class PlannedProposalReconcilerTests
                 Arg.Any<CancellationToken>())
             .Returns(false);
         await using var services = BuildServices(audit);
-        var reconciler = new PlannedProposalReconciler(
+        using var reconciler = new PlannedProposalReconciler(
             store,
             services.GetRequiredService<IServiceScopeFactory>(),
             new FixedTimeProvider(Now),

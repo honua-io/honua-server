@@ -21,7 +21,8 @@ internal static class GeoprocessingUsageEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Geoprocessing")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/tools/usage-ranking", HandleGetUsageRanking)
             .WithDisplayName("Get Geoprocessing Tool Usage Ranking")

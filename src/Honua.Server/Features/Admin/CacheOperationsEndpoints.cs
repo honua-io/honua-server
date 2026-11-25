@@ -23,21 +23,21 @@ internal static class CacheOperationsEndpoints
     public static void MapCacheOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/cache")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/health", HandleGetCacheHealth)
             .WithDisplayName("Get Cache Health")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheHealthResponse>>();
 
         group.MapGet("/statistics", HandleGetCacheStatistics)
             .WithDisplayName("Get Cache Statistics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatisticsResponse>>();
 
         group.MapPost("/invalidate", HandleInvalidateCache)
@@ -208,7 +208,7 @@ internal static class CacheOperationsEndpoints
                 detail = string.Concat("Service: ", request.ServiceId);
                 var scopeLabel = string.Concat("service:", request.ServiceId);
                 AdminLog.CacheInvalidationRequested(logger, scopeLabel);
-                var layerIds = await ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId!, context.RequestAborted).ConfigureAwait(false);
+                var layerIds = await CacheAdminEndpoints.ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId!, context.RequestAborted).ConfigureAwait(false);
                 await invalidationService.InvalidateServiceCatalogAsync(request.ServiceId, layerIds, context.RequestAborted).ConfigureAwait(false);
             }
             else
@@ -244,24 +244,6 @@ internal static class CacheOperationsEndpoints
                 StatusCodes.Status500InternalServerError,
                 CacheInvalidationFailedMessage);
         }
-    }
-
-    private static async Task<int[]> ResolveServiceLayerIdsAsync(
-        IMetadataV2GraphProvider graphProvider,
-        string serviceId,
-        CancellationToken cancellationToken)
-    {
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = snapshot.FindService(serviceId);
-        if (service is null)
-        {
-            return [];
-        }
-
-        return snapshot.PublicationsForService(service.Metadata.Id)
-            .Where(p => p.LayerIndex.HasValue)
-            .Select(p => p.LayerIndex!.Value)
-            .ToArray();
     }
 
     private static string? ValidateOperationsRequest(CacheOperationsInvalidationRequest request)

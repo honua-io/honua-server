@@ -69,7 +69,7 @@ internal sealed class ManagedDensityExecutor(
             }
 
             accumulator.Count++;
-            if (weightField is { Length: > 0 } && TryReadNumeric(feature, weightField, out var numeric))
+            if (weightField is { Length: > 0 } && StatisticsSupport.TryReadNumeric(feature, weightField, out var numeric))
             {
                 accumulator.WeightedSum += numeric;
                 accumulator.WeightCount++;
@@ -176,47 +176,6 @@ internal sealed class ManagedDensityExecutor(
         }
 
         return (CheckedIndex(rq, x, y, cellSize), CheckedIndex(rr, x, y, cellSize));
-    }
-
-    private static bool TryReadNumeric(IFeature feature, string field, out double value)
-    {
-        value = 0;
-        var attributes = feature.Attributes;
-        if (attributes is null || !attributes.Exists(field))
-        {
-            return false;
-        }
-
-        var raw = attributes.GetOptionalValue(field);
-        switch (raw)
-        {
-            case null:
-                return false;
-            case double d:
-                value = d;
-                return true;
-            case float f:
-                value = f;
-                return true;
-            case int i:
-                value = i;
-                return true;
-            case long l:
-                value = l;
-                return true;
-            case short s:
-                value = s;
-                return true;
-            case decimal m:
-                value = (double)m;
-                return true;
-            default:
-                return double.TryParse(
-                    Convert.ToString(raw, CultureInfo.InvariantCulture),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out value);
-        }
     }
 
     private static BinMode ReadMode(StepInputReader inputs)

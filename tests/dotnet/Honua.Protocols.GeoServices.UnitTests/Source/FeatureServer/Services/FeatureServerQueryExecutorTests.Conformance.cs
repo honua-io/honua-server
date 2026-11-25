@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -72,6 +73,24 @@ public sealed partial class FeatureServerQueryExecutorTests
         var result = await sut.QueryObjectIdsWithLimitProbeAsync(7, new FeatureQuery { Limit = limit }, CancellationToken.None);
 
         result.ObjectIds.Should().Equal(readerIds);
+        result.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task QueryObjectIdsWithLimitProbeAsync_WhenLimitIsNull_ProbesMaxNonStreamingObjectIds()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryObjectIdsAsync(
+                7,
+                Arg.Is<FeatureQuery>(q => q.Limit == FeatureServerQueryExecutor.MaxNonStreamingObjectIds + 1 && q.ReturnPublicObjectIds),
+                Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(1L, 2L));
+
+        var sut = CreateSut(reader);
+        var result = await sut.QueryObjectIdsWithLimitProbeAsync(7, new FeatureQuery { Limit = null }, CancellationToken.None);
+
+        result.ObjectIds.Should().Equal(1L, 2L);
         result.ExceededTransferLimit.Should().BeFalse();
     }
 

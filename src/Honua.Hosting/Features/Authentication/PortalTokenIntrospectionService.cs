@@ -47,7 +47,7 @@ internal sealed class PortalTokenIntrospectionService(
         return await _tokenIssuer.IntrospectAsync(token, cancellationToken).ConfigureAwait(false);
     }
 
-    private static bool LooksLikeJwt(string token)
+    internal static bool LooksLikeJwt(string token)
     {
         // A compact JWS has exactly two '.' separators (header.payload.signature).
         var first = token.IndexOf('.', StringComparison.Ordinal);

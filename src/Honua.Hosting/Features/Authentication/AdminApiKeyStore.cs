@@ -280,7 +280,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         return Task.FromResult<AdminApiKeyValidationResult?>(null);
     }
 
-    private static string[] NormalizePermissions(IReadOnlyList<string> permissions)
+    internal static string[] NormalizePermissions(IReadOnlyList<string> permissions)
     {
         var normalized = permissions
             .Select(static permission => permission.Trim())

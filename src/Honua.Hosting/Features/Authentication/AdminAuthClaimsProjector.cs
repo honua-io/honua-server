@@ -86,7 +86,8 @@ internal static class AdminAuthClaimsProjector
         // reaches the session. Roles are untouched: mapping provider claims to roles is
         // the operator's supported way to grant authority.
         claims.RemoveAll(static claim =>
-            CanonicalSecurityActor.IsFrameworkAuthorityClaimType(claim.Type));
+            CanonicalSecurityActor.IsFrameworkAuthorityClaimType(claim.Type)
+            || string.Equals(claim.Type, OwnerIdentityScope.SubjectIssuerClaim, StringComparison.OrdinalIgnoreCase));
 
         var roleValues = claims
             .Where(static claim => claim.Type is "roles" or "role" or ClaimTypes.Role)

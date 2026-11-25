@@ -42,6 +42,19 @@ public sealed class ImageServerMensurationMathTests
             .Should().BeApproximately(expectedMeters, 0.001d);
     }
 
+    [UnitTest]
+    public void Wgs84Vincenty_LongBaselineAndNearAntipodalPair_AreAccurateAndFinite()
+    {
+        // NYC (-74.006, 40.7128) to London (-0.1276, 51.5074): true WGS-84 geodesic is 5,585,246.76 m.
+        var nycToLondon = Wgs84Vincenty.DistanceMeters(-74.006d, 40.7128d, -0.1276d, 51.5074d);
+        nycToLondon.Should().BeApproximately(5_585_246.76d, 0.5d);
+
+        // Near-antipodal fallback must clamp haversine 'a' to [0, 1] and never return NaN.
+        var antipodal = Wgs84Vincenty.DistanceMeters(20.0422208d, 10.022221d, -159.9577792d, -10.022221d);
+        double.IsFinite(antipodal).Should().BeTrue();
+        antipodal.Should().BeGreaterThan(19_900_000d);
+    }
+
     private const double MeanRadius = 6371008.8;
 
     [UnitTest]

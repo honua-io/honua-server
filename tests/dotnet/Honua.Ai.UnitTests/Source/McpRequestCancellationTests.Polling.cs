@@ -68,4 +68,34 @@ public sealed partial class McpRequestCancellationTests
         await manager.PollOnceAsync(CancellationToken.None);
         Assert.True(store.Polls > polls);
     }
+
+    [UnitTest]
+    public async Task PollOnceAsync_WhenStoreIgnoresCancellation_ReturnsWithinBudgetPlusGraceAndStopsRequests()
+    {
+        var uncancelledHang = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System)
+        {
+            BeforePoll = _ => uncancelledHang.Task
+        };
+        await using var manager = new McpSessionManager(store: store)
+        {
+            PollBudgetDuration = TimeSpan.FromMilliseconds(50),
+            PollCancelGraceDuration = TimeSpan.FromMilliseconds(50),
+            DisposeStopTimeoutDuration = TimeSpan.FromMilliseconds(200)
+        };
+
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+        var (lease, _) = await manager.StartRequestAsync(session, Alice, Id("\"hung-1\""), CancellationToken.None);
+        await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+
+        try
+        {
+            await manager.PollOnceAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(request.Token.IsCancellationRequested);
+        }
+        finally
+        {
+            uncancelledHang.TrySetResult();
+        }
+    }
 }

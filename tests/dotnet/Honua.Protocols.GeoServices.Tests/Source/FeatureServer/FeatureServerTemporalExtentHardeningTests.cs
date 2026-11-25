@@ -142,6 +142,55 @@ public sealed class FeatureServerTemporalExtentHardeningTests : IAsyncLifetime
         Instant(interval[1].GetString()!).Should().Be(extent.Max!.Value);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
+    public async Task TemporalExtent_NotATemporalEndField_ReturnsNotFound()
+    {
+        UseTimeFields(new MetadataV2ObjectTemporal { StartTimeField = "timestamp", EndTimeField = "name" });
+
+        using var response = await _fixture.Client.GetAsync(ExtentPath);
+
+        await response.AssertGeoServicesErrorAsync(404);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
+    public async Task TemporalExtent_NoVisibleRows_ReturnsNullBounds()
+    {
+        UseTimeFields(new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });
+        (await GetExtentAsync()).Min.Should().NotBeNull();
+
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            permanentFilter: new MetadataV2PermanentFilter { Expression = "name = 'no-matching-feature'" });
+
+        var extent = await GetExtentAsync();
+
+        extent.StartTimeField.Should().Be("timestamp");
+        extent.Min.Should().BeNull();
+        extent.Max.Should().BeNull();
+        extent.MinEpochMs.Should().BeNull();
+        extent.MaxEpochMs.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
+    public async Task TemporalExtent_StartAndEndUseSameField_ReportsExactBounds()
+    {
+        UseTimeFields(new MetadataV2ObjectTemporal { StartTimeField = "timestamp", EndTimeField = "timestamp" });
+        await InsertRowAsync("earliest", Earliest);
+        await InsertRowAsync("latest", Latest);
+
+        var extent = await GetExtentAsync();
+
+        extent.EndTimeField.Should().Be("timestamp");
+        extent.Min.Should().Be(Instant(Earliest));
+        extent.Max.Should().Be(Instant(Latest));
+    }
+
     private void UseTimeFields(MetadataV2ObjectTemporal temporal)
         => _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, temporal: temporal);
 

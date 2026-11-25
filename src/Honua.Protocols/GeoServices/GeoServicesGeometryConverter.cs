@@ -926,7 +926,7 @@ internal static partial class GeoServicesGeometryConverter
         {
             HasZ = hasZ,
             HasM = hasM,
-            Rings = BuildPolygonRings(polygon, hasZ, hasM).ToArray(),
+            Rings = BuildPolygonRings(polygon, hasZ, hasM),
             SpatialReference = spatialReference
         };
     }
@@ -1004,11 +1004,14 @@ internal static partial class GeoServicesGeometryConverter
         return null;
     }
 
-    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon, bool hasZ, bool hasM)
+    private static double[][][] BuildPolygonRings(Polygon polygon, bool hasZ, bool hasM)
     {
+        var rings = new double[1 + polygon.NumInteriorRings][][];
+        var count = 0;
+
         if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
         {
-            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true, hasZ, hasM);
+            rings[count++] = BuildRingCoordinates(polygon.ExteriorRing, clockwise: true, hasZ, hasM);
         }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
@@ -1016,9 +1019,11 @@ internal static partial class GeoServicesGeometryConverter
             var interiorRing = polygon.GetInteriorRingN(i);
             if (interiorRing != null && !interiorRing.IsEmpty)
             {
-                yield return BuildRingCoordinates(interiorRing, clockwise: false, hasZ, hasM);
+                rings[count++] = BuildRingCoordinates(interiorRing, clockwise: false, hasZ, hasM);
             }
         }
+
+        return count == rings.Length ? rings : rings[..count];
     }
 
     private static double[][] BuildRingCoordinates(LineString ring, bool clockwise, bool hasZ, bool hasM)
@@ -1029,7 +1034,7 @@ internal static partial class GeoServicesGeometryConverter
             return coords;
         }
 
-        var isCcw = Orientation.IsCCW(ring.Coordinates);
+        var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
         if (clockwise == isCcw)
         {
             Array.Reverse(coords);

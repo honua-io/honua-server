@@ -81,7 +81,7 @@ public sealed class SpecGroundingAuthorizationTests(SpecGroundingAuthorizationTe
     [InlineData("summarize", "non-admin", HttpStatusCode.Forbidden)]
     [InlineData("summarize", "admin-read", HttpStatusCode.Forbidden)]
     [InlineData("summarize", "admin-write", HttpStatusCode.OK)]
-    public async Task GroundingRoute_PerPrincipal_AdmitsOnlyAdminWrite(
+    public async Task GroundingRoute_PerPrincipal_RequiresRoleAdminWrite(
         string endpoint, string profile, HttpStatusCode expected)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/v1/grounding/spec/{endpoint}")

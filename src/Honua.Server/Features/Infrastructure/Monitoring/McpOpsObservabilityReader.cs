@@ -53,7 +53,7 @@ internal sealed class McpOpsObservabilityReader(
         ArgumentNullException.ThrowIfNull(argument);
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        var severity = ParseOptionalEnum<OpsFindingSeverity>(argument.Severity, "severity");
+        var severity = McpOpsReaderHelpers.ParseOptionalEnum<OpsFindingSeverity>(argument.Severity, "severity");
         var evaluation = await _findings.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
         var filtered = evaluation.Findings.AsEnumerable();
 
@@ -110,8 +110,8 @@ internal sealed class McpOpsObservabilityReader(
             From = argument.From,
             To = argument.To,
             RuleId = ruleId,
-            Severities = OptionalList(ParseOptionalEnum<AlertSeverity>(argument.Severity, "severity")),
-            LifecycleStatuses = OptionalList(ParseOptionalEnum<AlertLifecycleStatus>(
+            Severities = OptionalList(McpOpsReaderHelpers.ParseOptionalEnum<AlertSeverity>(argument.Severity, "severity")),
+            LifecycleStatuses = OptionalList(McpOpsReaderHelpers.ParseOptionalEnum<AlertLifecycleStatus>(
                 argument.LifecycleState,
                 "lifecycleState")),
             PageSize = ClampPageSize(argument.PageSize),
@@ -257,24 +257,6 @@ internal sealed class McpOpsObservabilityReader(
     private static IReadOnlyList<TEnum>? OptionalList<TEnum>(TEnum? value)
         where TEnum : struct, Enum =>
         value is null ? null : [value.Value];
-
-    private static TEnum? ParseOptionalEnum<TEnum>(string? value, string fieldName)
-        where TEnum : struct, Enum
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed) &&
-            Enum.IsDefined(parsed))
-        {
-            return parsed;
-        }
-
-        throw new GeoprocessingValidationException(
-            $"'{fieldName}' contains unsupported value '{value}'.");
-    }
 
     private static int ClampPageSize(int? pageSize) =>
         Math.Min(MaxPageSize, Math.Max(1, pageSize ?? DefaultPageSize));

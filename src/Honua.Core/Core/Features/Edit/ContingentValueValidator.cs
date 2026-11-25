@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
@@ -133,7 +134,7 @@ public static class ContingentValueValidator
             case JsonValueKind.Null:
                 return value is null;
             case JsonValueKind.Number when element.TryGetDouble(out var number):
-                return TryToDouble(value, out var actual) && actual.Equals(number);
+                return AttributeRuleExpression.TryToDouble(value, out var actual) && actual.CompareTo(number) == 0;
             case JsonValueKind.True:
                 return value is bool b && b;
             case JsonValueKind.False:
@@ -150,7 +151,7 @@ public static class ContingentValueValidator
 
     private static bool InRange(object? value, JsonElement min, JsonElement max)
     {
-        if (!TryToDouble(value, out var v) ||
+        if (!AttributeRuleExpression.TryToDouble(value, out var v) ||
             !min.TryGetDouble(out var lo) ||
             !max.TryGetDouble(out var hi))
         {
@@ -158,39 +159,5 @@ public static class ContingentValueValidator
         }
 
         return v >= lo && v <= hi;
-    }
-
-    private static bool TryToDouble(object? value, out double result)
-    {
-        switch (value)
-        {
-            case double d:
-                result = d;
-                return true;
-            case float f:
-                result = f;
-                return true;
-            case decimal m:
-                result = (double)m;
-                return true;
-            case long l:
-                result = l;
-                return true;
-            case int i:
-                result = i;
-                return true;
-            case short s:
-                result = s;
-                return true;
-            case byte bt:
-                result = bt;
-                return true;
-            case string str when double.TryParse(str, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
-                result = parsed;
-                return true;
-            default:
-                result = 0;
-                return false;
-        }
     }
 }

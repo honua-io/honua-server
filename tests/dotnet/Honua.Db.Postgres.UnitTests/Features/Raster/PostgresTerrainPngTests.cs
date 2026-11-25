@@ -2,9 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Formats;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -69,5 +74,43 @@ public sealed class PostgresTerrainPngTests
         Action encode = () => PostgresTerrainTileService.PngEncoder.EncodeRgba(new byte[4 * 3 * 3], 4, 3);
 
         encode.Should().Throw<ArgumentException>();
+    }
+
+    [UnitTest]
+    public void EmptyTerrainRgbPng_IsPrecomputedTransparent256x256Png()
+    {
+        var decoded = MiniPngDecoder.Decode(PostgresTerrainTileService.EmptyTerrainRgbPng);
+
+        decoded.Width.Should().Be(TerrainRgbEncoding.TileSize);
+        decoded.Height.Should().Be(TerrainRgbEncoding.TileSize);
+        decoded.Rgba.Should().OnlyContain(static value => value == 0);
+    }
+
+    [UnitTest]
+    public async Task GetTerrainRgbTileAsync_UnsupportedSource_FailsWithoutOpeningBoundsQueryConnection()
+    {
+        var connectionProvider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
+        var crsRegistry = Substitute.For<ICrsRegistry>();
+        crsRegistry.IsSridSupportedAsync(4326, Arg.Any<CancellationToken>()).Returns(true);
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns([new RasterInfo { Id = 1, LayerId = 1, Name = "rgb", Width = 10, Height = 10, BandCount = 3, Srid = 4326, PixelType = "8BUI" }]);
+
+        var service = new PostgresTerrainTileService(
+            connectionProvider,
+            crsRegistry,
+            rasterStore,
+            NullLogger<PostgresTerrainTileService>.Instance);
+
+        var act = () => service.GetTerrainRgbTileAsync(new TerrainTileRequest
+        {
+            LayerId = 1,
+            Z = 0,
+            X = 0,
+            Y = 0
+        });
+
+        await act.Should().ThrowAsync<TerrainTileException>();
+        await connectionProvider.DidNotReceiveWithAnyArgs().OpenConnectionAsync(default);
     }
 }

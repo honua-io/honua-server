@@ -74,7 +74,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             var queryCommand = new NpgsqlBatchCommand(sql.ToString());
             foreach (var value in sql.Parameters)
             {
-                queryCommand.Parameters.AddWithValue(NormalizeParameterValue(value));
+                queryCommand.Parameters.AddWithValue(FeatureDataAccess.NormalizeParameterValue(value));
             }
 
             batch.BatchCommands.Add(queryCommand);

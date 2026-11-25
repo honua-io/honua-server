@@ -806,12 +806,13 @@ internal sealed partial class Wfs20Handler
     {
         var payload = await ReadTransactionFeaturePayloadAsync(
             resource, featureElement, cancellationToken, actionSrsName).ConfigureAwait(false);
+        var sanitizedAttributes = EditorTrackingBatch.OmitClientValues(resource, payload.Attributes);
 
         return await CreateTransactionFeatureAsync(
             resource,
             objectId: 0,
             payload.Geometry,
-            payload.Attributes,
+            sanitizedAttributes,
             geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
@@ -826,10 +827,11 @@ internal sealed partial class Wfs20Handler
     {
         var payload = await ReadTransactionFeaturePayloadAsync(
             resource, featureElement, cancellationToken, actionSrsName).ConfigureAwait(false);
+        var sanitizedAttributes = EditorTrackingBatch.OmitClientValues(resource, payload.Attributes);
 
         var attributes = _mutationValidator.ValidateAttributes(
             resource,
-            payload.Attributes,
+            sanitizedAttributes,
             ValidationExtensions.AttributeValidationMode.Strict,
             isUpdate: true);
         if (!attributes.IsValid)
@@ -841,7 +843,7 @@ internal sealed partial class Wfs20Handler
             resource,
             objectId,
             payload.Geometry,
-            payload.Attributes,
+            sanitizedAttributes,
             geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
@@ -858,9 +860,10 @@ internal sealed partial class Wfs20Handler
         // row here so a property-only WFS-T update cannot clear omitted fields or geometry.
         // Only the submitted changes are checked against the update contract (read-only
         // fields); untouched stored values are carried through unchanged.
+        var sanitizedChanges = EditorTrackingBatch.OmitClientValues(resource, changes.Attributes);
         var changesResult = _mutationValidator.ValidateAttributes(
             resource,
-            changes.Attributes,
+            sanitizedChanges,
             ValidationExtensions.AttributeValidationMode.Strict,
             isUpdate: true);
         if (!changesResult.IsValid)
@@ -869,16 +872,17 @@ internal sealed partial class Wfs20Handler
         }
 
         var mergedAttributes = existing.Attributes.ToBuilder();
-        foreach (var (name, value) in changes.Attributes)
+        foreach (var (name, value) in sanitizedChanges)
         {
             mergedAttributes[name] = value;
         }
 
+        var sanitizedMerged = EditorTrackingBatch.OmitClientValues(resource, mergedAttributes.ToImmutable());
         var updated = await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
-            mergedAttributes.ToImmutable(),
+            sanitizedMerged,
             geometrySupplied: changes.GeometrySpecified,
             cancellationToken).ConfigureAwait(false);
         return updated with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
@@ -2363,17 +2367,24 @@ internal sealed partial class Wfs20Handler
             var requestGeometryChangedFlags = prepared.Operations
                 .Select(static operation => operation.RequestGeometryChanged)
                 .ToImmutableArray();
-            var resource = prepared.Operations.IsDefaultOrEmpty
+            var descriptor = prepared.Operations.IsDefaultOrEmpty
                 ? throw new InvalidOperationException("WFS transaction did not prepare any operations.")
-                : prepared.Operations[0].Descriptor.Resource;
-            return await ExecutePreparedEditAsync(
+                : prepared.Operations[0].Descriptor;
+            var (singleResult, _) = await ExecutePreparedEditCoreAsync(
                 context,
-                prepared.LayerId,
-                resource,
-                operations,
-                requestGeometryChangedFlags,
-                rollbackOnFailure,
+                new WfsPreparedEditRequest
+                {
+                    LayerId = prepared.LayerId,
+                    Resource = descriptor.Resource,
+                    Operations = operations,
+                    RequestGeometryChangedFlags = requestGeometryChangedFlags,
+                    RollbackOnFailure = rollbackOnFailure,
+                    ServiceName = descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
+                    PublicLayerId = descriptor.Publication.LayerIndex,
+                    StoredRows = BuildDeleteStoredRows(prepared.Operations)
+                },
                 cancellationToken).ConfigureAwait(false);
+            return singleResult;
         }
 
         await using var writerTransaction = rollbackOnFailure
@@ -2381,6 +2392,7 @@ internal sealed partial class Wfs20Handler
                 IsolationLevel.Serializable,
                 cancellationToken).ConfigureAwait(false)
             : null;
+        var pendingAfterHooks = new List<(OgcProtocolEditGate.Target Target, FeatureEditBatch Batch, FeatureEditResult Result)>();
 
         var createResultIndexes = new Dictionary<int, int>();
         var updateResultIndexes = new Dictionary<int, int>();
@@ -2420,25 +2432,37 @@ internal sealed partial class Wfs20Handler
                      .OrderBy(static group => group.Min(operation => operation.Sequence)))
         {
             var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
-            var resource = operations[0].Descriptor.Resource;
+            var descriptor = operations[0].Descriptor;
+            var resource = descriptor.Resource;
             // Per-operation request-intent geometry flags, ordered to match the
             // EditOperation sequence the data layer iterates.
             FeatureEditResult layerResult;
             try
             {
-                layerResult = await ExecutePreparedEditAsync(
+                var (executedResult, deferredHook) = await ExecutePreparedEditCoreAsync(
                     context,
-                    layerGroup.Key,
-                    resource,
-                    operations
-                        .Select(static operation => operation.AdapterOperation)
-                        .ToImmutableArray(),
-                    operations
-                        .Select(static operation => operation.RequestGeometryChanged)
-                        .ToImmutableArray(),
-                    rollbackOnFailure,
-                    cancellationToken,
-                    writerTransaction).ConfigureAwait(false);
+                    new WfsPreparedEditRequest
+                    {
+                        LayerId = layerGroup.Key,
+                        Resource = resource,
+                        Operations = operations
+                            .Select(static operation => operation.AdapterOperation)
+                            .ToImmutableArray(),
+                        RequestGeometryChangedFlags = operations
+                            .Select(static operation => operation.RequestGeometryChanged)
+                            .ToImmutableArray(),
+                        RollbackOnFailure = rollbackOnFailure,
+                        WriterTransaction = writerTransaction,
+                        ServiceName = descriptor.Service?.Metadata.Name ?? descriptor.Service?.Metadata.Id,
+                        PublicLayerId = descriptor.Publication.LayerIndex,
+                        StoredRows = BuildDeleteStoredRows(operations)
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                layerResult = executedResult;
+                if (deferredHook is { } hook)
+                {
+                    pendingAfterHooks.Add(hook);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -2544,107 +2568,12 @@ internal sealed partial class Wfs20Handler
             updateResults: aggregatedUpdateResults.ToImmutableArray(),
             deleteResults: aggregatedDeleteResults.ToImmutableArray());
 
-        if (writerTransaction is null)
-        {
-            return aggregatedResult;
-        }
-
-        if (!aggregatedResult.IsSuccess)
-        {
-            await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            return FeatureEditResult.Rollback(
-                aggregatedResult.CreateResults,
-                aggregatedResult.UpdateResults,
-                aggregatedResult.DeleteResults);
-        }
-
-        var commitOutcome = await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        if (commitOutcome == FeatureWriterTransactionCommitOutcome.Committed)
-        {
-            return aggregatedResult;
-        }
-
-        const string errorMessage = "Transaction commit outcome is unknown.";
-        return FeatureEditResult.FailureWithUnknownCommitOutcome(
-            MarkCommitOutcomeUnknown(aggregatedResult.CreateResults, errorMessage),
-            MarkCommitOutcomeUnknown(aggregatedResult.UpdateResults, errorMessage),
-            MarkCommitOutcomeUnknown(aggregatedResult.DeleteResults, errorMessage));
-    }
-
-    private static ImmutableArray<EditOperationResult> MarkCommitOutcomeUnknown(
-        ImmutableArray<EditOperationResult> results,
-        string errorMessage)
-        => results
-            .Select(result => EditOperationResult.FailureWithUnknownCommitOutcome(
-                errorMessage,
-                objectId: result.ObjectId))
-            .ToImmutableArray();
-
-    internal async Task<FeatureEditResult> ExecutePreparedEditAsync(
-        HttpContext context,
-        int layerId,
-        MetadataV2Object resource,
-        ImmutableArray<Wfs20EditOperation> operations,
-        ImmutableArray<bool> requestGeometryChangedFlags,
-        bool rollbackOnFailure,
-        CancellationToken cancellationToken,
-        IFeatureWriterTransaction? writerTransaction = null)
-    {
-        var editAdapterResult = await _editParameterAdapter.ConvertAsync(
-            new Wfs20EditRequest
-            {
-                Operations = operations,
-                RollbackOnFailure = rollbackOnFailure
-            },
-            cancellationToken).ConfigureAwait(false);
-        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
-        {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid WFS transaction.");
-        }
-
-        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
-        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
-        if (!editValidation.IsValid)
-        {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid WFS transaction.");
-        }
-
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
-            cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
-        {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
-        }
-
-        editBatch = prepared.Batch;
-        // Bin per-kind geometry-change flags from the request-intent flags captured by
-        // PrepareInsert/Update/Delete/ReplaceOperationsAsync (BEFORE merging with the
-        // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
-        // report attribute-only Updates because BuildTransactionUpdatedFeatureAsync
-        // preserves the existing WKB when changes.GeometrySpecified is false.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(
-            operations.Select(static operation => operation.Operation).ToImmutableArray(),
-            requestGeometryChangedFlags);
-        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
-            context,
-            layerId,
-            HonuaTelemetry.Protocols.Wfs20,
-            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
-            layerSrid: resource.ReadSrid(),
-            perOperationGeometryChanged: perOperationGeometryChanged,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return writerTransaction is null
-            ? await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false)
-            : await writerTransaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            ? aggregatedResult
+            : await FinalizeMultiLayerTransactionAsync(
+                writerTransaction,
+                (aggregatedResult, pendingAfterHooks),
+                cancellationToken).ConfigureAwait(false);
     }
 
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(

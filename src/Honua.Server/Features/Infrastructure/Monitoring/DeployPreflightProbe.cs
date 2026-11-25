@@ -202,7 +202,7 @@ internal sealed class DeployPreflightProbe(
         return "Instance is ready for coordinated deployment.";
     }
 
-    private static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>
+    internal static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>
         status switch
         {
             MigrationLifecycleStatus.Running => "running",
@@ -212,7 +212,7 @@ internal sealed class DeployPreflightProbe(
             _ => "unknown"
         };
 
-    private static string? GetMigrationStatusMessage(MigrationState migrationState)
+    internal static string? GetMigrationStatusMessage(MigrationState migrationState)
     {
         if (!string.IsNullOrWhiteSpace(migrationState.StatusMessage))
         {

@@ -424,7 +424,7 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                if (!TryParseStatisticType(statisticType, out var parsedType))
+                if (StatisticTypeParser.TryParse(statisticType) is not { } parsedType)
                 {
                     error = $"Unsupported statisticType: {statisticType}.";
                     return false;
@@ -446,22 +446,5 @@ internal static partial class FeatureServerEndpoints
             error = "outStatistics is not valid JSON.";
             return false;
         }
-    }
-
-    private static bool TryParseStatisticType(string type, out StatisticType result)
-    {
-        result = type.ToLowerInvariant() switch
-        {
-            "count" => StatisticType.Count,
-            "sum" => StatisticType.Sum,
-            "min" => StatisticType.Min,
-            "max" => StatisticType.Max,
-            "avg" => StatisticType.Avg,
-            "stddev" => StatisticType.Stddev,
-            "var" => StatisticType.Var,
-            _ => default
-        };
-
-        return type.ToLowerInvariant() is "count" or "sum" or "min" or "max" or "avg" or "stddev" or "var";
     }
 }

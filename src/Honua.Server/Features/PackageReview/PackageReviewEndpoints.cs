@@ -14,6 +14,7 @@ using Honua.Core.Features.PackageReview.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -158,7 +159,7 @@ internal static partial class PackageReviewEndpoints
             },
             ActorId = actor
         }, WithStep(mutation, "draft"), context.RequestAborted).ConfigureAwait(false);
-        SetOperationHeaders(context, draftReceipt.Operation);
+        OperationHandleResponseHeaders.SetOperationHeaders(context, draftReceipt.Operation);
         if (draftReceipt.Operation.Status != OperationHandleStatus.Completed || draftReceipt.Value is not { } draft)
         {
             return MutationRefused(context, draftReceipt.Operation, "Map draft could not be created");
@@ -167,7 +168,7 @@ internal static partial class PackageReviewEndpoints
         var versionReceipt = await mutationRuntime.SaveVersionAsync(
             draft.DraftId, draft.Generation, request.Message, actor, WithStep(mutation, "version"), context.RequestAborted)
             .ConfigureAwait(false);
-        SetOperationHeaders(context, versionReceipt.Operation);
+        OperationHandleResponseHeaders.SetOperationHeaders(context, versionReceipt.Operation);
         if (versionReceipt.Operation.Status != OperationHandleStatus.Completed || versionReceipt.Value is not { } version)
         {
             return MutationRefused(context, versionReceipt.Operation, "Map could not be versioned");
@@ -185,7 +186,7 @@ internal static partial class PackageReviewEndpoints
             WithStep(mutation, "publication") with { ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal },
             context.RequestAborted).ConfigureAwait(false);
         var operation = proposalReceipt.Operation;
-        SetOperationHeaders(context, operation);
+        OperationHandleResponseHeaders.SetOperationHeaders(context, operation);
         if (operation.Status != OperationHandleStatus.RequiresApproval || string.IsNullOrWhiteSpace(operation.ProposalId))
         {
             return MutationRefused(context, operation, "Map publication was not proposed");
@@ -227,16 +228,6 @@ internal static partial class PackageReviewEndpoints
         => string.IsNullOrWhiteSpace(context.IdempotencyKey)
             ? context
             : context with { IdempotencyKey = $"{context.IdempotencyKey}:map-package-publish:{step}" };
-
-    private static void SetOperationHeaders(HttpContext context, OperationHandle operation)
-    {
-        context.Response.Headers["X-Honua-Operation-Instance-Id"] = operation.OperationInstanceId;
-        context.Response.Headers["X-Honua-Operation-Correlation-Id"] = operation.CorrelationId;
-        if (!string.IsNullOrWhiteSpace(operation.AuditId))
-        {
-            context.Response.Headers["X-Honua-Operation-Audit-Id"] = operation.AuditId;
-        }
-    }
 
     private static IResult MutationRefused(HttpContext context, OperationHandle operation, string title)
     {

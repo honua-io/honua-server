@@ -256,6 +256,49 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         data.GetProperty("errorMessage").GetString().Should().Be("Identity provider discovery request failed.");
     }
 
+    [UnitTest]
+    [Operation(Operations.Identity)]
+    public async Task ReadDiscoveryIssuerAsync_Exceeding64KbLimit_ThrowsHttpRequestException()
+    {
+        using var oversized = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[65_537]),
+        };
+
+        var act = () => IdentityAdminEndpoints.ReadDiscoveryIssuerAsync(oversized, CancellationToken.None);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identity)]
+    public async Task ReadDiscoveryIssuerAsync_DeeplyNestedJson_ReturnsNullWithoutThrowing()
+    {
+        var nested = new string('[', 20) + "0" + new string(']', 20);
+        using var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"issuer":"https://idp.example","nested":{{nested}}}"""),
+        };
+
+        var issuer = await IdentityAdminEndpoints.ReadDiscoveryIssuerAsync(response, CancellationToken.None);
+
+        issuer.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identity)]
+    public async Task ReadDiscoveryIssuerAsync_ValidBoundedDocument_ReturnsIssuer()
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"issuer":"https://idp.example"}"""),
+        };
+
+        var issuer = await IdentityAdminEndpoints.ReadDiscoveryIssuerAsync(response, CancellationToken.None);
+
+        issuer.Should().Be("https://idp.example");
+    }
+
     // --- Cache Status ---
 
     [IntegrationTest]

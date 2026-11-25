@@ -29,6 +29,7 @@ internal static class SharedCacheExtensions
                 Options = provider.GetService<IOptionsMonitor<SharedCacheOptions>>(),
                 LeaseStore = provider.GetService<ILeaseStore>(),
                 Budget = provider.GetService<ICdnPurgeBudget>(),
+                ApplicationStopping = provider.GetService<Microsoft.Extensions.Hosting.IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None,
             };
             var reliability = new CdnPurgeReliability(
                 provider.GetRequiredService<ICdnInvalidator>(),

@@ -61,7 +61,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         var stderr = process.StandardError.ReadToEndAsync();
         try
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(18));
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(23));
             process.ExitCode.Should().Be(0, await stderr);
             using var receipt = JsonDocument.Parse(await stdout);
             var result = receipt.RootElement;

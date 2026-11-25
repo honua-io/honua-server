@@ -32,21 +32,21 @@ These test cases form the shared certification baseline. Every client lane must 
 
 | Test Case ID | Category | Description | Protocol(s) | Evidence |
 |---|---|---|---|---|
-| CERT-CONN-01 | CONN | Establish HTTP connection to base URL | All | pass/fail |
-| CERT-CONN-02 | CONN | TLS handshake completes | All | pass/fail |
-| CERT-AUTH-01 | AUTH | Unauthenticated request returns 401/403 | All | pass/fail |
-| CERT-AUTH-02 | AUTH | Valid credential grants access | All | pass/fail |
-| CERT-DISC-01 | DISC | List available services/collections | FS, OGC, OData | pass/fail+count |
-| CERT-DISC-02 | DISC | Retrieve single service/collection metadata | FS, OGC, OData | pass/fail |
+| CERT-CONN-01 | CONN | Establish HTTP connection to base URL | All † | pass/fail |
+| CERT-CONN-02 | CONN | TLS handshake completes | All † | pass/fail |
+| CERT-AUTH-01 | AUTH | Unauthenticated request returns 401/403 | All † | pass/fail |
+| CERT-AUTH-02 | AUTH | Valid credential grants access | All † | pass/fail |
+| CERT-DISC-01 | DISC | List available services/collections | FS, OGC, OGC Records, OData | pass/fail+count |
+| CERT-DISC-02 | DISC | Retrieve single service/collection metadata | FS, OGC, OGC Records, OData | pass/fail |
 | CERT-SCHM-01 | SCHM | Retrieve field/property schema | FS, OGC, OData | pass/fail |
 | CERT-SCHM-02 | SCHM | Geometry type reported correctly | FS, OGC | pass/fail |
 | CERT-QFLT-01 | QFLT | Attribute equality filter returns subset | FS, OGC, OData | pass/fail+count |
 | CERT-QFLT-02 | QFLT | Spatial bbox/geometry filter returns subset | FS, OGC | pass/fail+count |
-| CERT-PAGE-01 | PAGE | First page with limit returns expected count | FS, OGC, OData | pass/fail+count |
-| CERT-PAGE-02 | PAGE | Second page offset returns different features | FS, OGC, OData | pass/fail |
+| CERT-PAGE-01 | PAGE | First page with limit returns expected count | FS, OGC, OGC Records, OData | pass/fail+count |
+| CERT-PAGE-02 | PAGE | Second page offset returns different features | FS, OGC, OGC Records, OData | pass/fail |
 | CERT-GEOM-01 | GEOM | Returned coordinates within tolerance | FS, OGC | pass/fail+delta |
 | CERT-GEOM-02 | GEOM | Output CRS/SR matches request | FS, OGC | pass/fail |
-| CERT-ERRH-01 | ERRH | Invalid endpoint returns structured error | All | pass/fail |
+| CERT-ERRH-01 | ERRH | Invalid endpoint returns structured error | All † | pass/fail |
 | CERT-ERRH-02 | ERRH | Malformed filter returns structured error | FS, OGC, OData | pass/fail |
 | CERT-RNDR-01 | RNDR | Map/table renders without client error | FS, OGC, OData, MVT ‡ | pass/fail |
 | CERT-RNDR-02 | RNDR | Data refresh preserves state | FS, OGC, OData | pass/fail |
@@ -56,6 +56,8 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-RNDR-LBL-01 | RNDR | Label/text renders where supported | FS, OGC | screenshot+pass/fail |
 | CERT-RNDR-SPR-01 | RNDR | Sprite/icon resolves and draws | MVT | screenshot+pass/fail |
 | CERT-RNDR-URL-01 | RNDR | Style URL/metadata is consumed | FS, MVT | pass/fail |
+
+† The OWSLib Records nightly suite exercises discovery and pagination. The transport check records TLS as `not_applicable` on plain HTTP and verifies the certificate on HTTPS. Connectivity, authentication, and structured error cases are `not_applicable`. The bounded-roster workflow emits governed Records candidate receipts.
 
 ‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02 (#464). The visual / style certification slice ([`visual-style-certification-slice.md`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/visual-style-certification-slice.md)) tracks the additional `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs.
 
@@ -81,7 +83,10 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | FS | GeoServices REST FeatureServer / MapServer | `featureserver`, `mapserver` |
 | OGC | OGC API Features | `ogc-features` |
 | OGC Maps | OGC API Maps | `ogc-maps` |
+| OGC Records | OGC API Records | `ogc-api-records` |
 | OGC Tiles | OGC API Tiles | `ogc-tiles` |
+| Elevation | Honua Elevation API | `elevation` |
+| Quantized mesh | Cesium quantized-mesh 1.0 | `quantized-mesh` |
 | OData | OData v4 | `odata` |
 | MVT | Vector Tiles (Mapbox Vector Tiles) | `mvt` |
 | WFS | WFS 2.0 | `wfs` |
@@ -144,7 +149,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
-| **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
+| **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps, Elevation API, quantized-mesh terrain | JS-CES-IMG-01, JS-CES-TILE-01, JS-CES-ELEV-01 |
 | **Desktop — ArcGIS Pro** | `geoservices-rest-stub` is REST-only. Desktop certification is not claimed in this repository. Lane id `desktop-arcgis` | REST common-core and Portal/Sharing facade discovery have historical stub baseline evidence; the `geoservices-rest-stub` lane now emits the `portal` protocol (CERT-PRTL-\*). FeatureServer and MapServer envelopes are `*-desktop-arcgis-featureserver.cert.json` and `*-desktop-arcgis-mapserver.cert.json`. No successful desktop run is linked | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client, GDAL/OGR) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite). GDAL/OGR certifies FeatureServer through the ESRIJSON driver (CONN, SCHM, QFLT, PAGE, ERRH, GEOM; not DISC, since the driver cannot list layers) and MapServer export through GDAL reading the server PNG over `/vsicurl/` (CONN-01) and the WMS driver AGS minidriver (CERT-RNDR-01, the one RNDR ID this lane certifies) | CLI-EXT-01, CLI-EXT-02 |
@@ -163,7 +168,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 
 §§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. After the visual / style slice lands (ticket #478), the suite also substantiates `CERT-RNDR-SYM-01` and `CERT-RNDR-URL-01` on the FeatureServer surface via drawingInfo metadata and per-category style assertions, and the reporter emits a 24-case common-core envelope (18 base + 6 slice) by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`. On the `mapserver` envelope the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs are also recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
-¶¶ **Cesium sub-lane scope:** The Playwright suite (`tests/js-browser/cesium/`, run via `docker/client-compat/cesium/`) exercises CesiumJS imagery providers — `WebMapServiceImageryProvider` (WMS), `WebMapTileServiceImageryProvider` (WMTS), `UrlTemplateImageryProvider` (OGC API Tiles), and `SingleTileImageryProvider` (OGC API Maps). Cesium does not consume vector-feature endpoints (FeatureServer, OGC API Features, WFS, OData) so the query/filter, schema, pagination, and geometry-fidelity categories are recorded as `not-applicable` in the `wms`, `wmts`, `ogc-tiles`, and `ogc-maps` envelopes. Per the contract for ticket #806, only CERT-CONN-01, CERT-CONN-02, CERT-AUTH-01, CERT-AUTH-02, CERT-DISC-01, CERT-DISC-02, CERT-ERRH-01, and CERT-RNDR-01 are applicable; the visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are `not-applicable` because Cesium imagery providers consume server-rendered raster output rather than per-feature drawing info.
+¶¶ **Cesium sub-lane scope:** The Playwright suite (`tests/js-browser/cesium/`, run via `docker/client-compat/cesium/`) exercises CesiumJS imagery providers — `WebMapServiceImageryProvider` (WMS), `WebMapTileServiceImageryProvider` (WMTS), `UrlTemplateImageryProvider` (OGC API Tiles), and `SingleTileImageryProvider` (OGC API Maps). Cesium does not consume vector-feature endpoints (FeatureServer, OGC API Features, WFS, OData) so the query/filter, schema, pagination, and geometry-fidelity categories are recorded as `not-applicable` in the `wms`, `wmts`, `ogc-tiles`, and `ogc-maps` envelopes. Per the contract for ticket #806, only CERT-CONN-01, CERT-CONN-02, CERT-AUTH-01, CERT-AUTH-02, CERT-DISC-01, CERT-DISC-02, CERT-ERRH-01, and CERT-RNDR-01 are applicable; the visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are `not-applicable` because Cesium imagery providers consume server-rendered raster output rather than per-feature drawing info. The nightly suite also records `CERT-CONN-01` and `JS-CES-ELEV-01` for an Elevation API point query through Cesium Resource and `CERT-CONN-01` for loading and decoding a quantized-mesh terrain tile through CesiumTerrainProvider.
 
 ### Lane-Specific Extensions
 
@@ -201,6 +206,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 |---|---|---|---|
 | JS-CES-IMG-01 | WMS GetMap request parameters spec-compliant (CRS, BBOX, WIDTH, HEIGHT) | WMS | pass/fail |
 | JS-CES-TILE-01 | OGC API Tiles URL template `{z}/{y}/{x}` substitution correct | OGC Tiles | pass/fail |
+| JS-CES-ELEV-01 | Cesium Resource returns the expected DEM height at a seeded coordinate | Elevation | pass/fail |
 
 #### Desktop Lane
 
@@ -300,6 +306,9 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-GPD-WFS-TYP-02 | NB-GPD | created_at='2024-01-01T12:00:00+00:00', event_date='2024-02-01', event_time='12:34:56.0000000' - all parse to the seeded instants | wfs | pass/fail |
 
 #### `py-owslib` — OWSLib (71 cases)
+
+The OGC API Records envelope covers the common-core discovery and pagination
+cases (CERT-DISC-01/02 and CERT-PAGE-01/02) through OWSLib's Records client.
 
 | Test Case ID | Category | Description | Protocol(s) | Evidence |
 |---|---|---|---|---|

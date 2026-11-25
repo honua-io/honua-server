@@ -823,7 +823,7 @@ internal sealed class FormSubmissionService
             return null;
         }
 
-        if (!TryReadFiniteDouble(x, out var longitude) || !TryReadFiniteDouble(y, out var latitude))
+        if (!FormPackageValidator.TryReadFiniteDouble(x, out var longitude) || !FormPackageValidator.TryReadFiniteDouble(y, out var latitude))
         {
             return null;
         }
@@ -837,19 +837,6 @@ internal sealed class FormSubmissionService
 
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
-
-    private static bool TryReadFiniteDouble(JsonElement value, out double result)
-    {
-        result = 0;
-        if (value.ValueKind == JsonValueKind.Number)
-        {
-            return value.TryGetDouble(out result) && double.IsFinite(result);
-        }
-
-        return value.ValueKind == JsonValueKind.String &&
-            double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
-            double.IsFinite(result);
-    }
 
     private static long? ResolveTargetFeatureId(FormSubmissionRequest request, FeatureEditResult editResult)
     {
@@ -1184,18 +1171,18 @@ internal sealed class FormSubmissionService
     {
         if (fieldPolicy is not null &&
             fieldPolicy.AllowedContentTypes.Length > 0 &&
-            !ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
+            !FormPackageValidator.ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
         {
             return false;
         }
 
         if (policy.AllowedContentTypes.Length > 0 &&
-            !ContentTypeAllowed(policy.AllowedContentTypes, contentType))
+            !FormPackageValidator.ContentTypeAllowed(policy.AllowedContentTypes, contentType))
         {
             return false;
         }
 
-        return ContentTypeAllowed(SplitAllowedMimeTypes(_attachmentLimits.AllowedMimeTypes), contentType);
+        return FormPackageValidator.ContentTypeAllowed(SplitAllowedMimeTypes(_attachmentLimits.AllowedMimeTypes), contentType);
     }
 
     private static Dictionary<string, FormFieldAttachmentPolicy> BuildAttachmentFieldPolicies(FormAttachmentPolicy policy)
@@ -1206,32 +1193,6 @@ internal sealed class FormSubmissionService
 
     private static bool OperationEquals(string operation, string expected)
         => string.Equals(operation, expected, StringComparison.OrdinalIgnoreCase);
-
-    private static bool ContentTypeAllowed(IEnumerable<string> allowedContentTypes, string contentType)
-    {
-        var normalized = contentType.Split(';', 2)[0].Trim();
-        foreach (var allowed in allowedContentTypes)
-        {
-            if (string.IsNullOrWhiteSpace(allowed))
-            {
-                continue;
-            }
-
-            var pattern = allowed.Trim();
-            if (string.Equals(pattern, normalized, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (pattern.EndsWith("/*", StringComparison.Ordinal) &&
-                normalized.StartsWith(pattern[..^1], StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     private static string[] SplitAllowedMimeTypes(string allowedMimeTypes)
         => allowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
@@ -20,8 +21,10 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Shared;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -44,6 +47,7 @@ internal sealed partial class Wcs20Handler
     private const string WcsProtocolName = "Wcs";
     // Mirror WMS/OGC Maps per-axis cap to prevent OOM DoS via SCALESIZE=x(N),y(N).
     private const int MaxWcsOutputDimension = 4096;
+    private const int MaxDescribeCoverageIds = 50;
 
     private static readonly HashSet<string> _getCoverageAllowedParameters = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -271,6 +275,7 @@ internal sealed partial class Wcs20Handler
         }
 
         var descriptions = new List<XElement>(coverageIds.Length);
+        var seenStorageLayerIds = new HashSet<int>();
         foreach (var coverageId in coverageIds)
         {
             var coverage = await ResolveCoverageAsync(context, scope, coverageId, cancellationToken).ConfigureAwait(false);
@@ -286,6 +291,11 @@ internal sealed partial class Wcs20Handler
                     Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
                     $"Coverage '{coverageId.Raw}' was not found.",
                     Wcs20Utilities.Parameters.CoverageId);
+            }
+
+            if (!seenStorageLayerIds.Add(coverage.Coverage.Value.LayerId))
+            {
+                continue;
             }
 
             if (!TryBuildCoverageDescription(coverage.Coverage.Value, out var description, out var metadataError))
@@ -405,39 +415,41 @@ internal sealed partial class Wcs20Handler
             .WithTag("honua.coverage.id", coverageId.Raw)
             .WithTag("honua.output.format", formatContentType);
 
-        if (sliceSelections.Count > 0)
+        var renderWidth = sliceSelections.Count > 0
+            ? Math.Max(1, sliceWidth)
+            : Math.Max(1, query.OutputWidth ?? coverage.Coverage.Value.Raster.Width);
+        var renderHeight = sliceSelections.Count > 0
+            ? Math.Max(1, sliceHeight)
+            : Math.Max(1, query.OutputHeight ?? coverage.Coverage.Value.Raster.Height);
+        var (renderLease, capacityRefusal) = await TryAcquireCoverageRenderLeaseAsync(
+            context, (renderWidth, renderHeight), cancellationToken).ConfigureAwait(false);
+        if (capacityRefusal is not null)
         {
-            return await HandleZarrGetCoverageAsync(
-                    coverageId,
-                    coverage.Coverage.Value,
-                    query,
-                    sliceBounds,
-                    sliceWidth,
-                    sliceHeight,
-                    sliceSelections,
-                    telemetry,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            return capacityRefusal;
         }
 
-        var result = await _coverageBackend.ExportImageAsync(
-            coverage.Coverage.Value.LayerId,
-            coverage.Coverage.Value.Raster.Id,
-            query,
-            cancellationToken).ConfigureAwait(false);
+        await using (renderLease)
+        {
+            if (sliceSelections.Count > 0)
+            {
+                return await HandleZarrGetCoverageAsync(
+                        coverageId,
+                        coverage.Coverage.Value,
+                        query,
+                        sliceBounds,
+                        sliceWidth,
+                        sliceHeight,
+                        sliceSelections,
+                        telemetry,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-        telemetry
-            .WithTag("honua.result.bytes", result.Data.Length)
-            .WithTag("honua.result.content_type", result.ContentType);
-        telemetry.SetSuccess(1);
-
-        Wcs20Log.CoverageReturned(
-            _logger,
-            coverageId.Raw,
-            result.Data.Length,
-            result.ContentType);
-
-        return EncodedRasterResults.File(result.Data, result.ContentType);
+            return await ExportCoverageResultAsync(
+                (coverageId, coverage.Coverage.Value),
+                (query, telemetry),
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<IResult> HandleZarrGetCoverageAsync(
@@ -580,7 +592,7 @@ internal sealed partial class Wcs20Handler
                     PublishedMetadataProjection.ForCapabilities(snapshot.Graph, coverage.Coverage.Value.Service));
         }
 
-        var service = ResolveService(context, snapshot, scope);
+        var service = await ResolveServiceAsync(context, new WcsServiceLookup(snapshot, scope), cancellationToken).ConfigureAwait(false);
         if (service.Error is not null)
         {
             return new CoverageListResult([], service.Error);
@@ -601,7 +613,8 @@ internal sealed partial class Wcs20Handler
             }
             var routableResource = resource!;
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, routableResource, service.Service))
+            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, routableResource, service.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -667,7 +680,7 @@ internal sealed partial class Wcs20Handler
             return new CoverageResolutionResult(result.Coverage, result.Error);
         }
 
-        var service = ResolveService(context, snapshot, scope);
+        var service = await ResolveServiceAsync(context, new WcsServiceLookup(snapshot, scope), cancellationToken).ConfigureAwait(false);
         if (service.Error is not null)
         {
             return new CoverageResolutionResult(null, service.Error);
@@ -687,7 +700,8 @@ internal sealed partial class Wcs20Handler
                 if (candidateResource is null ||
                     !snapshot.IsRoutable(candidate) ||
                     !TenantScopeHelpers.IsPublicationVisible(context, candidate, candidateResource, service.Service) ||
-                    !AccessPolicyHelpers.IsResourceAccessible(context, candidateResource, service.Service))
+                    !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context, candidateResource, service.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }
@@ -711,7 +725,8 @@ internal sealed partial class Wcs20Handler
         var resource = snapshot.ResolveResource(publication);
         if (!snapshot.IsRoutable(publication) ||
             !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service.Service) ||
-            !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service.Service))
+            !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                context, resource!, service.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
         {
             return new CoverageResolutionResult(null, null);
         }
@@ -744,23 +759,19 @@ internal sealed partial class Wcs20Handler
         // the resource directly from the storage-layer index, with a fallback to
         // publication.LayerIndex for fixtures/graphs that haven't migrated their
         // storage bindings (matches the resolution order used elsewhere in the V2 ports).
-        if (!TryResolveResourceForLayer(context, snapshot, layerId, out var resource, out var owningService))
+        var (resolved, resource, owningService) = await ResolveResourceForLayerAsync(
+            context, snapshot, layerId, cancellationToken).ConfigureAwait(false);
+        if (!resolved || resource is null)
         {
             return new LayerCoverageResult(null, null);
         }
 
-        // The owning service's policy is part of the decision. Passing null here would
-        // discard a service-level read restriction on this route: a resource with no
-        // policy of its own would resolve to "any authenticated principal", and
-        // DescribeCoverage/GetCoverage would serve the coverage to a caller the service
-        // denies. Every other classic surface (WMS and WMTS via
-        // RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async) evaluates
-        // both policies.
-        var accessDecision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, owningService);
+        var accessDecision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context, resource, owningService, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
         if (!accessDecision.IsAllowed)
         {
             return failOnAccessDenied
-                ? new LayerCoverageResult(null, CreateAccessDeniedResult(accessDecision))
+                ? new LayerCoverageResult(null, CreateAccessDeniedResult(context, accessDecision))
                 : new LayerCoverageResult(null, null);
         }
 
@@ -773,12 +784,11 @@ internal sealed partial class Wcs20Handler
             }, null);
     }
 
-    private static bool TryResolveResourceForLayer(
+    private static async Task<(bool Found, MetadataV2Object? Resource, MetadataV2Service? OwningService)> ResolveResourceForLayerAsync(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         int layerId,
-        out MetadataV2Object resource,
-        out MetadataV2Service? owningService)
+        CancellationToken cancellationToken)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
@@ -802,18 +812,17 @@ internal sealed partial class Wcs20Handler
             ?? routable.FirstOrDefault();
         if (preferred is not null)
         {
-            resource = preferred;
-            return TryFindOwningService(context, snapshot, preferred, out owningService);
+            var (ownerFound, ownerService) = await TryFindOwningServiceAsync(
+                context, snapshot, preferred, cancellationToken).ConfigureAwait(false);
+            return ownerFound ? (true, preferred, ownerService) : (false, null, null);
         }
         if (matchingBindings.Length > 0)
         {
-            resource = default!;
-            owningService = null;
-            return false;
+            return (false, null, null);
         }
 
         // No storage binding. A publication LayerIndex can belong to any protocol, so
-        // this fallback must use the same coverage-protocol filter as TryFindOwningService.
+        // this fallback must use the same coverage-protocol filter as TryFindOwningServiceAsync.
         // Otherwise a FeatureServer publication at the same integer authorizes the WCS
         // route for a key such as read:features/roads.
         var fallbackOwners = snapshot.Graph.Publications
@@ -836,25 +845,23 @@ internal sealed partial class Wcs20Handler
             var rasterOwners = fallbackOwners
                 .Where(entry => entry.Resource.Type == MetadataV2ObjectType.RasterDataset)
                 .ToArray();
-            (resource, owningService) = SelectCoverageOwner(
+            var (selectedResource, selectedService) = await SelectCoverageOwnerAsync(
                 context,
-                rasterOwners.Length > 0 ? rasterOwners : fallbackOwners);
-            return true;
+                rasterOwners.Length > 0 ? rasterOwners : fallbackOwners,
+                cancellationToken).ConfigureAwait(false);
+            return (true, selectedResource, selectedService);
         }
 
-        resource = default!;
-        owningService = null;
-        return false;
+        return (false, null, null);
     }
 
     // The owning coverage service is recovered from the publication graph, and a service that cannot serve coverages is not allowed to decide the request.
-    private static bool TryFindOwningService(
+    private static async Task<(bool Found, MetadataV2Service? OwningService)> TryFindOwningServiceAsync(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Object resource,
-        out MetadataV2Service? owningService)
+        CancellationToken cancellationToken)
     {
-        owningService = null;
         var hasCoveragePublication = false;
         var visible = new List<(MetadataV2Object Resource, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
@@ -879,16 +886,17 @@ internal sealed partial class Wcs20Handler
 
         if (visible.Count == 0)
         {
-            return !hasCoveragePublication;
+            return (!hasCoveragePublication, null);
         }
 
-        (_, owningService) = SelectCoverageOwner(context, visible);
-        return true;
+        var (_, owningService) = await SelectCoverageOwnerAsync(context, visible, cancellationToken).ConfigureAwait(false);
+        return (true, owningService);
     }
 
-    private static (MetadataV2Object Resource, MetadataV2Service Service) SelectCoverageOwner(
+    private static async Task<(MetadataV2Object Resource, MetadataV2Service Service)> SelectCoverageOwnerAsync(
         HttpContext context,
-        IReadOnlyList<(MetadataV2Object Resource, MetadataV2Service Service)> visible)
+        IReadOnlyList<(MetadataV2Object Resource, MetadataV2Service Service)> visible,
+        CancellationToken cancellationToken)
     {
         (MetadataV2Object Resource, MetadataV2Service Service)? policyBearing = null;
         (MetadataV2Object Resource, MetadataV2Service Service)? grantMatch = null;
@@ -900,10 +908,14 @@ internal sealed partial class Wcs20Handler
                 policyBearing ??= candidate;
             }
 
-            if (scopeGoverned &&
-                AccessPolicyHelpers.EvaluateResourceAccess(context, candidate.Resource, candidate.Service).IsAllowed)
+            if (scopeGoverned && grantMatch is null)
             {
-                grantMatch ??= candidate;
+                var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                    context, candidate.Resource, candidate.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+                if (decision.IsAllowed)
+                {
+                    grantMatch = candidate;
+                }
             }
         }
 
@@ -913,89 +925,6 @@ internal sealed partial class Wcs20Handler
     private static bool IsCoverageProtocol(MetadataV2Service service)
         => IsProtocolEnabled(service, WcsProtocolName) ||
            IsProtocolEnabled(service, ServiceProtocols.ImageServer);
-
-    private static ServiceResolutionResult ResolveService(
-        HttpContext context,
-        MetadataV2GraphSnapshot snapshot,
-        Wcs20RouteScope scope)
-    {
-        var serviceId = scope.ServiceId;
-        if (string.IsNullOrWhiteSpace(serviceId))
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.NoApplicableCode,
-                    "Service was not found."));
-        }
-
-        // Resolve by id first (canonical), then by display name to cover the
-        // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
-        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
-        {
-            // A display name does not identify one service. The canonical graph
-            // projects a single logical service across several protocol facets that
-            // intentionally share a name while carrying distinct ids - see
-            // 051_RelaxMetadataV2ServiceNameIndex.sql, which dropped the unique name
-            // index for exactly this reason, and the V1 compat snapshot, which emits
-            // those same-named facets. Taking the first name match and then asking
-            // whether it enables WCS rejects the request whenever the match happens to
-            // be the feature or map facet, even though the image facet serves
-            // coverages: every WCS route answered "WCS is not enabled for this
-            // service" while ImageServer on the same name answered 200. So pick the
-            // facet that actually serves this protocol, and only fall back to a bare
-            // name match so a service genuinely without WCS still reports that.
-            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
-                ?? snapshot.FindService(serviceId);
-        }
-
-        var serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context,
-            service is not null && service.IsRoutable()
-                ? ResourceValidationResult.Success(service)
-                : ResourceValidationResult.NotFound<MetadataV2Service>($"Service '{serviceId}' was not found."));
-        if (!serviceResult.IsValid)
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.NoApplicableCode,
-                    serviceResult.ErrorMessage!));
-        }
-
-        service = serviceResult.Resource!;
-        if (!IsProtocolEnabled(service, WcsProtocolName))
-        {
-            return new ServiceResolutionResult(
-                null,
-                Wcs20ErrorResults.CreateNotFound(
-                    Wcs20Utilities.ExceptionCodes.OperationNotSupported,
-                    "WCS is not enabled for this service."));
-        }
-
-        var serviceAccess = AccessPolicyHelpers.EvaluateServiceAccess(context, service);
-        if (!serviceAccess.IsAllowed && LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User))
-        {
-            // A layer-restricted read key may bootstrap only its own published
-            // coverages. The ordinary per-resource checks below still filter the
-            // capabilities list and each requested coverage independently.
-            var hasReadableCoverage = snapshot.Index.PublicationsByService[service.Metadata.Id]
-                .Any(publication => snapshot.IsRoutable(publication) &&
-                    snapshot.ResolveResource(publication) is { } resource &&
-                    snapshot.ResolveStorageLayerId(publication, resource).HasValue &&
-                    TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service) &&
-                    AccessPolicyHelpers.IsResourceAccessible(context, resource, service));
-            if (hasReadableCoverage)
-            {
-                serviceAccess = AccessDecision.Allowed();
-            }
-        }
-        if (!serviceAccess.IsAllowed)
-        {
-            return new ServiceResolutionResult(null, CreateAccessDeniedResult(serviceAccess));
-        }
-
-        return new ServiceResolutionResult(service, null);
-    }
 
     private static MetadataV2Service? FindServiceForProtocol(
         MetadataV2GraphSnapshot snapshot,
@@ -1141,10 +1070,17 @@ internal sealed partial class Wcs20Handler
         return null;
     }
 
-    private static IResult CreateAccessDeniedResult(AccessDecision decision)
-        => decision.RequiresAuthentication
-            ? Wcs20ErrorResults.CreateUnauthorized(AccessPolicyHelpers.AuthRequiredMessage)
-            : Wcs20ErrorResults.CreateForbidden(AccessPolicyHelpers.AccessForbiddenMessage);
+    private static IResult CreateAccessDeniedResult(HttpContext context, AccessDecision decision)
+    {
+        ResponseAccessVerdict.Record(context, decision);
+        if (decision.RequiresAuthentication)
+        {
+            AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+            return Wcs20ErrorResults.CreateUnauthorized(AccessPolicyHelpers.AuthRequiredMessage);
+        }
+
+        return Wcs20ErrorResults.CreateForbidden(AccessPolicyHelpers.AccessForbiddenMessage);
+    }
 
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
@@ -3081,31 +3017,14 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var parsed = new List<WcsCoverageIdentifier>();
-        foreach (var token in SplitCsvValues(values))
+        var (parsed, parseError) = ParseCoverageIdTokens(values);
+        if (parseError is { } failed)
         {
-            if (!TryParseCoverageId(token, out var coverageId))
-            {
-                error = new WcsParameterError(
-                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                    "COVERAGEID values must be valid coverage identifiers.",
-                    Wcs20Utilities.Parameters.CoverageId);
-                return false;
-            }
-
-            parsed.Add(coverageId);
-        }
-
-        if (parsed.Count == 0)
-        {
-            error = new WcsParameterError(
-                Wcs20Utilities.ExceptionCodes.MissingParameterValue,
-                "COVERAGEID is required.",
-                Wcs20Utilities.Parameters.CoverageId);
+            error = failed;
             return false;
         }
 
-        coverageIds = parsed.Distinct().ToArray();
+        coverageIds = parsed;
         return true;
     }
 

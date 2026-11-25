@@ -63,7 +63,7 @@ internal sealed class ODataQueryParameterAdapter(
                 var parseResult = _filterExpressionService.ParseAndNormalize(
                     FilterLanguage.OData,
                     parameters.Filter,
-                    resource);
+                    resource.WithoutHiddenSchemaFields());
                 if (!parseResult.IsSuccess || parseResult.Expression == null)
                 {
                     return Task.FromResult(QueryAdapterResult.Failure(
@@ -164,7 +164,7 @@ internal sealed class ODataQueryParameterAdapter(
             return null;
         }
 
-        var availableFields = resource.SchemaFields.ToDictionary(
+        var availableFields = resource.VisibleSchemaFields().ToDictionary(
             field => field.Name,
             StringComparer.OrdinalIgnoreCase);
         var allowedVirtualSelections = GetAllowedVirtualSelections(expand, compute);
@@ -206,9 +206,10 @@ internal sealed class ODataQueryParameterAdapter(
         }
 
         var clauses = new List<OrderByClause>();
-        var schemaFields = resource.SchemaFields.ToDictionary(
+        var schemaFields = resource.VisibleSchemaFields().ToDictionary(
             field => field.Name,
             StringComparer.OrdinalIgnoreCase);
+        var hiddenFields = resource.HiddenSchemaFieldNames();
 
         // Not rewritten as `.Select(...)`: beyond mapping rawField -> trimmed, this loop
         // validates syntax and throws ArgumentException per-segment, and conditionally
@@ -231,6 +232,11 @@ internal sealed class ODataQueryParameterAdapter(
             if (!IsValidODataFieldName(field))
             {
                 throw new ArgumentException($"Invalid field name in $orderby: {field}");
+            }
+
+            if (hiddenFields.Contains(field))
+            {
+                throw new ArgumentException($"Unknown field in $orderby: {field}");
             }
 
             var ascending = true;

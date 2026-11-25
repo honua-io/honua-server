@@ -186,7 +186,7 @@ internal static partial class MapServerEndpoints
                 .ToArray();
 
             var timeValue = GetValue(values, "time");
-            var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
+            var timeRelationValue = GeoServicesLayerTimeResolver.NormalizeTimeRelation(GetValue(values, "timeRelation"));
 
             var settings = new XmlWriterSettings
             {
@@ -214,17 +214,20 @@ internal static partial class MapServerEndpoints
                     layerDefs.TryGetValue(renderLayer.PublicLayerId, out var layerDef);
                     var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
-                    if (!TryGetEffectiveTimeParameters(
-                            timeValue,
-                            timeRelationValue,
-                            renderLayer,
-                            layerTimeOptions,
-                            out var effectiveTime,
-                            out var effectiveTimeRelation,
-                            out var timeError))
+                    var timeResolution = GeoServicesLayerTimeResolver.ResolveEffectiveTimeParameters(new EffectiveTimeRequest
                     {
-                        return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+                        GlobalTime = timeValue,
+                        GlobalTimeRelation = timeRelationValue,
+                        Target = new LayerTimeTarget(renderLayer.Id, renderLayer.PublicLayerId),
+                        LayerTimeOptions = layerTimeOptions
+                    });
+                    if (!timeResolution.IsValid)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, timeResolution.Error ?? "Invalid time parameter.");
                     }
+
+                    var effectiveTime = timeResolution.EffectiveTime;
+                    var effectiveTimeRelation = timeResolution.EffectiveTimeRelation;
 
                     if (!TryBuildLayerSqlFilter(
                             filterExpressionService,
@@ -544,115 +547,7 @@ internal static partial class MapServerEndpoints
         return stringField?.Name ?? objectIdField;
     }
 
-    private static bool TryGetEffectiveTimeParameters(
-        string? globalTime,
-        string? globalTimeRelation,
-        GenerateKmlLayerDescriptor renderLayer,
-        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        out string? effectiveTime,
-        out string? effectiveTimeRelation,
-        out string? error)
-    {
-        effectiveTime = globalTime;
-        effectiveTimeRelation = globalTimeRelation;
-        error = null;
-
-        LayerTimeOptions? options = null;
-        if (TryResolveLayerTimeOptions(layerTimeOptions, renderLayer, out var resolvedOptions))
-        {
-            options = resolvedOptions;
-            if (options.UseTime is false)
-            {
-                effectiveTime = null;
-                effectiveTimeRelation = null;
-                return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.Time))
-            {
-                effectiveTime = options.Time;
-            }
-
-            if (!string.IsNullOrWhiteSpace(options.TimeRelation))
-            {
-                effectiveTimeRelation = options.TimeRelation;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(effectiveTime))
-        {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
-        }
-
-        if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
-        {
-            error = InvalidTimeParameterMessage;
-            return false;
-        }
-
-        if (start is null && end is null && options?.TimeDataCumulative != true)
-        {
-            effectiveTime = null;
-            effectiveTimeRelation = null;
-            return true;
-        }
-
-        if (options?.TimeDataCumulative == true)
-        {
-            start = null;
-        }
-
-        if (options?.TimeOffset is { } timeOffset)
-        {
-            if (!TryApplyTimeOffset(
-                    start,
-                    end,
-                    timeOffset,
-                    options.TimeOffsetUnits,
-                    out var adjustedStart,
-                    out var adjustedEnd,
-                    out var offsetError))
-            {
-                error = offsetError ?? "Invalid time offset.";
-                return false;
-            }
-
-            start = adjustedStart;
-            end = adjustedEnd;
-        }
-
-        effectiveTime = BuildTimeParameter(start, end);
-        effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
-        return true;
-    }
-
-    private static bool TryResolveLayerTimeOptions(
-        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        GenerateKmlLayerDescriptor renderLayer,
-        out LayerTimeOptions resolvedOptions)
-    {
-        if (layerTimeOptions.TryGetValue(renderLayer.Id, out var directOptions) &&
-            directOptions is not null)
-        {
-            resolvedOptions = directOptions;
-            return true;
-        }
-
-        if (renderLayer.Id != renderLayer.PublicLayerId &&
-            layerTimeOptions.TryGetValue(renderLayer.PublicLayerId, out var sourceLayerOptions) &&
-            sourceLayerOptions is not null)
-        {
-            resolvedOptions = sourceLayerOptions;
-            return true;
-        }
-
-        resolvedOptions = default!;
-        return false;
-    }
-
-    private static bool TryBuildLayerSqlFilter(
+    internal static bool TryBuildLayerSqlFilter(
         IFilterExpressionService filterExpressionService,
         MetadataV2Object resource,
         string? where,
@@ -664,7 +559,7 @@ internal static partial class MapServerEndpoints
         sqlFilter = null;
         error = null;
 
-        FilterExpression? filterExpression = null;
+        FilterExpression? callerWhere = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
             var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, where);
@@ -674,8 +569,8 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            filterExpression = parseResult.Expression;
-            if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
+            callerWhere = parseResult.Expression;
+            if (callerWhere != null && !FilterExpressionHelpers.IsBooleanFilterExpression(callerWhere))
             {
                 error = "Invalid where clause.";
                 return false;
@@ -705,28 +600,54 @@ internal static partial class MapServerEndpoints
             }
         }
 
-        if (filterExpression != null && temporalExpression != null)
+        var (translatedFilter, translationError) = TranslateLayerFilterExpressions(
+            filterExpressionService,
+            resource,
+            (callerWhere, temporalExpression));
+        if (translationError is not null)
         {
-            filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
-        }
-        else
-        {
-            filterExpression ??= temporalExpression;
-        }
-
-        if (filterExpression != null)
-        {
-            var translationResult = filterExpressionService.Translate(filterExpression, resource);
-            if (!translationResult.IsSuccess)
-            {
-                error = translationResult.ErrorMessage ?? "Invalid filter syntax.";
-                return false;
-            }
-
-            sqlFilter = translationResult.SqlFilter;
+            error = translationError;
+            return false;
         }
 
+        sqlFilter = translatedFilter;
         return true;
+    }
+
+    private static (SqlFragment? SqlFilter, string? Error) TranslateLayerFilterExpressions(
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Object resource,
+        (FilterExpression? CallerWhere, FilterExpression? TemporalExpression) expressions)
+    {
+        var (callerWhere, temporalExpression) = expressions;
+        // Validate the caller's where/layerDefs predicate without hidden fields separately from
+        // the server-built temporal predicate so callers cannot probe hidden fields while server
+        // time filters remain functional.
+        if (callerWhere != null && temporalExpression != null && resource.SchemaFields.Any(static field => field.Hidden))
+        {
+            var callerValidation = filterExpressionService.Translate(callerWhere, resource.WithoutHiddenSchemaFields());
+            if (!callerValidation.IsSuccess)
+            {
+                return (null, callerValidation.ErrorMessage ?? "Invalid filter syntax.");
+            }
+        }
+
+        var filterExpression = callerWhere != null && temporalExpression != null
+            ? new BinaryExpression(callerWhere, BinaryOperator.And, temporalExpression)
+            : callerWhere ?? temporalExpression;
+
+        if (filterExpression is null)
+        {
+            return (null, null);
+        }
+
+        var translationResource = temporalExpression is null
+            ? resource.WithoutHiddenSchemaFields()
+            : resource;
+        var translationResult = filterExpressionService.Translate(filterExpression, translationResource);
+        return translationResult.IsSuccess
+            ? (translationResult.SqlFilter, null)
+            : (null, translationResult.ErrorMessage ?? "Invalid filter syntax.");
     }
 
     private static bool TryResolveTemporalFieldSelection(

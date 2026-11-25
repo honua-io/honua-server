@@ -30,7 +30,7 @@ using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac;
 
-internal static class SearchEndpoints
+internal static partial class SearchEndpoints
 {
     private const int Wgs84Srid = 4326;
     private const int MaxItemIdCount = 512;
@@ -451,6 +451,11 @@ internal static class SearchEndpoints
                 }
             }
 
+            if (ValidateSearchOffsetLimits(context, new SearchOffsetCheck { Offset = offset, TargetCount = targets.Length, OmitCount = omitCount }, activity) is { } offsetError)
+            {
+                return offsetError;
+            }
+
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
             // STAC item search is a union across the selected collections. A property
             // absent from one selected collection is evaluated as NULL for that
@@ -662,24 +667,11 @@ internal static class SearchEndpoints
                 // shared error pipeline maps it to InternalServerError.
                 if (omitCount)
                 {
-                    // Consume skipped rows in bounded pages. A count-free provider cannot tell us
-                    // how many rows precede an empty offset page in an earlier collection.
-                    var localOffset = 0;
-                    var exhausted = false;
-                    while (remainingSkip > 0)
-                    {
-                        var skipPage = await StacPageReader.ReadAsync(
-                            targetReader, storageLayerId,
-                            query with { Offset = localOffset, Limit = Math.Min(remainingSkip, StacConstants.MaxSearchLimit) },
-                            true, cancellationToken);
-                        remainingSkip -= skipPage.Items.Length;
-                        localOffset += skipPage.Items.Length;
-                        if (!skipPage.HasMoreResults || skipPage.Items.IsEmpty)
-                        {
-                            exhausted = true;
-                            break;
-                        }
-                    }
+                    var (localOffset, updatedSkip, exhausted) = await AdvanceOmitCountSkipAsync(
+                        (targetReader, storageLayerId),
+                        (query, targets.Length, remainingSkip),
+                        cancellationToken);
+                    remainingSkip = updatedSkip;
 
                     if (!exhausted && allItems.Count < pageLimit)
                     {
@@ -1091,15 +1083,18 @@ internal static class SearchEndpoints
         IReadOnlyList<MetadataV2Object>? crossCollectionResources,
         CancellationToken cancellationToken)
     {
+        var visibleCrossCollection = crossCollectionResources is null
+            ? null
+            : crossCollectionResources.Select(static candidate => candidate.WithoutHiddenSchemaFields()).ToArray();
         var result = await filterProcessor.ProcessFilterAsync(
-            resource,
+            resource.WithoutHiddenSchemaFields(),
             request.Filter,
             request.FilterLang,
             request.FilterCrs,
             defaultFilterLangIsText,
             cancellationToken,
             collectionId,
-            crossCollectionResources).ConfigureAwait(false);
+            visibleCrossCollection).ConfigureAwait(false);
 
         return result.IsSuccess
             ? (true, result.SqlFilter, result.Expression, null, false)
@@ -1112,8 +1107,8 @@ internal static class SearchEndpoints
         out ImmutableArray<OrderByClause> orderBy,
         out string? error)
     {
-        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
-        var availableFields = schemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var availableFields = resource.VisibleSchemaFields()
+            .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         var orderByBuilder = ImmutableArray.CreateBuilder<OrderByClause>(sortby.Length);
 
         foreach (var sort in sortby)
@@ -1235,8 +1230,7 @@ internal static class SearchEndpoints
         out StacFieldProjection? projection,
         out string? error)
     {
-        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
-        var availableFields = schemaFields
+        var availableFields = resource.VisibleSchemaFields()
             .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         // `datetime` and `id` are STAC canonical properties. They are included in
@@ -1376,7 +1370,7 @@ internal static class SearchEndpoints
             ? default
             : selected.Length == 0
                 ? ImmutableArray<string>.Empty
-                : schemaFields
+                : availableFields.Values
                     .Where(field => selected.Contains(field.Name))
                     .Select(field => field.Name)
                     .ToImmutableArray();

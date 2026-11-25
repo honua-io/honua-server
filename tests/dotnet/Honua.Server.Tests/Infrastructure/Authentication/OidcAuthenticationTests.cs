@@ -881,6 +881,7 @@ public class OidcAuthenticationTests : IClassFixture<OidcAuthenticationTests.Bea
             "Get Recent Errors",
             "Get Telemetry Status",
             "Get Migration Status",
+            "List Operate Events",
             "List Recent Server Logs",
             "Get Cache Status",
             "Get Cache Health",
@@ -895,20 +896,20 @@ public class OidcAuthenticationTests : IClassFixture<OidcAuthenticationTests.Bea
             endpoint.RoutePattern.RawText == "/api/v{version:apiVersion}/admin/geocoding/reference-data/import");
         Assert.NotNull(deploymentGlobalGeocodingImport.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>());
 
-        var tenantBackedMixedEndpoints = new[] { "List Audit Log Entries", "List Operate Events" }
+        var tenantBackedMixedEndpoints = new[] { "List Audit Log Entries" }
             .Select(displayName =>
                 Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
         Assert.All(tenantBackedMixedEndpoints, endpoint =>
             Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
 
-        var tenantBackedCacheInvalidations = new[]
+        var deploymentGlobalCacheInvalidations = new[]
         {
             "/api/v{version:apiVersion}/admin/cache/invalidate",
             "/api/v{version:apiVersion}/admin/operations/cache/invalidate"
         }.Select(route =>
             Assert.Single(routeEndpoints, endpoint => endpoint.RoutePattern.RawText == route));
-        Assert.All(tenantBackedCacheInvalidations, endpoint =>
-            Assert.Null(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
+        Assert.All(deploymentGlobalCacheInvalidations, endpoint =>
+            Assert.NotNull(endpoint.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>()));
 
         var markedAdminEndpoints = routeEndpoints.Where(endpoint =>
         {
@@ -924,7 +925,8 @@ public class OidcAuthenticationTests : IClassFixture<OidcAuthenticationTests.Bea
         Assert.All(markedAdminEndpoints, endpoint =>
             Assert.Contains(
                 endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
-                authorization => authorization.Policy == AuthenticationExtensions.AdminPolicy));
+                authorization => authorization.Policy is AuthenticationExtensions.AdminPolicy
+                    or AuthenticationExtensions.OpsReadPolicy));
     }
 
     [UnitTest]

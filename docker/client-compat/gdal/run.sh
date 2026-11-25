@@ -10,7 +10,7 @@ set -euo pipefail
 
 # Native GDAL is required in this canonical lane. Keep these checks outside
 # the evidence-producing pytest command's intentional `|| true` handling.
-for tool in ogrinfo ogr2ogr; do
+for tool in ogrinfo ogr2ogr gdalinfo gdal_translate; do
     command -v "$tool" >/dev/null 2>&1 || { echo "GDAL lane requires $tool" >&2; exit 1; }
 done
 ogrinfo --version

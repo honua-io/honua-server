@@ -10,6 +10,7 @@ using Honua.Core.Features.Observability.Services;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -274,20 +275,40 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
                 return Task.CompletedTask;
             },
         };
+        var clock = new TransitionClock();
+        var timerRegistered = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var services = new ServiceCollection()
+            .AddSingleton(ObserveRetryTimer(clock, timerRegistered))
             .AddScoped(_ => new OpsAutonomySettingsWriter(_postgres.DataSource, _store, watchdog))
             .BuildServiceProvider();
         using var reconciliation = new OpsWatchdogStartupReconciliation(
-            services.GetRequiredService<IServiceScopeFactory>(),
+            services,
             Options.Create(new OpsAutonomyOptions()),
             NullLogger<OpsWatchdogStartupReconciliation>.Instance);
 
         await reconciliation.StartAsync(CancellationToken.None);
+        Assert.Equal(TimeSpan.FromSeconds(5), await timerRegistered.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, Volatile.Read(ref attempts));
+        clock.Advance(TimeSpan.FromSeconds(5));
         await suspended.Task.WaitAsync(TimeSpan.FromSeconds(30));
         await reconciliation.StopAsync(CancellationToken.None);
 
         Assert.Equal(2, attempts);
         Assert.Null(reconciliation.ExecuteTask?.Exception);
+    }
+
+    private static TimeProvider ObserveRetryTimer(TransitionClock clock, TaskCompletionSource<TimeSpan> timerRegistered)
+    {
+        var provider = Substitute.For<TimeProvider>();
+        provider.CreateTimer(Arg.Any<TimerCallback>(), Arg.Any<object?>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>())
+            .Returns(call =>
+            {
+                var dueTime = call.ArgAt<TimeSpan>(2);
+                var timer = clock.CreateTimer(call.ArgAt<TimerCallback>(0), call.ArgAt<object?>(1), dueTime, call.ArgAt<TimeSpan>(3));
+                timerRegistered.TrySetResult(dueTime);
+                return timer;
+            });
+        return provider;
     }
 
     private static void CancelRequestWhenAuditRecords(IAuditLog audit, CancellationTokenSource request, string committedValue)

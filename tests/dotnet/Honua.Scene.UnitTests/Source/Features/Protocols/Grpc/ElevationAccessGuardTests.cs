@@ -35,12 +35,24 @@ public sealed class ElevationAccessGuardTests
     {
         var context = CreateCallContext(ServiceProtocols.Elevation);
 
-        var resource = await ElevationAccessGuard.EnforceReadAccessAsync(context, layerId: 1, CancellationToken.None);
+        var authorized = await ElevationAccessGuard.EnforceReadAccessAsync(context, layerId: 1, CancellationToken.None);
 
-        resource.Metadata.Id.Should().Be("dem");
+        authorized.Resource.Metadata.Id.Should().Be("dem");
+        authorized.StorageLayerId.Should().Be(1);
     }
 
-    private static TestServerCallContext CreateCallContext(string protocol)
+    [UnitTest]
+    public async Task EnforceReadAccessAsync_DistinctStorageLayerBinding_ReturnsResolvedStorageLayerId()
+    {
+        var context = CreateCallContext(ServiceProtocols.Elevation, storageLayerId: 42);
+
+        var authorized = await ElevationAccessGuard.EnforceReadAccessAsync(context, layerId: 1, CancellationToken.None);
+
+        authorized.Resource.Metadata.Id.Should().Be("dem");
+        authorized.StorageLayerId.Should().Be(42);
+    }
+
+    private static TestServerCallContext CreateCallContext(string protocol, int storageLayerId = 1)
     {
         var provider = new TestMetadataV2GraphBuilder()
             .AddResource(
@@ -48,7 +60,7 @@ public sealed class ElevationAccessGuardTests
                 "dem",
                 MetadataV2ObjectType.RasterDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: 1)
+            .AddStorageBinding("dem-binding", "dem", "dem", storageLayerId: storageLayerId)
             .AddService("imagery", "imagery", protocols: [protocol])
             .AddPublication("dem-publication", "imagery", "dem", layerIndex: 1, isPrimary: true)
             .BuildProvider();
