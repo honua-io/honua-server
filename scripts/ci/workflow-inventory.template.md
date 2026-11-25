@@ -948,9 +948,10 @@ coverage and the full/affected concurrency bounds remain unchanged. Live
 post-deployment runner idle times remain to be measured.
 
 Full runs (scheduled, or dispatched with `full_ci` or without `selective_base`,
-the `run-name` rule) put every server-test index on standard `ubuntu-latest`
-runners, which are free for this public repository; affected runs keep the
-heavy pool. Paired full runs on 18 Nov 2026 took a 78-minute server phase on
+the `run-name` rule) put every server-test index on the label set by
+`HONUA_CI_HEAVY_RUNNER`, defaulting to standard `ubuntu-latest` runners.
+Affected runs keep the heavy pool. Paired full runs on 18 Nov 2026 took a
+78-minute server phase on
 hosted runners (run 44271438677, all 225 shards, no larger runner size) against
 193-327 minutes on the six `honua-heavy` runners. The matrix stays on one pool.
 
@@ -2661,3 +2662,9 @@ after checking the SDK manifest. It skips the Python, Honua Server and SDK build
 setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
+
+### Tile Export Durable Recovery
+
+The Server Features Miscellaneous 7 shard includes Tile Export Durable Recovery.
+Its fixture connects the PostgreSQL job queue and worker with the same in-process
+wake signal used by the server host.

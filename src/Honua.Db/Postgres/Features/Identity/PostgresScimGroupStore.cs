@@ -243,6 +243,28 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
     {
         ArgumentNullException.ThrowIfNull(change);
 
+        const int maximumAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return await UpdateMembersOnceAsync(groupId, change, cancellationToken).ConfigureAwait(false);
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.DeadlockDetected && attempt < maximumAttempts)
+            {
+                // PostgreSQL aborted the transaction. The attempt has disposed it, so
+                // retry the entire change with fresh locks and a fresh read of the group.
+                await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<ScimGroup?> UpdateMembersOnceAsync(
+        string groupId,
+        ScimGroupMemberChange change,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 

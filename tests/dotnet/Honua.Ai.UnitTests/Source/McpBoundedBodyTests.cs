@@ -35,4 +35,33 @@ public sealed class McpBoundedBodyTests
         Encoding.UTF8.GetString(body!.Value.Span).Should().Be("{\"ok\":true}");
         McpEndpointExtensions.BoundedBodyInitialCapacity(maxBytes).Should().Be(16 * 1024);
     }
+
+    [UnitTest]
+    public async Task ReadBoundedBody_DeclaredLengthOverLimit_DoesNotRead()
+    {
+        const int limit = 512;
+        using var stream = new MemoryStream(new byte[limit + 1]);
+        var context = new DefaultHttpContext();
+        context.Request.Body = stream;
+        context.Request.ContentLength = stream.Length;
+
+        var body = await McpEndpointExtensions.ReadBoundedBodyAsync(context.Request, limit, CancellationToken.None);
+
+        body.Should().BeNull();
+        stream.Position.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ReadBoundedBody_UnknownLengthOverLimit_StopsReadingBeforeEnd()
+    {
+        const int limit = 512;
+        using var stream = new MemoryStream(new byte[64 * 1024]);
+        var context = new DefaultHttpContext();
+        context.Request.Body = stream;
+
+        var body = await McpEndpointExtensions.ReadBoundedBodyAsync(context.Request, limit, CancellationToken.None);
+
+        body.Should().BeNull();
+        stream.Position.Should().BeGreaterThan(limit).And.BeLessThan(stream.Length);
+    }
 }

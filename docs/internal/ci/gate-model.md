@@ -1649,8 +1649,8 @@ Core package or Postgres compatibility job still does. All trusted affected
 indices use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
 except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full runs
-(the `run-name` rule) put every server-test index on free standard
-`ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
+(the `run-name` rule) put every server-test index on the label set by
+`HONUA_CI_HEAVY_RUNNER`, defaulting to standard `ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
 server phase there, against 193-327 minutes on the six heavy runners. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
@@ -3814,3 +3814,10 @@ after checking the SDK manifest. It skips the Python, Honua Server and SDK build
 setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
+
+### Tile Export Durable Recovery fixture
+
+The durable recovery fixture uses the production queue wake signal to notify its
+worker when PostgreSQL jobs are queued. The recovery and retry cases still
+exercise the real queue, worker, reconciler, and durable stores in Server
+Features Miscellaneous 7 on selected PR runs and full trunk runs.
