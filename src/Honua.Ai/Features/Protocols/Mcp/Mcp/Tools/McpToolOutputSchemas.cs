@@ -457,7 +457,7 @@ internal static class McpToolOutputSchemas
             "engine": {
               "type": "string",
               "enum": ["live", "fixture"],
-              "description": "Planner engine: live (LLM) or fixture (canned template when no LLM is configured)."
+              "description": "Planner engine: live (LLM) or fixture (canned capability demo when no LLM is configured)."
             },
             "plan": { "type": ["object", "null"] },
             "specDraft": { "type": ["object", "null"] },
@@ -927,13 +927,13 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": { "type": "string", "description": "Operation handle status." },
             "operationId": { "type": "string", "const": "style.apply-preset" },
-            "operationInstanceId": { "type": "string", "minLength": 1 },
-            "handleId": { "type": "string", "minLength": 1 },
+            "operationInstanceId": { "type": "string" },
+            "handleId": { "type": "string" },
             "durable": {
               "type": "boolean",
               "description": "False when the direct handle was not durably persisted."
             },
-            "correlationId": { "type": "string", "minLength": 1 },
+            "correlationId": { "type": "string" },
             "auditId": { "type": ["string", "null"], "description": "Operation audit id." },
             "createdAt": { "type": "string", "format": "date-time" },
             "updatedAt": { "type": "string", "format": "date-time" },
