@@ -16,8 +16,8 @@ Import layers from GeoServer REST API.
 | Capability key | `import.geoserver` |
 | Category | Import |
 | Edition | Enterprise |
-| Status | ga |
-| Surface maturity | 5 implemented |
+| Status | preview |
+| Surface maturity | 5 preview |
 | Registry entries | 5 |
 | Proving tests | 18 |
 
@@ -26,3 +26,8 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Migrate from GeoServer](../../guides/migrate/from-geoserver.md)
+
+## Availability
+
+Status is **preview**.
+This capability has no runtime manifest ID in the published crosswalk. Do not infer a per-capability experimental switch from its licensing key.

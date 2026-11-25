@@ -19,7 +19,7 @@ Compute solar position from date/time/location and cast the shadow extent agains
 | Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
-| Proving tests | 5 |
+| Proving tests | 6 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
