@@ -33,7 +33,7 @@ internal abstract partial class StudioDraftToolBase
                         && proposal.Plan.ExecutionPayload is { } payload
                         && ReadApprovalDraftId(payload) is { } draftId)
                     {
-                        throw await ReadGenerationConflictAsync(httpContext, principal, draftId, token).ConfigureAwait(false);
+                        throw await ReadGenerationConflictAsync(httpContext, new(principal, draftId), token).ConfigureAwait(false);
                     }
                 },
                 OnCompleted = async (operation, token) =>
@@ -54,7 +54,7 @@ internal abstract partial class StudioDraftToolBase
                         throw new GeoprocessingPreconditionFailedException("The completed Studio draft result is unavailable.");
                     }
 
-                    await RequireAuthorizedUpdateAsync(httpContext, principal, draft.DraftId, token).ConfigureAwait(false);
+                    await RequireAuthorizedUpdateAsync(httpContext, new(principal, draft.DraftId), token).ConfigureAwait(false);
                     return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
                 }
             }, cancellationToken);
@@ -74,16 +74,18 @@ internal abstract partial class StudioDraftToolBase
         }
     }
 
+    private readonly record struct DraftApprovalTarget(ClaimsPrincipal Principal, Guid DraftId);
+
     private static async Task<StudioDraftGenerationConflictException> ReadGenerationConflictAsync(
-        HttpContext httpContext, ClaimsPrincipal principal, Guid draftId, CancellationToken cancellationToken)
+        HttpContext httpContext, DraftApprovalTarget target, CancellationToken cancellationToken)
     {
         // Re-authorize the latest snapshot before returning its generation.
-        var draft = await RequireAuthorizedUpdateAsync(httpContext, principal, draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireAuthorizedUpdateAsync(httpContext, target, cancellationToken).ConfigureAwait(false);
         return new StudioDraftGenerationConflictException(draft.Generation);
     }
 
     private static Task<StudioPackageDraft> RequireAuthorizedUpdateAsync(
-        HttpContext httpContext, ClaimsPrincipal principal, Guid draftId, CancellationToken cancellationToken) =>
-        RequireAuthorizedDraftAsync(httpContext, principal, RequireLifecycleService(httpContext), draftId,
+        HttpContext httpContext, DraftApprovalTarget target, CancellationToken cancellationToken) =>
+        RequireAuthorizedDraftAsync(httpContext, target.Principal, RequireLifecycleService(httpContext), target.DraftId,
             StudioAuthorizationOperation.UpdateDraft, OperatorOperation.Create, cancellationToken);
 }

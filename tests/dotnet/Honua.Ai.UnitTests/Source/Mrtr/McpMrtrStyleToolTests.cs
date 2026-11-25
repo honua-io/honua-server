@@ -133,25 +133,40 @@ public sealed class McpMrtrStyleToolTests
 
     private static OperationHandle Handle(OperationHandleStatus status) => new()
     {
-        OperationInstanceId = "opinst-1", OperationId = "style.apply-preset", CorrelationId = "corr-1",
-        Status = status, ProposalId = "prop-publish-1", CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        OperationInstanceId = "opinst-1",
+        OperationId = "style.apply-preset",
+        CorrelationId = "corr-1",
+        Status = status,
+        ProposalId = "prop-publish-1",
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
         Result = new OperationResultSummary
         {
             Summary = "Applied preset",
             Details = new Dictionary<string, string>
             {
-                ["styleId"] = "parcels", ["styleTitle"] = "Parcels", ["styleVersion"] = "3",
-                ["serviceId"] = "svc-parcels", ["serviceLayerIndex"] = "0",
-                ["expectedPublicationId"] = "pub-parcels", ["expectedResourceId"] = "res-parcels",
-                ["expectedStorageBindingId"] = "bind-parcels", ["expectedStorageLayerId"] = "42",
+                ["styleId"] = "parcels",
+                ["styleTitle"] = "Parcels",
+                ["styleVersion"] = "3",
+                ["serviceId"] = "svc-parcels",
+                ["serviceLayerIndex"] = "0",
+                ["expectedPublicationId"] = "pub-parcels",
+                ["expectedResourceId"] = "res-parcels",
+                ["expectedStorageBindingId"] = "bind-parcels",
+                ["expectedStorageLayerId"] = "42",
             },
         },
     };
 
     private static OperationProposal Proposal(OperationProposalStatus status) => new()
     {
-        ProposalId = "prop-publish-1", OperationId = "style.apply-preset", Kind = default, Status = status, RequestedBy = McpMrtrPublishToolTests.AgentActorId,
-        CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        ProposalId = "prop-publish-1",
+        OperationId = "style.apply-preset",
+        Kind = default,
+        Status = status,
+        RequestedBy = McpMrtrPublishToolTests.AgentActorId,
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
         Audit = new() { OperationInstanceId = "opinst-1" },
     };
 }

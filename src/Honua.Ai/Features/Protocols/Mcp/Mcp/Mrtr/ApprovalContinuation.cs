@@ -126,7 +126,9 @@ internal static class ApprovalContinuation
     private static McpToolsCallResult StatusResult(McpOperationToolOutput output)
     {
         var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
-        result.IsError = output.Status == nameof(OperationHandleStatus.Failed);
+        result.IsError = output.Status is nameof(OperationHandleStatus.Failed)
+            or nameof(OperationHandleStatus.Rejected)
+            or nameof(OperationHandleStatus.Cancelled);
         return result;
     }
 
@@ -172,7 +174,8 @@ internal static class ApprovalContinuation
 
     // A failed proposal's recorded reason says what to do next (for example, submit a fresh proposal).
     private static string Describe(OperationProposalStatus status, string? resolutionReason)
-        => status == OperationProposalStatus.Failed && !string.IsNullOrWhiteSpace(resolutionReason)
+        => status is OperationProposalStatus.Failed or OperationProposalStatus.Rejected or OperationProposalStatus.Cancelled
+            && !string.IsNullOrWhiteSpace(resolutionReason)
             ? resolutionReason
             : Describe(status);
 

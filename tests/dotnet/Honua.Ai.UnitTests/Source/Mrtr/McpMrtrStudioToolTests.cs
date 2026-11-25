@@ -159,21 +159,41 @@ public sealed class McpMrtrStudioToolTests
 
     private static StudioPackageDraft Draft(long generation) => new()
     {
-        DraftId = DraftId, ItemId = Guid.NewGuid(), PackageKey = "map", Family = StudioPackageFamily.Map,
-        Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
-        OwnerId = "agent-key-1", Generation = generation, CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        DraftId = DraftId,
+        ItemId = Guid.NewGuid(),
+        PackageKey = "map",
+        Family = StudioPackageFamily.Map,
+        Envelope = new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Map,
+            SchemaVersion = "1.0",
+        },
+        OwnerId = "agent-key-1",
+        Generation = generation,
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
     };
 
     private static OperationHandle Handle(OperationHandleStatus status) => new()
     {
-        OperationInstanceId = "opinst-1", OperationId = StudioDraftMutationContext.UpdateOperationId, CorrelationId = "corr-1",
-        Status = status, ProposalId = "prop-publish-1", CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        OperationInstanceId = "opinst-1",
+        OperationId = StudioDraftMutationContext.UpdateOperationId,
+        CorrelationId = "corr-1",
+        Status = status,
+        ProposalId = "prop-publish-1",
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
     };
 
     private static OperationProposal Proposal(OperationProposalStatus status) => new()
     {
-        ProposalId = "prop-publish-1", OperationId = StudioDraftMutationContext.UpdateOperationId, Kind = default,
-        Status = status, RequestedBy = McpMrtrPublishToolTests.AgentActorId, CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        ProposalId = "prop-publish-1",
+        OperationId = StudioDraftMutationContext.UpdateOperationId,
+        Kind = default,
+        Status = status,
+        RequestedBy = McpMrtrPublishToolTests.AgentActorId,
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
         Audit = new() { OperationInstanceId = "opinst-1" },
     };
 }
