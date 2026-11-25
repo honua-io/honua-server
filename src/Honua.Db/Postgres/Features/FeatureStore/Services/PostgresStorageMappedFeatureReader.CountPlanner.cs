@@ -69,7 +69,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         !_hasNonPointGeometry &&
         !query.IncludeNullGeometry &&
         CanUseScopedSourceSpatialCount(query) &&
-        query.SpatialFilter is { AntimeridianSplit: false } filter &&
+        query.SpatialFilter is { AntimeridianSplit: false, SpatialRelationship: SpatialRelationship.Intersects } filter &&
         (filter.Srid ?? _storageSrid) == _storageSrid &&
         query.SpatialFilterDatumTransformation is null;
 

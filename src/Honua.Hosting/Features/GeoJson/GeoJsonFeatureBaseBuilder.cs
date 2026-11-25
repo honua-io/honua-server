@@ -89,31 +89,13 @@ internal static partial class GeoJsonFeatureBaseBuilder
         var declaredAttributeFields = schema.DeclaredAttributeFields;
         var visibleAttributeFields = schema.VisibleAttributeFields;
 
-        // codeql[cs/linq/missed-select]: skips hidden fields and coerces values into one property dictionary
+        var source = new PropertySource(featureId, attributes, schema);
         foreach (var field in schema.VisibleFields)
         {
-            var fieldName = field.Name;
-            var isObjectIdField = fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-
-            if (isObjectIdField && !shouldIncludeObjectId)
+            if (IncludesProperty(field.Name, schema, options) &&
+                ReadProperty(field.Name, source, options) is { } property)
             {
-                continue;
-            }
-
-            if (!shouldProjectAll && !projectedProperties!.Contains(fieldName))
-            {
-                continue;
-            }
-
-            if (attributes.TryGetValue(fieldName, out var value))
-            {
-                properties[fieldName] = isObjectIdField && shouldIncludeObjectId && options.ResolveIdFromProperties
-                    ? UseCanonicalIdForNull(value, featureId)
-                    : CoerceProperty(fieldName, value, schema);
-            }
-            else if (isObjectIdField && shouldIncludeObjectId)
-            {
-                properties[fieldName] = featureId;
+                properties[field.Name] = property.Value;
             }
         }
 

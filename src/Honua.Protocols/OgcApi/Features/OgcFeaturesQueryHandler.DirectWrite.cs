@@ -15,12 +15,6 @@ namespace Honua.Protocols.Ogc.Api.Features;
 
 internal sealed partial class OgcFeaturesQueryHandler
 {
-    private enum DirectPropertyKind
-    {
-        Attribute,
-        ObjectId
-    }
-
     private sealed class DirectFeaturePayloadContext
     {
         public required MetadataV2Object Resource { get; init; }
@@ -33,15 +27,9 @@ internal sealed partial class OgcFeaturesQueryHandler
         public GeoJsonFeatureBaseBuilder.PreparedSchema? Schema { get; init; }
     }
 
-    private readonly record struct DirectPropertyField(
-        string Name,
-        JsonEncodedText EncodedName,
-        DirectPropertyKind Kind);
-
     private sealed class DirectFeatureWritePlan
     {
-        public required GeoJsonFeatureBaseBuilder.PreparedSchema Schema { get; init; }
-        public required DirectPropertyField[] Fields { get; init; }
+        public required GeoJsonFeatureBaseBuilder.PropertyWritePlan Properties { get; init; }
         public required MetadataV2Object Resource { get; init; }
         public required AxisOrder AxisOrder { get; init; }
         public required OgcFeaturesGeometryServices GeometryServices { get; init; }
@@ -98,51 +86,15 @@ internal sealed partial class OgcFeaturesQueryHandler
 
     private static DirectFeatureWritePlan BuildDirectFeatureWritePlan(DirectFeaturePayloadContext context)
     {
-        var schema = new GeoJsonFeatureBaseBuilder.PreparedSchema(context.Resource, includeAdditionalAttributes: false);
-        var fields = ResolveDirectPropertyFields(schema, context.ProjectedProperties);
+        var schema = context.Schema ??
+            new GeoJsonFeatureBaseBuilder.PreparedSchema(context.Resource, includeAdditionalAttributes: false);
         return new DirectFeatureWritePlan
         {
-            Schema = schema,
-            Fields = fields,
+            Properties = OgcGeoJsonFeatureBuilder.PreparePropertyWritePlan(schema, context.ProjectedProperties),
             Resource = context.Resource,
             AxisOrder = context.AxisOrder,
             GeometryServices = context.GeometryServices
         };
-    }
-
-    private static DirectPropertyField[] ResolveDirectPropertyFields(
-        GeoJsonFeatureBaseBuilder.PreparedSchema schema,
-        ImmutableHashSet<string>? projectedProperties)
-    {
-        var objectIdFieldName = schema.ObjectIdFieldName;
-        var includeObjectId = !objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-            (projectedProperties is null || projectedProperties.Contains(objectIdFieldName));
-        var hiddenIdName = schema.HiddenPrimaryIdFieldName;
-        var fields = new List<DirectPropertyField>(schema.VisibleFields.Length + 1);
-        var hasObjectIdField = false;
-
-        foreach (var field in schema.VisibleFields)
-        {
-            var isObjectIdField = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-            if ((isObjectIdField && !includeObjectId) ||
-                (hiddenIdName is not null && field.Name.Equals(hiddenIdName, StringComparison.OrdinalIgnoreCase)) ||
-                (projectedProperties is not null && !projectedProperties.Contains(field.Name)))
-            {
-                continue;
-            }
-
-            hasObjectIdField |= isObjectIdField;
-            var kind = isObjectIdField ? DirectPropertyKind.ObjectId : DirectPropertyKind.Attribute;
-            fields.Add(new DirectPropertyField(field.Name, JsonEncodedText.Encode(field.Name), kind));
-        }
-
-        if (includeObjectId && !hasObjectIdField &&
-            (hiddenIdName is null || !objectIdFieldName.Equals(hiddenIdName, StringComparison.OrdinalIgnoreCase)))
-        {
-            fields.Add(new DirectPropertyField(objectIdFieldName, JsonEncodedText.Encode(objectIdFieldName), DirectPropertyKind.ObjectId));
-        }
-
-        return [.. fields];
     }
 
     private static void WriteDirectFeature(
@@ -187,19 +139,18 @@ internal sealed partial class OgcFeaturesQueryHandler
         DirectFeatureWritePlan plan)
     {
         writer.WriteStartObject();
-        var attributes = feature.Attributes;
-        foreach (var field in plan.Fields)
+        foreach (var field in plan.Properties.Fields)
         {
-            if (attributes.TryGetValue(field.Name, out var rawValue))
+            if (plan.Properties.Read(feature, field) is { } property)
             {
-                writer.WritePropertyName(field.EncodedName);
-                WriteDirectValue(writer, GeoJsonFeatureBaseBuilder.CoerceProperty(field.Name, rawValue, plan.Schema));
+                writer.WritePropertyName(field.JsonName);
+                WriteDirectValue(writer, property.Value);
             }
-            else if (field.Kind == DirectPropertyKind.ObjectId)
-            {
-                writer.WritePropertyName(field.EncodedName);
-                writer.WriteNumberValue(feature.Id);
-            }
+        }
+
+        if (plan.Properties.IdentifierFallback is { } fallback)
+        {
+            writer.WriteNumber(fallback.JsonName, feature.Id);
         }
 
         writer.WriteEndObject();
