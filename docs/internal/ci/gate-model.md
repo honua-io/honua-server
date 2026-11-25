@@ -3814,3 +3814,10 @@ after checking the SDK manifest. It skips the Python, Honua Server and SDK build
 setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
+
+### Tile Export Durable Recovery fixture
+
+The durable recovery fixture uses the production queue wake signal to notify its
+worker when PostgreSQL jobs are queued. The recovery and retry cases still
+exercise the real queue, worker, reconciler, and durable stores in Server
+Features Miscellaneous 7 on selected PR runs and full trunk runs.

@@ -2662,3 +2662,9 @@ after checking the SDK manifest. It skips the Python, Honua Server and SDK build
 setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
+
+### Tile Export Durable Recovery
+
+The Server Features Miscellaneous 7 shard includes Tile Export Durable Recovery.
+Its fixture connects the PostgreSQL job queue and worker with the same in-process
+wake signal used by the server host.
