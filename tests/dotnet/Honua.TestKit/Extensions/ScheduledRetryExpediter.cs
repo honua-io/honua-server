@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Npgsql;
 
 namespace Honua.TestKit.Extensions;
@@ -35,6 +36,8 @@ public sealed class ScheduledRetryExpediter
         _jobStore = jobStore;
         _jobs = $"{JobStoreDatabase.QuoteIdentifier(schema)}.{ExecutionJobRow.TableName}";
     }
+
+    public PollWakeSignal<IJobQueue>? QueueWake { get; init; }
 
     public async Task ExpediteAsync(string operationId, JobRetryPolicy retryPolicy, TimeSpan attemptBudget)
     {
@@ -84,14 +87,24 @@ public sealed class ScheduledRetryExpediter
     private async Task MakeRetryDueAsync(string operationId, int attempt, TimeSpan budget)
     {
         var elapsed = Stopwatch.StartNew();
-        while (elapsed.Elapsed < budget && await TryMakeRetryDueAsync(operationId, attempt).ConfigureAwait(false))
+        while (elapsed.Elapsed < budget)
         {
+            var (updated, queued) = await TryMakeRetryDueAsync(operationId, attempt).ConfigureAwait(false);
+            if (updated)
+            {
+                QueueWake?.Wake();
+            }
+
+            if (!queued)
+            {
+                return;
+            }
+
             await Task.Delay(PollDelay).ConfigureAwait(false);
         }
     }
 
-    // Returns whether the attempt is still waiting to be claimed.
-    private async Task<bool> TryMakeRetryDueAsync(string operationId, int attempt)
+    private async Task<(bool Updated, bool Queued)> TryMakeRetryDueAsync(string operationId, int attempt)
     {
         await using var command = _dataSource.CreateCommand($"""
             WITH due AS (
@@ -100,13 +113,19 @@ public sealed class ScheduledRetryExpediter
                 WHERE operation_id = @operation_id AND status = '{nameof(ExecutionJobStatus.Queued)}'
                   AND attempt_count = @attempt AND queue_visible_at > now()
                 RETURNING operation_id)
-            SELECT EXISTS (
+            SELECT EXISTS (SELECT 1 FROM due), EXISTS (
                 SELECT 1 FROM {_jobs}
                 WHERE operation_id = @operation_id AND status = '{nameof(ExecutionJobStatus.Queued)}'
                   AND attempt_count = @attempt)
             """);
         command.Parameters.AddWithValue("operation_id", operationId);
         command.Parameters.AddWithValue("attempt", attempt);
-        return (bool)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+        await using var result = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        if (!await result.ReadAsync().ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The retry visibility update did not return its result.");
+        }
+
+        return (result.GetBoolean(0), result.GetBoolean(1));
     }
 }

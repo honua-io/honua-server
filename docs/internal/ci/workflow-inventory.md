@@ -948,9 +948,10 @@ coverage and the full/affected concurrency bounds remain unchanged. Live
 post-deployment runner idle times remain to be measured.
 
 Full runs (scheduled, or dispatched with `full_ci` or without `selective_base`,
-the `run-name` rule) put every server-test index on standard `ubuntu-latest`
-runners, which are free for this public repository; affected runs keep the
-heavy pool. Paired full runs on 18 Nov 2026 took a 78-minute server phase on
+the `run-name` rule) put every server-test index on the label set by
+`HONUA_CI_HEAVY_RUNNER`, defaulting to standard `ubuntu-latest` runners.
+Affected runs keep the heavy pool. Paired full runs on 18 Nov 2026 took a
+78-minute server phase on
 hosted runners (run 44271438677, all 225 shards, no larger runner size) against
 193-327 minutes on the six `honua-heavy` runners. The matrix stays on one pool.
 
@@ -2043,6 +2044,10 @@ it asserts that the requeued job's stored `next_retry_at` equals the policy's
 makes that one retry due now, the state the backoff would reach on its own. The
 real worker still claims, runs and fails every attempt, and the terminal status,
 attempt count, error and empty artifacts are asserted as before.
+
+The GeoServices GPServer and NAServer 1 fixture signals the production worker
+after each committed retry visibility update. The update loop still handles
+the worker's two-write requeue and checks the original retry schedule.
 
 `EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
 took 86 seconds in STAC API Governance 2. It built a path regex for every
