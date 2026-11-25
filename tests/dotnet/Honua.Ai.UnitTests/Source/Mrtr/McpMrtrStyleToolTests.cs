@@ -112,7 +112,9 @@ public sealed class McpMrtrStyleToolTests
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync("parcels", Arg.Any<CancellationToken>()).Returns(new StyleCatalogRecord
         {
-            StyleId = "parcels", Title = "Parcels", MapLibreStyleJson = "{}",
+            StyleId = "parcels",
+            Title = "Parcels",
+            MapLibreStyleJson = "{}",
         });
         var approvals = Substitute.For<IOperatorApprovalEvaluator>();
         approvals.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());

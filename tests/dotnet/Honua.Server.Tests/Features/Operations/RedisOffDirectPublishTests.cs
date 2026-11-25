@@ -177,7 +177,7 @@ public sealed class RedisOffDirectPublishTests
         handle.PolicyDecision.Should().Be(PolicyDecisionKind.Allow);
         handle.ProposalId.Should().BeNull("a direct style preset involves no governed proposal");
         handle.EvidenceRefs.Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        await catalog.Received(1).AssociateLayerAsync(StyleStorageLayerId, StyleId, 0, Arg.Any<CancellationToken>());
+        await catalog.Received(1).AssociatePrimaryLayerAsync(StyleStorageLayerId, StyleId, Arg.Any<CancellationToken>());
         await graphSync.Received(1).SyncLayerStylesAsync(StyleStorageLayerId, Arg.Any<CancellationToken>());
 
         audit.Events.Should().Contain(e =>
@@ -204,7 +204,7 @@ public sealed class RedisOffDirectPublishTests
         var handle = await invoker.SubmitAsync(StylePresetRequest(), Caller(LayerWriteKeyRole));
 
         handle.Status.Should().Be(OperationHandleStatus.Denied, handle.Reason);
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
     }
 
     [UnitTest]
@@ -227,7 +227,7 @@ public sealed class RedisOffDirectPublishTests
 
         refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await catalog.DidNotReceiveWithAnyArgs().AssociatePrimaryLayerAsync(default, default!, default);
     }
 
     [Theory]
@@ -407,14 +407,15 @@ public sealed class RedisOffDirectPublishTests
     private static IStyleCatalog StyleCatalog()
     {
         var catalog = Substitute.For<IStyleCatalog>();
-        catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(new StyleCatalogRecord
+        var preset = new StyleCatalogRecord
         {
             StyleId = StyleId,
             Title = "Flood depth",
             MapLibreStyleJson = "{\"version\":8,\"layers\":[]}",
             StyleVersion = 1,
-        });
-        catalog.AssociateLayerAsync(StyleStorageLayerId, StyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        };
+        catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(preset);
+        catalog.AssociatePrimaryLayerAsync(StyleStorageLayerId, StyleId, Arg.Any<CancellationToken>()).Returns(preset);
         return catalog;
     }
 
