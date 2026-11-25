@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1267,7 +1268,13 @@ public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
         var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
         // Match the fixture's password-authenticated admin principal. The real
         // temporary store binds this artifact to its existing ownership policy.
-        var owner = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], "test"));
+        var owner = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("auth_type", "admin"),
+            ],
+            AuthenticationExtensions.ApiKeyScheme));
         var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: owner);
         var sessionId = await InitializeAndGetSessionIdAsync();
         using var response = await PostRpcAsync(
