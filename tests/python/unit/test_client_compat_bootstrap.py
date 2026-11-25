@@ -88,11 +88,14 @@ def test_geoservices_stub_envelopes_are_neutral_and_never_claim_desktop_renderin
     monkeypatch.setenv("GEOSERVICES_STUB_LAYER_ID", "0")
     monkeypatch.setenv("GEOSERVICES_STUB_OUTPUT_DIR", str(tmp_path))
     root = Path(__file__).resolve().parents[3]
-    spec = importlib.util.spec_from_file_location("geoservices_stub_test", root / "docker/client-compat/geoservices-rest-stub/stub_runner.py")
+    stub_dir = root / "docker/client-compat/geoservices-rest-stub"
+    monkeypatch.syspath_prepend(str(stub_dir))
+    spec = importlib.util.spec_from_file_location("geoservices_stub_test", stub_dir / "stub_runner.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    results = module._finalize({key: module._new_result(key, "pass") for key in module.DESKTOP_ONLY})
+    finalized = module._finalize({key: module._new_result(key, "pass") for key in module.DESKTOP_ONLY})
+    results = [finalized[key] for key in module.CORE_IDS]
     for protocol in ("featureserver", "mapserver"):
         envelope = json.loads(module._write_envelope(protocol, results, "test").read_text())
         assert envelope["client_lane"] == "geoservices-rest-stub"
@@ -111,7 +114,9 @@ def test_retired_stub_environment_fails_closed(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "httpx", types.ModuleType("httpx"))
     monkeypatch.setenv("ARC" + "GIS_STUB_TIMEOUT", "1")
-    spec = importlib.util.spec_from_file_location("retired_stub_test", ROOT / "docker/client-compat/geoservices-rest-stub/stub_runner.py")
+    stub_dir = ROOT / "docker/client-compat/geoservices-rest-stub"
+    monkeypatch.syspath_prepend(str(stub_dir))
+    spec = importlib.util.spec_from_file_location("retired_stub_test", stub_dir / "stub_runner.py")
     assert spec and spec.loader
     with pytest.raises(SystemExit, match="Retired stub environment settings"):
         spec.loader.exec_module(importlib.util.module_from_spec(spec))

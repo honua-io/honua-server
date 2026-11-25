@@ -10184,7 +10184,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_HappyPath_ReturnsLocationsArray",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Alias_WithoutEntitlement_Returns402"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Alias_WithoutEntitlement_Returns402",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_EntitlementDenied_DoesNotCallProvider"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -10198,7 +10199,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_ReturnsGeoServicesPayload"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_ReturnsGeoServicesPayload",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_NoProviderMatch_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_ProviderAuthenticationDenied_HidesProviderDiagnostic"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -11663,6 +11666,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.CountryCodes_MalformedFilterReturns400_ValidFilterReachesProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeAddresses_WithOutFields_ProjectsAttributes",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_EntitlementDenied_DoesNotCallProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithEnterpriseEntitlement_ReachesEndpoint",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithProEntitlement_StillReturns402",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithoutEntitlement_Returns402WithEntitlementDetail"
@@ -11688,6 +11692,8 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithInvalidDistance_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithLangCode_PassesLanguageCodeToProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_NoProviderMatch_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_ProviderAuthenticationDenied_HidesProviderDiagnostic",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_WithoutAnyLicense_Succeeds"
       ],
       "proof_ledger_surface": "geocode-server",
@@ -23326,7 +23332,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_BlankAddressInBatch_EmitsUnmatchedSlotAndHonorsClientResultIdOnRootPostAlias"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_BlankAddressInBatch_EmitsUnmatchedSlotAndHonorsClientResultIdOnRootPostAlias",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_EntitlementDenied_DoesNotCallProvider"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -23340,7 +23347,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.RootGeocodeServerAliases_Post_SupportSuggestAndReverseGeocode"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.RootGeocodeServerAliases_Post_SupportSuggestAndReverseGeocode",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_NoProviderMatch_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_ProviderAuthenticationDenied_HidesProviderDiagnostic"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -24349,6 +24358,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriJsonOutSr_AcceptsSpatialReferenceObject",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ResultIdEchoesRecordObjectId_FallingBackToOneBasedPosition",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_EntitlementDenied_DoesNotCallProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Post_WithoutEntitlement_Returns402WithEntitlementDetail"
       ],
       "proof_ledger_surface": "geocode-server",
@@ -24364,7 +24374,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_Post_ReturnsGeoServicesPayload",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_ReturnsGeoServicesPayload"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_ReturnsGeoServicesPayload",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_NoProviderMatch_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_ProviderAuthenticationDenied_HidesProviderDiagnostic"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
