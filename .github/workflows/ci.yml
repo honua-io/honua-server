@@ -2211,6 +2211,9 @@ jobs:
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
+        env:
+          # Parallel compatibility tests share the loopback server query budget.
+          RateLimiting__QueryRequestsPerMinute: "1000"
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           post-seed-yaml: tests/seed/browser-compat.yaml
@@ -2356,6 +2359,9 @@ jobs:
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
+        env:
+          # Parallel compatibility tests share the loopback server query budget.
+          RateLimiting__QueryRequestsPerMinute: "1000"
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 

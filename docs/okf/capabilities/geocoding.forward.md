@@ -19,7 +19,7 @@ Convert a freeform address to coordinates using configured providers.
 | Status | ga |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
-| Proving tests | 66 |
+| Proving tests | 68 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

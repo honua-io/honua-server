@@ -19,7 +19,7 @@ Liveness/readiness health-check endpoints.
 | Status | ga |
 | Surface maturity | 21 implemented |
 | Registry entries | 21 |
-| Proving tests | 91 |
+| Proving tests | 95 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

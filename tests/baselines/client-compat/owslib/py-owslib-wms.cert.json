@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
-  "run_id": "20261116T165908Z",
-  "run_date": "2026-11-16T16:59:08.963176+00:00",
+  "run_id": "20261125T180646Z",
+  "run_date": "2026-11-25T18:06:46.547366+00:00",
   "server_version": "2026.1.1",
-  "server_commit": "95de72df386e4cb9ed9e656c017a0e66292614f3",
+  "server_commit": "693214ef504a5d21b1524245f815c36d6e28fecb",
   "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
   "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "py-owslib",
@@ -68,7 +68,7 @@
       "duration_ms": 0,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Layer '2000': queryable=1, abstract present, CRS options ['EPSG:4326', 'CRS:84', 'EPSG:3857'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
+      "notes": "Layer '2000': queryable=1, abstract present, CRS options ['CRS:84', 'EPSG:4326', 'EPSG:3857'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -145,7 +145,7 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 15,
+      "duration_ms": 12,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "OWSLib emitted the WMS 1.3.0 CRS parameter (crs=EPSG:3857, never the 1.1.1 SRS spelling) for a CRS the layer advertises, and the server returned rendered content at the requested size instead of a ServiceException. The response is imagery, so the CRS is substantiated by the request/response pair plus the CRS:84/EPSG:4326 axis-order equivalence proved in NB-OWS-WMS-MAP-02.",
@@ -155,7 +155,7 @@
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 3,
+      "duration_ms": 2,
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" version='",
@@ -175,7 +175,7 @@
     {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 15,
+      "duration_ms": 10,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "GetMap returned a decodable 256x200 PNG at the requested size and format, with 173 non-transparent pixels over the seeded extent. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
