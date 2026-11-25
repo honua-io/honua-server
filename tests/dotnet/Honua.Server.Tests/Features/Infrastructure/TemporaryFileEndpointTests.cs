@@ -5,6 +5,8 @@ using System.Net;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -12,6 +14,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
@@ -31,7 +34,7 @@ public sealed class TemporaryFileEndpointTests : IDisposable
     public async Task GetTemporaryFile_WithAuthenticatedOwner_AllowsOwnerAndRejectsAnonymousOrCrossSchemeReplay()
     {
         using var factory = CreateFactory();
-        var owner = CreateBootstrapAdminPrincipal();
+        var owner = CreateBootstrapAdminPrincipal(factory);
         var fileId = await StoreTemporaryFileAsync(factory, owner);
 
         using var anonymousClient = factory.CreateClient();
@@ -93,15 +96,18 @@ public sealed class TemporaryFileEndpointTests : IDisposable
         });
     }
 
-    private static ClaimsPrincipal CreateBootstrapAdminPrincipal()
+    private static ClaimsPrincipal CreateBootstrapAdminPrincipal(WebApplicationFactory<Program> factory)
     {
-        return new ClaimsPrincipal(new ClaimsIdentity(
+        var defaultTenantId = factory.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value.DefaultTenantId;
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
         [
             new Claim(ClaimTypes.Name, "admin"),
             new Claim(ClaimTypes.Role, "admin"),
             new Claim("auth_type", "admin"),
             new Claim("api_key_id", ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString("D"))
         ], AuthenticationExtensions.ApiKeyScheme));
+        CanonicalSecurityActor.StampRequestBinding(principal, defaultTenantId);
+        return principal;
     }
 
     private static ClaimsPrincipal CreatePrincipal(string name)

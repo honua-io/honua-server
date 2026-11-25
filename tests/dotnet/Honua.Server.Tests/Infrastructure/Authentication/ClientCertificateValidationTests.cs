@@ -743,7 +743,7 @@ public sealed class ClientCertificateValidationTests
             serial);
     }
 
-    private static (X509Certificate2 CaPublic, X509Certificate2 Leaf) CreateChainedCertificate(
+    internal static (X509Certificate2 CaPublic, X509Certificate2 Leaf) CreateChainedCertificate(
         string caSubject,
         string leafSubject,
         string sanUri)
