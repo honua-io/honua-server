@@ -58,7 +58,7 @@ const COMMON_CORE_IDS = [
 // pagination, and geometry-fidelity categories do not (Cesium does not expose
 // vector-feature query semantics for these protocols).
 const APPLICABLE_PER_PROTOCOL: Record<string, ReadonlySet<string>> = {
-  elevation: new Set(['CERT-QFLT-01']),
+  elevation: new Set(['CERT-CONN-01']),
   'quantized-mesh': new Set(['CERT-CONN-01']),
   wms: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',

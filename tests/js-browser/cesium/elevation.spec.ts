@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { createViewer } from './support/cesium-harness.js';
 import { POINT_CENTER, POINT_LAYER_ID, SEED_ELEVATION_METERS } from './support/constants.js';
 
-test('[CERT-QFLT-01] Cesium Resource queries the seeded elevation at a geographic point', async ({ page }) => {
+test('[CERT-CONN-01][JS-CES-ELEV-01] Cesium Resource queries the seeded elevation at a geographic point', async ({ page }) => {
   const { proxyOrigin } = await createViewer(page);
   const elevation = await page.evaluate(async ({ proxyOrigin, coordinates, layerId }) => {
     const Cesium = (window as any).Cesium;

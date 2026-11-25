@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "20261125T065257Z",
-  "run_date": "2026-11-25T06:52:57.496Z",
+  "run_id": "s-image-trim-elevation-final",
+  "run_date": "2026-11-25T06:59:10.470Z",
   "server_version": "9fd3f4b24ae3a9850640f6ec26133df9de057e41",
   "client_lane": "js-cesium",
   "client_version": "1.142.0",
@@ -10,8 +10,8 @@
   "results": [
     {
       "test_case_id": "CERT-CONN-01",
-      "status": "not-applicable",
-      "duration_ms": null,
+      "status": "pass",
+      "duration_ms": 1309,
       "measured_count": null,
       "measured_delta": null,
       "notes": "",
@@ -82,8 +82,8 @@
     },
     {
       "test_case_id": "CERT-QFLT-01",
-      "status": "pass",
-      "duration_ms": 1806,
+      "status": "not-applicable",
+      "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
       "notes": "",
@@ -233,5 +233,15 @@
     "not_applicable": 23
   },
   "cite_results": null,
-  "extensions": []
+  "extensions": [
+    {
+      "test_case_id": "JS-CES-ELEV-01",
+      "status": "pass",
+      "duration_ms": 1309,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    }
+  ]
 }
