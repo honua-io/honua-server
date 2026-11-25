@@ -113,7 +113,7 @@ internal sealed partial class AdminOidcCallbackEndpoint(
         or UnicodeCategory.ParagraphSeparator or UnicodeCategory.SpaceSeparator or UnicodeCategory.PrivateUse
         or UnicodeCategory.OtherNotAssigned));
 
-    [GeneratedRegex("^/console/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^/console/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?\z", RegexOptions.CultureInvariant)]
     private static partial Regex AllowedReturnPath();
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,64}$", RegexOptions.CultureInvariant)]

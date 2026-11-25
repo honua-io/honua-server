@@ -304,6 +304,7 @@ public sealed partial class AdminAuthEndpointsTests
         [InlineData("/admin/")]
         [InlineData("/console/auth/signin")]
         [InlineData("/console//operate/settings")]
+        [InlineData("/console/publish\n")]
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_UnlistedReturnPath_IsRejected(string returnTo)
         {
