@@ -11,11 +11,15 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 
@@ -196,22 +200,27 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
     {
         // The same signed subject owns the artifact and holds the admin role in
         // every case. Only OAuth scope narrowing distinguishes these outcomes.
-        var owner = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.NameIdentifier, "operator-123"),
-                new Claim("iss", Issuer),
-                new Claim("tid", "scope-test-tenant"),
-            ],
-            "Bearer"));
+        var token = CreateToken(scope);
+        await using var services = _fixture.Services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = services.ServiceProvider };
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token).ToString();
+        var owner = await context.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme);
+        owner.Succeeded.Should().BeTrue();
+        context.User = owner.Principal!;
+        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            services.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
+        await tenantMiddleware.InvokeAsync(context);
         var bytes = new byte[] { 137, 80, 78, 71 };
-        var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
-        var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: owner);
+        var store = services.ServiceProvider.GetRequiredService<ITemporaryFileService>();
+        var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: context.User);
         var alias = TemporaryFileResource.UriPrefix + uri[(uri.LastIndexOf('/') + 1)..];
         foreach (var resourceUri in new[] { uri, alias })
         {
             var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":"
                 + JsonSerializer.Serialize(resourceUri) + "}}";
-            using var response = await CallAsync(request, CreateToken(scope));
+            using var response = await CallAsync(request, token);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = await ReadJsonAsync(response);
             if (allowed)
