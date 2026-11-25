@@ -6,7 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -145,7 +144,7 @@ internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
         }
 
         var request = BuildRequest(argument, artifact, sourceId, connectionId, schema, table);
-        var context = PolicyContext(httpContext, authorizationOutcome);
+        var context = PublishServiceTool.PolicyContext(httpContext, authorizationOutcome);
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
 
@@ -155,21 +154,6 @@ internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
                 McpJsonContext.Default.McpPublishResultOutput);
     }
 
-    private static OperationPolicyContext PolicyContext(HttpContext httpContext, string authorizationOutcome)
-    {
-        var principal = httpContext.User;
-        return new OperationPolicyContext
-        {
-            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
-            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
-            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-            AuthorizationOutcome = authorizationOutcome,
-            Roles = AgentPrincipal.EffectiveRoles(principal),
-            ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
-            RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
-                .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
-        };
-    }
 
     private static ArtifactRef SelectArtifact(AnalysisResultPackage package, string? artifactId)
     {

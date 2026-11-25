@@ -87,7 +87,7 @@ internal sealed class PublishServiceTool : IMcpTool, IMcpInputRequiredTool
         return ApprovalContinuation.TryRequest(httpContext, handle) ?? PublishResponse(handle);
     }
 
-    private static OperationPolicyContext PolicyContext(HttpContext httpContext, string authorizationOutcome)
+    internal static OperationPolicyContext PolicyContext(HttpContext httpContext, string authorizationOutcome)
     {
         var principal = httpContext.User;
         return new OperationPolicyContext
