@@ -2044,6 +2044,10 @@ makes that one retry due now, the state the backoff would reach on its own. The
 real worker still claims, runs and fails every attempt, and the terminal status,
 attempt count, error and empty artifacts are asserted as before.
 
+The GeoServices GPServer and NAServer 1 fixture signals the production worker
+after each committed retry visibility update. The update loop still handles
+the worker's two-write requeue and checks the original retry schedule.
+
 `EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
 took 86 seconds in STAC API Governance 2. It built a path regex for every
 (registry endpoint, test method body) pair through `Regex.IsMatch`, whose static
