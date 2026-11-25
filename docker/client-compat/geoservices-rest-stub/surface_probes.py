@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from io import BytesIO
 
 import httpx
 
@@ -41,6 +42,8 @@ def geometry_service(client: httpx.Client, services: str) -> bool:
 
 
 def image_server(client: httpx.Client, service: str) -> bool:
+    from PIL import Image
+
     response = client.get(
         f"{service}/ImageServer/exportImage",
         params={
@@ -53,21 +56,37 @@ def image_server(client: httpx.Client, service: str) -> bool:
         },
     )
     response.raise_for_status()
-    return (
-        response.headers.get("content-type") == "image/png"
-        and response.content.startswith(b"\x89PNG\r\n\x1a\n")
-    )
+    if response.headers.get("content-type") != "image/png":
+        return False
+    try:
+        with Image.open(BytesIO(response.content), formats=["PNG"]) as image:
+            if image.size != (32, 32):
+                return False
+            image.verify()
+        with Image.open(BytesIO(response.content), formats=["PNG"]) as image:
+            image.load()
+    except (OSError, SyntaxError):
+        return False
+    return True
 
 
-def services_directory(client: httpx.Client, services: str, service_name: str) -> bool:
+def services_directory(client: httpx.Client, services: str, service_name: str, locator_name: str) -> bool:
     response = client.get(services, params={"f": "json"})
-    return any(
-        service["name"] == service_name and service["type"] == "FeatureServer"
+    discovered = {
+        (service["name"], service["type"])
         for service in response.raise_for_status().json()["services"]
-    )
+    }
+    return {
+        (service_name, "FeatureServer"),
+        (service_name, "VectorTileServer"),
+        (locator_name, "GeocodeServer"),
+    }.issubset(discovered)
 
 
 def vector_tile_server(client: httpx.Client, service: str) -> bool:
+    import mapbox_vector_tile
+    from google.protobuf.message import DecodeError
+
     response = client.get(f"{service}/VectorTileServer", params={"f": "json"})
     tile_info = response.raise_for_status().json()["tileInfo"]
     if tile_info["spatialReference"]["latestWkid"] != 3857 or tile_info["lods"][0]["level"] != 0:
@@ -75,10 +94,13 @@ def vector_tile_server(client: httpx.Client, service: str) -> bool:
 
     response = client.get(f"{service}/VectorTileServer/tile/0/0/0.pbf")
     response.raise_for_status()
-    return (
-        response.headers.get("content-type") == "application/vnd.mapbox-vector-tile"
-        and bool(response.content)
-    )
+    if response.headers.get("content-type") != "application/vnd.mapbox-vector-tile":
+        return False
+    try:
+        layers = mapbox_vector_tile.decode(response.content)
+    except DecodeError:
+        return False
+    return bool(layers.get("layer", {}).get("features"))
 
 
 def i3s_scene(client: httpx.Client, scene: str) -> bool:

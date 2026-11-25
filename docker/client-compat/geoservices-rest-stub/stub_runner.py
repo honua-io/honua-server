@@ -747,7 +747,7 @@ def _exercise_additional_surfaces(client: httpx.Client, run_id: str) -> bool:
         ("geocode-server", "CERT-GEOCODE-01", surface_probes.geocode_server, (services, locator_name)),
         ("geometry-service", "CERT-GEOMETRY-01", surface_probes.geometry_service, (services,)),
         ("image-server", "CERT-IMAGE-01", surface_probes.image_server, (service,)),
-        ("geoservices-root", "CERT-DIRECTORY-01", surface_probes.services_directory, (services, SERVICE_NAME)),
+        ("geoservices-root", "CERT-DIRECTORY-01", surface_probes.services_directory, (services, SERVICE_NAME, locator_name)),
         ("vector-tile-server", "CERT-VECTOR-TILE-01", surface_probes.vector_tile_server, (service,)),
         ("i3s", "CERT-I3S-01", surface_probes.i3s_scene, (scene,)),
     )
