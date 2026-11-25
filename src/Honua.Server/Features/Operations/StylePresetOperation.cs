@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.Styling;
 
@@ -105,10 +106,8 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             var catalog = services.GetRequiredService<IStyleCatalog>();
             var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
             var styleId = Required(request, "styleId");
-            if (!await catalog.AssociateLayerAsync(storageLayerId, styleId, 0, cancellationToken).ConfigureAwait(false))
-            {
-                throw new InvalidOperationException("The style or layer no longer exists; no preset association was applied.");
-            }
+            var preset = await catalog.AssociatePrimaryLayerAsync(storageLayerId, styleId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The style or layer no longer exists; no preset association was applied.");
 
             string? warning = null;
             try
@@ -146,8 +145,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
                 Result = new OperationResultSummary
                 {
                     Summary = "Applied layer style preset.",
-                    Details = warning is null ? new Dictionary<string, string>()
-                        : new Dictionary<string, string> { ["metadataReconciliationPending"] = bool.TrueString },
+                    Details = RecordedDetails(request, preset, warning),
                 },
             };
         }
@@ -156,6 +154,30 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             RecordFailure(activity, exception);
             throw;
         }
+    }
+
+    private static Dictionary<string, string> RecordedDetails(OperationRequest request, StyleCatalogRecord preset, string? warning)
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["serviceId"] = Required(request, "serviceId"),
+            ["serviceLayerIndex"] = Required(request, "serviceLayerIndex"),
+            ["styleId"] = preset.StyleId,
+            ["styleVersion"] = preset.StyleVersion.ToString(CultureInfo.InvariantCulture),
+        };
+        foreach (var key in new[] { "expectedPublicationId", "expectedResourceId", "expectedStorageBindingId", "expectedStorageLayerId" })
+        {
+            details[key] = Required(request, key);
+        }
+        if (preset.Title is { } title)
+        {
+            details["styleTitle"] = title;
+        }
+        if (warning is not null)
+        {
+            details["metadataReconciliationPending"] = bool.TrueString;
+        }
+        return details;
     }
 
     private static Activity? StartActivity(OperationRequest request, string phase)

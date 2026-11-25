@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -10,12 +11,14 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-internal abstract class StudioCompositionToolBase : StudioDraftToolBase
+internal abstract class StudioCompositionToolBase : StudioDraftToolBase, IMcpInputRequiredTool
 {
     protected StudioCompositionToolBase(IGeoprocessingJobService jobService, ILogger logger)
         : base(jobService, logger)
     {
     }
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval;
 
     protected sealed record CompositionEdit(
         HttpContext HttpContext,
@@ -25,13 +28,13 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
         Guid DraftId,
         long ExpectedGeneration);
 
-    protected Task<StudioPackageDraft> MutateCompositionAsync(
+    protected Task<DraftUpdateResult> MutateCompositionAsync(
         CompositionEdit edit,
         Func<StudioCompositionBody, StudioCompositionBody> mutate,
         CancellationToken cancellationToken) =>
         MutateEnvelopeAsync(edit, envelope => StudioCompositionBodyEditor.EditBody(envelope, mutate), cancellationToken);
 
-    protected async Task<StudioPackageDraft> MutateEnvelopeAsync(
+    protected async Task<DraftUpdateResult> MutateEnvelopeAsync(
         CompositionEdit edit,
         Func<StudioPackageEnvelope, StudioPackageEnvelope> mutate,
         CancellationToken cancellationToken)
@@ -59,7 +62,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
                 EnvelopeOnlyUpdate(draft, envelope, edit.ExpectedGeneration, actorId),
                 cancellationToken).ConfigureAwait(false);
 
-            Audit(edit.Principal, edit.ToolName, edit.DraftId, generationBefore: edit.ExpectedGeneration, generationAfter: updated.Generation);
+            AuditUpdate(edit, updated);
             return updated;
         }
         catch (Exception ex) when (ex is StudioCompositionFamilyException
@@ -70,6 +73,15 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
         {
             throw TranslateCompositionError(ex);
         }
+    }
+
+    private void AuditUpdate(CompositionEdit edit, DraftUpdateResult updated)
+    {
+        if (updated.Draft is { } completed)
+        {
+            Audit(edit.Principal, edit.ToolName, edit.DraftId, generationBefore: edit.ExpectedGeneration, generationAfter: completed.Generation);
+        }
+
     }
 
     protected static Exception TranslateCompositionError(Exception exception) => exception switch

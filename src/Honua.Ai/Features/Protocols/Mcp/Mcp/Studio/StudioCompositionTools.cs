@@ -12,75 +12,6 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
-{
-    public const string ToolName = "honua_studio_add_layer";
-
-    private readonly ILogger<AddStudioLayerTool> _typedLogger;
-
-    public AddStudioLayerTool(IGeoprocessingJobService jobService, ILogger<AddStudioLayerTool> logger)
-        : base(jobService, logger)
-    {
-        _typedLogger = logger;
-    }
-
-    public string Name => ToolName;
-
-    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
-
-    public McpToolDescriptor Describe() => new()
-    {
-        Name = ToolName,
-        Title = "Add Studio layer",
-        Description = "Add a layer to a map/app/dashboard draft. Set layer.sourceId to studioSourceId from honua_list_layers; layer.id is presentation identity. Needs no sourceBindings or mapSpec export. Duplicate ids or other families fail invalid_argument.",
-        InputSchema = StudioMcpSchemas.AddLayerArgumentSchema,
-        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
-        Annotations = McpToolAnnotationSets.Write("Add Studio layer", destructive: false, idempotent: false)
-    };
-
-    public async Task<McpToolsCallResult> InvokeAsync(
-        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
-    {
-        McpTelemetry.EnrichActivity("StudioAddLayer");
-        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
-
-        var principal = await EnsureAuthorizedAsync(
-                httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
-            .ConfigureAwait(false);
-        var lifecycleService = RequireLifecycleService(httpContext);
-
-        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
-        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var generation = RequireGeneration(argument.Generation);
-        var layerInput = argument.Layer ?? throw new GeoprocessingValidationException("'layer' is required.");
-        if (string.IsNullOrWhiteSpace(layerInput.Id))
-        {
-            throw new GeoprocessingValidationException("'layer.id' is required.");
-        }
-
-        var layer = new StudioCompositionLayer
-        {
-            Id = layerInput.Id,
-            SourceId = layerInput.SourceId,
-            Type = layerInput.Type,
-            Title = layerInput.Title,
-            Visible = layerInput.Visible ?? true,
-            StyleRef = layerInput.StyleRef,
-            Metadata = layerInput.Metadata,
-        };
-
-        var updated = await MutateCompositionAsync(
-            new CompositionEdit(httpContext, principal, lifecycleService, ToolName, draftId, generation),
-            body => StudioCompositionBodyEditor.AddLayer(body, layer, argument.BeforeId),
-            cancellationToken).ConfigureAwait(false);
-
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
-    }
-
-    internal static long RequireGeneration(long? generation) => generation
-        ?? throw new GeoprocessingValidationException("'generation' is required.");
-}
-
 internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpTool
 {
     public const string ToolName = "honua_studio_remove_layer";
@@ -118,6 +49,11 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveLayerArgument);
@@ -133,7 +69,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
             envelope => StudioCompositionDocumentEditor.RemoveLayer(envelope, argument.LayerId!),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -174,6 +110,11 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioSetLayerStyleArgument);
@@ -195,7 +136,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
                 body => StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
                 cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 
     private static bool RequestsInlineStyle(McpStudioSetLayerStyleArgument argument)
@@ -251,6 +192,11 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(
@@ -273,7 +219,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
             body => StudioCompositionBodyEditor.SetLayerVisibility(body, argument.LayerId!, visible),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -312,6 +258,11 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioSetViewArgument);
@@ -334,7 +285,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
             body => StudioCompositionViewEditor.MergeView(body, view),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -373,6 +324,11 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddWidgetArgument);
@@ -403,7 +359,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
             body => StudioCompositionBodyEditor.AddWidget(body, widget),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -442,6 +398,11 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveWidgetArgument);
@@ -457,7 +418,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
             body => StudioCompositionBodyEditor.RemoveWidget(body, argument.WidgetId!),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -502,6 +463,11 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioBindInteractionArgument);
@@ -514,7 +480,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
             body => StudioCompositionBodyEditor.BindInteraction(body, interaction),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 
     private static StudioInteraction BuildInteraction(McpStudioInteractionInput? input)
@@ -621,6 +587,11 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveInteractionArgument);
@@ -642,7 +613,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
             body => StudioCompositionBodyEditor.RemoveInteraction(body, argument.InteractionId!),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }
 
@@ -687,6 +658,11 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddControlArgument);
@@ -699,7 +675,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
             body => StudioCompositionBodyEditor.AddControl(body, control),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 
     private static StudioCompositionControl BuildControl(McpStudioControlInput? input)
@@ -788,6 +764,11 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveControlArgument);
@@ -810,6 +791,6 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
             body => StudioCompositionBodyEditor.RemoveControl(body, argument.ControlId!, cascade),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }

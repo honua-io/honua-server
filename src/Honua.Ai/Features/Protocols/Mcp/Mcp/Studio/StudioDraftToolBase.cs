@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
 // Tools are singletons and resolve scoped lifecycle services from RequestServices, because a singleton constructor would capture those scoped dependencies.
-internal abstract class StudioDraftToolBase
+internal abstract partial class StudioDraftToolBase
 {
     // The dispatcher hides tool names from anonymous callers, but a known Studio call is still audited.
     internal static void RecordAnonymousAuthorizationDenied(
@@ -262,7 +262,7 @@ internal abstract class StudioDraftToolBase
             decision).ConfigureAwait(false);
     }
 
-    protected static async Task<StudioPackageDraft> ApplyUpdateAsync(
+    protected static async Task<DraftUpdateResult> ApplyUpdateAsync(
         HttpContext httpContext,
         ClaimsPrincipal principal,
         Guid draftId,
@@ -290,29 +290,24 @@ internal abstract class StudioDraftToolBase
                 cancellationToken)
                 .ConfigureAwait(false);
 
+            if (Honua.Ai.Protocols.Mcp.Mrtr.ApprovalContinuation.TryRequest(httpContext, receipt.Operation) is { } inputRequired)
+            {
+                return new DraftUpdateResult(null, inputRequired);
+            }
+
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
                 ThrowMutationOutcome(receipt.Operation);
             }
 
-            return receipt.Value
-                ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+            return new DraftUpdateResult(receipt.Value
+                ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found."), null);
         }
         catch (Exception ex) when (
             ex is InvalidOperationException or GeoprocessingPreconditionFailedException
-            && string.Equals(ex.Message, "Stale draft generation; refresh and retry.", StringComparison.Ordinal))
+            && string.Equals(ex.Message, StudioDraftGenerationConflictException.ConflictMessage, StringComparison.Ordinal))
         {
-            // A writer may win the store CAS after the initial authorized read. Re-authorize
-            // the new snapshot before exposing its generation; never replay the mutation here.
-            var current = await RequireAuthorizedDraftAsync(
-                httpContext,
-                principal,
-                RequireLifecycleService(httpContext),
-                draftId,
-                StudioAuthorizationOperation.UpdateDraft,
-                OperatorOperation.Create,
-                cancellationToken).ConfigureAwait(false);
-            throw new StudioDraftGenerationConflictException(current.Generation);
+            throw await ReadGenerationConflictAsync(httpContext, new(principal, draftId), cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {

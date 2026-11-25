@@ -76,7 +76,7 @@ public sealed class McpMrtrApprovalTests
         var output = result.StructuredContent!.Value;
         output.GetProperty("status").GetString().Should().Be(expected);
         output.GetProperty("proposalId").GetString().Should().Be(ProposalId);
-        result.IsError.Should().Be(expected == "Failed");
+        result.IsError.Should().Be(expected is "Failed" or "Rejected" or "Cancelled");
     }
 
     [UnitTheory]
@@ -129,7 +129,7 @@ public sealed class McpMrtrApprovalTests
         output.GetProperty("status").GetString().Should().Be(status.ToString());
         output.GetProperty("updatedAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
         output.GetProperty("message").GetString().Should().Be(operation.Reason);
-        result.IsError.Should().Be(status == OperationHandleStatus.Failed);
+        result.IsError.Should().Be(status is OperationHandleStatus.Failed or OperationHandleStatus.Cancelled);
         var text = result.Content.Last(block => block.Type == "text").Text!;
         JsonNode.DeepEquals(JsonNode.Parse(text), JsonNode.Parse(output.GetRawText())).Should().BeTrue();
     }

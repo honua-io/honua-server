@@ -153,6 +153,34 @@ internal static class McpToolOutputSchemas
         return Parse(root.ToJsonString());
     }
 
+    private static JsonElement IncludeApprovalStatus(JsonElement completedSchema)
+    {
+        var root = JsonNode.Parse(IncludeErrorEnvelope(completedSchema).GetRawText())!.AsObject();
+        var props = root["properties"]!.AsObject();
+        props["status"] = JsonNode.Parse("""{"type":"string"}""");
+        props["operationId"] ??= JsonNode.Parse("""{"type":"string"}""");
+        props["proposalId"] ??= JsonNode.Parse("""{"type":"string"}""");
+        props["jobId"] ??= JsonNode.Parse("""{"type":["string","null"]}""");
+        var branches = root["oneOf"]!.AsArray();
+        var success = branches[0]!.AsObject();
+        var error = branches[1]!.AsObject();
+        var notError = success["not"]!.DeepClone();
+        success.Remove("not");
+        var approval = JsonNode.Parse(
+            """{"required":["status","operationId","proposalId"],"properties":{"status":{"enum":["RequiresApproval","Running","Rejected","Cancelled","Failed","Indeterminate"]}}}""")!;
+        branches[0] = new JsonObject
+        {
+            ["not"] = notError,
+            ["anyOf"] = new JsonArray(success.DeepClone(), approval),
+        };
+        if (error["properties"] is not JsonObject)
+        {
+            error["properties"] = JsonNode.Parse("""{"status":{"const":"error"}}""")!;
+        }
+
+        return Parse(root.ToJsonString());
+    }
+
     private static bool AcceptsErrorEnvelope(JsonElement schema)
     {
         if (!schema.TryGetProperty("oneOf", out var branches)
@@ -204,7 +232,7 @@ internal static class McpToolOutputSchemas
             "estimatedDurationSeconds": { "type": "number" },
             "durationEstimateAvailable": {
               "type": "boolean",
-              "description": "When false (current default), estimatedDurationSeconds is a placeholder (the dry-run path does not model runtime cost), not a prediction — do not treat 0 as 'instant'."
+              "description": "False means estimatedDurationSeconds is a placeholder, not a runtime prediction."
             },
             "estimatedArtifacts": {
               "type": "array",
@@ -226,7 +254,7 @@ internal static class McpToolOutputSchemas
             "createdAt": { "type": "string", "format": "date-time" },
             "resourceUri": {
               "type": "string",
-              "description": "honua://jobs/{jobId} resource URI for polling lifecycle state via resources/read."
+              "description": "Job resource URI."
             }
           }
         }
@@ -256,18 +284,18 @@ internal static class McpToolOutputSchemas
             "proposalId": { "type": ["string", "null"] },
             "resourceUri": {
               "type": ["string", "null"],
-              "description": "honua://proposals/{proposalId} resource URI to poll when human approval is required."
+              "description": "Proposal resource URI."
             },
             "executionOperationId": { "type": ["string", "null"] },
             "supportedKinds": {
               "type": ["array", "null"],
               "items": { "type": "string" },
-              "description": "Operation classes with a genuinely registered executor (routable through the gateway); reported on every response, including rejections, so proposing an unsupported kind is never a silent dead end (#2563)."
+              "description": "Routable operation classes with a registered executor."
             },
             "message": { "type": ["string", "null"] },
             "result": {
               "type": ["object", "null"],
-              "description": "Canonical non-mutating result returned by planning tools."
+              "description": "Planning result."
             },
             "targets": {
               "type": ["array", "null"],
@@ -284,7 +312,7 @@ internal static class McpToolOutputSchemas
             },
             "code": {
               "type": ["string", "null"],
-              "description": "Stable rejection code, e.g. platform_release_version_mismatch when a convergence targetVersion differs from the declared release."
+              "description": "Rejection code."
             },
             "declaredVersion": { "type": ["string", "null"] },
             "targetVersion": { "type": ["string", "null"] },
@@ -302,7 +330,7 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": {
               "type": "string",
-              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, or Failed."
+              "description": "Operation handle status."
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
@@ -310,7 +338,7 @@ internal static class McpToolOutputSchemas
             "handleId": { "type": "string" },
             "durable": {
               "type": "boolean",
-              "description": "Present and false when the operation instance record was not durably persisted (a direct publish on a server started without the PostgreSQL system database). The ids and audit receipts are real; the handle cannot be polled afterwards."
+              "description": "False when the direct publish handle was not durably persisted and cannot be polled."
             },
             "proposalId": { "type": ["string", "null"] },
             "correlationId": { "type": "string" },
@@ -321,28 +349,28 @@ internal static class McpToolOutputSchemas
             "policyOutcome": { "type": ["string", "null"] },
             "serviceUri": {
               "type": ["string", "null"],
-              "description": "honua://published-services/{serviceName} URI of the published service when the publish completed."
+              "description": "honua://published-services/{serviceName} URI on completion."
             },
             "storageLayerId": {
               "type": ["string", "null"],
-              "description": "Internal storage layer id used by global admin layer routes."
+              "description": "Storage layer id."
             },
             "serviceLayerIndex": {
               "type": ["string", "null"],
-              "description": "Service-local index for routes and MCP map tools."
+              "description": "Service-local layer index."
             },
             "serviceName": { "type": ["string", "null"] },
             "metadataRevision": {
               "type": ["integer", "null"],
-              "description": "Metadata v2 graph revision produced by the publish."
+              "description": "Resulting metadata revision."
             },
             "jobId": {
               "type": ["string", "null"],
-              "description": "Durable job id when the operation was queued."
+              "description": "Queued job id."
             },
             "approvalLane": {
               "type": ["string", "null"],
-              "description": "Approval lane to wait on when the publish requires human approval."
+              "description": "Approval lane when approval is required."
             },
             "summary": { "type": ["string", "null"] },
             "message": { "type": ["string", "null"] },
@@ -361,7 +389,7 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": {
               "type": "string",
-              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, Denied, or Failed."
+              "description": "Operation handle status."
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
@@ -376,31 +404,31 @@ internal static class McpToolOutputSchemas
             "policyOutcome": { "type": ["string", "null"] },
             "sourceJobId": {
               "type": ["string", "null"],
-              "description": "The completed analysis job id whose artifact was promoted."
+              "description": "Source job id."
             },
             "artifactId": {
               "type": ["string", "null"],
-              "description": "The result artifact that was promoted."
+              "description": "Promoted artifact id."
             },
             "serviceUri": {
               "type": ["string", "null"],
-              "description": "honua://published-services/{serviceId} URI of the published service when the promotion completed."
+              "description": "honua://published-services/{serviceId} URI on completion."
             },
             "serviceId": {
               "type": ["string", "null"],
-              "description": "Published service id (name) — pass to honua_query_features / honua_render_map as serviceId."
+              "description": "Published serviceId."
             },
             "storageLayerId": {
               "type": ["string", "null"],
-              "description": "Internal storage layer id used by global admin layer routes."
+              "description": "Storage layer id."
             },
             "serviceLayerIndex": {
               "type": ["string", "null"],
-              "description": "Service-local index for honua_query_features and honua_render_map."
+              "description": "Service-local layer index."
             },
             "metadataRevision": {
               "type": ["integer", "null"],
-              "description": "Metadata v2 graph revision produced by the promotion."
+              "description": "Resulting metadata revision."
             },
             "jobId": {
               "type": ["string", "null"],
@@ -408,7 +436,7 @@ internal static class McpToolOutputSchemas
             },
             "approvalLane": {
               "type": ["string", "null"],
-              "description": "Approval lane to wait on when the promotion requires human approval."
+              "description": "Approval lane when approval is required."
             },
             "summary": { "type": ["string", "null"] },
             "message": { "type": ["string", "null"] },
@@ -430,7 +458,7 @@ internal static class McpToolOutputSchemas
             "engine": {
               "type": "string",
               "enum": ["live", "fixture"],
-              "description": "Which planner produced this response. engine:\"live\" means the plan was compiled from your intent by a provider-backed model; engine:\"fixture\" means the plan is a canned deterministic template returned because no LLM provider is configured - treat it as a capability demo, not a plan compiled from your intent."
+              "description": "Planner engine: live (LLM) or fixture (canned capability demo when no LLM is configured)."
             },
             "plan": { "type": ["object", "null"] },
             "specDraft": { "type": ["object", "null"] },
@@ -562,9 +590,9 @@ internal static class McpToolOutputSchemas
             "connectionId": { "type": ["string", "null"] },
             "schema": { "type": ["string", "null"] },
             "table": { "type": ["string", "null"] },
-            "srid": { "type": ["integer", "null"], "description": "SRID stored on the imported table." },
-            "sourceSrid": { "type": ["integer", "null"], "description": "Producer or explicitly chosen source SRID. Not a feature property." },
-            "crsState": { "type": ["string", "null"], "description": "known when the producer recorded one CRS; unknown when the caller had to choose sourceSrid." },
+            "srid": { "type": ["integer", "null"], "description": "Stored SRID." },
+            "sourceSrid": { "type": ["integer", "null"], "description": "Source SRID." },
+            "crsState": { "type": ["string", "null"], "description": "CRS provenance (known or unknown)." },
             "contentSha256": { "type": ["string", "null"] },
             "geometryColumn": { "type": ["string", "null"] },
             "primaryKey": { "type": ["string", "null"] },
@@ -585,10 +613,10 @@ internal static class McpToolOutputSchemas
             "rowCount": { "type": "integer" },
             "connectionId": {
               "type": ["string", "null"],
-              "description": "Registered secure-connection name/id for the catalog database that owns the imported table; pass to honua_publish_service. Null when no registered connection matches the catalog database."
+              "description": "Catalog connection id for honua_publish_service, or null."
             },
-            "schema": { "type": ["string", "null"], "description": "Schema that owns the imported table." },
-            "table": { "type": ["string", "null"], "description": "Physical table name to publish." },
+            "schema": { "type": ["string", "null"], "description": "Target schema." },
+            "table": { "type": ["string", "null"], "description": "Target table." },
             "srid": { "type": ["integer", "null"] },
             "sourceSrid": { "type": ["integer", "null"] },
             "storedSrid": { "type": ["integer", "null"] },
@@ -602,7 +630,7 @@ internal static class McpToolOutputSchemas
                 "type": "object",
                 "required": ["code", "message"],
                 "properties": {
-                  "row": { "type": ["integer", "null"], "description": "1-based data row (header excluded), when known." },
+                  "row": { "type": ["integer", "null"], "description": "1-based data row." },
                   "code": { "type": "string" },
                   "message": { "type": "string" },
                   "field": { "type": ["string", "null"] }
@@ -706,7 +734,7 @@ internal static class McpToolOutputSchemas
             },
             "features": {
               "type": "array",
-              "description": "MCP-friendly feature projection with attributes under features[].attributes. GeoJSON callers should use geojson.features[].properties.",
+              "description": "Feature list with attributes under features[].attributes.",
               "items": {
                 "type": "object",
                 "required": ["attributes"],
@@ -719,7 +747,7 @@ internal static class McpToolOutputSchemas
             },
             "geojson": {
               "type": "object",
-              "description": "RFC 7946 GeoJSON FeatureCollection. Omitted when returnCountOnly=true. When returnGeometry=false each feature's geometry is null.",
+              "description": "GeoJSON FeatureCollection (omitted when returnCountOnly=true).",
               "properties": {
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
@@ -728,7 +756,7 @@ internal static class McpToolOutputSchemas
             "warnings": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Non-fatal advisories, most importantly a likely bbox/CRS mismatch (e.g. projected ordinates under the geographic default bboxSrid=4326, or a bbox entirely outside the layer extent) that would silently return 0 features."
+              "description": "Non-fatal advisories such as likely bbox/CRS mismatch."
             },
             {{ToolErrorProperties}}
           }
@@ -763,11 +791,11 @@ internal static class McpToolOutputSchemas
                 "properties": {
                   "serviceId": { "type": "string" },
                   "serviceLayerIndex": { "type": "integer" },
-                  "styleId": { "type": ["string", "null"], "description": "The layer's applied (primary) catalog style; null when the stored default style rendered." },
+                  "styleId": { "type": ["string", "null"], "description": "Applied primary style id, or null for default." },
                   "styleRendering": {
                     "type": "string",
                     "enum": ["applied", "default", "unsupported-style-construct"],
-                    "description": "applied: the applied style was drawn. default: no applied style, the stored default style was drawn. unsupported-style-construct: unsupportedStyleConstructs lists what the server rasterizer did not draw (the default style is never substituted)."
+                    "description": "applied, default, or unsupported-style-construct."
                   },
                   "unsupportedStyleConstructs": { "type": "array", "items": { "type": "string" } }
                 }
@@ -801,14 +829,14 @@ internal static class McpToolOutputSchemas
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft Map was created."
+              "description": "Creation status."
             },
-            "mapId": { "type": "string", "description": "Stable map_… identifier for the created draft." },
+            "mapId": { "type": "string", "description": "Draft map id." },
             "resourceUri": { "type": "string", "description": "honua://maps/{mapId}." },
             "map": { "type": ["object", "null"], "description": "The created Map draft." },
             "warnings": {
               "type": "array",
-              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "description": "Non-blocking findings.",
               "items": {
                 "type": "object",
                 "required": ["code", "path", "message"],
@@ -832,14 +860,14 @@ internal static class McpToolOutputSchemas
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft App was created."
+              "description": "Creation status."
             },
-            "appId": { "type": "string", "description": "Stable app_… identifier for the created draft." },
+            "appId": { "type": "string", "description": "Draft app id." },
             "resourceUri": { "type": "string", "description": "honua://apps/{appId}." },
             "app": { "type": ["object", "null"], "description": "The created App draft." },
             "warnings": {
               "type": "array",
-              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "description": "Non-blocking findings.",
               "items": {
                 "type": "object",
                 "required": ["code", "path", "message"],
@@ -865,20 +893,20 @@ internal static class McpToolOutputSchemas
             "styleVersion": { "type": ["integer", "null"] },
             "encodings": {
               "type": ["array", "null"],
-              "description": "Advertised encodings for the resolved style (resolve mode).",
+              "description": "Style encodings.",
               "items": {
                 "type": "object",
                 "properties": {
                   "encoding": { "type": "string", "description": "mapbox-style, esri-drawing-info, sld-1.0.0, or sld-1.1.0." },
                   "mediaType": { "type": "string" },
-                  "inlineBody": { "type": ["string", "null"], "description": "Inlined stylesheet body for the selected encoding, when includeStylesheet=true." },
-                  "storageRef": { "type": ["string", "null"], "description": "honua://styles/{styleId} reference when the encoding is advertised by reference." }
+                  "inlineBody": { "type": ["string", "null"], "description": "Inline stylesheet body." },
+                  "storageRef": { "type": ["string", "null"], "description": "Style resource URI." }
                 }
               }
             },
             "styles": {
               "type": ["array", "null"],
-              "description": "Discovery catalog of available styles (list mode).",
+              "description": "Available styles.",
               "items": {
                 "type": "object",
                 "properties": {
@@ -892,34 +920,34 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    public static readonly JsonElement ApplyStylePresetOutputSchema = Parse(
+    private static readonly JsonElement ApplyStylePresetResultSchema = Parse(
         """
         {
           "type": "object",
           "required": ["serviceId", "serviceLayerIndex", "styleId", "applied", "status", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
-            "status": { "type": "string", "description": "Canonical operation handle status (Completed for an applied or previewed preset)." },
+            "status": { "type": "string", "description": "Operation handle status." },
             "operationId": { "type": "string", "const": "style.apply-preset" },
-            "operationInstanceId": { "type": "string", "minLength": 1 },
-            "handleId": { "type": "string", "minLength": 1 },
+            "operationInstanceId": { "type": "string" },
+            "handleId": { "type": "string" },
             "durable": {
               "type": "boolean",
-              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without the PostgreSQL system database). The ids and audit receipts are real; the handle cannot be polled afterwards."
+              "description": "False when the direct handle was not durably persisted."
             },
-            "correlationId": { "type": "string", "minLength": 1 },
-            "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },
+            "correlationId": { "type": "string" },
+            "auditId": { "type": ["string", "null"], "description": "Operation audit id." },
             "createdAt": { "type": "string", "format": "date-time" },
             "updatedAt": { "type": "string", "format": "date-time" },
             "authorizationOutcome": { "type": ["string", "null"] },
             "policyOutcome": { "type": ["string", "null"] },
             "serviceId": { "type": "string" },
             "serviceLayerIndex": { "type": "integer" },
-            "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },
+            "styleId": { "type": "string", "description": "Selected preset id." },
             "title": { "type": ["string", "null"] },
             "styleVersion": { "type": "integer" },
             "applied": { "type": "boolean" },
-            "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." },
-            "warning": { "type": ["string", "null"], "description": "Any follow-up needed after the style binding was applied." }
+            "dryRun": { "type": "boolean", "description": "True on dry-run validation." },
+            "warning": { "type": ["string", "null"], "description": "Follow-up warning, if any." }
           }
         }
         """);
@@ -932,20 +960,20 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": {
               "type": "string",
-              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, DryRunRequired, Denied, or Failed."
+              "description": "Operation handle status."
             },
             "requiresApproval": { "type": "boolean" },
             "deterministic": {
               "type": "boolean",
-              "description": "Whether the backing operation descriptor is deterministic (AI-free)."
+              "description": "True when deterministic."
             },
             "cacheHit": {
               "type": "boolean",
-              "description": "True when served from the param-keyed deterministic cache instead of re-executed."
+              "description": "True on deterministic cache hit."
             },
             "cacheKey": {
               "type": ["string", "null"],
-              "description": "Param-keyed cache key (operation id + catalog version + normalized parameters) for a deterministic, read-only invocation; null when not cacheable."
+              "description": "Deterministic cache key, or null."
             },
             "operationId": { "type": "string" },
             "operationInstanceId": { "type": "string" },
@@ -959,22 +987,22 @@ internal static class McpToolOutputSchemas
             "policyOutcome": { "type": ["string", "null"] },
             "jobId": {
               "type": ["string", "null"],
-              "description": "Durable job id when the operation was queued."
+              "description": "Queued job id."
             },
             "approvalLane": {
               "type": ["string", "null"],
-              "description": "Approval lane to wait on when the operation requires human approval."
+              "description": "Approval lane when required."
             },
             "metadataRevision": {
               "type": ["integer", "null"],
-              "description": "Metadata v2 graph revision produced by the operation, when it mutated the graph."
+              "description": "Resulting metadata revision."
             },
             "summary": { "type": ["string", "null"] },
             "message": { "type": ["string", "null"] },
             "details": {
               "type": "object",
               "additionalProperties": { "type": "string" },
-              "description": "Operation-specific result detail values keyed by name."
+              "description": "Operation result details."
             },
             "resourceIds": { "type": "object", "additionalProperties": { "type": "string" } },
             "evidenceRefs": { "type": "array", "items": { "type": "string" } }
@@ -982,7 +1010,8 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    public static readonly JsonElement StudioDraftOutputSchema = Parse(
+    public static readonly JsonElement ApplyStylePresetOutputSchema = IncludeApprovalStatus(ApplyStylePresetResultSchema);
+    public static readonly JsonElement StudioDraftResultSchema = Parse(
         """
         {
           "type": "object",
@@ -999,7 +1028,7 @@ internal static class McpToolOutputSchemas
             "baseVersionId": { "type": ["string", "null"] },
             "generation": {
               "type": "integer",
-              "description": "Pass this generation on the next draft mutation for optimistic concurrency."
+              "description": "Next mutation generation."
             },
             "createdBy": { "type": ["string", "null"] },
             "updatedBy": { "type": ["string", "null"] },
@@ -1009,6 +1038,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    public static readonly JsonElement StudioDraftOutputSchema = IncludeApprovalStatus(StudioDraftResultSchema);
     public static readonly JsonElement StudioDraftMutationOutputSchema = Parse(
         """
         {
