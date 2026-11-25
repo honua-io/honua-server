@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.GeometryService.Services;
 using Honua.TestKit;
@@ -53,7 +55,12 @@ public sealed class GeometryServiceAdmissionEndpointTests
         });
         using var response = await client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/densify", content);
 
-        await response.AssertGeoServicesErrorAsync(503);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be((int)HttpStatusCode.ServiceUnavailable);
+        error.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        error.GetProperty("retryAfterSeconds").GetInt32().Should().Be(1);
         response.Headers.RetryAfter.Should().NotBeNull();
         response.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(1));
         response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
