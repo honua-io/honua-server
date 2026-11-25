@@ -105,7 +105,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         writer.WriteStartObject();
         writer.WriteString("type", "Feature");
         writer.WritePropertyName("id");
-        FeatureIdConverter.WriteId(writer, OgcFeatureIdentifierResolver.GetPublicId(feature, plan.Resource));
+        WriteDirectValue(writer, OgcFeatureIdentifierResolver.GetPublicId(feature, plan.Resource));
         writer.WritePropertyName("geometry");
         WriteDirectGeometry(writer, feature.Geometry, plan);
         writer.WritePropertyName("properties");
