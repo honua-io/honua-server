@@ -34,8 +34,13 @@ public sealed partial class LayerPublishJobTests
         Assert.Equal("source-job", handle.Result!.Details[PublishResultAttribution.SourceJobDetailKey]);
         jobs.GetAsync("abc", Arg.Any<CancellationToken>()).Returns(new LayerPublishJobProgress
         {
-            OperationId = "abc", Status = ProgressStatus.Completed, RowsMaterialized = 12, RowsTotal = 12,
-            LayerId = 7, StartedAt = DateTimeOffset.UtcNow, CompletedAt = DateTimeOffset.UtcNow,
+            OperationId = "abc",
+            Status = ProgressStatus.Completed,
+            RowsMaterialized = 12,
+            RowsTotal = 12,
+            LayerId = 7,
+            StartedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
         });
         for (var attempt = 0; attempt < 2; attempt++)
         {

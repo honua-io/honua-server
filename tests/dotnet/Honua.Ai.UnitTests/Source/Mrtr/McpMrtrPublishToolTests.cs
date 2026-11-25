@@ -260,7 +260,9 @@ public sealed class McpMrtrPublishToolTests
             Summary = "Published",
             Details = new Dictionary<string, string>
             {
-                ["serviceName"] = "svc-parcels", ["serviceLayerIndex"] = "0", ["storageLayerId"] = "42",
+                ["serviceName"] = "svc-parcels",
+                ["serviceLayerIndex"] = "0",
+                ["storageLayerId"] = "42",
                 [PublishResultAttribution.SourceJobDetailKey] = "job-1",
                 [PublishResultAttribution.ArtifactDetailKey] = "artifact-1",
             },
