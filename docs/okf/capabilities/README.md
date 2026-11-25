@@ -82,7 +82,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [SAML 2.0 Authentication](identity.saml.md) | Identity | Enterprise | ga |
 | [SCIM 2.0 Provisioning](identity.scim.md) | Identity | Enterprise | ga |
 | [File Import](import.file.md) | Import | Community | ga |
-| [GeoServer Import](import.geoserver.md) | Import | Enterprise | ga |
+| [GeoServer Import](import.geoserver.md) | Import | Enterprise | **preview** |
 | [GeoServices Import](import.geoservices.md) | Import | Enterprise | ga |
 | [Durable Job Runtime](jobs.durable-runtime.md) | Jobs | Community | ga |
 | [Governed Operation Proposals](operations.proposals.md) | ControlPlane | Community | ga |

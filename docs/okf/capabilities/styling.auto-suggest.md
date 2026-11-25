@@ -19,7 +19,7 @@ Style suggestions based on field analysis and classification.
 | Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
-| Proving tests | 10 |
+| Proving tests | 25 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
