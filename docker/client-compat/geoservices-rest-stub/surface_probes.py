@@ -65,22 +65,18 @@ def image_server(client: httpx.Client, service: str) -> bool:
             image.verify()
         with Image.open(BytesIO(response.content), formats=["PNG"]) as image:
             image.load()
-    except (OSError, SyntaxError):
+    except (Image.DecompressionBombError, OSError, SyntaxError):
         return False
     return True
 
 
-def services_directory(client: httpx.Client, services: str, service_name: str, locator_name: str) -> bool:
+def services_directory(client: httpx.Client, services: str, expected: set[tuple[str, str]]) -> bool:
     response = client.get(services, params={"f": "json"})
     discovered = {
         (service["name"], service["type"])
         for service in response.raise_for_status().json()["services"]
     }
-    return {
-        (service_name, "FeatureServer"),
-        (service_name, "VectorTileServer"),
-        (locator_name, "GeocodeServer"),
-    }.issubset(discovered)
+    return expected.issubset(discovered)
 
 
 def vector_tile_server(client: httpx.Client, service: str) -> bool:

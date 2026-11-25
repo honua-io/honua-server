@@ -743,11 +743,16 @@ def _exercise_additional_surfaces(client: httpx.Client, run_id: str) -> bool:
     locator_name = os.environ.get("GEOSERVICES_STUB_LOCATOR_NAME", "World")
     scene_id = os.environ.get("GEOSERVICES_STUB_SCENE_ID", "cert-browser-polygons")
     scene = f"{services}/{scene_id}/SceneServer"
+    expected_services = {
+        (SERVICE_NAME, "FeatureServer"),
+        (SERVICE_NAME, "VectorTileServer"),
+        (locator_name, "GeocodeServer"),
+    }
     probes = (
         ("geocode-server", "CERT-GEOCODE-01", surface_probes.geocode_server, (services, locator_name)),
         ("geometry-service", "CERT-GEOMETRY-01", surface_probes.geometry_service, (services,)),
         ("image-server", "CERT-IMAGE-01", surface_probes.image_server, (service,)),
-        ("geoservices-root", "CERT-DIRECTORY-01", surface_probes.services_directory, (services, SERVICE_NAME, locator_name)),
+        ("geoservices-root", "CERT-DIRECTORY-01", surface_probes.services_directory, (services, expected_services)),
         ("vector-tile-server", "CERT-VECTOR-TILE-01", surface_probes.vector_tile_server, (service,)),
         ("i3s", "CERT-I3S-01", surface_probes.i3s_scene, (scene,)),
     )
