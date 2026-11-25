@@ -155,49 +155,35 @@ public sealed class GeocodingEntitlementGateTests
         Assert.True(payload.RootElement.TryGetProperty("address", out _));
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null, false)]
+    [InlineData("Enterprise", true)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithoutAnyLicense_Succeeds()
+    public async Task GeocodeServerMetadata_AnonymousCaller_AdvertisesBatchOnlyWithEntitlement(
+        string? devGrantEdition,
+        bool supportsBatch)
     {
-        // Metadata/discovery stays Community, but it must not advertise the gated batch
-        // operation when the active edition cannot call it.
-        using var factory = CreateFactory(devGrantEdition: null);
+        using var factory = CreateFactory(devGrantEdition);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
-        Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
-        Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithEnterpriseEntitlement_AdvertisesBatch()
-    {
-        using var factory = CreateFactory(devGrantEdition: "Enterprise");
-        using var client = factory.CreateClient();
-
-        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
-        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        var metadata = payload.RootElement;
+        var capabilities = metadata.GetProperty("capabilities").GetString()!.Split(',');
+        var locatorProperties = metadata.GetProperty("locatorProperties");
+        Assert.Contains("Suggest", capabilities);
+        Assert.DoesNotContain("BatchGeocode", capabilities);
+        Assert.Equal(supportsBatch ? "true" : "false", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.Equal(supportsBatch, locatorProperties.TryGetProperty("MaxBatchSize", out _));
+        var hasSuggestedBatchSize = locatorProperties.TryGetProperty("SuggestedBatchSize", out var suggestedBatchSize);
+        Assert.Equal(supportsBatch, hasSuggestedBatchSize);
+        if (hasSuggestedBatchSize)
+        {
+            Assert.Equal(100, suggestedBatchSize.GetInt32());
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string? devGrantEdition)
@@ -206,6 +192,7 @@ public sealed class GeocodingEntitlementGateTests
 
         return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>

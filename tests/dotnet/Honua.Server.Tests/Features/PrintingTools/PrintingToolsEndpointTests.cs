@@ -110,10 +110,28 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("", false)]
+    [InlineData("Pro", true)]
     [Operation(Operations.Print)]
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
-    public async Task Execute_PdfFormat_ReturnsPdfDocument()
+    public async Task Execute_AnonymousPdfRequest_RequiresPdfEntitlement(string devGrantEdition, bool pdfEnabled)
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("Licensing:DevGrantEdition", devGrantEdition));
+        try
+        {
+            await fixture.InitializeAsync();
+            await AssertPdfEntitlementAsync(fixture.Client, pdfEnabled);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task AssertPdfEntitlementAsync(HttpClient client, bool pdfEnabled)
     {
         var webMapJson = CreateMinimalWebMapJson();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -123,29 +141,21 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        using var response = await _client.PostAsync(
+        using var response = await client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        // PDF may be blocked by entitlement gating (Community edition in tests).
-        // Accept either a PDF document or a Payment Required GeoServices error from
-        // license gating. A GeoServices error is signalled with HTTP 200 +
-        // an {"error":{"code":402}} body, so branch on the produced content type (a
-        // real PDF) rather than the HTTP status.
-        if (response.Content.Headers.ContentType?.MediaType == "application/pdf")
-        {
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            bytes.Length.Should().BeGreaterThan(0);
-            // Verify PDF magic bytes
-            bytes[0].Should().Be(0x25); // %
-            bytes[1].Should().Be(0x50); // P
-            bytes[2].Should().Be(0x44); // D
-            bytes[3].Should().Be(0x46); // F
-        }
-        else
+        if (!pdfEnabled)
         {
             await response.AssertGeoServicesErrorAsync(402);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("printing.pdf-output");
+            return;
         }
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().StartWith("%PDF-"u8.ToArray());
     }
 
     [IntegrationTest]
