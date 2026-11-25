@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260823T211929Z",
-  "run_date": "2026-08-23T21:19:32.655114+00:00",
-  "server_version": "1.0.0",
-  "server_commit": "dbb368c5d06fb744e5289e4fd6ab30acc3973698",
-  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
-  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "run_id": "20261125T180352Z",
+  "run_date": "2026-11-25T18:03:54.478998+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "693214ef504a5d21b1524245f815c36d6e28fecb",
+  "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
+  "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "r-sf",
   "client_version": "sf=1.1.2;ows4R=0.5;GDAL=3.8.4",
   "protocol": "ogc-features",
@@ -15,7 +15,7 @@
     {
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
-      "duration_ms": 51,
+      "duration_ms": 28,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "sf::st_read() opened OAPIF layer '0' and returned 10 row(s) (fixture seeds 10 features, 9 with geometry).",
@@ -34,7 +34,7 @@
     {
       "test_case_id": "CERT-AUTH-01",
       "status": "pass",
-      "duration_ms": 38,
+      "duration_ms": 36,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous httr GET /api/v1/admin/services returned 401 (expected 401/403). Control-plane probe uses httr because both feature protocols are anonymous in the client-compat fixture.",
@@ -44,7 +44,7 @@
     {
       "test_case_id": "CERT-AUTH-02",
       "status": "pass",
-      "duration_ms": 26,
+      "duration_ms": 27,
       "measured_count": null,
       "measured_delta": null,
       "notes": "httr GET /api/v1/admin/services with header X-API-Key: <admin key> returned 200 (expected 2xx). Honua's control plane authenticates with an API key header, not HTTP Basic and not a bearer login flow.",
@@ -54,7 +54,7 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 73,
+      "duration_ms": 44,
       "measured_count": 11,
       "measured_delta": null,
       "notes": "sf::st_layers() over the GDAL OAPIF driver (/collections listing) listed 11 feature type(s)/collection(s); certification target resolved to '0'.",
@@ -63,7 +63,7 @@
     {
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
-      "duration_ms": 46,
+      "duration_ms": 34,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "sf::st_layers() on the single-collection DSN OAPIF:http://honua:5000/ogc/features/collections/0 reported 1 collection(s): 0 (the GDAL OAPIF driver fetches /collections/{id} for this DSN shape).",
@@ -72,7 +72,7 @@
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
-      "duration_ms": 18,
+      "duration_ms": 10,
       "measured_count": 12,
       "measured_delta": null,
       "notes": "sf::st_read() attribute columns reported by the GDAL OAPIF driver exposed 12/12 canonical attribute fields.",
@@ -81,7 +81,7 @@
     {
       "test_case_id": "CERT-SCHM-02",
       "status": "pass",
-      "duration_ms": 14,
+      "duration_ms": 10,
       "measured_count": 9,
       "measured_delta": null,
       "notes": "sf::st_geometry_type() over 9 non-empty geometries reported: POINT.",
@@ -90,7 +90,7 @@
     {
       "test_case_id": "CERT-QFLT-01",
       "status": "pass",
-      "duration_ms": 79,
+      "duration_ms": 64,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "Attribute filter \"status = 'active'\" applied via sf::st_read(query=) OGR SQL; the GDAL OAPIF driver translates it into the protocol filter parameter (OAPIF queryable / CQL2, WFS 2.0 fes:Filter) where the server advertises it. Returned 5 row(s); expected 5.",
@@ -99,7 +99,7 @@
     {
       "test_case_id": "CERT-QFLT-02",
       "status": "pass",
-      "duration_ms": 132,
+      "duration_ms": 61,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Spatial filter applied through the protocol bbox parameter (OAPIF bbox=-122.495,37.705,-122.455,37.735) and read with sf::st_read(): 3 row(s); expected 3. Corroborated by sf::st_read(wkt_filter=) over the OAPIF DSN (GDAL SetSpatialFilter): 3 non-empty geometry/geometries.",
@@ -108,7 +108,7 @@
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 60,
+      "duration_ms": 29,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "First page via sf::st_read(query='... LIMIT 3') returned 3 row(s); expected 3.",
@@ -117,7 +117,7 @@
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 67,
+      "duration_ms": 31,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Second page via sf::st_read(query='... LIMIT 3 OFFSET 3') returned 3 row(s) with id set {4,5,6}; first page was {1,2,3}; overlap 0.",
@@ -126,7 +126,7 @@
     {
       "test_case_id": "CERT-GEOM-01",
       "status": "pass",
-      "duration_ms": 12,
+      "duration_ms": 8,
       "measured_count": null,
       "measured_delta": 0,
       "notes": "Anchor 'alpha' returned (-122.4900000000, 37.7100000000) against reference (-122.4900, 37.7100); max absolute coordinate deviation 0.000e+00 decimal degrees, threshold 1e-06.",
@@ -135,16 +135,16 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 19,
+      "duration_ms": 10,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "sf::st_crs() reported input=WGS 84, epsg=4326. OGC:CRS84 is accepted as the lon/lat presentation of EPSG:4326 that both protocols default to.",
+      "notes": "sf::st_crs() reported input=WGS 84 (CRS84), epsg=<none>. OGC:CRS84 is accepted as the lon/lat presentation of EPSG:4326 that both protocols default to.",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 40,
+      "duration_ms": 23,
       "measured_count": null,
       "measured_delta": null,
       "notes": "sf::st_read(layer='does-not-exist-9999') on the OAPIF DSN raised: \"Opening layer failed.\"; the corresponding wire request returned 404 ({\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027does-not-exist-9999\\u0027 not found.\",...).",
@@ -153,10 +153,10 @@
     {
       "test_case_id": "CERT-ERRH-02",
       "status": "pass",
-      "duration_ms": 65,
+      "duration_ms": 43,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Malformed filter \"status ==\" via sf::st_read(query=\"SELECT * FROM \"0\" WHERE status ==\") was rejected by the GDAL OGR SQL parser: \"Query execution failed, cannot open layer.  | GDAL Error 1: SQL Expression Parsing Error: syntax error, unexpected '='. Occurred around : SELECT * FROM \"0\" WHERE status ==                             ...\". The same malformed filter sent as the protocol filter parameter returned 400 (httr transport-shape check): {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression. (Parameter \\u0027cql...",
+      "notes": "Malformed filter \"status ==\" via sf::st_read(query=\"SELECT * FROM \"0\" WHERE status ==\") was rejected by the GDAL OGR SQL parser: \"Query execution failed, cannot open layer.  | GDAL Error 1: SQL Expression Parsing Error: syntax error, unexpected '='. Occurred around : SELECT * FROM \"0\" WHERE status ==                             ...\". The same malformed filter sent as the protocol filter parameter returned 400 (httr transport-shape check): {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression.\",\"instance\":\"/ogc/fe...",
       "evidence_ref": ""
     },
     {
@@ -234,17 +234,17 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 16,
+    "passed": 15,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 8
+    "not_applicable": 9
   },
   "cite_results": null,
   "extensions": [
     {
       "test_case_id": "NB-RSF-TYP-01",
       "status": "pass",
-      "duration_ms": 34,
+      "duration_ms": 26,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Numeric/boolean typing through OAPIF: count=integer, ratio=numeric, active=logical. All seeded values round-trip with the declared types.",
@@ -253,7 +253,7 @@
     {
       "test_case_id": "NB-RSF-TYP-02",
       "status": "pass",
-      "duration_ms": 30,
+      "duration_ms": 23,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Temporal typing through OAPIF: created_at as POSIXct, event_date as Date, event_time as character. Instants are compared in UTC, so a lost timezone is a failure, not a class difference. All seeded temporal values round-trip.",
@@ -262,7 +262,7 @@
     {
       "test_case_id": "NB-RSF-TYP-03",
       "status": "pass",
-      "duration_ms": 25,
+      "duration_ms": 16,
       "measured_count": null,
       "measured_delta": null,
       "notes": "JSON array columns through OAPIF/GeoJSON: tags as list, numbers as list; values tags=[red|blue] numbers=[0|1|2]. GeoJSON carries real arrays, so a stringified array would be a server-side typing bug.",
@@ -280,7 +280,7 @@
     {
       "test_case_id": "NB-RSF-NUL-01",
       "status": "pass",
-      "duration_ms": 12,
+      "duration_ms": 8,
       "measured_count": 4,
       "measured_delta": null,
       "notes": "Nullable `description`: 4 of 10 rows are NA (fixture seeds 4 NULLs); 'alpha' is NA and 'beta' is 'description_1'. A server that emitted \"\" or the string \"null\" would fail this.",
@@ -289,7 +289,7 @@
     {
       "test_case_id": "NB-RSF-NUL-02",
       "status": "pass",
-      "duration_ms": 9,
+      "duration_ms": 6,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "Null-geometry handling: 10 row(s) returned with 1 empty geometry/geometries (fixture seeds 10 features, 9 with geometry); the null-geometry row 'lambda' is present. Dropping it or failing the read would be a server bug.",
@@ -298,7 +298,7 @@
     {
       "test_case_id": "NB-RSF-GEO-01",
       "status": "pass",
-      "duration_ms": 43,
+      "duration_ms": 27,
       "measured_count": null,
       "measured_delta": null,
       "notes": "st_bbox() of the returned features (-122.49000 37.71000 -122.37000 37.79000) against the OAPIF declared extent (-122.50000 37.70000 -122.35000 37.84000): the data extent must lie inside the advertised extent, otherwise clients that zoom to the declared extent hide features.",
@@ -307,7 +307,7 @@
     {
       "test_case_id": "NB-RSF-GEO-02",
       "status": "pass",
-      "duration_ms": 17,
+      "duration_ms": 11,
       "measured_count": null,
       "measured_delta": 0,
       "notes": "WKB (st_as_binary) and WKT (st_as_text) round-trip of 9 server geometries: max coordinate deviation 0.000e+00 (WKB 0.000e+00, WKT 0.000e+00), threshold 1e-06.",
@@ -325,16 +325,16 @@
     {
       "test_case_id": "NB-RSF-CRS-01",
       "status": "pass",
-      "duration_ms": 31,
+      "duration_ms": 18,
       "measured_count": 2,
       "measured_delta": null,
-      "notes": "OAPIF advertises CRS list {3857, 4326} for the certification layer; both the storage CRS (EPSG:4326) and the Web Mercator alternative (EPSG:3857) must be offered or R users cannot request a projected read.",
+      "notes": "OAPIF advertises CRS list {4326, 3857} for the certification layer; both the storage CRS (EPSG:4326) and the Web Mercator alternative (EPSG:3857) must be offered or R users cannot request a projected read.",
       "evidence_ref": ""
     },
     {
       "test_case_id": "NB-RSF-CRS-02",
       "status": "pass",
-      "duration_ms": 61,
+      "duration_ms": 59,
       "measured_count": null,
       "measured_delta": 5.58793544769287e-09,
       "notes": "Server-side reprojection to EPSG:3857 (http://www.opengis.net/def/crs/EPSG/0/3857) returned (-13635524.4273, 4538539.1534); PROJ 9.4.0 via sf::st_transform() computes (-13635524.4273, 4538539.1534); max deviation 0.0000 m, threshold 0.01 m.",
@@ -343,7 +343,7 @@
     {
       "test_case_id": "NB-RSF-CRS-03",
       "status": "pass",
-      "duration_ms": 80,
+      "duration_ms": 59,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Axis order: the default response is [-122.4900, 37.7100] with Content-Crs <http://www.opengis.net/def/crs/OGC/1.3/CRS84> (must be lon,lat CRS84 per RFC 7946) and crs=http://www.opengis.net/def/crs/EPSG/0/4326 returns [37.7100, -122.4900] with Content-Crs <http://www.opengis.net/def/crs/EPSG/0/4326>, i.e. lat,lon order. Part 2 allows the CRS's declared (lat,lon) order for EPSG:4326, but only a Content-Crs that names the CRS lets a client know to swap back; garbage in either position puts every R point in the wrong hemisphere.",
@@ -352,7 +352,7 @@
     {
       "test_case_id": "NB-RSF-CRS-04",
       "status": "pass",
-      "duration_ms": 61,
+      "duration_ms": 36,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "bbox axis-order contract for OAPIF: the specified order (CRS84 lon,lat per Features Core) selected 3 feature(s) (expected 3), and the reversed order returned HTTP 400 with 0 feature(s) — a server that accepted both orders would be guessing, and a client cannot tell which guess it got.",
@@ -361,7 +361,7 @@
     {
       "test_case_id": "NB-RSF-PAG-01",
       "status": "pass",
-      "duration_ms": 127,
+      "duration_ms": 42,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Full paginated walk in pages of 3 over 5 request(s) collected 10 unique feature name(s) with 0 duplicate(s); the fixture seeds 10. A drifting page window would show up as a duplicate or a missing id.",
@@ -370,7 +370,7 @@
     {
       "test_case_id": "NB-RSF-PAG-02",
       "status": "pass",
-      "duration_ms": 22,
+      "duration_ms": 14,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Oversized page request (limit/COUNT=100000) returned HTTP 400 with n/a row(s). The server must clamp to its configured maximum or reject with a 4xx; a 5xx or an unbounded read is the bug this case looks for.",
@@ -379,7 +379,7 @@
     {
       "test_case_id": "NB-RSF-PAG-03",
       "status": "pass",
-      "duration_ms": 30,
+      "duration_ms": 16,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Paging counters on a 2-feature page (httr transport-shape check): numberMatched=10 (expected 10), numberReturned=2, actual features=2. numberMatched must be the unpaged total, not the page size.",
@@ -388,7 +388,7 @@
     {
       "test_case_id": "NB-RSF-PAG-04",
       "status": "pass",
-      "duration_ms": 27,
+      "duration_ms": 15,
       "measured_count": 0,
       "measured_delta": null,
       "notes": "Offset/startIndex past the end returned HTTP 200 with 0 feature(s) and numberMatched=10 (expected 200, 0 features, 10 matched). Wrapping around or erroring here breaks every client that walks to the end.",
@@ -397,7 +397,7 @@
     {
       "test_case_id": "NB-RSF-PAG-05",
       "status": "pass",
-      "duration_ms": 21,
+      "duration_ms": 13,
       "measured_count": 0,
       "measured_delta": null,
       "notes": "Zero-size page request (limit/COUNT=0) returned HTTP 400 with 0 feature(s): a structured 4xx or an empty 200 are both defensible; a 5xx or a full result set is not. Body: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"limit must be 1 or greater.\",\"instance\":\"/ogc/feature...",
@@ -406,7 +406,7 @@
     {
       "test_case_id": "NB-RSF-FMT-01",
       "status": "pass",
-      "duration_ms": 75,
+      "duration_ms": 37,
       "measured_count": 10,
       "measured_delta": 0,
       "notes": "End-to-end GeoPackage fidelity: the OAPIF response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation 0.000e+00. (JSON array columns are flattened to text first: OGR refuses list columns.)",
@@ -415,7 +415,7 @@
     {
       "test_case_id": "NB-RSF-FMT-02",
       "status": "pass",
-      "duration_ms": 12,
+      "duration_ms": 6,
       "measured_count": 10,
       "measured_delta": 0,
       "notes": "End-to-end GeoJSON fidelity: the OAPIF response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation 0.000e+00. (JSON array columns are flattened to text first: OGR refuses list columns.)",
@@ -424,16 +424,16 @@
     {
       "test_case_id": "NB-RSF-FMT-03",
       "status": "pass",
-      "duration_ms": 102,
+      "duration_ms": 59,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Advertised output formats all serve the complete feature set: f=json -> HTTP 200, 12833 byte(s), anchor present, last feature present; f=csv -> HTTP 200, 2111 byte(s), anchor present, last feature present; f=gml -> HTTP 200, 11023 byte(s), anchor present, last feature present.",
+      "notes": "Advertised output formats all serve the complete feature set: f=json -> HTTP 200, 12828 byte(s), anchor present, last feature present; f=csv -> HTTP 200, 2122 byte(s), anchor present, last feature present; f=gml -> HTTP 200, 11023 byte(s), anchor present, last feature present.",
       "evidence_ref": ""
     },
     {
       "test_case_id": "NB-RSF-ERR-01",
       "status": "pass",
-      "duration_ms": 39,
+      "duration_ms": 26,
       "measured_count": null,
       "measured_delta": null,
       "notes": "404-vs-400 distinction: unknown collection 'does-not-exist-9999' returned 404 (expected 404) and a malformed `limit` returned 400 (expected 400). Collapsing both into one status makes client retry logic wrong.",
@@ -442,7 +442,7 @@
     {
       "test_case_id": "NB-RSF-ERR-02",
       "status": "pass",
-      "duration_ms": 22,
+      "duration_ms": 14,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Malformed CRS 'http://example.invalid/crs/nope' returned HTTP 400 with a structured error body (problem+json / ExceptionReport). A 500 or a silent fallback to the storage CRS would both be server bugs: the client would believe it received the CRS it asked for.",
@@ -451,7 +451,7 @@
     {
       "test_case_id": "NB-RSF-ERR-03",
       "status": "pass",
-      "duration_ms": 11,
+      "duration_ms": 9,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Unsupported output format returned HTTP 400 (expected a 4xx). Body: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Unsupported format \\u0027application/x-not-a-format\\u0027\",\"instance\":\"/o...",
@@ -460,10 +460,10 @@
     {
       "test_case_id": "NB-RSF-ERR-04",
       "status": "pass",
-      "duration_ms": 11,
+      "duration_ms": 8,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Truncated protocol filter (\"status = 'active' AND\") returned HTTP 400 (expected a 4xx structured error, never a 500 and never a silent full result set). Body: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression. (Parameter \\u0027cql...",
+      "notes": "Truncated protocol filter (\"status = 'active' AND\") returned HTTP 400 (expected a 4xx structured error, never a 500 and never a silent full result set). Body: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression.\",\"instance\":\"/ogc/fe...",
       "evidence_ref": ""
     },
     {
@@ -487,7 +487,7 @@
     {
       "test_case_id": "NB-RSF-AUT-03",
       "status": "pass",
-      "duration_ms": 103,
+      "duration_ms": 48,
       "measured_count": 11,
       "measured_delta": null,
       "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the OAPIF DSN: 11 layer(s) listed and the certification target '0' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
@@ -496,7 +496,7 @@
     {
       "test_case_id": "NB-RSF-XPR-01",
       "status": "pass",
-      "duration_ms": 57,
+      "duration_ms": 63,
       "measured_count": null,
       "measured_delta": 0,
       "notes": "Cross-protocol extent agreement: OGC API Features collection extent [-122.50000 37.70000 -122.35000 37.84000] vs WFS ows:WGS84BoundingBox [-122.50000 37.70000 -122.35000 37.84000]; max deviation 0.000e+00. Disagreement means a client that zooms by metadata sees a different map depending on the protocol.",
@@ -505,7 +505,7 @@
     {
       "test_case_id": "NB-RSF-XPR-02",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 63,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Cross-protocol count agreement: OGC API Features numberMatched=10, WFS resultType=hits numberMatched=10, fixture total=10.",
@@ -514,7 +514,7 @@
     {
       "test_case_id": "NB-RSF-XPR-03",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 38,
       "measured_count": 2,
       "measured_delta": null,
       "notes": "Cross-protocol CRS agreement: OGC API Features offers {3857, 4326}, WFS offers {3857, 4326}. A CRS available on one protocol but not the other is a metadata bug, not a capability difference.",
@@ -523,7 +523,7 @@
     {
       "test_case_id": "NB-RSF-XPR-04",
       "status": "pass",
-      "duration_ms": 48,
+      "duration_ms": 36,
       "measured_count": 13,
       "measured_delta": null,
       "notes": "Cross-protocol attribute agreement: 13 field(s) in OGC API Features items vs 13 in WFS DescribeFeatureType. WFS-only: {}. OAPIF-only: {}. The same layer must expose the same attributes on both protocols.",
@@ -532,25 +532,25 @@
     {
       "test_case_id": "NB-RSF-OAF-01",
       "status": "pass",
-      "duration_ms": 21,
+      "duration_ms": 15,
       "measured_count": 7,
       "measured_delta": null,
-      "notes": "Landing page http://honua:5000/ogc/features returned HTTP 200 with link relations {self, alternate, service-desc, conformance, data, https://www.opengis.net/def/rel/ogc/1.0/map, http://www.opengis.net/def/rel/ogc/1.0/tilesets-vector}. OGC API Features Core requires self, service-desc/service-doc, conformance and data.",
+      "notes": "Landing page http://honua:5000/ogc/features returned HTTP 200 with link relations {self, alternate, service-desc, conformance, data, https://www.opengis.net/def/rel/ogc/1.0/map, http://www.opengis.net/def/rel/ogc/1.0/tilesets-map}. OGC API Features Core requires self, service-desc/service-doc, conformance and data.",
       "evidence_ref": ""
     },
     {
       "test_case_id": "NB-RSF-OAF-02",
       "status": "pass",
-      "duration_ms": 236,
+      "duration_ms": 116,
       "measured_count": 7,
       "measured_delta": null,
-      "notes": "Declared-vs-honoured conformance: 7 of 26 declared classes were probed and all held. A conformance class the server declares but does not implement is a server bug. ",
+      "notes": "Declared-vs-honoured conformance: 7 of 21 declared classes were probed and all held. A conformance class the server declares but does not implement is a server bug. ",
       "evidence_ref": ""
     },
     {
       "test_case_id": "NB-RSF-OAF-03",
       "status": "pass",
-      "duration_ms": 164,
+      "duration_ms": 50,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Link relations: self=http://honua:5000/ogc/features/collections/0/items?limit=3; following `next` returned HTTP 200 with 3 feature(s) disjoint from page one (overlap 0); the final page advertises relations {self, alternate, prev, http://www.opengis.net/def/rel/ogc/1.0/queryables} and must not advertise `next`.",
@@ -559,7 +559,7 @@
     {
       "test_case_id": "NB-RSF-OAF-04",
       "status": "pass",
-      "duration_ms": 95,
+      "duration_ms": 62,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "Single-item retrieval /items/1 returned HTTP 200 as a GeoJSON Feature with name 'alpha' (expected the 'alpha' anchor). Item ids advertised in the collection must be addressable.",
@@ -568,7 +568,7 @@
     {
       "test_case_id": "NB-RSF-OAF-05",
       "status": "pass",
-      "duration_ms": 58,
+      "duration_ms": 23,
       "measured_count": 2,
       "measured_delta": null,
       "notes": "datetime=2024-01-01T00:00:00Z/2024-01-03T00:00:00Z returned HTTP 200 with 2 of 10 feature(s); every returned created_at is inside the interval. A datetime filter that returns everything is not a filter.",
@@ -577,7 +577,7 @@
     {
       "test_case_id": "NB-RSF-OAF-06",
       "status": "pass",
-      "duration_ms": 59,
+      "duration_ms": 18,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "CQL2-text `filter=status = 'active'` returned HTTP 200 with 5 feature(s) (expected 5) and status values {active}. This is the protocol filter parameter, not a client-side filter.",
