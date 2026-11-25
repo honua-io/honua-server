@@ -59,6 +59,8 @@ public sealed class SynchronousPublishIdentityTests
         handle.MetadataRevision.Should().Be(42);
         handle.Result!.Details.Should().Contain("metadataRevision", "42");
         handle.Result.Details.Should().Contain("storageLayerId", "321");
+        handle.Result.Details.Should().Contain(PublishResultAttribution.SourceJobDetailKey, "source-job");
+        handle.Result.Details.Should().Contain(PublishResultAttribution.ArtifactDetailKey, "source-artifact");
         var indexText = serviceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
         handle.Result.Details.Should().Contain("serviceLayerIndex", indexText).And.NotContainKey("layerId");
         handle.ResourceIds.Should().Contain("serviceLayerIndex", indexText).And.Contain("storageLayerId", "321");
@@ -128,6 +130,7 @@ public sealed class SynchronousPublishIdentityTests
             OperationId = "service.publish",
             ConnectionId = "11111111-1111-1111-1111-111111111111",
             ServiceName = "parcels",
+            VerifiedPublishResultAttribution = new("source-job", "source-artifact"),
             Parameters = new Dictionary<string, string?>
             {
                 ["schema"] = "public",
