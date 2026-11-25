@@ -18,7 +18,7 @@ WORKDIR /workspace
 
 RUN pip install httpx==0.27.0
 
-COPY docker/client-compat/geoservices-rest-stub/stub_runner.py /usr/local/bin/stub_runner.py
+COPY docker/client-compat/geoservices-rest-stub/stub_runner.py docker/client-compat/geoservices-rest-stub/surface_probes.py /usr/local/bin/
 COPY docker/client-compat/geoservices-rest-stub/run.sh /usr/local/bin/run-geoservices-rest-stub-lane
 RUN chmod +x /usr/local/bin/run-geoservices-rest-stub-lane /usr/local/bin/stub_runner.py
 

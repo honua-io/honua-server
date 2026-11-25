@@ -939,7 +939,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 22,
+      "provingTestCount": 26,
       "maturity": {
         "implemented": 4
       },
@@ -999,7 +999,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 14,
+      "provingTestCount": 22,
       "maturity": {
         "implemented": 4
       },
@@ -1275,7 +1275,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 91,
+      "provingTestCount": 95,
       "maturity": {
         "implemented": 21
       },
@@ -1784,7 +1784,17 @@
         }
       ],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "geocode-server",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -1808,7 +1818,17 @@
         }
       ],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "geometry-service",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -1835,7 +1855,17 @@
       "geoservicesAssess": [
         "image-service"
       ],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "image-server",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -1935,7 +1965,17 @@
         }
       ],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "geoservices-root",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -1961,7 +2001,17 @@
       "geoservicesAssess": [
         "vector-tiles"
       ],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "vector-tile-server",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
@@ -2003,7 +2053,17 @@
       "geoservicesAssess": [
         "scene-service"
       ],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "geoservices-rest-stub",
+          "protocol": "i3s",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": []
     },
     {
