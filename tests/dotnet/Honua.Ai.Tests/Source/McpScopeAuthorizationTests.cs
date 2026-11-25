@@ -39,12 +39,14 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
 
     private readonly WebAppFixture _fixture = host.Fixture;
     private readonly HttpClient _client = host.Fixture.Client;
+    private readonly string _catalogReaderRole = host.CatalogReader;
 
     // Every case mints its own token and the artifact cases store a temporary file of their own, so one
     // host serves them all.
     public sealed class ScopeHost : IAsyncLifetime
     {
-        internal const string CatalogReader = "mcp-scope-test-catalog-reader";
+        // Role deletion retains the name, so each fixture needs a fresh one.
+        internal string CatalogReader { get; } = $"mcp-scope-catalog-{Guid.NewGuid():N}";
         private Guid? _createdRoleId;
 
         internal WebAppFixture Fixture { get; } = new WebAppFixture()
@@ -69,13 +71,6 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
             await Fixture.InitializeAsync();
             using var scope = Fixture.Services.CreateScope();
             var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
-            var existing = (await roles.ListRolesAsync())
-                .FirstOrDefault(r => string.Equals(r.Name, CatalogReader, StringComparison.OrdinalIgnoreCase));
-            if (existing is not null)
-            {
-                return;
-            }
-
             var created = await roles.CreateRoleAsync(new RoleDefinition
             {
                 Name = CatalogReader,
