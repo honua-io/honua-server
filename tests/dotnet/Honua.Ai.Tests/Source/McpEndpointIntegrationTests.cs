@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1272,8 +1273,13 @@ public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
         context.Request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
         var owner = await context.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
         owner.Succeeded.Should().BeTrue("the fixture client uses the same bootstrap credential");
+        context.User = owner.Principal!;
+        context.Request.Path = "/mcp";
+        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            scope.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
+        await tenantMiddleware.InvokeAsync(context);
         var store = scope.ServiceProvider.GetRequiredService<ITemporaryFileService>();
-        var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: owner.Principal);
+        var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: context.User);
         var sessionId = await InitializeAndGetSessionIdAsync();
         using var response = await PostRpcAsync(
             $$"""{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":{{JsonSerializer.Serialize(uri)}} } }""", sessionId);
