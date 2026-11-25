@@ -46,7 +46,10 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
             "/elevation/0/line-of-sight",
             new
             {
-                observerLon = 0.0, observerLat = 0.0, targetLon = 0.05, targetLat = 0.0
+                observerLon = 0.0,
+                observerLat = 0.0,
+                targetLon = 0.05,
+                targetLat = 0.0
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -66,7 +69,9 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
             "/elevation/0/viewshed",
             new
             {
-                observerLon = 0.0, observerLat = 0.0, radiusMeters = 5000.0
+                observerLon = 0.0,
+                observerLat = 0.0,
+                radiusMeters = 5000.0
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

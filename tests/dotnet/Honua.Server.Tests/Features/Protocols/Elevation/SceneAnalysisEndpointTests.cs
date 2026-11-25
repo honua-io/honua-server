@@ -45,7 +45,9 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
             "/elevation/0/sun-shadow",
             new
             {
-                observerLon = 0.0, observerLat = 0.0, timestamp = "2026-03-20T08:00:00Z",
+                observerLon = 0.0,
+                observerLat = 0.0,
+                timestamp = "2026-03-20T08:00:00Z",
                 maxShadowLengthMeters = 200.0
             });
 
@@ -66,7 +68,10 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
             "/elevation/0/slice",
             new
             {
-                startLon = 0.0, startLat = 0.0, endLon = 1.0, endLat = 1.0
+                startLon = 0.0,
+                startLat = 0.0,
+                endLon = 1.0,
+                endLat = 1.0
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
