@@ -3825,8 +3825,8 @@ Features Miscellaneous 7 on selected PR runs and full trunk runs.
 ### Watchdog startup reconciliation retry timing
 
 The retry test waits for the five-second timer to be registered, verifies the
-first attempt completed, and advances virtual time before checking the retry and
-host health. The server still uses a five-second retry interval.
+first attempt reached the retry delay, and advances virtual time before checking
+that the second suspend attempt succeeds and the reconciliation task has no exception. The server still uses a five-second retry interval.
 
 A paired build-host benchmark used one runner execution per revision. The
 filtered infrastructure cohort had 3,396 passes and five skips on each revision.

@@ -2667,8 +2667,8 @@ qualifying run.
 
 The Caching, File Storage, Styling and Infrastructure shard includes the watchdog
 startup retry integration test. The test advances an injected clock through the
-five-second retry delay and checks that reconciliation retries while the host
-remains healthy.
+five-second retry delay, verifies the second suspend attempt succeeds, and
+checks that the reconciliation task has no exception.
 
 ### Tile Export Durable Recovery
 
