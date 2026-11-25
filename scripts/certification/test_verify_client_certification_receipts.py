@@ -764,7 +764,7 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         cls.verdicts = module.verify_release(MIRROR, cls.receipts, candidate())
 
     def test_the_committed_baselines_are_real_envelopes(self):
-        self.assertEqual(30, len(self.receipts))
+        self.assertEqual(32, len(self.receipts))
 
     def test_no_committed_baseline_certifies_any_governed_cell(self):
         summary = module.summarize(self.verdicts)
