@@ -62,4 +62,39 @@ public sealed class OgcGeoJsonProjectionTests
         explicitIdentifier.Properties.Should().ContainKey("public_id").WhoseValue.Should().Be(publicIdentifier);
         Create(null).Properties.Should().ContainKey("public_id").WhoseValue.Should().Be(publicIdentifier);
     }
+
+    [Fact]
+    public void PreparePropertyWritePlan_SparseProjectedRow_MatchesMaterializedProperties()
+    {
+        var resource = new MetadataV2Object
+        {
+            SchemaFields =
+            [
+                new() { Name = "public_id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+                new() { Name = "date", Type = MetadataV2FieldType.Date },
+                new() { Name = "missing", Type = MetadataV2FieldType.String },
+                new() { Name = "unselected", Type = MetadataV2FieldType.String }
+            ]
+        };
+        var attributes = new Dictionary<string, object?> { ["date"] = 0L, ["unselected"] = "omit" }
+            .ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+        var feature = Feature.Create(7, null, attributes);
+        var schema = new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false);
+        var projection = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PUBLIC_ID", "date", "missing" };
+        var geometry = new OgcFeaturesGeometryServices(
+            new GeometryService(Options.Create(new LimitsOptions())),
+            Substitute.For<ICoordinateTransformService>(),
+            Options.Create(new LimitsOptions()));
+
+        var materialized = OgcGeoJsonFeatureBuilder.Create(
+            feature, resource, AxisOrder.EastNorth, geometry, projection, schema: schema);
+        var plan = OgcGeoJsonFeatureBuilder.PreparePropertyWritePlan(schema, projection);
+        var plannedProperties = plan.Fields.Select(field => plan.Read(feature, field))
+            .OfType<KeyValuePair<string, object?>>()
+            .ToDictionary(property => property.Key, property => property.Value);
+
+        plannedProperties.Should().HaveCount(2).And.BeEquivalentTo(materialized.Properties);
+        plannedProperties.Should().Contain("public_id", 7L).And.Contain("date", "1970-01-01");
+        plan.IdentifierFallback.Should().BeNull();
+    }
 }

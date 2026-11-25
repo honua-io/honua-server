@@ -89,14 +89,40 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         return batch;
     }
 
+    private enum FeatureReadPagingMode
+    {
+        Exact,
+        ProbeNextPage
+    }
+
+    private enum FeatureReadPlanMode
+    {
+        Default,
+        AllowSerial
+    }
+
+    private enum ConnectionOwnership
+    {
+        Owned,
+        Borrowed
+    }
+
+    private readonly record struct FeatureReadOpenOptions(
+        FeatureReadPagingMode PagingMode,
+        FeatureReadPlanMode PlanMode,
+        NpgsqlConnectionLease? BorrowedConnection = null);
+
     private async Task<FeatureReadSession> OpenFeatureReadSessionAsync(
         FeatureQuery query,
-        bool probeLimit,
-        bool allowSerialPlan,
+        FeatureReadOpenOptions options,
         CancellationToken cancellationToken)
     {
+        var probeLimit = options.PagingMode == FeatureReadPagingMode.ProbeNextPage;
+        var allowSerialPlan = options.PlanMode == FeatureReadPlanMode.AllowSerial;
         var sql = BuildFeatureSelect(query, probeLimit);
-        var session = new FeatureReadSession(await OpenConnectionAsync(cancellationToken).ConfigureAwait(false));
+        var ownership = options.BorrowedConnection is null ? ConnectionOwnership.Owned : ConnectionOwnership.Borrowed;
+        var lease = options.BorrowedConnection ?? await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var session = new FeatureReadSession(lease, ownership);
         try
         {
             var connection = session.Connection;
@@ -202,7 +228,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         }
     }
 
-    private sealed class FeatureReadSession(NpgsqlConnectionLease connection) : IAsyncDisposable
+    private sealed class FeatureReadSession(
+        NpgsqlConnectionLease connection,
+        ConnectionOwnership ownership = ConnectionOwnership.Owned) : IAsyncDisposable
     {
         public NpgsqlConnectionLease Connection { get; } = connection;
         public NpgsqlCommand? Command { get; set; }
@@ -253,7 +281,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             }
             finally
             {
-                await Connection.DisposeAsync().ConfigureAwait(false);
+                if (ownership == ConnectionOwnership.Owned)
+                {
+                    await Connection.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
     }
