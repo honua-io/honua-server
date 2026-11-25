@@ -10,6 +10,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -49,16 +50,22 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
         public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
+    public enum BodyFraming
+    {
+        KnownLength,
+        Streamed
+    }
+
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
+    [InlineData(McpTestTransport.Legacy, BodyFraming.KnownLength)]
+    [InlineData(McpTestTransport.Legacy, BodyFraming.Streamed)]
+    [InlineData(McpTestTransport.Modern, BodyFraming.KnownLength)]
+    [InlineData(McpTestTransport.Modern, BodyFraming.Streamed)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Body_AtByteLimit_DispatchesDiscovery(bool modern, bool unknownLength)
+    public async Task Body_AtByteLimit_DispatchesDiscovery(McpTestTransport transport, BodyFraming framing)
     {
-        using var request = BodyRequest(BodyLimit, modern, unknownLength);
+        using var request = BodyRequest(BodyLimit, transport, framing);
         var before = host.Counter.Calls;
 
         using var response = await _client.SendAsync(request);
@@ -71,30 +78,25 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
     }
 
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
+    [InlineData(McpTestTransport.Legacy, BodyFraming.KnownLength)]
+    [InlineData(McpTestTransport.Legacy, BodyFraming.Streamed)]
+    [InlineData(McpTestTransport.Modern, BodyFraming.KnownLength)]
+    [InlineData(McpTestTransport.Modern, BodyFraming.Streamed)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Body_OneByteOverLimit_Returns413BeforeDiscovery(bool modern, bool unknownLength)
+    public async Task Body_OneByteOverLimit_Returns413BeforeDiscovery(McpTestTransport transport, BodyFraming framing)
     {
-        using var request = BodyRequest(BodyLimit + 1, modern, unknownLength);
+        using var request = BodyRequest(BodyLimit + 1, transport, framing);
         var before = host.Counter.Calls;
 
         using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
         var body = await response.Content.ReadAsStringAsync();
-        if (modern)
+        if (transport == McpTestTransport.Modern)
         {
             response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
-            const string eventStart = "event: message\ndata: ";
-            const string eventEnd = "\n\n";
-            body = body.ReplaceLineEndings("\n");
-            body.Should().StartWith(eventStart).And.EndWith(eventEnd);
-            body = body[eventStart.Length..^eventEnd.Length];
-            body.Should().NotContain("\n");
+            body = ReadSingleSseMessage(body);
         }
 
         using var document = JsonDocument.Parse(body);
@@ -105,27 +107,53 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
         host.Counter.Calls.Should().Be(before, "oversized bodies must be rejected before dispatch");
     }
 
-    private static HttpRequestMessage BodyRequest(int bytes, bool modern, bool unknownLength)
+    private static string ReadSingleSseMessage(string body)
     {
-        var metadata = modern
-            ? "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientCapabilities\":{}},"
-            : string.Empty;
+        const string eventStart = "event: message\ndata: ";
+        const string eventEnd = "\n\n";
+        body = body.ReplaceLineEndings("\n");
+        body.Should().StartWith(eventStart).And.EndWith(eventEnd);
+        var message = body[eventStart.Length..^eventEnd.Length];
+        message.Should().NotContain("\n");
+        return message;
+    }
+
+    private static HttpRequestMessage BodyRequest(int bytes, McpTestTransport transport, BodyFraming framing)
+        => transport switch
+        {
+            McpTestTransport.Legacy => CreateBodyRequest(BuildPaddedBody(bytes, string.Empty), framing),
+            McpTestTransport.Modern => CreateModernBodyRequest(bytes, framing),
+            _ => throw new ArgumentOutOfRangeException(nameof(transport))
+        };
+
+    private static byte[] BuildPaddedBody(int bytes, string metadata)
+    {
         var prefix = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{" + metadata + "\"pad\":\"é";
         const string suffix = "\"}}";
         var padding = bytes - Encoding.UTF8.GetByteCount(prefix + suffix);
         var body = Encoding.UTF8.GetBytes(prefix + new string('x', padding) + suffix);
         body.Length.Should().Be(bytes);
-        var content = unknownLength ? (HttpContent)new UnknownLengthContent(body) : new ByteArrayContent(body);
+        return body;
+    }
+
+    private static HttpRequestMessage CreateBodyRequest(byte[] body, BodyFraming framing)
+    {
+        HttpContent content = framing switch
+        {
+            BodyFraming.KnownLength => new ByteArrayContent(body),
+            BodyFraming.Streamed => new StreamContent(new NonSeekableStream(new MemoryStream(body))),
+            _ => throw new ArgumentOutOfRangeException(nameof(framing))
+        };
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         var request = new HttpRequestMessage(HttpMethod.Post, "/mcp?view=default") { Content = content };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        if (modern)
-        {
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-            request.Headers.Add("MCP-Protocol-Version", "2026-07-28");
-            request.Headers.Add("Mcp-Method", "tools/list");
-        }
+        return request;
+    }
 
+    private static HttpRequestMessage CreateModernBodyRequest(int bytes, BodyFraming framing)
+    {
+        var request = CreateBodyRequest(BuildPaddedBody(bytes, McpTestWire.ModernMetadata + ","), framing);
+        McpTestWire.ConfigureModernHeaders(request, "tools/list");
         return request;
     }
 
@@ -138,18 +166,6 @@ public sealed partial class McpHttpRequestBoundsTests(McpHttpRequestBoundsTests.
         {
             Interlocked.Increment(ref _calls);
             return ValueTask.FromResult<IReadOnlyList<IMcpTool>>([]);
-        }
-    }
-
-    private sealed class UnknownLengthContent(byte[] body) : HttpContent
-    {
-        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
-            => stream.WriteAsync(body).AsTask();
-
-        protected override bool TryComputeLength(out long length)
-        {
-            length = 0;
-            return false;
         }
     }
 }

@@ -13,15 +13,21 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class McpHttpRequestBoundsTests
 {
+    public enum BatchCaller
+    {
+        Anonymous,
+        Admin
+    }
+
     [IntegrationTheory]
-    [InlineData(false, 2)]
-    [InlineData(true, 2)]
-    [InlineData(true, 3)]
+    [InlineData(BatchCaller.Anonymous, 2)]
+    [InlineData(BatchCaller.Admin, 2)]
+    [InlineData(BatchCaller.Admin, 3)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Batch_WithinCallerLimit_DispatchesAllElements(bool authenticated, int count)
+    public async Task Batch_WithinCallerLimit_DispatchesAllElements(BatchCaller caller, int count)
     {
-        using var request = BatchRequest(count, authenticated);
+        using var request = BatchRequest(count, caller);
         var before = host.Counter.Calls;
 
         using var response = await _client.SendAsync(request);
@@ -32,31 +38,19 @@ public sealed partial class McpHttpRequestBoundsTests
         document.RootElement.GetArrayLength().Should().Be(count);
         document.RootElement.EnumerateArray().Select(item => item.GetProperty("id").GetInt32())
             .Should().Equal(Enumerable.Range(1, count));
-        foreach (var item in document.RootElement.EnumerateArray())
-        {
-            item.TryGetProperty("error", out _).Should().BeFalse();
-            var tools = item.GetProperty("result").GetProperty("tools");
-            if (authenticated)
-            {
-                tools.GetArrayLength().Should().BePositive();
-            }
-            else
-            {
-                tools.GetArrayLength().Should().Be(0);
-            }
-        }
+        AssertDispatchedTools(document.RootElement, caller);
 
         (host.Counter.Calls - before).Should().BeGreaterThanOrEqualTo(count);
     }
 
     [IntegrationTheory]
-    [InlineData(false, 3)]
-    [InlineData(true, 4)]
+    [InlineData(BatchCaller.Anonymous, 2)]
+    [InlineData(BatchCaller.Admin, 3)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task Batch_AboveCallerLimit_RejectsWholeBatchWithoutDispatch(bool authenticated, int count)
+    public async Task Batch_AboveCallerLimit_RejectsWholeBatchWithoutDispatch(BatchCaller caller, int limit)
     {
-        using var request = BatchRequest(count, authenticated);
+        using var request = BatchRequest(limit + 1, caller);
         var before = host.Counter.Calls;
 
         using var response = await _client.SendAsync(request);
@@ -68,11 +62,28 @@ public sealed partial class McpHttpRequestBoundsTests
         root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
         root.GetProperty("error").GetProperty("message").GetString()
-            .Should().Contain(authenticated ? "3" : "2");
+            .Should().Contain(limit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         host.Counter.Calls.Should().Be(before, "admission must reject the entire batch before its first element");
     }
 
-    private static HttpRequestMessage BatchRequest(int count, bool authenticated)
+    private static void AssertDispatchedTools(JsonElement batch, BatchCaller caller)
+    {
+        foreach (var item in batch.EnumerateArray())
+        {
+            item.TryGetProperty("error", out _).Should().BeFalse();
+            var tools = item.GetProperty("result").GetProperty("tools");
+            if (caller == BatchCaller.Admin)
+            {
+                tools.GetArrayLength().Should().BePositive();
+            }
+            else
+            {
+                tools.GetArrayLength().Should().Be(0);
+            }
+        }
+    }
+
+    private static HttpRequestMessage BatchRequest(int count, BatchCaller caller)
     {
         var elements = Enumerable.Range(1, count)
             .Select(id => ListRequest.Replace("\"id\":1", "\"id\":" + id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
@@ -82,7 +93,7 @@ public sealed partial class McpHttpRequestBoundsTests
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
-        if (authenticated)
+        if (caller == BatchCaller.Admin)
         {
             request.Headers.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
         }
