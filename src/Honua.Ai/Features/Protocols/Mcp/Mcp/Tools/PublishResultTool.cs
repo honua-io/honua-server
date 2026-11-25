@@ -154,7 +154,6 @@ internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
                 McpJsonContext.Default.McpPublishResultOutput);
     }
 
-
     private static ArtifactRef SelectArtifact(AnalysisResultPackage package, string? artifactId)
     {
         if (!string.IsNullOrWhiteSpace(artifactId))
