@@ -1288,10 +1288,9 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.targeted-shards.outputs.schedule_shards != 'false' }}
     # Keep one matrix on one pool: hosted jobs waiting for capacity also occupy
     # max-parallel slots and can prevent idle heavy runners from receiving work.
-    # Full runs (the run-name rule) take standard hosted runners, free for this
-    # public repository; affected runs keep the heavy pool. Fork code stays on
-    # the existing fallback.
-    runs-on: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Full runs (the run-name rule) use the configured label or standard hosted
+    # runners. Affected runs keep the heavy pool and its existing fallback.
+    runs-on: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && (inputs.full_ci || !inputs.selective_base)) && (vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest') || vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
