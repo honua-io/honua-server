@@ -61,6 +61,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             parts.Add($"""
                 CASE WHEN pg_catalog.pg_typeof({column}) OPERATOR(pg_catalog.=) ANY (ARRAY[
                     'pg_catalog.text'::pg_catalog.regtype, 'pg_catalog.varchar'::pg_catalog.regtype,
+                    'pg_catalog.bpchar'::pg_catalog.regtype,
                     'pg_catalog.bool'::pg_catalog.regtype, 'pg_catalog.int2'::pg_catalog.regtype,
                     'pg_catalog.int4'::pg_catalog.regtype, 'pg_catalog.int8'::pg_catalog.regtype])
                 THEN {EmptyNativeAttributeJson} ELSE jsonb_build_object({key}::text, {column}) END
@@ -107,7 +108,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             var type = reader.GetPostgresType(ordinal);
             var kind = type.Namespace == "pg_catalog" ? type.InternalName switch
             {
-                "text" or "varchar" => NativeAttributeKind.Text,
+                "text" or "varchar" or "bpchar" => NativeAttributeKind.Text,
                 "bool" => NativeAttributeKind.Boolean,
                 "int2" => NativeAttributeKind.Int16,
                 "int4" => NativeAttributeKind.Int32,

@@ -1,8 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -50,6 +51,71 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         public static WkbCreationResult Success(byte[] wkb) => new() { IsSuccess = true, Wkb = wkb };
         public static WkbCreationResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
+    }
+
+    public bool TryWriteWkbPoint(Utf8JsonWriter writer, byte[]? wkb, AxisOrder axisOrder)
+    {
+        if (wkb is null || wkb.Length == 0)
+        {
+            writer.WriteNullValue();
+            return true;
+        }
+
+        if (_geometryLimits.SimplifyTolerance is > 0 || !TryRead2DWkbPoint(wkb, out var x, out var y))
+        {
+            return false;
+        }
+
+        if (_geometryLimits.MaxCoordinatePrecision >= 0)
+        {
+            var precision = Math.Clamp(_geometryLimits.MaxCoordinatePrecision, 0, 15);
+            x = Math.Round(x, precision, MidpointRounding.AwayFromZero);
+            y = Math.Round(y, precision, MidpointRounding.AwayFromZero);
+        }
+
+        var first = axisOrder == AxisOrder.NorthEast ? y : x;
+        var second = axisOrder == AxisOrder.NorthEast ? x : y;
+        writer.WriteStartObject();
+        writer.WriteString("type", "Point");
+        writer.WriteStartArray("coordinates");
+        writer.WriteNumberValue(first);
+        writer.WriteNumberValue(second);
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+        return true;
+    }
+
+    private static bool TryRead2DWkbPoint(ReadOnlySpan<byte> wkb, out double x, out double y)
+    {
+        x = 0;
+        y = 0;
+        if (wkb.Length != 21)
+        {
+            return false;
+        }
+
+        var byteOrder = wkb[0];
+        if (byteOrder is not (0 or 1))
+        {
+            return false;
+        }
+
+        var isLittleEndian = byteOrder == 1;
+        var typeCode = isLittleEndian
+            ? BinaryPrimitives.ReadUInt32LittleEndian(wkb.Slice(1, 4))
+            : BinaryPrimitives.ReadUInt32BigEndian(wkb.Slice(1, 4));
+        if (typeCode != 1u)
+        {
+            return false;
+        }
+
+        x = isLittleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(wkb.Slice(5, 8))
+            : BinaryPrimitives.ReadDoubleBigEndian(wkb.Slice(5, 8));
+        y = isLittleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(wkb.Slice(13, 8))
+            : BinaryPrimitives.ReadDoubleBigEndian(wkb.Slice(13, 8));
+        return double.IsFinite(x) && double.IsFinite(y);
     }
 
     public SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, AxisOrder axisOrder)

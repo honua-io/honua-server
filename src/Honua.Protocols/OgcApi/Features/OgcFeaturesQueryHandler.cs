@@ -434,21 +434,24 @@ internal sealed partial class OgcFeaturesQueryHandler(
             else
             {
                 featureResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                features = featureResult.Value.Items
-                    .Select(feature =>
-                    {
-                        ImmutableArray<Link>? links = linkTemplate?.Build(
-                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
-                        return ToOgcFeature(
-                            feature,
-                            resource,
-                            outputAxisOrder,
-                            _geometryServices,
-                            projectedProperties,
-                            links,
-                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
-                    })
-                    .ToArray();
+                if (!CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate))
+                {
+                    features = featureResult.Value.Items
+                        .Select(feature =>
+                        {
+                            ImmutableArray<Link>? links = linkTemplate?.Build(
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
+                            return ToOgcFeature(
+                                feature,
+                                resource,
+                                outputAxisOrder,
+                                _geometryServices,
+                                projectedProperties,
+                                links,
+                                featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
+                        })
+                        .ToArray();
+                }
             }
             stopwatch.Stop();
             var queryTotalCount = pagedRawPointResult?.TotalCount
@@ -464,7 +467,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                       ?? encodedResult?.HasMoreResults
                                       ?? featureResult?.HasMoreResults
                                       ?? false;
-            var numberReturned = pagedRawPointResult?.Items.Length ?? pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? features.Length;
+            var numberReturned = pagedRawPointResult?.Items.Length
+                                 ?? pagedRawResult?.Items.Length
+                                 ?? gmlResult?.Items.Length
+                                 ?? (featureResult.HasValue && CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate)
+                                     ? featureResult.Value.Items.Length
+                                     : features.Length);
             if (gmlResult.HasValue)
             {
                 queryTotalCount = gmlResult.Value.TotalCount;
@@ -515,6 +523,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var payload = CreateRawFeatureCollectionPayload(
                     pagedRawResult.Value.Items,
                     new RawPayloadContext(resource, links, queryTotalCount));
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
+            }
+
+            if (featureResult.HasValue && CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate))
+            {
+                var payload = CreateDirectFeatureCollectionPayload(
+                    featureResult.Value.Items,
+                    new DirectFeaturePayloadContext(
+                        resource,
+                        outputAxisOrder,
+                        _geometryServices,
+                        projectedProperties,
+                        links,
+                        queryTotalCount));
                 return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 

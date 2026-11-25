@@ -180,7 +180,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
     // strings, ISO strings (seeds), or CLR date types depending on the write
     // path; emit one consistent, schema-conformant representation. Non-date
     // fields and unparseable values pass through unchanged.
-    private static object? CoerceProperty(
+    internal static object? CoerceProperty(
         string fieldName,
         object? value,
         PreparedSchema schema)

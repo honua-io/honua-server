@@ -89,14 +89,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         return batch;
     }
 
+    private readonly record struct FeatureReadOpenOptions(
+        bool ProbeLimit,
+        bool AllowSerialPlan,
+        NpgsqlConnectionLease? BorrowedConnection = null);
+
     private async Task<FeatureReadSession> OpenFeatureReadSessionAsync(
         FeatureQuery query,
-        bool probeLimit,
-        bool allowSerialPlan,
+        FeatureReadOpenOptions options,
         CancellationToken cancellationToken)
     {
+        var probeLimit = options.ProbeLimit;
+        var allowSerialPlan = options.AllowSerialPlan;
         var sql = BuildFeatureSelect(query, probeLimit);
-        var session = new FeatureReadSession(await OpenConnectionAsync(cancellationToken).ConfigureAwait(false));
+        var ownsConnection = options.BorrowedConnection is null;
+        var lease = options.BorrowedConnection ?? await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var session = new FeatureReadSession(lease, ownsConnection);
         try
         {
             var connection = session.Connection;
@@ -202,7 +210,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         }
     }
 
-    private sealed class FeatureReadSession(NpgsqlConnectionLease connection) : IAsyncDisposable
+    private sealed class FeatureReadSession(NpgsqlConnectionLease connection, bool ownsConnection = true) : IAsyncDisposable
     {
         public NpgsqlConnectionLease Connection { get; } = connection;
         public NpgsqlCommand? Command { get; set; }
@@ -253,7 +261,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             }
             finally
             {
-                await Connection.DisposeAsync().ConfigureAwait(false);
+                if (ownsConnection)
+                {
+                    await Connection.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
     }
