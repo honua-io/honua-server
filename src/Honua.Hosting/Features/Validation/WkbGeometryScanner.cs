@@ -13,6 +13,7 @@ internal struct WkbScanState
     public long RingCount;
     public bool HasZ;
     public bool HasM;
+    public bool HasNonFiniteCoordinate;
 }
 
 internal enum WkbScanOutcome : byte
@@ -151,6 +152,11 @@ internal ref struct WkbGeometryScanner(ReadOnlySpan<byte> wkb)
             return WkbScanOutcome.Empty;
         }
 
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+        {
+            _state.HasNonFiniteCoordinate = true;
+        }
+
         _state.VertexCount++;
         UpdateDimensionsForVertex(_offset, header);
         _offset += pointBytes;
@@ -240,22 +246,36 @@ internal ref struct WkbGeometryScanner(ReadOnlySpan<byte> wkb)
         }
 
         _state.VertexCount += numPoints;
-        if (numPoints > 0 && ((header.HasZ && !_state.HasZ) || (header.HasM && !_state.HasM)))
+        if (numPoints > 0)
         {
-            ScanSequenceDimensions(_offset, numPoints, header);
+            ScanSequenceVertices(_offset, numPoints, header);
         }
 
         _offset += (int)byteCount;
         return true;
     }
 
-    private void ScanSequenceDimensions(int startOffset, uint numPoints, WkbNodeHeader header)
+    private void ScanSequenceVertices(int startOffset, uint numPoints, WkbNodeHeader header)
     {
         var stride = header.OrdinateCount * sizeof(double);
         var pos = startOffset;
-        for (uint i = 0; i < numPoints && ((header.HasZ && !_state.HasZ) || (header.HasM && !_state.HasM)); i++)
+        for (uint i = 0; i < numPoints; i++)
         {
-            UpdateDimensionsForVertex(pos, header);
+            if (!_state.HasNonFiniteCoordinate)
+            {
+                var x = ReadDouble(_wkb.Slice(pos, sizeof(double)), header.Flags);
+                var y = ReadDouble(_wkb.Slice(pos + sizeof(double), sizeof(double)), header.Flags);
+                if (!double.IsFinite(x) || !double.IsFinite(y))
+                {
+                    _state.HasNonFiniteCoordinate = true;
+                }
+            }
+
+            if ((header.HasZ && !_state.HasZ) || (header.HasM && !_state.HasM))
+            {
+                UpdateDimensionsForVertex(pos, header);
+            }
+
             pos += stride;
         }
     }

@@ -210,7 +210,7 @@ internal ref partial struct WkbToSkiaDecoder(ReadOnlySpan<byte> wkb, Func<double
         var remaining = _reader.RemainingBytes;
         var safeCapacity = remaining > 0
             ? Math.Min(numGeometries, remaining / MinNestedPointBytes + 1)
-            : numGeometries;
+            : 0;
         var points = new List<SKPoint>(safeCapacity);
 
         AppendMultiPointToList(points, numGeometries, depth);

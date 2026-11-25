@@ -23,6 +23,21 @@ internal static partial class GdalErrorSanitizer
         RegexOptions.CultureInvariant)]
     private static partial Regex EndpointHostRegex();
 
+    [GeneratedRegex(
+        @"^\s*File\s+""[^""]*"",\s*line\s+\d+\b",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex PythonFrameRegex();
+
+    [GeneratedRegex(
+        @"^\s*at\s+[A-Za-z0-9_.+<>`]+\([^)]*\)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ManagedFrameRegex();
+
+    [GeneratedRegex(
+        @"^\s*#\d+\s+0x[0-9a-fA-F]+\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex NativeFrameRegex();
+
     public static void UseConfiguredEndpoints(AwsS3Options? s3, AzureBlobOptions? azure)
         => _configuredHosts = ExtractHosts(s3, azure);
 
@@ -39,11 +54,52 @@ internal static partial class GdalErrorSanitizer
         redacted = EndpointHostRegex().Replace(redacted, EndpointPlaceholder);
         redacted = RedactHosts(redacted, _configuredHosts);
         redacted = RedactHosts(redacted, endpointHosts);
+        redacted = StripStackTraces(redacted);
 
         return redacted.Length <= WorkspacePathSanitizer.DefaultMaxLength
             ? redacted
             : redacted[..WorkspacePathSanitizer.DefaultMaxLength] + "…";
     }
+
+    private static string StripStackTraces(string text)
+    {
+        var lines = text.Split('\n');
+        var kept = new List<string>(lines.Length);
+        var skipPythonSourceLine = false;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (IsPythonFrameLine(line))
+            {
+                skipPythonSourceLine = true;
+                continue;
+            }
+
+            if (skipPythonSourceLine && line.StartsWith("    ", StringComparison.Ordinal))
+            {
+                skipPythonSourceLine = false;
+                continue;
+            }
+
+            skipPythonSourceLine = false;
+            if (!IsStackTraceLine(line))
+            {
+                kept.Add(line);
+            }
+        }
+
+        var filtered = string.Join('\n', kept).Trim();
+        return filtered.Length == 0 ? "Native process terminated abnormally." : filtered;
+    }
+
+    private static bool IsPythonFrameLine(string line)
+        => PythonFrameRegex().IsMatch(line);
+
+    private static bool IsStackTraceLine(string line)
+        => line.TrimStart().StartsWith("Traceback (most recent call last):", StringComparison.OrdinalIgnoreCase)
+            || ManagedFrameRegex().IsMatch(line)
+            || NativeFrameRegex().IsMatch(line);
 
     public static string TruncateForLog(string stderr)
         => WorkspacePathSanitizer.TruncateForLog(stderr);

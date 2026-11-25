@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Text;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Subprocesses;
@@ -19,6 +18,8 @@ internal sealed partial class ProcessGdalCommandRunner(
     ILogger<ProcessGdalCommandRunner> logger,
     IConfiguration? configuration = null) : IGdalCommandRunner
 {
+    internal int MaxOutputChars { get; set; } = BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars;
+
     public async Task<GdalCommandResult> RunAsync(
         string tool,
         IReadOnlyList<string> arguments,
@@ -67,9 +68,8 @@ internal sealed partial class ProcessGdalCommandRunner(
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
-            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
-        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
+        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(MaxOutputChars);
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker(BoundedProcessOutputBuffer.DefaultMaxErrorChars);
 
         process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
         process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
@@ -79,13 +79,7 @@ internal sealed partial class ProcessGdalCommandRunner(
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        var result = new GdalCommandResult
-        {
-            ExitCode = process.ExitCode,
-            StandardOutput = stdout.ToString(),
-            StandardError = stderr.ToString(),
-            StandardOutputTruncated = stdout.Truncated
-        };
+        var result = BoundedProcessOutputBuffer.BuildCommandResult(process.ExitCode, stdout, stderr);
 
         Log.ToolCompleted(logger, tool, result.ExitCode);
         return result;
@@ -183,99 +177,5 @@ internal sealed partial class ProcessGdalCommandRunner(
 
         [LoggerMessage(9201, LogLevel.Information, "GDAL tool {Tool} exited with code {ExitCode}")]
         public static partial void ToolCompleted(ILogger logger, string tool, int exitCode);
-    }
-}
-
-internal sealed class BoundedProcessOutputBuffer
-{
-    internal const int DefaultMaxChars = 256 * 1024;
-    internal const int DefaultStandardOutputMaxChars = 50 * 1024 * 1024;
-    internal const string TruncationMarker = "... [output truncated]";
-
-    private enum TruncationMarkerMode
-    {
-        Append,
-        Omit,
-    }
-
-    private readonly int _maxChars;
-    private readonly TruncationMarkerMode _truncationMarkerMode;
-    private readonly Lock _sync = new();
-    private readonly StringBuilder _builder = new();
-    private bool _truncated;
-
-    public BoundedProcessOutputBuffer(int maxChars = DefaultMaxChars)
-        : this(maxChars, TruncationMarkerMode.Append)
-    {
-    }
-
-    private BoundedProcessOutputBuffer(int maxChars, TruncationMarkerMode truncationMarkerMode)
-    {
-        _maxChars = maxChars > 0
-            ? maxChars
-            : throw new ArgumentOutOfRangeException(nameof(maxChars), "Maximum character limit must be positive.");
-        _truncationMarkerMode = truncationMarkerMode;
-    }
-
-    public static BoundedProcessOutputBuffer CreateWithTruncationMarker(int maxChars = DefaultMaxChars)
-        => new(maxChars, TruncationMarkerMode.Append);
-
-    public static BoundedProcessOutputBuffer CreateWithoutTruncationMarker(int maxChars = DefaultMaxChars)
-        => new(maxChars, TruncationMarkerMode.Omit);
-
-    public bool Truncated
-    {
-        get
-        {
-            lock (_sync)
-            {
-                return _truncated;
-            }
-        }
-    }
-
-    public void AppendLine(string? line)
-    {
-        if (line is null)
-        {
-            return;
-        }
-
-        lock (_sync)
-        {
-            if (_truncated)
-            {
-                return;
-            }
-
-            var remaining = _maxChars - _builder.Length;
-            var lineLengthWithNewLine = line.Length + Environment.NewLine.Length;
-            if (lineLengthWithNewLine <= remaining)
-            {
-                _builder.AppendLine(line);
-                return;
-            }
-
-            if (remaining > 0)
-            {
-                _builder.Append(line, 0, Math.Min(line.Length, remaining));
-            }
-
-            if (_truncationMarkerMode == TruncationMarkerMode.Append)
-            {
-                _builder.AppendLine();
-                _builder.Append(TruncationMarker);
-            }
-
-            _truncated = true;
-        }
-    }
-
-    public override string ToString()
-    {
-        lock (_sync)
-        {
-            return _builder.ToString();
-        }
     }
 }

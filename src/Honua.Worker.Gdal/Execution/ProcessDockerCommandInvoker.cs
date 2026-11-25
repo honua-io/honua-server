@@ -129,7 +129,8 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         using var process = new Process { StartInfo = startInfo };
         var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
             BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
-        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker(
+            BoundedProcessOutputBuffer.DefaultMaxErrorChars);
 
         process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
         process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
@@ -164,7 +165,8 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        return (process.ExitCode, stdout.ToString(), stderr.ToString(), stdout.Truncated);
+        var result = BoundedProcessOutputBuffer.BuildCommandResult(process.ExitCode, stdout, stderr);
+        return (result.ExitCode, result.StandardOutput, result.StandardError, result.StandardOutputTruncated);
     }
 
     private static async Task TryForceRemoveContainerAsync(string executable, string containerName)
