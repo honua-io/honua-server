@@ -313,7 +313,8 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
     [InlineData("GET", true, true)]
     [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
     [Endpoint("HEAD /api/v1/rasters/cog/{*artifactId}")]
-    public async Task CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders(
+    [Operation(Operations.Security)]
+    public async Task CogProxy_SourceBecomesRestricted_AnonymousReadIsUnauthorizedBeforeBytesOrHeaders(
         string method, bool range, bool restrictService)
     {
         var descriptor = await PublishAsync();

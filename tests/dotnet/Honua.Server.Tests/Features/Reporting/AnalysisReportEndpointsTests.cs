@@ -11,6 +11,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,16 +21,39 @@ namespace Honua.Server.Tests.Features.Reporting;
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisReportEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseEnvironment("Test");
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+    });
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client?.Dispose();
+        return _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("/api/v1/analysis/reports/sample-job")]
+    [InlineData("/api/v1/analysis/reports/sample-job/render?format=md")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}/render")]
+    public async Task AnalysisReport_AnonymousReadIsUnauthorized(string path)
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
