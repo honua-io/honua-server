@@ -32,8 +32,8 @@ public sealed class StyleSuggestionSecurityTests(StyleSuggestionSecurityTests.St
     {
         public WebApplicationFactory<Program> Application { get; } = ServiceRbacTestFixture
             .CreateFactory(() => new RbacTestLayerCatalog(
-                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
-                betaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["beta-reader"])))
+                betaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["beta-reader"]),
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"])))
             .WithWebHostBuilder(builder => builder
                 .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword)
                 .UseSetting("InputValidation:MaxParameterLength", MaxParameterLength.ToString(CultureInfo.InvariantCulture))
@@ -54,7 +54,9 @@ public sealed class StyleSuggestionSecurityTests(StyleSuggestionSecurityTests.St
         using var client = host.Application.CreateClient();
         using var response = await SendRendererAsync(client, method, AlphaRenderer);
 
-        await response.AssertGeoServicesErrorAsync(401, 499);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(499, error.RootElement.GetProperty("error").GetProperty("code").GetInt32());
     }
 
     [IntegrationTheory]
@@ -91,17 +93,27 @@ public sealed class StyleSuggestionSecurityTests(StyleSuggestionSecurityTests.St
         await denied.AssertGeoServicesErrorAsync(403);
     }
 
-    [IntegrationTheory]
+    [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Security)]
     [Endpoint(GetRendererEndpoint)]
-    [Endpoint(PostRendererEndpoint)]
-    [InlineData("GET")]
-    [InlineData("POST")]
-    public async Task GenerateRenderer_UnknownParameter_ReturnsBadRequest(string method)
+    public async Task GenerateRenderer_UnknownQueryParameter_ReturnsBadRequest()
     {
         using var client = ServiceRbacTestFixture.CreateClient(host.Application, "alpha-reader");
-        using var response = await SendRendererAsync(client, method, AlphaRenderer + "?unexpected=true");
+        using var response = await client.GetAsync(AlphaRenderer + "?unexpected=true");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.Security)]
+    [Endpoint(PostRendererEndpoint)]
+    public async Task GenerateRenderer_UnknownJsonProperty_ReturnsBadRequest()
+    {
+        using var client = ServiceRbacTestFixture.CreateClient(host.Application, "alpha-reader");
+        using var body = JsonContent("""{"unexpected":true}""");
+        using var response = await client.PostAsync(AlphaRenderer, body);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -184,7 +196,9 @@ public sealed class StyleSuggestionSecurityTests(StyleSuggestionSecurityTests.St
         using var body = OversizedJsonContent();
         using var response = await client.PostAsync(AlphaRenderer, body);
 
-        await response.AssertGeoServicesErrorAsync(413);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(413, error.RootElement.GetProperty("error").GetProperty("code").GetInt32());
     }
 
     [IntegrationTest]
@@ -245,6 +259,9 @@ public sealed class StyleSuggestionSecurityTests(StyleSuggestionSecurityTests.St
         using var response = await client.PostAsync(SuggestStyle, body);
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(413, error.RootElement.GetProperty("status").GetInt32());
     }
 
     private HttpClient CreateBootstrapClient()
