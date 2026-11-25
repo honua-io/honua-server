@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit;
@@ -455,7 +456,11 @@ public sealed class RoutingAsyncWebToolTests
         // against that policy and the retry is then made due, instead of sleeping through it.
         var retryPolicy = JobRetryPolicy.Default;
         var jobStore = fixture.GetService<IExecutionJobStore>();
-        await new ScheduledRetryExpediter(fixture.Postgres.DataSource, jobStore).ExpediteAsync(jobId, retryPolicy, GPServerJobWait.JobBudget);
+        var retries = new ScheduledRetryExpediter(fixture.Postgres.DataSource, jobStore)
+        {
+            QueueWake = fixture.GetService<PollWakeSignal<IJobQueue>>(),
+        };
+        await retries.ExpediteAsync(jobId, retryPolicy, GPServerJobWait.JobBudget);
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId, jobStore);
         terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
         provider.ReceivedCalls().Count(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).Should().Be(retryPolicy.MaxAttempts);
