@@ -157,6 +157,7 @@ internal static class McpToolOutputSchemas
     {
         var root = JsonNode.Parse(IncludeErrorEnvelope(completedSchema).GetRawText())!.AsObject();
         var props = root["properties"]!.AsObject();
+        props["status"] = JsonNode.Parse("""{"type":"string"}""");
         props["operationId"] ??= JsonNode.Parse("""{"type":"string"}""");
         props["proposalId"] ??= JsonNode.Parse("""{"type":"string"}""");
         props["jobId"] ??= JsonNode.Parse("""{"type":["string","null"]}""");
@@ -253,7 +254,7 @@ internal static class McpToolOutputSchemas
             "createdAt": { "type": "string", "format": "date-time" },
             "resourceUri": {
               "type": "string",
-              "description": "honua://jobs/{jobId} resource URI for polling lifecycle state via resources/read."
+              "description": "Job resource URI."
             }
           }
         }
@@ -283,7 +284,7 @@ internal static class McpToolOutputSchemas
             "proposalId": { "type": ["string", "null"] },
             "resourceUri": {
               "type": ["string", "null"],
-              "description": "honua://proposals/{proposalId} resource URI to poll when human approval is required."
+              "description": "Proposal resource URI."
             },
             "executionOperationId": { "type": ["string", "null"] },
             "supportedKinds": {
@@ -294,7 +295,7 @@ internal static class McpToolOutputSchemas
             "message": { "type": ["string", "null"] },
             "result": {
               "type": ["object", "null"],
-              "description": "Canonical non-mutating result returned by planning tools."
+              "description": "Planning result."
             },
             "targets": {
               "type": ["array", "null"],
@@ -311,7 +312,7 @@ internal static class McpToolOutputSchemas
             },
             "code": {
               "type": ["string", "null"],
-              "description": "Stable rejection code, e.g. platform_release_version_mismatch when a convergence targetVersion differs from the declared release."
+              "description": "Rejection code."
             },
             "declaredVersion": { "type": ["string", "null"] },
             "targetVersion": { "type": ["string", "null"] },
@@ -329,7 +330,7 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": {
               "type": "string",
-              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, or Failed."
+              "description": "Operation handle status."
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
@@ -388,7 +389,7 @@ internal static class McpToolOutputSchemas
           "properties": {
             "status": {
               "type": "string",
-              "description": "Operation handle status: Completed, Queued, Running, RequiresApproval, Denied, or Failed."
+              "description": "Operation handle status."
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
@@ -403,11 +404,11 @@ internal static class McpToolOutputSchemas
             "policyOutcome": { "type": ["string", "null"] },
             "sourceJobId": {
               "type": ["string", "null"],
-              "description": "The completed analysis job id whose artifact was promoted."
+              "description": "Source job id."
             },
             "artifactId": {
               "type": ["string", "null"],
-              "description": "The result artifact that was promoted."
+              "description": "Promoted artifact id."
             },
             "serviceUri": {
               "type": ["string", "null"],
@@ -589,9 +590,9 @@ internal static class McpToolOutputSchemas
             "connectionId": { "type": ["string", "null"] },
             "schema": { "type": ["string", "null"] },
             "table": { "type": ["string", "null"] },
-            "srid": { "type": ["integer", "null"], "description": "SRID stored on the imported table." },
-            "sourceSrid": { "type": ["integer", "null"], "description": "Producer or explicitly chosen source SRID. Not a feature property." },
-            "crsState": { "type": ["string", "null"], "description": "known when the producer recorded one CRS; unknown when the caller had to choose sourceSrid." },
+            "srid": { "type": ["integer", "null"], "description": "Stored SRID." },
+            "sourceSrid": { "type": ["integer", "null"], "description": "Source SRID." },
+            "crsState": { "type": ["string", "null"], "description": "CRS provenance (known or unknown)." },
             "contentSha256": { "type": ["string", "null"] },
             "geometryColumn": { "type": ["string", "null"] },
             "primaryKey": { "type": ["string", "null"] },
@@ -614,8 +615,8 @@ internal static class McpToolOutputSchemas
               "type": ["string", "null"],
               "description": "Catalog connection id for honua_publish_service, or null."
             },
-            "schema": { "type": ["string", "null"], "description": "Schema that owns the imported table." },
-            "table": { "type": ["string", "null"], "description": "Physical table name to publish." },
+            "schema": { "type": ["string", "null"], "description": "Target schema." },
+            "table": { "type": ["string", "null"], "description": "Target table." },
             "srid": { "type": ["integer", "null"] },
             "sourceSrid": { "type": ["integer", "null"] },
             "storedSrid": { "type": ["integer", "null"] },
@@ -629,7 +630,7 @@ internal static class McpToolOutputSchemas
                 "type": "object",
                 "required": ["code", "message"],
                 "properties": {
-                  "row": { "type": ["integer", "null"], "description": "1-based data row (header excluded), when known." },
+                  "row": { "type": ["integer", "null"], "description": "1-based data row." },
                   "code": { "type": "string" },
                   "message": { "type": "string" },
                   "field": { "type": ["string", "null"] }
@@ -828,14 +829,14 @@ internal static class McpToolOutputSchemas
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft Map was created."
+              "description": "Creation status."
             },
-            "mapId": { "type": "string", "description": "Stable map_… identifier for the created draft." },
+            "mapId": { "type": "string", "description": "Draft map id." },
             "resourceUri": { "type": "string", "description": "honua://maps/{mapId}." },
             "map": { "type": ["object", "null"], "description": "The created Map draft." },
             "warnings": {
               "type": "array",
-              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "description": "Non-blocking findings.",
               "items": {
                 "type": "object",
                 "required": ["code", "path", "message"],
@@ -859,14 +860,14 @@ internal static class McpToolOutputSchemas
             "status": {
               "type": "string",
               "enum": ["created"],
-              "description": "created — the draft App was created."
+              "description": "Creation status."
             },
-            "appId": { "type": "string", "description": "Stable app_… identifier for the created draft." },
+            "appId": { "type": "string", "description": "Draft app id." },
             "resourceUri": { "type": "string", "description": "honua://apps/{appId}." },
             "app": { "type": ["object", "null"], "description": "The created App draft." },
             "warnings": {
               "type": "array",
-              "description": "Non-blocking findings deferred to publish-time resolution.",
+              "description": "Non-blocking findings.",
               "items": {
                 "type": "object",
                 "required": ["code", "path", "message"],
@@ -892,20 +893,20 @@ internal static class McpToolOutputSchemas
             "styleVersion": { "type": ["integer", "null"] },
             "encodings": {
               "type": ["array", "null"],
-              "description": "Advertised encodings for the resolved style (resolve mode).",
+              "description": "Style encodings.",
               "items": {
                 "type": "object",
                 "properties": {
                   "encoding": { "type": "string", "description": "mapbox-style, esri-drawing-info, sld-1.0.0, or sld-1.1.0." },
                   "mediaType": { "type": "string" },
-                  "inlineBody": { "type": ["string", "null"], "description": "Inlined stylesheet body for the selected encoding, when includeStylesheet=true." },
-                  "storageRef": { "type": ["string", "null"], "description": "honua://styles/{styleId} reference when the encoding is advertised by reference." }
+                  "inlineBody": { "type": ["string", "null"], "description": "Inline stylesheet body." },
+                  "storageRef": { "type": ["string", "null"], "description": "Style resource URI." }
                 }
               }
             },
             "styles": {
               "type": ["array", "null"],
-              "description": "Discovery catalog of available styles (list mode).",
+              "description": "Available styles.",
               "items": {
                 "type": "object",
                 "properties": {
