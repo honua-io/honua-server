@@ -1272,7 +1272,8 @@ public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
             [
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim(ClaimTypes.Role, "admin"),
-                new Claim("auth_type", "admin"),
+                new Claim("auth_type", "dev-bypass"),
+                new Claim("api_key_id", "00000000-0000-0000-0000-000000000001"),
             ],
             AuthenticationExtensions.ApiKeyScheme));
         var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: owner);
