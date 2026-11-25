@@ -28,6 +28,9 @@ internal static class Wcs20ErrorResults
     internal static IResult CreateInternalServerError(string detail)
         => Create(StatusCodes.Status500InternalServerError, Wcs20Utilities.ExceptionCodes.NoApplicableCode, detail, null);
 
+    internal static IResult CreateServiceUnavailable(string detail)
+        => Create(StatusCodes.Status503ServiceUnavailable, Wcs20Utilities.ExceptionCodes.NoApplicableCode, detail, null);
+
     private static IResult Create(int statusCode, string exceptionCode, string detail, string? locator)
     {
         var exceptionAttributes = new List<object>

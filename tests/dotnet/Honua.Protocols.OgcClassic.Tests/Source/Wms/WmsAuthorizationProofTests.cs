@@ -63,13 +63,16 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
     }
 
     [IntegrationTheory]
-    [InlineData("1.3.0")]
-    [InlineData("1.1.1")]
+    [InlineData("1.3.0", "/rest/services/{0}/MapServer/WMS")]
+    [InlineData("1.1.1", "/rest/services/{0}/MapServer/WMS")]
+    [InlineData("1.3.0", "/ogc/services/{0}/wms")]
+    [InlineData("1.1.1", "/ogc/services/{0}/wms")]
     [Protocol(TestProtocols.Wms13)]
     [Operation(Operations.SecurityTesting)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
-    public async Task Wms_GetCapabilities_EmptyService_EnforcesServiceAccess(string version)
+    public async Task Wms_GetCapabilities_EmptyService_RejectsAnonymousAndForbiddenCallers(string version, string route)
     {
         var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var graph = snapshot.Graph with
@@ -82,7 +85,8 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
         };
         ((TestMetadataV2GraphProvider)Fixture.GetService<IMetadataV2GraphProvider>())
             .SetGraph(graph, schema: Fixture.CurrentSchema);
-        var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}";
+        var path = string.Format(System.Globalization.CultureInfo.InvariantCulture, route, WebAppFixture.TestServiceId);
+        var url = $"{path}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}";
 
         using var denied = await Outsider().GetAsync(url);
         await AssertWmsAccessDeniedAsync(denied, version);

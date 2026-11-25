@@ -23,6 +23,11 @@ internal static partial class FeatureServerEndpoints
     private const int MaxCategoryLimit = 100;
     private const int DefaultHistogramBins = 10;
     private const int MaxHistogramBins = 64;
+    internal const int MaxSummariesPerRequest = 16;
+    internal const int MaxRangeBucketsPerSummary = 32;
+    internal const int MaxGroupByFields = 4;
+    internal const int MaxTotalSubQueriesPerRequest = 64;
+    internal const int MaxGroupedSummaryRows = 1_000;
 
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex SqlParameterRegex();
@@ -283,138 +288,36 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
+            if (document.RootElement.GetArrayLength() > MaxSummariesPerRequest)
+            {
+                error = StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid summaries parameter",
+                    [$"At most {MaxSummariesPerRequest} summaries may be requested per query."]);
+                return false;
+            }
+
             var builder = ImmutableArray.CreateBuilder<SpatialAggregationSummaryDefinition>();
             var ids = new HashSet<string>(StringComparer.Ordinal);
+            var totalBucketSubQueries = 0;
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (element.ValueKind != JsonValueKind.Object ||
-                    !TryReadStringProperty(element, "id", out var id) ||
-                    !TryReadStringProperty(element, "kind", out var kindRaw) ||
-                    string.IsNullOrWhiteSpace(id) ||
-                    string.IsNullOrWhiteSpace(kindRaw))
+                var parsedItem = ParseSpatialAggregationSummaryItem(new SummaryItemParseInput
                 {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        ["Each summary requires string id and kind properties."]);
-                    return false;
-                }
-
-                if (!ids.Add(id))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        [$"Duplicate summary id '{id}'."]);
-                    return false;
-                }
-
-                if (!TryParseSpatialAggregationSummaryKind(kindRaw, out var kind))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        [$"Unsupported summary kind '{kindRaw}'."]);
-                    return false;
-                }
-
-                if (!TryReadStringProperty(element, "field", out var field) ||
-                    !TryReadStringProperty(element, "title", out var title) ||
-                    !TryReadStringProperty(element, "unit", out var unit) ||
-                    !TryReadStringProperty(element, "orderBy", out var orderBy))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        ["Summary string properties must be JSON strings when supplied."]);
-                    return false;
-                }
-
-                if (RequiresField(kind) && string.IsNullOrWhiteSpace(field))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        [$"{kindRaw} summaries require a field."]);
-                    return false;
-                }
-
-                if (!string.IsNullOrWhiteSpace(field) && !IsSafeSpatialAggregationFieldName(field))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        [$"Invalid summary field '{field}'."]);
-                    return false;
-                }
-
-                if (!string.IsNullOrWhiteSpace(field) && !IsSchemaField(resource, field))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        [$"Summary field '{field}' does not exist on the layer."]);
-                    return false;
-                }
-
-                if (!TryReadPositiveInt(element, "limit", out var limit) ||
-                    !TryReadPositiveInt(element, "bins", out var bins) ||
-                    !TryReadOptionalDouble(element, "min", out var min) ||
-                    !TryReadOptionalDouble(element, "max", out var max))
-                {
-                    error = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Invalid summaries parameter",
-                        ["Summary numeric properties must be finite positive values where required."]);
-                    return false;
-                }
-
-                var includeOther = TryReadBool(element, "includeOther", out var parsedIncludeOther) && parsedIncludeOther;
-
-                ImmutableArray<SpatialAggregationRangeBucketDefinition>? ranges = null;
-                if (kind == SpatialAggregationSummaryKind.Range &&
-                    !TryParseRangeBuckets(context, element, out ranges, out error))
-                {
-                    return false;
-                }
-
-                if (kind == SpatialAggregationSummaryKind.Histogram)
-                {
-                    bins ??= DefaultHistogramBins;
-                    if (bins <= 0 || bins > MaxHistogramBins ||
-                        (min.HasValue && max.HasValue && min.Value >= max.Value))
-                    {
-                        error = StandardErrorHelpers.CreateBadRequest(
-                            context,
-                            "Invalid summaries parameter",
-                            [$"Histogram summaries require 1-{MaxHistogramBins} bins and max greater than min when bounds are supplied."]);
-                        return false;
-                    }
-                }
-
-                builder.Add(new SpatialAggregationSummaryDefinition
-                {
-                    Id = id,
-                    Kind = kind,
-                    Title = title,
-                    Field = field,
-                    FieldType = !string.IsNullOrWhiteSpace(field) &&
-                        TryResolveSpatialAggregationFieldType(resource, field, out var fieldType)
-                            ? fieldType
-                            : null,
-                    Unit = unit,
-                    CategoryLimit = Math.Min(limit.GetValueOrDefault(DefaultCategoryLimit), MaxCategoryLimit),
-                    IncludeOther = includeOther,
-                    CategoryOrderBy = orderBy,
-                    HistogramBins = bins,
-                    HistogramMin = min,
-                    HistogramMax = max,
-                    HistogramMethod = kind == SpatialAggregationSummaryKind.Histogram &&
-                        TryReadStringProperty(element, "method", out var method)
-                        ? method
-                        : null,
-                    Ranges = ranges
+                    Context = context,
+                    Resource = resource,
+                    Element = element,
+                    SeenIds = ids,
+                    TotalBucketSubQueries = totalBucketSubQueries
                 });
+                if (parsedItem.Error is not null)
+                {
+                    error = parsedItem.Error;
+                    return false;
+                }
+
+                totalBucketSubQueries += parsedItem.BucketSubQueries;
+                builder.Add(parsedItem.Definition!.Value);
             }
 
             summaries = builder.ToImmutable();
@@ -460,6 +363,15 @@ internal static partial class FeatureServerEndpoints
                     context,
                     "Invalid groupBy parameter",
                     ["groupBy must be a JSON array."]);
+                return false;
+            }
+
+            if (document.RootElement.GetArrayLength() > MaxGroupByFields)
+            {
+                error = StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid groupBy parameter",
+                    [$"At most {MaxGroupByFields} groupBy fields may be requested per query."]);
                 return false;
             }
 
@@ -599,6 +511,7 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
     {
         var countAlias = $"{summary.Id}_count";
+        var isCountAsc = string.Equals(summary.CategoryOrderBy, "count-asc", StringComparison.OrdinalIgnoreCase);
         var rows = await featureReader.QueryStatisticsAsync(
             storageLayerId,
             featureQuery with
@@ -609,38 +522,32 @@ internal static partial class FeatureServerEndpoints
                     StatisticType = StatisticType.Count,
                     OnStatisticField = FieldNames.ObjectId,
                     OutStatisticFieldName = countAlias
-                })
+                }),
+                OrderBy = ImmutableArray.Create(
+                    new OrderByClause(countAlias, ascending: isCountAsc),
+                    new OrderByClause(summary.Field!, ascending: true)),
+                Limit = MaxGroupedSummaryRows
             },
             cancellationToken);
 
         var valueField = summary.Field!;
-        var buckets = rows
-            .Where(row => row.TryGetValue(valueField, out var value) && value is not null)
-            .Select(row => new
-            {
-                Value = row[valueField],
-                Count = ToLong(row.GetValueOrDefault(countAlias))
-            })
-            .OrderByDescending(row => string.Equals(summary.CategoryOrderBy, "count-asc", StringComparison.OrdinalIgnoreCase) ? -row.Count : row.Count)
-            .ThenBy(row => Convert.ToString(row.Value, CultureInfo.InvariantCulture), StringComparer.Ordinal)
-            .Take(summary.CategoryLimit.GetValueOrDefault(DefaultCategoryLimit))
-            .Select(row => new SpatialAggregationBucketValueResponse
-            {
-                Value = row.Value,
-                Count = row.Count
-            })
-            .ToArray();
-
-        var selected = new HashSet<string>(
-            buckets.Select(bucket => Convert.ToString(bucket.Value, CultureInfo.InvariantCulture) ?? string.Empty),
-            StringComparer.Ordinal);
-        var otherCount = rows
-            .Where(row => row.TryGetValue(valueField, out var value) && value is not null)
-            .Where(row => !selected.Contains(Convert.ToString(row[valueField], CultureInfo.InvariantCulture) ?? string.Empty))
-            .Sum(row => ToLong(row.GetValueOrDefault(countAlias)));
+        var buckets = BuildCategoryBuckets(rows, summary, countAlias);
         var nullCount = rows
             .Where(row => !row.TryGetValue(valueField, out var value) || value is null)
             .Sum(row => ToLong(row.GetValueOrDefault(countAlias)));
+        var otherCount = await ResolveCategoryOtherCountAsync(
+            new CategoryOtherCountInput
+            {
+                FeatureReader = featureReader,
+                StorageLayerId = storageLayerId,
+                FeatureQuery = featureQuery,
+                Rows = rows,
+                Buckets = buckets,
+                ValueField = valueField,
+                CountAlias = countAlias,
+                NullCount = nullCount
+            },
+            cancellationToken);
 
         return new SpatialAggregationSummaryValueResponse
         {
@@ -1194,16 +1101,20 @@ internal static partial class FeatureServerEndpoints
             })
             .ToImmutableArray();
 
+        var limit = Math.Clamp(
+            groupBy.Select(group => group.Limit).Where(limit => limit.HasValue).Min() ?? 100,
+            1,
+            MaxGroupedSummaryRows);
         var rows = await featureReader.QueryStatisticsAsync(
             storageLayerId,
             featureQuery with
             {
                 GroupByFields = groupBy.Select(group => group.Field).ToImmutableArray(),
-                OutStatistics = stats
+                OutStatistics = stats,
+                Limit = limit
             },
             cancellationToken);
 
-        var limit = groupBy.Select(group => group.Limit).Where(limit => limit.HasValue).Min() ?? 100;
         return rows
             .Take(limit)
             .Select(row =>
@@ -1368,6 +1279,15 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "Invalid summaries parameter",
                 ["Range summaries require a non-empty ranges array."]);
+            return false;
+        }
+
+        if (rangesElement.GetArrayLength() > MaxRangeBucketsPerSummary)
+        {
+            error = StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid summaries parameter",
+                [$"Range summaries may define at most {MaxRangeBucketsPerSummary} range buckets."]);
             return false;
         }
 

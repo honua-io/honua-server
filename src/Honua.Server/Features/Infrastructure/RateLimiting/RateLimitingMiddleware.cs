@@ -1,20 +1,26 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
+using System.Buffers;
+using System.Globalization;
 using System.Security.Claims;
-using System.Text;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
-using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Server.Features.Operations;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
+
+internal sealed class RateLimitingDependencies
+{
+    public required IRateLimitPolicyStore PolicyStore { get; init; }
+    public required IOptions<RateLimitingOptions> Options { get; init; }
+    public required ILogger<RateLimitingMiddleware> Logger { get; init; }
+    public TimeProvider? TimeProvider { get; init; }
+    public ShardedRateLimitCounterStore? CounterStore { get; init; }
+}
 
 // A server-only request feature; never reconstructed from caller headers.
 internal sealed class RateLimitAdmission
@@ -29,36 +35,39 @@ internal sealed partial class RateLimitingMiddleware
     private const string IpKeyFamily = "ip";
     private const string UnknownKeyFamily = "unknown";
 
-    // At capacity the least-recently-used entry is evicted so a flood of new keys cannot deny unrelated subjects.
-    private const int MaxMemoryCounterEntries = 10_000;
+    // At capacity the least-recently-used entry in the shard is evicted in O(1) so a flood of new keys
+    // cannot deny unrelated subjects or stall unrelated shards.
+    internal const int MaxMemoryCounterEntries = 10_000;
+    private const int CounterShardCount = 16;
 
+    private static readonly RateLimitAdmission Admitted = new();
     private static readonly long MemoryCapacityLogIntervalTicks = TimeSpan.TicksPerMinute;
-
-    private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
-    private static readonly object _memoryCountersLock = new();
-    private static DateTimeOffset _nextMemoryCounterPrune = DateTimeOffset.MinValue;
-    private static long _memoryCounterSequence;
-    private static long _lastMemoryCapacityLogTicks;
+    private static readonly ShardedRateLimitCounterStore SharedCounterStore = new(MaxMemoryCounterEntries, CounterShardCount);
 
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly ShardedRateLimitCounterStore _counterStore;
+    private long _lastMemoryCapacityLogTicks;
 
     public RateLimitingMiddleware(
         RequestDelegate next,
-        IRateLimitPolicyStore policyStore,
-        IOptions<RateLimitingOptions> options,
-        ILogger<RateLimitingMiddleware> logger,
-        TimeProvider? timeProvider = null)
+        RateLimitingDependencies dependencies)
     {
+        ArgumentNullException.ThrowIfNull(dependencies);
         _next = next;
-        _policyStore = policyStore;
-        _options = options.Value;
-        _logger = logger;
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _policyStore = dependencies.PolicyStore;
+        _options = dependencies.Options.Value;
+        _logger = dependencies.Logger;
+        _timeProvider = dependencies.TimeProvider ?? TimeProvider.System;
+        _counterStore = dependencies.CounterStore ?? SharedCounterStore;
     }
+
+    internal static int SharedMemoryCounterCount => SharedCounterStore.Count;
+
+    internal static void ClearSharedMemoryCounters() => SharedCounterStore.Clear();
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -94,7 +103,7 @@ internal sealed partial class RateLimitingMiddleware
 
         if (rateLimitResult.IsAllowed)
         {
-            context.Features.Set(new RateLimitAdmission());
+            context.Features.Set(Admitted);
             // Add rate limit headers
             AddRateLimitHeaders(context, rateLimitResult);
             await _next(context);
@@ -108,16 +117,12 @@ internal sealed partial class RateLimitingMiddleware
 
     private static string? DetermineRateLimitKey(HttpContext context)
     {
-        // Skip rate limiting for health checks and metrics endpoints
-        var path = context.Request.Path.Value?.ToLowerInvariant();
-        if (path is "/health" or "/metrics" or "/ready")
-        {
-            return null;
-        }
-
-        // Use client IP as the primary rate limiting key
-        var clientIp = GetClientIpAddress(context);
-        if (string.IsNullOrEmpty(clientIp))
+        // Skip rate limiting for health probes and metrics endpoints.
+        var path = context.Request.Path;
+        if (path.Equals("/health", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/metrics", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/ready", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
@@ -126,18 +131,14 @@ internal sealed partial class RateLimitingMiddleware
         // pipeline). When present it prefixes the bucket so two tenants sharing an
         // identity provider — or an anonymous IP straddling tenants — never share a
         // counter. The id is a stable opaque tenant identifier, never a secret.
-        var tenantPrefix = string.Empty;
-        var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
-        if (!string.IsNullOrEmpty(tenantContext?.TenantId))
-        {
-            tenantPrefix = $"{TenantKeyFamily}:{tenantContext.TenantId}|";
-        }
+        var tenantId = context.RequestServices?.GetService(typeof(ITenantContext)) is ITenantContext tenantContext
+            && !string.IsNullOrEmpty(tenantContext.TenantId)
+            ? tenantContext.TenantId
+            : null;
 
-        // Key on the authenticated principal when one is present. Never derive the
-        // bucket from raw, unauthenticated credentials (Authorization header or
-        // ?api_key=): an attacker could mint a fresh bucket per request by sending
-        // a random token, bypassing the IP-based limit entirely, and the raw secret
-        // would be kept verbatim in the counter key space.
+        // Key on the authenticated principal first (even if RemoteIpAddress is absent, e.g. Unix
+        // domain socket behind a reverse proxy). Never derive the bucket from raw, unauthenticated
+        // credentials (Authorization header or ?api_key=).
         var principal = context.User;
         if (principal?.Identity?.IsAuthenticated == true)
         {
@@ -177,46 +178,47 @@ internal sealed partial class RateLimitingMiddleware
                 // Encode every tuple component independently before adding separators. Raw
                 // issuer and subject strings may themselves contain ':', so concatenating them
                 // directly would let distinct validated identities collide on one counter.
-                return $"{tenantPrefix}{UserKeyFamily}:" +
-                    $"{EncodeKeyComponent(authenticationScheme)}:" +
-                    $"{EncodeKeyComponent(issuerScope)}:" +
-                    EncodeKeyComponent(authenticatedSubject);
+                return FormatAuthenticatedSubjectKey(new AuthenticatedSubjectKeyParts
+                {
+                    TenantId = tenantId,
+                    AuthenticationScheme = authenticationScheme,
+                    IssuerScope = issuerScope,
+                    AuthenticatedSubject = authenticatedSubject
+                });
             }
         }
 
-        // Fall back to IP-based rate limiting for unauthenticated requests.
-        // IPv6 addresses are already aggregated to /64 by GetClientIpAddress.
-        return $"{tenantPrefix}{IpKeyFamily}:{clientIp}";
-    }
+        // Fall back to IP-based rate limiting for unauthenticated requests (and a bounded
+        // unknown bucket if no client IP is available, rather than bypassing rate limiting).
+        var clientIp = GetClientIpAddress(context);
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            return string.IsNullOrEmpty(clientIp)
+                ? $"{IpKeyFamily}:{UnknownKeyFamily}"
+                : $"{IpKeyFamily}:{clientIp}";
+        }
 
-    private static string EncodeKeyComponent(string value)
-        => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+        return string.IsNullOrEmpty(clientIp)
+            ? $"{TenantKeyFamily}:{tenantId}|{IpKeyFamily}:{UnknownKeyFamily}"
+            : $"{TenantKeyFamily}:{tenantId}|{IpKeyFamily}:{clientIp}";
+    }
 
     private async Task<RateLimitResult> CheckRateLimitAsync(string rateLimitKey, HttpContext context)
     {
         try
         {
-            // Always meter the subject's shared tier/global counter: the ceiling that bounds total
-            // traffic for the subject across every endpoint. Tier resolution (api-key > tenant >
-            // plan, else global default) feeds the same unscoped counter. Counters are per node,
-            // so a limit of N admits up to N per window on each node.
-            var subjectLimit = await ResolveSubjectLimitAsync(context);
-            var subjectResult = CheckRateLimitMemory(rateLimitKey, subjectLimit);
+            var (subjectLimit, fromPolicyStore) = await ResolveSubjectLimitAsync(context);
+            var subjectResult = CheckRateLimitMemory(rateLimitKey.AsSpan(), subjectLimit);
 
-            // When an endpoint declares an explicit per-endpoint limit, additionally meter a
-            // counter partitioned by the endpoint's policy scope so that limit meters
-            // only that endpoint's traffic — high-volume traffic to one endpoint must not drain
-            // another endpoint's allowance for the same subject. The request passes only if BOTH
-            // the shared subject ceiling and the endpoint counter are under limit, and both have
-            // already been incremented above/below.
-            var endpointLimit = ResolveEndpointLimit(context);
+            var endpointLimit = fromPolicyStore
+                ? ResolveExplicitEndpointLimit(context)
+                : ResolveEndpointOrCategoryLimit(context);
             if (endpointLimit is null)
             {
                 return subjectResult;
             }
 
-            var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
-            var endpointResult = CheckRateLimitMemory(scopedKey, endpointLimit.Value);
+            var endpointResult = CheckScopedRateLimitMemory(rateLimitKey, endpointLimit.Value);
 
             return CombineResults(subjectResult, endpointResult);
         }
@@ -253,151 +255,60 @@ internal sealed partial class RateLimitingMiddleware
         return subject.IsAllowed ? endpoint : subject;
     }
 
-    // Admission, expiry, and increments share a lock so concurrent requests cannot exceed the cap or reset a live counter.
-    private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
+    private RateLimitResult CheckScopedRateLimitMemory(string rateLimitKey, ResolvedRateLimit endpointLimit)
     {
-        var now = _timeProvider.GetUtcNow();
-        var window = resolved.Window;
-
-        // Align the fixed window to epoch-anchored buckets so an arbitrary policy window
-        // (not just one minute) is deterministic.
-        var windowTicks = Math.Max(TimeSpan.TicksPerSecond, window.Ticks);
-        var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
-        var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);
-
-        lock (_memoryCountersLock)
+        const string policySeparator = "|policy:";
+        var scope = endpointLimit.Scope;
+        var totalLength = rateLimitKey.Length + policySeparator.Length + scope.Length;
+        char[]? rented = null;
+        try
         {
-            if (!_memoryCounters.TryGetValue(counterKey, out var counter))
+            Span<char> buffer = totalLength <= 512
+                ? stackalloc char[512]
+                : (rented = ArrayPool<char>.Shared.Rent(totalLength));
+
+            rateLimitKey.AsSpan().CopyTo(buffer);
+            policySeparator.AsSpan().CopyTo(buffer[rateLimitKey.Length..]);
+            scope.AsSpan().CopyTo(buffer[(rateLimitKey.Length + policySeparator.Length)..]);
+
+            return CheckRateLimitMemory(buffer[..totalLength], endpointLimit);
+        }
+        finally
+        {
+            if (rented is not null)
             {
-                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
-                {
-                    PruneExpiredMemoryCounters(now);
-                }
-
-                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
-                {
-                    if (!TryEvictLeastRecentlyUsedMemoryCounter())
-                    {
-                        // Fail open without inserting so the budgets that are already
-                        // tracked stay intact when eviction cannot free a slot.
-                        return new RateLimitResult
-                        {
-                            IsAllowed = true,
-                            RequestsRemaining = resolved.Limit,
-                            WindowReset = windowStart + window,
-                            RequestCount = 0,
-                            Limit = resolved.Limit
-                        };
-                    }
-
-                    LogMemoryCounterEviction(now);
-                }
-
-                counter = new FixedWindowCounter();
-                _memoryCounters[counterKey] = counter;
+                ArrayPool<char>.Shared.Return(rented);
             }
-
-            // Touch on every hit, including denies, so a subject that is still
-            // being metered is not the one eviction drops.
-            counter.LastSeenTicks = ++_memoryCounterSequence;
-            if (counter.WindowStart != windowStart)
-            {
-                counter.WindowStart = windowStart;
-                counter.Count = 0;
-            }
-            counter.WindowEnd = windowStart + window;
-            if (counter.WindowEnd < _nextMemoryCounterPrune)
-            {
-                _nextMemoryCounterPrune = counter.WindowEnd;
-            }
-            var currentCount = ++counter.Count;
-            var limit = resolved.Limit;
-
-            return new RateLimitResult
-            {
-                IsAllowed = currentCount <= limit,
-                RequestsRemaining = Math.Max(0, limit - currentCount),
-                WindowReset = counter.WindowEnd,
-                RequestCount = currentCount,
-                Limit = limit
-            };
         }
     }
 
-    private static bool TryEvictLeastRecentlyUsedMemoryCounter()
+    private RateLimitResult CheckRateLimitMemory(ReadOnlySpan<char> counterKey, ResolvedRateLimit resolved)
     {
-        string? oldestKey = null;
-        var oldestSeen = long.MaxValue;
-        foreach (var entry in _memoryCounters)
+        var now = _timeProvider.GetUtcNow();
+        var outcome = _counterStore.RecordHit(counterKey, resolved, now);
+        if (outcome.Evicted)
         {
-            if (entry.Value.LastSeenTicks < oldestSeen)
-            {
-                oldestSeen = entry.Value.LastSeenTicks;
-                oldestKey = entry.Key;
-            }
+            LogMemoryCounterEviction(now);
         }
 
-        return oldestKey is not null && _memoryCounters.TryRemove(oldestKey, out _);
+        return outcome.Result;
     }
 
     private void LogMemoryCounterEviction(DateTimeOffset now)
     {
-        if (now.UtcTicks - _lastMemoryCapacityLogTicks < MemoryCapacityLogIntervalTicks)
+        var lastTicks = Volatile.Read(ref _lastMemoryCapacityLogTicks);
+        if (now.UtcTicks - lastTicks < MemoryCapacityLogIntervalTicks)
         {
             return;
         }
 
-        _lastMemoryCapacityLogTicks = now.UtcTicks;
-        RateLimitingLog.MemoryCounterCapacityEvicted(_logger, MaxMemoryCounterEntries);
-    }
-
-    private static void PruneExpiredMemoryCounters(DateTimeOffset now)
-    {
-        if (now < _nextMemoryCounterPrune)
+        if (Interlocked.CompareExchange(ref _lastMemoryCapacityLogTicks, now.UtcTicks, lastTicks) == lastTicks)
         {
-            return;
-        }
-
-        _nextMemoryCounterPrune = DateTimeOffset.MaxValue;
-        foreach (var entry in _memoryCounters)
-        {
-            if (entry.Value.WindowEnd <= now)
-            {
-                _memoryCounters.TryRemove(entry);
-            }
-            else if (entry.Value.WindowEnd < _nextMemoryCounterPrune)
-            {
-                _nextMemoryCounterPrune = entry.Value.WindowEnd;
-            }
+            RateLimitingLog.MemoryCounterCapacityEvicted(_logger, _counterStore.Capacity);
         }
     }
 
-    private sealed class FixedWindowCounter
-    {
-        public DateTimeOffset WindowStart;
-        public DateTimeOffset WindowEnd;
-        public int Count;
-
-        // The touch stamp is monotonic rather than wall-clock, because equal values must still order.
-        public long LastSeenTicks;
-    }
-
-    private static ResolvedRateLimit? ResolveEndpointLimit(HttpContext context)
-    {
-        var endpoint = context.GetEndpoint();
-        var endpointRateLimit = endpoint?.Metadata.GetMetadata<RateLimitAttribute>();
-        if (endpointRateLimit is null)
-        {
-            return null;
-        }
-
-        return new ResolvedRateLimit(
-            endpointRateLimit.RequestsPerMinute,
-            TimeSpan.FromMinutes(1),
-            GetEndpointScope(endpoint, context));
-    }
-
-    private async Task<ResolvedRateLimit> ResolveSubjectLimitAsync(HttpContext context)
+    private async Task<(ResolvedRateLimit Limit, bool FromPolicyStore)> ResolveSubjectLimitAsync(HttpContext context)
     {
         // Subject-tier policies (per-plan / per-tenant / per-api-key) drive the ceiling when one
         // matches. Resolution order is centralized in RateLimitPolicyResolver so the precedence is
@@ -421,66 +332,12 @@ internal sealed partial class RateLimitingMiddleware
             var policy = RateLimitPolicyResolver.Resolve(policies, descriptor);
             if (policy is not null && policy.RequestsPerWindow > 0 && policy.WindowDuration > TimeSpan.Zero)
             {
-                return new ResolvedRateLimit(policy.RequestsPerWindow, policy.WindowDuration, string.Empty);
+                return (new ResolvedRateLimit(policy.RequestsPerWindow, policy.WindowDuration, string.Empty), true);
             }
         }
 
         // Global default (one-minute window), shared across endpoints for the subject.
-        return new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1), string.Empty);
-    }
-
-    private static string GetEndpointScope(Endpoint? endpoint, HttpContext context)
-    {
-        // Prefer the routed method metadata (may enumerate several verbs); fall back to the actual
-        // request verb so a non-routed endpoint still partitions per method.
-        var methods = endpoint?.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
-        var method = methods is { Count: > 0 }
-            ? string.Join(",", methods)
-            : context.Request.Method;
-
-        if (endpoint is RouteEndpoint routeEndpoint)
-        {
-            var routeTemplate = routeEndpoint.RoutePattern.RawText;
-            if (!string.IsNullOrEmpty(routeTemplate))
-            {
-                return $"{method} {routeTemplate}";
-            }
-        }
-
-        var target = string.IsNullOrEmpty(endpoint?.DisplayName) ? "endpoint" : endpoint.DisplayName;
-        return $"{method} {target}";
-    }
-
-    // The tier descriptor uses opaque identifiers, never raw secrets.
-    private static RateLimitRequestDescriptor BuildRequestDescriptor(HttpContext context)
-    {
-        // Only an API-key principal carries an api-key tier, and the tier key is the stable
-        // api_key_id. Identity.Name is a display name: an OIDC user (or a second key) with the
-        // same name must not inherit another key's quota.
-        var apiKeyIdentity = context.User?.Identities.FirstOrDefault(identity =>
-            identity.IsAuthenticated
-            && string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
-        var apiKeyId = apiKeyIdentity?.FindFirst("api_key_id")?.Value;
-        var apiKey = string.IsNullOrEmpty(apiKeyId) ? null : apiKeyId;
-
-        var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
-        var tenantId = string.IsNullOrEmpty(tenantContext?.TenantId) ? null : tenantContext.TenantId;
-
-        // The billing plan is carried as a claim when present (added by the auth provider or a
-        // downstream enrichment step); absent for anonymous traffic.
-        var plan = (context.User as ClaimsPrincipal)?.FindFirst("plan")?.Value
-            ?? (context.User as ClaimsPrincipal)?.FindFirst("honua_plan")?.Value;
-        if (string.IsNullOrEmpty(plan))
-        {
-            plan = null;
-        }
-
-        return new RateLimitRequestDescriptor
-        {
-            ApiKey = apiKey,
-            TenantId = tenantId,
-            Plan = plan,
-        };
+        return (new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1), string.Empty), false);
     }
 
     private static void AddRateLimitHeaders(HttpContext context, RateLimitResult result)
@@ -500,11 +357,40 @@ internal sealed partial class RateLimitingMiddleware
         // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
         // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
         var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - _timeProvider.GetUtcNow()).TotalSeconds));
+        if (_options.StatusCode != StatusCodes.Status429TooManyRequests && !IsProtocolFramedBackpressure(context))
+        {
+            context.Response.Headers["Retry-After"] = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            context.Response.Headers["Honua-Retryable"] = "true";
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    _options.StatusCode,
+                    ProblemDetailsHelpers.GetTitle(_options.StatusCode),
+                    "Too many requests. Please try again later.")
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return;
+        }
+
         await BackpressureResponseWriter.WriteAsync(
             context,
             BackpressureKind.Throttled,
             retryAfterSeconds,
             context.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static bool IsProtocolFramedBackpressure(HttpContext context)
+    {
+        var path = context.Request.Path;
+        if (HttpMethods.IsPost(context.Request.Method)
+            && (path.Equals("/mcp", StringComparison.OrdinalIgnoreCase)
+                || path.Equals("/mcp/", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true
+            || path.StartsWithSegments("/honua.v1", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/geospatial.v1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? GetClientIpAddress(HttpContext context)
@@ -515,52 +401,19 @@ internal sealed partial class RateLimitingMiddleware
         // Anonymous keys use this string; authenticated keys use the subject and never this value.
         return ClientAddressPartition.From(context.Connection.RemoteIpAddress);
     }
-
-    // Logs report a family label and a hash, so the tenant, principal, and address do not appear.
-    private static (string Family, string Hash) SplitRateLimitKey(string? rateLimitKey)
-    {
-        if (string.IsNullOrEmpty(rateLimitKey))
-        {
-            return (UnknownKeyFamily, LogValueRedactor.Hash(null));
-        }
-
-        // The bucket family is identified by the last segment so a tenant-prefixed key
-        // reports user/ip rather than the tenant scope marker.
-        var lastSegment = rateLimitKey;
-        var pipeIndex = rateLimitKey.LastIndexOf('|');
-        if (pipeIndex >= 0 && pipeIndex < rateLimitKey.Length - 1)
-        {
-            lastSegment = rateLimitKey[(pipeIndex + 1)..];
-        }
-
-        var separatorIndex = lastSegment.IndexOf(':', StringComparison.Ordinal);
-        var family = separatorIndex <= 0 ? UnknownKeyFamily : lastSegment[..separatorIndex];
-
-        var resolvedFamily = family switch
-        {
-            TenantKeyFamily => TenantKeyFamily,
-            UserKeyFamily => UserKeyFamily,
-            IpKeyFamily => IpKeyFamily,
-            _ => UnknownKeyFamily
-        };
-
-        // Hash the full key (including tenant prefix) so distinct buckets get distinct
-        // correlation hashes without exposing any identifier.
-        return (resolvedFamily, LogValueRedactor.Hash(rateLimitKey));
-    }
 }
 
 internal readonly record struct ResolvedRateLimit(int Limit, TimeSpan Window, string Scope);
 
-internal sealed class RateLimitResult
+internal readonly record struct RateLimitResult
 {
-    public required bool IsAllowed { get; set; }
+    public required bool IsAllowed { get; init; }
 
-    public required int RequestsRemaining { get; set; }
+    public required int RequestsRemaining { get; init; }
 
-    public required DateTimeOffset WindowReset { get; set; }
+    public required DateTimeOffset WindowReset { get; init; }
 
-    public int RequestCount { get; set; }
+    public int RequestCount { get; init; }
 
-    public int Limit { get; set; }
+    public int Limit { get; init; }
 }

@@ -226,11 +226,11 @@ rendering and style `CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-SYM-01`, `CERT-RN
 `CERT-PRTL-TOKN-02`, `CERT-PRTL-AUTH-01`, `CERT-PRTL-OAUTH-01`, `CERT-PRTL-OAUTH-02`,
 `CERT-PRTL-COMM-01`, `CERT-PRTL-COMM-02`.
 
-**Lane extensions (24).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
+**Lane extensions (25).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
 `JS-EXT-OL-ITEMTYPE-01`, `JS-EXT-OL-ITEMS-01`, `JS-EXT-OL-GEOJSON-01`, `JS-EXT-OL-GEOJSON-02`,
 `JS-EXT-OL-WFS-GETFEATURE-01` (unfiltered parsing only; no core filtering credit),
 `JS-EXT-TILES-DISC-01`, `JS-EXT-TILES-DISC-02`, `JS-EXT-TILES-SCHM-01`, `JS-EXT-OGC-MAPS-01`.
-Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
+Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`, `JS-CES-ELEV-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
 `BI-EXT-01`, `BI-EXT-02`.
 
@@ -239,7 +239,7 @@ Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02
 | Lane | State | Protocol bindings |
 |---|---|---|
 | `js` | active | `ogc-features` on a discovered collection (configured to `browser_compat` 2000); `wfs` on a discovered feature type; `wms`, `wmts`, `ogc-maps`, `mvt` on `browser_compat` |
-| `js-cesium` | active | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` on `browser_compat` |
+| `js-cesium` | active | `wms`, `wmts`, `ogc-tiles`, `ogc-maps`, `elevation`, `quantized-mesh` on `browser_compat` |
 | `desktop-qgis` | active | `ogc-features` and `wfs` on the canonical service |
 | `cli` | active | `ogc-features` and `wfs` on the canonical service |
 | `geoservices-rest-stub` | active | `featureserver` and `mapserver` on `browser_compat` 2000; `portal` on the tier ladder |

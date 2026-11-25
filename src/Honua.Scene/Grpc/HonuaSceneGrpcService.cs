@@ -17,6 +17,8 @@ namespace Honua.Scene.Grpc;
 
 internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBase
 {
+    private const int MaxPageSize = 1000;
+
     private readonly ISceneDatasetRegistry _registry;
     private readonly SceneDatasetOptions _options;
     private readonly ILogger<HonuaSceneGrpcService> _logger;
@@ -88,7 +90,7 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
             throw new RpcException(new Status(StatusCode.InvalidArgument, "page_token is not a valid continuation token."));
         }
 
-        var count = request.PageSize;
+        var count = request.PageSize > 0 ? Math.Min(request.PageSize, MaxPageSize) : 0;
 
         // Intentional protocol divergence (documented per AGENTS.md "If a protocol
         // intentionally diverges ... document why in code and add direct
@@ -108,8 +110,9 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
         response.Scenes.AddRange(page);
 
         // Only a bounded page can have a successor: an unbounded (page_size <= 0) call
-        // already returned the whole remaining catalog.
-        if (count > 0 && ordered.Count > offset + count)
+        // already returned the whole remaining catalog. Use 64-bit arithmetic so large
+        // page_token offsets cannot overflow int32.
+        if (count > 0 && (long)offset + count < ordered.Count)
         {
             response.NextPageToken = SceneCatalogPageToken.Encode(offset + count);
         }

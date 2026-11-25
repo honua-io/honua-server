@@ -126,14 +126,10 @@ internal sealed partial class PbfQueryFormatter
             options.OutFields,
             options.ObjectIdFieldName,
             runtimeFields: null);
-        var fieldIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < queryFields.Length; i++)
-        {
-            fieldIndex[queryFields[i].Name] = i;
-        }
+        var fieldSpecs = BuildFieldSpecs(queryFields, options.ObjectIdFieldName);
 
         double scale = ComputeScale(options.GeometryLimits, options.QuantizationTransform);
-        return new FeatureEncoding(queryFields, fieldIndex, options.ObjectIdFieldName, options.ReturnGeometry,
+        return new FeatureEncoding(queryFields, fieldSpecs, options.ObjectIdFieldName, options.ReturnGeometry,
             ReturnZ: false, ReturnM: false, options.GeometryLimits, scale, options.QuantizationTransform, options.Srid);
     }
 
@@ -270,7 +266,7 @@ internal sealed partial class PbfQueryFormatter
         var writer = new ProtobufWriter(256);
         try
         {
-            WriteFeature(ref writer, feature, encoding.Fields, encoding.FieldIndex, encoding.ObjectId,
+            WriteFeature(ref writer, feature, encoding.FieldSpecs,
                 encoding.ReturnGeometry, encoding.ReturnZ, encoding.ReturnM, encoding.Limits,
                 encoding.Scale, encoding.Transform, encoding.Srid);
             return writer.DetachBuffer();
@@ -306,7 +302,7 @@ internal sealed partial class PbfQueryFormatter
         public QuantizationTransform? QuantizationTransform { get; init; }
     }
 
-    private sealed record FeatureEncoding(GeoServicesFieldInfo[] Fields, Dictionary<string, int> FieldIndex,
+    private sealed record FeatureEncoding(GeoServicesFieldInfo[] Fields, PbfFieldSpec[] FieldSpecs,
         string ObjectId, bool ReturnGeometry, bool ReturnZ, bool ReturnM, GeometryLimits Limits,
         double Scale, QuantizationTransform? Transform, int Srid = 0);
 

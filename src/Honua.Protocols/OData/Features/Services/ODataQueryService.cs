@@ -75,14 +75,15 @@ internal sealed partial class ODataQueryService
                 Filter = queryFilter with { Expression = BindPublicLayerId(expression, publicLayerId.Value) }
             };
         }
-        var validation = _queryProcessor.ValidateQuery(unifiedQuery, resource);
+        var visibleResource = resource.WithoutHiddenSchemaFields();
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, visibleResource);
         if (!validation.IsValid)
         {
             return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
         }
 
-        var optimized = _queryProcessor.OptimizeQuery(unifiedQuery, resource);
-        var featureQuery = _queryProcessor.ToFeatureQuery(optimized, resource);
+        var optimized = _queryProcessor.OptimizeQuery(unifiedQuery, visibleResource);
+        var featureQuery = _queryProcessor.ToFeatureQuery(optimized, visibleResource);
 
         // bbox shorthand: attach an envelope spatial filter through the shared spatial-filter
         // helper so the canonical query pipeline applies viewport windowing instead of the
@@ -169,7 +170,8 @@ internal sealed partial class ODataQueryService
             return null;
         }
 
-        var parseResult = _filterExpressionService.ParseAndNormalize(FilterLanguage.OData, odataFilter, resource);
+        var visibleResource = resource.WithoutHiddenSchemaFields();
+        var parseResult = _filterExpressionService.ParseAndNormalize(FilterLanguage.OData, odataFilter, visibleResource);
         if (!parseResult.IsSuccess)
         {
             throw new ArgumentException(parseResult.ErrorMessage ?? "Invalid OData filter.");
@@ -183,7 +185,7 @@ internal sealed partial class ODataQueryService
         var expression = publicLayerId.HasValue
             ? BindPublicLayerId(parseResult.Expression, publicLayerId.Value)
             : parseResult.Expression;
-        var translationResult = _filterExpressionService.Translate(expression, resource);
+        var translationResult = _filterExpressionService.Translate(expression, visibleResource);
         if (!translationResult.IsSuccess)
         {
             throw new ArgumentException(translationResult.ErrorMessage ?? "Invalid OData filter.");

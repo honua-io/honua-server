@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -33,7 +35,7 @@ public static partial class FeatureAttributeValidator
     {
         private readonly MetadataV2Object _resource;
         private readonly AttributeValidationOptions _options;
-        private readonly Dictionary<string, MetadataV2Field> _fields = new(StringComparer.OrdinalIgnoreCase);
+        private readonly CompiledResourceFieldIndex _index;
         private readonly List<string> _errors = [];
         private readonly ImmutableDictionary<string, object?>.Builder _attributes =
             ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -42,10 +44,7 @@ public static partial class FeatureAttributeValidator
         {
             _resource = resource;
             _options = options;
-            foreach (var field in resource.SchemaFields)
-            {
-                _fields.TryAdd(field.Name, field);
-            }
+            _index = CompiledResourceFieldIndex.For(resource);
         }
 
         public void Add(KeyValuePair<string, object?> attribute)
@@ -56,7 +55,7 @@ public static partial class FeatureAttributeValidator
                 _attributes[key] = NormalizeAttributeValue(rawValue);
                 return;
             }
-            if (!_fields.TryGetValue(key, out var field))
+            if (!_index.FieldsByName.TryGetValue(key, out var field))
             {
                 if (_options.Profile == AttributeValidationProfile.Strict)
                 {
@@ -69,8 +68,9 @@ public static partial class FeatureAttributeValidator
 
         private void ValidateField(MetadataV2Field field, object? rawValue)
         {
-            if (_options.Operation == AttributeMutationOperation.Update &&
-                AttributeMutationPolicy.IsReadOnlyOnUpdate(_resource, field))
+            if ((_options.Operation == AttributeMutationOperation.Update &&
+                 AttributeMutationPolicy.IsReadOnlyOnUpdate(_resource, field)) ||
+                (_index.EditorTrackingFields is not null && _index.EditorTrackingFields.Contains(field.Name)))
             {
                 _errors.Add($"Field '{field.Name}' is not editable.");
                 return;
@@ -80,7 +80,7 @@ public static partial class FeatureAttributeValidator
             {
                 normalizedValue = CoerceExactNumber(field, rawValue, normalizedValue);
             }
-            var error = ValidateAttributeValue(field, normalizedValue, _options.Profile);
+            var error = ValidateAttributeValue(field, normalizedValue);
             if (error != null)
             {
                 _errors.Add(error);
@@ -94,6 +94,24 @@ public static partial class FeatureAttributeValidator
                 normalizedValue = booleanValue;
             }
             _attributes[field.Name] = normalizedValue;
+        }
+
+        private string? ValidateAttributeValue(MetadataV2Field field, object? value)
+        {
+            if (value == null)
+            {
+                return field.Nullable ? null : $"Field '{field.Name}' cannot be null.";
+            }
+
+            var typeError = ValidateAgainstFieldType(field, value, _options.Profile);
+            if (typeError != null)
+            {
+                return typeError;
+            }
+
+            return field.Domain is not null
+                ? ValidateAgainstDomain(field, value, _index)
+                : null;
         }
 
         public ValidationResult<ImmutableDictionary<string, object?>> Complete()
@@ -157,33 +175,206 @@ public static partial class FeatureAttributeValidator
             _ => normalizedValue
         };
 
-    private static string? ValidateAttributeValue(
-        MetadataV2Field field,
-        object? value,
-        AttributeValidationProfile mode)
+}
+
+internal sealed class CompiledResourceFieldIndex
+{
+    private static readonly ConditionalWeakTable<MetadataV2Object, CompiledResourceFieldIndex> Cache = new();
+
+    private CompiledResourceFieldIndex(
+        FrozenDictionary<string, MetadataV2Field> fieldsByName,
+        FrozenSet<string>? editorTrackingFields,
+        FrozenDictionary<string, CompiledCodedValueDomain>? codedValueDomainsByFieldName)
     {
-        if (value == null)
-        {
-            return field.Nullable ? null : $"Field '{field.Name}' cannot be null.";
-        }
+        FieldsByName = fieldsByName;
+        EditorTrackingFields = editorTrackingFields;
+        CodedValueDomainsByFieldName = codedValueDomainsByFieldName;
+    }
 
-        var typeError = ValidateAgainstFieldType(field, value, mode);
-        if (typeError != null)
-        {
-            return typeError;
-        }
+    public FrozenDictionary<string, MetadataV2Field> FieldsByName { get; }
 
-        // Domain check applies on top of type validation.
-        if (field.Domain is { } domain)
+    public FrozenSet<string>? EditorTrackingFields { get; }
+
+    public FrozenDictionary<string, CompiledCodedValueDomain>? CodedValueDomainsByFieldName { get; }
+
+    public static CompiledResourceFieldIndex For(MetadataV2Object resource)
+        => Cache.GetValue(resource, Build);
+
+    private static CompiledResourceFieldIndex Build(MetadataV2Object resource)
+    {
+        var fields = new Dictionary<string, MetadataV2Field>(resource.SchemaFields.Count, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, CompiledCodedValueDomain>? codedDomains = null;
+
+        foreach (var field in resource.SchemaFields)
         {
-            var domainError = ValidateAgainstDomain(field, value, domain);
-            if (domainError != null)
+            if (!fields.TryAdd(field.Name, field))
             {
-                return domainError;
+                continue;
+            }
+
+            if (field.Domain is { } domain &&
+                string.Equals(domain.Type, "codedValue", StringComparison.OrdinalIgnoreCase) &&
+                domain.CodedValues.Count > 0)
+            {
+                codedDomains ??= new Dictionary<string, CompiledCodedValueDomain>(StringComparer.OrdinalIgnoreCase);
+                codedDomains[field.Name] = CompiledCodedValueDomain.Build(domain.CodedValues);
             }
         }
 
-        return null;
+        FrozenSet<string>? editorTrackingFields = null;
+        if (resource.Editing is not null)
+        {
+            var trackingFields = Edit.EditorTrackingFields.Names(resource.Editing)
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            if (trackingFields.Count > 0)
+            {
+                editorTrackingFields = trackingFields;
+            }
+        }
+
+        return new CompiledResourceFieldIndex(
+            fields.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+            editorTrackingFields,
+            codedDomains?.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase));
+    }
+}
+
+internal sealed class CompiledCodedValueDomain
+{
+    [Flags]
+    private enum AllowedBooleanCodes : byte
+    {
+        None = 0,
+        True = 1,
+        False = 2,
     }
 
+    private readonly record struct CodedValueSet
+    {
+        public FrozenSet<string>? StringCodes { get; init; }
+
+        public FrozenSet<long>? LongCodes { get; init; }
+
+        public FrozenSet<double>? DoubleCodes { get; init; }
+
+        public AllowedBooleanCodes BooleanCodes { get; init; }
+    }
+
+    private sealed class CodedValueAccumulator
+    {
+        private HashSet<string>? _stringCodes;
+        private HashSet<long>? _longCodes;
+        private HashSet<double>? _doubleCodes;
+        private AllowedBooleanCodes _booleanCodes;
+
+        public void Add(JsonElement code)
+        {
+            switch (code.ValueKind)
+            {
+                case JsonValueKind.String:
+                    AddStringCode(code.GetString());
+                    break;
+                case JsonValueKind.Number:
+                    AddNumericCode(code);
+                    break;
+                case JsonValueKind.True:
+                    _booleanCodes |= AllowedBooleanCodes.True;
+                    break;
+                case JsonValueKind.False:
+                    _booleanCodes |= AllowedBooleanCodes.False;
+                    break;
+            }
+        }
+
+        public CodedValueSet ToCodedValueSet()
+            => new()
+            {
+                StringCodes = _stringCodes?.ToFrozenSet(StringComparer.Ordinal),
+                LongCodes = _longCodes?.ToFrozenSet(),
+                DoubleCodes = _doubleCodes?.ToFrozenSet(),
+                BooleanCodes = _booleanCodes,
+            };
+
+        private void AddStringCode(string? text)
+        {
+            if (text is null)
+            {
+                return;
+            }
+
+            _stringCodes ??= new HashSet<string>(StringComparer.Ordinal);
+            _stringCodes.Add(text);
+        }
+
+        private void AddNumericCode(JsonElement code)
+        {
+            if (code.TryGetInt64(out var codedLong))
+            {
+                _longCodes ??= [];
+                _longCodes.Add(codedLong);
+            }
+            else if (code.TryGetDouble(out var codedDouble))
+            {
+                _doubleCodes ??= [];
+                _doubleCodes.Add(codedDouble);
+            }
+        }
+    }
+
+    private readonly FrozenSet<string>? _stringCodes;
+    private readonly FrozenSet<long>? _longCodes;
+    private readonly FrozenSet<double>? _doubleCodes;
+    private readonly AllowedBooleanCodes _booleanCodes;
+
+    private CompiledCodedValueDomain(CodedValueSet codes)
+    {
+        _stringCodes = codes.StringCodes;
+        _longCodes = codes.LongCodes;
+        _doubleCodes = codes.DoubleCodes;
+        _booleanCodes = codes.BooleanCodes;
+    }
+
+    public static CompiledCodedValueDomain Build(IReadOnlyList<MetadataV2CodedValue> codedValues)
+    {
+        var accumulator = new CodedValueAccumulator();
+        for (var i = 0; i < codedValues.Count; i++)
+        {
+            accumulator.Add(codedValues[i].Code);
+        }
+
+        return new CompiledCodedValueDomain(accumulator.ToCodedValueSet());
+    }
+
+    public bool Matches(object value)
+    {
+        if (value is bool b && ((b ? AllowedBooleanCodes.True : AllowedBooleanCodes.False) & _booleanCodes) != 0)
+        {
+            return true;
+        }
+
+        if (_longCodes is not null &&
+            FeatureAttributeValidator.ReadInt64(value) is { } valueLong &&
+            _longCodes.Contains(valueLong))
+        {
+            return true;
+        }
+
+        if (_doubleCodes is not null &&
+            FeatureAttributeValidator.ReadDouble(value) is { } valueDouble &&
+            _doubleCodes.Contains(valueDouble))
+        {
+            return true;
+        }
+
+        if (_stringCodes is not null)
+        {
+            var text = value as string ?? value.ToString();
+            if (text is not null && _stringCodes.Contains(text))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

@@ -7,6 +7,7 @@ using Honua.Core.Features.Identity.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -44,10 +45,12 @@ internal static partial class UserManagementEndpoints
     public static void MapUserManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/users")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Users")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         var list = AdminHttpOperationRouteBinding.ForAccess("admin.user.list", "/users");
         group.MapMethods(list.RoutePattern, list.Methods, HandleListUsers)

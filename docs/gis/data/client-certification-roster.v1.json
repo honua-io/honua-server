@@ -151,6 +151,8 @@
         "wfs",
         "wms",
         "wmts",
+        "elevation",
+        "quantized-mesh",
         "admin-api",
         "portal"
       ],
@@ -594,7 +596,9 @@
         "wms",
         "wmts",
         "ogc-tiles",
-        "ogc-maps"
+        "ogc-maps",
+        "elevation",
+        "quantized-mesh"
       ],
       "operationApplicability": {
         "applicable": [
@@ -659,7 +663,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Cesium imagery providers consume server-rendered raster output; the matrix Cesium sub-lane footnote governs the not-applicable set."
+      "notes": "Cesium covers imagery providers, elevation point sampling, and quantized-mesh tile loading. The matrix Cesium sub-lane footnote describes each evidence surface."
     },
     {
       "id": "esri-js-maps-sdk",

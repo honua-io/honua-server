@@ -11,6 +11,12 @@ namespace Honua.Ai.Protocols.Mcp;
 internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposable
 {
     private static readonly TimeSpan PollBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan PollCancelGrace = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan DisposeStopTimeout = TimeSpan.FromSeconds(5);
+
+    internal TimeSpan PollBudgetDuration { get; init; } = PollBudget;
+    internal TimeSpan PollCancelGraceDuration { get; init; } = PollCancelGrace;
+    internal TimeSpan DisposeStopTimeoutDuration { get; init; } = DisposeStopTimeout;
 
     private readonly ConcurrentDictionary<McpRequestLease, byte> _runningRequests = new();
     private readonly Dictionary<string, DateTimeOffset> _removedSessions = new(StringComparer.Ordinal);
@@ -33,7 +39,15 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
 
         try
         {
-            await StopAsync(CancellationToken.None).ConfigureAwait(false);
+            using var stopTimeout = new CancellationTokenSource(DisposeStopTimeoutDuration);
+            try
+            {
+                await StopAsync(stopTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stopTimeout.IsCancellationRequested)
+            {
+                // StopAsync already ended all local requests and sessions; bound disposal if a poll is stuck.
+            }
         }
         finally
         {
@@ -112,7 +126,7 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
     private async Task<McpPollResult> PollWithinBudgetAsync(McpPollRequest request, CancellationToken cancellationToken)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        budget.CancelAfter(PollBudget);
+        budget.CancelAfter(PollBudgetDuration);
         var polling = PollStoreAsync(request, budget.Token);
         try
         {
@@ -121,10 +135,42 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         catch (OperationCanceledException)
         {
             StopAll(_runningRequests.Keys);
-            // Budget expiry also needs a join: cancellation cleanup may outlive the timeout.
-            await polling.ConfigureAwait(false);
+            await budget.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await polling.WaitAsync(PollCancelGraceDuration, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when the store call observes cancellation within the grace window.
+            }
+            catch (TimeoutException)
+            {
+                ObserveAbandonedPoll(polling);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                LogStoreFailure(ex, "poll-cancel-cleanup");
+            }
+
             throw;
         }
+    }
+
+    private void ObserveAbandonedPoll(Task<McpPollResult> polling)
+    {
+        _ = polling.ContinueWith(
+            static (completed, state) =>
+            {
+                if (completed.IsFaulted && completed.Exception is { } fault)
+                {
+                    ((McpSessionManager)state!).LogStoreFailure(fault.GetBaseException(), "abandoned-poll");
+                }
+            },
+            this,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private Task<McpPollResult> PollStoreAsync(McpPollRequest request, CancellationToken cancellationToken)

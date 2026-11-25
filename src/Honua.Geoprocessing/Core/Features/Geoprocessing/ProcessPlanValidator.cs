@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Sql;
 using Honua.Core.Queries.Filters.GeoServicesSql;
+using Honua.Core.Serialization;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -2260,9 +2261,13 @@ internal static partial class ProcessPlanValidator
                 // tokens, so syntactically valid JSON with the wrong value kind
                 // would otherwise escape as an unhandled exception (500) rather
                 // than surface as INVALID_PARAMETER_VALUE.
-                if (!TryReadStringProperty(element, "statisticType", out var statisticType)
-                    || !TryReadStringProperty(element, "onStatisticField", out var onField)
-                    || !TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                var statisticTypeProp = JsonElementHelpers.ReadStringProperty(element, "statisticType");
+                var onFieldProp = JsonElementHelpers.ReadStringProperty(element, "onStatisticField");
+                var outFieldNameProp = JsonElementHelpers.ReadStringProperty(element, "outStatisticFieldName");
+                var statisticType = statisticTypeProp.Value;
+                var onField = onFieldProp.Value;
+                var outFieldName = outFieldNameProp.Value;
+                if (!statisticTypeProp.IsValid || !onFieldProp.IsValid || !outFieldNameProp.IsValid)
                 {
                     error = "each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName";
                     return false;
@@ -2290,34 +2295,6 @@ internal static partial class ProcessPlanValidator
             error = "outStatistics is not valid JSON.";
             return false;
         }
-    }
-
-    // Treats absent properties as null and non-string value kinds (numbers,
-    // booleans, objects, arrays, null literal) as a validation failure so the
-    // caller reports INVALID_PARAMETER_VALUE instead of propagating
-    // JsonElement.GetString()'s InvalidOperationException.
-    private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
-    {
-        if (!element.TryGetProperty(propertyName, out var property))
-        {
-            value = null;
-            return true;
-        }
-
-        if (property.ValueKind == JsonValueKind.Null)
-        {
-            value = null;
-            return true;
-        }
-
-        if (property.ValueKind != JsonValueKind.String)
-        {
-            value = null;
-            return false;
-        }
-
-        value = property.GetString();
-        return true;
     }
 
     private static DistanceUnit ResolveBufferDistanceUnit(string unitLabel) => unitLabel.ToLowerInvariant() switch

@@ -162,8 +162,16 @@ internal static partial class ZarrCfGeoreferencing
     private static async Task<double[]> ReadValuesAsync(
         ZarrCfScan scan, ZarrArrayMetadata array, CancellationToken cancellationToken)
     {
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(scan.Reader, scan.Bucket, scan.RootPath, scan.Metadata,
-            new ZarrSubsetRequest { Variable = array.Name, Start = [0], Stop = [array.Shape[0]] }, cancellationToken).ConfigureAwait(false);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            new ZarrSubsetReadParameters
+            {
+                Reader = scan.Reader,
+                Bucket = scan.Bucket,
+                RootPath = scan.RootPath,
+                Metadata = scan.Metadata,
+                Request = new ZarrSubsetRequest { Variable = array.Name, Start = [0], Stop = [array.Shape[0]] },
+            },
+            cancellationToken).ConfigureAwait(false);
         var size = ZarrSubsetReader.ResolveElementSize(subset.DataType);
         var values = new double[subset.Data.Length / size];
         for (var i = 0; i < values.Length; i++)

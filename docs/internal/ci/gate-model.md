@@ -211,6 +211,9 @@ its issue closes only when all signals recover. GitHub can report a workflow as 
 while its children execute. For these runs the watchdog checks paginated, latest-attempt
 job evidence: runner assignment proves a scheduled start, while child jobs waiting
 over 45 minutes still alert. A queued job's `started_at` alone does not prove execution.
+The watchdog follows all Actions jobs pages at 25 jobs per page and retries HTTP 500, 502, 503
+and 504 twice on the affected page. If a jobs request still fails, the watchdog reports the API
+error with its run and page before evaluating or changing the stale-signal issue.
 
 Stage 3 details:
 
@@ -3002,6 +3005,10 @@ it asserts that the requeued job's stored `next_retry_at` equals the policy's
 makes that one retry due now, the state the backoff would reach on its own. The
 real worker still claims, runs and fails every attempt, and the terminal status,
 attempt count, error and empty artifacts are asserted as before.
+
+The GeoServices GPServer and NAServer 1 fixture signals the production worker
+after each committed retry visibility update. The update loop still handles
+the worker's two-write requeue and checks the original retry schedule.
 
 `EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
 took 86 seconds in STAC API Governance 2. It built a path regex for every

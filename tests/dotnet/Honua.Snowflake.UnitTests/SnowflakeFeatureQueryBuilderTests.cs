@@ -10,7 +10,7 @@ using Honua.Db.Snowflake.Features.FeatureStore.Services;
 namespace Honua.Db.Snowflake.Tests;
 
 [global::Xunit.Trait("Tier", "Fast")]
-public class SnowflakeFeatureQueryBuilderTests
+public partial class SnowflakeFeatureQueryBuilderTests
 {
     private const int TestLayerId = 7;
 

@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -49,7 +48,7 @@ internal static class ODataDeltaService
             EncodeSegment(state.Format),
             EncodeSegment(state.Count?.ToString().ToLowerInvariant()),
             state.UpperBoundTimestamp?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
-        return Base64UrlEncode(payload);
+        return ODataSkipTokenService.Base64UrlEncode(payload);
     }
 
     public static bool TryDecode(
@@ -69,7 +68,7 @@ internal static class ODataDeltaService
         string payload;
         try
         {
-            payload = Base64UrlDecode(token);
+            payload = ODataSkipTokenService.Base64UrlDecode(token);
         }
         catch (FormatException)
         {
@@ -262,7 +261,7 @@ internal static class ODataDeltaService
     }
 
     private static string EncodeSegment(string? value)
-        => string.IsNullOrEmpty(value) ? string.Empty : Base64UrlEncode(value);
+        => string.IsNullOrEmpty(value) ? string.Empty : ODataSkipTokenService.Base64UrlEncode(value);
 
     private static string? DecodeSegment(string segment, out string? errorMessage)
     {
@@ -274,38 +273,12 @@ internal static class ODataDeltaService
 
         try
         {
-            return Base64UrlDecode(segment);
+            return ODataSkipTokenService.Base64UrlDecode(segment);
         }
         catch (FormatException)
         {
             errorMessage = "$deltatoken is invalid or malformed.";
             return null;
         }
-    }
-
-    private static string Base64UrlEncode(string input)
-    {
-        var bytes = Encoding.UTF8.GetBytes(input);
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
-
-    private static string Base64UrlDecode(string input)
-    {
-        var padded = input.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2:
-                padded += "==";
-                break;
-            case 3:
-                padded += "=";
-                break;
-        }
-
-        var bytes = Convert.FromBase64String(padded);
-        return Encoding.UTF8.GetString(bytes);
     }
 }

@@ -103,4 +103,35 @@ public sealed class PostgresRasterRawDecoderTests
         var act = () => PostgresRasterRawDecoder.Decode(bytes);
         act.Should().Throw<NotSupportedException>();
     }
+
+    [UnitTest]
+    public void Decode_IsNoDataBandFlag_MarksAllPixelsInvalid()
+    {
+        var bytes = Convert.FromHexString(FloatWkb);
+        bytes[61] |= 0x20;
+
+        var result = PostgresRasterRawDecoder.Decode(bytes);
+
+        result.BandValidityMasks![0].Should().Equal(0x00, 0x00);
+    }
+
+    [UnitTest]
+    public void Decode_NaNNoDataSentinel_MasksOnlyNaNPixels()
+    {
+        var header = Convert.FromHexString(FloatWkb)[..61];
+        header[3] = 1;
+        header[57] = 2;
+        header[59] = 1;
+        var nanBytes = BitConverter.GetBytes(float.NaN);
+        var validBytes = BitConverter.GetBytes(12.5f);
+        var bytes = header.Concat(new byte[] { 0x40 | 10 })
+            .Concat(nanBytes)
+            .Concat(validBytes)
+            .Concat(nanBytes)
+            .ToArray();
+
+        var result = PostgresRasterRawDecoder.Decode(bytes);
+
+        result.BandValidityMasks![0].Should().Equal(0x80);
+    }
 }

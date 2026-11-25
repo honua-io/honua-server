@@ -11,6 +11,8 @@ MAX_NONCE_LENGTH = 256
 REVIEWED_CONTRACTS = {
     'Honua.Server.Migrations.183_RemoveUnusedFeatureIndexes.sql':
         '8fa24e8ba3c540117e5ce6061374ac6df6525cf91f195bddbcede38f65fbb9dd',
+    'Honua.Server.Migrations.237_AdoptContentPublicationVocabulary.sql':
+        '77f1705da67dfb33fc385c445a34e59f16240eb20316296e067d4cd47bbfb817',
 }
 MIGRATIONS = Path(__file__).resolve().parents[2] / 'src/Honua.Server/Migrations'
 

@@ -27,7 +27,9 @@ internal static class OperationSecretKeyRingProtection
 
     internal readonly record struct MaterializedKeyRing(string Path, string? Password);
 
-    public static MaterializedKeyRing WritePkcs12Material(string material)
+    internal readonly record struct DecodedPkcs12Material(byte[] Bytes, string? Password);
+
+    internal static DecodedPkcs12Material DecodePkcs12Material(string material)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(material);
         string? password = null;
@@ -70,37 +72,76 @@ internal static class OperationSecretKeyRingProtection
             throw new InvalidOperationException($"'{CertificateMaterialKey}' did not contain a certificate.");
         }
 
-        // A private key lands on disk here, so the file is created privately and
-        // uniquely rather than written and then tightened. WriteAllBytes to a fixed
-        // /tmp name created the file under the process umask and only chmod'd it to
-        // 0600 afterwards, which on a shared host leaves a window where another local
-        // user can read it, lets one pre-create the path as a symlink, and lets two
-        // Honua processes overwrite each other's certificate. UnixCreateMode applies
-        // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
-        // A tmpfs mounted over /tmp hides the root pre-created by the image.
-        var temporaryRoot = Path.GetTempPath();
-        Directory.CreateDirectory(temporaryRoot);
-        var path = Path.Join(
-            temporaryRoot,
-            $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
-        var options = new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-        };
+        return new DecodedPkcs12Material(bytes, password);
+    }
 
-        if (!OperatingSystem.IsWindows())
+    public static MaterializedKeyRing WritePkcs12Material(string material)
+    {
+        var decoded = DecodePkcs12Material(material);
+        try
         {
-            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            // A private key lands on disk here, so the file is created privately and
+            // uniquely rather than written and then tightened. UnixCreateMode applies
+            // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
+            var temporaryRoot = Path.GetTempPath();
+            Directory.CreateDirectory(temporaryRoot);
+            var path = Path.Join(
+                temporaryRoot,
+                $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+            };
+
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+
+            using (var stream = new FileStream(path, options))
+            {
+                stream.Write(decoded.Bytes);
+            }
+
+            return new MaterializedKeyRing(path, decoded.Password);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(decoded.Bytes);
+        }
+    }
+
+    internal static X509Certificate2 LoadPkcs12FromMemory(string material, string? fallbackPassword = null)
+    {
+        var decoded = DecodePkcs12Material(material);
+        var effectivePassword = !string.IsNullOrEmpty(decoded.Password) ? decoded.Password : fallbackPassword;
+        X509Certificate2 certificate;
+        try
+        {
+            certificate = string.IsNullOrEmpty(effectivePassword)
+                ? X509CertificateLoader.LoadPkcs12(decoded.Bytes, password: null)
+                : X509CertificateLoader.LoadPkcs12(decoded.Bytes, effectivePassword);
+        }
+        catch (CryptographicException exception)
+        {
+            throw new InvalidOperationException(
+                $"'{CertificateMaterialKey}' could not be loaded as a PKCS#12 certificate ({exception.GetType().Name}). Check the bundle and its export password.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(decoded.Bytes);
         }
 
-        using (var stream = new FileStream(path, options))
+        if (!certificate.HasPrivateKey)
         {
-            stream.Write(bytes);
+            certificate.Dispose();
+            throw new InvalidOperationException(
+                $"'{CertificateMaterialKey}' must reference a certificate with a private key.");
         }
 
-        return new MaterializedKeyRing(path, password);
+        return certificate;
     }
 
     // Development and Test may start without a key-ring certificate; every other environment with a database requires one.
@@ -131,7 +172,9 @@ internal static class OperationSecretKeyRingProtection
         ArgumentNullException.ThrowIfNull(configuration);
         var secret = configuration[SecretKey];
         var material = string.IsNullOrWhiteSpace(secret) ? null : SecretKeyRingMaterial.Parse(secret);
-        var certificate = material is null || !string.IsNullOrWhiteSpace(configuration[CertificatePathKey])
+        var hasCertificate = !string.IsNullOrWhiteSpace(configuration[CertificatePathKey])
+            || !string.IsNullOrWhiteSpace(configuration[CertificateMaterialKey]);
+        var certificate = material is null || hasCertificate
             ? Resolve(configuration)
             : null;
         return new OperationKeyRingProtector(certificate, material);
@@ -143,6 +186,12 @@ internal static class OperationSecretKeyRingProtection
         var path = configuration[CertificatePathKey];
         if (string.IsNullOrWhiteSpace(path))
         {
+            var inlineMaterial = configuration[CertificateMaterialKey];
+            if (!string.IsNullOrWhiteSpace(inlineMaterial))
+            {
+                return LoadPkcs12FromMemory(inlineMaterial, configuration[CertificatePasswordKey]);
+            }
+
             throw new InvalidOperationException(
                 $"'{CertificatePathKey}' is required outside Development and Test whenever a database is configured "
                 + "('ConnectionStrings:DefaultConnection'): the operation key ring is stored in that database and this "

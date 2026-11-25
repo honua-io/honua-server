@@ -608,7 +608,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         services.GetServices<IDagFeatureSource>()
             .FirstOrDefault(candidate => string.Equals(candidate.SourceId, HonuaLayerSourceId, StringComparison.Ordinal));
 
-    private static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
+    internal static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
     {
         NtsGeometry? geometry = null;
         if (!string.IsNullOrWhiteSpace(sourceFeature.GeometryGeoJson))

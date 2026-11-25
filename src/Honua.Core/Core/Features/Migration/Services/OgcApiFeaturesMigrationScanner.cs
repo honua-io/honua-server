@@ -20,7 +20,6 @@ namespace Honua.Core.Features.Migration.Services;
 public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigrationScanner
 {
     private const string SourceKind = "ogc-api-features";
-    private const int MaxJsonDocumentRedirects = 5;
 
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
 
@@ -325,46 +324,16 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         }
     }
 
-    private async Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
-    {
-        var requestUri = uri;
-
-        for (var redirectCount = 0; ; redirectCount++)
-        {
-            MigrationLinkedUrlPolicy.Current.EnsureAllows(requestUri);
-            using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            message.Headers.Accept.ParseAdd("application/json");
-            message.Headers.Accept.ParseAdd("application/geo+json");
-
-            using var response = await _httpClient
-                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
-
-            if ((int)response.StatusCode is >= 300 and < 400)
+    private Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
+        => OgcApiFeaturesImportService.GetJsonDocumentAsync(
+            _httpClient,
+            new OgcApiFeaturesImportService.JsonDocumentFetchRequest
             {
-                if (redirectCount >= MaxJsonDocumentRedirects)
-                {
-                    throw new HttpRequestException("OGC API Features endpoint returned too many redirects.");
-                }
-
-                var redirectUri = MigrationPinnedDns.ResolveRedirectUri(requestUri, response.Headers.Location);
-                if (redirectUri == null || !MigrationPinnedDns.IsSafeRedirectUri(requestUri, redirectUri))
-                {
-                    throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
-                }
-
-                MigrationLinkedUrlPolicy.Current.EnsureAllows(redirectUri);
-                requestUri = redirectUri;
-                continue;
-            }
-
-            response.EnsureSuccessStatusCode();
-            var payload = await MigrationHttpContentReader
-                .ReadStringWithLimitAsync(response, MigrationHttpContentReader.DefaultMaxResponseBytes, cancellationToken)
-                .ConfigureAwait(false);
-            return JsonDocument.Parse(payload);
-        }
-    }
+                Uri = uri,
+                PrimaryAccept = "application/json",
+                SecondaryAccept = "application/geo+json",
+            },
+            cancellationToken);
 
 
     private static IEnumerable<MigrationInventoryField> ReadFields(JsonElement root)

@@ -26,7 +26,8 @@ internal static class GeocodingReferenceDataImportEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Geocoding")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         // Cast to Delegate so the HttpContext-only handler binds as a route handler (its
         // IResult is written to the response) rather than a raw RequestDelegate.

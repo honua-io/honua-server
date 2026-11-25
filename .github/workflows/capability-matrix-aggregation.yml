@@ -31,6 +31,7 @@ on:
       - 'docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md'
       - 'docs/gis/data/operation-capability.v1.json'
       - 'tests/baselines/client-compat/**'
+      - 'scripts/client-compat/diff-baselines.py'
       - 'scripts/ci/generate-capability-matrix.py'
       - 'scripts/certification/build-client-checklist.py'
       - 'scripts/certification/test_build_client_checklist.py'
@@ -91,6 +92,15 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
+
+      - name: Check Cesium certification baseline inventory
+        run: |
+          python3 scripts/client-compat/diff-baselines.py \
+            --baselines tests/baselines/client-compat \
+            --current tests/baselines/client-compat \
+            --expected-pairs tests/baselines/client-compat/expected-pairs.json \
+            --client-lanes js-cesium --strict \
+            --gap-report "${RUNNER_TEMP}/cesium-baseline-inventory.json"
 
       - name: Regenerate capability-matrix.v1.json
         run: python3 scripts/ci/generate-capability-matrix.py

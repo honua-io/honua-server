@@ -22,7 +22,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         FeatureQuerySecurity.ValidateDateBins(query, dateBin);
 
         var sql = new SqlBuilder();
-        var timestamp = BuildEpochAwareTemporalExpression(
+        var timestamp = FeatureQueryBuilder.BuildEpochAwareTemporalExpression(
             ResolveColumnExpression(dateBin.BinField, sql),
             MetadataV2FieldType.DateTime);
         var boundary = DateBinBoundarySql.Build(dateBin, timestamp, origin => sql.AddParameter(origin.UtcDateTime));

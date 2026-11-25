@@ -481,7 +481,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 await stream.DisposeAsync();
             }
 
-            TryDeleteTempFile(tempFilePath);
+            InMemoryImportJobService.TryDeleteTempFile(tempFilePath);
 
             _jobs.TryRemove(jobId, out _);
         }
@@ -765,22 +765,6 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 UniversalImportJobLog.ProgressUpdateFailed(_logger, _jobId, ex);
             }
-        }
-    }
-
-    private static void TryDeleteTempFile(string? tempFilePath)
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(tempFilePath) && File.Exists(tempFilePath))
-            {
-                File.Delete(tempFilePath);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Best-effort cleanup; ignore failures (e.g. file locked/in use, already removed,
-            // or the process lacks delete permission on the temp path).
         }
     }
 }

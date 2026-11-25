@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,26 +12,80 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
+internal sealed record VersionJobRunnerOptions
+{
+    public required IServiceScopeFactory ScopeFactory { get; init; }
+
+    public required IVersionJobStore JobStore { get; init; }
+
+    public required ILogger<VersionJobRunner> Logger { get; init; }
+
+    public IHostApplicationLifetime? Lifetime { get; init; }
+
+    public int MaxTerminalSaveAttempts { get; init; } = 8;
+
+    public TimeSpan InitialTerminalSaveRetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    public TimeSpan MaxTerminalSaveRetryDelay { get; init; } = TimeSpan.FromSeconds(30);
+}
+
 public sealed partial class VersionJobRunner : IVersionJobRunner
 {
     private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
-    private static readonly TimeSpan TerminalSaveRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IVersionJobStore _jobStore;
     private readonly ILogger<VersionJobRunner> _logger;
     private readonly IHostApplicationLifetime? _lifetime;
+    private readonly int _maxTerminalSaveAttempts;
+    private readonly TimeSpan _initialTerminalSaveRetryDelay;
+    private readonly TimeSpan _maxTerminalSaveRetryDelay;
+    private readonly ConcurrentDictionary<Guid, Task> _inFlightJobs = new();
 
     public VersionJobRunner(
         IServiceScopeFactory scopeFactory,
         IVersionJobStore jobStore,
         ILogger<VersionJobRunner> logger,
         IHostApplicationLifetime? lifetime = null)
+        : this(new VersionJobRunnerOptions
+        {
+            ScopeFactory = scopeFactory,
+            JobStore = jobStore,
+            Logger = logger,
+            Lifetime = lifetime,
+        })
     {
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _lifetime = lifetime;
+    }
+
+    internal VersionJobRunner(VersionJobRunnerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxTerminalSaveAttempts, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.InitialTerminalSaveRetryDelay, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(
+            options.MaxTerminalSaveRetryDelay,
+            options.InitialTerminalSaveRetryDelay);
+
+        ArgumentNullException.ThrowIfNull(options.ScopeFactory);
+        ArgumentNullException.ThrowIfNull(options.JobStore);
+        ArgumentNullException.ThrowIfNull(options.Logger);
+
+        _scopeFactory = options.ScopeFactory;
+        _jobStore = options.JobStore;
+        _logger = options.Logger;
+        _lifetime = options.Lifetime;
+        _maxTerminalSaveAttempts = options.MaxTerminalSaveAttempts;
+        _initialTerminalSaveRetryDelay = options.InitialTerminalSaveRetryDelay;
+        _maxTerminalSaveRetryDelay = options.MaxTerminalSaveRetryDelay;
+    }
+
+    internal async Task WaitForInFlightJobsAsync(CancellationToken cancellationToken = default)
+    {
+        var pending = _inFlightJobs.Values.ToArray();
+        if (pending.Length > 0)
+        {
+            await Task.WhenAll(pending).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public Task<VersionJob> StartReconcileAsync(
@@ -73,12 +128,36 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             ConflictDetection: detection);
 
         await _jobStore.SaveAsync(job, cancellationToken).ConfigureAwait(false);
-
-        // Detach the execution from the request: the background task owns its own DI scope and
-        // cancellation so the job completes even after the start response returns.
-        _ = Task.Run(() => ExecuteAsync(job), CancellationToken.None);
+        TrackBackgroundExecution(job);
 
         return job;
+    }
+
+    private void TrackBackgroundExecution(VersionJob job)
+    {
+        // Detach the execution from the request: the background task owns its own DI scope and
+        // cancellation so the job completes even after the start response returns, while still
+        // being tracked so callers or graceful shutdown can observe pending work.
+        var trackedTask = Task.Run(async () =>
+        {
+            try
+            {
+                await ExecuteAsync(job).ConfigureAwait(false);
+            }
+            finally
+            {
+                _inFlightJobs.TryRemove(job.JobId, out _);
+            }
+        }, CancellationToken.None);
+
+        if (!trackedTask.IsCompleted)
+        {
+            _inFlightJobs[job.JobId] = trackedTask;
+            if (trackedTask.IsCompleted)
+            {
+                _inFlightJobs.TryRemove(job.JobId, out _);
+            }
+        }
     }
 
     private async Task ExecuteAsync(VersionJob job)
@@ -206,7 +285,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
     private async Task SaveTerminalStateAsync(VersionJob job)
     {
         var shutdownToken = _lifetime?.ApplicationStopping ?? CancellationToken.None;
-        while (true)
+        for (var attempt = 1; attempt <= _maxTerminalSaveAttempts; attempt++)
         {
             try
             {
@@ -215,19 +294,41 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                if (IsNonTransientSaveFailure(ex) || attempt >= _maxTerminalSaveAttempts)
+                {
+                    Log.TerminalSaveAbandoned(_logger, job.Kind.ToString(), job.VersionId, job.JobId, attempt, ex);
+                    return;
+                }
+
                 Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
             }
 
-            // Retain the operation's original outcome through an outage without replaying it.
+            // Retain the operation's original outcome through a transient outage without replaying it.
+            var delay = ComputeTerminalSaveRetryDelay(attempt);
             try
             {
-                await Task.Delay(TerminalSaveRetryDelay, shutdownToken).ConfigureAwait(false);
+                await Task.Delay(delay, shutdownToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
             {
                 return;
             }
         }
+    }
+
+    private static bool IsNonTransientSaveFailure(Exception exception)
+        => exception is ArgumentException or NotSupportedException or FormatException;
+
+    private TimeSpan ComputeTerminalSaveRetryDelay(int attempt)
+    {
+        var exponent = Math.Min(attempt - 1, 16);
+        var scaledTicks = _initialTerminalSaveRetryDelay.Ticks * (1L << exponent);
+        var baseTicks = scaledTicks > 0 && scaledTicks < _maxTerminalSaveRetryDelay.Ticks
+            ? scaledTicks
+            : _maxTerminalSaveRetryDelay.Ticks;
+        var jitterFactor = 1.0 + (Random.Shared.NextDouble() * 0.25);
+        var jitteredTicks = (long)Math.Min(baseTicks * jitterFactor, _maxTerminalSaveRetryDelay.Ticks);
+        return TimeSpan.FromTicks(Math.Max(1L, jitteredTicks));
     }
 
     private static async Task<VersionJob> RunReconcileAsync(
@@ -296,5 +397,11 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             Level = LogLevel.Warning,
             Message = "Query response cache invalidation failed after a version job completed.")]
         public static partial void QueryResponseInvalidationFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7105,
+            Level = LogLevel.Error,
+            Message = "Abandoned persisting terminal state for version {JobKind} job {JobId} (version {VersionId}) after {Attempts} attempt(s).")]
+        public static partial void TerminalSaveAbandoned(ILogger logger, string jobKind, Guid versionId, Guid jobId, int attempts, Exception exception);
     }
 }

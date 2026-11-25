@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Sockets;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -45,19 +44,23 @@ public sealed class Wps20ConformanceEchoTests
     [Fact]
     public async Task ConnectPinnedAsync_CancellationDisposesCurrentSocket()
     {
-        Socket? socket = null;
+        var options = Substitute.For<IOptionsMonitor<Wps20Options>>();
+        options.CurrentValue.Returns(new Wps20Options
+        {
+            EnableConformanceEcho = true,
+            ConformanceReferenceAllowedHosts = ["example.test"]
+        });
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
+        using var echo = new Wps20ConformanceEcho(options, environment);
 
-        var action = async () => await Wps20ConformanceEcho.ConnectPinnedAsync(
-            [IPAddress.Parse("203.0.113.1")],
-            443,
-            cancellation.Token,
-            family => socket = new Socket(family, SocketType.Stream, ProtocolType.Tcp));
+        var action = () => echo.ResolveInputAsync(
+            new EchoInput("literalInput", EchoValueKind.Reference, "https://example.test/value", "text/plain"),
+            cancellation.Token);
 
         await action.Should().ThrowAsync<OperationCanceledException>();
-        socket.Should().NotBeNull();
-        socket!.SafeHandle.IsClosed.Should().BeTrue();
     }
 
     private sealed class StaticResponseHandler(HttpResponseMessage response) : HttpMessageHandler

@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -22,10 +23,12 @@ internal static class InvestigationEndpoints
     public static void MapInvestigationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/investigations")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Investigations")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("", HandleList)
             .WithDisplayName("List Investigations")
@@ -43,6 +46,11 @@ internal static class InvestigationEndpoints
             .WithDisplayName("Update Investigation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
 
+        MapInvestigationSubresourceEndpoints(group);
+    }
+
+    private static void MapInvestigationSubresourceEndpoints(IEndpointRouteBuilder group)
+    {
         group.MapPost("/{investigationId}/pins", HandleAddPin)
             .WithDisplayName("Pin Event To Investigation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));

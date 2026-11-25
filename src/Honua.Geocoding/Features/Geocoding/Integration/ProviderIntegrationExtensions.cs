@@ -1,10 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Providers;
-using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -14,6 +16,33 @@ namespace Honua.Geocoding.Features.Geocoding.Integration;
 
 public static class ProviderIntegrationExtensions
 {
+    internal const string NominatimClientName = "nominatim-geocoding";
+    internal const string AzureMapsClientName = "azure-maps-geocoding";
+    private const int MaxConnectionsPerGeocodingProvider = 32;
+
+    private static readonly PinnedDnsConnector GeocodingPinnedDnsConnector = new(
+        Dns.GetHostAddressesAsync,
+        new PinnedDnsFailureMessages(
+            "Geocoding provider destination resolves to a disallowed network address.",
+            "Unable to connect to the geocoding provider."));
+
+    internal static SocketsHttpHandler CreateHardenedGeocodingHandler(
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+    {
+        var connector = hostAddressResolver is null
+            ? GeocodingPinnedDnsConnector
+            : new PinnedDnsConnector(
+                hostAddressResolver,
+                new PinnedDnsFailureMessages(
+                    "Geocoding provider destination resolves to a disallowed network address.",
+                    "Unable to connect to the geocoding provider."));
+
+        var handler = connector.CreateHandler(MaxConnectionsPerGeocodingProvider);
+        handler.UseCookies = false;
+        handler.PooledConnectionLifetime = TimeSpan.FromMinutes(5);
+        return handler;
+    }
+
     public static IServiceCollection AddNominatimGeocodeProvider(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -24,9 +53,11 @@ public static class ProviderIntegrationExtensions
         services.AddOptions<NominatimProviderConfiguration>()
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Nominatim"));
 
-        services.AddResilientHttpClient<NominatimGeocodeProvider>(
+        services.AddResilientHttpClient(
+            NominatimClientName,
             "nominatim-geocoding",
-            HttpResiliencePolicies.FastApiDefaults);
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => CreateHardenedGeocodingHandler());
 
         services.AddGeocodeProvider(
             NominatimGeocodeProvider.ProviderName,
@@ -34,7 +65,7 @@ public static class ProviderIntegrationExtensions
             {
                 var config = serviceProvider.GetRequiredService<IOptionsMonitor<NominatimProviderConfiguration>>().CurrentValue;
                 var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-                var httpClient = httpClientFactory.CreateClient(typeof(NominatimGeocodeProvider).FullName ?? nameof(NominatimGeocodeProvider));
+                var httpClient = httpClientFactory.CreateClient(NominatimClientName);
 
                 return new NominatimGeocodeProvider(config, httpClient);
             });
@@ -76,9 +107,11 @@ public static class ProviderIntegrationExtensions
         services.AddOptions<AzureMapsProviderConfiguration>()
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:AzureMaps"));
 
-        services.AddResilientHttpClient<AzureMapsGeocodeProvider>(
+        services.AddResilientHttpClient(
+            AzureMapsClientName,
             "azure-maps-geocoding",
-            HttpResiliencePolicies.FastApiDefaults);
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => CreateHardenedGeocodingHandler());
 
         services.AddGeocodeProvider(
             AzureMapsGeocodeProvider.ProviderName,
@@ -86,7 +119,7 @@ public static class ProviderIntegrationExtensions
             {
                 var config = serviceProvider.GetRequiredService<IOptionsMonitor<AzureMapsProviderConfiguration>>().CurrentValue;
                 var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-                var httpClient = httpClientFactory.CreateClient(typeof(AzureMapsGeocodeProvider).FullName ?? nameof(AzureMapsGeocodeProvider));
+                var httpClient = httpClientFactory.CreateClient(AzureMapsClientName);
 
                 return new AzureMapsGeocodeProvider(config, httpClient);
             });

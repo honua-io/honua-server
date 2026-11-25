@@ -184,24 +184,12 @@ internal sealed class UnpivotTransformExecutor(
                     table.Add(name, attributes.Exists(name) ? attributes.GetOptionalValue(name) : null);
                 }
 
-                Upsert(table, nameField, field);
-                Upsert(table, valueField, value);
+                OverlayExecutorSupport.Upsert(table, nameField, field);
+                OverlayExecutorSupport.Upsert(table, valueField, value);
                 output.Add(new Feature(feature.Geometry, table));
             }
         }
 
         return output;
-    }
-
-    private static void Upsert(AttributesTable table, string name, object? value)
-    {
-        if (table.Exists(name))
-        {
-            table[name] = value;
-        }
-        else
-        {
-            table.Add(name, value);
-        }
     }
 }

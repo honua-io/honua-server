@@ -92,7 +92,7 @@ internal static partial class AdminApiKeyEndpoints
             request.Name.Trim(),
             kind.Permissions,
             request.ExpiresAt,
-            ResolveCreator(context),
+            AdminPrincipalHelpers.ResolveCreator(context),
             restrictions,
             context.RequestAborted);
 
@@ -267,7 +267,7 @@ internal static partial class AdminApiKeyEndpoints
             return true;
         }
 
-        var actor = ResolveCreator(context) ?? AuditEvent.AnonymousActor;
+        var actor = AdminPrincipalHelpers.ResolveCreator(context) ?? AuditEvent.AnonymousActor;
         var permissionsList = string.Join(",", record.Permissions);
         var escapedName = record.Name.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
         var escapedPerms = permissionsList.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
@@ -461,17 +461,6 @@ internal static partial class AdminApiKeyEndpoints
         }
 
         return "active";
-    }
-
-    private static string? ResolveCreator(HttpContext context)
-    {
-        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(apiKeyId))
-        {
-            return $"api-key:{apiKeyId}";
-        }
-
-        return context.User.Identity?.Name;
     }
 
     [LoggerMessage(EventId = 4560, Level = LogLevel.Information,

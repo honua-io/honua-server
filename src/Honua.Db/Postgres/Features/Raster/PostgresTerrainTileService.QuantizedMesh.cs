@@ -16,7 +16,7 @@ internal sealed partial class PostgresTerrainTileService
     {
         ValidateGeographicRequest(request);
 
-        _ = await ValidateSupportedMetadataAsync(
+        await ValidateSupportedMetadataAsync(
             request.LayerId,
             request.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
@@ -77,28 +77,30 @@ internal sealed partial class PostgresTerrainTileService
             allNoData: !hasData);
     }
 
-    private async Task<TerrainDatasetMetadata> ValidateSupportedMetadataAsync(
+    private async Task ValidateSupportedMetadataAsync(
         int layerId,
         RasterMergeStrategy mergeStrategy,
         CancellationToken cancellationToken)
     {
-        var metadata = await GetDatasetMetadataAsync(layerId, mergeStrategy, cancellationToken).ConfigureAwait(false);
-        if (metadata is null)
+        _ = mergeStrategy;
+        var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (rasters.Length == 0)
         {
             throw new TerrainTileException(
                 TerrainTileFailureKind.SourceUnavailable,
                 "No raster source is registered for this terrain dataset.");
         }
 
-        if (!metadata.IsSupported)
+        var candidateSourceSrid = ResolveSourceSrid(rasters);
+        var sourceSrid = await ResolveSupportedSourceSridAsync(candidateSourceSrid, cancellationToken).ConfigureAwait(false);
+        var unsupportedReasons = GetUnsupportedReasons(rasters, candidateSourceSrid, sourceSrid);
+        if (unsupportedReasons.Length > 0)
         {
-            var kind = metadata.UnsupportedReasons.Any(static reason => reason.Contains("CRS", StringComparison.OrdinalIgnoreCase))
+            var kind = unsupportedReasons.Any(static reason => reason.Contains("CRS", StringComparison.OrdinalIgnoreCase))
                 ? TerrainTileFailureKind.UnknownCrs
                 : TerrainTileFailureKind.UnsupportedSource;
-            throw new TerrainTileException(kind, string.Join(" ", metadata.UnsupportedReasons));
+            throw new TerrainTileException(kind, string.Join(" ", unsupportedReasons));
         }
-
-        return metadata;
     }
 
     private async Task<long[]> GetIntersectingRasterIdsGeographicAsync(

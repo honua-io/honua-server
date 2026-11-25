@@ -37,17 +37,19 @@ public sealed class CuratedZarrCorpusReaderTests
         array.DimensionNames.Should().Equal(["time", "latitude", "longitude"]);
 
         // Whole-cube read through the production subset reader.
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            reader,
-            Bucket,
-            ArrayRoot,
-            metadata,
-            new ZarrSubsetRequest
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters
+        {
+            Reader = reader,
+            Bucket = Bucket,
+            RootPath = ArrayRoot,
+            Metadata = metadata,
+            Request = new ZarrSubsetRequest
             {
                 Variable = array.Name,
                 Start = [0, 0, 0],
                 Stop = [2, 3, 4],
-            });
+            }
+        });
 
         subset.Shape.Should().Equal([2, 3, 4]);
         subset.DataType.Should().Be("<f4");
@@ -67,17 +69,19 @@ public sealed class CuratedZarrCorpusReaderTests
 
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, ArrayRoot);
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
-            reader,
-            Bucket,
-            ArrayRoot,
-            metadata,
-            new ZarrSubsetRequest
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters
+        {
+            Reader = reader,
+            Bucket = Bucket,
+            RootPath = ArrayRoot,
+            Metadata = metadata,
+            Request = new ZarrSubsetRequest
             {
                 Variable = metadata.Arrays[0].Name,
                 Start = [1, 0, 0],
                 Stop = [2, 3, 4],
-            });
+            }
+        });
 
         subset.Shape.Should().Equal([1, 3, 4]);
         subset.Data.Length.Should().Be(12 * sizeof(float));

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization.Metadata;
@@ -13,6 +14,7 @@ internal sealed class ETagService : IETagService
     private const int Base64HashSize = 44; // Base64-encoded SHA256 size (rounded up to nearest 4-byte boundary)
     // Base64-encoded SHA256 hash of empty content with padding trimmed to match ComputeETag formatting.
     private const string EmptyContentHash = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU";
+    private const string EmptyETag = "\"" + EmptyContentHash + "\"";
 
     public string ComputeETag<T>(T obj, JsonTypeInfo<T> jsonTypeInfo)
     {
@@ -28,7 +30,7 @@ internal sealed class ETagService : IETagService
         if (data.IsEmpty)
         {
             // Return a consistent ETag for empty content (SHA256 hash of empty payload).
-            return $"\"{EmptyContentHash}\"";
+            return EmptyETag;
         }
 
         // Compute SHA256 hash
@@ -38,16 +40,21 @@ internal sealed class ETagService : IETagService
             throw new InvalidOperationException("Failed to compute SHA256 hash");
         }
 
-        // Convert to Base64 for compact representation
-        Span<char> base64Chars = stackalloc char[Base64HashSize];
-        if (!Convert.TryToBase64Chars(hashBytes, base64Chars, out var charsWritten))
+        // Convert to Base64 directly into a quoted buffer and trim any trailing '=' padding.
+        Span<char> etagChars = stackalloc char[Base64HashSize + 2];
+        etagChars[0] = '"';
+        if (!Convert.TryToBase64Chars(hashBytes, etagChars[1..], out var charsWritten))
         {
             throw new InvalidOperationException("Failed to encode hash as Base64");
         }
 
-        // Return as quoted strong ETag (trim any padding and quote)
-        var base64Hash = new string(base64Chars[..charsWritten]).TrimEnd('=');
-        return $"\"{base64Hash}\"";
+        while (charsWritten > 0 && etagChars[charsWritten] == '=')
+        {
+            charsWritten--;
+        }
+
+        etagChars[charsWritten + 1] = '"';
+        return new string(etagChars[..(charsWritten + 2)]);
     }
 
     public string ComputeETag(string content)
@@ -68,11 +75,16 @@ internal sealed class ETagService : IETagService
             var actualByteCount = Encoding.UTF8.GetBytes(content, utf8Bytes);
             return ComputeETag(utf8Bytes[..actualByteCount]);
         }
-        else
+
+        var rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
+        try
         {
-            // Use heap allocation for larger strings
-            var utf8Bytes = Encoding.UTF8.GetBytes(content);
-            return ComputeETag(utf8Bytes);
+            var actualByteCount = Encoding.UTF8.GetBytes(content, rented);
+            return ComputeETag(rented.AsSpan(0, actualByteCount));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
         }
     }
 
@@ -83,20 +95,27 @@ internal sealed class ETagService : IETagService
             return true; // No conditional header, resource is considered modified
         }
 
+        var headerSpan = ifNoneMatch.AsSpan();
         // Handle "*" which means any ETag
-        if (ifNoneMatch.Trim() == "*")
+        if (headerSpan.Trim().SequenceEqual("*"))
         {
             return false; // Resource exists (any ETag), so not modified
         }
 
-        // Parse multiple ETags (comma-separated)
-        var etags = ifNoneMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
         // If-None-Match uses weak comparison for GET/HEAD.
-        var current = ParseETag(currentETag);
-        if (etags.Select(ParseETag).Any(candidate => string.Equals(candidate.Value, current.Value, StringComparison.Ordinal)))
+        var currentValue = ParseETag(currentETag.AsSpan()).Value;
+        foreach (var range in headerSpan.Split(','))
         {
-            return false; // ETag matches, resource not modified
+            var candidate = headerSpan[range].Trim();
+            if (candidate.IsEmpty)
+            {
+                continue;
+            }
+
+            if (ParseETag(candidate).Value.SequenceEqual(currentValue))
+            {
+                return false; // ETag matches, resource not modified
+            }
         }
 
         return true; // No matching ETag found, resource is modified
@@ -109,21 +128,33 @@ internal sealed class ETagService : IETagService
             return true; // No conditional header, precondition passes
         }
 
+        var headerSpan = ifMatch.AsSpan();
         // Handle "*" which means any ETag
-        if (ifMatch.Trim() == "*")
+        if (headerSpan.Trim().SequenceEqual("*"))
         {
             return true; // Resource exists (any ETag), precondition passes
         }
 
-        // Parse multiple ETags (comma-separated)
-        var etags = ifMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
         // If-Match requires strong comparison; weak tags never match.
-        var current = ParseETag(currentETag);
-        if (!current.IsWeak &&
-            etags.Select(ParseETag).Any(candidate => !candidate.IsWeak && string.Equals(candidate.Value, current.Value, StringComparison.Ordinal)))
+        var current = ParseETag(currentETag.AsSpan());
+        if (current.IsWeak)
         {
-            return true; // ETag matches, precondition passes
+            return false;
+        }
+
+        foreach (var range in headerSpan.Split(','))
+        {
+            var candidate = headerSpan[range].Trim();
+            if (candidate.IsEmpty)
+            {
+                continue;
+            }
+
+            var candidateTag = ParseETag(candidate);
+            if (!candidateTag.IsWeak && candidateTag.Value.SequenceEqual(current.Value))
+            {
+                return true; // ETag matches, precondition passes
+            }
         }
 
         return false; // No matching ETag found, precondition fails
@@ -150,27 +181,37 @@ internal sealed class ETagService : IETagService
         }
     }
 
-    private static (string Value, bool IsWeak) ParseETag(string etag)
+    private static ParsedETag ParseETag(ReadOnlySpan<char> etag)
     {
-        if (string.IsNullOrWhiteSpace(etag))
+        var trimmed = etag.Trim();
+        if (trimmed.IsEmpty)
         {
-            return (string.Empty, false);
+            return ParsedETag.Strong(ReadOnlySpan<char>.Empty);
         }
 
-        var trimmed = etag.Trim();
         var isWeak = false;
-
         if (trimmed.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
         {
             isWeak = true;
             trimmed = trimmed[2..].TrimStart();
         }
 
-        if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
+        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
         {
             trimmed = trimmed[1..^1];
         }
 
-        return (trimmed, isWeak);
+        return isWeak ? ParsedETag.Weak(trimmed) : ParsedETag.Strong(trimmed);
+    }
+
+    private readonly ref struct ParsedETag
+    {
+        public ReadOnlySpan<char> Value { get; init; }
+
+        public bool IsWeak { get; init; }
+
+        public static ParsedETag Strong(ReadOnlySpan<char> value) => new() { Value = value };
+
+        public static ParsedETag Weak(ReadOnlySpan<char> value) => new() { Value = value, IsWeak = true };
     }
 }

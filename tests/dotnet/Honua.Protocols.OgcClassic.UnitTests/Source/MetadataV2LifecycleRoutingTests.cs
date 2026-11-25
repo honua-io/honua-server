@@ -53,59 +53,49 @@ public sealed class MetadataV2LifecycleRoutingTests
     }
 
     [UnitTest]
-    public void WcsLayerResolver_WithRetiredBinding_OmitsCoverage()
+    public async Task WcsLayerResolver_WithRetiredBinding_OmitsCoverage()
     {
         var snapshot = CreateSnapshot(
             publicationLifecycle: MetadataV2LifecycleStatus.Active,
             bindingLifecycle: MetadataV2LifecycleStatus.Retired);
         var method = typeof(Wcs20Handler).GetMethod(
-            "TryResolveResourceForLayer",
+            "ResolveResourceForLayerAsync",
             BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull();
 
-        // Bind the argument array to the live signature rather than a hard-coded arity:
-        // a call that passes too few arguments dies with an opaque
-        // TargetParameterCountException instead of proving the retirement boundary. The
-        // resolver is invoked positionally, so a renamed or reordered parameter must
-        // fail here rather than silently feed a value into the wrong slot.
         var parameters = method!.GetParameters();
-        parameters.Length.Should().BeGreaterThanOrEqualTo(4);
+        parameters.Length.Should().Be(4);
         parameters[0].Name.Should().Be("context");
         parameters[1].Name.Should().Be("snapshot");
         parameters[2].Name.Should().Be("layerId");
-        parameters[3].Name.Should().Be("resource");
-        var arguments = new object?[parameters.Length];
-        arguments[0] = new DefaultHttpContext();
-        arguments[1] = snapshot;
-        arguments[2] = 7;
+        parameters[3].Name.Should().Be("cancellationToken");
 
-        var resolved = (bool)method.Invoke(null, arguments)!;
+        var task = (Task<(bool Found, MetadataV2Object? Resource, MetadataV2Service? OwningService)>)method.Invoke(
+            null,
+            [new DefaultHttpContext(), snapshot, 7, CancellationToken.None])!;
+        var (resolved, resource, owningService) = await task;
 
         resolved.Should().BeFalse();
-        // Every out parameter must come back empty: neither the resource behind the
-        // retired binding nor the service that owns it may leak to the coverage route.
-        for (var index = 3; index < arguments.Length; index++)
-        {
-            arguments[index].Should().BeNull(
-                "out parameter '{0}' must stay empty when the binding is retired",
-                parameters[index].Name);
-        }
+        resource.Should().BeNull("the resource behind the retired binding must not leak to the coverage route");
+        owningService.Should().BeNull("the service owning the retired binding must not leak to the coverage route");
     }
 
     [UnitTest]
-    public void WcsServiceResolver_WithRetiredService_RejectsRoute()
+    public async Task WcsServiceResolver_WithRetiredService_RejectsRoute()
     {
         var snapshot = CreateSnapshot(
             publicationLifecycle: MetadataV2LifecycleStatus.Active,
             serviceLifecycle: MetadataV2LifecycleStatus.Retired);
         var method = typeof(Wcs20Handler).GetMethod(
-            "ResolveService",
+            "ResolveServiceAsync",
             BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull();
 
-        var result = method!.Invoke(
+        var task = (Task)method!.Invoke(
             null,
-            [new DefaultHttpContext(), snapshot, new Wcs20RouteScope(null, "service-ogc")]);
+            [new DefaultHttpContext(), new Wcs20Handler.WcsServiceLookup(snapshot, new Wcs20RouteScope(null, "service-ogc")), CancellationToken.None])!;
+        await task;
+        var result = task.GetType().GetProperty("Result")!.GetValue(task);
 
         result.Should().NotBeNull();
         result!.GetType().GetProperty("Service")!.GetValue(result).Should().BeNull();

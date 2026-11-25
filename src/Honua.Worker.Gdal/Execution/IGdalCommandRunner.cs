@@ -11,6 +11,8 @@ internal sealed record GdalCommandResult
 
     public string StandardError { get; init; } = "";
 
+    public bool StandardOutputTruncated { get; init; }
+
     public bool Succeeded => ExitCode == 0;
 }
 

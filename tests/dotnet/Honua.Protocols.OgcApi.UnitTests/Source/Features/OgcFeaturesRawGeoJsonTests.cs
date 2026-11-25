@@ -255,6 +255,43 @@ public sealed class OgcFeaturesRawGeoJsonTests
         tag3.Should().NotBe(tag1);
     }
 
+    [UnitTest]
+    public void CreateMaterializedFeatureCollectionPayload_SinglePassSerializationMatchesSchemaAndStablePrefix()
+    {
+        var etagService = new ETagService();
+        var first = CreateMaterializedSampleCollection(new DateTimeOffset(2026, 11, 22, 8, 0, 0, TimeSpan.Zero));
+        var second = first with { TimeStamp = new DateTimeOffset(2026, 11, 22, 9, 0, 0, TimeSpan.Zero) };
+
+        var payload1 = OgcFeaturesQueryHandler.CreateMaterializedFeatureCollectionPayload(first);
+        var payload2 = OgcFeaturesQueryHandler.CreateMaterializedFeatureCollectionPayload(second);
+
+        payload1.Bytes.Span[..payload1.StableHashLength]
+            .SequenceEqual(payload2.Bytes.Span[..payload2.StableHashLength]).Should().BeTrue();
+        payload1.Bytes.Span.SequenceEqual(payload2.Bytes.Span).Should().BeFalse();
+
+        var tag1 = OgcFeaturesQueryHandler.ComputeWeakETag(payload1.Bytes.Span[..payload1.StableHashLength], etagService);
+        var tag2 = OgcFeaturesQueryHandler.ComputeWeakETag(payload2.Bytes.Span[..payload2.StableHashLength], etagService);
+        tag1.Should().StartWith("W/\"");
+        tag2.Should().Be(tag1);
+
+        using var doc = JsonDocument.Parse(payload1.Bytes);
+        doc.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        doc.RootElement.GetProperty("numberMatched").GetInt64().Should().Be(1);
+        doc.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+        doc.RootElement.GetProperty("features")[0].GetProperty("id").GetInt32().Should().Be(7);
+        doc.RootElement.GetProperty("links")[0].GetProperty("rel").GetString().Should().Be("self");
+        doc.RootElement.GetProperty("timeStamp").GetString().Should().Be("2026-11-22T08:00:00.0000000Z");
+    }
+
+    private static FeatureCollection CreateMaterializedSampleCollection(DateTimeOffset timeStamp) => new()
+    {
+        Features = [new GeoJsonFeature { Id = 7, Properties = new Dictionary<string, object?> { ["category"] = "park" } }],
+        NumberMatched = 1,
+        NumberReturned = 1,
+        Links = ImmutableArray.Create(Link.Create("https://example.test/items", "self", "application/geo+json", "Items")),
+        TimeStamp = timeStamp,
+    };
+
     private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => new()
         {

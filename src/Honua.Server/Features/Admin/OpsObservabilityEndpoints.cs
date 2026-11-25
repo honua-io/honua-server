@@ -6,6 +6,7 @@ using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -24,10 +25,12 @@ internal static class OpsObservabilityEndpoints
         // admin write — the ops-read policy is method-aware, so applying it at the group keeps every
         // mutation admin-only.
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability")
-            .RequireOpsReadAuthorization();
+            .RequireOpsReadAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapOpsIncidentEndpoints();
 

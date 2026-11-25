@@ -85,9 +85,9 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
-        // without paying for a separate COUNT query. The probe row is trimmed before returning.
+        // without paying for a separate COUNT query. Guard against int.MaxValue overflow.
         var requestedLimit = query.Limit;
-        var probeQuery = requestedLimit.HasValue
+        var probeQuery = requestedLimit is > 0 and < int.MaxValue
             ? query with { Limit = requestedLimit.Value + 1 }
             : query;
 
@@ -105,7 +105,7 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
         long exactMatchCount = features.Length;
         if (hasMore || offset > 0)
         {
-            var countSql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query);
+            var countSql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
             exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
         }
 
@@ -122,30 +122,30 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = RedshiftFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = RedshiftFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = RedshiftFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = RedshiftFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = RedshiftFeatureQueryBuilder.BuildStatistics(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = RedshiftFeatureQueryBuilder.BuildStatistics(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -155,11 +155,11 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
 
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
-        var countTask = _dataAccess.ExecuteCountAsync(mapping, RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
-        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, RedshiftFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
+        var countTask = _dataAccess.ExecuteCountAsync(mapping, RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery, attributeColumns), _boundConnection, cancellationToken);
+        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, RedshiftFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery, attributeColumns), _boundConnection, cancellationToken);
         await Task.WhenAll(countTask, extentTask).ConfigureAwait(false);
 
         return new EstimateResult

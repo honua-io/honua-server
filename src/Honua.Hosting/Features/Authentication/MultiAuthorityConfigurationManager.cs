@@ -138,7 +138,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
         return merged;
     }
 
-    private static void AddIssuerKeys(
+    internal static void AddIssuerKeys(
         Dictionary<string, List<SecurityKey>> keysByIssuer,
         string? issuer,
         List<SecurityKey> signingKeys)

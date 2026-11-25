@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Hosting.UnitTests.Source.Infrastructure.Authentication;
 
@@ -110,5 +111,37 @@ public sealed class LiveStreamSecurityRegistryTests
         await registry.RefreshAsync(new("credential-revoked", storedBindingHash, "AdminSessionBearerBinding"), CancellationToken.None);
 
         Assert.True(revoked, "deleting the bearer binding token on sign-out must end the bearer's streams");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WhenRefreshThrows_ContinuesRunningSubsequentTicks()
+    {
+        using var registry = new LiveStreamSecurityRegistry(
+            Options.Create(new LiveStreamSecurityOptions { SecurityBackstopInterval = TimeSpan.FromMilliseconds(20) }));
+        var attempts = 0;
+        var secondTickReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = registry.Register(new("alice", null), _ =>
+        {
+            var count = Interlocked.Increment(ref attempts);
+            if (count == 1)
+            {
+                throw new InvalidOperationException("transient refresh failure");
+            }
+
+            secondTickReached.TrySetResult();
+            return Task.CompletedTask;
+        });
+
+        await registry.StartAsync(CancellationToken.None);
+        try
+        {
+            await secondTickReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await registry.StopAsync(CancellationToken.None);
+        }
+
+        Assert.True(attempts >= 2);
     }
 }

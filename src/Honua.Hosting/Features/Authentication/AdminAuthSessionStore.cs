@@ -253,6 +253,8 @@ internal sealed class AdminAuthPendingSession : AdminAuthSessionState
 
     public required string CodeVerifier { get; init; }
 
+    public string? Nonce { get; init; }
+
     public string ReturnTo { get; init; } = "/console/";
 }
 

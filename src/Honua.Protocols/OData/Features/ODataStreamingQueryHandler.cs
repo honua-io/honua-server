@@ -571,6 +571,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             var selectedFields = ODataUtilityService.ParseSelect(select);
+            var hiddenFields = resource.HiddenSchemaFieldNames();
 
             // Stream the OData response
             var featureStream = featureReader is IStreamingFeatureStore routedStreamingStore
@@ -580,28 +581,32 @@ internal sealed partial class ODataStreamingQueryHandler(
                     : QueryAsStreamAsync(featureReader, storageLayerId.Value, streamQuery, effectiveToken);
             await StreamODataFeaturesAsync(
                 featureStream,
-                context,
-                publicLayerId,
-                resource.ReadSrid() ?? 4326,
-                axisOrder,
-                pagination,
-                topValue,
-                selectedFields,
-                filter,
-                select,
-                orderby,
-                countValue,
-                expand,
-                useSkipToken,
-                compute,
-                format,
-                trackChangesRequested,
-                deltatoken,
-                deltaDefinition,
-                totalCount,
-                ODataUtilityService.ShouldIncludeContext(context.Request, format),
-                computeExpressions,
-                _geometryService,
+                new ODataFeatureStreamRequest
+                {
+                    Context = context,
+                    LayerId = publicLayerId,
+                    LayerSrid = resource.ReadSrid() ?? 4326,
+                    AxisOrder = axisOrder,
+                    Pagination = pagination,
+                    RequestedTop = topValue,
+                    SelectedFields = selectedFields,
+                    HiddenFields = hiddenFields,
+                    Filter = filter,
+                    Select = select,
+                    OrderBy = orderby,
+                    Count = countValue,
+                    Expand = expand,
+                    UseSkipToken = useSkipToken,
+                    Compute = compute,
+                    Format = format,
+                    TrackChangesRequested = trackChangesRequested,
+                    DeltaToken = deltatoken,
+                    DeltaState = deltaDefinition,
+                    TotalCount = totalCount,
+                    IncludeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format),
+                    ComputeExpressions = computeExpressions,
+                    GeometryService = _geometryService
+                },
                 effectiveToken);
 
             HonuaTelemetry.SetSuccess(featureActivity);
@@ -651,177 +656,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
     }
 
-    private static async Task StreamODataFeaturesAsync(
-        IAsyncEnumerable<Feature> features,
-        HttpContext context,
-        int layerId,
-        int? layerSrid,
-        AxisOrder axisOrder,
-        PaginationValues pagination,
-        int? requestedTop,
-        HashSet<string>? selectedFields,
-        string? filter,
-        string? select,
-        string? orderby,
-        bool? count,
-        string? expand,
-        bool useSkipToken,
-        string? compute,
-        string? format,
-        bool trackChangesRequested,
-        string? deltatoken,
-        ODataDeltaService.DeltaQueryState deltaState,
-        long? totalCount,
-        bool includeContext,
-        System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
-        IGeometryService geometryService,
-        CancellationToken cancellationToken)
-    {
-        // deltaState is only meaningfully used below when trackChangesRequested/deltatoken
-        // paging is active, but the parameter itself is always non-null (callers pass the
-        // resolved-or-default delta state unconditionally). Guard once, up front, instead of
-        // repeating an inline "?? throw" at each access site further down.
-        ArgumentNullException.ThrowIfNull(deltaState);
-
-        using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
-        {
-            Indented = false,
-            SkipValidation = false
-        });
-
-        try
-        {
-            // Start OData response
-            writer.WriteStartObject();
-
-            // OData JSON Format v4.01 §4.5.1: @odata.context MUST be the first property.
-            var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-            if (includeContext)
-            {
-                writer.WriteString("@odata.context", ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand));
-            }
-
-            if (count == true && totalCount.HasValue)
-            {
-                writer.WriteNumber("@odata.count", totalCount.Value);
-            }
-
-            // Start value array
-            writer.WriteStartArray("value");
-
-            var streamedCount = 0;
-            var hasMoreResults = false;
-            var featuresSinceFlush = 0;
-            await foreach (var feature in features.WithCancellation(cancellationToken))
-            {
-                if (streamedCount >= pagination.Limit)
-                {
-                    hasMoreResults = true;
-                    break;
-                }
-
-                await WriteODataFeatureAsync(
-                    writer,
-                    feature,
-                    layerId,
-                    layerSrid,
-                    axisOrder,
-                    selectedFields,
-                    computeExpressions,
-                    geometryService,
-                    cancellationToken);
-                streamedCount++;
-
-                if (++featuresSinceFlush >= FlushInterval)
-                {
-                    // Utf8JsonWriter only advances a PipeWriter; flush the pipe too so rows reach the
-                    // client as they stream instead of buffering the whole page in memory.
-                    await writer.FlushAsync(cancellationToken);
-                    await context.Response.BodyWriter.FlushAsync(cancellationToken);
-                    featuresSinceFlush = 0;
-                }
-            }
-
-            // End value array
-            writer.WriteEndArray();
-
-            var shouldPaginate = totalCount.HasValue
-                ? ODataUtilityService.ShouldPaginate(streamedCount, pagination.Offset, totalCount.Value, pagination.Limit)
-                : hasMoreResults;
-
-            // An ordinary collection stops once the client $top is spent and carries the remaining
-            // budget forward; change-tracking continuations keep paging by $top.
-            int? continuationTop = pagination.Limit;
-            if (shouldPaginate && !trackChangesRequested && string.IsNullOrWhiteSpace(deltatoken))
-            {
-                shouldPaginate = ODataUtilityService.TryGetContinuationTop(requestedTop, streamedCount, out continuationTop);
-            }
-
-            if (shouldPaginate)
-            {
-                var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
-                var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
-                    ? ODataUtilityService.GenerateDeltaNextLink(
-                        context.Request,
-                        deltaState,
-                        nextSkip,
-                        pagination.Limit,
-                        useSkipToken,
-                        deltaState.Filter,
-                        deltaState.OrderBy)
-                    : ODataUtilityService.GenerateNextLink(
-                        context.Request,
-                        nextSkip,
-                        continuationTop,
-                        filter,
-                        select,
-                        orderby,
-                        count,
-                        expand,
-                        useSkipToken,
-                        compute,
-                        format,
-                        trackChangesRequested,
-                        trackChangesRequested ? deltaState : null);
-                writer.WriteString("@odata.nextLink", nextLink);
-            }
-            else if (trackChangesRequested)
-            {
-                var finalDeltaState = !string.IsNullOrWhiteSpace(deltatoken)
-                    ? deltaState with
-                    {
-                        Timestamp = deltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
-                        UpperBoundTimestamp = null,
-                        LayerId = layerId,
-                        Count = count
-                    }
-                    : deltaState with
-                    {
-                        LayerId = layerId,
-                        Count = count
-                    };
-                var deltaLink = ODataUtilityService.GenerateDeltaLink(
-                    context.Request,
-                    finalDeltaState);
-                writer.WriteString("@odata.deltaLink", deltaLink);
-            }
-
-            // End OData response
-            writer.WriteEndObject();
-
-            await writer.FlushAsync(cancellationToken);
-        }
-        catch
-        {
-            // Nothing written since the last flush has reached the client. Drop it so disposing the
-            // writer cannot commit a half-built collection: before the response starts that prefix
-            // would precede the error body written further up, and after it the abort already marks
-            // the response as cut.
-            writer.Reset();
-            throw;
-        }
-    }
-
     private static string? ValidateDeltaRequestQuery(IEnumerable<string> queryKeys)
     {
         foreach (var key in queryKeys)
@@ -838,178 +672,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
 
         return null;
-    }
-
-    private static async Task WriteODataFeatureAsync(
-        Utf8JsonWriter writer,
-        Feature feature,
-        int layerId,
-        int? layerSrid,
-        AxisOrder axisOrder,
-        HashSet<string>? select,
-        System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
-        IGeometryService geometryService,
-        CancellationToken cancellationToken)
-    {
-        writer.WriteStartObject();
-        var requiresCompute = !computeExpressions.IsDefaultOrEmpty;
-        HashSet<string>? writtenProperties = requiresCompute
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : null;
-
-        // Core OData feature properties
-        writer.WriteNumber("ObjectId", feature.Id);
-        writer.WriteNumber("LayerId", layerId);
-        if (writtenProperties is not null)
-        {
-            _ = writtenProperties.Add("ObjectId");
-            _ = writtenProperties.Add("LayerId");
-        }
-
-        if (select == null || select.Contains("Geometry"))
-        {
-            var geometry = ODataGeometryConverter.ConvertWkbToGeometry(geometryService, feature.Geometry, layerSrid, axisOrder);
-            if (geometry != null)
-            {
-                writer.WritePropertyName("Geometry");
-                JsonSerializer.Serialize(writer, geometry, ODataJsonContext.Default.ODataSpatialGeometry);
-            }
-            else
-            {
-                writer.WriteNull("Geometry");
-            }
-
-            if (writtenProperties is not null)
-            {
-                _ = writtenProperties.Add("Geometry");
-            }
-        }
-
-        Dictionary<string, object?>? computeSource = null;
-        if (feature.Attributes != null)
-        {
-            var normalized = ODataAttributeSerializer.NormalizeAttributes(feature.Attributes);
-            if (requiresCompute)
-            {
-                computeSource = new Dictionary<string, object?>(normalized, StringComparer.OrdinalIgnoreCase)
-                {
-                    ["ObjectId"] = feature.Id,
-                    ["LayerId"] = layerId
-                };
-            }
-
-            foreach (var kvp in normalized)
-            {
-                if (ODataUtilityService.IsReservedFeatureProperty(kvp.Key))
-                {
-                    continue;
-                }
-
-                if ((select == null || select.Contains(kvp.Key)) &&
-                    (writtenProperties == null || writtenProperties.Add(kvp.Key)))
-                {
-                    await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
-                }
-            }
-        }
-        else if (requiresCompute)
-        {
-            computeSource = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["ObjectId"] = feature.Id,
-                ["LayerId"] = layerId
-            };
-        }
-
-        // computeSource is only ever assigned (in the branches above) when requiresCompute is
-        // true, so a non-null computeSource already implies requiresCompute; the redundant
-        // conjunct has been dropped.
-        if (computeSource != null)
-        {
-            ODataComputeService.ApplyCompute(computeSource, computeExpressions);
-            foreach (var expression in computeExpressions)
-            {
-                if (select != null && !select.Contains(expression.Alias))
-                {
-                    continue;
-                }
-
-                if (writtenProperties is HashSet<string> writtenPropertiesSet &&
-                    !writtenPropertiesSet.Add(expression.Alias))
-                {
-                    continue;
-                }
-
-                if (computeSource!.TryGetValue(expression.Alias, out var computedValue))
-                {
-                    await WriteODataJsonValueAsync(writer, expression.Alias, computedValue, cancellationToken);
-                }
-                else
-                {
-                    writer.WriteNull(expression.Alias);
-                }
-            }
-        }
-
-        writer.WriteEndObject(); // End feature
-
-        // Allow for cancellation during processing
-        if (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-    }
-
-    private static async Task WriteODataJsonValueAsync(
-        Utf8JsonWriter writer,
-        string propertyName,
-        object? value,
-        CancellationToken cancellationToken)
-    {
-        switch (value)
-        {
-            case null:
-                writer.WriteNull(propertyName);
-                break;
-            case string s:
-                writer.WriteString(propertyName, s);
-                break;
-            case int i:
-                writer.WriteNumber(propertyName, i);
-                break;
-            case long l:
-                writer.WriteNumber(propertyName, l);
-                break;
-            case double d:
-                writer.WriteNumber(propertyName, d);
-                break;
-            case float f:
-                writer.WriteNumber(propertyName, f);
-                break;
-            case decimal dec:
-                writer.WriteNumber(propertyName, dec);
-                break;
-            case bool b:
-                writer.WriteBoolean(propertyName, b);
-                break;
-            case DateTime dt:
-                writer.WriteString(propertyName, dt.ToString("O")); // ISO 8601 format
-                break;
-            case DateTimeOffset dto:
-                writer.WriteString(propertyName, dto.ToString("O")); // ISO 8601 format
-                break;
-            default:
-                // For complex objects, serialize using OData JSON context
-                writer.WritePropertyName(propertyName);
-                JsonSerializer.Serialize(writer, value, ODataJsonContext.Default.Object);
-                break;
-        }
-
-        // Allow for cancellation during long attribute writing
-        if (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
     }
 
     public async Task<IResult> HandleGetFeaturesCountAsync(

@@ -24,7 +24,7 @@ internal static class GeoServicesTemplateMapper
             {
                 Id = subtype.Code.Clone(),
                 Name = subtype.Name,
-                Domains = MapDomains(subtype.FieldOverrides),
+                Domains = GeoServicesSubtypeMapper.MapDomains(subtype.FieldOverrides),
                 Templates =
                 [
                     new FeatureTemplate
@@ -63,20 +63,6 @@ internal static class GeoServicesTemplateMapper
         }
 
         return attributes;
-    }
-
-    private static Dictionary<string, GeoServicesFieldDomainInfo>? MapDomains(
-        IReadOnlyDictionary<string, MetadataV2SubtypeFieldOverride> overrides)
-    {
-        var domains = new Dictionary<string, GeoServicesFieldDomainInfo>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, mapped) in overrides
-            .Select(pair => (pair.Key, Mapped: GeoServicesFieldDomainMapper.Map(pair.Value.Domain)))
-            .Where(pair => pair.Mapped is not null))
-        {
-            domains[key] = mapped!;
-        }
-
-        return domains.Count == 0 ? null : domains;
     }
 
     private static string ResolveDrawingTool(string? geometryType)

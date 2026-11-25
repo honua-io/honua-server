@@ -906,6 +906,8 @@ internal static partial class GPServerEndpoints
         }
     }
 
+    internal const int MaxJobsListLimit = 200;
+
     private static bool TryParseJobsListQuery(
         HttpContext context,
         out IReadOnlyList<ExecutionJobStatus> statuses,
@@ -924,9 +926,11 @@ internal static partial class GPServerEndpoints
         var rawLimit = query["num"].FirstOrDefault() ?? query["limit"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(rawLimit))
         {
-            if (!int.TryParse(rawLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+            if (!int.TryParse(rawLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                || parsed <= 0
+                || parsed > MaxJobsListLimit)
             {
-                error = "'num' must be a positive integer.";
+                error = $"'num' must be an integer between 1 and {MaxJobsListLimit}.";
                 return false;
             }
 
@@ -2084,7 +2088,9 @@ internal static partial class GPServerEndpoints
             int.TryParse(workingRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out workingSrid);
         }
 
-        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(GPServerEndpoints));
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(
+            new() { Value = value, FromSrid = workingSrid, OutSrid = outSr, Logger = logger });
         if (outcome.Reprojected)
         {
             value = outcome.Value ?? value;

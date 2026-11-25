@@ -38,9 +38,9 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         CancellationToken cancellationToken)
     {
         var source = context.Features;
-        var distance = ReadDistance(inputs);
-        var distanceMeters = distance * ReadUnitFactor(inputs);
-        var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
+        var distance = inputs.ReadDistance();
+        var distanceMeters = distance * inputs.ReadUnitFactor();
+        var dissolve = inputs.ReadBoolDefaultTrue("dissolve");
         var groupByFields = ReadGroupByFields(inputs);
         var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
         StatisticsSupport.EnsureNoOutputCollisions(stats, [.. groupByFields, CountAttribute]);
@@ -250,75 +250,12 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 : null;
             parts[i] = value is null
                 ? NullMarker
-                : EscapeKeyComponent(Convert.ToString(value, CultureInfo.InvariantCulture) ?? NullMarker);
+                : StatisticsSupport.EscapeKeyComponent(Convert.ToString(value, CultureInfo.InvariantCulture) ?? NullMarker);
         }
 
         return string.Join(Separator, parts);
     }
 
-    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a field boundary.
-    private static string EscapeKeyComponent(string value)
-    {
-        if (value.IndexOfAny(['', '']) < 0)
-        {
-            return value;
-        }
-
-        var sb = new StringBuilder(value.Length + 4);
-        foreach (var ch in value)
-        {
-            if (ch is '' or '')
-            {
-                sb.Append(''); // Escape prefix before any structural character.
-            }
-
-            sb.Append(ch);
-        }
-
-        return sb.ToString();
-    }
-
-    private static double ReadDistance(StepInputReader inputs)
-    {
-        if (!inputs.TryGet("distance", out var raw) || string.IsNullOrWhiteSpace(raw)
-            || !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            || !double.IsFinite(value)
-            || value < 0)
-        {
-            throw new TransformInputException("'distance' must be a finite non-negative number");
-        }
-
-        return value;
-    }
-
-    private static double ReadUnitFactor(StepInputReader inputs)
-    {
-        var raw = inputs.GetOrDefault("unit", "meters").Trim().ToLowerInvariant();
-        return raw switch
-        {
-            "" or "meters" or "meter" or "m" => 1.0,
-            "kilometers" or "kilometer" or "km" => 1000.0,
-            "feet" or "foot" or "ft" => 0.3048,
-            "miles" or "mile" or "mi" => 1609.344,
-            _ => throw new TransformInputException(
-                $"unit '{raw}' is not supported (allowed: meters, kilometers, feet, miles)"),
-        };
-    }
-
-    private static bool ReadBool(StepInputReader inputs, string name, bool defaultValue)
-    {
-        if (!inputs.TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
-        {
-            return defaultValue;
-        }
-
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "true" or "1" or "yes" => true,
-            "false" or "0" or "no" => false,
-            _ => throw new TransformInputException($"'{name}' must be a boolean (true|false)"),
-        };
-    }
 
     private static List<string> ReadGroupByFields(StepInputReader inputs)
     {

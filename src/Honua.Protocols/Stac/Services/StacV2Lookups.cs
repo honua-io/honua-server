@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -73,7 +74,8 @@ internal static class StacV2Lookups
                 continue;
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, resource, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }

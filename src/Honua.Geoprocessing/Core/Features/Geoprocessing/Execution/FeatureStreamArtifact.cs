@@ -352,11 +352,11 @@ internal static class FeatureStreamArtifact
         }
     }
 
-    private static async IAsyncEnumerable<IFeature> ToAsync(
-        FeatureCollection collection,
+    public static async IAsyncEnumerable<IFeature> ToAsync(
+        IEnumerable<IFeature> features,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        foreach (var feature in collection)
+        foreach (var feature in features)
         {
             cancellationToken.ThrowIfCancellationRequested();
             yield return feature;

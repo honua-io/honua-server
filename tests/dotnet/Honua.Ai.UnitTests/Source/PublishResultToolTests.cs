@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -408,6 +409,46 @@ public sealed class PublishResultToolTests
         content.GetProperty("status").GetString().Should().Be("error");
         content.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
         content.GetProperty("message").GetString().Should().Be("An internal MCP operation failed.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_publish_result")]
+    public async Task PublishResult_AgentWithCustomRoleClaimType_PopulatesAgentRoleInPolicyContext()
+    {
+        OperationPolicyContext? capturedContext = null;
+        var invoker = new FakeInvoker((_, policyContext) =>
+        {
+            capturedContext = policyContext;
+            return new OperationHandle
+            {
+                OperationId = PublishResultTool.PublishOperationId,
+                OperationInstanceId = "op-agent-1",
+                CorrelationId = "corr-agent-1",
+                Status = OperationHandleStatus.RequiresApproval,
+                ApprovalLane = "admin",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+        });
+        var context = AuthenticatedContext(invoker);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "oidc-agent"),
+                new Claim(ClaimTypes.NameIdentifier, "agent-sub-1"),
+                new Claim("roles", AgentApprovalRule.AgentRole)
+            ],
+            authenticationType: "Test",
+            nameType: ClaimTypes.Name,
+            roleType: "roles"));
+        var tool = CreateTool(JobServiceReturning(CompletedPackage(FeatureLayerArtifact())));
+        var arguments = Arguments(new McpPublishResultArgument { SourceId = JobId });
+
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        capturedContext.Should().NotBeNull();
+        capturedContext!.Roles.Should().Contain(AgentApprovalRule.AgentRole);
     }
 
     private sealed class FakeInvoker(Func<OperationRequest, OperationPolicyContext, OperationHandle> handler)

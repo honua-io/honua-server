@@ -1,12 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.ObjectStorage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
@@ -33,7 +34,8 @@ internal static class ObjectStorageConnectionEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Secure Connections")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         // Each call mints and stores a new external id bound to the caller, so it is a POST.
         group.MapPost("/object-storage/setup", HandleSetupAsync)
@@ -139,18 +141,20 @@ internal static class ObjectStorageConnectionEndpoints
         }
     }
 
-    // A stable identity for binding a setup to its minter: shared admin keys all carry the name "admin",
-    // so the key id comes first, then the signed-in subject.
+    // A stable, issuer- and tenant-qualified identity for binding a setup to its minter.
     internal static string SetupPrincipal(HttpContext context)
     {
         var user = context.User;
-        if (user.FindFirst("api_key_id")?.Value is { Length: > 0 } keyId)
+        var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
+        if (OwnerIdentityScope.TryResolvePrincipalBindingKey(user, tenantOptions) is { } key)
         {
-            return "api-key:" + keyId;
+            return key;
         }
 
-        var subject = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
-        return string.IsNullOrWhiteSpace(subject) ? "name:" + context.GetUserIdentity() : "subject:" + subject;
+        var tenantSegment = OwnerIdentityScope.ResolveBindingTenantSegment(user, tenantOptions);
+        var scheme = user.Identity?.AuthenticationType?.Trim().ToLowerInvariant();
+        var schemeSegment = string.IsNullOrEmpty(scheme) ? "unknown" : Uri.EscapeDataString(scheme);
+        return $"{schemeSegment}:name:{Uri.EscapeDataString(context.GetUserIdentity())}:tenant:{tenantSegment}";
     }
 
     internal static string? QuickCreateUrl(ObjectStorageConnectionOptions options, ObjectStorageConnectionSetup setup)

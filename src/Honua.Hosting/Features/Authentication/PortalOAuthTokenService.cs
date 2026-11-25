@@ -147,6 +147,13 @@ internal sealed class PortalOAuthTokenService(
             }
 
             var roles = ResolveRoles(keyRoles, request.Scope);
+            if (roles is null)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "invalid_scope",
+                    "The requested scope is not granted to this API key.");
+            }
+
             return await MintClientCredentialsTokenAsync(
                 principalId: validation.Record.Name,
                 roles: roles,
@@ -263,11 +270,12 @@ internal sealed class PortalOAuthTokenService(
     private static string? RequireClientIp(PortalOAuthTokenRequest request)
         => string.IsNullOrWhiteSpace(request.ClientIp) ? null : request.ClientIp;
 
-    private static IReadOnlyList<string> ResolveRoles(IReadOnlyList<string> keyPermissions, string? requestedScope)
+    private static IReadOnlyList<string>? ResolveRoles(IReadOnlyList<string> keyPermissions, string? requestedScope)
     {
         // scope may only NARROW to roles the key already holds — a requested scope the
-        // key lacks is dropped, never escalated (ADR-0053). Absent any usable scope,
-        // the principal gets exactly the key's permissions.
+        // key lacks is dropped, never escalated (ADR-0053). When a non-empty scope matches
+        // no held permission, fail closed with invalid_scope per RFC 6749 §5.2 rather than
+        // falling back to the full key permissions.
         if (string.IsNullOrWhiteSpace(requestedScope))
         {
             return keyPermissions;
@@ -276,9 +284,10 @@ internal sealed class PortalOAuthTokenService(
         var requested = requestedScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var narrowed = requested
             .Where(scope => keyPermissions.Contains(scope, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return narrowed.Length == 0 ? keyPermissions : narrowed;
+        return narrowed.Length == 0 ? null : narrowed;
     }
 
     private async Task<PortalOAuthTokenResult> ExchangeAuthorizationCodeAsync(

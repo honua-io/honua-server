@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -307,57 +308,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
         => Task.FromResult(CanResolve(secretKey));
 
-    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
-            return connectionStringTemplate;
-
-        if (connectionStringTemplate.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
-        }
-
-        // Simple pattern matching for AWS secret references like ${aws:secretsmanager:...} or {aws:secretsmanager:...}
-        var result = connectionStringTemplate;
-        var patterns = new[] { "${", "{" };
-
-        foreach (var pattern in patterns)
-        {
-            var startIndex = 0;
-            while (true)
+    public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        => ConnectionStringSecretTemplateExpander.ExpandAsync(
+            new SecretTemplateExpansionRequest
             {
-                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
-                if (start == -1) break;
-
-                var end = result.IndexOf('}', start + pattern.Length);
-                if (end == -1) break;
-
-                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
-
-                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
-                {
-                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
-                    if (!string.IsNullOrEmpty(resolvedValue))
-                    {
-                        var fullReference = result.Substring(start, end - start + 1);
-                        result = result.Replace(fullReference, resolvedValue);
-                        startIndex = start + resolvedValue.Length;
-                    }
-                    else
-                    {
-                        startIndex = end + 1;
-                    }
-                }
-                else
-                {
-                    startIndex = end + 1;
-                }
-            }
-        }
-
-        return result;
-    }
+                ConnectionStringTemplate = connectionStringTemplate,
+                DirectPrefix = SecretsManagerPrefix,
+                CanResolve = CanResolve,
+                ResolveSecretAsync = ResolveSecretAsync
+            },
+            cancellationToken);
 
     private static byte[] BuildPayload(string secretId, string? versionStage, string? versionId)
     {
@@ -574,7 +534,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     {
         decoded = string.Empty;
 
-        if (ContainsMalformedEscapeSequence(value))
+        if (UriEscapeValidation.ContainsMalformedEscapeSequence(value))
         {
             return false;
         }
@@ -592,38 +552,6 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         {
             return false;
         }
-    }
-
-    private static bool ContainsMalformedEscapeSequence(string value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            if (value[i] != '%')
-            {
-                continue;
-            }
-
-            if (i + 2 >= value.Length)
-            {
-                return true;
-            }
-
-            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
-            {
-                return true;
-            }
-
-            i += 2;
-        }
-
-        return false;
-    }
-
-    private static bool IsHexDigit(char c)
-    {
-        return (c >= '0' && c <= '9')
-            || (c >= 'A' && c <= 'F')
-            || (c >= 'a' && c <= 'f');
     }
 
     private static string ResolveRegion(string secretId)

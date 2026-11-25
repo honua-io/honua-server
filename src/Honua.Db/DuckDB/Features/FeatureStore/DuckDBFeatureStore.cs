@@ -512,6 +512,13 @@ internal sealed class DuckDBFeatureStore :
 
         if (features.Count == 0)
         {
+            if (query.Offset is > 0)
+            {
+                var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+                var exactTotalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+                return QueryResult<Feature>.Create(exactTotalCount, ImmutableArray<Feature>.Empty, false);
+            }
+
             return QueryResult<Feature>.Empty();
         }
 
@@ -536,6 +543,13 @@ internal sealed class DuckDBFeatureStore :
 
         if (features.Length == 0)
         {
+            if (query.Offset is > 0)
+            {
+                var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+                var exactTotalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+                return QueryResult<EncodedGeoJsonFeature>.Create(exactTotalCount, ImmutableArray<EncodedGeoJsonFeature>.Empty, false);
+            }
+
             return QueryResult<EncodedGeoJsonFeature>.Empty();
         }
 

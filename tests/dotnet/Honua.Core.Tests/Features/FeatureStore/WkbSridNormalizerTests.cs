@@ -3,11 +3,26 @@
 
 using System.Buffers.Binary;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
 public sealed class WkbSridNormalizerTests
 {
+    [UnitTest]
+    public void RemoveEmbeddedSrid_StandardWkbWithoutSrid_ReturnsOriginalReference()
+    {
+        var wkb = new byte[1 + sizeof(uint) + (2 * sizeof(double))];
+        wkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(wkb.AsSpan(1), 1u);
+        BinaryPrimitives.WriteDoubleLittleEndian(wkb.AsSpan(5), 10.5);
+        BinaryPrimitives.WriteDoubleLittleEndian(wkb.AsSpan(13), 20.25);
+
+        var result = WkbSridNormalizer.RemoveEmbeddedSrid(wkb);
+
+        Assert.Same(wkb, result);
+    }
+
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0xA0000001u, 3)]

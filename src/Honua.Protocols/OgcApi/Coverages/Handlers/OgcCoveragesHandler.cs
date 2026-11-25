@@ -22,6 +22,7 @@ using Honua.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -29,7 +30,7 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
-internal sealed class OgcCoveragesHandler
+internal sealed partial class OgcCoveragesHandler
 {
     private const int MaxScaleSize = 8192;
     private const string CoverageItemType = "coverage";
@@ -454,15 +455,8 @@ internal sealed class OgcCoveragesHandler
 
             if (resolution.ZarrRegistration is { } zarrRegistration)
             {
-                var zarrResult = await _zarrCoverages.GetCoverageAsync(
-                        context,
-                        collectionId,
-                        zarrRegistration,
-                        f,
-                        cancellationToken)
+                return await ServeZarrCoverageAsync(context, (collectionId, zarrRegistration, f, telemetry), cancellationToken)
                     .ConfigureAwait(false);
-                telemetry.SetSuccess(1);
-                return zarrResult;
             }
 
             var parameterError = ValidateCoverageQueryParameters(context);
@@ -494,21 +488,23 @@ internal sealed class OgcCoveragesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, queryError);
             }
 
-            var scalingResult = await TryApplyScalingAsync(
-                    context,
-                    resolution.Raster!.Value,
-                    supportedCrs,
-                    storageSrid,
-                    rasterQuery,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!scalingResult.Success)
+            var (scaledQuery, scalingError) = await ApplyCoverageScalingStepAsync(
+                context,
+                new CoverageScalingInput
+                {
+                    CollectionId = collectionId,
+                    Raster = resolution.Raster!.Value,
+                    SupportedCrs = supportedCrs,
+                    StorageSrid = storageSrid,
+                    Query = rasterQuery
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (scalingError is not null)
             {
-                OgcCoveragesLog.ValidationFailed(_logger, collectionId, scalingResult.Error);
-                return StandardErrorHelpers.CreateBadRequest(context, scalingResult.Error);
+                return scalingError;
             }
 
-            rasterQuery = scalingResult.Query;
+            rasterQuery = scaledQuery;
 
             telemetry
                 .WithTag(HonuaTelemetry.Tags.LayerId, resolution.StorageLayerId!.Value)
@@ -517,27 +513,39 @@ internal sealed class OgcCoveragesHandler
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
                 .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster!.Value.BandCount);
 
-            var result = await _rasterStore.ExportImageAsync(
-                    resolution.StorageLayerId!.Value,
-                    resolution.Raster!.Value.Id,
-                    rasterQuery,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (result.Data.Length == 0)
+            var (renderLease, capacityError) = await TryAcquireCoverageRenderLeaseAsync(
+                context,
+                (rasterQuery, resolution.Raster!.Value),
+                cancellationToken).ConfigureAwait(false);
+            if (capacityError is not null)
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Coverage '{collectionId}' was not found.");
+                return capacityError;
             }
 
-            WriteCoverageHeaders(context, collectionId, negotiatedFormat, outputCrs, result);
+            await using (renderLease)
+            {
+                var result = await _rasterStore.ExportImageAsync(
+                        resolution.StorageLayerId!.Value,
+                        resolution.Raster!.Value.Id,
+                        rasterQuery,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
-            telemetry
-                .WithTag("honua.result.bytes", result.Data.Length)
-                .WithTag("honua.result.content_type", result.ContentType);
-            telemetry.SetSuccess(1);
-            OgcCoveragesLog.CoverageReturned(_logger, collectionId, result.Data.Length, result.ContentType);
+                if (result.Data.Length == 0)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Coverage '{collectionId}' was not found.");
+                }
 
-            return EncodedRasterResults.File(result.Data, negotiatedFormat.ContentType);
+                WriteCoverageHeaders(context, collectionId, negotiatedFormat, outputCrs, result);
+
+                telemetry
+                    .WithTag("honua.result.bytes", result.Data.Length)
+                    .WithTag("honua.result.content_type", result.ContentType);
+                telemetry.SetSuccess(1);
+                OgcCoveragesLog.CoverageReturned(_logger, collectionId, result.Data.Length, result.ContentType);
+
+                return EncodedRasterResults.File(result.Data, negotiatedFormat.ContentType);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

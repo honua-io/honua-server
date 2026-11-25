@@ -81,7 +81,7 @@ internal static class Wgs84Vincenty
         var lambda = Math.Atan2(
             sinSigma * sinAlpha1,
             (cosU1 * cosSigma) - (sinU1 * sinSigma * cosAlpha1));
-        var cCoeff = Flattening / 16.0 * cosSquaredAlpha * (2.0 + (Flattening * (4.0 - (3.0 * cosSquaredAlpha))));
+        var cCoeff = Flattening / 16.0 * cosSquaredAlpha * (4.0 + (Flattening * (4.0 - (3.0 * cosSquaredAlpha))));
         var capitalL = lambda - ((1.0 - cCoeff) * Flattening * sinAlpha * (sigma
             + (cCoeff * sinSigma * (cos2SigmaM + (cCoeff * cosSigma * (-1.0 + (2.0 * cos2SigmaM * cos2SigmaM)))))));
         var lon2 = DegreesToRadians(lonDeg) + capitalL;
@@ -139,7 +139,7 @@ internal static class Wgs84Vincenty
             cos2SigmaM = cosSquaredAlpha <= 0
                 ? 0
                 : cosSigma - (2.0 * sinU1 * sinU2 / cosSquaredAlpha);
-            var c = Flattening / 16.0 * cosSquaredAlpha * (2.0 + (Flattening * (4.0 - (3.0 * cosSquaredAlpha))));
+            var c = Flattening / 16.0 * cosSquaredAlpha * (4.0 + (Flattening * (4.0 - (3.0 * cosSquaredAlpha))));
             var lambdaPrev = lambda;
             lambda = l + ((1.0 - c) * Flattening * sinAlpha * (sigma
                 + (c * sinSigma * (cos2SigmaM + (c * cosSigma * (-1.0 + (2.0 * cos2SigmaM * cos2SigmaM)))))));
@@ -169,8 +169,11 @@ internal static class Wgs84Vincenty
         var phi2 = DegreesToRadians(lat2);
         var dPhi = DegreesToRadians(lat2 - lat1);
         var dLambda = DegreesToRadians(NormalizeLongitudeDelta(lon2 - lon1));
-        var a = (Math.Sin(dPhi / 2) * Math.Sin(dPhi / 2))
-            + (Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(dLambda / 2) * Math.Sin(dLambda / 2));
+        var a = Math.Clamp(
+            (Math.Sin(dPhi / 2) * Math.Sin(dPhi / 2))
+            + (Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(dLambda / 2) * Math.Sin(dLambda / 2)),
+            0d,
+            1d);
         return 2d * MeanRadius * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
     }
 
@@ -185,7 +188,7 @@ internal static class Wgs84Vincenty
         return degrees < 0d ? degrees + 360d : degrees;
     }
 
-    private static double NormalizeLongitudeDelta(double delta)
+    internal static double NormalizeLongitudeDelta(double delta)
     {
         delta %= 360d;
         if (delta >= 180d)
@@ -200,20 +203,7 @@ internal static class Wgs84Vincenty
         return delta;
     }
 
-    private static double WrapLongitude(double lon)
-    {
-        lon %= 360d;
-        if (lon >= 180d)
-        {
-            lon -= 360d;
-        }
-        else if (lon < -180d)
-        {
-            lon += 360d;
-        }
-
-        return lon;
-    }
+    internal static double WrapLongitude(double lon) => NormalizeLongitudeDelta(lon);
 
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
 

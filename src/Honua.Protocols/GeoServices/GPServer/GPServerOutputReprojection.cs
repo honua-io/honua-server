@@ -59,71 +59,101 @@ internal static class GPServerOutputReprojection
         return false;
     }
 
-    public static ReprojectionOutcome TryReprojectGeoJsonValue(string? value, int fromSrid, int outSrid)
+    internal readonly record struct GeoJsonReprojectionRequest
     {
-        if (string.IsNullOrEmpty(value) ||
-            !value.StartsWith(GeoJsonDataUriPrefix, StringComparison.Ordinal))
+        public string? Value { get; init; }
+        public required int FromSrid { get; init; }
+        public required int OutSrid { get; init; }
+        public ILogger? Logger { get; init; }
+    }
+
+    public static ReprojectionOutcome TryReprojectGeoJsonValue(
+        string? value,
+        int fromSrid,
+        int outSrid)
+        => TryReprojectGeoJsonValue(new GeoJsonReprojectionRequest
         {
-            return new ReprojectionOutcome(
-                Reprojected: false,
-                Value: value,
-                CapabilityMessage:
-                    $"env:outSR={outSrid} could not be applied: this task's output is not a reprojectable " +
-                    "GeoJSON geometry. Omit env:outSR or use geometry.project for reprojection.");
+            Value = value,
+            FromSrid = fromSrid,
+            OutSrid = outSrid
+        });
+
+    public static ReprojectionOutcome TryReprojectGeoJsonValue(GeoJsonReprojectionRequest request)
+    {
+        if (ValidateReprojectionRequest(request) is { } earlyOutcome)
+        {
+            return earlyOutcome;
+        }
+
+        return DecodeAndReprojectGeoJson(request);
+    }
+
+    private static ReprojectionOutcome? ValidateReprojectionRequest(GeoJsonReprojectionRequest request)
+    {
+        var (value, fromSrid, outSrid) = (request.Value, request.FromSrid, request.OutSrid);
+        if (string.IsNullOrEmpty(value) || !value.StartsWith(GeoJsonDataUriPrefix, StringComparison.Ordinal))
+        {
+            return new ReprojectionOutcome(false, value,
+                $"env:outSR={outSrid} could not be applied: this task's output is not a reprojectable " +
+                "GeoJSON geometry. Omit env:outSR or use geometry.project for reprojection.");
         }
 
         if (fromSrid <= 0)
         {
-            return new ReprojectionOutcome(
-                Reprojected: false,
-                Value: value,
-                CapabilityMessage:
-                    $"env:outSR={outSrid} could not be applied: the input spatial reference is unknown. " +
-                    "Provide 'srid' (or an esriGeometry with a spatialReference) so the output can be reprojected.");
+            return new ReprojectionOutcome(false, value,
+                $"env:outSR={outSrid} could not be applied: the input spatial reference is unknown. " +
+                "Provide 'srid' (or an esriGeometry with a spatialReference) so the output can be reprojected.");
         }
 
         if (fromSrid == outSrid)
         {
-            return new ReprojectionOutcome(Reprojected: true, Value: value, CapabilityMessage: null);
+            return new ReprojectionOutcome(true, value, null);
         }
 
         if (!IsTransformSupported(fromSrid, outSrid))
         {
-            return new ReprojectionOutcome(
-                Reprojected: false,
-                Value: value,
-                CapabilityMessage:
-                    $"env:outSR={outSrid} is not supported for the in-memory transform path from SRID {fromSrid}. " +
-                    "Supported pairs: identity, Web Mercator aliases (3857/900913/102100/102113/3785), and " +
-                    "WGS 84 (4326) <-> Web Mercator. Datum-shift pairs requiring ST_Transform are not yet supported.");
+            return new ReprojectionOutcome(false, value,
+                $"env:outSR={outSrid} is not supported for the in-memory transform path from SRID {fromSrid}. " +
+                "Supported pairs: identity, Web Mercator aliases (3857/900913/102100/102113/3785), and " +
+                "WGS 84 (4326) <-> Web Mercator. Datum-shift pairs requiring ST_Transform are not yet supported.");
         }
 
+        return null;
+    }
+
+    private static ReprojectionOutcome DecodeAndReprojectGeoJson(GeoJsonReprojectionRequest request)
+    {
         string featureJson;
         try
         {
-            var base64 = value.AsSpan(GeoJsonDataUriPrefix.Length);
+            var base64 = request.Value!.AsSpan(GeoJsonDataUriPrefix.Length);
             featureJson = Encoding.UTF8.GetString(Convert.FromBase64String(base64.ToString()));
         }
         catch (FormatException)
         {
             return new ReprojectionOutcome(
                 Reprojected: false,
-                Value: value,
-                CapabilityMessage: $"env:outSR={outSrid} could not be applied: output payload is not valid base64 GeoJSON.");
+                Value: request.Value,
+                CapabilityMessage: $"env:outSR={request.OutSrid} could not be applied: output payload is not valid base64 GeoJSON.");
         }
 
         try
         {
-            var rewritten = ReprojectFeatureJson(featureJson, fromSrid, outSrid);
+            var rewritten = ReprojectFeatureJson(featureJson, request.FromSrid, request.OutSrid);
             var encoded = GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(rewritten));
             return new ReprojectionOutcome(Reprojected: true, Value: encoded, CapabilityMessage: null);
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException)
         {
+            if (request.Logger is not null)
+            {
+                GPServerLog.OutputReprojectionFailed(request.Logger, request.FromSrid, request.OutSrid, ex);
+            }
+
             return new ReprojectionOutcome(
                 Reprojected: false,
-                Value: value,
-                CapabilityMessage: $"env:outSR={outSrid} could not be applied: {ex.Message}");
+                Value: request.Value,
+                CapabilityMessage: $"env:outSR={request.OutSrid} could not be applied: output geometry could not be reprojected.");
         }
     }
 

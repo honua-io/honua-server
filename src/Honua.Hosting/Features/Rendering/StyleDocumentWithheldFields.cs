@@ -5,11 +5,13 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Rendering;
@@ -28,6 +30,11 @@ internal static partial class StyleDocumentWithheldFields
     private const string PromoteIdProperty = "promoteId";
 
     internal const string EmptyMapLibreStyle = """{"version":8,"sources":{},"layers":[]}""";
+
+    internal const string EmptySldStyle = """<?xml version="1.0" encoding="UTF-8"?><StyledLayerDescriptor xmlns="http://www.opengis.net/sld" version="1.0.0" />""";
+
+    private const int MaxSldCharacters = 2 * 1024 * 1024;
+    private const int MaxSldElementDepth = 64;
 
     private static readonly HashSet<string> FieldReferenceProperties = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -179,7 +186,11 @@ internal static partial class StyleDocumentWithheldFields
             return sld;
         }
 
-        var document = XDocument.Parse(sld, LoadOptions.PreserveWhitespace);
+        if (TryParseSecureSld(sld) is not { } document)
+        {
+            return EmptySldStyle;
+        }
+
         var referencing = document.Descendants()
             .Where(element => SldElementReferences(element, withheld))
             .Select(RemovalTarget)
@@ -192,6 +203,55 @@ internal static partial class StyleDocumentWithheldFields
 
         var body = document.ToString(SaveOptions.DisableFormatting);
         return document.Declaration is { } declaration ? declaration + body : body;
+    }
+
+    private static XDocument? TryParseSecureSld(string sld)
+    {
+        if (string.IsNullOrWhiteSpace(sld) || sld.Length > MaxSldCharacters)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!HasBoundedElementDepth(sld))
+            {
+                return null;
+            }
+
+            return SecureXmlDocumentParser.Parse(sld, LoadOptions.PreserveWhitespace);
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static bool HasBoundedElementDepth(string xml)
+    {
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersFromEntities = 0,
+            MaxCharactersInDocument = MaxSldCharacters
+        };
+
+        using var stringReader = new StringReader(xml);
+        using var reader = XmlReader.Create(stringReader, settings);
+        while (reader.Read())
+        {
+            if (reader.NodeType == XmlNodeType.Element && reader.Depth > MaxSldElementDepth)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Esri metadata rule: a field-reference property naming the field, or an Arcade, label, template or SQL where reference.

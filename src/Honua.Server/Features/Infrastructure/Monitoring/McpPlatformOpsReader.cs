@@ -95,8 +95,8 @@ internal sealed class McpPlatformOpsReader(
             return Serialize(response, DeployControlJsonContext.Default.DeployOperationListResponse);
         }
 
-        var status = ParseOptionalEnum<WorkflowOperationStatus>(argument.Status, "status");
-        var kind = ParseOptionalEnum<WorkflowOperationKind>(argument.Kind, "kind");
+        var status = McpOpsReaderHelpers.ParseOptionalEnum<WorkflowOperationStatus>(argument.Status, "status");
+        var kind = McpOpsReaderHelpers.ParseOptionalEnum<WorkflowOperationKind>(argument.Kind, "kind");
         var page = Math.Max(1, argument.Page ?? 1);
         var pageSize = ClampPageSize(argument.PageSize);
 
@@ -668,24 +668,6 @@ internal sealed class McpPlatformOpsReader(
             .Select(kind => kind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
-    }
-
-    private static TEnum? ParseOptionalEnum<TEnum>(string? value, string fieldName)
-        where TEnum : struct, Enum
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed) &&
-            Enum.IsDefined(parsed))
-        {
-            return parsed;
-        }
-
-        throw new GeoprocessingValidationException(
-            $"'{fieldName}' contains unsupported value '{value}'.");
     }
 
     private static int ClampPageSize(int? pageSize) =>

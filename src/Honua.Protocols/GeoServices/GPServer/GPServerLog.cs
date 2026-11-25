@@ -49,4 +49,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8114, LogLevel.Debug, "GPServer jobs listed: ServiceId={ServiceId}, TaskName={TaskName}, Count={Count}")]
     public static partial void JobsListed(ILogger logger, string serviceId, string taskName, int count);
+
+    [LoggerMessage(8115, LogLevel.Warning, "GPServer output reprojection failed from SRID {FromSrid} to SRID {OutSrid}")]
+    public static partial void OutputReprojectionFailed(ILogger logger, int fromSrid, int outSrid, Exception exception);
 }

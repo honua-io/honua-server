@@ -121,7 +121,7 @@ internal sealed partial class FeatureDataAccess
         parameterIndex++;
     }
 
-    private static object NormalizeParameterValue(object? value)
+    internal static object NormalizeParameterValue(object? value)
     {
         return value switch
         {

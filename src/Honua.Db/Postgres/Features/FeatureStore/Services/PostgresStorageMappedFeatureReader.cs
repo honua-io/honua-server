@@ -491,10 +491,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
-        var attributesReader = new FeatureAttributeReadContext();
+        var rowContext = new MappedFeatureRowContext
+        {
+            NativeAttributes = session.NativeAttributes,
+            AttributesReader = new FeatureAttributeReadContext(),
+            DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+        };
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, session.NativeAttributes, attributesReader);
+            yield return ReadFeature(reader, rowContext);
         }
     }
 
@@ -546,10 +551,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         try
         {
             var reader = session.Reader!;
-            var attributesReader = new FeatureAttributeReadContext();
+            var rowContext = new MappedFeatureRowContext
+            {
+                NativeAttributes = session.NativeAttributes,
+                AttributesReader = new FeatureAttributeReadContext(),
+                DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+            };
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
+                rows.Add(ReadFeature(reader, rowContext));
             }
 
             return rows;
@@ -1009,7 +1019,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var orderedExpression = IsNumericFieldType(fieldType)
             ? numericExpression
             : IsTemporalFieldType(fieldType)
-                ? BuildEpochAwareTemporalExpression(fieldExpression, fieldType)
+                ? FeatureQueryBuilder.BuildEpochAwareTemporalExpression(fieldExpression, fieldType)
                 : fieldExpression;
         return statisticType switch
         {
@@ -1033,29 +1043,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         => fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
 
     private static bool IsTemporalFieldType(MetadataV2FieldType fieldType)
         => fieldType is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.TimestampOffset
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time;
-
-    private static string BuildEpochAwareTemporalExpression(
-        string fieldExpression,
-        MetadataV2FieldType fieldType)
-    {
-        var nullSafe = $"NULLIF(({fieldExpression})::text, '')";
-        var timestamp = $"CASE WHEN {nullSafe} ~ '^-?[0-9]+$' " +
-                        $"THEN to_timestamp({nullSafe}::double precision / 1000.0) " +
-                        $"ELSE {nullSafe}::timestamptz END";
-        return fieldType switch
-        {
-            MetadataV2FieldType.DateTime => timestamp,
-            MetadataV2FieldType.Date => $"({timestamp})::date",
-            MetadataV2FieldType.Time => $"{nullSafe}::time",
-            _ => fieldExpression
-        };
-    }
 
     private void AppendStatisticsHaving(SqlBuilder sql, FeatureQuery query)
     {
@@ -1609,15 +1604,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "::bigint",
             MetadataV2FieldType.Double or MetadataV2FieldType.Float => "::double precision",
+            MetadataV2FieldType.Decimal => "::numeric",
             MetadataV2FieldType.Boolean => "::boolean",
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => null,
+            MetadataV2FieldType.Uuid => "::uuid",
+            MetadataV2FieldType.DateTime
+                or MetadataV2FieldType.TimestampOffset
+                or MetadataV2FieldType.Date
+                or MetadataV2FieldType.Time => null,
             _ => null,
         };
 
-        return field.Type is MetadataV2FieldType.DateTime
-            or MetadataV2FieldType.Date
-            or MetadataV2FieldType.Time
-            ? BuildEpochAwareTemporalExpression(column, field.Type)
+        return IsTemporalFieldType(field.Type)
+            ? FeatureQueryBuilder.BuildEpochAwareTemporalExpression(column, field.Type)
             : sortCast is null ? column : $"NULLIF(({column})::text, ''){sortCast}";
     }
 
@@ -1630,10 +1628,28 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
-    private Feature ReadFeature(
-        NpgsqlDataReader reader,
-        NativeAttributeDecoder? nativeAttributes,
-        FeatureAttributeReadContext attributesReader)
+    private static int ResolveDistanceOrdinal(NpgsqlDataReader reader, NativeAttributeDecoder? nativeAttributes)
+    {
+        var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
+        for (var i = 3; i < metadataEndOrdinal; i++)
+        {
+            if (reader.GetName(i).Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private readonly struct MappedFeatureRowContext
+    {
+        public NativeAttributeDecoder? NativeAttributes { get; init; }
+        public required FeatureAttributeReadContext AttributesReader { get; init; }
+        public int? DistanceOrdinal { get; init; }
+    }
+
+    private Feature ReadFeature(NpgsqlDataReader reader, MappedFeatureRowContext context)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1641,29 +1657,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
+            if (!reader.IsDBNull(2) && (context.NativeAttributes is null || context.NativeAttributes.HasJsonFallback))
             {
-                attributesReader.ReadInto(reader, 2, attributesDictionary);
+                context.AttributesReader.ReadInto(reader, 2, attributesDictionary);
             }
 
-            nativeAttributes?.ReadInto(reader, attributesDictionary);
+            context.NativeAttributes?.ReadInto(reader, attributesDictionary);
             if (_injectObjectId)
             {
                 attributesDictionary[FieldNames.ObjectId] = id;
             }
-            var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
-            if (metadataEndOrdinal > 3)
+
+            var resolvedDistanceOrdinal = context.DistanceOrdinal ?? ResolveDistanceOrdinal(reader, context.NativeAttributes);
+            if (resolvedDistanceOrdinal >= 0)
             {
-                for (var i = 3; i < metadataEndOrdinal; i++)
-                {
-                    var fieldName = reader.GetName(i);
-                    if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(i)
-                            ? null
-                            : reader.GetFieldValue<double>(i);
-                    }
-                }
+                attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(resolvedDistanceOrdinal)
+                    ? null
+                    : reader.GetFieldValue<double>(resolvedDistanceOrdinal);
             }
 
             return Feature.Create(id, geometry, attributesDictionary.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
@@ -1864,26 +1874,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var command = PostgresSqlSafety.CreateReadCommand(connection, sql.ToString());
         foreach (var parameter in sql.Parameters)
         {
-            command.Parameters.AddWithValue(NormalizeParameterValue(parameter));
+            command.Parameters.AddWithValue(FeatureDataAccess.NormalizeParameterValue(parameter));
         }
 
         return command;
-    }
-
-    private static object NormalizeParameterValue(object? value)
-    {
-        return value switch
-        {
-            null => DBNull.Value,
-            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
-            // DateTimeOffset.UtcDateTime yields a Kind=Unspecified DateTime, which Npgsql
-            // refuses to bind to a timestamptz column (ArgumentException -> HTTP 500). Force
-            // a UTC kind so temporal STAC/OGC filters bind correctly.
-            DateTime dateTime => DateTime.SpecifyKind(
-                dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime,
-                DateTimeKind.Utc),
-            _ => value
-        };
     }
 
     private static object? ConvertStatisticsValue(object value)
@@ -2064,8 +2058,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return false;
         }
 
-        var candidate = whereClause.Substring(index, 3);
-        if (!candidate.Equals("AND", StringComparison.OrdinalIgnoreCase))
+        if (!whereClause.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
