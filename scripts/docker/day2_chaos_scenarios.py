@@ -1,185 +1,63 @@
-"""Deterministic Day-2 chaos, upgrade, and self-healing scenario definitions."""
+"""Deterministic Day-2 chaos, upgrade, and self-healing scenario implementations."""
 
 from __future__ import annotations
 
-import json
-import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Protocol
 
-REPLICA_CONVERGENCE_BUDGET_SECONDS = 5.0
-BOUNDED_DISK_FULL_STATUSES = frozenset({500, 503, 507})
-PG_DB = "honua_dev"
-PG_USER = "honua_user"
+from day2_chaos_support import (
+    BOUNDED_DISK_FULL_STATUSES,
+    PG_DB,
+    PG_USER,
+    REPLICA_CONVERGENCE_BUDGET_SECONDS,
+    ChaosEnvironment,
+    ClockAdapter,
+    CommandAdapter,
+    CommandResult,
+    CommandSpec,
+    HttpAdapter,
+    HttpRequest,
+    HttpResponse,
+    OutcomeSpec,
+    ProbeSpec,
+    ScenarioConfig,
+    ScenarioOutcome,
+    build_probe_jwt,
+    compose_run,
+    evaluate_outcome,
+    http_get,
+    http_post,
+    parse_feature_count,
+    parse_json_int,
+    parse_json_str,
+    parse_services_count,
+    psql_exec,
+    verify_running_image,
+    wait_for_probe,
+)
 
-
-def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-@dataclass(frozen=True)
-class CommandSpec:
-    args: tuple[str, ...]
-    timeout_seconds: float = 60.0
-
-
-@dataclass(frozen=True)
-class CommandResult:
-    returncode: int
-    stdout: str = ""
-    stderr: str = ""
-
-
-@dataclass(frozen=True)
-class HttpRequest:
-    method: str
-    url: str
-    headers: dict[str, str] = field(default_factory=dict)
-    body: bytes | None = None
-    timeout_seconds: float = 5.0
-
-
-@dataclass(frozen=True)
-class HttpResponse:
-    status: int
-    body: str = ""
-    headers: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ScenarioConfig:
-    image: str = "honua-server:local"
-    compose_file: str = "docker-compose.yml"
-    base_url: str = "http://127.0.0.1:8080"
-    replica_url: str = "http://127.0.0.1:8082"
-    jwks_url: str = "http://127.0.0.1:8089"
-    mttr_budget_seconds: float = 30.0
-    poll_interval_seconds: float = 0.5
-    max_wait_seconds: float = 60.0
-
-
-@dataclass(frozen=True)
-class ProbeSpec:
-    url: str
-    expected_status: int = 200
-    max_wait_seconds: float | None = None
-    headers: dict[str, str] = field(default_factory=dict)
-    predicate: Callable[[HttpResponse], bool] | None = None
-
-
-@dataclass(frozen=True)
-class ProbeResult:
-    reached: bool
-    elapsed_seconds: float
-    last_status: int
-    last_body: str
-
-
-@dataclass(frozen=True)
-class OutcomeSpec:
-    name: str
-    category: str
-    mttr_seconds: float
-    budget_seconds: float
-    data_loss: bool
-    checks: dict[str, bool]
-    details: str
-
-
-@dataclass(frozen=True)
-class ScenarioOutcome:
-    name: str
-    category: str
-    passed: bool
-    mttr_seconds: float
-    mttr_budget_seconds: float
-    within_mttr_budget: bool
-    data_loss: bool
-    details: str
-    checks: dict[str, bool] = field(default_factory=dict)
-
-
-class CommandAdapter(Protocol):
-    def run(self, spec: CommandSpec) -> CommandResult: ...
-
-
-class HttpAdapter(Protocol):
-    def send(self, request: HttpRequest) -> HttpResponse: ...
-
-
-@dataclass(frozen=True)
-class ClockAdapter:
-    now: Callable[[], float] = time.monotonic
-    sleep: Callable[[float], None] = time.sleep
-    utc_iso: Callable[[], str] = utc_now_iso
-
-
-@dataclass(frozen=True)
-class ChaosEnvironment:
-    config: ScenarioConfig
-    command: CommandAdapter
-    http: HttpAdapter
-    clock: ClockAdapter = field(default_factory=ClockAdapter)
-
-
-def compose_run(env: ChaosEnvironment, subargs: tuple[str, ...]) -> CommandResult:
-    return env.command.run(CommandSpec(("docker", "compose", "-f", env.config.compose_file, *subargs)))
-
-
-def psql_exec(env: ChaosEnvironment, sql: str) -> CommandResult:
-    return compose_run(env, ("exec", "-T", "postgres", "psql", "-U", PG_USER, "-d", PG_DB, "-Atc", sql))
-
-
-def http_get(env: ChaosEnvironment, url: str) -> HttpResponse:
-    return env.http.send(HttpRequest("GET", url))
-
-
-def http_post(env: ChaosEnvironment, url: str) -> HttpResponse:
-    return env.http.send(HttpRequest("POST", url))
-
-
-def _load_json_dict(body: str) -> dict[str, object]:
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def parse_json_int(body: str, key: str, default: int = -1) -> int:
-    value = _load_json_dict(body).get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else default
-
-
-def parse_json_str(body: str, key: str) -> str:
-    value = _load_json_dict(body).get(key)
-    return value if isinstance(value, str) else ""
-
-
-def wait_for_probe(env: ChaosEnvironment, spec: ProbeSpec) -> ProbeResult:
-    started = env.clock.now()
-    deadline = started + (spec.max_wait_seconds or env.config.max_wait_seconds)
-    while True:
-        last = env.http.send(HttpRequest("GET", spec.url, headers=spec.headers))
-        matched = last.status == spec.expected_status and (
-            spec.predicate is None or spec.predicate(last)
-        )
-        if matched or env.clock.now() >= deadline:
-            elapsed = round(env.clock.now() - started, 3)
-            return ProbeResult(matched, elapsed, last.status, last.body)
-        env.clock.sleep(env.config.poll_interval_seconds)
-
-
-def evaluate_outcome(spec: OutcomeSpec) -> ScenarioOutcome:
-    within_budget = spec.mttr_seconds <= spec.budget_seconds
-    passed = all(spec.checks.values()) and not spec.data_loss and within_budget
-    return ScenarioOutcome(
-        spec.name, spec.category, passed, round(spec.mttr_seconds, 3),
-        round(spec.budget_seconds, 3), within_budget, spec.data_loss,
-        spec.details, dict(spec.checks),
-    )
+__all__ = [
+    "SCENARIOS",
+    "ChaosEnvironment",
+    "ClockAdapter",
+    "CommandAdapter",
+    "CommandResult",
+    "CommandSpec",
+    "HttpAdapter",
+    "HttpRequest",
+    "HttpResponse",
+    "ScenarioConfig",
+    "ScenarioOutcome",
+    "build_probe_jwt",
+    "scenario_backup_wipe_restore_secrets_and_layers",
+    "scenario_cold_start_postgres_delayed",
+    "scenario_concurrent_replicas_migration_lock",
+    "scenario_jwks_key_rotation_rate_limited",
+    "scenario_live_ddl_cached_plan_invalidation",
+    "scenario_postgres_restart_mid_traffic",
+    "scenario_tmpfs_disk_full_bounded_recovery",
+    "scenario_two_replica_metadata_convergence",
+    "verify_running_image",
+]
 
 
 def scenario_cold_start_postgres_delayed(env: ChaosEnvironment) -> ScenarioOutcome:
@@ -233,24 +111,24 @@ def scenario_concurrent_replicas_migration_lock(env: ChaosEnvironment) -> Scenar
 def scenario_postgres_restart_mid_traffic(env: ChaosEnvironment) -> ScenarioOutcome:
     """Postgres restarts under live read traffic and Honua auto-recovers with zero data loss."""
     baseline = http_get(env, f"{env.config.base_url}/rest/services?f=json")
-    baseline_count = parse_json_int(baseline.body, "count", default=0)
+    baseline_count = parse_services_count(baseline.body)
     restarted = compose_run(env, ("restart", "postgres"))
     live_during = http_get(env, f"{env.config.base_url}/healthz/live")
     recovered = wait_for_probe(env, ProbeSpec(f"{env.config.base_url}/healthz/ready"))
     after = http_get(env, f"{env.config.base_url}/rest/services?f=json")
-    after_count = parse_json_int(after.body, "count", default=-1)
+    after_count = parse_services_count(after.body)
     checks = {
-        "baseline_ok": baseline.status == 200,
+        "baseline_ok": baseline.status == 200 and baseline_count >= 0,
         "postgres_restarted": restarted.returncode == 0,
         "live_during_restart": live_during.status == 200,
         "recovered_ready_200": recovered.reached,
-        "post_restart_read_ok": after.status == 200,
+        "post_restart_read_ok": after.status == 200 and after_count >= 0,
     }
+    data_loss = after.status != 200 or after_count < max(baseline_count, 0)
     return evaluate_outcome(OutcomeSpec(
         "postgres_restart_mid_traffic_auto_recovers", "mid-traffic-restart",
-        recovered.elapsed_seconds, env.config.mttr_budget_seconds,
-        after.status != 200 or after_count < baseline_count,
-        checks, f"baseline_count={baseline_count}, after_count={after_count}",
+        recovered.elapsed_seconds, env.config.mttr_budget_seconds, data_loss,
+        checks, f"baseline_services={baseline_count}, after_services={after_count}",
     ))
 
 
@@ -258,44 +136,54 @@ def scenario_live_ddl_cached_plan_invalidation(env: ChaosEnvironment) -> Scenari
     """Live ALTER TABLE invalidates cached plans and Honua self-heals queries."""
     query_url = f"{env.config.base_url}/rest/services/day2_parcels/FeatureServer/0/query?where=1%3D1&outFields=*&f=json"
     warm_1, warm_2 = http_get(env, query_url), http_get(env, query_url)
-    before_count = parse_json_int(warm_2.body, "count", default=0)
+    before_count = parse_feature_count(warm_2.body)
     ddl = psql_exec(env, "ALTER TABLE day2_parcels ADD COLUMN IF NOT EXISTS day2_note text DEFAULT 'ok';")
     healed = wait_for_probe(env, ProbeSpec(query_url))
-    after_count = parse_json_int(healed.last_body, "count", default=-1)
+    after_count = parse_feature_count(healed.last_body)
     checks = {
-        "warm_queries_ok": warm_1.status == 200 and warm_2.status == 200,
+        "warm_queries_ok": warm_1.status == 200 and warm_2.status == 200 and before_count >= 0,
         "live_ddl_applied": ddl.returncode == 0,
-        "post_ddl_query_healed": healed.reached,
+        "post_ddl_query_healed": healed.reached and after_count >= 0,
     }
+    data_loss = not healed.reached or after_count < max(before_count, 0)
     return evaluate_outcome(OutcomeSpec(
         "live_ddl_cached_plan_invalidation_auto_heals", "cached-plan-invalidation",
-        healed.elapsed_seconds, env.config.mttr_budget_seconds,
-        not healed.reached or after_count < before_count,
-        checks, f"before_count={before_count}, after_count={after_count}",
+        healed.elapsed_seconds, env.config.mttr_budget_seconds, data_loss,
+        checks, f"before_features={before_count}, after_features={after_count}",
     ))
 
 
 def scenario_backup_wipe_restore_secrets_and_layers(env: ChaosEnvironment) -> ScenarioOutcome:
     """Backup, wipe, and restore preserves encrypted connections and published layers."""
-    before_count = parse_json_int(http_get(env, f"{env.config.base_url}/rest/services?f=json").body, "count", 0)
+    before_count = parse_services_count(http_get(env, f"{env.config.base_url}/rest/services?f=json").body)
     backup = compose_run(env, ("exec", "-T", "postgres", "pg_dump", "-U", PG_USER, PG_DB))
+    if backup.returncode != 0 or not backup.stdout.strip():
+        return evaluate_outcome(OutcomeSpec(
+            "backup_wipe_restore_preserves_encrypted_secrets_and_layers", "backup-restore", 0.0,
+            env.config.mttr_budget_seconds, False,
+            {"backup_succeeded": False, "aborted_before_wipe": True},
+            f"backup failed before wipe (rc={backup.returncode}, bytes={len(backup.stdout)})",
+        ))
     wipe = psql_exec(env, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-    restore = compose_run(env, ("exec", "-T", "postgres", "psql", "-U", PG_USER, "-d", PG_DB))
+    restore = compose_run(
+        env, ("exec", "-T", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-U", PG_USER, "-d", PG_DB),
+        stdin_text=backup.stdout,
+    )
     recovered = wait_for_probe(env, ProbeSpec(f"{env.config.base_url}/healthz/ready"))
     after_layers = http_get(env, f"{env.config.base_url}/rest/services?f=json")
     secrets_probe = http_get(env, f"{env.config.base_url}/api/v1/admin/connections")
-    after_count = parse_json_int(after_layers.body, "count", -1)
+    after_count = parse_services_count(after_layers.body)
     secrets_ok = secrets_probe.status == 200 and parse_json_int(secrets_probe.body, "decrypted", 0) > 0
     layers_ok = after_layers.status == 200 and after_count >= before_count > 0
     checks = {
-        "backup_succeeded": backup.returncode == 0, "wipe_succeeded": wipe.returncode == 0,
+        "backup_succeeded": True, "wipe_succeeded": wipe.returncode == 0,
         "restore_succeeded": restore.returncode == 0, "ready_after_restore": recovered.reached,
         "layers_preserved": layers_ok, "encrypted_secrets_preserved": secrets_ok,
     }
     return evaluate_outcome(OutcomeSpec(
         "backup_wipe_restore_preserves_encrypted_secrets_and_layers", "backup-restore",
         recovered.elapsed_seconds, env.config.mttr_budget_seconds, not (layers_ok and secrets_ok),
-        checks, f"layers={before_count}->{after_count}, secrets_status={secrets_probe.status}",
+        checks, f"services={before_count}->{after_count}, secrets_status={secrets_probe.status}",
     ))
 
 
@@ -320,17 +208,29 @@ def scenario_tmpfs_disk_full_bounded_recovery(env: ChaosEnvironment) -> Scenario
     ))
 
 
+def _resolve_rotated_token(env: ChaosEnvironment, rotate_body: str) -> str:
+    if env.config.rotated_token:
+        return env.config.rotated_token
+    issued = parse_json_str(rotate_body, "token")
+    if issued:
+        return issued
+    kid = parse_json_str(rotate_body, "kid") or "rotated-k1"
+    return build_probe_jwt(kid, env.config.jwks_url)
+
+
 def scenario_jwks_key_rotation_rate_limited(env: ChaosEnvironment) -> ScenarioOutcome:
     """JWKS rotation auto-refreshes valid keys while rate-limiting unknown key ID bursts."""
     rotated = http_post(env, f"{env.config.jwks_url}/rotate")
     status_url = f"{env.config.base_url}/api/v1/admin/status"
-    accepted = wait_for_probe(env, ProbeSpec(status_url, headers={"Authorization": "Bearer rotated-kid-token"}))
+    valid_jwt = _resolve_rotated_token(env, rotated.body)
+    accepted = wait_for_probe(env, ProbeSpec(status_url, headers={"Authorization": f"Bearer {valid_jwt}"}))
     burst = [
-        env.http.send(HttpRequest("GET", status_url, {"Authorization": f"Bearer unknown-kid-{i}"})).status
+        env.http.send(
+            HttpRequest("GET", status_url, {"Authorization": f"Bearer {build_probe_jwt(f'unknown-kid-{i}', env.config.jwks_url)}"})
+        ).status
         for i in range(5)
     ]
-    metrics_body = http_get(env, f"{env.config.jwks_url}/metrics").body
-    refresh_count = parse_json_int(metrics_body, "refresh_count", 99)
+    refresh_count = parse_json_int(http_get(env, f"{env.config.jwks_url}/metrics").body, "refresh_count", 99)
     checks = {
         "jwks_rotated": rotated.status == 200,
         "rotated_token_accepted": accepted.reached,
