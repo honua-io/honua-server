@@ -2662,6 +2662,12 @@ setup, role assumption and transcript upload. Certification mode still uses the
 SDK certification script. A hosted after-change duration still requires a
 qualifying run.
 
+### Tile Export Durable Recovery
+
+The Server Features Miscellaneous 7 shard includes Tile Export Durable Recovery.
+Its fixture connects the PostgreSQL job queue and worker with the same in-process
+wake signal used by the server host.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
@@ -2669,9 +2675,3 @@ qualifying run.
 | `advisory-runner-select.yml` | Advisory heavy runner selection | `workflow_call` | |
 | `arm64-gc-benchmark.yml` | Arm64 GC Benchmark (manual) | `workflow_dispatch` | |
 | `server-nuget-locks.yml` | Server NuGet Locks | `pull_request`, `workflow_dispatch` | |
-
-## Tile Export Durable Recovery
-
-The Server Features Miscellaneous 7 shard includes Tile Export Durable Recovery.
-Its fixture connects the PostgreSQL job queue and worker with the same in-process
-wake signal used by the server host.
