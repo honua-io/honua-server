@@ -111,7 +111,7 @@ internal static class CustomCodeOwnerScopeCapture
         entries.Add(new JobResourceScopeEntry(service, layer.Length == 0 ? null : layer, access));
     }
 
-    private static List<string> SnapshotRoles(ClaimsPrincipal principal)
+    internal static List<string> SnapshotRoles(ClaimsPrincipal principal)
     {
         var roles = principal.FindAll(ClaimTypes.Role)
             .Select(claim => claim.Value)

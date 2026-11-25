@@ -306,7 +306,7 @@ internal static class ResponseCacheUtilities
     // DefaultHttpContext throws when RequestServices was never assigned. Key
     // helpers run from unit tests that do not install a provider; those requests
     // have no license to vary on.
-    private static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
+    internal static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
     {
         try
         {

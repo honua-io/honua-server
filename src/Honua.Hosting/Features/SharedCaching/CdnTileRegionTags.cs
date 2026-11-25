@@ -15,40 +15,70 @@ internal static class CdnTileRegionTags
 
     internal static string[] ForNativeTile(PathString path, TileOptions options)
     {
-        var segments = (path.Value ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is [var metadataRoot, var metadataLayer, var document]
-            && metadataRoot.Equals("tiles", StringComparison.OrdinalIgnoreCase)
-            && document.Equals("tile.json", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(metadataLayer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var metadataLayerId))
+        var pathSpan = (path.Value ?? string.Empty).AsSpan();
+        Span<Range> ranges = stackalloc Range[7];
+        var count = pathSpan.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        if (count is not (3 or 5 or 6) || !pathSpan[ranges[0]].Equals("tiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var segments = ranges[..count];
+        if (TryMatchSpecialNativeTileTag(pathSpan, segments) is { } specialTags)
+        {
+            return specialTags;
+        }
+
+        if (ParseStandardMvtPath(pathSpan, segments) is not { } parsed)
+        {
+            return [];
+        }
+
+        var extent = options.TileExtent > 0 ? options.TileExtent : 4096;
+        return ForTile(parsed.LayerId, parsed.Tile, Math.Max(0, options.TileBuffer) / (double)extent);
+    }
+
+    private static string[]? TryMatchSpecialNativeTileTag(ReadOnlySpan<char> pathSpan, ReadOnlySpan<Range> ranges)
+    {
+        if (ranges.Length == 3
+            && pathSpan[ranges[2]].Equals("tile.json", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var metadataLayerId))
         {
             return [Metadata(metadataLayerId)];
         }
 
         // H3 hexagons cross tile edges by up to a cell, so an H3 tile is purged with every regional purge
         // of its layer through the buffered tag rather than by its own cells.
-        if (segments is [var h3Root, var h3Layer, var h3, _, _, var h3Row]
-            && h3Root.Equals("tiles", StringComparison.OrdinalIgnoreCase)
-            && h3.Equals("h3", StringComparison.OrdinalIgnoreCase)
-            && h3Row.EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(h3Layer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h3LayerId))
+        if (ranges.Length == 6
+            && pathSpan[ranges[2]].Equals("h3", StringComparison.OrdinalIgnoreCase)
+            && pathSpan[ranges[5]].EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h3LayerId))
         {
             return [Buffered(h3LayerId)];
         }
 
-        if (segments is not [var root, var layerText, var zoomText, var columnText, var rowText]
-            || !root.Equals("tiles", StringComparison.OrdinalIgnoreCase)
-            || !rowText.EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
-            || !int.TryParse(layerText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
-            || !int.TryParse(zoomText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zoom)
-            || !int.TryParse(columnText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var column)
-            || !int.TryParse(rowText[..^4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row)
-            || zoom is < 0 or > 30 || column < 0 || row < 0 || column >= (1 << zoom) || row >= (1 << zoom))
+        return null;
+    }
+
+    private static (int LayerId, TileAddress Tile)? ParseStandardMvtPath(ReadOnlySpan<char> pathSpan, ReadOnlySpan<Range> ranges)
+    {
+        if (ranges.Length != 5)
         {
-            return [];
+            return null;
         }
 
-        var extent = options.TileExtent > 0 ? options.TileExtent : 4096;
-        return ForTile(layerId, new(zoom, column, row), Math.Max(0, options.TileBuffer) / (double)extent);
+        var rowSpan = pathSpan[ranges[4]];
+        if (!rowSpan.EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(pathSpan[ranges[1]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+            || !int.TryParse(pathSpan[ranges[2]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var zoom)
+            || !int.TryParse(pathSpan[ranges[3]], NumberStyles.Integer, CultureInfo.InvariantCulture, out var column)
+            || !int.TryParse(rowSpan[..^4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var row)
+            || zoom is < 0 or > 30 || column < 0 || row < 0 || column >= (1 << zoom) || row >= (1 << zoom))
+        {
+            return null;
+        }
+
+        return (layerId, new TileAddress(zoom, column, row));
     }
 
     internal static string[] ForTile(int layerId, TileAddress tile, double bufferFraction = 0d)

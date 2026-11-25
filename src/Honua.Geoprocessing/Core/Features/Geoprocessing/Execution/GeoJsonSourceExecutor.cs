@@ -68,7 +68,7 @@ internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecuto
         // large sources spill to an NDJSON stream so downstream transforms read incrementally
         // and the 50 MiB inline cap does not fail a large source feed.
         var published = await FeatureStreamPublisher.PublishAsync(
-            ToAsync(collection, cancellationToken),
+            FeatureStreamArtifact.ToAsync(collection, cancellationToken),
             HandledProcessId,
             inputCount: collection.Count,
             _options.CurrentValue.OutputRootDirectory,
@@ -80,17 +80,5 @@ internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecuto
         await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
-    }
-
-    private static async IAsyncEnumerable<IFeature> ToAsync(
-        FeatureCollection collection,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        foreach (var feature in collection)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return feature;
-            await Task.CompletedTask.ConfigureAwait(false);
-        }
     }
 }

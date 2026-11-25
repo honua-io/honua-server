@@ -20,6 +20,8 @@ internal static class IdentityAdminEndpoints
     private const string IdentityTestHttpClient = "IdentityProviderTest";
     private const string IdentityProviderDiscoveryFailedMessage = "Identity provider discovery request failed.";
     private const string IdentityProviderDiscoveryTimedOutMessage = "Identity provider discovery request timed out.";
+    private const int MaxDiscoveryResponseBytes = 65_536;
+    private const int MaxDiscoveryJsonDepth = 16;
 
     public static void MapIdentityAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -133,25 +135,18 @@ internal static class IdentityAdminEndpoints
             client.Timeout = TimeSpan.FromSeconds(5);
 
             var stopwatch = Stopwatch.StartNew();
-            using var response = await client.GetAsync(discoveryUrl, cancellationToken).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, discoveryUrl);
+            request.Headers.Accept.ParseAdd("application/json");
+            using var response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             string? issuer = null;
             if (response.IsSuccessStatusCode)
             {
-                try
-                {
-                    var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    using var doc = JsonDocument.Parse(content);
-                    if (doc.RootElement.TryGetProperty("issuer", out var issuerElement))
-                    {
-                        issuer = issuerElement.GetString();
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Issuer extraction is best-effort
-                }
+                issuer = await ReadDiscoveryIssuerAsync(response, cancellationToken).ConfigureAwait(false);
             }
 
             var isReachable = response.IsSuccessStatusCode;
@@ -207,6 +202,34 @@ internal static class IdentityAdminEndpoints
                 ApiResponse<IdentityProviderTestResult>.CreateSuccess(errorResult),
                 IdentityAdminJsonContext.Default.ApiResponseIdentityProviderTestResult);
         }
+    }
+
+    internal static async Task<string?> ReadDiscoveryIssuerAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        await response.Content.LoadIntoBufferAsync(MaxDiscoveryResponseBytes, cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(
+                payload,
+                new JsonDocumentOptions { MaxDepth = MaxDiscoveryJsonDepth });
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("issuer", out var issuerElement)
+                && issuerElement.ValueKind == JsonValueKind.String)
+            {
+                return issuerElement.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Issuer extraction is best-effort for malformed or overly nested JSON payloads.
+        }
+
+        return null;
     }
 
 }

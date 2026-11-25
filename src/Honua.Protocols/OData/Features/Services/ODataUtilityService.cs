@@ -475,55 +475,73 @@ internal static class ODataUtilityService
             statusCode: crudResult.StatusCode);
     }
 
-    public static Dictionary<string, object?> BuildFeaturePayload(
-        int layerId,
-        Feature feature,
-        ODataSpatialGeometry? geometry,
-        IReadOnlyDictionary<string, object?> attributes)
+    public sealed class ODataFeaturePayloadRequest
     {
-        var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["ObjectId"] = feature.Id,
-            ["LayerId"] = layerId,
-            ["Geometry"] = geometry
-        };
-
-        foreach (var (key, value) in attributes)
-        {
-            if (IsReservedFeatureProperty(key))
-            {
-                continue;
-            }
-
-            payload[key] = value;
-        }
-
-        return payload;
+        public required int LayerId { get; init; }
+        public required Feature Feature { get; init; }
+        public ODataSpatialGeometry? Geometry { get; init; }
+        public IReadOnlyDictionary<string, object?>? Attributes { get; init; }
+        public IReadOnlySet<string>? HiddenFields { get; init; }
     }
 
-    // Builds the payload straight from the stored attributes, normalizing each value as
-    // ODataAttributeSerializer.Serialize does, without the intermediate copy.
     public static Dictionary<string, object?> BuildFeaturePayload(
         int layerId,
         Feature feature,
         ODataSpatialGeometry? geometry)
-    {
-        var payload = new Dictionary<string, object?>(feature.Attributes.Count + 3, StringComparer.OrdinalIgnoreCase)
+        => BuildFeaturePayload(new ODataFeaturePayloadRequest
         {
-            ["ObjectId"] = feature.Id,
-            ["LayerId"] = layerId,
-            ["Geometry"] = geometry
-        };
+            LayerId = layerId,
+            Feature = feature,
+            Geometry = geometry
+        });
 
-        foreach (var (key, value) in feature.Attributes)
+    public static Dictionary<string, object?> BuildFeaturePayload(ODataFeaturePayloadRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var capacity = request.Attributes is null ? request.Feature.Attributes.Count + 3 : 0;
+        var payload = capacity > 0
+            ? new Dictionary<string, object?>(capacity, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        payload["ObjectId"] = request.Feature.Id;
+        payload["LayerId"] = request.LayerId;
+        payload["Geometry"] = request.Geometry;
+
+        if (request.Attributes is not null)
         {
-            if (!IsReservedFeatureProperty(key))
+            CopyFeatureAttributes(payload, request.Attributes, request.HiddenFields);
+            return payload;
+        }
+
+        CopyNormalizedFeatureAttributes(payload, request.Feature.Attributes, request.HiddenFields);
+        return payload;
+    }
+
+    private static void CopyFeatureAttributes(
+        Dictionary<string, object?> payload,
+        IReadOnlyDictionary<string, object?> attributes,
+        IReadOnlySet<string>? hiddenFields)
+    {
+        foreach (var (key, value) in attributes)
+        {
+            if (!IsReservedFeatureProperty(key) && (hiddenFields is null || !hiddenFields.Contains(key)))
+            {
+                payload[key] = value;
+            }
+        }
+    }
+
+    private static void CopyNormalizedFeatureAttributes(
+        Dictionary<string, object?> payload,
+        IReadOnlyDictionary<string, object?> attributes,
+        IReadOnlySet<string>? hiddenFields)
+    {
+        foreach (var (key, value) in attributes)
+        {
+            if (!IsReservedFeatureProperty(key) && (hiddenFields is null || !hiddenFields.Contains(key)))
             {
                 payload[key] = ODataAttributeSerializer.NormalizeODataValue(value);
             }
         }
-
-        return payload;
     }
 
     public static Dictionary<string, object?> BuildLayerPayload(

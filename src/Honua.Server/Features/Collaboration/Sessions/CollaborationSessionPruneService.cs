@@ -27,15 +27,26 @@ internal sealed partial class CollaborationSessionPruneService : BackgroundServi
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                _sessions.PruneRemotePresence();
-                var removed = _sessions.PruneStaleParticipants(MaxIdle);
-                if (removed > 0)
+                try
                 {
-                    Log.StaleParticipantsPruned(_logger, removed);
+                    _sessions.PruneRemotePresence();
+                    var removed = _sessions.PruneStaleParticipants(MaxIdle);
+                    if (removed > 0)
+                    {
+                        Log.StaleParticipantsPruned(_logger, removed);
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    Log.PruneSweepFailed(_logger, ex);
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Expected on host shutdown.
         }
@@ -48,5 +59,11 @@ internal sealed partial class CollaborationSessionPruneService : BackgroundServi
             Level = LogLevel.Debug,
             Message = "Pruned {RemovedCount} stale collaboration session participant(s).")]
         public static partial void StaleParticipantsPruned(ILogger logger, int removedCount);
+
+        [LoggerMessage(
+            EventId = 7431,
+            Level = LogLevel.Error,
+            Message = "Collaboration session prune sweep failed; continuing on next interval.")]
+        public static partial void PruneSweepFailed(ILogger logger, Exception exception);
     }
 }

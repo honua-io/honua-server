@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -82,12 +83,15 @@ internal static partial class FeatureStreamEndpoints
         bool hasExplicitLayerScope = !string.IsNullOrWhiteSpace(layerSource);
         if (!string.IsNullOrWhiteSpace(layerSource))
         {
-            var (parsedIds, layerError) = ParseAndAuthorizeLayerIds(
-                context,
-                logger,
-                service,
-                snapshot,
-                layerSource);
+            var (parsedIds, layerError) = await ParseAndAuthorizeLayerIdsAsync(
+                new StreamLayerAuthorizationContext
+                {
+                    HttpContext = context,
+                    Logger = logger,
+                    Service = service,
+                    Snapshot = snapshot
+                },
+                layerSource).ConfigureAwait(false);
             if (layerError is not null)
             {
                 return SubscriptionParseResult.Failed(layerError);
@@ -99,11 +103,14 @@ internal static partial class FeatureStreamEndpoints
 
         if (service is not null && layerIds is null)
         {
-            var (serviceLayerIds, accessError) = ResolveAndAuthorizeServiceLayerIds(
-                context,
-                logger,
-                snapshot,
-                service);
+            var (serviceLayerIds, accessError) = await ResolveAndAuthorizeServiceLayerIdsAsync(
+                new StreamLayerAuthorizationContext
+                {
+                    HttpContext = context,
+                    Logger = logger,
+                    Service = service,
+                    Snapshot = snapshot
+                }).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return SubscriptionParseResult.Failed(accessError);
@@ -465,7 +472,12 @@ internal static partial class FeatureStreamEndpoints
                 }
 
                 var nameKey = (service.Metadata.Name.ToUpperInvariant(), layer.LayerId);
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service) ||
+                if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context,
+                        layer.Resource,
+                        service,
+                        AuthorizationOperation.Query,
+                        cancellationToken).ConfigureAwait(false) ||
                     !TenantScopeHelpers.IsTenantVisible(context, layer.Publication!, layer.Resource, service))
                 {
                     // Ambiguous display-name routes must not alias an inaccessible tenant.
@@ -600,76 +612,38 @@ internal static partial class FeatureStreamEndpoints
         return true;
     }
 
-    private static (int[]? Ids, IResult? Error) ParseAndAuthorizeLayerIds(
-        HttpContext context,
-        ILogger logger,
-        MetadataV2Service? service,
-        MetadataV2GraphSnapshot snapshot,
+    private sealed class StreamLayerAuthorizationContext
+    {
+        public required HttpContext HttpContext { get; init; }
+        public required ILogger Logger { get; init; }
+        public required MetadataV2GraphSnapshot Snapshot { get; init; }
+        public MetadataV2Service? Service { get; init; }
+    }
+
+    private static async Task<(int[]? Ids, IResult? Error)> ParseAndAuthorizeLayerIdsAsync(
+        StreamLayerAuthorizationContext authContext,
         string layersValue)
     {
-        var ids = new List<int>();
-        foreach (var part in layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var (ids, parseError) = ParseRequestedLayerIds(authContext, layersValue);
+        if (parseError is not null)
         {
-            if (!int.TryParse(part, CultureInfo.InvariantCulture, out var id))
-            {
-                var msg = $"Invalid layer ID '{part}'. Must be an integer.";
-                FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
-            }
-
-            ids.Add(id);
+            return (null, parseError);
         }
 
-        // Reject layers/layerIds inputs that parsed to zero ids (e.g. "," or
-        // "  ,  "). Without this guard the caller treats the request as a
-        // valid filtered subscription (HasSubscription=true), which skips the
-        // unfiltered admin gate in HandleFeatureStream and the all-layer
-        // service-access check below. The resulting subscription matches no
-        // events but holds an open SSE/WS session and a MaxConcurrentSessions
-        // slot — an anonymous DoS surface.
-        if (ids.Count == 0)
-        {
-            const string msg = "Invalid layer filter: layers/layerIds must specify at least one layer ID.";
-            FeatureStreamLog.FilterValidationFailed(logger, msg);
-            return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
-        }
-
-        var resolvedIds = new List<int>(ids.Count);
+        var resolvedIds = new List<int>(ids!.Count);
         var seenResolved = new HashSet<int>();
         foreach (var id in ids)
         {
-            // When a serviceId was provided, restrict layer ids to that service so a
-            // caller cannot piggy-back unrelated layers on an authorized service.
-            // When no serviceId was provided, look up the layer's primary service so
-            // the access policy check evaluates the service-level policy too.
-            StreamLayerDescriptor? layer;
-            MetadataV2Service? authService;
-            if (service is not null)
+            var (layer, authService, lookupError) = ResolveAuthorizedLayerTarget(authContext, id);
+            if (lookupError is not null)
             {
-                layer = ResolveStreamLayer(snapshot, service, id);
-                if (layer is null)
-                {
-                    var msg = $"Layer {id} is not part of service '{service.Metadata.Name}'.";
-                    FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
-                }
-
-                authService = service;
-            }
-            else
-            {
-                layer = ResolveStreamLayer(snapshot, service: null, id);
-                if (layer is null)
-                {
-                    var msg = $"Layer {id} not found.";
-                    FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
-                }
-
-                authService = layer.Service;
+                return (null, lookupError);
             }
 
-            var accessError = RequireStreamLayerAccess(context, layer.Resource, authService);
+            var accessError = await RequireStreamLayerAccessAsync(
+                authContext.HttpContext,
+                layer!.Resource,
+                authService).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return (null, accessError);
@@ -684,23 +658,79 @@ internal static partial class FeatureStreamEndpoints
         return (resolvedIds.ToArray(), null);
     }
 
-    private static (int[]? Ids, IResult? Error) ResolveAndAuthorizeServiceLayerIds(
-        HttpContext context,
-        ILogger logger,
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+    private static (List<int>? Ids, IResult? Error) ParseRequestedLayerIds(
+        StreamLayerAuthorizationContext authContext,
+        string layersValue)
     {
-        var layers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+        var ids = new List<int>();
+        foreach (var part in layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(part, CultureInfo.InvariantCulture, out var id))
+            {
+                var msg = $"Invalid layer ID '{part}'. Must be an integer.";
+                FeatureStreamLog.FilterValidationFailed(authContext.Logger, msg);
+                return (null, StandardErrorHelpers.CreateBadRequest(authContext.HttpContext, msg));
+            }
+
+            ids.Add(id);
+        }
+
+        if (ids.Count == 0)
+        {
+            const string msg = "Invalid layer filter: layers/layerIds must specify at least one layer ID.";
+            FeatureStreamLog.FilterValidationFailed(authContext.Logger, msg);
+            return (null, StandardErrorHelpers.CreateBadRequest(authContext.HttpContext, msg));
+        }
+
+        return (ids, null);
+    }
+
+    private static (StreamLayerDescriptor? Layer, MetadataV2Service? AuthService, IResult? Error) ResolveAuthorizedLayerTarget(
+        StreamLayerAuthorizationContext authContext,
+        int id)
+    {
+        if (authContext.Service is not null)
+        {
+            var scopedLayer = ResolveStreamLayer(authContext.Snapshot, authContext.Service, id);
+            if (scopedLayer is null)
+            {
+                var msg = $"Layer {id} is not part of service '{authContext.Service.Metadata.Name}'.";
+                FeatureStreamLog.FilterValidationFailed(authContext.Logger, msg);
+                return (null, null, StandardErrorHelpers.CreateBadRequest(authContext.HttpContext, msg));
+            }
+
+            return (scopedLayer, authContext.Service, null);
+        }
+
+        var layer = ResolveStreamLayer(authContext.Snapshot, service: null, id);
+        if (layer is null)
+        {
+            var msg = $"Layer {id} not found.";
+            FeatureStreamLog.FilterValidationFailed(authContext.Logger, msg);
+            return (null, null, StandardErrorHelpers.CreateBadRequest(authContext.HttpContext, msg));
+        }
+
+        return (layer, layer.Service, null);
+    }
+
+    private static async Task<(int[]? Ids, IResult? Error)> ResolveAndAuthorizeServiceLayerIdsAsync(
+        StreamLayerAuthorizationContext authContext)
+    {
+        var service = authContext.Service!;
+        var layers = ResolveServiceStreamLayers(authContext.Snapshot, service).ToArray();
         if (layers.Length == 0)
         {
             var msg = $"Service '{service.Metadata.Name}' has no routable layers.";
-            FeatureStreamLog.FilterValidationFailed(logger, msg);
-            return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+            FeatureStreamLog.FilterValidationFailed(authContext.Logger, msg);
+            return (null, StandardErrorHelpers.CreateBadRequest(authContext.HttpContext, msg));
         }
 
         foreach (var layer in layers)
         {
-            var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
+            var accessError = await RequireStreamLayerAccessAsync(
+                authContext.HttpContext,
+                layer.Resource,
+                service).ConfigureAwait(false);
             if (accessError is not null)
             {
                 return (null, accessError);
@@ -710,11 +740,16 @@ internal static partial class FeatureStreamEndpoints
         return (layers.Select(static layer => layer.LayerId).Distinct().ToArray(), null);
     }
 
-    private static IResult? RequireStreamLayerAccess(
+    private static Task<IResult?> RequireStreamLayerAccessAsync(
         HttpContext context,
         MetadataV2Object resource,
         MetadataV2Service? service)
-        => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        => AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            AuthorizationOperation.Query,
+            service,
+            context.RequestAborted);
 
     internal static MetadataV2Service? ResolveStreamService(
         MetadataV2GraphSnapshot snapshot,

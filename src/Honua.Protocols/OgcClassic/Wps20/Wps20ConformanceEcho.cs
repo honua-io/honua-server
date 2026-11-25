@@ -6,7 +6,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
@@ -170,41 +169,24 @@ internal sealed class Wps20ConformanceEcho : IDisposable
         }
     }
 
-    private static HttpMessageHandler CreateReferenceHandler(IReadOnlyList<IPAddress> pinnedAddresses) =>
-        new SocketsHttpHandler
+    private static readonly PinnedDnsFailureMessages ReferenceConnectionFailures = new(
+        "Reference input resolves to a private or reserved network address.",
+        "No validated reference address accepted the connection.");
+
+    private static HttpMessageHandler CreateReferenceHandler(IReadOnlyList<IPAddress> pinnedAddresses)
+    {
+        var connector = new PinnedDnsConnector(
+            static (_, _) => Task.FromResult(Array.Empty<IPAddress>()),
+            ReferenceConnectionFailures);
+        return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             UseProxy = false,
-            ConnectCallback = (context, token) => ConnectPinnedAsync(
+            ConnectCallback = (context, token) => connector.ConnectToFirstReachableAsync(
                 pinnedAddresses,
                 context.DnsEndPoint.Port,
                 token)
         };
-
-    internal static async ValueTask<Stream> ConnectPinnedAsync(
-        IReadOnlyList<IPAddress> pinnedAddresses,
-        int port,
-        CancellationToken cancellationToken,
-        Func<AddressFamily, Socket>? createSocket = null)
-    {
-        createSocket ??= static family => new Socket(family, SocketType.Stream, ProtocolType.Tcp);
-        Exception? lastFailure = null;
-        foreach (var pinnedAddress in pinnedAddresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(createSocket(pinnedAddress.AddressFamily));
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(new IPEndPoint(pinnedAddress, port), cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (Exception ex) when (ex is SocketException or IOException)
-            {
-                lastFailure = ex;
-            }
-        }
-        throw new HttpRequestException("No validated reference address accepted the connection.", lastFailure);
     }
 
     internal string BuildPublicUrl(HttpContext context, string relativePath)

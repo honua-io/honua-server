@@ -46,7 +46,8 @@ internal static partial class RateLimitEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Rate Limits")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         var list = AdminHttpOperationRouteBinding.ForAccess("admin.rate-limit-policy.list", "/rate-limits");
         group.MapMethods(list.RoutePattern, list.Methods, HandleListPolicies)

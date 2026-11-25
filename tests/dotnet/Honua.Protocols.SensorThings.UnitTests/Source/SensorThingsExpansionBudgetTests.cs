@@ -42,6 +42,36 @@ public sealed class SensorThingsExpansionBudgetTests
     }
 
     [UnitTest]
+    public async Task Expand_ExceedingMaxExpansionDepth_RejectedBeforeQueryingStore()
+    {
+        var store = new FanOutStore();
+        var context = Context(
+            "/sta/v1.1/Things",
+            "?$expand=Locations($expand=Things($expand=Locations($expand=Things($expand=Locations))))");
+
+        var result = await SensorThingsEndpoints.HandleCoreRead(context, store, Translator());
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, store.Calls);
+    }
+
+    [UnitTest]
+    public void StaQueryPlan_Create_PreParsesNestedExpansionPlansOnce()
+    {
+        var context = Context("/sta/v1.1/Things", "?$expand=Locations($select=name;$expand=Things($top=2))");
+
+        var planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For("Things"), Translator());
+
+        planResult.IsSuccess.Should().BeTrue();
+        var locations = planResult.Plan!.Expansions.Should().ContainSingle().Subject;
+        locations.NestedPlan.Should().NotBeNull();
+        locations.NestedPlan!.HasProjection.Should().BeTrue();
+        var things = locations.NestedPlan.Expansions.Should().ContainSingle().Subject;
+        things.NestedPlan.Should().NotBeNull();
+        things.Top.Should().Be(2);
+    }
+
+    [UnitTest]
     public async Task NestedTop_AboveNestedMax_IsClampedBeforeTheStoreQuery()
     {
         var store = Substitute.For<ISensorThingsEntityStore>();

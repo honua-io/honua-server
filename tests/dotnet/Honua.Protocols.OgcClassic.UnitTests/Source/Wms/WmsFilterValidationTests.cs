@@ -51,7 +51,7 @@ public sealed class WmsFilterValidationTests
         var (status, body) = await TranslateAsync(UnknownFieldFilter);
 
         status.Should().Be(StatusCodes.Status400BadRequest);
-        body.Should().Contain("InvalidParameterValue").And.Contain("nosuchfield");
+        body.Should().Contain("InvalidParameterValue").And.Contain("Invalid FILTER expression.");
         body.Should().NotContain("NoApplicableCode");
         _translated.Should().BeNull();
     }
@@ -80,7 +80,7 @@ public sealed class WmsFilterValidationTests
         var (status, body) = await TranslateAsync(MistypedLiteralFilter);
 
         status.Should().Be(StatusCodes.Status400BadRequest);
-        body.Should().Contain("InvalidParameterValue").And.Contain("numeric");
+        body.Should().Contain("InvalidParameterValue").And.Contain("Invalid FILTER expression.");
         body.Should().NotContain("NoApplicableCode");
     }
 
@@ -130,8 +130,21 @@ public sealed class WmsFilterValidationTests
         var (status, body) = await TranslateAsync(HiddenFieldFilter);
 
         status.Should().Be(StatusCodes.Status400BadRequest);
-        body.Should().Contain("InvalidParameterValue").And.Contain("category");
-        body.Should().NotContain("NoApplicableCode");
+        body.Should().Contain("InvalidParameterValue").And.Contain("Invalid FILTER expression.");
+        body.Should().NotContain("category").And.NotContain("NoApplicableCode");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task MalformedXml_ReturnsClientReasonWithoutRawParserMessage()
+    {
+        var (status, body) = await TranslateAsync("<fes:Filter><unclosed></fes:Filter>");
+
+        status.Should().Be(StatusCodes.Status400BadRequest);
+        body.Should().Contain("InvalidParameterValue").And.Contain("Filter is not well-formed XML.");
+        body.Should().NotContain("Line ").And.NotContain("position ");
     }
 
     private (SqlFragment? Filter, IResult? Error) Translate(string filter)

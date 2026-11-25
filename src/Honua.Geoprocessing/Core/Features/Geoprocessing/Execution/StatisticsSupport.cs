@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using NetTopologySuite.Features;
 
@@ -219,6 +220,28 @@ internal static class StatisticsSupport
 
         var value = feature.Attributes.GetOptionalValue(field);
         return value is null ? "\0NULL" : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "\0NULL";
+    }
+
+    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a field boundary.
+    public static string EscapeKeyComponent(string value)
+    {
+        if (value.IndexOfAny(['\u001E', '\u001F']) < 0)
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length + 4);
+        foreach (var ch in value)
+        {
+            if (ch is '\u001E' or '\u001F')
+            {
+                sb.Append('\u001E');
+            }
+
+            sb.Append(ch);
+        }
+
+        return sb.ToString();
     }
 
     // Each field is accumulated once even when several stats name it, or a sum would be multiplied by the number of co-requested stats.

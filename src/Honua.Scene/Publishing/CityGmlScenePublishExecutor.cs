@@ -9,7 +9,6 @@ using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Bim;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Scene.Assets;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -81,110 +80,51 @@ internal sealed partial class CityGmlScenePublishExecutor
         var sceneId = ResolveSceneId(request.SceneId, model, intentId);
         var displayName = ResolveDisplayName(request.DisplayName, model, sceneId);
         ValidateOptions(displayName, request.EditionGate, request.CacheMaxAgeSeconds);
-        var cacheMaxAge = request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds;
+        var cacheMaxAge = request.CacheMaxAgeSeconds ?? ScenePublishHelper.DefaultCacheMaxAgeSeconds;
 
-        await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
-
-        // 3. Stage → register → promote, reusing the shared durability mechanics.
-        var outputDirectory = SceneTilesetStaging.ResolveOutputDirectory(
-            _environment.ContentRootPath, serverOptions.OutputRoot, sceneId);
-        var stagingDirectory = SceneTilesetStaging.ResolveStagingDirectory(
-            _environment.ContentRootPath, serverOptions.OutputRoot, intentId);
-        string? stagingToCleanup = stagingDirectory;
-        try
-        {
-            Directory.CreateDirectory(stagingDirectory);
-            // Safe: "tileset.json" is a hardcoded literal, and tileset.Tiles' uri keys
-            // are the fixed "building_0000.glb" constant minted by
-            // BuildingSceneLayerBuilder (see its tileUri const) — neither is derived
-            // from the uploaded CityGML document, so neither combine can be rooted.
-            await File.WriteAllBytesAsync(
-                Path.Join(stagingDirectory, "tileset.json"),
-                tileset.TilesetJsonBytes,
-                cancellationToken).ConfigureAwait(false);
-            foreach (var (uri, bytes) in tileset.Tiles)
+        var outputDirectory = await HostedScenePublishPipeline.StageAndPublishAsync(
+            new HostedScenePublishRequest
             {
-                await File.WriteAllBytesAsync(
-                    Path.Join(stagingDirectory, uri),
-                    bytes,
-                    cancellationToken).ConfigureAwait(false);
-            }
+                ContentRootPath = _environment.ContentRootPath,
+                OutputRoot = serverOptions.OutputRoot,
+                IntentId = intentId,
+                SceneId = sceneId,
+                DisplayName = displayName,
+                Description = request.Description,
+                ContentKind = SceneContentKind.Buildings,
+                TilesetJsonBytes = tileset.TilesetJsonBytes,
+                Tiles = tileset.Tiles,
+                BoundsDegrees = tileset.BoundsDegrees,
+                CacheMaxAgeSeconds = cacheMaxAge,
+                EditionGate = request.EditionGate,
+                RequiresAuth = request.RequiresAuth,
+                CreatedBy = request.CreatedBy ?? "publisher",
+                Registration = _registration,
+                Storage = _storage,
+                Activity = activity,
+                OnOverwroteStaleFinalDir = stale => CityGmlIngestLog.PromotionOverwroteStaleFinalDir(_logger, stale),
+                OnStagingCleanupFailed = (dir, ex) => CityGmlIngestLog.StagingCleanupFailed(_logger, dir, ex),
+                CompensateRegistrationAsync = CompensateRegistrationAsync,
+            },
+            cancellationToken).ConfigureAwait(false);
 
-            // Replicate the staged tileset tree to the shared object store before
-            // registering so the recorded storage prefix always implies the bytes
-            // exist and any node can hydrate it (ADR-0060).
-            var newDatasetId = Guid.NewGuid();
-            var storagePrefix = await SceneAssetStorageUploader.UploadTreeAsync(
-                _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
-            if (storagePrefix is not null)
-            {
-                await SceneAssetHydration.WriteMarkerAsync(
-                    stagingDirectory,
-                    SceneAssetHydration.BuildToken(newDatasetId, storagePrefix),
-                    cancellationToken).ConfigureAwait(false);
-            }
+        stopwatch.Stop();
+        activity?.SetTag("honua.scene.id", sceneId);
+        activity?.SetTag("honua.scene.building_count", tileset.BuildingCount);
+        activity?.SetTag("honua.scene.surface_count", tileset.SurfaceCount);
+        CityGmlIngestLog.Completed(
+            _logger, intentId, sceneId, tileset.BuildingCount, tileset.SurfaceCount, stopwatch.ElapsedMilliseconds);
 
-            var registeredDatasetId = await TryRegisterSceneAsync(
-                newDatasetId,
-                sceneId,
-                displayName,
-                request.Description,
-                outputDirectory,
-                storagePrefix,
-                tileset.BoundsDegrees,
-                cacheMaxAge,
-                request.EditionGate,
-                request.RequiresAuth,
-                request.CreatedBy ?? "publisher",
-                cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                SceneTilesetStaging.PromoteStagingToFinal(
-                    stagingDirectory,
-                    outputDirectory,
-                    stale => CityGmlIngestLog.PromotionOverwroteStaleFinalDir(_logger, stale));
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                if (registeredDatasetId is { } datasetId)
-                {
-                    await CompensateRegistrationAsync(datasetId, sceneId).ConfigureAwait(false);
-                }
-                throw;
-            }
-            stagingToCleanup = null;
-
-            stopwatch.Stop();
-            activity?.SetTag("honua.scene.id", sceneId);
-            activity?.SetTag("honua.scene.building_count", tileset.BuildingCount);
-            activity?.SetTag("honua.scene.surface_count", tileset.SurfaceCount);
-            CityGmlIngestLog.Completed(
-                _logger, intentId, sceneId, tileset.BuildingCount, tileset.SurfaceCount, stopwatch.ElapsedMilliseconds);
-
-            return new CityGmlSceneIngestOutcome(
-                sceneId,
-                outputDirectory,
-                tileset.BoundsDegrees,
-                tileset.BuildingCount,
-                tileset.SurfaceCount,
-                tileset.Tiles.Count,
-                tileset.Disciplines,
-                tileset.Warnings);
-        }
-        finally
-        {
-            if (stagingToCleanup is not null)
-            {
-                SceneTilesetStaging.TryDeleteStaging(
-                    stagingToCleanup,
-                    ex => CityGmlIngestLog.StagingCleanupFailed(_logger, stagingToCleanup, ex));
-            }
-        }
+        return new CityGmlSceneIngestOutcome(
+            sceneId,
+            outputDirectory,
+            tileset.BoundsDegrees,
+            tileset.BuildingCount,
+            tileset.SurfaceCount,
+            tileset.Tiles.Count,
+            tileset.Disciplines,
+            tileset.Warnings);
     }
-
-    private const int DefaultCacheMaxAgeSeconds = 3600;
 
     private static CityGmlGeoTransform BuildGeoTransform(CityGmlModel model)
     {
@@ -298,7 +238,7 @@ internal sealed partial class CityGmlScenePublishExecutor
         return baseName + suffix;
     }
 
-    private static void ValidateOptions(string displayName, string? editionGate, int? cacheMaxAgeSeconds)
+    internal static void ValidateOptions(string displayName, string? editionGate, int? cacheMaxAgeSeconds)
     {
         if (!SceneDatasetValidator.TryValidateName(displayName, out var nameError))
         {
@@ -323,80 +263,11 @@ internal sealed partial class CityGmlScenePublishExecutor
         }
     }
 
-    private async Task PreflightSceneRegistrationConflictAsync(string sceneId, CancellationToken cancellationToken)
-    {
-        if (_registration is null)
-        {
-            return;
-        }
-        var existing = await _registration.GetBySceneIdAsync(sceneId, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' already exists.");
-        }
-    }
-
-    private async Task<Guid?> TryRegisterSceneAsync(
-        Guid datasetId,
-        string sceneId,
-        string displayName,
-        string? description,
-        string outputDirectory,
-        string? assetStoragePrefix,
-        double[] bounds,
-        int cacheMaxAgeSeconds,
-        string? editionGate,
-        bool requiresAuth,
-        string createdBy,
+    internal static Task<Guid?> TryRegisterSceneAsync(
+        ISceneRegistrationService? registration,
+        SceneRegistrationRequest request,
         CancellationToken cancellationToken)
-    {
-        if (_registration is null)
-        {
-            return null;
-        }
-
-        var record = new SceneDatasetRecord
-        {
-            DatasetId = datasetId,
-            Id = sceneId,
-            Name = displayName,
-            Description = description,
-            AssetRoot = outputDirectory,
-            AssetStoragePrefix = assetStoragePrefix,
-            TilesetFileName = "tileset.json",
-            DatasetType = SceneDatasetType.HostedTiles,
-            ServingFormat = SceneServingFormat.ThreeDTiles,
-            ContentKind = SceneContentKind.Buildings,
-            Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
-            // BSL coordinates are placed on the WGS-84 ellipsoid with ellipsoidal
-            // height in meters, so the registered CRS is the 3D geographic 4979.
-            Crs = "EPSG:4979",
-            CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
-            EditionGate = editionGate,
-            RequiresAuth = requiresAuth,
-            IsPublic = !requiresAuth,
-            AllowedRoles = null,
-            Status = SceneDatasetStatus.Active,
-            ValidationMessage = null,
-            Revision = 1,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = createdBy,
-            UpdatedAt = null
-        };
-
-        try
-        {
-            var saved = await _registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
-            return saved?.DatasetId is { } id && id != Guid.Empty ? id : record.DatasetId;
-        }
-        catch (SceneDatasetAlreadyExistsException ex)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' or name '{displayName}' already exists.",
-                ex);
-        }
-    }
+        => HostedScenePublishPipeline.TryRegisterSceneAsync(registration, request, cancellationToken);
 
     private async Task CompensateRegistrationAsync(Guid datasetId, string sceneId)
     {

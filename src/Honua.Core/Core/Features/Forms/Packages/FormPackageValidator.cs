@@ -975,7 +975,7 @@ public sealed partial class FormPackageValidator
             .GroupBy(static fieldPolicy => fieldPolicy.FieldId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
 
-    private static bool ContentTypeAllowed(IEnumerable<string> allowedContentTypes, string contentType)
+    internal static bool ContentTypeAllowed(IEnumerable<string> allowedContentTypes, string contentType)
     {
         var normalized = contentType.Split(';', 2)[0].Trim();
         foreach (var allowed in allowedContentTypes)
@@ -1156,7 +1156,7 @@ public sealed partial class FormPackageValidator
         return property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value);
     }
 
-    private static bool TryReadFiniteDouble(JsonElement value, out double result)
+    internal static bool TryReadFiniteDouble(JsonElement value, out double result)
     {
         result = 0;
         if (value.ValueKind == JsonValueKind.Number)

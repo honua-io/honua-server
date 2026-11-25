@@ -445,9 +445,9 @@ internal sealed partial class OgcStyleProjection : IOgcStyleProjection
             using var document = JsonDocument.Parse(mapLibreStyleJson);
             parsed = document.RootElement.Clone();
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"MapLibre style is not valid JSON: {ex.Message}");
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, "MapLibre style is not valid JSON.");
         }
 
         var result = await StoreLayerStyleAsync(
@@ -483,9 +483,9 @@ internal sealed partial class OgcStyleProjection : IOgcStyleProjection
             using var document = JsonDocument.Parse(drawingInfoJson);
             drawingInfo = document.RootElement.Clone();
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, "drawingInfo is not valid JSON.");
         }
 
         if (!TryValidateDrawingInfoShape(drawingInfo, out var shapeError))
@@ -536,9 +536,9 @@ internal sealed partial class OgcStyleProjection : IOgcStyleProjection
             using var document = JsonDocument.Parse(conversion.MapLibreStyleJson);
             mapLibre = document.RootElement.Clone();
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"Converted MapLibre style is not valid JSON: {ex.Message}", warnings);
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, "Converted MapLibre style is not valid JSON.", warnings);
         }
 
         var result = await StoreLayerStyleAsync(
@@ -1029,9 +1029,9 @@ internal sealed partial class OgcStyleProjection : IOgcStyleProjection
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = $"MapLibre style is not valid JSON: {ex.Message}";
+            error = "MapLibre style is not valid JSON.";
             return false;
         }
     }

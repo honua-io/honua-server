@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
+using Honua.Server.Features.Styling;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -121,22 +122,7 @@ internal sealed partial class FeatureStreamPublisher(
     }
 
     internal static JsonElement? ParseJsonElement(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.Clone();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+        => StyleJsonUtilities.ParseJsonElement(json);
 
     internal static Dictionary<string, JsonElement>? ParseAttributes(string? propertiesJson)
     {

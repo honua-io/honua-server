@@ -35,10 +35,7 @@ internal static class GeoservicesCatalogCacheHelper
             return false;
         }
 
-        var headers = context.Request.Headers;
-        return !headers.ContainsKey("Authorization")
-            && !headers.ContainsKey("X-API-Key")
-            && !MetadataDocumentByteCache.HasQueryToken(context.Request);
+        return !BypassOutputCacheOnCredentialedRequestPolicy.CarriesCredential(context);
     }
 
     internal static string BuildAnonymousDirectoryKey(
@@ -82,7 +79,8 @@ internal static class GeoservicesCatalogCacheHelper
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var cacheKey = BuildAnonymousDirectoryKey(context, snapshot, licenseStatusProvider);
+        var rawKey = BuildAnonymousDirectoryKey(context, snapshot, licenseStatusProvider);
+        var cacheKey = MetadataDocumentByteCache.ScopeKeyForRequest(context, rawKey);
         var generation = await MetadataDocumentByteCache
             .ResolveConfigGenerationAsync(context, context.RequestAborted)
             .ConfigureAwait(false);

@@ -34,9 +34,15 @@ internal sealed class SecurityHeadersMiddleware
 
     public Task InvokeAsync(HttpContext context)
     {
-        // Apply security headers to all responses, respecting HTTPS gating,
-        // HEAD/OPTIONS shortcuts, and per-route CSP overrides.
+        // Apply security headers eagerly and re-apply in OnStarting so a downstream
+        // Response.Clear() cannot strip them before the response leaves the pipeline.
         ApplySecurityHeaders(context);
+        context.Response.OnStarting(static state =>
+        {
+            var (middleware, httpContext) = ((SecurityHeadersMiddleware, HttpContext))state;
+            middleware.EnsureSecurityHeaders(httpContext);
+            return Task.CompletedTask;
+        }, (this, context));
 
         // Log security headers application for debugging in development
         if (_logger.IsEnabled(LogLevel.Debug))
@@ -63,72 +69,69 @@ internal sealed class SecurityHeadersMiddleware
     private void ApplySecurityHeaders(HttpContext context)
     {
         var headers = context.Response.Headers;
-        var method = context.Request.Method;
-        var isPreflightLike = HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
-        var skipBodyRelevantHeaders = _options.SkipHeadersForPreflight && isPreflightLike;
+        WriteSecurityHeaders(context, (name, value) => headers[name] = value);
+    }
 
-        // Strict-Transport-Security (HSTS) - Force HTTPS for specified duration.
-        // Per RFC 6797, HSTS MUST only be sent over a secure transport. We gate it
-        // accordingly so HTTP responses (e.g. behind a reverse proxy that already
-        // terminates TLS but forwards as HTTP) don't ship a meaningless header.
+    private void EnsureSecurityHeaders(HttpContext context)
+    {
+        var headers = context.Response.Headers;
+        WriteSecurityHeaders(context, (name, value) => headers.TryAdd(name, value));
+    }
+
+    private void WriteSecurityHeaders(HttpContext context, Action<string, string> writeHeader)
+    {
         if (_options.EnableHsts && (!_options.HstsHttpsOnly || context.Request.IsHttps))
         {
-            headers["Strict-Transport-Security"] = _hstsHeader;
+            writeHeader("Strict-Transport-Security", _hstsHeader);
         }
 
-        // Content-Security-Policy - Prevent XSS and injection attacks. CSP, COEP,
-        // and Permissions-Policy are only meaningful for resource-bearing responses,
-        // so we skip them for HEAD/OPTIONS where the body is empty by definition.
-        if (!skipBodyRelevantHeaders)
+        var method = context.Request.Method;
+        var skipBodyHeaders = _options.SkipHeadersForPreflight && (HttpMethods.IsHead(method) || HttpMethods.IsOptions(method));
+        if (!skipBodyHeaders)
         {
-            var routeOverride = ResolveRouteOverride(context.Request.Path);
-            var cspHeader = ResolveContentSecurityPolicy(routeOverride);
-            if (!string.IsNullOrEmpty(cspHeader.policy))
-            {
-                headers[cspHeader.headerName] = cspHeader.policy;
-            }
+            WriteBodySecurityHeaders(context, writeHeader);
         }
 
-        // X-Frame-Options - Prevent clickjacking attacks
-        headers["X-Frame-Options"] = _options.XFrameOptions;
+        writeHeader("X-Frame-Options", _options.XFrameOptions);
+        writeHeader("X-Content-Type-Options", "nosniff");
+        writeHeader("Referrer-Policy", _options.ReferrerPolicy);
 
-        // X-Content-Type-Options - Prevent MIME-type confusion attacks
-        headers["X-Content-Type-Options"] = "nosniff";
-
-        // Referrer-Policy - Control referrer information leakage
-        headers["Referrer-Policy"] = _options.ReferrerPolicy;
-
-        // X-XSS-Protection - Enable XSS filtering in older browsers (legacy support)
         if (_options.EnableXssProtection)
         {
-            headers["X-XSS-Protection"] = "1; mode=block";
+            writeHeader("X-XSS-Protection", "1; mode=block");
         }
 
-        // Cross-Origin-Opener-Policy - Isolate browsing context
         if (!string.IsNullOrEmpty(_options.CrossOriginOpenerPolicy))
         {
-            headers["Cross-Origin-Opener-Policy"] = _options.CrossOriginOpenerPolicy;
+            writeHeader("Cross-Origin-Opener-Policy", _options.CrossOriginOpenerPolicy);
         }
 
-        // Cross-Origin-Embedder-Policy - Control cross-origin resource loading
-        if (!skipBodyRelevantHeaders && !string.IsNullOrEmpty(_options.CrossOriginEmbedderPolicy))
-        {
-            headers["Cross-Origin-Embedder-Policy"] = _options.CrossOriginEmbedderPolicy;
-        }
-
-        // Permissions-Policy - Restrict access to browser features
-        if (!skipBodyRelevantHeaders && !string.IsNullOrEmpty(_options.PermissionsPolicy))
-        {
-            headers["Permissions-Policy"] = _options.PermissionsPolicy;
-        }
-
-        // Custom security headers
         if (_options.CustomHeaders != null)
         {
             foreach (var customHeader in _options.CustomHeaders)
             {
-                headers[customHeader.Key] = customHeader.Value;
+                writeHeader(customHeader.Key, customHeader.Value);
             }
+        }
+    }
+
+    private void WriteBodySecurityHeaders(HttpContext context, Action<string, string> writeHeader)
+    {
+        var routeOverride = ResolveRouteOverride(context.Request.Path);
+        var cspHeader = ResolveContentSecurityPolicy(routeOverride);
+        if (!string.IsNullOrEmpty(cspHeader.policy))
+        {
+            writeHeader(cspHeader.headerName, cspHeader.policy);
+        }
+
+        if (!string.IsNullOrEmpty(_options.CrossOriginEmbedderPolicy))
+        {
+            writeHeader("Cross-Origin-Embedder-Policy", _options.CrossOriginEmbedderPolicy);
+        }
+
+        if (!string.IsNullOrEmpty(_options.PermissionsPolicy))
+        {
+            writeHeader("Permissions-Policy", _options.PermissionsPolicy);
         }
     }
 

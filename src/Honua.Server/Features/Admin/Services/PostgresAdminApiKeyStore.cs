@@ -61,7 +61,7 @@ internal sealed class PostgresAdminApiKeyStore(
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var (hash, salt) = AdminApiKeyHashing.HashSalted(key);
         var record = new AdminApiKeyRecord(
-            Guid.NewGuid(), name, DisplayPrefix(key), hash, NormalizePermissions(permissions),
+            Guid.NewGuid(), name, DisplayPrefix(key), hash, InMemoryAdminApiKeyStore.NormalizePermissions(permissions),
             now, now, expiresAt, null, null, null, createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges),
@@ -322,16 +322,6 @@ internal sealed class PostgresAdminApiKeyStore(
         using var builder = new NpgsqlCommandBuilder();
         return builder.QuoteIdentifier(string.IsNullOrWhiteSpace(schema) ? "honua" : schema.Trim())
             + "." + builder.QuoteIdentifier(TableName);
-    }
-
-    private static string[] NormalizePermissions(IReadOnlyList<string> permissions)
-    {
-        var normalized = permissions
-            .Select(static permission => permission.Trim())
-            .Where(static permission => permission.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return normalized.Length == 0 ? ["admin:*"] : normalized;
     }
 
     private static string DisplayPrefix(string key) => key[..Math.Min(DisplayPrefixLength, key.Length)];

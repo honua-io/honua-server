@@ -321,8 +321,7 @@ public class ZarrMetadataValidationTests
         objects[Root + (keyEncoding == "default" ? "/c/0/0" : "/0.0")] = raw;
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "validation", Start = [0, 0], Stop = [2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "validation", Start = [0, 0], Stop = [2, 2] } });
         subset.Data.Should().Equal(1, 2, 3, 4);
     }
 

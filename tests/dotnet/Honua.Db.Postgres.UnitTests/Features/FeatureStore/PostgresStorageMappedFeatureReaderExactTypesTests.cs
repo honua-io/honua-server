@@ -33,7 +33,28 @@ public sealed class PostgresStorageMappedFeatureReaderExactTypesTests
         sql.Should().NotContain("\"amount\"::text");
     }
 
-    private static string BuildFeatureSelect(string? attributesColumn)
+    [UnitTest]
+    public void BuildFeatureSelect_JsonbDecimalTimestampOffsetAndUuid_EmitsTypedSortAndWhereCasts()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "amount > 10",
+            OrderBy =
+            [
+                OrderByClause.Asc("amount"),
+                OrderByClause.Desc("observed_at"),
+                OrderByClause.Asc("external_id"),
+            ]
+        };
+
+        var sql = BuildFeatureSelect(attributesColumn: "attributes", query);
+
+        sql.Should().Contain("::numeric");
+        sql.Should().Contain("::timestamptz");
+        sql.Should().Contain("::uuid");
+    }
+
+    private static string BuildFeatureSelect(string? attributesColumn, FeatureQuery? query = null)
     {
         var reader = new PostgresStorageMappedFeatureReader(
             Substitute.For<IAdoNetDatabaseConnectionProvider>(),
@@ -49,7 +70,7 @@ public sealed class PostgresStorageMappedFeatureReaderExactTypesTests
 
         return typeof(PostgresStorageMappedFeatureReader)
             .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(reader, [new FeatureQuery(), false])!
+            .Invoke(reader, [query ?? new FeatureQuery(), false])!
             .ToString()!;
     }
 
@@ -63,6 +84,7 @@ public sealed class PostgresStorageMappedFeatureReaderExactTypesTests
                 new MetadataV2Field { Name = "amount", Type = MetadataV2FieldType.Decimal },
                 new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.TimestampOffset },
                 new MetadataV2Field { Name = "ratio", Type = MetadataV2FieldType.Double },
+                new MetadataV2Field { Name = "external_id", Type = MetadataV2FieldType.Uuid },
             ],
         };
 }

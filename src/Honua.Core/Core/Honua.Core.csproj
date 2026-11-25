@@ -98,6 +98,7 @@
     <InternalsVisibleTo Include="Honua.SqlServer.UnitTests" />
     <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
     <InternalsVisibleTo Include="Honua.Snowflake.UnitTests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
 </Project>

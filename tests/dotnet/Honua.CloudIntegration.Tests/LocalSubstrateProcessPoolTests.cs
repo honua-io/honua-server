@@ -150,12 +150,12 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
         // arbitrary operator-supplied executable, so it cannot know what contract that binary speaks: an
         // unattested pool declares the baseline (v1) and the gate refuses a raster-source (v2) job during
         // a rolling version step rather than launching a worker that would mis-read the spec.
-        using var context = CreateBackend(maxConcurrent: 1);
+        using var context = CreateBackend(maxConcurrent: 1, workerContracts: []);
 
         var capabilities = await context.Backend.GetCapabilitiesAsync();
         capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.MinimumSupportedVersion);
 
-        // A v1 job runs on this backend; a raster-source job exceeds its declared contract and is gated.
+        // A v1 job runs on an attested v1 worker; a raster-source job exceeds its declared contract and is gated.
         (RasterSourceContract.MinimumSupportedVersion > capabilities.MaxSupportedContractVersion).Should().BeFalse();
         (RasterSourceContract.JobContractVersion > capabilities.MaxSupportedContractVersion).Should().BeTrue();
     }
@@ -204,7 +204,7 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
 
         // The declared capability and the launch path agree: without an attestation the backend refuses
         // the raster-source job at admission instead of spawning a worker that predates the contract.
-        using var context = CreateBackend(maxConcurrent: 1);
+        using var context = CreateBackend(maxConcurrent: 1, workerContracts: []);
 
         var baseJob = CreateJob(context, "raster-contract-unattested", "--exit", "0");
         var job = baseJob with
@@ -215,20 +215,29 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
         var submission = await context.Backend.StartAsync(job);
 
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
-        submission.Message.Should().Contain("version 1").And.Contain("requires version 2");
+        submission.Message.Should().Contain("not registered").And.Contain("requires version 2");
     }
 
-    private static BackendContext CreateBackend(
+    private BackendContext CreateBackend(
         int maxConcurrent,
         List<LocalProcessWorkerContractOptions>? workerContracts = null)
     {
         var workingRoot = Directory.CreateTempSubdirectory("honua-ls-gp-run").FullName;
+        var contracts = workerContracts ??
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = _helper.DotnetMuxerPath,
+                ArgumentPrefix = [_helper.HelperDllPath],
+                MaxSupportedContractVersion = RasterSourceContract.MinimumSupportedVersion
+            }
+        ];
         var backend = new LocalProcessPoolBatchComputeBackend(
             Options.Create(new LocalProcessPoolOptions
             {
                 MaxConcurrentProcesses = maxConcurrent,
                 WorkingRoot = workingRoot,
-                WorkerContracts = workerContracts ?? []
+                WorkerContracts = contracts
             }),
             NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
 

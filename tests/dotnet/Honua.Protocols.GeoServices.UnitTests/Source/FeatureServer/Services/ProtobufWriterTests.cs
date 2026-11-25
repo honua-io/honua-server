@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -300,6 +301,125 @@ public sealed class ProtobufWriterTests
 
         // tag 0x0A (field 1, wire type 2), length 1, value 5
         result.Should().Equal(new byte[] { 0x0A, 0x01, 0x05 });
+    }
+
+    [UnitTest]
+    public void WritePackedUInt32_AcrossVarintBoundaries_MatchesIndividualVarintEncoding()
+    {
+        uint[] values = [0u, 1u, 127u, 128u, 16383u, 16384u, 0x1FFFFFu, 0x200000u, 0x0FFFFFFFu, 0x10000000u, uint.MaxValue];
+
+        var payload = new ProtobufWriter(64);
+        var expected = new ProtobufWriter(64);
+        var actual = new ProtobufWriter(4);
+        try
+        {
+            foreach (var v in values)
+            {
+                payload.WriteRawVarint(v);
+            }
+
+            expected.WriteTag(2, 2);
+            expected.WriteRawVarint((uint)payload.Position);
+            expected.WriteRawBytes(payload.WrittenMemory.Span);
+
+            actual.WritePackedUInt32(2, values);
+
+            actual.WrittenMemory.ToArray().Should().Equal(expected.WrittenMemory.ToArray());
+        }
+        finally
+        {
+            payload.Dispose();
+            expected.Dispose();
+            actual.Dispose();
+        }
+    }
+
+    [UnitTest]
+    public void WritePackedUInt64_AcrossVarintBoundaries_MatchesIndividualVarintEncoding()
+    {
+        ulong[] values =
+        [
+            0UL, 1UL, 127UL, 128UL, (1UL << 14) - 1, 1UL << 14,
+            (1UL << 56) - 1, 1UL << 56, (1UL << 63) - 1, 1UL << 63, ulong.MaxValue
+        ];
+
+        var payload = new ProtobufWriter(128);
+        var expected = new ProtobufWriter(128);
+        var actual = new ProtobufWriter(4);
+        try
+        {
+            foreach (var v in values)
+            {
+                payload.WriteRawVarint(v);
+            }
+
+            expected.WriteTag(3, 2);
+            expected.WriteRawVarint((uint)payload.Position);
+            expected.WriteRawBytes(payload.WrittenMemory.Span);
+
+            actual.WritePackedUInt64(3, values);
+
+            actual.WrittenMemory.ToArray().Should().Equal(expected.WrittenMemory.ToArray());
+        }
+        finally
+        {
+            payload.Dispose();
+            expected.Dispose();
+            actual.Dispose();
+        }
+    }
+
+    [UnitTest]
+    public void WritePackedSInt64_AcrossZigZagBoundaries_MatchesIndividualVarintEncoding()
+    {
+        long[] values = [0L, -1L, 1L, -64L, 64L, -65L, 65L, int.MinValue, int.MaxValue, long.MinValue, long.MaxValue];
+
+        var payload = new ProtobufWriter(128);
+        var expected = new ProtobufWriter(128);
+        var actual = new ProtobufWriter(4);
+        try
+        {
+            foreach (var v in values)
+            {
+                var zigzag = (ulong)((v << 1) ^ (v >> 63));
+                payload.WriteRawVarint(zigzag);
+            }
+
+            expected.WriteTag(3, 2);
+            expected.WriteRawVarint((uint)payload.Position);
+            expected.WriteRawBytes(payload.WrittenMemory.Span);
+
+            actual.WritePackedSInt64(3, values);
+
+            actual.WrittenMemory.ToArray().Should().Equal(expected.WrittenMemory.ToArray());
+        }
+        finally
+        {
+            payload.Dispose();
+            expected.Dispose();
+            actual.Dispose();
+        }
+    }
+
+    [UnitTest]
+    public void Reset_ClearsPositionAndReusesBuffer()
+    {
+        var writer = new ProtobufWriter(32);
+        try
+        {
+            writer.WriteString(1, "first-value");
+            writer.Position.Should().BeGreaterThan(0);
+
+            writer.Reset();
+            writer.Position.Should().Be(0);
+
+            writer.WriteUInt32(1, 7);
+            writer.WrittenMemory.ToArray().Should().Equal(new byte[] { 0x08, 0x07 });
+        }
+        finally
+        {
+            writer.Dispose();
+        }
     }
 
     // ── Buffer growth ──────────────────────────────────────────

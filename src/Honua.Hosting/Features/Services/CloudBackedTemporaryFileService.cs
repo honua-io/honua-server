@@ -84,6 +84,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
 
         ValidateCloudStorageRequest(data, contentType);
+        var cloudMetadata = BuildCloudMetadata(principal);
 
         await _cloudWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -116,7 +117,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                         ContentType = contentType,
                         TimeToLive = expiration ?? _options.DefaultExpiration,
                         Folder = TemporaryFolder,
-                        Metadata = BuildCloudMetadata(principal)
+                        Metadata = cloudMetadata
                     },
                     processingToken).ConfigureAwait(false);
 
@@ -438,7 +439,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
     private static ImmutableDictionary<string, string> BuildCloudMetadata(ClaimsPrincipal? principal)
     {
-        var principalKey = ResolvePrincipalKey(principal);
+        var principalKey = TemporaryFilePrincipalKey.ResolveForStorage(principal);
         if (string.IsNullOrWhiteSpace(principalKey))
         {
             return ImmutableDictionary<string, string>.Empty;
@@ -455,8 +456,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             return true;
         }
 
-        var principalKey = ResolvePrincipalKey(principal);
-        return string.Equals(principalKey, authorizedPrincipalKey, StringComparison.Ordinal);
+        return TemporaryFilePrincipalKey.IsAuthorized(authorizedPrincipalKey, principal);
     }
 
     private static bool TryGetMetadataValue(IReadOnlyDictionary<string, string> metadata, string key, out string? value)
@@ -475,18 +475,6 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
         value = null;
         return false;
-    }
-
-    private static string? ResolvePrincipalKey(ClaimsPrincipal? principal)
-    {
-        if (principal?.Identity?.IsAuthenticated != true)
-        {
-            return null;
-        }
-
-        return principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue("sub")
-            ?? principal.Identity.Name;
     }
 
     private static string GetFileExtension(string contentType)

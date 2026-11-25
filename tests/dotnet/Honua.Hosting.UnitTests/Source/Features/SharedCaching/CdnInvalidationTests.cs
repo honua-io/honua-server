@@ -241,6 +241,115 @@ public sealed class CdnInvalidationTests
         logger.Messages.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task InvalidateAfterEditAsync_WhenBackgroundBatchThrows_LogsErrorAndCancelsPendingTimersOnShutdown()
+    {
+        var logger = new RecordingLogger();
+        var invalidator = new ThrowOnceThenRecordInvalidator();
+        var service = new CdnInvalidationService(
+            invalidator,
+            logger,
+            new CdnPurgeCoordination { TimeProvider = _time });
+
+        // First edit opens the window immediately.
+        await service.InvalidateAfterEditAsync(["/tiles/1/*"], CancellationToken.None);
+        // Second edit queues into the pending window.
+        await service.InvalidateAfterEditAsync(["/tiles/2/*"], CancellationToken.None);
+
+        // Trigger the window close: invalidator throws on the background call, must be logged rather than unobserved.
+        invalidator.ThrowOnNextCall = true;
+        _time.Advance(CdnInvalidationService.CoalescingWindow);
+        await invalidator.AttemptCountReaches(2);
+
+        var logDeadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (!logger.Messages.Any(message =>
+                   message.Contains("Background CDN invalidation batch failed unexpectedly", StringComparison.Ordinal))
+               && DateTimeOffset.UtcNow < logDeadline)
+        {
+            await Task.Delay(10);
+        }
+
+        logger.Messages.Should().Contain(message =>
+            message.Contains("Background CDN invalidation batch failed unexpectedly", StringComparison.Ordinal));
+
+        // Queue another pending edit and flush on shutdown: pending timer is cancelled and flush runs cleanly.
+        await service.InvalidateAfterEditAsync(["/tiles/3/*"], CancellationToken.None);
+        await service.FlushPendingAsync();
+
+        invalidator.RecordedPaths.Should().Contain(paths => paths.Contains("/tiles/3/*"));
+    }
+
+    private sealed class ThrowOnceThenRecordInvalidator : ICdnInvalidator
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string[]> _recorded = [];
+        private int _attempts;
+        private TaskCompletionSource _attemptSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool ThrowOnNextCall { get; set; }
+
+        public IReadOnlyList<string[]> RecordedPaths
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _recorded];
+                }
+            }
+        }
+
+        public Task<CdnInvalidationResult> InvalidateAsync(
+            IReadOnlyCollection<string> paths,
+            CancellationToken cancellationToken = default)
+        {
+            var shouldThrow = false;
+            lock (_gate)
+            {
+                _attempts++;
+                if (ThrowOnNextCall)
+                {
+                    ThrowOnNextCall = false;
+                    shouldThrow = true;
+                }
+                else
+                {
+                    _recorded.Add([.. paths]);
+                }
+
+                _attemptSignal.TrySetResult();
+                _attemptSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            if (shouldThrow)
+            {
+                throw new InvalidOperationException("unexpected transport error");
+            }
+
+            return Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, "inv-1"));
+        }
+
+        public async Task AttemptCountReaches(int target)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (true)
+            {
+                Task wait;
+                lock (_gate)
+                {
+                    if (_attempts >= target)
+                    {
+                        return;
+                    }
+
+                    wait = _attemptSignal.Task;
+                }
+
+                await wait.WaitAsync(timeout.Token);
+            }
+        }
+    }
+
     private OutputCacheInvalidationService Invalidation(IPublicExportAccessChangeListener? exports = null)
     {
         var services = new ServiceCollection();

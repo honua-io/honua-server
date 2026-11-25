@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -101,10 +99,10 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         List<string> keyFields;
         try
         {
-            schema = Identifier(inputs.GetOrDefault("schema", "public"));
-            table = Identifier(inputs.Require("layer"));
-            geometryColumn = Identifier(inputs.GetOrDefault("geometryColumn", "geom"));
-            targetSrid = RequireSrid(inputs, "targetSrid");
+            schema = SinkFeatureEncoder.Identifier(inputs.GetOrDefault("schema", "public"));
+            table = SinkFeatureEncoder.Identifier(inputs.Require("layer"));
+            geometryColumn = SinkFeatureEncoder.Identifier(inputs.GetOrDefault("geometryColumn", "geom"));
+            targetSrid = inputs.RequireSrid("targetSrid");
             loadMode = ParseLoadMode(inputs.GetOrDefault("loadMode", "append"));
             keyFields = ParseKeyFields(inputs.GetOrDefault("keyFields", string.Empty));
 
@@ -346,38 +344,11 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         foreach (var part in parts)
         {
             // Key fields are interpolated into JSONB accessors in the sink; validate them.
-            keys.Add(Identifier(part));
+            keys.Add(SinkFeatureEncoder.Identifier(part));
         }
 
         return keys;
     }
-
-    private static string Identifier(string value)
-    {
-        if (!IdentifierRegex().IsMatch(value))
-        {
-            throw new TransformInputException(
-                $"identifier '{value}' is invalid; identifiers must match ^[A-Za-z_][A-Za-z0-9_]*$ " +
-                "(they cannot be parameterized in DDL/DML).");
-        }
-
-        return value;
-    }
-
-    private static int RequireSrid(StepInputReader inputs, string key)
-    {
-        if (!inputs.TryGet(key, out var raw)
-            || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            || value <= 0)
-        {
-            throw new TransformInputException($"requires a positive integer '{key}' option.");
-        }
-
-        return value;
-    }
-
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z")]
-    private static partial Regex IdentifierRegex();
 
     private static partial class Log
     {

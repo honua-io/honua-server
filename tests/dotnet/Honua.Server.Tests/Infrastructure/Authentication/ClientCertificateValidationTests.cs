@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -533,6 +534,43 @@ public sealed class ClientCertificateValidationTests
         result.PrincipalId.Should().Be("native-prod-admin");
     }
 
+    [UnitTest]
+    public async Task ValidateAsync_WithBothIssuerSubjectAndThumbprintConfigured_EnforcesAndSemantics()
+    {
+        var (pinnedCa, pinnedLeaf) = CreateChainedCertificate(
+            "CN=Honua Shared Issuer CA",
+            "CN=Honua Pinned Leaf",
+            "spiffe://honua/prod/admin");
+        var (otherCa, otherLeaf) = CreateChainedCertificate(
+            "CN=Honua Shared Issuer CA",
+            "CN=Honua Other Leaf",
+            "spiffe://honua/prod/admin");
+        using var _1 = pinnedCa;
+        using var _2 = pinnedLeaf;
+        using var _3 = otherCa;
+        using var _4 = otherLeaf;
+
+        var profile = CreateProfile("prod-pinned", "prod", pinnedCa.Subject, "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerThumbprints = [pinnedCa.Thumbprint];
+        profile.CustomTrustAnchorCertificates = [ExportPem(pinnedCa), ExportPem(otherCa)];
+        profile.RequireChainTrust = true;
+
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        });
+
+        var matchingResult = await validator.ValidateAsync(pinnedLeaf);
+        var mismatchedThumbprintResult = await validator.ValidateAsync(otherLeaf);
+
+        matchingResult.Succeeded.Should().BeTrue(matchingResult.Detail);
+        mismatchedThumbprintResult.Succeeded.Should().BeFalse(
+            "matching AcceptedIssuerSubjects must not bypass AcceptedIssuerThumbprints pinning");
+        mismatchedThumbprintResult.ErrorCode.Should().Be(ClientCertificateValidationErrorCode.UntrustedIssuer);
+    }
+
     [Fact]
     public void EvaluateChainOutcome_WithCleanBuild_ReturnsTrusted()
         => ClientCertificateValidator.EvaluateChainOutcome(
@@ -705,7 +743,7 @@ public sealed class ClientCertificateValidationTests
             serial);
     }
 
-    private static (X509Certificate2 CaPublic, X509Certificate2 Leaf) CreateChainedCertificate(
+    internal static (X509Certificate2 CaPublic, X509Certificate2 Leaf) CreateChainedCertificate(
         string caSubject,
         string leafSubject,
         string sanUri)

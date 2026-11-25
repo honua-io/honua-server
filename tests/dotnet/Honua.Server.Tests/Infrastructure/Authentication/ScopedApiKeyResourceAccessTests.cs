@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Validation;
@@ -24,10 +25,10 @@ public sealed class ScopedApiKeyResourceAccessTests
         var principal = await AuthenticateAsync(["write:svcA/layer1"]);
         var context = ContextFor(principal);
 
-        var ownLayer = AccessPolicyHelpers.IsResourceAccessible(
-            context, Resource("layer1"), Service("svcA"), AccessScope.Read);
-        var otherLayer = AccessPolicyHelpers.IsResourceAccessible(
-            context, Resource("layer2"), Service("svcB"), AccessScope.Read);
+        var ownLayer = await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context, Resource("layer1"), Service("svcA"), AuthorizationOperation.Query);
+        var otherLayer = await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context, Resource("layer2"), Service("svcB"), AuthorizationOperation.Query);
         var coarse = new AccessPolicyEvaluator().Evaluate(principal, layerPolicy: null, servicePolicy: null);
 
         Assert.False(ownLayer);
@@ -41,10 +42,10 @@ public sealed class ScopedApiKeyResourceAccessTests
         var principal = await AuthenticateAsync(["read:svcA/layer1"]);
         var context = ContextFor(principal);
 
-        Assert.True(AccessPolicyHelpers.IsResourceAccessible(
-            context, Resource("layer1"), Service("svcA"), AccessScope.Read));
-        Assert.False(AccessPolicyHelpers.IsResourceAccessible(
-            context, Resource("layer2"), Service("svcB"), AccessScope.Read));
+        Assert.True(await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context, Resource("layer1"), Service("svcA"), AuthorizationOperation.Query));
+        Assert.False(await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context, Resource("layer2"), Service("svcB"), AuthorizationOperation.Query));
     }
 
     [UnitTheory]
@@ -55,8 +56,8 @@ public sealed class ScopedApiKeyResourceAccessTests
         var principal = await AuthenticateAsync([grant]);
         var context = ContextFor(principal);
 
-        Assert.False(AccessPolicyHelpers.IsResourceAccessible(
-            context, Resource("layer2"), Service("svcB"), AccessScope.Read));
+        Assert.False(await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context, Resource("layer2"), Service("svcB"), AuthorizationOperation.Query));
     }
 
     [UnitTest]

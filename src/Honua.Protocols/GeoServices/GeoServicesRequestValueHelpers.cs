@@ -14,7 +14,7 @@ namespace Honua.Protocols.GeoServices;
 
 internal static class GeoServicesRequestValueHelpers
 {
-    private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
+    internal const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
     private const string QueryTimeoutTokenKey = "GeoServicesQueryTimeoutToken";
 
     internal static readonly FrozenSet<string> LayerQueryAllowedParameters = new[]

@@ -47,7 +47,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, attributeColumns, query, parameters);
+        AppendWhereClause(new() { Sql = sb, Mapping = mapping, AttributeColumns = attributeColumns, Query = query, Parameters = parameters });
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         if (query.Distinct)
@@ -88,7 +88,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             sb.Append("SELECT COUNT_BIG(*) FROM ").Append(mapping.QuotedTableReference);
             sb.Append(" WHERE 1=1");
 
-            AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
+            AppendWhereClause(new() { Sql = sb, Mapping = mapping, AttributeColumns = declaredAttributes, Query = query, Parameters = parameters });
             AppendObjectIdsFilter(sb, mapping, query, parameters);
             AppendSpatialFilter(sb, mapping, query, parameters);
 
@@ -111,7 +111,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
+        AppendWhereClause(new() { Sql = sb, Mapping = mapping, AttributeColumns = declaredAttributes, Query = query, Parameters = parameters });
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         sb.Append(") AS distinct_values");
@@ -136,7 +136,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, mapping, declaredAttributes, query, parameters);
+        AppendWhereClause(new() { Sql = sb, Mapping = mapping, AttributeColumns = declaredAttributes, Query = query, Parameters = parameters });
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         AppendOrderByClause(sb, mapping, declaredAttributes, query);
@@ -179,7 +179,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(effective);
         GuardUnsupportedOutputSrid(mapping, effective);
-        AppendWhereClause(sb, mapping, attributeColumns ?? [], effective, parameters);
+        AppendWhereClause(new() { Sql = sb, Mapping = mapping, AttributeColumns = attributeColumns ?? [], Query = effective, Parameters = parameters });
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
 
@@ -267,54 +267,72 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
     }
 
-    private static void AppendWhereClause(
-        StringBuilder sb,
-        SqlServerLayerMapping mapping,
-        IReadOnlyList<string> attributeColumns,
-        FeatureQuery query,
-        List<object> parameters)
+    private sealed class SqlServerWhereContext
     {
-        if (query.TextSearch is { } search)
+        public required StringBuilder Sql { get; init; }
+        public required SqlServerLayerMapping Mapping { get; init; }
+        public required IReadOnlyList<string> AttributeColumns { get; init; }
+        public required FeatureQuery Query { get; init; }
+        public required List<object> Parameters { get; init; }
+    }
+
+    private static void AppendWhereClause(SqlServerWhereContext context)
+    {
+        if (context.Query.EnforcedSqlFilter is not null)
         {
-            var predicate = FeatureTextSearchSql.Build(search, SqlServerIdentifier.QuoteAttribute, text =>
-            {
-                var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
-                parameters.Add(text);
-                return marker;
-            }, (column, value) => $"CHARINDEX({value}, {column})");
-            sb.Append(" AND ").Append(predicate);
+            throw new NotSupportedException(
+                "SQL Server provider does not support EnforcedSqlFilter. Layers with server-enforced " +
+                "definition or security filters cannot be served by this provider in this slice.");
         }
 
-        // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
-        // ISqlFilterTranslator pipeline, which only registers a Postgres translator today. Passing
-        // a Postgres-emitted fragment through here would yield invalid T-SQL (JSON path operators,
-        // unquoted identifiers, dollar-sign placeholders), so we re-parse Where using this provider's
-        // own SQL Server-aware parser whenever it is supplied.
-        if (!string.IsNullOrWhiteSpace(query.Where))
+        if (context.Query.TextSearch is { } search)
         {
-            if (query.SqlFilter is not null)
+            AppendTextSearchPredicate(context, search);
+        }
+
+        AppendWhereOrRejectSqlFilter(context);
+    }
+
+    private static void AppendTextSearchPredicate(SqlServerWhereContext context, FeatureTextSearch search)
+    {
+        var predicate = FeatureTextSearchSql.Build(
+            search,
+            field => SqlServerIdentifier.QuoteAttribute(
+                ResolveTextSearchField(context.Mapping, context.AttributeColumns, field)),
+            text =>
+            {
+                var marker = "@p" + context.Parameters.Count.ToString(CultureInfo.InvariantCulture);
+                context.Parameters.Add(text);
+                return marker;
+            },
+            (column, value) => $"CHARINDEX({value}, {column})");
+        context.Sql.Append(" AND ").Append(predicate);
+    }
+
+    private static void AppendWhereOrRejectSqlFilter(SqlServerWhereContext context)
+    {
+        // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
+        // ISqlFilterTranslator pipeline, which emits Postgres-flavored SQL that is not valid T-SQL.
+        if (!string.IsNullOrWhiteSpace(context.Query.Where))
+        {
+            if (context.Query.SqlFilter is not null)
             {
                 throw new NotSupportedException(
                     "SQL Server cannot safely combine canonical Where text with a translated SqlFilter. " +
                     "Submit the additional constraints through provider-neutral FeatureQuery properties.");
             }
 
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), mapping, attributeColumns, parameters);
-            sb.Append(" AND (").Append(parameterized).Append(')');
+            var parameterized = ParseAndParameterizeWhereClause(
+                context.Query.Where!.Trim(),
+                context.Mapping,
+                context.AttributeColumns,
+                context.Parameters);
+            context.Sql.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
 
-        if (query.SqlFilter is not null)
+        if (context.Query.SqlFilter is not null)
         {
-            // The shared ISqlFilterTranslator pipeline registers a PostgreSQL translator; the
-            // SqlFilter produced by it contains Postgres-specific SQL (JSONB ->> operators,
-            // ::casts, ST_* functions, double-quoted identifiers) that is not valid T-SQL. The
-            // Oracle provider documents and enforces the same restriction (OracleFeatureQueryBuilder.cs).
-            // Passing a Postgres-flavored fragment through here would produce an opaque SqlException
-            // rather than a clear, actionable error, so we reject it here instead.
-            // Callers that need SQL-Server-specific filtered queries should populate the canonical
-            // FeatureQuery.Where text (e.g. via the FeatureServer 'where' parameter), which is
-            // re-parsed by this provider's own T-SQL-aware parser.
             throw new NotSupportedException(
                 "Translated FeatureQuery.SqlFilter fragments are not executable against the SQL Server provider. " +
                 "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL which is not valid T-SQL. " +
@@ -594,11 +612,11 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} IS {notClause}NULL");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -606,7 +624,7 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var field = inMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var placeholders = new List<string>();
                 foreach (Match valueMatch in LegacyWhereClauseParser.MatchInValues(inMatch.Groups["values"].Value))
@@ -614,7 +632,7 @@ internal static partial class SqlServerFeatureQueryBuilder
                     placeholders.Add("@p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
                     parameters.Add(LegacyWhereClauseParser.ParseValueToken(valueMatch.Value));
                 }
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
@@ -622,14 +640,14 @@ internal static partial class SqlServerFeatureQueryBuilder
             if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
-                SqlServerIdentifier.EnsureValid(field, "WHERE column");
+                _ = SqlServerIdentifier.QuoteAttribute(field);
                 field = ResolveDeclaredField(mapping, attributeColumns, field, "WHERE");
                 var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Warehouse);
                 var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value);
 
                 var paramName = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
                 parameters.Add(value);
-                rendered.Add($"{SqlServerIdentifier.Quote(field)} {op} {paramName}");
+                rendered.Add($"{SqlServerIdentifier.QuoteAttribute(field)} {op} {paramName}");
                 continue;
             }
 
@@ -663,6 +681,18 @@ internal static partial class SqlServerFeatureQueryBuilder
         var declared = attributeColumns.FirstOrDefault(column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
         return declared ?? throw new ArgumentException(
             $"{clause} field '{field}' is not declared on layer {mapping.LayerId}.");
+    }
+
+    private static string ResolveTextSearchField(
+        SqlServerLayerMapping mapping,
+        IReadOnlyList<string> attributeColumns,
+        string field)
+    {
+        _ = SqlServerIdentifier.QuoteAttribute(field);
+        var declared = attributeColumns.FirstOrDefault(
+            column => column.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return declared ?? throw new ArgumentException(
+            $"Text search field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
 }

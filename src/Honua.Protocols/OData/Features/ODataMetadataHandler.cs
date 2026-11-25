@@ -1,12 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Protocols.OData;
 
@@ -40,11 +41,11 @@ internal sealed class ODataMetadataHandler(
                 StatusCodes.Status404NotFound);
         }
 
-        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, effectiveToken)
+        var (visible, deniedResult) = await FilterAccessiblePublicationsAsync(context, allPublications, effectiveToken)
             .ConfigureAwait(false);
-        if (visible.Length == 0)
+        if (deniedResult is not null)
         {
-            return CreateAccessDeniedResult(context, allPublications);
+            return deniedResult;
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
@@ -99,11 +100,11 @@ internal sealed class ODataMetadataHandler(
                 StatusCodes.Status404NotFound);
         }
 
-        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, effectiveToken)
+        var (visible, deniedResult) = await FilterAccessiblePublicationsAsync(context, allPublications, effectiveToken)
             .ConfigureAwait(false);
-        if (visible.Length == 0)
+        if (deniedResult is not null)
         {
-            return CreateAccessDeniedResult(context, allPublications);
+            return deniedResult;
         }
 
         var snapshot = await ODataV2Lookups.GetSnapshotAsync(context, effectiveToken).ConfigureAwait(false);
@@ -112,18 +113,39 @@ internal sealed class ODataMetadataHandler(
         return TypedResults.Content(metadata, "application/xml");
     }
 
-    private static IResult CreateAccessDeniedResult(
-        HttpContext context,
-        IEnumerable<ODataV2Lookups.ResolvedODataPublication> publications)
+    private static async Task<(List<ODataV2Lookups.ResolvedODataPublication> Visible, IResult? DeniedResult)>
+        FilterAccessiblePublicationsAsync(
+            HttpContext context,
+            ODataV2Lookups.ResolvedODataPublication[] publications,
+            CancellationToken cancellationToken)
     {
-        var requiresAuthentication = publications.Any(pub =>
-            AccessPolicyHelpers.EvaluateAccess(
+        var visible = new List<ODataV2Lookups.ResolvedODataPublication>(publications.Length);
+        AccessDecision? denial = null;
+        foreach (var pub in publications)
+        {
+            var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                 context,
-                pub.Resource.AccessPolicy,
-                pub.Service.AccessPolicy).RequiresAuthentication);
+                pub.Resource,
+                pub.Service,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            if (decision.IsAllowed)
+            {
+                visible.Add(pub);
+            }
+            else if (denial is null || decision.RequiresAuthentication)
+            {
+                denial = decision;
+            }
+        }
 
-        return requiresAuthentication
-            ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
-            : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+        if (visible.Count == 0)
+        {
+            return (visible, AccessPolicyHelpers.CreateAccessDeniedResult(
+                context,
+                denial ?? AccessDecision.Forbidden(AccessPolicyHelpers.AccessForbiddenMessage)));
+        }
+
+        return (visible, null);
     }
 }

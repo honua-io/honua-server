@@ -6,6 +6,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -89,125 +90,61 @@ internal sealed class SqlServerFeatureDataAccess
         }
     }
 
-    public async Task<long> ExecuteCountAsync(
+    public Task<long> ExecuteCountAsync(
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("sqlserver.feature.count");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "count", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            RelationalFeatureStoreHelpers.ReadCountAsync,
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            if (result is null || result is DBNull)
-            {
-                return 0L;
-            }
-
-            return Convert.ToInt64(result, CultureInfo.InvariantCulture);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            SqlServerFeatureLog.QueryFailed(_logger, "count", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "count", ex);
-        }
-    }
-
-    public async Task<FeatureExtent?> ExecuteExtentAsync(
+    public Task<FeatureExtent?> ExecuteExtentAsync(
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("sqlserver.feature.extent");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "extent", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            (cmd, ct) => RelationalFeatureStoreHelpers.ReadExtentAsync(cmd, mapping.Srid ?? 0, ct),
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return null;
-            }
-
-            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
-            {
-                return null;
-            }
-
-            var minX = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
-            var minY = Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
-            var maxX = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture);
-            var maxY = Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return FeatureExtent.Create(minX, minY, maxX, maxY, mapping.Srid ?? 0);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            SqlServerFeatureLog.QueryFailed(_logger, "extent", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "extent", ex);
-        }
-    }
-
-    public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
+    public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
+        => ExecuteOperationAsync(
+            new SqlServerOperationContext { Operation = "objectids", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            RelationalFeatureStoreHelpers.ReadObjectIdsAsync,
+            cancellationToken);
+
+    private sealed class SqlServerOperationContext
     {
-        using var activity = _activitySource.StartActivity("sqlserver.feature.objectids");
-        activity?.SetTag("layer.id", mapping.LayerId);
-
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var ids = ImmutableArray.CreateBuilder<long>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (!reader.IsDBNull(0))
-                {
-                    ids.Add(Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
-                }
-            }
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return ids.ToImmutable();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            SqlServerFeatureLog.QueryFailed(_logger, "objectids", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "objectids", ex);
-        }
+        public required string Operation { get; init; }
+        public required SqlServerLayerMapping Mapping { get; init; }
+        public required ParameterizedQuery Query { get; init; }
+        public DataConnection? DataConnection { get; init; }
     }
+
+    private Task<TResult> ExecuteOperationAsync<TResult>(
+        SqlServerOperationContext context,
+        Func<SqlCommand, CancellationToken, Task<TResult>> execute,
+        CancellationToken cancellationToken)
+        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
+            new QueryOperationRequest<SqlConnection, SqlCommand, TResult>
+            {
+                ActivitySource = _activitySource,
+                ActivityName = $"sqlserver.feature.{context.Operation}",
+                LayerId = context.Mapping.LayerId,
+                OpenConnection = ct => _connectionFactory.OpenAsync(context.DataConnection, ct),
+                CreateCommand = conn => CreateCommand(conn, context.Query),
+                Execute = execute,
+                LogFailure = ex => SqlServerFeatureLog.QueryFailed(_logger, context.Operation, context.Mapping.LayerId, ex),
+                WrapException = ex => WrapException(context.Mapping.LayerId, context.Operation, ex),
+            },
+            cancellationToken);
 
     private static Exception WrapException(int layerId, string operationType, Exception ex)
         => ex switch

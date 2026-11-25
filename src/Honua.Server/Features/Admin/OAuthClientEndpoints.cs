@@ -116,7 +116,7 @@ internal static partial class OAuthClientEndpoints
             RedirectUris: request.RedirectUris ?? [],
             AllowedScopes: request.AllowedScopes ?? [],
             ExpiresAt: request.ExpiresAt,
-            CreatedBy: ResolveCreator(context));
+            CreatedBy: AdminPrincipalHelpers.ResolveCreator(context));
 
         var result = await store.CreateAsync(registration, context.RequestAborted);
         LogClientRegistered(logger, result.Record.Id, result.Record.ClientId);
@@ -374,17 +374,6 @@ internal static partial class OAuthClientEndpoints
         }
 
         return "active";
-    }
-
-    private static string? ResolveCreator(HttpContext context)
-    {
-        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(apiKeyId))
-        {
-            return $"api-key:{apiKeyId}";
-        }
-
-        return context.User.Identity?.Name;
     }
 
     [LoggerMessage(EventId = 4570, Level = LogLevel.Information,

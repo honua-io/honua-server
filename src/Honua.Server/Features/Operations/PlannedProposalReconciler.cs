@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Infrastructure;
 
 namespace Honua.Server.Features.Operations;
 
@@ -15,37 +17,25 @@ internal sealed partial class PlannedProposalReconciler(
 {
     internal static readonly TimeSpan StaleAge = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(15);
     private const string LeaseId = "operation-proposal-planned-janitor";
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await SweepOnceAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.SweepFailed(logger, ex);
-            }
+    internal TimeSpan LeaseDuration { get; init; } = DefaultLeaseDuration;
 
-            try
+    internal TimeSpan LeaseRenewInterval { get; init; } = DefaultLeaseRenewInterval;
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => PeriodicBackgroundLoop.RunAsync(
+            new PeriodicBackgroundLoopOptions
             {
-                await Task.Delay(SweepInterval, clock, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
-    }
+                Interval = SweepInterval,
+                TimeProvider = clock,
+                ExecuteIterationAsync = SweepOnceAsync,
+                OnIterationError = ex => Log.SweepFailed(logger, ex)
+            },
+            stoppingToken);
 
     internal async Task SweepOnceAsync(CancellationToken cancellationToken = default)
     {
@@ -56,21 +46,59 @@ internal sealed partial class PlannedProposalReconciler(
             return;
         }
 
+        using var sweepCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var renewalTask = ReconcilerLeaseHelper.RenewLeaseUntilCancelledAsync(new LeaseRenewalRequest
+        {
+            LeaseId = LeaseId,
+            RenewInterval = LeaseRenewInterval,
+            ReconciliationCancellation = sweepCancellation,
+            RenewLeaseAsync = ct => proposalStore.RenewLeaseAsync(LeaseId, _ownerId, LeaseDuration, ct),
+            Logger = logger,
+            Clock = clock
+        });
+
         try
         {
-            var cutoff = clock.GetUtcNow() - StaleAge;
-            var active = await proposalStore.ListActiveAsync(cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            foreach (var candidate in active.Where(proposal =>
-                         proposal.Status == OperationProposalStatus.Planned && proposal.UpdatedAt <= cutoff))
-            {
-                await CompensateAsync(candidate.ProposalId, cutoff, cancellationToken).ConfigureAwait(false);
-            }
+            await CompensateStaleProposalsAsync(sweepCancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (sweepCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            Log.SweepLeaseLost(logger);
         }
         finally
         {
-            await proposalStore.ReleaseLeaseAsync(LeaseId, _ownerId, CancellationToken.None)
-                .ConfigureAwait(false);
+            await ReconcilerLeaseHelper.StopAndReleaseLeaseAsync(new LeaseReleaseRequest
+            {
+                LeaseId = LeaseId,
+                ReconciliationCancellation = sweepCancellation,
+                RenewalTask = renewalTask,
+                ReleaseLeaseAsync = ct => proposalStore.ReleaseLeaseAsync(LeaseId, _ownerId, ct),
+                Logger = logger
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task CompensateStaleProposalsAsync(CancellationTokenSource sweepCancellation)
+    {
+        var cutoff = clock.GetUtcNow() - StaleAge;
+        var active = await proposalStore.ListActiveAsync(cancellationToken: sweepCancellation.Token)
+            .ConfigureAwait(false);
+        foreach (var candidate in active.Where(proposal =>
+                     proposal.Status == OperationProposalStatus.Planned && proposal.UpdatedAt <= cutoff))
+        {
+            sweepCancellation.Token.ThrowIfCancellationRequested();
+            try
+            {
+                await CompensateAsync(candidate.ProposalId, cutoff, sweepCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (sweepCancellation.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.ProposalCompensationFailed(logger, candidate.ProposalId, ex);
+            }
         }
     }
 
@@ -135,5 +163,11 @@ internal sealed partial class PlannedProposalReconciler(
 
         [LoggerMessage(7424, LogLevel.Warning, "Compensated stale Planned proposal '{ProposalId}' with audit '{AuditId}'")]
         public static partial void Compensated(ILogger logger, string proposalId, string auditId);
+
+        [LoggerMessage(7431, LogLevel.Warning, "Planned proposal compensation failed for '{ProposalId}'; continuing sweep")]
+        public static partial void ProposalCompensationFailed(ILogger logger, string proposalId, Exception exception);
+
+        [LoggerMessage(7432, LogLevel.Warning, "Planned proposal janitor lost its lease during sweep; remaining proposals deferred")]
+        public static partial void SweepLeaseLost(ILogger logger);
     }
 }

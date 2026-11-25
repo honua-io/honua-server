@@ -97,9 +97,12 @@ public sealed class RateLimitingPartitionIntegrationTests
         {
             var middleware = new RateLimitingMiddleware(
                 next,
-                policyStore,
-                options,
-                NullLogger<RateLimitingMiddleware>.Instance);
+                new RateLimitingDependencies
+                {
+                    PolicyStore = policyStore,
+                    Options = options,
+                    Logger = NullLogger<RateLimitingMiddleware>.Instance,
+                });
             return context => middleware.InvokeAsync(context);
         });
 

@@ -42,8 +42,7 @@ public class ZarrChunkIntegrityTests
         objects[Root + "/.zarray"] = Encoding.UTF8.GetBytes(document.ToJsonString());
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] } });
 
         subset.Data.Should().Equal(objects[Root + "/0.0"]);
     }
@@ -85,8 +84,7 @@ public class ZarrChunkIntegrityTests
         objects[Root + "/0.0"] = encoded;
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        var act = () => new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] });
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] } });
 
         await act.Should().ThrowAsync<InvalidDataException>();
     }
@@ -107,8 +105,7 @@ public class ZarrChunkIntegrityTests
         }
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "integrity", Start = [2, 2], Stop = [3, 3] });
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "integrity", Start = [2, 2], Stop = [3, 3] } });
 
         BitConverter.ToSingle(subset.Data).Should().Be(9);
     }
@@ -201,8 +198,7 @@ public class ZarrChunkIntegrityTests
         objects[Root + "/0.0"] = encoded;
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
-        return await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", Root, metadata,
-            new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] });
+        return await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = Root, Metadata = metadata, Request = new ZarrSubsetRequest { Variable = "integrity", Start = [0, 0], Stop = [2, 2] } });
     }
 
     private static Dictionary<string, byte[]> BuildRaw() =>

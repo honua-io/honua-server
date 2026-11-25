@@ -14,8 +14,6 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagNetworkDatasets = "Network Datasets";
-    private const string IdempotencyKeyHeader = "Idempotency-Key";
-    private const int MaxIdempotencyKeyLength = 200;
 
     public static IEndpointRouteBuilder MapNetworkTopologyPromotionAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -101,10 +99,13 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body is required.");
         }
 
-        if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var headerError))
+        var idempotencyKeyResult = NetworkTopologyAdminRequestHelpers.ResolveIdempotencyKey(context);
+        if (!idempotencyKeyResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, idempotencyKeyResult.Error);
         }
+
+        var idempotencyKey = idempotencyKeyResult.Value!;
 
         if (request.TargetGeneration is not { } targetGeneration || targetGeneration <= 0)
         {
@@ -167,41 +168,6 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to list promotion history.");
         }
-    }
-
-    private static bool TryResolveIdempotencyKey(HttpContext context, out string key, out string error)
-    {
-        key = string.Empty;
-        error = string.Empty;
-
-        if (!context.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var values) || values.Count == 0)
-        {
-            error = $"{IdempotencyKeyHeader} header is required.";
-            return false;
-        }
-
-        var raw = values[0];
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            error = $"{IdempotencyKeyHeader} header must not be empty.";
-            return false;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.Length > MaxIdempotencyKeyLength)
-        {
-            error = $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.";
-            return false;
-        }
-
-        if (trimmed.Any(char.IsControl))
-        {
-            error = $"{IdempotencyKeyHeader} header must not contain control characters.";
-            return false;
-        }
-
-        key = trimmed;
-        return true;
     }
 
     private static NetworkTopologyPromotionDto ToDto(NetworkTopologyPromotionRecord record) => new()

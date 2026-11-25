@@ -54,17 +54,18 @@ internal static class CapabilitiesDocumentCacheHelper
             return await buildAsync().ConfigureAwait(false);
         }
 
+        var scopedKey = MetadataDocumentByteCache.ScopeKeyForRequest(context, cacheKey);
         var configGeneration = await MetadataDocumentByteCache
             .ResolveConfigGenerationAsync(context, context.RequestAborted)
             .ConfigureAwait(false);
         var stamp = docCache.CaptureStamp(configGeneration);
-        if (docCache.Get(stamp, cacheKey) is { } hit)
+        if (docCache.Get(stamp, scopedKey) is { } hit)
         {
             return hit.ToResult();
         }
 
         var (cached, isDegraded) = await BuildDocumentAsync(context, buildAsync).ConfigureAwait(false);
-        return isDegraded ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
+        return isDegraded ? cached.ToResult() : docCache.Set(stamp, scopedKey, cached).ToResult();
     }
 
     private static async Task<(CachedMetadataDocument Document, bool IsDegraded)> BuildDocumentAsync(

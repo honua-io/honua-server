@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,6 +21,14 @@ internal sealed class RedshiftFeatureDataAccess
     private readonly IOptions<RedshiftOptions> _options;
     private readonly ILogger<RedshiftFeatureDataAccess> _logger;
 
+    private sealed class RedshiftOperationContext
+    {
+        public required string Operation { get; init; }
+        public required RedshiftLayerMapping Mapping { get; init; }
+        public required ParameterizedQuery Query { get; init; }
+        public DataConnection? DataConnection { get; init; }
+    }
+
     public RedshiftFeatureDataAccess(
         IRedshiftConnectionFactory connectionFactory,
         IOptions<RedshiftOptions> options,
@@ -31,226 +39,83 @@ internal sealed class RedshiftFeatureDataAccess
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<ImmutableArray<Feature>> ExecuteSelectAsync(
+    public Task<ImmutableArray<Feature>> ExecuteSelectAsync(
         RedshiftLayerMapping mapping,
         ParameterizedQuery query,
         IReadOnlyList<string> attributeColumns,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("redshift.feature.select");
-        activity?.SetTag("layer.id", mapping.LayerId);
-
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var features = ImmutableArray.CreateBuilder<Feature>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var id = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
-                byte[]? wkb = reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1);
-
-                var attrs = ImmutableDictionary<string, object?>.Empty.ToBuilder();
-                for (var i = 2; i < reader.FieldCount; i++)
+        => ExecuteOperationAsync(
+            new RedshiftOperationContext { Operation = "select", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            (cmd, ct) => RelationalFeatureStoreHelpers.ReadFeaturesAsync(
+                cmd,
+                new FeatureReadOptions
                 {
-                    var name = reader.GetName(i);
-                    if (i - 2 < attributeColumns.Count)
-                    {
-                        name = attributeColumns[i - 2];
-                    }
+                    ProviderName = "Redshift",
+                    LayerId = mapping.LayerId,
+                    PrimaryKeyColumn = mapping.PrimaryKeyColumn,
+                    AttributeColumns = attributeColumns,
+                },
+                ct),
+            cancellationToken);
 
-                    attrs[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                }
-
-                features.Add(Feature.Create(id, wkb, attrs.ToImmutable()));
-            }
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return features.ToImmutable();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            RedshiftFeatureLog.QueryFailed(_logger, "select", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "select", ex);
-        }
-    }
-
-    public async Task<long> ExecuteCountAsync(
+    public Task<long> ExecuteCountAsync(
         RedshiftLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("redshift.feature.count");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new RedshiftOperationContext { Operation = "count", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            RelationalFeatureStoreHelpers.ReadCountAsync,
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            if (result is null || result is DBNull)
-            {
-                return 0L;
-            }
-
-            return Convert.ToInt64(result, CultureInfo.InvariantCulture);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            RedshiftFeatureLog.QueryFailed(_logger, "count", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "count", ex);
-        }
-    }
-
-    public async Task<FeatureExtent?> ExecuteExtentAsync(
+    public Task<FeatureExtent?> ExecuteExtentAsync(
         RedshiftLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("redshift.feature.extent");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new RedshiftOperationContext { Operation = "extent", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            (cmd, ct) => RelationalFeatureStoreHelpers.ReadExtentAsync(cmd, mapping.Srid ?? 0, ct),
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return null;
-            }
-
-            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
-            {
-                return null;
-            }
-
-            var minX = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
-            var minY = Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
-            var maxX = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture);
-            var maxY = Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture);
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return FeatureExtent.Create(minX, minY, maxX, maxY, mapping.Srid ?? 0);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            RedshiftFeatureLog.QueryFailed(_logger, "extent", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "extent", ex);
-        }
-    }
-
-    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsAsync(
         RedshiftLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("redshift.feature.statistics");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new RedshiftOperationContext { Operation = "statistics", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            RelationalFeatureStoreHelpers.ReadStatisticRowsAsync,
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-            var rows = await ReadStatisticRowsAsync(command, cancellationToken).ConfigureAwait(false);
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return rows;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            RedshiftFeatureLog.QueryFailed(_logger, "statistics", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "statistics", ex);
-        }
-    }
-
-    public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
+    public Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
         RedshiftLayerMapping mapping,
         ParameterizedQuery query,
         DataConnection? dataConnection,
         CancellationToken cancellationToken)
-    {
-        using var activity = _activitySource.StartActivity("redshift.feature.objectids");
-        activity?.SetTag("layer.id", mapping.LayerId);
+        => ExecuteOperationAsync(
+            new RedshiftOperationContext { Operation = "objectids", Mapping = mapping, Query = query, DataConnection = dataConnection },
+            RelationalFeatureStoreHelpers.ReadObjectIdsAsync,
+            cancellationToken);
 
-        try
-        {
-            await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
-            await using var command = CreateCommand(connection, query);
-
-            var ids = ImmutableArray.CreateBuilder<long>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (!reader.IsDBNull(0))
-                {
-                    ids.Add(Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
-                }
-            }
-
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return ids.ToImmutable();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is DbException or TimeoutException)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            RedshiftFeatureLog.QueryFailed(_logger, "objectids", mapping.LayerId, ex);
-            throw WrapException(mapping.LayerId, "objectids", ex);
-        }
-    }
-
-    private static async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ReadStatisticRowsAsync(
-        DbCommand command,
+    private Task<TResult> ExecuteOperationAsync<TResult>(
+        RedshiftOperationContext context,
+        Func<NpgsqlCommand, CancellationToken, Task<TResult>> execute,
         CancellationToken cancellationToken)
-    {
-        var rows = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var row = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-            for (var i = 0; i < reader.FieldCount; i++)
+        => RelationalFeatureStoreHelpers.ExecuteQueryOperationAsync(
+            new QueryOperationRequest<NpgsqlConnection, NpgsqlCommand, TResult>
             {
-                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            }
-
-            rows.Add(row.ToImmutable());
-        }
-
-        return rows.ToImmutable();
-    }
+                ActivitySource = _activitySource,
+                ActivityName = $"redshift.feature.{context.Operation}",
+                LayerId = context.Mapping.LayerId,
+                OpenConnection = ct => _connectionFactory.OpenAsync(context.DataConnection, ct),
+                CreateCommand = conn => CreateCommand(conn, context.Query),
+                Execute = execute,
+                LogFailure = ex => RedshiftFeatureLog.QueryFailed(_logger, context.Operation, context.Mapping.LayerId, ex),
+                WrapException = ex => WrapException(context.Mapping.LayerId, context.Operation, ex),
+            },
+            cancellationToken);
 
     private static Exception WrapException(int layerId, string operationType, Exception ex)
         => ex switch

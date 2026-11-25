@@ -31,14 +31,17 @@ internal static class ProtocolRequestClassifier
             return IsRestOgcServiceAlias(path);
         }
 
-        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is null || segments.Length < 2)
+        var span = remaining.Value.AsSpan();
+        Span<Range> ranges = stackalloc Range[3];
+        var count = span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        if (count < 2)
         {
             return false;
         }
 
-        return string.Equals(segments[1], "wms", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(segments[1], "wmts", StringComparison.OrdinalIgnoreCase);
+        var second = span[ranges[1]];
+        return second.Equals("wms", StringComparison.OrdinalIgnoreCase) ||
+               second.Equals("wmts", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsRestOgcServiceAlias(PathString path)
@@ -48,15 +51,18 @@ internal static class ProtocolRequestClassifier
             return false;
         }
 
-        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is null || segments.Length < 3)
+        var span = remaining.Value.AsSpan();
+        Span<Range> ranges = stackalloc Range[4];
+        var count = span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        if (count < 3)
         {
             return false;
         }
 
-        return string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
-               (string.Equals(segments[2], "wms", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(segments[2], "wmts", StringComparison.OrdinalIgnoreCase));
+        var third = span[ranges[2]];
+        return span[ranges[1]].Equals("MapServer", StringComparison.OrdinalIgnoreCase) &&
+               (third.Equals("wms", StringComparison.OrdinalIgnoreCase) ||
+                third.Equals("wmts", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool IsOgc(PathString path) =>
@@ -72,25 +78,21 @@ internal static class ProtocolRequestClassifier
     {
         if (path.StartsWithSegments("/ogc/services", out var remaining))
         {
-            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 2 } &&
-                   string.Equals(segments[1], "wcs", StringComparison.OrdinalIgnoreCase);
+            return MatchesOgcServiceSegment(remaining, "wcs");
         }
 
         // /ogc/wcs/{serviceId}: the same service-scoped WCS without a "services"
         // segment, for clients that read /services/ as an ArcGIS Server site (ADR-0079).
         if (path.StartsWithSegments("/ogc/wcs", out var aliasRemaining))
         {
-            var segments = aliasRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: 1 };
+            var span = aliasRemaining.Value.AsSpan();
+            Span<Range> ranges = stackalloc Range[2];
+            return span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries) == 1;
         }
 
         if (path.StartsWithSegments("/rest/services", out var restRemaining))
         {
-            var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 3 } &&
-                   string.Equals(segments[1], "ImageServer", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(segments[2], "WCS", StringComparison.OrdinalIgnoreCase);
+            return MatchesRestServiceAlias(restRemaining, "ImageServer", "WCS");
         }
 
         return false;
@@ -105,24 +107,21 @@ internal static class ProtocolRequestClassifier
             return false;
         }
 
-        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments is null || segments.Length < 2)
+        var span = remaining.Value.AsSpan();
+        Span<Range> ranges = stackalloc Range[3];
+        var count = span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        if (count < 2)
         {
             return false;
         }
 
-        var versionSegment = segments[0];
-        if (versionSegment is not ['v' or 'V', ..])
+        var versionSegment = span[ranges[0]];
+        if (versionSegment.Length < 2 || versionSegment[0] is not ('v' or 'V'))
         {
             return false;
         }
 
-        var versionPart = versionSegment.AsSpan(1);
-        if (versionPart.IsEmpty)
-        {
-            return false;
-        }
-
+        var versionPart = versionSegment[1..];
         foreach (var ch in versionPart)
         {
             if (!char.IsDigit(ch) && ch != '.')
@@ -131,7 +130,7 @@ internal static class ProtocolRequestClassifier
             }
         }
 
-        return string.Equals(segments[1], "admin", StringComparison.OrdinalIgnoreCase);
+        return span[ranges[1]].Equals("admin", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool IsGeoServices(PathString path) =>
@@ -144,17 +143,12 @@ internal static class ProtocolRequestClassifier
     {
         if (path.StartsWithSegments("/ogc/services", out var remaining))
         {
-            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 2 } &&
-                   string.Equals(segments[1], "wms", StringComparison.OrdinalIgnoreCase);
+            return MatchesOgcServiceSegment(remaining, "wms");
         }
 
         if (path.StartsWithSegments("/rest/services", out var restRemaining))
         {
-            var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 3 } &&
-                   string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(segments[2], "wms", StringComparison.OrdinalIgnoreCase);
+            return MatchesRestServiceAlias(restRemaining, "MapServer", "wms");
         }
 
         return false;
@@ -164,19 +158,32 @@ internal static class ProtocolRequestClassifier
     {
         if (path.StartsWithSegments("/ogc/services", out var remaining))
         {
-            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 2 } &&
-                   string.Equals(segments[1], "wmts", StringComparison.OrdinalIgnoreCase);
+            return MatchesOgcServiceSegment(remaining, "wmts");
         }
 
         if (path.StartsWithSegments("/rest/services", out var restRemaining))
         {
-            var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            return segments is { Length: >= 3 } &&
-                   string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(segments[2], "wmts", StringComparison.OrdinalIgnoreCase);
+            return MatchesRestServiceAlias(restRemaining, "MapServer", "wmts");
         }
 
         return false;
+    }
+
+    private static bool MatchesOgcServiceSegment(PathString remaining, ReadOnlySpan<char> service)
+    {
+        var span = remaining.Value.AsSpan();
+        Span<Range> ranges = stackalloc Range[3];
+        var count = span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        return count >= 2 && span[ranges[1]].Equals(service, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesRestServiceAlias(PathString remaining, ReadOnlySpan<char> serverType, ReadOnlySpan<char> alias)
+    {
+        var span = remaining.Value.AsSpan();
+        Span<Range> ranges = stackalloc Range[4];
+        var count = span.Split(ranges, '/', StringSplitOptions.RemoveEmptyEntries);
+        return count >= 3
+            && span[ranges[1]].Equals(serverType, StringComparison.OrdinalIgnoreCase)
+            && span[ranges[2]].Equals(alias, StringComparison.OrdinalIgnoreCase);
     }
 }

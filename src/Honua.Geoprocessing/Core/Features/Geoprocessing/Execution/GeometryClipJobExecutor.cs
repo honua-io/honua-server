@@ -1,15 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -53,38 +50,24 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing clip inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        var pairRead = GeometryExecutorSupport.ReadAndDecodeValidatedPair(
+            parameters,
+            new PairGeometryInputNames("targetWkb", "clipEnvelopeWkb"));
+        if (!pairRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {inputError}");
+            if (pairRead.FailedField is not null)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, pairRead.FailedField, pairRead.LogReason!);
+            }
+            else
+            {
+                Log.InvalidInputs(_logger, job.OperationId, pairRead.LogReason!);
+            }
+
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {pairRead.Error}");
         }
 
-        if (!TryDecodeGeometry(inputs.TargetWkb, out var target, out var decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {decodeError}");
-        }
-
-        if (!TryDecodeGeometry(inputs.ClipEnvelopeWkb, out var clip, out decodeError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", decodeError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {decodeError}");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: targetWkb {targetSridError}.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(clip, inputs.Srid, out var clipSridError))
-        {
-            Log.InvalidWkb(_logger, job.OperationId, "clipEnvelopeWkb", clipSridError);
-            return JobExecutionResult.InvalidInput($"Invalid clip inputs: clipEnvelopeWkb {clipSridError}.");
-        }
-
-        target.SRID = inputs.Srid;
-        clip.SRID = inputs.Srid;
+        var (target, clip, srid) = (pairRead.Pair.First, pairRead.Pair.Second, pairRead.Pair.Srid);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, "Computing clip geometry", cancellationToken).ConfigureAwait(false);
@@ -104,7 +87,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             }
 
             var envelopeGeometry = target.Factory.ToGeometry(envelope);
-            envelopeGeometry.SRID = inputs.Srid;
+            envelopeGeometry.SRID = srid;
             clipped = target.Intersection(envelopeGeometry);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -119,7 +102,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
                 "Clip computation produced an empty geometry; verify that the target intersects the clip envelope.");
         }
 
-        clipped.SRID = inputs.Srid;
+        clipped.SRID = srid;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding clip artifact", cancellationToken).ConfigureAwait(false);
@@ -129,7 +112,7 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
             HandledProcessId,
             new[]
             {
-                ("inputSrid", (object)inputs.Srid),
+                ("inputSrid", (object)srid),
             });
 
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
@@ -149,82 +132,6 @@ internal sealed partial class GeometryClipJobExecutor : IProcessExecutor
 
         return JobExecutionResult.Succeeded();
     }
-
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out ClipInputs inputs,
-        out string error)
-    {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "targetWkb", out var target) || string.IsNullOrWhiteSpace(target))
-        {
-            error = "missing required input 'targetWkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "clipEnvelopeWkb", out var clip) || string.IsNullOrWhiteSpace(clip))
-        {
-            error = "missing required input 'clipEnvelopeWkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
-        {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
-        }
-
-        inputs = new ClipInputs(target, clip, srid);
-        error = "";
-        return true;
-    }
-
-    private static bool TryDecodeGeometry(string base64Wkb, out Geometry geometry, out string error)
-    {
-        geometry = null!;
-        byte[] bytes;
-        try
-        {
-            bytes = Convert.FromBase64String(base64Wkb);
-        }
-        catch (FormatException)
-        {
-            error = "is not valid base64";
-            return false;
-        }
-
-        if (bytes.Length == 0)
-        {
-            error = "decoded to zero bytes";
-            return false;
-        }
-
-        try
-        {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(bytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            error = $"could not be decoded ({ex.GetType().Name})";
-            return false;
-        }
-
-        if (geometry == null || geometry.IsEmpty)
-        {
-            error = "decoded to an empty geometry";
-            return false;
-        }
-
-        error = "";
-        return true;
-    }
-
-    private readonly record struct ClipInputs(string TargetWkb, string ClipEnvelopeWkb, int Srid);
 
     private static partial class Log
     {

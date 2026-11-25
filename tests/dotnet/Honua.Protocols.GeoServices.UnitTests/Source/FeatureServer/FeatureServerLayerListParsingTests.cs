@@ -277,8 +277,15 @@ public sealed class FeatureServerLayerListParsingTests
             "\"filter-test\"",
             DateTimeOffset.UtcNow);
 
+        var decisions = new Dictionary<MetadataV2Object, Honua.Core.Features.Security.Domain.AccessDecision>(ReferenceEqualityComparer.Instance)
+        {
+            [activeResource] = Honua.Core.Features.Security.Domain.AccessDecision.Allowed(),
+            [retiredResource] = Honua.Core.Features.Security.Domain.AccessDecision.Allowed(),
+            [draftBindingResource] = Honua.Core.Features.Security.Domain.AccessDecision.Allowed(),
+        };
+
         var visible = FeatureServerEndpoints.FilterAccessibleLayersV2(
-            new ResourceAccessSet(context, service, AccessScope.Read, new(ReferenceEqualityComparer.Instance)),
+            new ResourceAccessSet(context, service, AccessScope.Read, decisions),
             snapshot,
             [
                 (activePublication, activeResource),

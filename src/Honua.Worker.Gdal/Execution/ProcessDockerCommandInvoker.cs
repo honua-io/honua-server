@@ -2,7 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Text;
+using Honua.Core.Features.Infrastructure.Subprocesses;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
@@ -22,7 +22,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         var (effectiveArguments, containerName) = EnsureRunContainerName(arguments);
         Log.RunningContainer(logger, executable, string.Join(' ', effectiveArguments));
 
-        var (exitCode, stdout, stderr) = await RunProcessAsync(
+        var (exitCode, stdout, stderr, stdoutTruncated) = await RunProcessAsync(
             executable, effectiveArguments, environment, containerName, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
 
         Log.ContainerCompleted(logger, executable, exitCode);
@@ -31,6 +31,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
             ExitCode = exitCode,
             StandardOutput = stdout,
             StandardError = stderr,
+            StandardOutputTruncated = stdoutTruncated,
         };
     }
 
@@ -48,7 +49,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         // silently falls back to the in-process path instead of throwing.
         try
         {
-            var (exitCode, _, _) = await RunProcessAsync(
+            var (exitCode, _, _, _) = await RunProcessAsync(
                 executable,
                 new[] { "image", "inspect", image },
                 environment: null,
@@ -95,7 +96,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         return (updated, containerName);
     }
 
-    private static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunProcessAsync(
+    private static async Task<(int ExitCode, string StandardOutput, string StandardError, bool StandardOutputTruncated)> RunProcessAsync(
         string executable,
         IReadOnlyList<string> arguments,
         IReadOnlyDictionary<string, string>? environment,
@@ -126,23 +127,12 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         }
 
         using var process = new Process { StartInfo = startInfo };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
+        var stdout = BoundedProcessOutputBuffer.CreateWithoutTruncationMarker(
+            BoundedProcessOutputBuffer.DefaultStandardOutputMaxChars);
+        var stderr = BoundedProcessOutputBuffer.CreateWithTruncationMarker();
 
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stdout.AppendLine(e.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-            {
-                stderr.AppendLine(e.Data);
-            }
-        };
+        process.OutputDataReceived += (_, e) => stdout.AppendLine(e.Data);
+        process.ErrorDataReceived += (_, e) => stderr.AppendLine(e.Data);
 
         if (!process.Start())
         {
@@ -151,7 +141,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
                 throw new InvalidOperationException($"Failed to start container runtime '{executable}'.");
             }
 
-            return (-1, "", "");
+            return (-1, "", "", false);
         }
 
         process.BeginOutputReadLine();
@@ -163,7 +153,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         }
         catch (OperationCanceledException)
         {
-            TryKill(process);
+            SubprocessEnvironmentScrubber.TryKill(process);
             if (!string.IsNullOrWhiteSpace(containerName))
             {
                 await TryForceRemoveContainerAsync(executable, containerName).ConfigureAwait(false);
@@ -174,7 +164,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        return (process.ExitCode, stdout.ToString(), stderr.ToString());
+        return (process.ExitCode, stdout.ToString(), stderr.ToString(), stdout.Truncated);
     }
 
     private static async Task TryForceRemoveContainerAsync(string executable, string containerName)
@@ -183,25 +173,27 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         {
             using var rmProcess = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = executable,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                },
+                StartInfo = CreateForceRemoveStartInfo(executable, containerName),
             };
-            rmProcess.StartInfo.ArgumentList.Add("rm");
-            rmProcess.StartInfo.ArgumentList.Add("-f");
-            rmProcess.StartInfo.ArgumentList.Add(containerName);
+            rmProcess.OutputDataReceived += static (_, _) => { };
+            rmProcess.ErrorDataReceived += static (_, _) => { };
             if (!rmProcess.Start())
             {
                 return;
             }
 
+            rmProcess.BeginOutputReadLine();
+            rmProcess.BeginErrorReadLine();
+
             using var cleanupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await rmProcess.WaitForExitAsync(cleanupTimeout.Token).ConfigureAwait(false);
+            try
+            {
+                await rmProcess.WaitForExitAsync(cleanupTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                SubprocessEnvironmentScrubber.TryKill(rmProcess);
+            }
         }
         catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -209,23 +201,20 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         }
     }
 
-    private static void TryKill(Process process)
+    private static ProcessStartInfo CreateForceRemoveStartInfo(string executable, string containerName)
     {
-        try
+        var startInfo = new ProcessStartInfo
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // Process already exited between the check and the kill.
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            // Permission/race killing the process; nothing more we can do.
-        }
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("rm");
+        startInfo.ArgumentList.Add("-f");
+        startInfo.ArgumentList.Add(containerName);
+        return startInfo;
     }
 
     private static partial class Log

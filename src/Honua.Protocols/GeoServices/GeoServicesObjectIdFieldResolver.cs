@@ -1,11 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.GeoServices;
 
@@ -44,37 +43,5 @@ internal static class GeoServicesObjectIdFieldResolver
         => field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger;
 
     public static long ResolveObjectIdValue(Feature feature, string objectIdFieldName)
-    {
-        if (!string.IsNullOrWhiteSpace(objectIdFieldName) &&
-            feature.Attributes.TryGetValue(objectIdFieldName, out var value) &&
-            TryNormalizeObjectId(value, out var objectId))
-        {
-            return objectId;
-        }
-
-        return feature.Id;
-    }
-
-    private static bool TryNormalizeObjectId(object? value, out long objectId)
-    {
-        objectId = 0;
-        return value switch
-        {
-            long number => SetObjectId(number, out objectId),
-            int number => SetObjectId(number, out objectId),
-            short number => SetObjectId(number, out objectId),
-            byte number => SetObjectId(number, out objectId),
-            JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetInt64(out var number) =>
-                SetObjectId(number, out objectId),
-            string text when long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) =>
-                SetObjectId(number, out objectId),
-            _ => false
-        };
-    }
-
-    private static bool SetObjectId(long value, out long objectId)
-    {
-        objectId = value;
-        return true;
-    }
+        => GeoParquetFeatureWriter.ResolveObjectIdValue(feature, objectIdFieldName);
 }

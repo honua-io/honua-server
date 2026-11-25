@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -13,49 +14,16 @@ internal sealed partial class ExecutionJobBackstopSweepService(
     IExecutionJobStore jobStore,
     IExecutionJobReconciler reconciler,
     IOptions<ControlPlaneTriggerOptions> options,
-    ILogger<ExecutionJobBackstopSweepService> logger) : BackgroundService
+    ILogger<ExecutionJobBackstopSweepService> logger) : BackstopSweepBackgroundService(options)
 {
-    private readonly ControlPlaneTriggerOptions _options = options.Value;
+    protected override void LogBackstopStarted(int intervalSeconds, int staleSeconds)
+        => Log.BackstopStarted(logger, intervalSeconds, staleSeconds);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var interval = _options.BackstopInterval > TimeSpan.Zero
-            ? _options.BackstopInterval
-            : TimeSpan.FromMinutes(2);
-        var staleThreshold = _options.StaleThreshold > TimeSpan.Zero
-            ? _options.StaleThreshold
-            : TimeSpan.FromSeconds(90);
+    protected override void LogBackstopSweepFailed(Exception exception)
+        => Log.BackstopSweepFailed(logger, exception);
 
-        Log.BackstopStarted(logger, (int)interval.TotalSeconds, (int)staleThreshold.TotalSeconds);
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await SweepOnceAsync(staleThreshold, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            // Intentionally generic: this is a long-running background backstop-sweep
-            // loop. A single failed sweep iteration must not kill the host's
-            // background service; log and retry on the next interval.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.BackstopSweepFailed(logger, ex);
-            }
-
-            try
-            {
-                await Task.Delay(interval, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
-    }
+    protected override Task ExecuteSweepAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
+        => SweepOnceAsync(staleThreshold, cancellationToken);
 
     internal async Task SweepOnceAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
     {

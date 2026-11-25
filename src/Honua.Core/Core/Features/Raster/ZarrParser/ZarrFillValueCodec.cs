@@ -70,7 +70,7 @@ internal static class ZarrFillValueCodec
         throw Invalid(name, dtype);
     }
 
-    internal static void Fill(byte[] buffer, string dtype, int elementSize, object? value, CancellationToken cancellationToken)
+    internal static void Fill(Span<byte> buffer, string dtype, int elementSize, object? value, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (value is null) return; // v2 null fill denotes undefined content; zero is permitted.
@@ -119,7 +119,7 @@ internal static class ZarrFillValueCodec
         {
             cancellationToken.ThrowIfCancellationRequested();
             var length = Math.Min(Math.Min(initialized, 64 * 1024), buffer.Length - initialized);
-            buffer.AsSpan(0, length).CopyTo(buffer.AsSpan(initialized, length));
+            buffer.Slice(0, length).CopyTo(buffer.Slice(initialized, length));
             initialized += length;
         }
     }

@@ -976,8 +976,8 @@ public class MySqlFeatureQueryBuilderTests
     {
         var result = _builder.BuildExtentQuery(LayerId, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_Longitude(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Latitude(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_Longitude(ST_SRID(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1), 4326)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Latitude(ST_SRID(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3), 4326)))", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_X(", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Y(", result.Sql, StringComparison.Ordinal);
     }
@@ -1001,8 +1001,9 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = builder.BuildExtentQuery(103, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_SRID(", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
     }
 
@@ -1354,5 +1355,40 @@ public class MySqlFeatureQueryBuilderTests
         // The enforced parameter gets @p0, the caller's parameter gets @p1.
         Assert.Contains(42, result.WhereParameters.OfType<int>().Cast<object>());
         Assert.Contains("active", result.WhereParameters);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_WithNonMySqlDialectFragment_ThrowsNotSupported()
+    {
+        var pgFragment = new SqlFragment("\"status\" = @p0", new object?[] { "active" })
+        {
+            Dialect = "postgresql"
+        };
+
+        Assert.Throws<NotSupportedException>(() =>
+            _builder.BuildSelectQuery(LayerId, new FeatureQuery { SqlFilter = pgFragment }));
+        Assert.Throws<NotSupportedException>(() =>
+            _builder.BuildSelectQuery(LayerId, new FeatureQuery { EnforcedSqlFilter = pgFragment }));
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_TextSearchUndeclaredField_ThrowsAndDeclaredFieldQuotesCanonicalCase()
+    {
+        var undeclaredQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["secret_col"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        Assert.Throws<ArgumentException>(() => _builder.BuildSelectQuery(LayerId, undeclaredQuery));
+
+        var mixedCaseQuery = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["NAME"], [new FeatureSearchTerm[] { new("harbor", false) }])
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, mixedCaseQuery);
+        Assert.Contains("`name`", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`NAME`", result.Sql, StringComparison.Ordinal);
     }
 }

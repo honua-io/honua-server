@@ -14,7 +14,6 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagNetworkDatasets = "Network Datasets";
-    private const string IfMatchHeader = "If-Match";
 
     public static IEndpointRouteBuilder MapNetworkTopologyRebuildAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -59,10 +58,13 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
         [FromServices] ILogger<NetworkTopologyRebuildAdminLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveExpectedRowVersion(context, out var expectedRowVersion, out var headerError))
+        var rowVersionResult = NetworkTopologyAdminRequestHelpers.ResolveExpectedRowVersion(context);
+        if (!rowVersionResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, rowVersionResult.Error);
         }
+
+        var expectedRowVersion = rowVersionResult.Value;
 
         NetworkTopologyGeneration? target;
         try
@@ -141,27 +143,6 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to load the rebuild attempt.");
         }
-    }
-
-    private static bool TryResolveExpectedRowVersion(HttpContext context, out long rowVersion, out string error)
-    {
-        rowVersion = 0;
-        error = string.Empty;
-
-        if (!context.Request.Headers.TryGetValue(IfMatchHeader, out var values) || values.Count == 0)
-        {
-            error = $"{IfMatchHeader} header is required and must carry the generation's current row version.";
-            return false;
-        }
-
-        var raw = values[0]?.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(raw) || !long.TryParse(raw, out rowVersion) || rowVersion <= 0)
-        {
-            error = $"{IfMatchHeader} header must be a positive integer row version.";
-            return false;
-        }
-
-        return true;
     }
 
     private static NetworkTopologyRebuildAttemptDto ToDto(

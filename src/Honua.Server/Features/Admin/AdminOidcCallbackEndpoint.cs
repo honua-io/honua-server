@@ -71,7 +71,7 @@ internal sealed partial class AdminOidcCallbackEndpoint(
         var rawCode = context.Request.Query["error"].ToString();
         var errorCode = OAuthErrorCode().IsMatch(rawCode) ? rawCode : "unrecognized_error";
         var ownAttempt = pending is not null
-            && string.Equals(pending.State, context.Request.Query["state"].ToString(), StringComparison.Ordinal);
+            && PortalOAuthBroker.CryptographicEquals(pending.State, context.Request.Query["state"].ToString());
         AdminAuthLog.ProviderReturnedError(
             logger, ownAttempt ? pending!.ProviderKey : "unknown", ForLog(rawCode),
             ForLog(context.Request.Query["error_description"].ToString()));

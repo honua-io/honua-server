@@ -201,12 +201,15 @@ public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseF
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["editor"] },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        var decision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service);
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context, resource, service, Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query);
         decision.IsAllowed.Should().Be(allowed);
 
         // The group grant never overrides an explicit resource read policy.
         var restricted = resource with { AccessPolicy = new AccessPolicy { AllowedRoles = ["layer-reader"] } };
-        AccessPolicyHelpers.EvaluateResourceAccess(context, restricted, service).IsAllowed.Should().BeFalse();
+        (await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context, restricted, service, Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query))
+            .IsAllowed.Should().BeFalse();
     }
 
     private sealed class TestTenantContext(string tenantId) : ITenantContext

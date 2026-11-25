@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -40,10 +41,12 @@ internal static partial class RlsPolicyEndpoints
     public static void MapRlsPolicyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/rls-policies")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "RLS")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         var list = AdminHttpOperationRouteBinding.ForAccess("admin.rls-policy.list", "/rls-policies");
         group.MapMethods(list.RoutePattern, list.Methods, HandleListPolicies)

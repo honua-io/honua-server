@@ -6,6 +6,7 @@ using Honua.Infrastructure.Models;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Routing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
@@ -18,9 +19,6 @@ internal static partial class NetworkTopologyEditAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagNetworkDatasets = "Network Datasets";
-    private const string IdempotencyKeyHeader = "Idempotency-Key";
-    private const string IfMatchHeader = "If-Match";
-    private const int MaxIdempotencyKeyLength = 200;
 
     public static IEndpointRouteBuilder MapNetworkTopologyEditAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -131,11 +129,20 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         [FromServices] ILogger<NetworkTopologyEditAdminLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var headerError) ||
-            !TryResolveExpectedRowVersion(context, out var expectedRowVersion, out headerError))
+        var idempotencyKeyResult = NetworkTopologyAdminRequestHelpers.ResolveIdempotencyKey(context);
+        if (!idempotencyKeyResult.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, headerError);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, idempotencyKeyResult.Error);
         }
+
+        var rowVersionResult = NetworkTopologyAdminRequestHelpers.ResolveExpectedRowVersion(context);
+        if (!rowVersionResult.IsValid)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, rowVersionResult.Error);
+        }
+
+        var idempotencyKey = idempotencyKeyResult.Value!;
+        var expectedRowVersion = rowVersionResult.Value;
 
         NetworkTopologyGeneration? targetGeneration;
         try
@@ -265,62 +272,6 @@ internal static partial class NetworkTopologyEditAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to apply the topology edit batch.");
         }
-    }
-
-    private static bool TryResolveIdempotencyKey(HttpContext context, out string key, out string error)
-    {
-        key = string.Empty;
-        error = string.Empty;
-
-        if (!context.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var values) || values.Count == 0)
-        {
-            error = $"{IdempotencyKeyHeader} header is required.";
-            return false;
-        }
-
-        var raw = values[0];
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            error = $"{IdempotencyKeyHeader} header must not be empty.";
-            return false;
-        }
-
-        var trimmed = raw.Trim();
-        if (trimmed.Length > MaxIdempotencyKeyLength)
-        {
-            error = $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.";
-            return false;
-        }
-
-        if (trimmed.Any(char.IsControl))
-        {
-            error = $"{IdempotencyKeyHeader} header must not contain control characters.";
-            return false;
-        }
-
-        key = trimmed;
-        return true;
-    }
-
-    private static bool TryResolveExpectedRowVersion(HttpContext context, out long rowVersion, out string error)
-    {
-        rowVersion = 0;
-        error = string.Empty;
-
-        if (!context.Request.Headers.TryGetValue(IfMatchHeader, out var values) || values.Count == 0)
-        {
-            error = $"{IfMatchHeader} header is required and must carry the generation's current row version.";
-            return false;
-        }
-
-        var raw = values[0]?.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(raw) || !long.TryParse(raw, out rowVersion) || rowVersion <= 0)
-        {
-            error = $"{IfMatchHeader} header must be a positive integer row version.";
-            return false;
-        }
-
-        return true;
     }
 
     private static bool TryMapBatch(NetworkTopologyEditBatchRequest request, out NetworkTopologyEditBatch batch, out string error)

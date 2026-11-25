@@ -20,6 +20,7 @@ internal sealed partial class CdnInvalidationService(
     private readonly ILeaseStore? _leaseStore = coordination?.LeaseStore;
     private readonly ICdnPurgeBudget? _budget = coordination?.Budget;
     private readonly CdnPurgeReliability? _reliability = coordination?.Reliability;
+    private readonly CancellationToken _applicationStopping = coordination?.ApplicationStopping ?? CancellationToken.None;
 
     internal const string ResultHeader = "Honua-Cdn-Invalidation";
 
@@ -48,6 +49,7 @@ internal sealed partial class CdnInvalidationService(
         [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
     private readonly Lock _gate = new();
+    private readonly TaskCompletionSource _shutdownSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<string, CdnPurgeCause> _pendingEditPaths = new(StringComparer.Ordinal);
     private DateTimeOffset _lastEditInvalidation = DateTimeOffset.MinValue;
     private DateTimeOffset? _windowClosesAt;
@@ -322,6 +324,12 @@ internal sealed partial class CdnInvalidationService(
             Level = LogLevel.Error,
             Message = "A stopping task could not send its waiting CDN purges; invalidate these before relying on purge-backed lifetimes. count={Count} paths={Paths}")]
         public static partial void ShutdownPurgesNotSent(ILogger logger, int count, string paths);
+
+        [LoggerMessage(
+            EventId = 10320,
+            Level = LogLevel.Error,
+            Message = "Background CDN invalidation batch failed unexpectedly; continuing remaining purges.")]
+        public static partial void BackgroundPurgeFailed(ILogger logger, Exception exception);
 
         // The purge record: which change caused the invalidation, which task sent it, and what the CDN answered.
         [LoggerMessage(

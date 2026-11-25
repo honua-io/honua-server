@@ -139,6 +139,81 @@ public sealed class DatabaseRecoveryCompletionTests
         context.RecoveryFailure.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task Recovery_WithDeferredCheck_RunsCheckAfterSchemaGuardAndMarksRecovered()
+    {
+        var context = new DegradedStartupContext();
+        context.MarkDegraded(false, Assembly.GetExecutingAssembly(), schemaGuardPending: true);
+        var state = new MigrationState();
+        var guard = Substitute.For<IDatabaseSchemaGuard>();
+        guard.VerifyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var deferredValidated = false;
+        using var services = new ServiceCollection()
+            .AddSingleton(guard)
+            .AddSingleton(new DeferredDatabaseRecoveryCheck(() => deferredValidated = true))
+            .BuildServiceProvider();
+        using var recovery = Service(context, state, services, new StartupResilienceOptions(), lambda: true);
+
+        (await recovery.TryRecoverOnReadinessProbeAsync(TimeSpan.FromSeconds(5), CancellationToken.None))
+            .Should().BeTrue();
+        deferredValidated.Should().BeTrue();
+        context.IsRecovered.Should().BeTrue();
+        context.RecoveryFailure.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Recovery_WhenDeferredCheckFailsWithNonTransientError_AbandonsRecovery()
+    {
+        var context = new DegradedStartupContext();
+        context.MarkDegraded(false, Assembly.GetExecutingAssembly(), schemaGuardPending: true);
+        var state = new MigrationState();
+        var guard = Substitute.For<IDatabaseSchemaGuard>();
+        guard.VerifyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        using var services = new ServiceCollection()
+            .AddSingleton(guard)
+            .AddSingleton(new DeferredDatabaseRecoveryCheck(() =>
+                throw new InvalidOperationException("Key ring wrapped with a different secret.")))
+            .BuildServiceProvider();
+        using var recovery = Service(context, state, services, new StartupResilienceOptions(), lambda: true);
+
+        (await recovery.TryRecoverOnReadinessProbeAsync(TimeSpan.FromSeconds(5), CancellationToken.None))
+            .Should().BeFalse();
+        context.IsRecovered.Should().BeFalse();
+        context.IsAwaitingDatabase.Should().BeTrue();
+        context.RecoveryFailure.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
+    public async Task Recovery_WhenDeferredCheckFailsWithTransientError_RetriesUntilCheckSucceeds()
+    {
+        var context = new DegradedStartupContext();
+        context.MarkDegraded(false, Assembly.GetExecutingAssembly(), schemaGuardPending: true);
+        var state = new MigrationState();
+        var guard = Substitute.For<IDatabaseSchemaGuard>();
+        guard.VerifyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var attempts = 0;
+        using var services = new ServiceCollection()
+            .AddSingleton(guard)
+            .AddSingleton(new DeferredDatabaseRecoveryCheck(() =>
+            {
+                if (Interlocked.Increment(ref attempts) == 1)
+                {
+                    throw new TimeoutException("transient database timeout");
+                }
+            }))
+            .BuildServiceProvider();
+        using var recovery = Service(context, state, services, new StartupResilienceOptions(), lambda: true);
+
+        (await recovery.TryRecoverOnReadinessProbeAsync(TimeSpan.FromSeconds(5), CancellationToken.None))
+            .Should().BeFalse();
+        context.RecoveryFailure.Should().BeNull();
+
+        (await recovery.TryRecoverOnReadinessProbeAsync(TimeSpan.FromSeconds(5), CancellationToken.None))
+            .Should().BeTrue();
+        attempts.Should().Be(2);
+        context.IsRecovered.Should().BeTrue();
+    }
+
     private static DatabaseRecoveryBackgroundService Service(DegradedStartupContext context, MigrationState state,
         IServiceProvider services, StartupResilienceOptions options, bool lambda = false)
     {

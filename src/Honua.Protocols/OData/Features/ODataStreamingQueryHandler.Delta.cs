@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -9,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -127,40 +129,22 @@ internal sealed partial class ODataStreamingQueryHandler
             {
                 return DeltaRecovery(context, "InvalidQueryOption", computeError!, 400);
             }
-            var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, resource.ReadSrid() ?? 4326, cancellationToken).ConfigureAwait(false);
-            var selected = ODataUtilityService.ParseSelect(query.Select);
-            var items = new List<JsonElement>(result.Items.Length);
-            var bytes = 0L;
-            foreach (var feature in result.Items)
+            var (current, overflow) = await SerializeDeltaSnapshotFeaturesAsync(
+                context,
+                new DeltaSnapshotFeatureInput { Query = query, Resource = resource, Items = result.Items, Compute = compute },
+                cancellationToken).ConfigureAwait(false);
+            if (overflow is not null)
             {
-                using var buffer = new MemoryStream();
-                await using (var writer = new Utf8JsonWriter(buffer))
-                {
-                    await WriteODataFeatureAsync(writer, feature, query.LayerId, resource.ReadSrid() ?? 4326,
-                        axisOrder, selected, compute, _geometryService, cancellationToken).ConfigureAwait(false);
-                    await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-                }
-                bytes += buffer.Length;
-                if (bytes > MaximumSnapshotBytes)
-                {
-                    return DeltaRecovery(context, "DeltaQueryTooLarge", "The tracked result exceeds the bounded snapshot capacity; narrow the projection.", 413);
-                }
-                using var document = JsonDocument.Parse(buffer.ToArray());
-                items.Add(document.RootElement.Clone());
+                return overflow;
             }
-            // If an authorization policy changed while the database was being read,
-            // do not publish a receipt made under mixed policy versions.
             if (!string.Equals(binding, await ComputeDeltaBindingAsync(context, resource, metadataEtag, cancellationToken).ConfigureAwait(false), StringComparison.Ordinal))
             {
                 return DeltaRecovery(context, "DeltaScopeChanged", "The query authorization scope changed; retry the baseline.", 410);
             }
-            var current = items.ToArray();
-            // Baselines page from Items. Persisting the same array again as Changes
-            // would double every anonymous receipt.
             var changes = continuation is null
                 ? []
-                : ComputeDeltaChanges(continuation.Snapshot.Items, current, query.LayerId);
-            snapshot = new ODataQuerySnapshot(Guid.NewGuid(), DateTimeOffset.UtcNow, query, binding, pageSize, current, changes,
+                : ComputeDeltaChanges(continuation.Snapshot.Items, current!, query.LayerId);
+            snapshot = new ODataQuerySnapshot(Guid.NewGuid(), DateTimeOffset.UtcNow, query, binding, pageSize, current!, changes,
                 IsDelta: continuation is not null);
             var payload = JsonSerializer.SerializeToUtf8Bytes(snapshot, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot);
             try
@@ -204,6 +188,53 @@ internal sealed partial class ODataStreamingQueryHandler
         ODataUtilityService.ApplyTrackChangesPreference(context);
         HonuaTelemetry.SetSuccess(Activity.Current, (int)Math.Min(pageSize, SnapshotRows(snapshot).Length - offset));
         return Results.Bytes(response.ToArray(), ODataUtilityService.GetODataContentType(context.Request, query.Format));
+    }
+
+    private sealed class DeltaSnapshotFeatureInput
+    {
+        public required ODataDeltaService.DeltaQueryState Query { get; init; }
+        public required MetadataV2Object Resource { get; init; }
+        public required ImmutableArray<Feature> Items { get; init; }
+        public required ImmutableArray<ODataComputeExpression> Compute { get; init; }
+    }
+
+    private async Task<(JsonElement[]? Items, IResult? Overflow)> SerializeDeltaSnapshotFeaturesAsync(
+        HttpContext context,
+        DeltaSnapshotFeatureInput input,
+        CancellationToken cancellationToken)
+    {
+        var srid = input.Resource.ReadSrid() ?? 4326;
+        var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken).ConfigureAwait(false);
+        var writeContext = new ODataFeatureWriteContext
+        {
+            LayerId = input.Query.LayerId,
+            LayerSrid = srid,
+            AxisOrder = axisOrder,
+            Select = ODataUtilityService.ParseSelect(input.Query.Select),
+            HiddenFields = input.Resource.HiddenSchemaFieldNames(),
+            ComputeExpressions = input.Compute,
+            GeometryService = _geometryService,
+            CancellationToken = cancellationToken
+        };
+        var items = new List<JsonElement>(input.Items.Length);
+        var bytes = 0L;
+        foreach (var feature in input.Items)
+        {
+            using var buffer = new MemoryStream();
+            await using (var writer = new Utf8JsonWriter(buffer))
+            {
+                WriteODataFeature(writer, feature, writeContext);
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            bytes += buffer.Length;
+            if (bytes > MaximumSnapshotBytes)
+            {
+                return (null, DeltaRecovery(context, "DeltaQueryTooLarge", "The tracked result exceeds the bounded snapshot capacity; narrow the projection.", 413));
+            }
+            using var document = JsonDocument.Parse(buffer.ToArray());
+            items.Add(document.RootElement.Clone());
+        }
+        return (items.ToArray(), null);
     }
 
     internal static JsonElement[] SnapshotRows(ODataQuerySnapshot snapshot)

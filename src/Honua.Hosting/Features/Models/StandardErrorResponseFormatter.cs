@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Security;
 using Honua.Infrastructure.Caching;
@@ -519,8 +520,8 @@ internal static class StandardErrorResponseFormatter
         HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode ?? statusCode);
     }
 
-    private static readonly string[] GeoServicesServiceTypes =
-    [
+    private static readonly FrozenSet<string> GeoServicesServiceTypes = new[]
+    {
         "FeatureServer",
         "MapServer",
         "ImageServer",
@@ -530,7 +531,7 @@ internal static class StandardErrorResponseFormatter
         "GeometryServer",
         "NAServer",
         "SceneServer"
-    ];
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private static (string ServiceType, bool IsGeoServices) ClassifyServiceType(PathString path)
     {
@@ -580,11 +581,17 @@ internal static class StandardErrorResponseFormatter
             return "GeoServices";
         }
 
-        foreach (var segment in value.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        var span = value.AsSpan();
+        var lookup = GeoServicesServiceTypes.GetAlternateLookup<ReadOnlySpan<char>>();
+        foreach (var range in span.Split('/'))
         {
-            var match = GeoServicesServiceTypes.FirstOrDefault(
-                type => string.Equals(segment, type, StringComparison.OrdinalIgnoreCase));
-            if (match is not null)
+            var segment = span[range];
+            if (segment.IsEmpty)
+            {
+                continue;
+            }
+
+            if (lookup.TryGetValue(segment, out var match))
             {
                 return match;
             }
@@ -601,19 +608,27 @@ internal static class StandardErrorResponseFormatter
             return "unknown";
         }
 
-        var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0)
+        var span = value.AsSpan().TrimEnd('/');
+        if (span.IsEmpty)
+        {
+            return "unknown";
+        }
+
+        var lastSlash = span.LastIndexOf('/');
+        var last = lastSlash >= 0 ? span[(lastSlash + 1)..] : span;
+        if (last.IsEmpty)
         {
             return "unknown";
         }
 
         // Closed set: the last segment is caller-controlled (service and layer names), so only
         // known operation terminals become labels; everything else collapses to "unknown".
-        var last = segments[^1];
-        return GeoServicesOperations.Contains(last) ? last.ToLowerInvariant() : "unknown";
+        return GeoServicesOperations.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(last, out var normalized)
+            ? normalized
+            : "unknown";
     }
 
-    private static readonly HashSet<string> GeoServicesOperations = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenDictionary<string, string> GeoServicesOperations = new[]
     {
         // FeatureServer / layer
         "query", "queryTopFeatures", "queryDateBins", "queryBins", "queryRelatedRecords",
@@ -637,5 +652,8 @@ internal static class StandardErrorResponseFormatter
         "submitJob", "execute", "cancel", "solve", "solveClosestFacility", "solveServiceArea",
         "findAddressCandidates", "geocodeAddresses", "reverseGeocode", "suggest",
         "generate", "generateToken",
-    };
+    }.ToFrozenDictionary(
+        static op => op,
+        static op => op.ToLowerInvariant(),
+        StringComparer.OrdinalIgnoreCase);
 }

@@ -120,7 +120,7 @@ internal static class ODataSkipTokenService
         return Convert.ToHexString(hashBytes)[..FingerprintLength].ToLowerInvariant();
     }
 
-    private static string Base64UrlEncode(string input)
+    internal static string Base64UrlEncode(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(input);
         return Convert.ToBase64String(bytes)
@@ -129,7 +129,7 @@ internal static class ODataSkipTokenService
             .Replace('/', '_');
     }
 
-    private static string Base64UrlDecode(string input)
+    internal static string Base64UrlDecode(string input)
     {
         var padded = input.Replace('-', '+').Replace('_', '/');
         switch (padded.Length % 4)

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
@@ -44,13 +45,40 @@ internal static partial class WmsRequestHandlers
         return [.. tenantVisibleLayers.Where(layer => !accessible.Contains(layer.Identifier))];
     }
 
-    private static IResult? ChallengeRequestedProtectedLayers(
+    private readonly record struct WmsProtectedLayerChallenge(
+        MetadataV2Service Service,
+        IReadOnlyList<WmsLayer> ChallengeLayers);
+
+    private static async Task<(WmsLayer[] AccessibleLayers, WmsLayer[] ChallengeLayers, IResult? ChallengeError)> ResolveAuthorizedWmsLayersAsync(
         HttpContext context,
-        MetadataV2Service service,
-        IReadOnlyList<WmsLayer> challengeLayers)
+        (MetadataV2Service Service, WmsLayer[] AllLayers) input,
+        CancellationToken cancellationToken)
+    {
+        var (service, wmsLayers) = input;
+        var accessibleLayerList = new List<WmsLayer>(wmsLayers.Length);
+        foreach (var layer in wmsLayers)
+        {
+            if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, layer.Resource, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
+            {
+                accessibleLayerList.Add(layer);
+            }
+        }
+
+        var accessibleLayers = accessibleLayerList.ToArray();
+        var challengeLayers = ResolveWmsChallengeLayers(service, wmsLayers, accessibleLayers);
+        var challengeError = await ChallengeRequestedProtectedLayersAsync(
+            context, new WmsProtectedLayerChallenge(service, challengeLayers), cancellationToken).ConfigureAwait(false);
+        return (accessibleLayers, challengeLayers, challengeError);
+    }
+
+    private static async Task<IResult?> ChallengeRequestedProtectedLayersAsync(
+        HttpContext context,
+        WmsProtectedLayerChallenge challenge,
+        CancellationToken cancellationToken)
     {
         var requestType = NormalizeWmsRequestType(GetQueryValue(context.Request.Query, "REQUEST"));
-        if (challengeLayers.Count == 0 || requestType is null
+        if (challenge.ChallengeLayers.Count == 0 || requestType is null
             || !_layerParametersByRequest.TryGetValue(requestType, out var parameters))
         {
             return null;
@@ -61,13 +89,22 @@ internal static partial class WmsRequestHandlers
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .SelectMany(static value => value!.Split(',', StringSplitOptions.TrimEntries))
             .ToHashSet(StringComparer.Ordinal);
-        var denial = challengeLayers
-            .Where(layer => requested.Contains(layer.Identifier))
-            .Select(layer => AccessPolicyHelpers.EvaluateResourceAccess(context, layer.Resource, service))
-            .Where(static decision => !decision.IsAllowed)
-            .OrderByDescending(static decision => decision.RequiresAuthentication)
-            .Select(static decision => (AccessDecision?)decision)
-            .FirstOrDefault();
+        AccessDecision? denial = null;
+        foreach (var layer in challenge.ChallengeLayers)
+        {
+            if (!requested.Contains(layer.Identifier))
+            {
+                continue;
+            }
+
+            var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                context, layer.Resource, challenge.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+            if (!decision.IsAllowed && (denial is null || (decision.RequiresAuthentication && !denial.Value.RequiresAuthentication)))
+            {
+                denial = decision;
+            }
+        }
+
         return denial is { } refused ? CreateWmsAccessDenied(context, refused) : null;
     }
 

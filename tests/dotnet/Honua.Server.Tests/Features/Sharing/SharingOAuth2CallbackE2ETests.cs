@@ -117,15 +117,18 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         combinedState.Should().NotBeNullOrWhiteSpace();
         combinedState.Should().MatchRegex("^[0-9a-f]{64}\\.[0-9a-f]{64}$",
             "both generated values retain the reviewed 256-bit hexadecimal representation");
+        var idpNonce = idpQuery["nonce"].ToString();
+        idpNonce.Should().MatchRegex("^[0-9a-f]{64}$",
+            "the broker sends a 256-bit hexadecimal nonce to bind the returned ID token");
 
         // 2. callback: the mock IdP returns to Honua with a code + the combined state.
         //    The broker exchanges the IdP code (stub returns a signed id_token),
-        //    verifies the principal, and redirects to the allow-listed ArcGIS
+        //    verifies the principal and nonce, and redirects to the allow-listed ArcGIS
         //    redirect_uri with a Honua-minted authorization code.
         var callbackUrl = QueryHelpers.AddQueryString("/sharing/rest/oauth2/callback", new Dictionary<string, string?>
         {
             ["state"] = combinedState,
-            ["code"] = "mock-idp-authorization-code",
+            ["code"] = $"mock-idp-authorization-code:{idpNonce}",
         });
 
         using var callbackResponse = await client.GetAsync(callbackUrl);
@@ -259,6 +262,8 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("reject")]
     [InlineData("wrong-issuer")]
+    [InlineData("wrong-nonce")]
+    [InlineData("missing-nonce")]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/oauth2/callback")]
     public async Task Callback_IdpExchangeFailure_RedirectsAccessDeniedToClient(string idpCode)
@@ -442,7 +447,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         return state;
     }
 
-    private static string CreateIdToken(string issuer = IdpAuthority)
+    private static string CreateIdToken(string issuer = IdpAuthority, string? nonce = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(IdpSigningKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -455,6 +460,10 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
             new(ClaimTypes.Role, "org_user"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.Nonce, nonce));
+        }
 
         var token = new JwtSecurityToken(
             issuer: issuer,
@@ -486,27 +495,45 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
 
             if (path.EndsWith("/token", StringComparison.Ordinal))
             {
-                var form = request.Content is null
-                    ? string.Empty
-                    : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
-                if (form.Contains("code=reject", StringComparison.Ordinal))
-                {
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
-                }
-
-                var tokenResponse = JsonSerializer.Serialize(new
-                {
-                    access_token = "mock-idp-access-token",
-                    id_token = CreateIdToken(form.Contains("code=wrong-issuer", StringComparison.Ordinal)
-                        ? "https://untrusted-idp.test"
-                        : IdpAuthority),
-                    token_type = "Bearer",
-                    expires_in = 600,
-                });
-                return Task.FromResult(Json(tokenResponse));
+                return Task.FromResult(HandleTokenExchange(request, cancellationToken));
             }
 
             return Task.FromResult(NotFound());
+        }
+
+        private static HttpResponseMessage HandleTokenExchange(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var form = request.Content is null
+                ? string.Empty
+                : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
+            var code = QueryHelpers.ParseQuery(form)["code"].ToString();
+            if (string.Equals(code, "reject", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            }
+
+            const string codePrefix = "mock-idp-authorization-code:";
+            var issuer = string.Equals(code, "wrong-issuer", StringComparison.Ordinal)
+                ? "https://untrusted-idp.test"
+                : IdpAuthority;
+            string? nonce = code switch
+            {
+                "wrong-nonce" => "0000000000000000000000000000000000000000000000000000000000000000",
+                "missing-nonce" => null,
+                _ when code.StartsWith(codePrefix, StringComparison.Ordinal) => code[codePrefix.Length..],
+                _ => "unused-nonce",
+            };
+
+            var tokenResponse = JsonSerializer.Serialize(new
+            {
+                access_token = "mock-idp-access-token",
+                id_token = CreateIdToken(issuer, nonce),
+                token_type = "Bearer",
+                expires_in = 600,
+            });
+            return Json(tokenResponse);
         }
 
         private static HttpResponseMessage NotFound() => new(HttpStatusCode.NotFound);

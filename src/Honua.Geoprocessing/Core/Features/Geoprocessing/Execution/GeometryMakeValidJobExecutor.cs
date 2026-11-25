@@ -1,14 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -52,36 +49,33 @@ internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing make-valid inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadSingleGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {inputRead.Error}");
         }
 
-        Geometry geometry;
-        try
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(inputs.WkbBytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.InvalidInput("Invalid make-valid inputs: WKB payload could not be decoded.");
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
+            {
+                Log.InvalidWkb(_logger, job.OperationId, decodeResult.Error!);
+                return JobExecutionResult.InvalidInput("Invalid make-valid inputs: WKB payload could not be decoded.");
+            }
+
+            if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
+            {
+                return JobExecutionResult.InvalidInput("Invalid make-valid inputs: geometry is empty.");
+            }
+
+            Log.InvalidInputs(_logger, job.OperationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {decodeResult.Error}.");
         }
 
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return JobExecutionResult.InvalidInput("Invalid make-valid inputs: geometry is empty.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
-        {
-            Log.InvalidInputs(_logger, job.OperationId, sridError);
-            return JobExecutionResult.InvalidInput($"Invalid make-valid inputs: {sridError}.");
-        }
-
-        geometry.SRID = inputs.Srid;
+        var geometry = decodeResult.Geometry!;
         var wasValid = geometry.IsValid;
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -139,52 +133,6 @@ internal sealed partial class GeometryMakeValidJobExecutor : IProcessExecutor
 
         return JobExecutionResult.Succeeded();
     }
-
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out MakeValidInputs inputs,
-        out string error)
-    {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "wkb", out var wkb) || string.IsNullOrWhiteSpace(wkb))
-        {
-            error = "missing required input 'wkb'";
-            return false;
-        }
-
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
-        {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
-        }
-
-        byte[] wkbBytes;
-        try
-        {
-            wkbBytes = Convert.FromBase64String(wkb);
-        }
-        catch (FormatException)
-        {
-            error = "input 'wkb' is not valid base64";
-            return false;
-        }
-
-        if (wkbBytes.Length == 0)
-        {
-            error = "input 'wkb' decoded to zero bytes";
-            return false;
-        }
-
-        inputs = new MakeValidInputs(wkbBytes, srid);
-        error = "";
-        return true;
-    }
-
-    private readonly record struct MakeValidInputs(byte[] WkbBytes, int Srid);
 
     private static partial class Log
     {
