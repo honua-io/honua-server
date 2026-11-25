@@ -415,12 +415,15 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /scim/v2/Groups/{id}")]
     public async Task GroupLifecycle_MembershipChanges_SyncRoles()
     {
-        await CreateUserAsync("g-user@example.com");
+        var suffix = Guid.NewGuid().ToString("N");
+        var userName = $"g-user-{suffix}@example.com";
+        var groupName = $"analysts-{suffix}";
+        await CreateUserAsync(userName);
 
         // Create empty group.
         var createResp = await _client.PostAsJsonAsync("/scim/v2/Groups", new
         {
-            displayName = "analysts",
+            displayName = groupName,
         });
         Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
         var groupId = (await ReadAsync(createResp)).GetProperty("id").GetString()!;
@@ -434,38 +437,38 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         {
             Operations = new[]
             {
-                new { op = "add", path = "members", value = new[] { new { value = "g-user@example.com" } } },
+                new { op = "add", path = "members", value = new[] { new { value = userName } } },
             },
         }));
         Assert.Equal(HttpStatusCode.OK, patchAdd.StatusCode);
 
         var store = _fixture.Services.GetRequiredService<IUserStore>();
-        Assert.Contains("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // PATCH remove member => role revoked.
         var patchRemove = await _client.PatchAsync($"/scim/v2/Groups/{groupId}", JsonContent.Create(new
         {
             Operations = new[]
             {
-                new { op = "remove", path = "members", value = new[] { new { value = "g-user@example.com" } } },
+                new { op = "remove", path = "members", value = new[] { new { value = userName } } },
             },
         }));
         Assert.Equal(HttpStatusCode.OK, patchRemove.StatusCode);
-        Assert.DoesNotContain("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // PUT full replace members.
         var putResp = await _client.PutAsJsonAsync($"/scim/v2/Groups/{groupId}", new
         {
-            displayName = "analysts",
-            members = new[] { new { value = "g-user@example.com" } },
+            displayName = groupName,
+            members = new[] { new { value = userName } },
         });
         Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
-        Assert.Contains("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // DELETE group => role revoked from all members.
         var deleteResp = await _client.DeleteAsync($"/scim/v2/Groups/{groupId}");
         Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
-        Assert.DoesNotContain("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
     }
 
     [IntegrationTest]
