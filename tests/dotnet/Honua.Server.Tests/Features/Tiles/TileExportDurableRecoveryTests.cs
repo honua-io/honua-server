@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Tiles;
 using Honua.Server.Features.Admin.Services;
@@ -373,6 +374,7 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
     private sealed class TileExportJobHarness : IAsyncDisposable
     {
         private readonly PostgresJobSubstrateHarness _jobs;
+        private readonly PollWakeSignal<IJobQueue> _queueWake = new();
         private readonly CountingTileExportProducer _producer;
         private readonly TileExportJobExecutor _executor;
         private readonly TimeProvider _timeProvider;
@@ -381,6 +383,8 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
         private TileExportJobHarness(PostgresJobSubstrateHarness jobs)
         {
             _jobs = jobs;
+            // Match the hosting registration so a local enqueue wakes the worker's idle poll.
+            Queue = new PostgresJobQueue(jobs.Database, NullLogger<PostgresJobQueue>.Instance, _queueWake);
             // A fixed clock keeps the content-addressed reuse horizon deterministic: the stored
             // artifact's expiry and a later job's minimum-expiry requirement evaluate at the same
             // instant, so a valid checkpoint is reused rather than marginally re-expired.
@@ -405,7 +409,7 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
 
         public PostgresExecutionJobStore Store => _jobs.JobStore;
 
-        public PostgresJobQueue Queue => _jobs.Queue;
+        public PostgresJobQueue Queue { get; }
 
         public PostgresExecutionLogStore LogStore => _jobs.LogStore;
 
@@ -428,14 +432,15 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
 
         public async Task RunWorkerAsync(Func<Task> body)
         {
-            var worker = new JobExecutionService(
+            using var worker = new JobExecutionService(
                 Queue,
                 Store,
                 [_executor],
                 new ExecutionJobCancellationTokens(),
                 [],
                 LogStore,
-                NullLogger<JobExecutionService>.Instance);
+                NullLogger<JobExecutionService>.Instance,
+                wake: _queueWake);
             await worker.StartAsync(CancellationToken.None);
             try
             {

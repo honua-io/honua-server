@@ -19,6 +19,13 @@
   },
   "overrides": [
     {
+      "capability": "import.geoserver",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "GeoServer import is Preview in 2026.1: kept working, not extended until requested.",
+      "decision": "founder ruling 2026-11-22"
+    },
+    {
       "capability": "serve.wmts",
       "maturity": "preview",
       "reasonCode": "release-deferred",
