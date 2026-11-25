@@ -7,24 +7,31 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
 public sealed class GeometryServiceDatumProfiles : IAsyncLifetime, IAsyncDisposable
 {
-    private readonly DatumGridPostgresFixture _withGrid = new();
-    private readonly DatumGridPostgresFixture _withoutGrid = new();
-    private Task? _withGridInitialization;
-    private Task? _withoutGridInitialization;
+    private DatumGridPostgresFixture? _withGrid;
+    private DatumGridPostgresFixture? _withoutGrid;
 
     public Task InitializeAsync() => Task.CompletedTask;
 
     // xUnit runs the cases in this class fixture's test collection serially.
     public async Task<DatumGridPostgresFixture> GetWithGridAsync()
-    {
-        await (_withGridInitialization ??= _withGrid.InitializeAsync(includeNadconGrid: true));
-        return _withGrid;
-    }
+        => _withGrid ??= await CreateProfileAsync(static fixture => fixture.InitializeAsync(includeNadconGrid: true));
 
     public async Task<DatumGridPostgresFixture> GetWithoutGridAsync()
+        => _withoutGrid ??= await CreateProfileAsync(static fixture => fixture.InitializeAsync(includeNadconGrid: false));
+
+    private static async Task<DatumGridPostgresFixture> CreateProfileAsync(Func<DatumGridPostgresFixture, Task> initialize)
     {
-        await (_withoutGridInitialization ??= _withoutGrid.InitializeAsync(includeNadconGrid: false));
-        return _withoutGrid;
+        var fixture = new DatumGridPostgresFixture();
+        try
+        {
+            await initialize(fixture);
+            return fixture;
+        }
+        catch
+        {
+            await fixture.DisposeAsync();
+            throw;
+        }
     }
 
     ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
@@ -33,11 +40,17 @@ public sealed class GeometryServiceDatumProfiles : IAsyncLifetime, IAsyncDisposa
     {
         try
         {
-            await _withGrid.DisposeAsync();
+            if (_withGrid is not null)
+            {
+                await _withGrid.DisposeAsync();
+            }
         }
         finally
         {
-            await _withoutGrid.DisposeAsync();
+            if (_withoutGrid is not null)
+            {
+                await _withoutGrid.DisposeAsync();
+            }
         }
     }
 }
