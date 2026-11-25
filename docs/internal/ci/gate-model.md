@@ -3828,8 +3828,9 @@ The retry test waits for the five-second timer to be registered, verifies the
 first attempt reached the retry delay, and advances virtual time before checking
 that the second suspend attempt succeeds and the reconciliation task has no exception. The server still uses a five-second retry interval.
 
-A paired build-host benchmark used one runner execution per revision. The
-filtered infrastructure cohort had 3,396 passes and five skips on each revision.
+A paired build-host benchmark measured the original virtual-time change
+(`68374d7713`), with one runner execution per revision. The filtered
+infrastructure cohort had 3,396 passes and five skips on each revision.
 The settings writer class used 5.174 and 0.172 summed case seconds before and
 after. Test-command wall time was 179.00 and 163.64 seconds, a difference of 0.26
 runner-minutes for the measured cohort. Full shard timing remains unmeasured.
