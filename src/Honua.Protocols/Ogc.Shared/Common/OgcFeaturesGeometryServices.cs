@@ -53,6 +53,8 @@ internal sealed partial class OgcFeaturesGeometryServices
         public static WkbCreationResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
     }
 
+    private readonly record struct WkbPoint2D(double X, double Y);
+
     public bool TryWriteWkbPoint(Utf8JsonWriter writer, byte[]? wkb, AxisOrder axisOrder)
     {
         if (wkb is null || wkb.Length == 0)
@@ -61,11 +63,13 @@ internal sealed partial class OgcFeaturesGeometryServices
             return true;
         }
 
-        if (_geometryLimits.SimplifyTolerance is > 0 || !TryRead2DWkbPoint(wkb, out var x, out var y))
+        if (_geometryLimits.SimplifyTolerance is > 0 || Read2DWkbPoint(wkb) is not { } point)
         {
             return false;
         }
 
+        var x = point.X;
+        var y = point.Y;
         if (_geometryLimits.MaxCoordinatePrecision >= 0)
         {
             var precision = Math.Clamp(_geometryLimits.MaxCoordinatePrecision, 0, 15);
@@ -85,19 +89,17 @@ internal sealed partial class OgcFeaturesGeometryServices
         return true;
     }
 
-    private static bool TryRead2DWkbPoint(ReadOnlySpan<byte> wkb, out double x, out double y)
+    private static WkbPoint2D? Read2DWkbPoint(ReadOnlySpan<byte> wkb)
     {
-        x = 0;
-        y = 0;
         if (wkb.Length != 21)
         {
-            return false;
+            return null;
         }
 
         var byteOrder = wkb[0];
         if (byteOrder is not (0 or 1))
         {
-            return false;
+            return null;
         }
 
         var isLittleEndian = byteOrder == 1;
@@ -106,16 +108,16 @@ internal sealed partial class OgcFeaturesGeometryServices
             : BinaryPrimitives.ReadUInt32BigEndian(wkb.Slice(1, 4));
         if (typeCode != 1u)
         {
-            return false;
+            return null;
         }
 
-        x = isLittleEndian
+        var x = isLittleEndian
             ? BinaryPrimitives.ReadDoubleLittleEndian(wkb.Slice(5, 8))
             : BinaryPrimitives.ReadDoubleBigEndian(wkb.Slice(5, 8));
-        y = isLittleEndian
+        var y = isLittleEndian
             ? BinaryPrimitives.ReadDoubleLittleEndian(wkb.Slice(13, 8))
             : BinaryPrimitives.ReadDoubleBigEndian(wkb.Slice(13, 8));
-        return double.IsFinite(x) && double.IsFinite(y);
+        return double.IsFinite(x) && double.IsFinite(y) ? new WkbPoint2D(x, y) : null;
     }
 
     public SimpleGeoJsonGeometry? ConvertWkbToSimpleGeometry(byte[]? wkb, AxisOrder axisOrder)

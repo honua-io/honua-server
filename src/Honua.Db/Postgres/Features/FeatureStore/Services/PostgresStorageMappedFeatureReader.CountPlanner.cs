@@ -15,10 +15,22 @@ internal sealed partial class PostgresStorageMappedFeatureReader
 {
     private volatile bool _hasNonPointGeometry;
 
+    private enum CountScope
+    {
+        Standalone,
+        AssociatedFeatureRead
+    }
+
+    private enum CountSpatialPredicate
+    {
+        Default,
+        PointEnvelope
+    }
+
     private readonly record struct CountExecutionOptions(
-        bool IsAssociatedFeatureRead,
+        CountScope Scope,
         CancellationToken CancellationToken,
-        bool UsePointEnvelope = false);
+        CountSpatialPredicate SpatialPredicate = CountSpatialPredicate.Default);
 
     private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query, bool isAssociatedFeatureRead) =>
         _preferSerialSourceSpatialCounts is { } preferSerial
@@ -86,9 +98,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         CountExecutionOptions options)
     {
         var usePointEnvelope = connection.Transaction is null && CanUsePointEnvelopeCountPredicate(query);
+        var initialPredicate = usePointEnvelope ? CountSpatialPredicate.PointEnvelope : CountSpatialPredicate.Default;
         try
         {
-            return await ExecuteCountSqlAsync(connection, query, options with { UsePointEnvelope = usePointEnvelope })
+            return await ExecuteCountSqlAsync(connection, query, options with { SpatialPredicate = initialPredicate })
                 .ConfigureAwait(false);
         }
         catch (PostgresException ex) when (
@@ -97,7 +110,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             IsNonPointGeometryCountError(ex))
         {
             _hasNonPointGeometry = true;
-            return await ExecuteCountSqlAsync(connection, query, options with { UsePointEnvelope = false })
+            return await ExecuteCountSqlAsync(connection, query, options with { SpatialPredicate = CountSpatialPredicate.Default })
                 .ConfigureAwait(false);
         }
     }
@@ -107,9 +120,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         FeatureQuery query,
         CountExecutionOptions options)
     {
-        var sql = BuildCountSql(query, options.UsePointEnvelope);
+        var sql = options.SpatialPredicate == CountSpatialPredicate.PointEnvelope
+            ? BuildPointEnvelopeCountSql(query)
+            : BuildCountSql(query);
         // A caller-owned transaction would retain SET LOCAL beyond this count.
-        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, options.IsAssociatedFeatureRead);
+        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, options.Scope == CountScope.AssociatedFeatureRead);
         var disableJit = ShouldDisableJitForSpatialCount(query);
         if (connection.Transaction is null && (useSerialPlan || disableJit))
         {

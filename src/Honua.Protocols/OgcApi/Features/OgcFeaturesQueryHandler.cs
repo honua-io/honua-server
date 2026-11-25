@@ -434,23 +434,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             else
             {
                 featureResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                if (!CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate))
+                if (!CanUseDirectFeatureWrite(outputFormat, linkTemplate))
                 {
-                    features = featureResult.Value.Items
-                        .Select(feature =>
-                        {
-                            ImmutableArray<Link>? links = linkTemplate?.Build(
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
-                            return ToOgcFeature(
-                                feature,
-                                resource,
-                                outputAxisOrder,
-                                _geometryServices,
-                                projectedProperties,
-                                links,
-                                featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
-                        })
-                        .ToArray();
+                    var fallbackCtx = new DirectFeaturePayloadContext { Resource = resource, AxisOrder = outputAxisOrder, GeometryServices = _geometryServices, ProjectedProperties = projectedProperties, LinkTemplate = linkTemplate, Schema = featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false) };
+                    features = MaterializeDirectFallbackFeatures(featureResult.Value.Items, fallbackCtx);
                 }
             }
             stopwatch.Stop();
@@ -467,12 +454,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                       ?? encodedResult?.HasMoreResults
                                       ?? featureResult?.HasMoreResults
                                       ?? false;
-            var numberReturned = pagedRawPointResult?.Items.Length
-                                 ?? pagedRawResult?.Items.Length
-                                 ?? gmlResult?.Items.Length
-                                 ?? (featureResult.HasValue && CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate)
-                                     ? featureResult.Value.Items.Length
-                                     : features.Length);
+            var directFeatureWrite = featureResult.HasValue && CanUseDirectFeatureWrite(outputFormat, linkTemplate);
+            var numberReturned = pagedRawPointResult?.Items.Length ?? pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? (directFeatureWrite ? featureResult!.Value.Items.Length : features.Length);
             if (gmlResult.HasValue)
             {
                 queryTotalCount = gmlResult.Value.TotalCount;
@@ -526,17 +509,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
-            if (featureResult.HasValue && CanUseDirectFeatureWrite(useNativeGeoJson, outputFormat, linkTemplate))
+            if (featureResult.HasValue && CanUseDirectFeatureWrite(outputFormat, linkTemplate))
             {
-                var payload = CreateDirectFeatureCollectionPayload(
-                    featureResult.Value.Items,
-                    new DirectFeaturePayloadContext(
-                        resource,
-                        outputAxisOrder,
-                        _geometryServices,
-                        projectedProperties,
-                        links,
-                        queryTotalCount));
+                var payload = CreateDirectFeatureCollectionPayload(featureResult.Value.Items, new() { Resource = resource, AxisOrder = outputAxisOrder, GeometryServices = _geometryServices, ProjectedProperties = projectedProperties, Links = links, NumberMatched = queryTotalCount });
                 return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 

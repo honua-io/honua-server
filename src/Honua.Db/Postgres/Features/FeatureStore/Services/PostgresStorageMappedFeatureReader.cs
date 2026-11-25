@@ -205,7 +205,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        var countOptions = new CountExecutionOptions(IsAssociatedFeatureRead: true, cancellationToken);
+        var countOptions = new CountExecutionOptions(CountScope.AssociatedFeatureRead, cancellationToken);
         var totalCount = await ExecuteCountOnConnectionAsync(connection, query, countOptions).ConfigureAwait(false);
         if (!items.IsDefault)
         {
@@ -281,9 +281,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await CountCoreAsync(query, isAssociatedFeatureRead: false, cancellationToken).ConfigureAwait(false);
     }
 
-    private SqlBuilder BuildCountSql(FeatureQuery query, bool usePointEnvelopePredicate = false)
+    private SqlBuilder BuildCountSql(FeatureQuery query)
     {
-        var sql = new SqlBuilder { UsePointEnvelopeCountFilter = usePointEnvelopePredicate };
+        var sql = new SqlBuilder();
         if (!query.Distinct)
         {
             sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
@@ -301,14 +301,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return sql;
     }
 
+    private SqlBuilder BuildPointEnvelopeCountSql(FeatureQuery query)
+    {
+        var sql = new SqlBuilder { UsePointEnvelopeCountFilter = true };
+        sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
+        AppendFilter(sql, query);
+        return sql;
+    }
+
     private async Task<long> CountCoreAsync(
         FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var scope = isAssociatedFeatureRead ? CountScope.AssociatedFeatureRead : CountScope.Standalone;
         return await ExecuteCountOnConnectionAsync(
             connection,
             query,
-            new CountExecutionOptions(isAssociatedFeatureRead, cancellationToken)).ConfigureAwait(false);
+            new CountExecutionOptions(scope, cancellationToken)).ConfigureAwait(false);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(
@@ -452,7 +461,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         await using var session = await OpenFeatureReadSessionAsync(
-            query, new FeatureReadOpenOptions(ProbeLimit: true, AllowSerialPlan: true), cancellationToken).ConfigureAwait(false);
+            query,
+            new FeatureReadOpenOptions(FeatureReadPagingMode.ProbeNextPage, FeatureReadPlanMode.AllowSerial),
+            cancellationToken).ConfigureAwait(false);
         using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
         if (rows.Count == 0)
         {
@@ -471,7 +482,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         await using var session = await OpenFeatureReadSessionAsync(
-            query, new FeatureReadOpenOptions(ProbeLimit: false, AllowSerialPlan: false), cancellationToken).ConfigureAwait(false);
+            query,
+            new FeatureReadOpenOptions(FeatureReadPagingMode.Exact, FeatureReadPlanMode.Default),
+            cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
         var rowContext = new MappedFeatureRowContext
         {
@@ -522,7 +535,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         await using var session = await OpenFeatureReadSessionAsync(
             query,
-            new FeatureReadOpenOptions(ProbeLimit: false, AllowSerialPlan: true, BorrowedConnection: borrowedConnection),
+            new FeatureReadOpenOptions(
+                FeatureReadPagingMode.Exact,
+                FeatureReadPlanMode.AllowSerial,
+                BorrowedConnection: borrowedConnection),
             cancellationToken).ConfigureAwait(false);
         using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
         return rows.ToImmutable(rows.Count);
@@ -834,7 +850,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.SpatialFilter.HasValue && _geometryColumn != null)
         {
-            conditions.Add(BuildSpatialFilter(query, sql));
+            conditions.Add(sql.UsePointEnvelopeCountFilter
+                ? BuildPointEnvelopeCountFilter(query, sql)
+                : BuildSpatialFilter(query, sql));
         }
 
         if (query.TemporalFilter.HasValue)
@@ -1230,11 +1248,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string BuildSpatialFilter(FeatureQuery query, SqlBuilder sql)
     {
-        if (sql.UsePointEnvelopeCountFilter)
-        {
-            return BuildPointEnvelopeCountFilter(query, sql);
-        }
-
         var filter = query.SpatialFilter!.Value;
         var geometryColumn = $"{_geometryColumn}::geometry";
         if (filter.SpatialRelationship == SpatialRelationship.NearestNeighbor)

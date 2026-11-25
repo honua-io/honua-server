@@ -15,33 +15,65 @@ namespace Honua.Protocols.Ogc.Api.Features;
 
 internal sealed partial class OgcFeaturesQueryHandler
 {
-    private readonly record struct DirectFeaturePayloadContext(
-        MetadataV2Object Resource,
-        AxisOrder AxisOrder,
-        OgcFeaturesGeometryServices GeometryServices,
-        ImmutableHashSet<string>? ProjectedProperties,
-        ImmutableArray<Link> Links,
-        long? NumberMatched);
+    private enum DirectPropertyKind
+    {
+        Attribute,
+        ObjectId
+    }
+
+    private sealed class DirectFeaturePayloadContext
+    {
+        public required MetadataV2Object Resource { get; init; }
+        public required AxisOrder AxisOrder { get; init; }
+        public required OgcFeaturesGeometryServices GeometryServices { get; init; }
+        public ImmutableHashSet<string>? ProjectedProperties { get; init; }
+        public ImmutableArray<Link> Links { get; init; }
+        public long? NumberMatched { get; init; }
+        public OgcFeatureLinkTemplate? LinkTemplate { get; init; }
+        public GeoJsonFeatureBaseBuilder.PreparedSchema? Schema { get; init; }
+    }
 
     private readonly record struct DirectPropertyField(
         string Name,
         JsonEncodedText EncodedName,
-        bool IsObjectIdField);
+        DirectPropertyKind Kind);
 
-    private sealed record DirectFeatureWritePlan(
-        GeoJsonFeatureBaseBuilder.PreparedSchema Schema,
-        DirectPropertyField[] Fields,
-        MetadataV2Object Resource,
-        AxisOrder AxisOrder,
-        OgcFeaturesGeometryServices GeometryServices);
+    private sealed class DirectFeatureWritePlan
+    {
+        public required GeoJsonFeatureBaseBuilder.PreparedSchema Schema { get; init; }
+        public required DirectPropertyField[] Fields { get; init; }
+        public required MetadataV2Object Resource { get; init; }
+        public required AxisOrder AxisOrder { get; init; }
+        public required OgcFeaturesGeometryServices GeometryServices { get; init; }
+    }
 
-    private static bool CanUseDirectFeatureWrite(
-        bool useNativeGeoJson,
-        string outputFormat,
-        OgcFeatureLinkTemplate? linkTemplate) =>
-        useNativeGeoJson &&
+    private static bool CanUseDirectFeatureWrite(string outputFormat, OgcFeatureLinkTemplate? linkTemplate) =>
         linkTemplate is null &&
-        !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
+        (string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase));
+
+    private static GeoJsonFeature[] MaterializeDirectFallbackFeatures(
+        ImmutableArray<Feature> items,
+        DirectFeaturePayloadContext context)
+    {
+        var result = new GeoJsonFeature[items.Length];
+        for (var i = 0; i < items.Length; i++)
+        {
+            var feature = items[i];
+            ImmutableArray<Link>? featureLinks = context.LinkTemplate?.Build(
+                OgcFeatureIdentifierResolver.FormatPublicId(feature, context.Resource));
+            result[i] = ToOgcFeature(
+                feature,
+                context.Resource,
+                context.AxisOrder,
+                context.GeometryServices,
+                context.ProjectedProperties,
+                featureLinks,
+                context.Schema);
+        }
+
+        return result;
+    }
 
     private static OgcCollectionPayload CreateDirectFeatureCollectionPayload(
         ImmutableArray<Feature> features,
@@ -86,21 +118,24 @@ internal sealed partial class OgcFeaturesQueryHandler
             }
 
             hasObjectIdField |= isObjectIdField;
-            fields.Add(new DirectPropertyField(fieldName, JsonEncodedText.Encode(fieldName), isObjectIdField));
+            var kind = isObjectIdField ? DirectPropertyKind.ObjectId : DirectPropertyKind.Attribute;
+            fields.Add(new DirectPropertyField(fieldName, JsonEncodedText.Encode(fieldName), kind));
         }
 
         if (includeObjectId && !hasObjectIdField &&
             (hiddenIdName is null || !objectIdFieldName.Equals(hiddenIdName, StringComparison.OrdinalIgnoreCase)))
         {
-            fields.Add(new DirectPropertyField(objectIdFieldName, JsonEncodedText.Encode(objectIdFieldName), true));
+            fields.Add(new DirectPropertyField(objectIdFieldName, JsonEncodedText.Encode(objectIdFieldName), DirectPropertyKind.ObjectId));
         }
 
-        return new DirectFeatureWritePlan(
-            schema,
-            [.. fields],
-            context.Resource,
-            context.AxisOrder,
-            context.GeometryServices);
+        return new DirectFeatureWritePlan
+        {
+            Schema = schema,
+            Fields = [.. fields],
+            Resource = context.Resource,
+            AxisOrder = context.AxisOrder,
+            GeometryServices = context.GeometryServices
+        };
     }
 
     private static void WriteDirectFeature(
@@ -153,7 +188,7 @@ internal sealed partial class OgcFeaturesQueryHandler
                 writer.WritePropertyName(field.EncodedName);
                 WriteDirectValue(writer, GeoJsonFeatureBaseBuilder.CoerceProperty(field.Name, rawValue, plan.Schema));
             }
-            else if (field.IsObjectIdField)
+            else if (field.Kind == DirectPropertyKind.ObjectId)
             {
                 writer.WritePropertyName(field.EncodedName);
                 writer.WriteNumberValue(feature.Id);
