@@ -933,6 +933,11 @@
     ],
     "interop": [
       {
+        "clientLane": "cli-gdal",
+        "protocol": "wcs",
+        "capability": "serve.wcs"
+      },
+      {
         "clientLane": "js",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"

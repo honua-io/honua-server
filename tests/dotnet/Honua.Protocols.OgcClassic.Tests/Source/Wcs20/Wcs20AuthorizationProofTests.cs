@@ -59,7 +59,7 @@ public sealed class Wcs20AuthorizationProofTests : OgcClassicAuthorizationProofT
     [Operation(Operations.SecurityTesting)]
     [Endpoint("GET /ogc/wcs/{serviceId}")]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    public async Task Wcs_GetCoverage_DesktopPathWithoutReadRole_IsRefusedLikeTheServiceRoute()
+    public async Task Wcs_GetCoverage_DesktopPathWithoutReadRole_ReturnsForbiddenLikeTheServiceRoute()
     {
         // The desktop path must enforce the service policy exactly as the
         // canonical service route does: same refusal, no coverage bytes, and the

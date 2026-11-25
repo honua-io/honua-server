@@ -259,6 +259,7 @@ services:
       # read the browser_compat seed: three points in layer 2000.
       HONUA_GDAL_GEOSERVICES_SERVICE: browser_compat
       HONUA_GDAL_GEOSERVICES_LAYER: "2000"
+      HONUA_GDAL_WCS_SERVICE: svc-browser-compat-image
     depends_on:
       honua:
         condition: service_healthy

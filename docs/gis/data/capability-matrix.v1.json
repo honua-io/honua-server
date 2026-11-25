@@ -2360,7 +2360,17 @@
       ],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "cli-gdal",
+          "protocol": "wcs",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": [
         "wcs"
       ]

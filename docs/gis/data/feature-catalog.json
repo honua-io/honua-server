@@ -7665,7 +7665,11 @@
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies",
         "Honua.Server.Tests.DeepHealthEndpointFailureTests.DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase",
-        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady"
+        "Honua.Server.Tests.DeepHealthEndpointTests.DeepHealthEndpoint_DatabaseAndCatalogAvailable_ReturnsUncachedReady",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.ServeErrors_PublicRoutesFailWhileProbesStayHealthy",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.SettingAbsent_FaultIsInert",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_AfterTheRecoveryRestart_ServesNormally",
+        "Honua.Server.Tests.Features.HealthCheck.QualificationFaultPipelineTests.Wedged_DeepProbeAndPublicRoutesFailWhileLoadBalancerProbesStayHealthy"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
@@ -9572,6 +9576,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetCapabilities_EmptyService_RejectsAnonymousAndForbiddenCallers",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsSharedCacheTests.PublicWmsGetMapOnServiceAlias_EmitsSharedTileCacheControl",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctIdentifiersShareResource_PreservesBothNames",
@@ -9988,7 +9993,7 @@
       "protocol": "nested-standard",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20AuthorizationProofTests.Wcs_GetCoverage_DesktopPathWithoutReadRole_IsRefusedLikeTheServiceRoute",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20AuthorizationProofTests.Wcs_GetCoverage_DesktopPathWithoutReadRole_ReturnsForbiddenLikeTheServiceRoute",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_DesktopPathUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_DesktopPath_MatchesServiceRouteDescription",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment",
@@ -13853,7 +13858,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_UnscopedStyle_RendersAtEveryScale",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.Wms_GetMap_Point_MatchesCommittedBaseline",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.Wms_GetMap_Transparent_MatchesCommittedBaseline",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetCapabilities_EmptyService_EnforcesServiceAccess",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetCapabilities_EmptyService_RejectsAnonymousAndForbiddenCallers",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetCapabilities_TenantHiddenService_DeniesOtherwiseAuthorizedViewer",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetFeatureInfo_WithoutReadRole_ReturnsAccessDeniedAndNoAttributes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetMap_WithoutReadRole_ReturnsAccessDeniedAndNoImagery",
