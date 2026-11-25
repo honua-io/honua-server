@@ -89,7 +89,7 @@
       "golden_trace": [
         {
           "tool": "honua_resolve_entity",
-          "arguments": {"query": "Austin Parcels"},
+          "arguments": {"text": "Austin Parcels"},
           "response": {
             "isError": false,
             "structuredContent": {"matches": [{"serviceId": "svc-austin", "serviceLayerIndex": 0}]}
@@ -161,10 +161,10 @@
         },
         {
           "tool": "honua_ops_findings",
-          "arguments": {"severity": "warning"},
+          "arguments": {"severity": "Warning"},
           "response": {
             "isError": false,
-            "structuredContent": {"findings": [{"findingId": "f-101", "severity": "warning"}]}
+            "structuredContent": {"findings": [{"findingId": "f-101", "severity": "Warning"}]}
           }
         },
         {
@@ -288,7 +288,7 @@
         },
         {
           "tool": "honua_solve_route",
-          "arguments": {"stops": [[-97.7431, 30.2649], [-97.7347, 30.2752]]},
+          "arguments": {"stops": [{"lon": -97.7431, "lat": 30.2649}, {"lon": -97.7347, "lat": 30.2752}]},
           "response": {
             "isError": false,
             "structuredContent": {"status": "ok", "distanceMeters": 1820, "durationSeconds": 240}
@@ -320,7 +320,7 @@
         },
         {
           "tool": "honua_plan_analysis",
-          "arguments": {"intentId": "intent-wf-1", "goal": "Buffer wildfire perimeters by 500m"},
+          "arguments": {"intent": "Buffer wildfire perimeters by 500m", "context": {"intentId": "intent-wf-1"}},
           "response": {
             "isError": false,
             "structuredContent": {"planId": "plan-wf-1", "steps": [{"stepId": "s1", "processId": "buffer"}]}
@@ -516,31 +516,40 @@
       "golden_trace": [
         {
           "tool": "honua_studio_create_draft",
-          "arguments": {"title": "Zoning Review Map", "kind": "map"},
+          "arguments": {"packageKey": "zoning-review-map", "family": "map", "schemaVersion": "1.0"},
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 1}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 1}
           }
         },
         {
           "tool": "honua_studio_add_layer",
-          "arguments": {"draftId": "draft-101", "layer": {"id": "parcels-layer", "sourceId": "svc-parcels/0"}},
+          "arguments": {
+            "draftId": "11111111-1111-4111-8111-111111111101",
+            "generation": 1,
+            "layer": {"id": "parcels-layer", "sourceId": "svc-parcels/0"}
+          },
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 2}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 2}
           }
         },
         {
           "tool": "honua_studio_set_layer_style",
-          "arguments": {"draftId": "draft-101", "layerId": "parcels-layer", "styleId": "style_parcels_default"},
+          "arguments": {
+            "draftId": "11111111-1111-4111-8111-111111111101",
+            "generation": 2,
+            "layerId": "parcels-layer",
+            "styleRef": "style_parcels_default"
+          },
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 3}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 3}
           }
         },
         {
           "tool": "honua_studio_validate_draft",
-          "arguments": {"draftId": "draft-101"},
+          "arguments": {"draftId": "11111111-1111-4111-8111-111111111101"},
           "response": {
             "isError": false,
             "structuredContent": {"valid": true, "errors": []}
@@ -551,7 +560,7 @@
     {
       "id": "cart-05",
       "category": "cartography_and_styling",
-      "prompt": "Open Studio draft-101, set the camera view to Austin, add a legend widget, and preview the draft.",
+      "prompt": "Open Studio draft 11111111-1111-4111-8111-111111111101, set the camera view to Austin, add a legend widget, and preview the draft.",
       "required_tools": ["honua_studio_get_draft", "honua_studio_set_view", "honua_studio_add_widget", "honua_studio_preview_draft"],
       "forbidden_tools": ["honua_studio_propose_publication"],
       "expect_refusal": false,
@@ -564,34 +573,42 @@
       "golden_trace": [
         {
           "tool": "honua_studio_get_draft",
-          "arguments": {"draftId": "draft-101"},
+          "arguments": {"draftId": "11111111-1111-4111-8111-111111111101"},
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 3}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 3}
           }
         },
         {
           "tool": "honua_studio_set_view",
-          "arguments": {"draftId": "draft-101", "center": [-97.7431, 30.2672], "zoom": 12},
+          "arguments": {
+            "draftId": "11111111-1111-4111-8111-111111111101",
+            "generation": 3,
+            "view": {"center": [-97.7431, 30.2672], "zoom": 12}
+          },
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 4}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 4}
           }
         },
         {
           "tool": "honua_studio_add_widget",
-          "arguments": {"draftId": "draft-101", "widget": {"id": "w-legend", "kind": "legend"}},
+          "arguments": {
+            "draftId": "11111111-1111-4111-8111-111111111101",
+            "generation": 4,
+            "widget": {"id": "w-legend", "kind": "legend"}
+          },
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "generation": 5}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "generation": 5}
           }
         },
         {
           "tool": "honua_studio_preview_draft",
-          "arguments": {"draftId": "draft-101"},
+          "arguments": {"draftId": "11111111-1111-4111-8111-111111111101"},
           "response": {
             "isError": false,
-            "structuredContent": {"draftId": "draft-101", "status": "ready"}
+            "structuredContent": {"draftId": "11111111-1111-4111-8111-111111111101", "status": "ready"}
           }
         }
       ]
@@ -764,7 +781,7 @@
       "golden_trace": [
         {
           "tool": "honua_studio_validate_draft",
-          "arguments": {"draftId": "draft-101"},
+          "arguments": {"draftId": "11111111-1111-4111-8111-111111111101"},
           "response": {
             "isError": false,
             "structuredContent": {"valid": true, "generation": 5}
@@ -772,15 +789,22 @@
         },
         {
           "tool": "honua_studio_save_version",
-          "arguments": {"draftId": "draft-101", "expectedGeneration": 5, "changeNote": "Added Austin view and legend"},
+          "arguments": {
+            "draftId": "11111111-1111-4111-8111-111111111101",
+            "generation": 5,
+            "changeNote": "Added Austin view and legend"
+          },
           "response": {
             "isError": false,
-            "structuredContent": {"itemId": "item-101", "versionId": "ver-2"}
+            "structuredContent": {
+              "itemId": "22222222-2222-4222-8222-222222222101",
+              "versionId": "ver-2"
+            }
           }
         },
         {
           "tool": "honua_studio_list_versions",
-          "arguments": {"itemId": "item-101"},
+          "arguments": {"itemId": "22222222-2222-4222-8222-222222222101"},
           "response": {
             "isError": false,
             "structuredContent": {"versions": [{"versionId": "ver-2"}, {"versionId": "ver-1"}]}

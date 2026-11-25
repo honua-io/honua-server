@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -19,18 +20,23 @@ if SCRIPT_DIR not in sys.path:
 from mcp_agent_eval_scoring import (
     DEFAULT_TASKS_PATH,
     SCORECARD_SCHEMA,
+    AuthCredentials,
     EvalConfig,
     EvalTask,
     TaskOutcome,
     ToolStep,
+    TraceResult,
     build_scorecard,
     evaluate_trace,
     load_tasks,
 )
 
+MAX_TOOL_LIST_PAGES = 50
+
 __all__ = [
     "DEFAULT_TASKS_PATH",
     "SCORECARD_SCHEMA",
+    "AuthCredentials",
     "DriverAction",
     "DriverTurn",
     "EvalConfig",
@@ -39,10 +45,12 @@ __all__ = [
     "HttpDriverConfig",
     "HttpJsonRequest",
     "HttpModelDriver",
+    "LiveMcpClient",
     "McpJsonRpcClient",
     "ModelDriver",
     "TaskOutcome",
     "ToolStep",
+    "TraceResult",
     "build_scorecard",
     "evaluate_trace",
     "load_tasks",
@@ -127,9 +135,15 @@ class HttpModelDriver(ModelDriver):
 class McpJsonRpcClient:
     """Minimal stdlib MCP JSON-RPC 2.0 Streamable-HTTP client."""
 
-    def __init__(self, mcp_url: str, timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        mcp_url: str,
+        timeout: float = 15.0,
+        auth: AuthCredentials | None = None,
+    ) -> None:
         self._mcp_url = mcp_url
         self._timeout = timeout
+        self._auth = auth or AuthCredentials()
         self._session_id: str | None = None
         self._next_id = 1
 
@@ -145,10 +159,22 @@ class McpJsonRpcClient:
         return body
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """Discover available tools via JSON-RPC tools/list."""
-        body, _ = self._rpc("tools/list", {})
-        tools = (body.get("result") or {}).get("tools")
-        return tools if isinstance(tools, list) else []
+        """Discover all available tools via paginated JSON-RPC tools/list."""
+        collected: list[dict[str, Any]] = []
+        seen_cursors: set[str] = set()
+        cursor: str | None = None
+        for _ in range(MAX_TOOL_LIST_PAGES):
+            body, _ = self._rpc("tools/list", {"cursor": cursor} if cursor else {})
+            result = body.get("result") or {}
+            page = result.get("tools")
+            if isinstance(page, list):
+                collected.extend(page)
+            next_cursor = result.get("nextCursor")
+            if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
+                break
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        return collected
 
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Invoke a tool via JSON-RPC tools/call and return normalized payload."""
@@ -167,10 +193,13 @@ class McpJsonRpcClient:
         req_id = self._next_id
         self._next_id += 1
         payload = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", **self._auth.headers()}
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
         return _post_json(HttpJsonRequest(self._mcp_url, payload, headers, self._timeout))
+
+
+LiveMcpClient = McpJsonRpcClient
 
 
 def _post_json(req: HttpJsonRequest) -> tuple[dict[str, Any], dict[str, str]]:
@@ -188,21 +217,22 @@ def _post_json(req: HttpJsonRequest) -> tuple[dict[str, Any], dict[str, str]]:
             raise RuntimeError(f"HTTP {exc.code} from {req.url}: {raw}") from parse_err
 
 
-def run_live_task(client: McpJsonRpcClient, driver: ModelDriver, task: EvalTask) -> list[ToolStep]:
+def run_live_task(client: McpJsonRpcClient, driver: ModelDriver, task: EvalTask) -> TraceResult:
     """Execute one task over live MCP JSON-RPC using a pluggable ModelDriver."""
     client.initialize()
     available_tools = client.list_tools()
     history: list[ToolStep] = []
+    agent_refused = False
     for _ in range(task.max_tool_calls + 1):
         action = driver.next_action(DriverTurn(task, available_tools, history))
+        if action.refused:
+            agent_refused = True
         if action.done or not action.tool:
-            if action.refused and history:
-                last = history[-1]
-                history[-1] = ToolStep(last.tool, last.arguments, {**last.response, "refused": True})
             break
         response = client.call_tool(action.tool, action.arguments)
-        history.append(ToolStep(action.tool, action.arguments, {**response, "refused": True} if action.refused else response))
-    return history
+        step_resp = {**response, "refused": True} if action.refused else response
+        history.append(ToolStep(action.tool, action.arguments, step_resp))
+    return TraceResult(steps=history, agent_refused=agent_refused)
 
 
 def resolve_driver(config: EvalConfig) -> ModelDriver:
@@ -225,7 +255,10 @@ def run_eval(config: EvalConfig, driver: ModelDriver | None = None) -> dict[str,
         raise ValueError("--mcp-url is required in live-model mode.")
     active_driver = driver or resolve_driver(config)
     outcomes = [
-        evaluate_trace(task, run_live_task(McpJsonRpcClient(config.mcp_url, config.timeout_seconds), active_driver, task))
+        evaluate_trace(
+            task,
+            run_live_task(McpJsonRpcClient(config.mcp_url, config.timeout_seconds, config.auth), active_driver, task),
+        )
         for task in tasks
     ]
     return build_scorecard(config, outcomes)
@@ -240,8 +273,14 @@ def parse_args(argv: list[str] | None = None) -> EvalConfig:
     parser.add_argument("--model", default=None)
     parser.add_argument("--scorecard", type=Path, default=None)
     parser.add_argument("--timeout", type=float, default=15.0)
+    parser.add_argument("--api-key", default=None)
+    parser.add_argument("--bearer-token", default=None)
     ns = parser.parse_args(argv)
-    return EvalConfig(ns.tasks, ns.mode, ns.scorecard, ns.mcp_url, ns.model, ns.timeout)
+    auth = AuthCredentials(
+        api_key=ns.api_key or os.environ.get("HONUA_API_KEY"),
+        bearer_token=ns.bearer_token or os.environ.get("HONUA_BEARER_TOKEN"),
+    )
+    return EvalConfig(ns.tasks, ns.mode, ns.scorecard, ns.mcp_url, ns.model, ns.timeout, auth)
 
 
 def main(argv: list[str] | None = None) -> int:
