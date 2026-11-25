@@ -99,27 +99,41 @@ internal sealed partial class OgcFeaturesQueryHandler
     private static DirectFeatureWritePlan BuildDirectFeatureWritePlan(DirectFeaturePayloadContext context)
     {
         var schema = new GeoJsonFeatureBaseBuilder.PreparedSchema(context.Resource, includeAdditionalAttributes: false);
+        var fields = ResolveDirectPropertyFields(schema, context.ProjectedProperties);
+        return new DirectFeatureWritePlan
+        {
+            Schema = schema,
+            Fields = fields,
+            Resource = context.Resource,
+            AxisOrder = context.AxisOrder,
+            GeometryServices = context.GeometryServices
+        };
+    }
+
+    private static DirectPropertyField[] ResolveDirectPropertyFields(
+        GeoJsonFeatureBaseBuilder.PreparedSchema schema,
+        ImmutableHashSet<string>? projectedProperties)
+    {
         var objectIdFieldName = schema.ObjectIdFieldName;
         var includeObjectId = !objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-            (context.ProjectedProperties is null || context.ProjectedProperties.Contains(objectIdFieldName));
+            (projectedProperties is null || projectedProperties.Contains(objectIdFieldName));
         var hiddenIdName = schema.HiddenPrimaryIdFieldName;
-
         var fields = new List<DirectPropertyField>(schema.VisibleFields.Length + 1);
         var hasObjectIdField = false;
+
         foreach (var field in schema.VisibleFields)
         {
-            var fieldName = field.Name;
-            var isObjectIdField = fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
+            var isObjectIdField = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
             if ((isObjectIdField && !includeObjectId) ||
-                (hiddenIdName is not null && fieldName.Equals(hiddenIdName, StringComparison.OrdinalIgnoreCase)) ||
-                (context.ProjectedProperties is not null && !context.ProjectedProperties.Contains(fieldName)))
+                (hiddenIdName is not null && field.Name.Equals(hiddenIdName, StringComparison.OrdinalIgnoreCase)) ||
+                (projectedProperties is not null && !projectedProperties.Contains(field.Name)))
             {
                 continue;
             }
 
             hasObjectIdField |= isObjectIdField;
             var kind = isObjectIdField ? DirectPropertyKind.ObjectId : DirectPropertyKind.Attribute;
-            fields.Add(new DirectPropertyField(fieldName, JsonEncodedText.Encode(fieldName), kind));
+            fields.Add(new DirectPropertyField(field.Name, JsonEncodedText.Encode(field.Name), kind));
         }
 
         if (includeObjectId && !hasObjectIdField &&
@@ -128,14 +142,7 @@ internal sealed partial class OgcFeaturesQueryHandler
             fields.Add(new DirectPropertyField(objectIdFieldName, JsonEncodedText.Encode(objectIdFieldName), DirectPropertyKind.ObjectId));
         }
 
-        return new DirectFeatureWritePlan
-        {
-            Schema = schema,
-            Fields = [.. fields],
-            Resource = context.Resource,
-            AxisOrder = context.AxisOrder,
-            GeometryServices = context.GeometryServices
-        };
+        return [.. fields];
     }
 
     private static void WriteDirectFeature(
