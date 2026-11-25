@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20261125T180226Z",
+  "run_date": "2026-11-25T18:02:26.618259+00:00",
+  "server_version": "693214ef504a5d21b1524245f815c36d6e28fecb",
+  "client_lane": "geoservices-rest-stub",
+  "client_version": "stub-1.0",
+  "protocol": "geocode-server",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-GEOCODE-01",
+      "status": "pass",
+      "duration_ms": 11,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

@@ -18,7 +18,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-11-25T06:59:10.470000Z",
+    "anchor": "2026-11-25T18:06:46.547678Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -1692,7 +1692,7 @@
           "freshness": {
             "state": "fresh",
             "ageDays": 0,
-            "runDate": "2026-11-25T06:59:10.470000Z"
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         }
       ],
@@ -1745,8 +1745,8 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 1,
-            "runDate": "2026-11-23T07:15:30.096120Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.323094Z"
           }
         },
         {
@@ -1799,9 +1799,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "geocode-server",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.618259Z"
           }
         }
       ],
@@ -1833,9 +1833,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "geometry-service",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.643334Z"
           }
         }
       ],
@@ -1870,9 +1870,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "image-server",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.757828Z"
           }
         }
       ],
@@ -1926,8 +1926,8 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 1,
-            "runDate": "2026-11-23T07:15:30.298080Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.420475Z"
           }
         },
         {
@@ -1935,7 +1935,7 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "fresh",
-            "ageDays": 1,
+            "ageDays": 2,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         },
@@ -1980,9 +1980,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "geoservices-root",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.762346Z"
           }
         }
       ],
@@ -2016,9 +2016,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "vector-tile-server",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.866594Z"
           }
         }
       ],
@@ -2068,9 +2068,9 @@
           "clientLane": "geoservices-rest-stub",
           "protocol": "i3s",
           "freshness": {
-            "state": "unknown",
-            "ageDays": null,
-            "runDate": null
+            "state": "fresh",
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:02:26.966605Z"
           }
         }
       ],
@@ -2196,8 +2196,8 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:39.990000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:40.289000Z"
           }
         },
         {
@@ -2214,7 +2214,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "fresh",
-            "ageDays": 1,
+            "ageDays": 2,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         },
@@ -2255,8 +2255,8 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:39.755000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:39.979000Z"
           }
         },
         {
@@ -2264,8 +2264,8 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:53.364000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         }
       ],
@@ -2293,7 +2293,7 @@
           "freshness": {
             "state": "fresh",
             "ageDays": 0,
-            "runDate": "2026-11-25T05:36:49.261006Z"
+            "runDate": "2026-11-25T18:06:46.546858Z"
           }
         }
       ],
@@ -2328,8 +2328,8 @@
           "protocol": "ogc-tiles",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:53.364000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         }
       ],
@@ -2375,7 +2375,7 @@
           "freshness": {
             "state": "fresh",
             "ageDays": 0,
-            "runDate": "2026-11-25T04:12:19.678816Z"
+            "runDate": "2026-11-25T18:01:29.235505Z"
           }
         }
       ],
@@ -2403,7 +2403,7 @@
           "freshness": {
             "state": "fresh",
             "ageDays": 0,
-            "runDate": "2026-11-25T06:52:57.496000Z"
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         }
       ],
@@ -2430,8 +2430,8 @@
           "protocol": "mvt",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:52.394000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:45.631000Z"
           }
         }
       ],
@@ -2460,7 +2460,17 @@
       ],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "cli",
+          "protocol": "wcs",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": [
         "wcs"
       ]
@@ -2508,8 +2518,8 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:40.991000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:41.191000Z"
           }
         },
         {
@@ -2526,7 +2536,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "fresh",
-            "ageDays": 1,
+            "ageDays": 2,
             "runDate": "2026-11-23T11:04:36.127067Z"
           }
         }
@@ -2565,8 +2575,8 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:39.001000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:39.181000Z"
           }
         },
         {
@@ -2574,8 +2584,8 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:53.364000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         },
         {
@@ -2624,8 +2634,8 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:37.557000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:37.501000Z"
           }
         },
         {
@@ -2633,8 +2643,8 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 201,
-            "runDate": "2026-05-07T14:05:53.364000Z"
+            "ageDays": 0,
+            "runDate": "2026-11-25T18:00:43.161000Z"
           }
         },
         {

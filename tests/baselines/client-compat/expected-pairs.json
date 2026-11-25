@@ -132,6 +132,36 @@
     {
       "client_lane": "py-pystac",
       "protocol": "stac"
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "geocode-server",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "geometry-service",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "geoservices-root",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "i3s",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "image-server",
+      "nightly_only": true
+    },
+    {
+      "client_lane": "geoservices-rest-stub",
+      "protocol": "vector-tile-server",
+      "nightly_only": true
     }
   ]
 }

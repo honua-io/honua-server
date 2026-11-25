@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
-  "run_id": "20261116T165908Z",
-  "run_date": "2026-11-16T16:59:08.963573+00:00",
+  "run_id": "20261125T180646Z",
+  "run_date": "2026-11-25T18:06:46.547678+00:00",
   "server_version": "2026.1.1",
-  "server_commit": "95de72df386e4cb9ed9e656c017a0e66292614f3",
+  "server_commit": "693214ef504a5d21b1524245f815c36d6e28fecb",
   "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
   "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "py-owslib",
@@ -147,7 +147,7 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 43,
+      "duration_ms": 32,
       "measured_count": null,
       "measured_delta": null,
       "notes": "TILEMATRIXSET=WebMercatorQuad (SupportedCRS urn:ogc:def:crs:EPSG:6.18:3:3857) is carried verbatim in the request OWSLib builds and served at the declared tile size; a column index that is only valid in the WorldCRS84Quad grid is rejected as TileOutOfRange, so the requested grid geometry really is the one being applied.",
@@ -157,7 +157,7 @@
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 3,
+      "duration_ms": 2,
       "measured_count": null,
       "measured_delta": null,
       "notes": "An unknown LAYER produced an ows:ExceptionReport with a machine-readable exceptionCode, which OWSLib surfaces as owslib.util.ServiceException rather than handing the caller a broken image.",
@@ -177,7 +177,7 @@
     {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 37,
+      "duration_ms": 28,
       "measured_count": 546,
       "measured_delta": null,
       "notes": "GetTile(WebMercatorQuad/5/12/5) contained 66 authored-style pixels at independent positions in a decodable 256x256 PNG (546 bytes) whose dimensions match the TileWidth/TileHeight the capabilities declare. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",

@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260507T140536Z",
-  "run_date": "2026-05-07T14:05:39.990Z",
-  "server_version": "unknown",
+  "run_id": "20261125T180038Z",
+  "run_date": "2026-11-25T18:00:40.289Z",
+  "server_version": "693214ef504a5d21b1524245f815c36d6e28fecb",
   "client_lane": "js",
   "client_version": "10.8.0",
   "protocol": "ogc-features",
@@ -11,7 +11,7 @@
     {
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
-      "duration_ms": 6,
+      "duration_ms": 14,
       "measured_count": null,
       "measured_delta": null,
       "notes": "OGC Features landing page returns links array",
@@ -47,7 +47,7 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 7,
+      "duration_ms": 11,
       "measured_count": 21,
       "measured_delta": null,
       "notes": "21 conformance classes returned",
@@ -56,7 +56,7 @@
     {
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
-      "duration_ms": 16,
+      "duration_ms": 17,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Collection '2000' metadata retrieved",
@@ -65,7 +65,7 @@
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
-      "duration_ms": 15,
+      "duration_ms": 22,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Queryables JSON Schema returned",
@@ -101,16 +101,16 @@
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 9,
+      "duration_ms": 8,
       "measured_count": 2,
       "measured_delta": null,
-      "notes": "limit=2 honoured",
+      "notes": "Populated configured fixture returned exactly2 unique identified features for limit=2",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 12,
+      "duration_ms": 4,
       "measured_count": 2,
       "measured_delta": null,
       "notes": "Two nonempty2-feature pages have unique IDs and zero overlap at offset=2",
@@ -237,7 +237,7 @@
     {
       "test_case_id": "JS-EXT-OL-ITEMS-01",
       "status": "pass",
-      "duration_ms": 69,
+      "duration_ms": 70,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "3 features returned (unfiltered listing)",
@@ -246,7 +246,7 @@
     {
       "test_case_id": "JS-EXT-OL-GEOJSON-01",
       "status": "pass",
-      "duration_ms": 1,
+      "duration_ms": 2,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "ol/format/GeoJSON parsed 3 features, 3 with geometry",
@@ -255,10 +255,10 @@
     {
       "test_case_id": "JS-EXT-OL-GEOJSON-02",
       "status": "pass",
-      "duration_ms": 73,
+      "duration_ms": 26,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Single item '11' fetched and parsed by ol/format/GeoJSON",
+      "notes": "Single item '9204' fetched and parsed by ol/format/GeoJSON",
       "evidence_ref": ""
     },
     {
@@ -273,7 +273,7 @@
     {
       "test_case_id": "JS-EXT-OL-ITEMTYPE-01",
       "status": "pass",
-      "duration_ms": 3,
+      "duration_ms": 4,
       "measured_count": null,
       "measured_delta": null,
       "notes": "itemType: feature (not a geometry type signal per OGC spec)",
