@@ -201,20 +201,8 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
         // The same signed subject owns the artifact and holds the admin role in
         // every case. Only OAuth scope narrowing distinguishes these outcomes.
         var token = CreateToken(scope);
-        await using var services = _fixture.Services.CreateAsyncScope();
-        var context = new DefaultHttpContext { RequestServices = services.ServiceProvider };
-        context.Connection.RemoteIpAddress = IPAddress.Loopback;
-        context.Request.Path = "/mcp";
-        context.Request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token).ToString();
-        var owner = await context.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme);
-        owner.Succeeded.Should().BeTrue();
-        context.User = owner.Principal!;
-        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
-            services.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
-        await tenantMiddleware.InvokeAsync(context);
         var bytes = new byte[] { 137, 80, 78, 71 };
-        var store = services.ServiceProvider.GetRequiredService<ITemporaryFileService>();
-        var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: context.User);
+        var uri = await StoreBearerArtifactAsync(token, bytes);
         var alias = TemporaryFileResource.UriPrefix + uri[(uri.LastIndexOf('/') + 1)..];
         foreach (var resourceUri in new[] { uri, alias })
         {
@@ -236,6 +224,23 @@ public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTest
                     .GetString().Should().Be("insufficient_scope");
             }
         }
+    }
+
+    private async Task<string> StoreBearerArtifactAsync(string token, byte[] bytes)
+    {
+        await using var services = _fixture.Services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = services.ServiceProvider };
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token).ToString();
+        var owner = await context.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme);
+        owner.Succeeded.Should().BeTrue();
+        context.User = owner.Principal!;
+        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            services.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
+        await tenantMiddleware.InvokeAsync(context);
+        var store = services.ServiceProvider.GetRequiredService<ITemporaryFileService>();
+        return await store.StoreTemporaryFileAsync(bytes, "image/png", principal: context.User);
     }
 
     private static bool IsToolError(JsonElement result)
