@@ -63,6 +63,10 @@ internal sealed class TiffIfdParser
 
             // BigTIFF: bytes 4-5 = offset byte size (must be 8), 6-7 = always 0
             firstIfdOffset = ReadInt64(header, 8, isLittleEndian);
+            if (firstIfdOffset < 0)
+            {
+                throw new InvalidDataException("BigTIFF header declares a negative IFD offset.");
+            }
         }
         else
         {
@@ -98,13 +102,18 @@ internal sealed class TiffIfdParser
             dataStart = 2;
         }
 
-        if (entryCount > MaxIfdEntryCount)
+        if (entryCount is < 0 or > MaxIfdEntryCount)
         {
-            throw new InvalidDataException($"IFD entry count {entryCount} exceeds maximum.");
+            throw new InvalidDataException($"IFD entry count {entryCount} is outside the supported range.");
         }
 
         var entrySize = _isBigTiff ? TiffConstants.BigTiffIfdEntrySize : TiffConstants.ClassicIfdEntrySize;
         var entriesEnd = dataStart + (int)entryCount * entrySize;
+        if (ifdData.Length < entriesEnd)
+        {
+            throw new InvalidDataException($"Buffer too small for {entryCount} TIFF IFD entries.");
+        }
+
         var entries = new IfdEntry[(int)entryCount];
 
         for (var i = 0; i < (int)entryCount; i++)
@@ -155,8 +164,9 @@ internal sealed class TiffIfdParser
 
     public long[] ReadLongArray(ReadOnlySpan<byte> data, int count, ushort type)
     {
-        var result = new long[count];
         var typeSize = TiffConstants.GetTypeSize(type);
+        ValidateArrayBounds(data.Length, count, typeSize);
+        var result = new long[count];
 
         for (var i = 0; i < count; i++)
         {
@@ -176,8 +186,9 @@ internal sealed class TiffIfdParser
 
     public int[] ReadIntArray(ReadOnlySpan<byte> data, int count, ushort type)
     {
-        var result = new int[count];
         var typeSize = TiffConstants.GetTypeSize(type);
+        ValidateArrayBounds(data.Length, count, typeSize);
+        var result = new int[count];
 
         for (var i = 0; i < count; i++)
         {
@@ -187,12 +198,32 @@ internal sealed class TiffIfdParser
                 TiffConstants.TypeByte or TiffConstants.TypeAscii or TiffConstants.TypeUndefined => data[pos],
                 TiffConstants.TypeShort => ReadUInt16(data, pos, _isLittleEndian),
                 TiffConstants.TypeLong => (int)ReadUInt32(data, pos, _isLittleEndian),
-                TiffConstants.TypeLong8 => checked((int)ReadInt64(data, pos, _isLittleEndian)),
+                TiffConstants.TypeLong8 => ReadBoundedInt32FromInt64(data, pos),
                 _ => (int)ReadUInt32(data, pos, _isLittleEndian)
             };
         }
 
         return result;
+    }
+
+    private int ReadBoundedInt32FromInt64(ReadOnlySpan<byte> data, int pos)
+    {
+        var value = ReadInt64(data, pos, _isLittleEndian);
+        if (value is < int.MinValue or > int.MaxValue)
+        {
+            throw new InvalidDataException($"TIFF LONG8 array element {value} is outside the 32-bit integer range.");
+        }
+
+        return (int)value;
+    }
+
+    private static void ValidateArrayBounds(int dataLength, int count, int typeSize)
+    {
+        if (count < 0 || (long)count * typeSize > dataLength)
+        {
+            throw new InvalidDataException(
+                $"TIFF array requires {(long)count * typeSize} bytes, exceeding the {dataLength}-byte buffer.");
+        }
     }
 
     public long[] ReadInlineLongArray(long valueOrOffset, int count, ushort type)
@@ -228,10 +259,15 @@ internal sealed class TiffIfdParser
             valueOrOffset = ReadUInt32(data, offset + 8, _isLittleEndian);
         }
 
+        if (count < 0)
+        {
+            throw new InvalidDataException($"TIFF IFD entry (tag {tag}) declares negative count {count}.");
+        }
+
         // For classic TIFF, if the value fits in 4 bytes, it's inline
         var typeSize = TiffConstants.GetTypeSize(type);
-        var totalSize = count * typeSize;
-        var isInline = _isBigTiff ? totalSize <= 8 : totalSize <= 4;
+        var inlineLimit = _isBigTiff ? 8L : 4L;
+        var isInline = count <= inlineLimit / typeSize;
 
         // For inline values, re-read according to the field type so that
         // left-justified SHORT values parse correctly in big-endian TIFFs.

@@ -11,6 +11,7 @@ public static class WkbSridNormalizer
     private const uint EwkbMFlag = 0x40000000;
     private const uint EwkbSridFlag = 0x20000000;
     private const uint EwkbFlagMask = EwkbZFlag | EwkbMFlag | EwkbSridFlag;
+    private const int DefaultMaxGeometryDepth = 128;
 
     public static byte[] RemoveEmbeddedSrid(byte[] wkb)
     {
@@ -84,7 +85,7 @@ public static class WkbSridNormalizer
         ref bool hasM,
         uint? expectedGeometryType = null,
         int depth = 0,
-        int maximumDepth = int.MaxValue)
+        int maximumDepth = DefaultMaxGeometryDepth)
     {
         if (depth >= maximumDepth ||
             !TryReadByteOrder(input, ref offset, out var littleEndian) ||

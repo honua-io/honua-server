@@ -9,11 +9,12 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishServiceTool : IMcpTool
+internal sealed class PublishServiceTool : IMcpTool, IMcpInputRequiredTool
 {
     public const string ToolName = "honua_publish_service";
 
@@ -30,6 +31,8 @@ internal sealed class PublishServiceTool : IMcpTool
     public string Name => ToolName;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval;
 
     public McpToolDescriptor Describe() => new()
     {
@@ -59,6 +62,16 @@ internal sealed class PublishServiceTool : IMcpTool
             .EnsureAuthorizedAndApprovedAsync(httpContext, principal, cancellationToken)
             .ConfigureAwait(false);
 
+        var requester = new ApprovalRequester(PublishOperationId, McpAuthorizationHelper.ResolveActorId(principal))
+        {
+            OnCompleted = (operation, _) => Task.FromResult(PublishResponse(operation)),
+            OnRunning = PublishResponse,
+        };
+        if (await ApprovalContinuation.TryResumeAsync(httpContext, requester, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
         {
@@ -67,7 +80,17 @@ internal sealed class PublishServiceTool : IMcpTool
         }
 
         var request = BuildRequest(argument);
-        var context = new OperationPolicyContext
+        var context = PolicyContext(httpContext, authorizationOutcome);
+
+        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+
+        return ApprovalContinuation.TryRequest(httpContext, handle) ?? PublishResponse(handle);
+    }
+
+    internal static OperationPolicyContext PolicyContext(HttpContext httpContext, string authorizationOutcome)
+    {
+        var principal = httpContext.User;
+        return new OperationPolicyContext
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
@@ -78,10 +101,6 @@ internal sealed class PublishServiceTool : IMcpTool
             RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
                 .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
-
-        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
-
-        return McpToolHelpers.SuccessResult(Project(handle), McpJsonContext.Default.McpPublishServiceOutput);
     }
 
     private static OperationRequest BuildRequest(McpPublishServiceArgument argument)
@@ -131,6 +150,9 @@ internal sealed class PublishServiceTool : IMcpTool
             Parameters = parameters,
         };
     }
+
+    private static McpToolsCallResult PublishResponse(OperationHandle handle)
+        => McpToolHelpers.SuccessResult(Project(handle), McpJsonContext.Default.McpPublishServiceOutput);
 
     private static McpPublishServiceOutput Project(OperationHandle handle)
     {

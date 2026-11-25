@@ -140,13 +140,16 @@ internal static class PMTilesDirectory
     {
         var decoder = new DirectoryDecoder(data);
         var numEntries = decoder.ReadEntryCount();
-        var entries = new PMTilesEntry[numEntries];
+        if (numEntries == 0)
+        {
+            return [];
+        }
 
+        var entries = new PMTilesEntry[numEntries];
         decoder.ReadTileIds(entries);
         decoder.ReadRunLengths(entries);
         decoder.ReadLengths(entries);
         decoder.ReadOffsets(entries);
-
         return entries;
     }
 
@@ -187,7 +190,13 @@ internal static class PMTilesDirectory
             var lastTileId = 0UL;
             for (var i = 0; i < entries.Length; i++)
             {
-                lastTileId += ReadVarint();
+                var delta = ReadVarint();
+                if (delta > ulong.MaxValue - lastTileId)
+                {
+                    throw new InvalidDataException("PMTiles tile ID delta overflows 64-bit unsigned integer.");
+                }
+
+                lastTileId += delta;
                 entries[i] = new PMTilesEntry(lastTileId, 0, 0, 0);
             }
         }
@@ -216,16 +225,30 @@ internal static class PMTilesDirectory
             for (var i = 0; i < entries.Length; i++)
             {
                 var v = ReadVarint();
-                if (v == 0 && i == 0)
-                {
-                    throw new InvalidDataException("First PMTiles directory entry cannot use contiguous offset encoding.");
-                }
-
-                var offset = v == 0
-                    ? entries[i - 1].Offset + entries[i - 1].Length
-                    : v - 1;
+                var offset = ResolveEntryOffset(entries, i, v);
                 entries[i] = entries[i] with { Offset = offset };
             }
+        }
+
+        private static ulong ResolveEntryOffset(PMTilesEntry[] entries, int index, ulong encodedValue)
+        {
+            if (encodedValue != 0)
+            {
+                return encodedValue - 1;
+            }
+
+            if (index == 0)
+            {
+                throw new InvalidDataException("First PMTiles directory entry cannot use contiguous offset encoding.");
+            }
+
+            var previous = entries[index - 1];
+            if (previous.Offset > ulong.MaxValue - previous.Length)
+            {
+                throw new InvalidDataException("PMTiles contiguous entry offset overflows 64-bit unsigned integer.");
+            }
+
+            return previous.Offset + previous.Length;
         }
 
         private uint ReadUInt32(string overflowMessage)
@@ -325,13 +348,13 @@ internal static class PMTilesDirectory
         int bytesRead;
         while ((bytesRead = gzip.Read(buffer, 0, buffer.Length)) > 0)
         {
-            totalBytes += bytesRead;
-            if (totalBytes > maxDecompressedBytes)
+            if (bytesRead > maxDecompressedBytes - totalBytes)
             {
                 throw new InvalidDataException(
                     $"Decompressed PMTiles directory exceeds maximum allowed size of {maxDecompressedBytes} bytes.");
             }
 
+            totalBytes += bytesRead;
             output.Write(buffer, 0, bytesRead);
         }
 

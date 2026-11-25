@@ -53,9 +53,10 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend
                 return;
             }
 
+            var bounded = line.Length > MaxTailChars ? line[^MaxTailChars..] : line;
             lock (_sync)
             {
-                _tail.Enqueue(line);
+                _tail.Enqueue(bounded);
                 while (_tail.Count > MaxTailLines)
                 {
                     _tail.Dequeue();

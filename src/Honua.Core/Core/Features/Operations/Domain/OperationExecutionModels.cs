@@ -18,6 +18,11 @@ public sealed record OperationRequest
 
     [JsonIgnore]
     public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
+
+    // Set by the result publisher after it resolves the caller's completed job and selected artifact.
+    [JsonIgnore]
+    public PublishResultAttribution? VerifiedPublishResultAttribution { get; init; }
+
     public required string OperationId { get; init; }
 
     public IReadOnlyDictionary<string, string?> Parameters { get; init; } =
@@ -36,6 +41,12 @@ public sealed record OperationRequest
     // Approval-payload secret references are resolved only by the approved REST executor and are never part of the public request.
     public IReadOnlyDictionary<string, OperationSecretReference> SecretParameters { get; init; } =
         new Dictionary<string, OperationSecretReference>(StringComparer.Ordinal);
+}
+
+public sealed record PublishResultAttribution(string SourceJobId, string ArtifactId)
+{
+    public const string SourceJobDetailKey = "publishResultSourceJobId";
+    public const string ArtifactDetailKey = "publishResultArtifactId";
 }
 
 public sealed record VerifiedCommittedSinkPublication

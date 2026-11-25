@@ -34,6 +34,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
         // Step 2: Walk IFD chain — each IFD represents one resolution level
         var overviewLevels = new List<CogOverviewLevel>();
+        var visitedOffsets = new HashSet<long>();
         var currentOffset = firstIfdOffset;
         var levelIndex = 0;
 
@@ -56,6 +57,11 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
+            if (!visitedOffsets.Add(currentOffset))
+            {
+                throw new InvalidDataException($"Cyclic TIFF IFD offset {currentOffset} detected.");
+            }
+
             // Read the IFD — estimate 100 entries initially
             var ifdReadSize = parser.CalculateIfdReadSize(EstimatedIfdEntries);
             byte[] ifdBytes;
@@ -112,7 +118,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         planarConfiguration = (int)entry.ValueOrOffset;
                         break;
                     case 42113 when levelIndex == 0: // GDAL_NODATA
-                        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128)
+                        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128 || (!entry.IsInline && entry.ValueOrOffset < 0))
                         {
                             throw new InvalidDataException("Invalid COG nodata tag.");
                         }
@@ -363,7 +369,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
     {
         if (entry.Type is not (TiffConstants.TypeUndefined or TiffConstants.TypeByte)
-            || entry.Count is < 4 or > JpegTileAssembler.MaxJpegTablesBytes)
+            || entry.Count is < 4 or > JpegTileAssembler.MaxJpegTablesBytes
+            || (!entry.IsInline && entry.ValueOrOffset < 0))
         {
             throw new InvalidDataException(
                 $"COG JPEGTables must hold 4-{JpegTileAssembler.MaxJpegTablesBytes} UNDEFINED bytes.");
@@ -384,6 +391,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     // File-controlled IFD sizes are rejected before they can drive an unbounded range read.
     private static int GetValidatedExternalArrayByteCount(IfdEntry entry)
     {
+        if (entry.ValueOrOffset < 0)
+        {
+            throw new InvalidDataException(
+                $"TIFF IFD entry (tag {entry.Tag}) declares a negative external offset {entry.ValueOrOffset}.");
+        }
+
         if (entry.Count is <= 0 or > MaxExternalArrayElements)
         {
             throw new InvalidDataException(
@@ -410,6 +423,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
         geoKeyData = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        if (geoKeyData.Length < 8)
+        {
+            throw new InvalidDataException("COG GeoKeyDirectoryTag data is truncated.");
+        }
 
         // GeoKey directory: header (4 shorts) + entries (4 shorts each)
         // Each entry: KeyID, TIFFTagLocation, Count, Value_Offset
@@ -471,6 +488,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        if (data.Length < 40)
+        {
+            throw new InvalidDataException("COG ModelTiepointTag data is truncated.");
+        }
 
         // Tiepoint: I, J, K, X, Y, Z — we want X (index 3) and Y (index 4)
         var x = ReadDouble(data, 24, parser.IsLittleEndian);
@@ -524,6 +545,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        if (data.Length < 16)
+        {
+            throw new InvalidDataException("COG ModelPixelScaleTag data is truncated.");
+        }
 
         var scaleX = ReadDouble(data, 0, parser.IsLittleEndian);
         var scaleY = ReadDouble(data, 8, parser.IsLittleEndian);

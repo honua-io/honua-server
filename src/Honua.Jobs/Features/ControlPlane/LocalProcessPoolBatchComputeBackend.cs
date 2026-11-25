@@ -18,6 +18,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     internal const string LaunchedMarkerPrefix = "local-process:";
 
     private const int MaxTailLines = 50;
+    private const int MaxTailChars = 500;
 
     private const int MaxRetainedUnobservedOutcomes = 10_000;
 

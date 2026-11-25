@@ -39,7 +39,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
             return GeometryValidationResult.NullGeometry(_options.AllowNullGeometry);
         }
 
-        // Check WKB size limit
         var maxWkbSize = Math.Min(_options.MaxWkbSize, _geometryLimits.MaxGeometrySize);
         if (wkb.Length > maxWkbSize)
         {
@@ -65,6 +64,12 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
         }
 
         var state = scanner.State;
+        if (state.HasNonFiniteCoordinate)
+        {
+            return GeometryValidationResult.Failure(
+                ValidationErrorCode.InvalidCoordinates,
+                "Geometry contains non-finite coordinates.");
+        }
 
         // Count vertices
         var maxVertices = Math.Min(_options.MaxVertices, _geometryLimits.MaxVerticesPerGeometry);

@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 440,
-      "provingTestCount": 2085,
+      "provingTestCount": 2112,
       "maturity": {
         "implemented": 438,
         "experimental": 2
@@ -979,7 +979,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 66,
+      "provingTestCount": 68,
       "maturity": {
         "implemented": 12
       },
@@ -1159,7 +1159,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 17,
-      "provingTestCount": 39,
+      "provingTestCount": 40,
       "maturity": {
         "implemented": 17
       },
@@ -1355,7 +1355,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 13,
-      "provingTestCount": 29,
+      "provingTestCount": 30,
       "maturity": {
         "implemented": 13
       },
@@ -1814,7 +1814,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 164,
+      "provingTestCount": 165,
       "maturity": {
         "implemented": 48
       },
@@ -2360,7 +2360,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 171,
+      "provingTestCount": 173,
       "maturity": {
         "implemented": 11
       },
@@ -2460,7 +2460,17 @@
       ],
       "parity": [],
       "geoservicesAssess": [],
-      "interop": [],
+      "interop": [
+        {
+          "clientLane": "cli",
+          "protocol": "wcs",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
+        }
+      ],
       "geobench": [
         "wcs"
       ]
@@ -2543,7 +2553,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 33,
+      "provingTestCount": 34,
       "maturity": {
         "implemented": 1
       },
