@@ -244,7 +244,7 @@ public sealed class GeocodingEntitlementGateTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AnonymousCallerWithoutEntitlement_DoesNotAdvertiseBatch()
     {
-        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: null);
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Community");
 
         Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
@@ -263,7 +263,7 @@ public sealed class GeocodingEntitlementGateTests
         Assert.True(locatorProperties.TryGetProperty("MaxBatchSize", out _));
     }
 
-    private static async Task<JsonElement> GetAnonymousLocatorPropertiesAsync(string? devGrantEdition)
+    private static async Task<JsonElement> GetAnonymousLocatorPropertiesAsync(string devGrantEdition)
     {
         using var factory = CreateFactory(devGrantEdition);
         using var client = factory.CreateClient();
@@ -302,6 +302,7 @@ public sealed class GeocodingEntitlementGateTests
             TestWebApplicationFactory.ConfigureForTests(builder);
 
             builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Licensing:Mode", "Enabled");
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>

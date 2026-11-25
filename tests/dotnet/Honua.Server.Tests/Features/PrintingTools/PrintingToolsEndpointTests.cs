@@ -115,7 +115,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
     public async Task Execute_AnonymousPdfRequestWithoutGrant_RequiresPdfEntitlement()
     {
-        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "");
+        var fixture = CreateAnonymousPdfFixture(devGrantEdition: "Community");
         try
         {
             await fixture.InitializeAsync();
@@ -142,7 +142,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
             using var response = await RequestPdfAsync(fixture.Client);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
+            Assert.Equal("application/pdf", response.Content.Headers.ContentType?.MediaType);
             var bytes = await response.Content.ReadAsByteArrayAsync();
             bytes.Should().StartWith("%PDF-"u8.ToArray());
         }
@@ -155,6 +155,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
     private static WebAppFixture CreateAnonymousPdfFixture(string devGrantEdition)
         => new WebAppFixture().ConfigureWebHost(builder =>
             builder.UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("Licensing:Mode", "Enabled")
                 .UseSetting("Licensing:DevGrantEdition", devGrantEdition));
 
     private static async Task<HttpResponseMessage> RequestPdfAsync(HttpClient client)
