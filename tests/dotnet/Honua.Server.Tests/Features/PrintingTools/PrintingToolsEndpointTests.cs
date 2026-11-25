@@ -133,7 +133,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
     [IntegrationTest]
     [Operation(Operations.Print)]
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
-    public async Task Execute_AnonymousPdfRequestWithPro_ReturnsPdfDocument()
+    public async Task Execute_PdfFormat_ReturnsPdfDocument()
     {
         var fixture = CreateAnonymousPdfFixture(devGrantEdition: "Pro");
         try
