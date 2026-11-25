@@ -470,8 +470,10 @@ internal static partial class AdminAuthEndpoints
                 provider.Authority!,
                 context.RequestAborted).ConfigureAwait(false);
 
-            var tokenPolicy = (oidcOptions.Value.RequireHttps ? DiscoveryEndpointPolicy.Strict : DiscoveryEndpointPolicy.AllowHttp)
-                | (networkPolicy == DiscoveryNetworkPolicy.AllowPrivate ? DiscoveryEndpointPolicy.AllowPrivateNetworks : DiscoveryEndpointPolicy.Strict);
+            var tokenPolicy = BuildDiscoveryEndpointPolicy(
+                discovery.TokenEndpoint,
+                provider,
+                new AdminDiscoveryPolicyOptions(oidcOptions.Value, networkPolicy));
             if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
                     discovery.TokenEndpoint,
                     tokenPolicy,

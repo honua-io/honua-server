@@ -72,6 +72,8 @@ class IdentityProvider:
         now = int(time.time())
         claims = {"iss": self.issuer, "aud": query["client_id"], "sub": "lifecycle-person",
                   "name": "Lifecycle Person", "roles": ["admin"], "iat": now, "exp": now + 7200}
+        if query.get("nonce"):
+            claims["nonce"] = query["nonce"]
         header = base64url(json.dumps({"alg": "RS256", "kid": "lifecycle", "typ": "JWT"}).encode())
         payload = base64url(json.dumps(claims).encode())
         message = f"{header}.{payload}".encode()

@@ -81,6 +81,23 @@ public sealed partial class AdminAuthEndpointsTests
         AdminAuthEndpoints.IsAllowedDiscoveryIssuer("https://evil.example.com", provider, oidcOptions).Should().BeFalse();
     }
 
+    [UnitTest]
+    public void IsSameAuthorityOrigin_PermitsConfiguredAuthorityOriginAndRejectsOtherHostsOrPorts()
+    {
+        AdminAuthEndpoints.IsSameAuthorityOrigin(
+            "https://lifecycle-identity:8443/token",
+            "https://lifecycle-identity:8443").Should().BeTrue();
+        AdminAuthEndpoints.IsSameAuthorityOrigin(
+            "https://lifecycle-identity:9443/token",
+            "https://lifecycle-identity:8443").Should().BeFalse();
+        AdminAuthEndpoints.IsSameAuthorityOrigin(
+            "http://lifecycle-identity:8443/token",
+            "https://lifecycle-identity:8443").Should().BeFalse();
+        AdminAuthEndpoints.IsSameAuthorityOrigin(
+            "https://169.254.169.254/latest/meta-data",
+            "https://lifecycle-identity:8443").Should().BeFalse();
+    }
+
     [IntegrationTheory]
     [InlineData("javascript:alert(1)")]
     [InlineData("http://login.example.com/logout")]

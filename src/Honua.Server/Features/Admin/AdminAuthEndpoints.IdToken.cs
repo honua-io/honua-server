@@ -99,12 +99,18 @@ internal static partial class AdminAuthEndpoints
             && !string.IsNullOrWhiteSpace(validation.Discovery.JwksUri)
             && !string.IsNullOrWhiteSpace(validation.Provider.ClientId);
 
+    private readonly record struct AdminDiscoveryPolicyOptions(
+        OidcAuthenticationOptions OidcOptions,
+        DiscoveryNetworkPolicy NetworkPolicy);
+
     private static async Task<IReadOnlyList<SecurityKey>> LoadValidatedSigningKeysAsync(
         AdminIdTokenValidationContext validation,
         CancellationToken cancellationToken)
     {
-        var policy = (validation.OidcOptions.RequireHttps ? DiscoveryEndpointPolicy.Strict : DiscoveryEndpointPolicy.AllowHttp)
-            | (validation.NetworkPolicy == DiscoveryNetworkPolicy.AllowPrivate ? DiscoveryEndpointPolicy.AllowPrivateNetworks : DiscoveryEndpointPolicy.Strict);
+        var policy = BuildDiscoveryEndpointPolicy(
+            validation.Discovery.JwksUri,
+            validation.Provider,
+            new AdminDiscoveryPolicyOptions(validation.OidcOptions, validation.NetworkPolicy));
         if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(
                 validation.Discovery.JwksUri!,
                 policy,
@@ -117,6 +123,30 @@ internal static partial class AdminAuthEndpoints
             validation.HttpClientFactory,
             validation.Discovery.JwksUri!,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static bool IsSameAuthorityOrigin(string? endpoint, string? authority)
+        => Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri)
+            && Uri.TryCreate(authority, UriKind.Absolute, out var authorityUri)
+            && string.Equals(endpointUri.Scheme, authorityUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(endpointUri.Host, authorityUri.Host, StringComparison.OrdinalIgnoreCase)
+            && endpointUri.Port == authorityUri.Port;
+
+    private static DiscoveryEndpointPolicy BuildDiscoveryEndpointPolicy(
+        string? endpoint,
+        OidcProviderRegistration provider,
+        AdminDiscoveryPolicyOptions options)
+    {
+        var policy = options.OidcOptions.RequireHttps
+            ? DiscoveryEndpointPolicy.Strict
+            : DiscoveryEndpointPolicy.AllowHttp;
+        if (options.NetworkPolicy == DiscoveryNetworkPolicy.AllowPrivate
+            || IsSameAuthorityOrigin(endpoint, provider.Authority))
+        {
+            policy |= DiscoveryEndpointPolicy.AllowPrivateNetworks;
+        }
+
+        return policy;
     }
 
     private static Claim[]? ValidateSignedIdTokenClaims(
