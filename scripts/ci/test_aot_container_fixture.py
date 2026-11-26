@@ -34,10 +34,6 @@ class AotContainerFixtureTests(unittest.TestCase):
         self.assertEqual(app[-1], "server-image")
         self.assertIn("--memory=1073741824", app)
         self.assertIn("--memory-swap=1073741824", app)
-        self.assertIn(
-            f"{fixture.REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro",
-            app,
-        )
         self.assertIn("RateLimiting__Enabled=false", app)
         self.assertEqual(stop, ["stop", session.app_container])
         self.assertEqual(start, ["start", session.app_container])
@@ -65,3 +61,13 @@ class AotContainerFixtureTests(unittest.TestCase):
         self.assertEqual(docker.call_count, 2)
         cleanup.assert_called_once()
         self.assertEqual(cleanup.call_args.args[0].network, docker.call_args_list[0].args[0][-1])
+
+    def test_app_container_mounts_test_settings_readonly(self) -> None:
+        session = fixture.DockerSession("net", "pg", "app", 18080)
+        with patch.object(fixture, "_run_docker_checked") as docker:
+            fixture._start_app_container(session, "server-image", fixture.ContainerOptions(90))
+
+        args = docker.call_args.args[0]
+        mount = f"{fixture.REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro"
+        self.assertIn(mount, args)
+        self.assertEqual(args[args.index(mount) - 1], "-v")
