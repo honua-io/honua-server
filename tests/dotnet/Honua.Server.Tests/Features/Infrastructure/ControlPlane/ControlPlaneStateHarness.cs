@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
@@ -40,7 +41,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
         "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql",
         "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql",
-        "Honua.Server.Migrations.221_CreateProposalEvidenceConsumptions.sql"
+        "Honua.Server.Migrations.221_CreateProposalEvidenceConsumptions.sql",
+        "Honua.Server.Migrations.230_CreateAuthenticationFailureWindows.sql"
     ];
 
     // These tables stay in the honua schema in production; the test installs them in its own schema.
@@ -150,6 +152,10 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresTokenReplayStore CreateTokenReplayStore() => new(DataSource, _jobs.Database);
 
     public PostgresIdempotencyReservationStore CreateIdempotencyReservationStore() => new(_jobs.Database);
+
+    public PostgresAuthenticationFailureLedger CreateAuthenticationFailureLedger(
+        IOptions<AuthenticationFailureLimiterOptions> options, TimeProvider? timeProvider = null)
+        => new(_jobs.Database, options, timeProvider ?? TimeProvider.System);
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);

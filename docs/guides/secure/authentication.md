@@ -292,8 +292,22 @@ route that allows anonymous access serves the request anonymously, and
 The client address is the connection address after trusted forwarded-header
 processing. Behind a proxy, enable `ForwardedHeaders` or every client shares the
 proxy's address; the server warns at startup while `ForwardedHeaders` is off.
-List addresses that front many clients in `ExemptNetworks`. Counts are held per
-server instance, and a request without a client address is not counted.
+List addresses that front many clients in `ExemptNetworks`. A request without a
+client address is not counted.
+
+With a system database, every server instance counts into one window per source
+in PostgreSQL, so a source is refused after `Threshold` failures in total across
+all instances, and a refusal survives a restart. A failed attempt queues one row
+update. PostgreSQL starts and expires shared windows using its own clock.
+The worker skips failures that have spent a full counting window in the queue.
+Successful and uncounted requests write nothing. Each instance reads active
+refusals on its `SharedPollInterval` tick. Set `BlockDuration` longer than the
+poll interval so healthy instances have time to see each refusal.
+Instances fall back to local counting if the database is unavailable, the shared
+write queue is full, or every shared slot is in use. The
+`honua_authentication_shared_failures_dropped_total` metric counts failures
+that could not enter the queue. A server without a system database counts
+per instance.
 
 | Setting (`Authentication:FailedAttempts`) | Default | Meaning |
 |---|---:|---|
@@ -301,7 +315,8 @@ server instance, and a request without a client address is not counted.
 | `Threshold` | `10` | Failures within `Window` that refuse a source. |
 | `Window` | `00:15:00` | Counting window, started by the first failure. |
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
-| `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
+| `MaxTrackedSources` | `10000` | Maximum tracked addresses. PostgreSQL can reuse expired slots. If the limit is lowered, existing active refusals remain in force until they expire. |
+| `SharedPollInterval` | `00:00:05` | How often an instance reads refusals made by other instances, from 1 ms to one minute. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
 
 The `honua_authentication_failed_attempts_total` counter aggregates completed

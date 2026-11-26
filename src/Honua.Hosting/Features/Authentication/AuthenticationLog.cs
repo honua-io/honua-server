@@ -145,4 +145,16 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "SECURITY: a credential that matched no managed API key was refused without comparing the administrator password, because Authentication:AdminPassword:LoopbackOnly is true and the request did not come directly from loopback")]
     public static partial void AdminPasswordRefusedOnNetworkPath(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4124,
+        Level = LogLevel.Warning,
+        Message = "The shared failed-attempt store could not be read or written; failed sign-in attempts are counted on this instance only until it recovers")]
+    public static partial void SharedFailureStoreUnavailable(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4125,
+        Level = LogLevel.Warning,
+        Message = "Shutdown deadline reached before shared authentication failures could be drained.")]
+    public static partial void SharedFailureDrainTimedOut(ILogger logger);
 }

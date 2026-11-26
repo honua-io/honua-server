@@ -12,6 +12,7 @@ internal sealed class AuthenticationFailureLimiterOptions
 
     internal static readonly TimeSpan MaxDuration = TimeSpan.FromDays(1);
     internal const int MaxSources = 1_000_000;
+    internal static readonly TimeSpan MaxPollInterval = TimeSpan.FromMinutes(1);
 
     public bool Enabled { get; set; } = true;
 
@@ -22,6 +23,9 @@ internal sealed class AuthenticationFailureLimiterOptions
     public TimeSpan BlockDuration { get; set; } = TimeSpan.FromMinutes(15);
 
     public int MaxTrackedSources { get; set; } = 10_000;
+
+    // With a system database, how soon a refusal made by another server instance takes effect on this one.
+    public TimeSpan SharedPollInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     // CIDR ranges that are never counted or refused, such as a proxy or health checker that shares one address for many clients.
     public List<string> ExemptNetworks { get; set; } = [];
@@ -37,6 +41,9 @@ internal sealed class AuthenticationFailureLimiterOptionsValidator : IValidateOp
                 OutOfRange(nameof(options.MaxTrackedSources), options.MaxTrackedSources, AuthenticationFailureLimiterOptions.MaxSources),
                 OutOfRange(nameof(options.Window), options.Window),
                 OutOfRange(nameof(options.BlockDuration), options.BlockDuration),
+                options.SharedPollInterval < TimeSpan.FromMilliseconds(1)
+                    ? $"{AuthenticationFailureLimiterOptions.SectionName}:{nameof(options.SharedPollInterval)} must be at least 1 ms."
+                    : OutOfRange(nameof(options.SharedPollInterval), options.SharedPollInterval, AuthenticationFailureLimiterOptions.MaxPollInterval),
             }
             .Concat(options.ExemptNetworks.Select(NotANetwork))
             .OfType<string>()
@@ -50,8 +57,11 @@ internal sealed class AuthenticationFailureLimiterOptionsValidator : IValidateOp
             : null;
 
     private static string? OutOfRange(string setting, TimeSpan value)
-        => value <= TimeSpan.Zero || value > AuthenticationFailureLimiterOptions.MaxDuration
-            ? $"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {AuthenticationFailureLimiterOptions.MaxDuration}."
+        => OutOfRange(setting, value, AuthenticationFailureLimiterOptions.MaxDuration);
+
+    private static string? OutOfRange(string setting, TimeSpan value, TimeSpan maximum)
+        => value <= TimeSpan.Zero || value > maximum
+            ? $"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {maximum}."
             : null;
 
     private static string? NotANetwork(string network)

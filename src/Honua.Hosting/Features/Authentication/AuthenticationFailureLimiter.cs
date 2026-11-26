@@ -34,7 +34,8 @@ internal interface IAuthenticationFailureLimiter
     void EndAttempt(AuthenticationAttemptKey key, AuthenticationAttemptOutcome outcome);
 }
 
-// Process-local store; the interface leaves room for a shared one. A success never clears failures: they expire with the window.
+// Counts in process; with a system database the shared view adds the refusals and totals of every instance.
+// A success never clears failures: they expire with the window.
 internal sealed class AuthenticationFailureLimiter(
     IOptions<AuthenticationFailureLimiterOptions> options,
     TimeProvider timeProvider,
@@ -44,36 +45,41 @@ internal sealed class AuthenticationFailureLimiter(
         "honua_authentication_failed_attempts_total",
         unit: null,
         description: "Completed failed credential checks across all tracked sources.");
+    private static readonly Counter<long> SharedFailuresDropped = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua_authentication_shared_failures_dropped_total",
+        unit: null,
+        description: "Failures counted locally whose shared write could not be queued.");
     private static readonly TimeSpan InFlightRetryAfter = TimeSpan.FromSeconds(1);
 
     private readonly AuthenticationFailureLimiterOptions _options = options.Value;
     private readonly Dictionary<string, FailureWindow> _sources = new(StringComparer.Ordinal);
     private readonly Lock _gate = new();
 
+    // Set by the host that has a system database; null counts per instance.
+    public SharedAuthenticationFailures? Shared { get; init; }
+
     public TimeSpan? RefusalFor(string source)
     {
-        var now = timeProvider.GetUtcNow();
-        lock (_gate)
-        {
-            return _sources.TryGetValue(source, out var window) && window.RefusedUntil is { } until && until > now
-                ? until - now
-                : null;
-        }
+        var now = Now;
+        var until = Later(LocalRefusal(source, now), SharedRefusal(source, now));
+        return until > now ? until - now : null;
     }
 
     // An in-flight credential holds a slot, so a parallel burst of distinct guesses cannot pass the threshold; the same credential in flight shares one slot.
     public AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = Now;
         lock (_gate)
         {
-            var window = Track(key.Source, now);
-            if (window.RefusedUntil is { } until && until > now)
+            var (sharedWindow, pendingSharedFailures, previousRefusal) = Shared?.ForAdmission(key.Source, now) ?? default;
+            var window = Track(key.Source, now, previousRefusal);
+            if (Later(window.RefusedUntil, sharedWindow?.RefusedUntil) is { } until && until > now)
             {
                 return AuthenticationAttemptAdmission.Refuse(until - now);
             }
 
-            if (!window.Pending.ContainsKey(key.Credential) && window.Failures + window.Pending.Count >= _options.Threshold)
+            var failures = Math.Max(window.Failures, (long)(sharedWindow?.Failures ?? 0) + pendingSharedFailures);
+            if (!window.Pending.ContainsKey(key.Credential) && failures + window.Pending.Count >= _options.Threshold)
             {
                 return AuthenticationAttemptAdmission.Refuse(InFlightRetryAfter);
             }
@@ -90,36 +96,63 @@ internal sealed class AuthenticationFailureLimiter(
             FailedAttempts.Add(1);
         }
 
-        var now = timeProvider.GetUtcNow();
+        var now = Now;
+        bool sharedWriteDropped;
+        bool blocked;
         lock (_gate)
         {
-            if (!_sources.TryGetValue(key.Source, out var window))
+            _sources.TryGetValue(key.Source, out var window);
+            window?.Release(key.Credential);
+            if (outcome != AuthenticationAttemptOutcome.Failed || IsRefused(key.Source, window, now))
             {
+                if (window is not null)
+                {
+                    ForgetIfIdle(key.Source, window, now);
+                }
+
                 return;
             }
 
-            window.Release(key.Credential);
-            if (outcome != AuthenticationAttemptOutcome.Failed || window.IsRefused(now))
-            {
-                ForgetIfIdle(key.Source, window, now);
-                return;
-            }
-
-            if (++window.Failures < _options.Threshold)
-            {
-                return;
-            }
-
-            window.RefusedUntil = now + _options.BlockDuration;
+            // The source entry can be evicted while an admitted check is in flight.
+            sharedWriteDropped = Shared?.Record(key.Source, now) is false;
+            blocked = window?.RecordFailure(now, _options) is true;
         }
 
-        AuthenticationLog.AuthenticationSourceBlocked(
-            logger, LogValueRedactor.Hash(key.Source), (int)_options.BlockDuration.TotalSeconds);
+        if (sharedWriteDropped)
+        {
+            SharedFailuresDropped.Add(1);
+        }
+
+        if (blocked)
+        {
+            AuthenticationLog.AuthenticationSourceBlocked(
+                logger, LogValueRedactor.Hash(key.Source), (int)_options.BlockDuration.TotalSeconds);
+        }
     }
 
-    private FailureWindow Track(string source, DateTimeOffset now)
+    private DateTimeOffset? LocalRefusal(string source, DateTimeOffset now)
     {
-        if (_sources.TryGetValue(source, out var existing) && !existing.IsWindowOver(now, _options.Window))
+        lock (_gate)
+        {
+            return _sources.TryGetValue(source, out var window) && window.IsRefused(now) ? window.RefusedUntil : null;
+        }
+    }
+
+    private bool IsRefused(string source, FailureWindow? window, DateTimeOffset now)
+        => window?.IsRefused(now) is true || SharedRefusal(source, now) is not null;
+
+    private DateTimeOffset? SharedRefusal(string source, DateTimeOffset now)
+        => Shared?.For(source, now) is { } window && window.IsRefused(now) ? window.RefusedUntil : null;
+
+    private static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)
+        => first is null ? second : second is null ? first : first > second ? first : second;
+
+    private DateTimeOffset Now => Shared?.Now ?? timeProvider.GetUtcNow();
+
+    private FailureWindow Track(string source, DateTimeOffset now, DateTimeOffset? previousRefusal)
+    {
+        if (_sources.TryGetValue(source, out var existing) && !existing.IsWindowOver(now, _options.Window)
+            && (existing.IsRefused(now) || previousRefusal is null || previousRefusal > now || previousRefusal <= existing.Started))
         {
             return existing;
         }
@@ -175,6 +208,17 @@ internal sealed class AuthenticationFailureLimiter(
 
         public bool IsEvictable(DateTimeOffset now, TimeSpan length)
             => Pending.Count == 0 && (IsWindowOver(now, length) || (Failures == 0 && RefusedUntil is null));
+
+        public bool RecordFailure(DateTimeOffset now, AuthenticationFailureLimiterOptions options)
+        {
+            if (++Failures < options.Threshold)
+            {
+                return false;
+            }
+
+            RefusedUntil = now + options.BlockDuration;
+            return true;
+        }
 
         public void Release(int credential)
         {

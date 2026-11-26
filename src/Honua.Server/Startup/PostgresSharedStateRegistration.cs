@@ -95,6 +95,15 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
+        services.TryAddSingleton(provider => new PostgresAuthenticationFailureLedger(
+            provider.GetRequiredService<JobStoreDatabase>(),
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
+            provider.GetService<TimeProvider>() ?? TimeProvider.System));
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddSharedAuthenticationFailures();
+        }
+
         services.AddOAuthScopeCatalogue();
         services.AddFeatureLockStore();
         services.AddRetentionSweeps();
@@ -132,6 +141,38 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
     }
 
+    // Without a system database the shared view is deliberately null and failed sign-ins are counted per instance.
+    private static void AddSharedAuthenticationFailures(this IServiceCollection services)
+    {
+        services.TryAddSingleton<SharedAuthenticationFailures>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? new SharedAuthenticationFailures(
+                    provider.GetRequiredService<PostgresAuthenticationFailureLedger>(),
+                    provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
+                    provider.GetService<TimeProvider>() ?? TimeProvider.System)
+                : null!);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SharedAuthenticationFailureSync>(provider =>
+            new SharedAuthenticationFailureSync(
+                provider.GetService<SharedAuthenticationFailures>(),
+                provider.GetService<TimeProvider>() ?? TimeProvider.System,
+                provider.GetRequiredService<ILogger<SharedAuthenticationFailureSync>>())));
+
+        // Replace only the built-in limiter; a limiter a host or test registered itself stays.
+        foreach (var descriptor in services.Where(item =>
+            item.ServiceType == typeof(IAuthenticationFailureLimiter) &&
+            item.ImplementationType == typeof(AuthenticationFailureLimiter)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
+        services.TryAddSingleton<IAuthenticationFailureLimiter>(provider => new AuthenticationFailureLimiter(
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
+            provider.GetService<TimeProvider>() ?? TimeProvider.System,
+            provider.GetRequiredService<ILogger<AuthenticationFailureLimiter>>())
+        {
+            Shared = provider.GetService<SharedAuthenticationFailures>(),
+        });
+    }
+
     private static void AddOAuthScopeCatalogue(this IServiceCollection services)
     {
         // Replace only the built-in default when protocol registration ran first.
@@ -158,6 +199,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresVersionJobStore>();
         services.AddRetentionSweep<PostgresTileCacheGenerationCheckpointStore>();
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
+        services.AddRetentionSweep<PostgresAuthenticationFailureLedger>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
