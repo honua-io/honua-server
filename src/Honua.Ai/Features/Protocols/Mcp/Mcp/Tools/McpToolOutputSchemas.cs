@@ -732,6 +732,30 @@ internal static class McpToolOutputSchemas
               "type": "integer",
               "description": "Matching feature count when known. Normal queries use the canonical query result total; returnCountOnly=true uses CountAsync."
             },
+            "countOnly": {
+              "type": "boolean",
+              "description": "True when returnCountOnly=true was requested and no features were projected."
+            },
+            "truncated": {
+              "type": "boolean",
+              "description": "True when the response stopped early to stay within maxPayloadBytes."
+            },
+            "truncationReason": {
+              "type": "string",
+              "description": "Machine-readable truncation reason when truncated=true (e.g. payload_byte_budget_exceeded)."
+            },
+            "payloadBytes": {
+              "type": "integer",
+              "description": "UTF-8 byte size of the serialized feature entries included in this response."
+            },
+            "maxPayloadBytes": {
+              "type": "integer",
+              "description": "Byte budget enforced on returned feature entries for this response."
+            },
+            "dataTrust": {
+              "type": "string",
+              "description": "Trust classification for returned feature attributes (untrusted_external_data)."
+            },
             "features": {
               "type": "array",
               "description": "Feature list with attributes under features[].attributes.",

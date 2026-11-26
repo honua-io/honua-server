@@ -152,7 +152,11 @@ internal sealed class PublishServiceTool : IMcpTool, IMcpInputRequiredTool
     }
 
     private static McpToolsCallResult PublishResponse(OperationHandle handle)
-        => McpToolHelpers.SuccessResult(Project(handle), McpJsonContext.Default.McpPublishServiceOutput);
+    {
+        var result = McpToolHelpers.SuccessResult(Project(handle), McpJsonContext.Default.McpPublishServiceOutput);
+        result.IsError = handle.Status is OperationHandleStatus.Failed or OperationHandleStatus.Denied;
+        return result;
+    }
 
     private static McpPublishServiceOutput Project(OperationHandle handle)
     {

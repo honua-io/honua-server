@@ -201,6 +201,56 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         results[1].GetProperty("tool_use_id").GetString().Should().Be("toolu_b");
     }
 
+    [UnitTest]
+    public async Task StreamAsync_ToolCallArgumentsExceedingByteCap_FailsClosedWithError()
+    {
+        var chunk = new string('x', 70_000);
+        var payload = $$$$"""
+            event: message_start
+            data: {"type":"message_start","message":{"id":"msg_big","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":0}}}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_big","name":"list_catalog_layers","input":{}}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"a\":\"{{{{chunk}}}}"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{{{{chunk}}}}"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{{{{chunk}}}}"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{{{{chunk}}}}\"}"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+
+            """;
+
+        using var handler = new StudioAiProxySequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload) });
+        using var clients = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var request = InitialContinuationRequest(AiExecutionContext.Create("test", "person-a", "studio-chat"));
+
+        var events = await CollectAsync(adapter, request);
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        var error = events.Single(e => e.Type == StudioAiChatEventType.Error);
+        error.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        error.ErrorMessage.Should().Contain("maximum allowed size");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.ToolCallStop);
+    }
+
     private static StudioAiChatRequest ZeroArgToolResultRequest(
         AiExecutionContext identity,
         StudioAiChatRequest initial) => new()

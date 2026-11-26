@@ -122,7 +122,7 @@ public sealed class McpIngestDatasetToolTests
         importer.ImportFileAsync(Arg.Do<ImportRequest>(request => captured = request), Arg.Any<CancellationToken>())
             .Returns(ImportResult.CreateFailure("unknown", SupportedFileFormat.Csv, "A source SRID is required.",
                 errorCode: ImportValidationErrorCodes.SourceSridRequired));
-        var structured = AssertToolSucceeded(await DispatchAsync(BuildServices(importer),
+        var structured = AssertToolFailed(await DispatchAsync(BuildServices(importer),
             """{"format":"csv","data":"geometry\\nPOINT(1 2)\\n","datasetName":"unknown"}"""));
         structured.GetProperty("success").GetBoolean().Should().BeFalse();
         structured.GetProperty("errorCode").GetString().Should().Be(ImportValidationErrorCodes.SourceSridRequired);
@@ -417,7 +417,7 @@ public sealed class McpIngestDatasetToolTests
             BuildServices(importService),
             """{"format":"csv","data":"not really csv","datasetName":"broken"}""");
 
-        var structured = AssertToolSucceeded(response);
+        var structured = AssertToolFailed(response);
         structured.GetProperty("success").GetBoolean().Should().BeFalse();
         structured.GetProperty("errorMessage").GetString().Should().Contain("No features");
     }
@@ -441,7 +441,7 @@ public sealed class McpIngestDatasetToolTests
             BuildServices(importService),
             $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
 
-        var structured = AssertToolSucceeded(response);
+        var structured = AssertToolFailed(response);
         structured.GetProperty("success").GetBoolean().Should().BeFalse();
         structured.GetProperty("errorMessage").GetString().Should().Contain("dataset.stage.import");
         captured.Should().NotBeNull();
@@ -463,7 +463,7 @@ public sealed class McpIngestDatasetToolTests
             BuildServices(importService),
             """{"format":"csv","data":"name,lon,lat\nA,east,30.2\n","datasetName":"stops"}""");
 
-        var message = AssertToolSucceeded(response).GetProperty("errorMessage").GetString();
+        var message = AssertToolFailed(response).GetProperty("errorMessage").GetString();
         message.Should().Contain("unparseable geometry");
         message.Should().NotContain("dataset.stage.import", "a new dataset that failed validation was not a replacement");
     }
@@ -483,7 +483,7 @@ public sealed class McpIngestDatasetToolTests
             BuildServices(importService),
             $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
 
-        AssertToolSucceeded(response).GetProperty("errorMessage").GetString().Should().NotContain("dataset.stage.import");
+        AssertToolFailed(response).GetProperty("errorMessage").GetString().Should().NotContain("dataset.stage.import");
         captured!.EffectiveLoadMode.Should().Be(ImportLoadMode.Replace);
     }
 

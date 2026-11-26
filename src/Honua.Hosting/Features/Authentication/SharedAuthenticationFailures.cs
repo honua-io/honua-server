@@ -163,13 +163,16 @@ internal sealed class SharedAuthenticationFailures(
                 return;
             }
 
-            // Refusals take precedence over counters and expired refusal history.
+            // Refusals take precedence over counters and expired refusal history,
+            // while never exceeding the tracked-source bound when all slots are refused.
             var evictable = _windows.Where(entry => !entry.Value.IsRefused(now))
                 .OrderBy(entry => entry.Value.ExpiresAt).FirstOrDefault();
-            if (evictable.Key is not null)
+            if (evictable.Key is null)
             {
-                _windows.TryRemove(evictable);
+                return;
             }
+
+            _windows.TryRemove(evictable);
         }
 
         _windows[key] = window;

@@ -381,7 +381,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
     private static McpToolsCallResult OperationResult(McpOperationToolOutput output)
     {
         var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
-        result.IsError = output.Status == OperationHandleStatus.Failed.ToString();
+        result.IsError = string.Equals(output.Status, OperationHandleStatus.Failed.ToString(), StringComparison.Ordinal)
+            || string.Equals(output.Status, OperationHandleStatus.Denied.ToString(), StringComparison.Ordinal);
         return result;
     }
 

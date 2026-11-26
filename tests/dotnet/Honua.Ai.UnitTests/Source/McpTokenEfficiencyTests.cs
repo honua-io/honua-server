@@ -147,6 +147,25 @@ public sealed partial class McpTaxonomyAlignmentTests
         TextShouldEqualStructuredContent(result.Content[0].Text ?? string.Empty, result.StructuredContent);
     }
 
+    [UnitTest]
+    public void SuccessResult_PayloadAboveInlineTextByteCap_OmitsDuplicateJsonTextBlock()
+    {
+        var output = BuildRepresentativeQueryPage(featureCount: 600);
+        var payloadJson = JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+        System.Text.Encoding.UTF8.GetByteCount(payloadJson).Should().BeGreaterThan(McpToolHelpers.MaxInlineTextContentBytes);
+
+        var result = McpToolHelpers.SuccessResult(
+            output,
+            MapToolJsonContext.Default.McpQueryFeaturesOutput,
+            SummarizeForMeasurement);
+
+        result.IsError.Should().BeFalse();
+        result.Content.Should().ContainSingle();
+        result.Content[0].Text.Should().Contain("county_parcels");
+        result.Content[0].Text!.Length.Should().BeLessThan(McpToolHelpers.MaxInlineTextContentBytes);
+        result.StructuredContent.Should().NotBeNull();
+    }
+
     private static void TextShouldEqualStructuredContent(string text, JsonElement? structuredContent)
     {
         structuredContent.Should().NotBeNull();

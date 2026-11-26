@@ -15,6 +15,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.PrintingTools.Models;
 using Honua.ServiceDefaults;
 
@@ -275,6 +276,18 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             activity?.SetTag("print.output_bytes", outputBytes.LongLength);
             activity?.SetStatus(ActivityStatusCode.Ok);
             PrintingToolsLog.JobCompleted(_logger, job.JobId, outputBytes.LongLength);
+        }
+        catch (PrintRenderCapacityExceededException)
+        {
+            var capacityFailed = progress with
+            {
+                Status = OperationStatus.Failed,
+                ErrorMessage = RasterRenderCapacityLimiter.CapacityExceededMessage,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Print failed"
+            };
+            await progressStore.SetProgressAsync(job.JobId, capacityFailed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+            PrintingToolsLog.JobFailed(_logger, job.JobId, RasterRenderCapacityLimiter.CapacityExceededMessage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

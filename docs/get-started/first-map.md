@@ -26,27 +26,55 @@ through the server's MCP endpoint (`POST /mcp`) with the official MCP Python cli
 
 The tool requires the durable operator workflow capability, which needs the system database.
 A deployment without one refuses the operation; it does not enable anonymous access. Over `/mcp`,
-access-policy changes are proposal-gated: the call returns `isError: false` with
-`status: "RequiresApproval"` and `requiresApproval: true`, and anonymous reads take effect only
-after a human approves the resulting proposal in Console Approvals. Use the quickstart profile and
-ensure the policy change is approved before opening the map.
+access-policy changes are proposal-gated and must be filed with a stored scoped API key
+(`agent` + `admin:write`) rather than the bootstrap admin password (approval re-checks the stored
+proposer key before executing). The script below mints a scoped proposer key using `$HONUA_API_KEY`
+(or reuses `$HONUA_MCP_API_KEY` if already set), submits the MCP proposal, and reports
+`status: "RequiresApproval"` with `requiresApproval: true`. Anonymous reads take effect only after a
+human approves the resulting proposal in Console Approvals. Use the quickstart profile and ensure
+the policy change is approved before opening the map.
 
 ```bash
 python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
+import json
 import os
+import urllib.request
 
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
+base_url = os.environ["HONUA_BASE_URL"].rstrip("/")
 service = os.environ["HONUA_SERVICE"]
 
 
-async def allow_anonymous():
+def resolve_mcp_proposer_key() -> str:
+    if os.environ.get("HONUA_MCP_API_KEY"):
+        return os.environ["HONUA_MCP_API_KEY"]
+    payload = json.dumps({
+        "name": "first-map-mcp-agent",
+        "kind": "agent",
+        "permissions": ["agent", "admin:write"],
+    }).encode()
+    request = urllib.request.Request(
+        f"{base_url}/api/v1/admin/api-keys",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": os.environ["HONUA_API_KEY"],
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = json.loads(response.read())
+    return body["data"]["key"]
+
+
+async def allow_anonymous(proposer_key: str):
     server = StreamableHttpParameters(
-        url=f"{os.environ['HONUA_BASE_URL']}/mcp",
-        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+        url=f"{base_url}/mcp",
+        headers={"X-API-Key": proposer_key},
     )
     async with ClientSessionGroup() as group:
         session = await group.connect_to_server(server)
@@ -56,7 +84,7 @@ async def allow_anonymous():
         })
 
 
-call = asyncio.run(allow_anonymous())
+call = asyncio.run(allow_anonymous(resolve_mcp_proposer_key()))
 result = call.structured_content or {}
 status = result.get("status")
 if call.is_error:
@@ -77,7 +105,8 @@ PY
 MCP tool calls authenticate with the `X-API-Key` header; HTTP Basic auth is refused.
 `$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` and
 `secrets/honua_admin_password` — see [Publish your first dataset](first-dataset.md) for the two
-lines that read them.
+lines that read them. Proposal-gated MCP calls cannot use the bootstrap credential directly, so the
+snippet mints a stored `agent` + `admin:write` API key (or reuses `$HONUA_MCP_API_KEY` if set).
 
 The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` — it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
 

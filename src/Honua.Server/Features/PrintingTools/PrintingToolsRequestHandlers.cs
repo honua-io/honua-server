@@ -37,6 +37,7 @@ internal static class PrintingToolsRequestHandlers
     // server-defined, so the memory ceiling is bounded by design.
     private const int MaxOutputDimension = 4096;
     private const int MaxFeaturesPerLayer = 10_000;
+    private static readonly RasterRenderCapacityLimiter FallbackRenderLimiter = new();
 
     internal static readonly TimeSpan ResultTtl = TimeSpan.FromHours(24);
 
@@ -89,7 +90,16 @@ internal static class PrintingToolsRequestHandlers
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
-                webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken, crsRegistry);
+                webMap,
+                template,
+                dpi,
+                resolvedLayers,
+                featureReader,
+                logger,
+                cancellationToken,
+                crsRegistry,
+                authorizationServices,
+                tenantId);
 
             if (mapFrameBytes is null)
             {
@@ -149,7 +159,9 @@ internal static class PrintingToolsRequestHandlers
             else
             {
                 // Raster output (PNG, JPG)
-                using var surface = SKSurface.Create(new SKImageInfo(pageWidthPx, pageHeightPx, SKColorType.Rgba8888, SKAlphaType.Premul));
+                await using var pageLease = await AcquireRenderLeaseAsync(
+                    authorizationServices, (pageWidthPx, pageHeightPx), cancellationToken).ConfigureAwait(false);
+                using var surface = CreateSurface(pageWidthPx, pageHeightPx);
                 var canvas = surface.Canvas;
 
                 LayoutComposer.Compose(canvas, compositionTemplate, mapFrameBytes, legendEntries,
@@ -216,7 +228,9 @@ internal static class PrintingToolsRequestHandlers
         var renderZoom = RenderZoom.FromExtent(renderExtent, imageWidth, imageHeight, extentSrid);
 
         // Create a composite surface for all layers
-        using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+        await using var frameLease = await AcquireRenderLeaseAsync(
+            authorizationServices, (imageWidth, imageHeight), cancellationToken).ConfigureAwait(false);
+        using var surface = CreateSurface(imageWidth, imageHeight);
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.White);
 
@@ -463,6 +477,33 @@ internal static class PrintingToolsRequestHandlers
         document.Close();
 
         return stream.ToArray();
+    }
+
+    private static async ValueTask<RasterRenderCapacityLimiter.Lease> AcquireRenderLeaseAsync(
+        IServiceProvider? services,
+        (int Width, int Height) dimensions,
+        CancellationToken cancellationToken)
+    {
+        var limiter = services?.GetService<RasterRenderCapacityLimiter>() ?? FallbackRenderLimiter;
+        return await limiter.TryAcquireAsync(dimensions.Width, dimensions.Height, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new PrintRenderCapacityExceededException();
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Maintainability",
+        "CA1508:Avoid dead conditional code",
+        Justification = "SkiaSharp returns null at runtime when unmanaged surface allocation fails despite non-null annotations.")]
+    internal static SKSurface CreateSurface(int width, int height)
+    {
+        var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        if (surface is null)
+        {
+            throw new InvalidOperationException(
+                $"Failed to allocate print render surface ({width}x{height}).");
+        }
+
+        return surface;
     }
 
     private static byte[] EncodeRaster(SKSurface surface, string format)

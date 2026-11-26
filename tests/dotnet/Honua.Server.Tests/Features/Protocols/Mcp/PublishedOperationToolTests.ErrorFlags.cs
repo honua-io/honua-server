@@ -13,10 +13,12 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class PublishedOperationToolTests
 {
-    [UnitTest]
-    public async Task Invoke_FailedCanonicalOutcome_ReportsErrorToClient()
+    [UnitTheory]
+    [InlineData(OperationHandleStatus.Failed)]
+    [InlineData(OperationHandleStatus.Denied)]
+    public async Task Invoke_FailedOrDeniedCanonicalOutcome_ReportsErrorToClient(OperationHandleStatus status)
     {
-        var result = await InvokeAndAssertCanonicalEnvelopeAsync(OperationHandleStatus.Failed);
+        var result = await InvokeAndAssertCanonicalEnvelopeAsync(status);
 
         result.IsError.Should().BeTrue();
     }

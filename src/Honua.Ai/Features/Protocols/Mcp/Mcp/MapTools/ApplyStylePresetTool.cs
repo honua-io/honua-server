@@ -154,7 +154,7 @@ internal sealed partial class ApplyStylePresetTool : IMcpTool, IMcpInputRequired
             Tier = httpContext.RequestServices.GetService<ILicenseEntitlementService>()?
                 .GetSnapshot().Edition.ToString().ToLowerInvariant(),
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-            Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
+            Roles = AgentPrincipal.EffectiveRoles(principal),
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                 .OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),

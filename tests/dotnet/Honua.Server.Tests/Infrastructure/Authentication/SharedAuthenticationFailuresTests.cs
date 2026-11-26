@@ -296,6 +296,30 @@ public sealed class SharedAuthenticationFailuresTests
         limiter.RefusalFor(Source).Should().BeNull();
     }
 
+    [UnitTest]
+    public void Apply_AllSlotsActivelyRefused_DoesNotGrowBeyondMaxTrackedSources()
+    {
+        var boundedOptions = Options.Create(new AuthenticationFailureLimiterOptions
+        {
+            Threshold = 3,
+            Window = TimeSpan.FromMinutes(10),
+            BlockDuration = TimeSpan.FromMinutes(5),
+            MaxTrackedSources = 2,
+        });
+        var shared = new SharedAuthenticationFailures(_ledger, boundedOptions, _clock);
+        var now = _clock.GetUtcNow();
+        var activeRefusal = new SharedFailureWindow(3, now.AddMinutes(5), now.AddMinutes(5));
+
+        shared.Apply(SharedAuthenticationFailures.Digest("198.51.100.1"), activeRefusal, now);
+        shared.Apply(SharedAuthenticationFailures.Digest("198.51.100.2"), activeRefusal, now);
+        shared.Apply(SharedAuthenticationFailures.Digest("198.51.100.3"), activeRefusal, now);
+
+        shared.For("198.51.100.1", now).Should().Be(activeRefusal);
+        shared.For("198.51.100.2", now).Should().Be(activeRefusal);
+        shared.For("198.51.100.3", now).Should().BeNull(
+            "when every tracked slot is actively refused, new entries must not grow _windows past MaxTrackedSources");
+    }
+
     private sealed class TestClock : TimeProvider
     {
         public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;

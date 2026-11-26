@@ -19,6 +19,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     private const string AnthropicVersion = "2023-06-01";
     private const string ProviderLabel = "anthropic";
     private const int MaxMetadataLabelLength = 64;
+    internal const int MaxToolArgumentsBytes = 262_144;
     internal const string UnsupportedContentBlockCode = "studio_ai/unsupported_content_block";
     internal const string ProviderStreamErrorCode = "studio_ai/provider_error";
 
@@ -304,7 +305,15 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
                 case "content_block_delta" when frame.Delta?.Type == "input_json_delta" && frame.Delta.PartialJson is { } partial
                     && state.OpenBlockType(frame) == "tool_use":
-                    state.ToolArgsBuffer?.Append(partial);
+                    if (!state.TryAppendToolArguments(partial))
+                    {
+                        yield return state.Error(
+                            "Provider tool call arguments exceeded the maximum allowed size.",
+                            state.Timer.ElapsedMilliseconds,
+                            StudioAiStreamGrammarValidator.InvalidStreamCode);
+                        yield break;
+                    }
+
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallDelta,
@@ -577,7 +586,26 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         {
             ToolCallId = block.Id;
             ToolArgsBuffer = new StringBuilder();
+            ToolArgsByteCount = 0;
             ToolInitialInput = block.Input;
+        }
+
+        public bool TryAppendToolArguments(string partial)
+        {
+            if (ToolArgsBuffer is null)
+            {
+                return false;
+            }
+
+            var incomingBytes = Encoding.UTF8.GetByteCount(partial);
+            if (incomingBytes > MaxToolArgumentsBytes - ToolArgsByteCount)
+            {
+                return false;
+            }
+
+            ToolArgsByteCount += incomingBytes;
+            ToolArgsBuffer.Append(partial);
+            return true;
         }
 
         public JsonElement? ResolveToolArguments()
@@ -588,7 +616,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                 return TryParseObject(streamed);
             }
 
-            return ToolInitialInput is { ValueKind: JsonValueKind.Object } initial
+            if (ToolInitialInput is not { ValueKind: JsonValueKind.Object } initial)
+            {
+                return null;
+            }
+
+            return Encoding.UTF8.GetByteCount(initial.GetRawText()) <= MaxToolArgumentsBytes
                 ? initial.Clone()
                 : null;
         }
@@ -603,6 +636,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             };
             ToolCallId = null;
             ToolArgsBuffer = null;
+            ToolArgsByteCount = 0;
             ToolInitialInput = null;
             return evt;
         }
@@ -627,6 +661,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         public int? CompletionTokens { get; set; }
         public string? ToolCallId { get; set; }
         public StringBuilder? ToolArgsBuffer { get; set; }
+        public int ToolArgsByteCount { get; private set; }
         public JsonElement? ToolInitialInput { get; set; }
         public StudioAiStopReason StopReason { get; set; } = StudioAiStopReason.EndTurn;
         public bool SawMessageStart { get; set; }

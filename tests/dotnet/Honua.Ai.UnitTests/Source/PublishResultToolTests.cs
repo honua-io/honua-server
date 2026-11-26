@@ -302,11 +302,37 @@ public sealed class PublishResultToolTests
 
         var result = await tool.InvokeAsync(AuthenticatedContext(invoker), arguments, CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
+        result.IsError.Should().BeTrue();
         var content = result.StructuredContent!.Value;
         content.GetProperty("status").GetString().Should().Be("Denied");
         content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         content.GetProperty("message").GetString().Should().Contain("not authorized");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_publish_result")]
+    public async Task PublishResult_WhenOperationFails_SetsIsErrorTrue()
+    {
+        var invoker = new FakeInvoker((_, _) => new OperationHandle
+        {
+            OperationId = PublishResultTool.PublishOperationId,
+            OperationInstanceId = "op-failed",
+            CorrelationId = "corr-failed",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Status = OperationHandleStatus.Failed,
+            Reason = "Storage layer registration failed."
+        });
+
+        var tool = CreateTool(JobServiceReturning(CompletedPackage(FeatureLayerArtifact())));
+        var result = await tool.InvokeAsync(
+            AuthenticatedContext(invoker),
+            Arguments(new McpPublishResultArgument { SourceId = JobId }),
+            CancellationToken.None);
+
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Failed");
     }
 
     [UnitTest]
