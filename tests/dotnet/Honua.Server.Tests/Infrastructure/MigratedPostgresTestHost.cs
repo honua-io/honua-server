@@ -7,6 +7,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

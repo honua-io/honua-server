@@ -64,7 +64,8 @@ public sealed class ExportNonAsciiLayerNameTests : IAsyncLifetime
             snapshot.ResolveResource(candidate)?.Type == MetadataV2ObjectType.FeatureDataset);
         var resource = snapshot.ResolveResource(publication)!;
         _serviceName = snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name;
-        _serviceLayerIndex = publication.LayerIndex;
+        _serviceLayerIndex = publication.LayerIndex
+            ?? throw new InvalidOperationException("The seeded feature publication has no layer index.");
 
         var updatedGraph = snapshot.Graph with
         {
