@@ -145,4 +145,26 @@ public sealed class AotNativeLibraryRuntimeTests
         nightly.Should().Contain("DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-11.0-aot");
         nightly.Should().NotContain("10.0-alpine");
     }
+
+    [ArchitectureTest]
+    public void PublishedServerAotDockerfiles_ShouldOptimizeArm64ForSizeAndGuardBranchRange()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var project = File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Server/Honua.Server.csproj"));
+        project.Should().Contain("RuntimeIdentifier.EndsWith('-arm64'))\">Size</OptimizationPreference>");
+        project.Should().Contain("RuntimeIdentifier.EndsWith('-arm64'))\">true</IlcFoldIdenticalMethodBodies>");
+
+        foreach (var relativePath in _publishedServerAotDockerfiles)
+        {
+            var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
+            contents.Should().Contain("arm64) RUNTIME_ID=\"linux-arm64\"; OPT_PREF=\"Size\"", relativePath);
+            contents.Should().Contain("-p:OptimizationPreference=\"$OPT_PREF\"", relativePath);
+            contents.Should().Contain("-p:IlcFoldIdenticalMethodBodies=true", relativePath);
+        }
+
+        var verification = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"));
+        verification.Should().Contain("verify_arm64_branch_range");
+        verification.Should().Contain("__managedcode");
+        verification.Should().Contain("128 * 1024 * 1024");
+    }
 }

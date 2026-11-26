@@ -1,9 +1,27 @@
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
+
+
+def write_synthetic_arm64_elf(path, managedcode_size):
+    shstrtab = b'\x00.shstrtab\x00__managedcode\x00'
+    shstr_off = 64
+    shoff = (shstr_off + len(shstrtab) + 7) & ~7
+    ehdr = struct.pack(
+        '<16sHHIQQQIHHHHHH',
+        b'\x7fELF\x02\x01\x01' + b'\x00' * 9,
+        3, 183, 1, 0, 0, shoff, 0, 64, 0, 0, 64, 3, 1,
+    )
+    sh_null = struct.pack('<IIQQQQIIQQ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    sh_str = struct.pack('<IIQQQQIIQQ', 1, 3, 0, 0, shstr_off, len(shstrtab), 0, 0, 1, 0)
+    sh_code = struct.pack('<IIQQQQIIQQ', 11, 8, 6, 0x600000, 0, managedcode_size, 0, 0, 32, 0)
+    pad = b'\x00' * (shoff - shstr_off - len(shstrtab))
+    path.write_bytes(ehdr + shstrtab + pad + sh_null + sh_str + sh_code)
+    path.chmod(0o755)
 
 
 class NativeRuntimeGateTests(unittest.TestCase):
@@ -93,6 +111,17 @@ class NativeRuntimeGateTests(unittest.TestCase):
     def test_managed_client_without_any_native_variant_is_rejected(self):
         (self.app / 'Confluent.Kafka.dll').touch()
         self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_arm64_managedcode_within_branch_range_passes(self):
+        write_synthetic_arm64_elf(self.app / 'Honua.Server', 108 * 1024 * 1024)
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_arm64_managedcode_exceeding_branch_range_is_rejected(self):
+        write_synthetic_arm64_elf(self.app / 'Honua.Server', 128 * 1024 * 1024)
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('__managedcode', result.stderr)
 
 
 if __name__ == '__main__':
