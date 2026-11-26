@@ -45,6 +45,70 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
+    public async Task Poll_UsesTheRemainingLifetimeInADelayedResponse()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
+        var remaining = TimeSpan.FromMinutes(2);
+        var window = new LedgerFailureWindow(3, remaining, remaining);
+        _ledger.ReadRefusalsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            _clock.Elapsed += TimeSpan.FromMinutes(3);
+            return Task.FromResult<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>>(
+                [KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), window)]);
+        });
+        using var sync = CreateSync(shared);
+
+        await sync.PollAsync(CancellationToken.None);
+
+        CreateLimiter(shared).RefusalFor(Source).Should().Be(remaining);
+    }
+
+    [UnitTest]
+    public async Task Write_UsesTheRemainingLifetimeInADelayedResponse()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
+        var remaining = TimeSpan.FromMinutes(2);
+        _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            _clock.Elapsed += TimeSpan.FromMinutes(3);
+            return Task.FromResult<LedgerFailureWindow?>(new(3, remaining, remaining));
+        });
+        shared.Record(Source, shared.Now).Should().BeTrue();
+        shared.Recorded.TryRead(out var pending).Should().BeTrue();
+        using var sync = CreateSync(shared);
+
+        await sync.RecordAsync(pending, CancellationToken.None);
+
+        CreateLimiter(shared).RefusalFor(Source).Should().Be(remaining);
+    }
+
+    [UnitTest]
+    public async Task Admission_CountsOnlyPendingFailuresWithinTheWindow()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
+        using var sync = CreateSync(shared);
+        var persisted = new TaskCompletionSource<LedgerFailureWindow?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>()).Returns(persisted.Task);
+        shared.Record(Source, shared.Now).Should().BeTrue();
+        shared.Recorded.TryRead(out var pending).Should().BeTrue();
+        var writing = sync.RecordAsync(pending, CancellationToken.None);
+
+        try
+        {
+            _clock.Elapsed += _options.Value.Window;
+            shared.Record(Source, shared.Now).Should().BeTrue();
+            shared.ForAdmission(Source, shared.Now).PendingFailures.Should().Be(1);
+        }
+        finally
+        {
+            persisted.SetResult(null);
+            await writing;
+        }
+
+        shared.ForAdmission(Source, shared.Now).PendingFailures.Should().Be(1);
+    }
+
+    [UnitTest]
     public async Task SharedTotal_CountsTowardTheThresholdOnThisInstance()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);

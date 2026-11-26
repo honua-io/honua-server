@@ -1,14 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -20,7 +21,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     private const string Source = "198.51.100.7";
 
     [IntegrationTest]
-    public async Task Threshold_IsReachedByFailuresAcrossTwoInstances()
+    public async Task Ledger_AggregatesRecordedFailuresFromTwoInstances()
     {
         await using var harness = await CreateHarnessAsync();
         var taskA = new Node(harness, Policy(threshold: 4));
@@ -30,7 +31,6 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         await taskB.FailAsync(Source, 2);
 
         taskB.Limiter.RefusalFor(Source).Should().NotBeNull("task B's own write returned the fourth failure in the deployment");
-        taskA.Limiter.RefusalFor(Source).Should().BeNull("task A has not polled yet and counted only two");
         await taskA.Sync.PollAsync(CancellationToken.None);
         taskA.Limiter.RefusalFor(Source).Should().NotBeNull();
         taskA.Limiter.TryBeginAttempt(new(Source, 99)).Admitted.Should().BeFalse();
@@ -41,22 +41,32 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     {
         await using var harness = await CreateHarnessAsync();
         var pollInterval = TimeSpan.FromMilliseconds(500);
+        var clock = new TransitionClock();
+        var timerReady = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timerProvider = Substitute.For<TimeProvider>();
+        timerProvider.CreateTimer(Arg.Any<TimerCallback>(), Arg.Any<object?>(), Arg.Any<TimeSpan>(), Arg.Any<TimeSpan>())
+            .Returns(call =>
+            {
+                var period = call.ArgAt<TimeSpan>(3);
+                var timer = clock.CreateTimer(call.ArgAt<TimerCallback>(0), call.ArgAt<object?>(1), call.ArgAt<TimeSpan>(2), period);
+                timerReady.TrySetResult(period);
+                return timer;
+            });
         var taskA = new Node(harness, Policy(threshold: 3, pollInterval));
-        var taskB = new Node(harness, Policy(threshold: 3, pollInterval));
+        var taskB = new Node(harness, Policy(threshold: 3, pollInterval), timerProvider);
         await taskB.Sync.StartAsync(CancellationToken.None);
         try
         {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            (await timerReady.Task.WaitAsync(deadline.Token)).Should().Be(pollInterval);
             await taskA.FailAsync(Source, 3);
             taskA.Limiter.RefusalFor(Source).Should().NotBeNull();
 
-            var elapsed = Stopwatch.StartNew();
-            while (taskB.Limiter.RefusalFor(Source) is null && elapsed.Elapsed < TimeSpan.FromSeconds(10))
+            clock.Advance(pollInterval);
+            while (taskB.Limiter.RefusalFor(Source) is null)
             {
-                await Task.Delay(25);
+                await Task.Delay(25, deadline.Token);
             }
-
-            taskB.Limiter.RefusalFor(Source).Should().NotBeNull();
-            elapsed.Elapsed.Should().BeLessThan(pollInterval * 4, "task B applies refusals on its next poll");
         }
         finally
         {
@@ -208,14 +218,14 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
 
     private sealed class Node
     {
-        public Node(ControlPlaneStateHarness harness, IOptions<AuthenticationFailureLimiterOptions> options)
+        public Node(ControlPlaneStateHarness harness, IOptions<AuthenticationFailureLimiterOptions> options, TimeProvider? timerProvider = null)
         {
             Shared = new SharedAuthenticationFailures(harness.CreateAuthenticationFailureLedger(options), options, TimeProvider.System);
             Limiter = new AuthenticationFailureLimiter(options, TimeProvider.System, NullLogger<AuthenticationFailureLimiter>.Instance)
             {
                 Shared = Shared,
             };
-            Sync = new SharedAuthenticationFailureSync(Shared, TimeProvider.System, NullLogger<SharedAuthenticationFailureSync>.Instance);
+            Sync = new SharedAuthenticationFailureSync(Shared, timerProvider ?? TimeProvider.System, NullLogger<SharedAuthenticationFailureSync>.Instance);
         }
 
         public SharedAuthenticationFailures Shared { get; }

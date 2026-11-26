@@ -48,8 +48,9 @@ internal sealed class SharedAuthenticationFailures(
         new BoundedChannelOptions(PendingCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
     private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<string, SharedFailureWindow> _windows = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _pendingFailures = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Queue<DateTimeOffset>> _pendingFailures = new(StringComparer.Ordinal);
     private readonly int _maxTrackedSources = options.Value.MaxTrackedSources;
+    private readonly TimeSpan _windowLength = options.Value.Window;
     private readonly DateTimeOffset _clockOrigin = timeProvider.GetUtcNow();
     private readonly long _clockTimestamp = timeProvider.GetTimestamp();
 
@@ -70,7 +71,13 @@ internal sealed class SharedAuthenticationFailures(
                 return false;
             }
 
-            _pendingFailures[source] = _pendingFailures.GetValueOrDefault(source) + 1;
+            if (!_pendingFailures.TryGetValue(source, out var pending))
+            {
+                pending = new Queue<DateTimeOffset>();
+                _pendingFailures.Add(source, pending);
+            }
+
+            pending.Enqueue(at);
             return true;
         }
     }
@@ -87,8 +94,11 @@ internal sealed class SharedAuthenticationFailures(
         lock (_gate)
         {
             _windows.TryGetValue(key, out var window);
+            var pendingCount = _pendingFailures.TryGetValue(source, out var pending)
+                ? pending.Count(at => now - at < _windowLength)
+                : 0;
             return (window.ExpiresAt > now ? window : null,
-                _pendingFailures.GetValueOrDefault(source),
+                pendingCount,
                 window.RefusedUntil ?? window.PreviousRefusal);
         }
     }
@@ -101,11 +111,7 @@ internal sealed class SharedAuthenticationFailures(
     {
         lock (_gate)
         {
-            if (_pendingFailures.GetValueOrDefault(source) > 1)
-            {
-                _pendingFailures[source]--;
-            }
-            else
+            if (_pendingFailures.TryGetValue(source, out var pending) && pending.TryDequeue(out _) && pending.Count == 0)
             {
                 _pendingFailures.Remove(source);
             }
