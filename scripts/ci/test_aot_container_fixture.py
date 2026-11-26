@@ -71,3 +71,13 @@ class AotContainerFixtureTests(unittest.TestCase):
         mount = f"{fixture.REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro"
         self.assertIn(mount, args)
         self.assertEqual(args[args.index(mount) - 1], "-v")
+
+    def test_wait_for_postgis_probes_tcp_loopback_not_init_socket(self) -> None:
+        ok = Mock(returncode=0)
+        with patch.object(fixture, "_run_docker_unchecked", return_value=ok) as docker:
+            fixture._wait_for_postgis("pg-test", 5.0)
+
+        docker.assert_called_once_with([
+            "exec", "pg-test", "pg_isready", "-h", "127.0.0.1", "-p", "5432",
+            "-U", "postgres", "-d", "honua_cng",
+        ])
