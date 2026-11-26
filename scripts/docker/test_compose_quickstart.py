@@ -51,7 +51,7 @@ class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             postgres = json.loads(result.stdout)['services']['postgres']
             self.assertEqual('missing', postgres['pull_policy'])
-            self.assertEqual('ghcr.io/honua-io/honua-server@sha256:2d215e136348f3e0d7139c352f88281b5f980d19d78a00d3d308b56fa0060fb4', postgres['build']['args']['BASE_IMAGE'])
+            self.assertEqual('ghcr.io/honua-io/honua-server@sha256:1b5a7fbe802f8e0342370ace747b074fa7e0e02c2fd14c8e94ff44df06e1b7ee', postgres['build']['args']['BASE_IMAGE'])
             for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
                 self.assertEqual((ROOT / 'docker/proj-grids' / name).read_bytes(),
                                  (path / 'docker/proj-grids' / name).read_bytes())
