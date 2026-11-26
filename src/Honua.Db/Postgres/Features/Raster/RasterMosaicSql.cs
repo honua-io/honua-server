@@ -5,15 +5,26 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
+internal readonly record struct RasterMosaicExpressionOptions
+{
+    public RasterMosaicOrdering Ordering { get; init; }
+
+    public RasterMosaicAttributeSort? AttributeSort { get; init; }
+
+    public string? AlignToSourceCte { get; init; }
+
+    public string? ResamplingAlgorithm { get; init; }
+}
+
 internal static class RasterMosaicSql
 {
     public static string CreateMosaicAggregateExpression(
         RasterMergeStrategy mergeStrategy,
-        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
-        RasterMosaicAttributeSort? attributeSort = null,
-        string? alignToSourceCte = null)
+        RasterMosaicExpressionOptions options = default)
     {
-        var input = alignToSourceCte is null ? "rast" : CreateAlignedRasterExpression(alignToSourceCte);
+        var input = options.AlignToSourceCte is null
+            ? "rast"
+            : CreateAlignedRasterExpression(options.AlignToSourceCte, options.ResamplingAlgorithm);
         return mergeStrategy switch
         {
             // MEAN/MAX/MIN are order-independent; the ordering clause is meaningless for them.
@@ -23,19 +34,35 @@ internal static class RasterMosaicSql
 
             // Oldest is an explicit FIRST/oldest-acquisition selection regardless of the
             // requested ordering; ordering only refines the newest/Northwest/lock cases below.
-            RasterMergeStrategy.Oldest => $"ST_Union({input}, 'FIRST' ORDER BY {OrderByClause(ordering, attributeSort)})",
+            RasterMergeStrategy.Oldest => $"ST_Union({input}, 'FIRST' ORDER BY {OrderByClause(options.Ordering, options.AttributeSort)})",
 
             // Newest (and the default) honour the requested ordering via a LAST union: the row
             // sorted last in the ORDER BY wins the contested pixel.
-            _ => $"ST_Union({input}, 'LAST' ORDER BY {OrderByClause(ordering, attributeSort)})"
+            _ => $"ST_Union({input}, 'LAST' ORDER BY {OrderByClause(options.Ordering, options.AttributeSort)})"
         };
     }
 
-    internal static string CreateAlignedRasterExpression(string sourceCte)
+    internal static string CreateAlignedRasterExpression(
+        string sourceCte,
+        string? algorithm = null)
     {
+        var validated = RasterProjectionSql.ValidateResamplingAlgorithm(algorithm);
         var reference = CreateReferenceGridExpression(sourceCte);
+        var widenSource = CreateWidenSourcePredicate(sourceCte, reference);
+        var wide = CreateWidenedNoDataExpression();
 
-        var widenSource = $"""
+        return $"""
+            (SELECT CASE
+                        WHEN ST_IsEmpty(rast) OR COALESCE(ST_SameAlignment(rast, {reference}), TRUE)
+                            THEN prepared.rast
+                        ELSE ST_Resample(prepared.rast, {reference}, '{validated}')
+                    END
+             FROM (SELECT CASE WHEN {widenSource} THEN {wide} ELSE rast END AS rast) AS prepared)
+            """;
+    }
+
+    private static string CreateWidenSourcePredicate(string sourceCte, string reference)
+        => $"""
             (EXISTS (
                 SELECT 1 FROM {sourceCte} AS candidate
                 WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
@@ -47,13 +74,14 @@ internal static class RasterMosaicSql
                   AND ST_BandNoDataValue(candidate.rast, band.n) IS NULL))
             """;
 
+    private static string CreateWidenedNoDataExpression()
+    {
         // Map algebra emits the requested NoData value for an input NoData pixel. Resetting
         // that value on the wider result keeps existing masks intact while preserving valid
         // zero, signed -1 and floating values. Every band is widened because ST_Union inherits the first
         // input's pixel type, independently of which row needed resampling.
         // A 64BF source can itself contain the reserved value. Detect that exceptional
         // collision before conversion and fail explicitly instead of silently erasing it.
-        // The cast deliberately carries a stable diagnostic into the PostgreSQL error.
         const string WideNoData = """
             CASE WHEN ST_BandPixelType(rast, band.n) = '64BF'
                        AND ST_ValueCount(rast, band.n, TRUE, -1.7976931348623157e308) > 0
@@ -61,7 +89,7 @@ internal static class RasterMosaicSql
                  ELSE -1.7976931348623157e308
             END
             """;
-        var wide = $"""
+        return $"""
             ST_AddBand(
                 ST_MakeEmptyRaster(rast),
                 (SELECT array_agg(
@@ -69,15 +97,6 @@ internal static class RasterMosaicSql
                                 ST_MapAlgebra(rast, band.n, '64BF', '[rast.val]', {WideNoData}),
                                 1, {WideNoData}) ORDER BY band.n)
                  FROM generate_series(1, ST_NumBands(rast)) AS band(n)))
-            """;
-
-        return $"""
-            (SELECT CASE
-                        WHEN ST_IsEmpty(rast) OR COALESCE(ST_SameAlignment(rast, {reference}), TRUE)
-                            THEN prepared.rast
-                        ELSE ST_Resample(prepared.rast, {reference}, 'NearestNeighbor')
-                    END
-             FROM (SELECT CASE WHEN {widenSource} THEN {wide} ELSE rast END AS rast) AS prepared)
             """;
     }
 

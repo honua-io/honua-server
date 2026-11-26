@@ -12,9 +12,14 @@ public sealed class CoverageScalingTests
     [UnitTest]
     public void TryResolveFactor_HalvesBothAxes()
     {
-        CoverageScaling.TryResolveFactor(64, 32, 0.5, out var result).Should().BeTrue();
-        result.Width.Should().Be(32);
-        result.Height.Should().Be(16);
+        // OGC 12-039 (Clause 6.3/6.4): 0 < factor < 1 scales down; factor > 1 scales up.
+        CoverageScaling.TryResolveFactor(64, 32, 0.5, out var downsampled).Should().BeTrue();
+        downsampled.Width.Should().Be(32);
+        downsampled.Height.Should().Be(16);
+
+        CoverageScaling.TryResolveFactor(64, 32, 2, out var upsampled).Should().BeTrue();
+        upsampled.Width.Should().Be(128);
+        upsampled.Height.Should().Be(64);
     }
 
     [UnitTest]

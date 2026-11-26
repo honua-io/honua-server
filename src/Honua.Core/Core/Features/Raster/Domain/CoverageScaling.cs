@@ -84,6 +84,9 @@ public static class CoverageScaling
 
     private static bool IsPositiveFactor(double factor) => double.IsFinite(factor) && factor > 0;
 
+    // Per OGC 12-039 (WCS 2.0 Scaling Extension, Clause 6.3/6.4), scale factors multiply the
+    // grid domain size: 0 < factor < 1 scales down and factor > 1 scales up (unlike OGC API
+    // Coverages scale-factor, which multiplies cell resolution).
     private static bool TryScaleDimension(int baseSize, double factor, out int dimension)
     {
         dimension = 0;

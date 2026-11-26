@@ -12,6 +12,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.Infrastructure.Rendering;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -112,12 +113,75 @@ public sealed class OgcCoveragesZarrGeoTiffTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiCoverages)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_ZarrBacked_WhenRenderCapacityExhausted_ReturnsServiceUnavailable()
+    {
+        using var limiter = new RasterRenderCapacityLimiter(
+            maxConcurrentRenders: 1,
+            maxReservedBytes: 1024 * 1024,
+            acquireTimeout: TimeSpan.Zero);
+        await using var heldLease = await limiter.TryAcquireAsync(1, 1, CancellationToken.None);
+        heldLease.Should().NotBeNull();
+
+        await using var fixture = (await CreateZarrFixtureAsync()).ConfigureServices(services =>
+        {
+            services.RemoveAll<RasterRenderCapacityLimiter>();
+            services.AddSingleton(limiter);
+        });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync(
+            CollectionPath + "/coverage?f=geotiff&subset=Lon(-1:1),Lat(-1:1)&scaleSize=Lon(2),Lat(2)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        response.Headers.TryGetValues("Retry-After", out var retryAfter).Should().BeTrue();
+        retryAfter.Should().Contain("1");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiCoverages)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_ZarrBacked_UnscaledSmallSubsetOfLargeArray_ReservesPlannedSubsetCapacity()
+    {
+        // A 1024x1024 array would exceed a 1 MiB budget if charged at full array size (4 MiB),
+        // but a 16x16 unscaled subset only needs 1 KiB and must succeed when planned accurately.
+        using var limiter = new RasterRenderCapacityLimiter(
+            maxConcurrentRenders: 1,
+            maxReservedBytes: 1024 * 1024,
+            acquireTimeout: TimeSpan.Zero);
+
+        await using var fixture = (await CreateZarrFixtureAsync(
+            ZarrFixtureBuilder.BuildGroupedZlib(
+                Root, 1024, 1024, 64, 64, (row, column) => (row * 1024f) + column, 4326, 0, 0, 10.24, 10.24)))
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<RasterRenderCapacityLimiter>();
+                services.AddSingleton(limiter);
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync(
+            CollectionPath + "/coverage?f=geotiff&subset=Lon(0:0.16),Lat(0:0.16)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/tiff");
+    }
+
     private static string CollectionPath => $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}";
 
-    private static async Task<WebAppFixture> CreateZarrFixtureAsync()
-    {
-        var reader = new InMemoryZarrRangeReader(ZarrFixtureBuilder.BuildGroupedZlib(
+    private static Task<WebAppFixture> CreateZarrFixtureAsync()
+        => CreateZarrFixtureAsync(ZarrFixtureBuilder.BuildGroupedZlib(
             Root, 2, 2, 2, 2, (row, column) => (row * 2f) + column, 4326, -1, -1, 1, 1));
+
+    private static async Task<WebAppFixture> CreateZarrFixtureAsync(Dictionary<string, byte[]> zarrObjects)
+    {
+        var reader = new InMemoryZarrRangeReader(zarrObjects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", Root);
         var store = Substitute.For<IZarrStore>();
         store.ListByLayerAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>()).Returns([

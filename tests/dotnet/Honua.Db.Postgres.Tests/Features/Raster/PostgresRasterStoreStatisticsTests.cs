@@ -595,7 +595,9 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
                 ),
                 {RasterStatisticsAllocationSql.CreateCtes()},
                 merged AS (
-                    SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(RasterMergeStrategy.Newest, alignToSourceCte: "source")} AS rast
+                    SELECT {RasterMosaicSql.CreateMosaicAggregateExpression(
+                        RasterMergeStrategy.Newest,
+                        new RasterMosaicExpressionOptions { AlignToSourceCte = "source" })} AS rast
                     FROM admitted_source
                 )
                 SELECT a.admitted, a.width, a.height, ST_Width(m.rast), ST_Height(m.rast)

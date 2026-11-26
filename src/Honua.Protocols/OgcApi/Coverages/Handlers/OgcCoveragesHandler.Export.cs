@@ -64,7 +64,7 @@ internal sealed partial class OgcCoveragesHandler
         return (scalingResult.Query, scalingResult.RenderSize, null);
     }
 
-    private static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
+    internal static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
         HttpContext context,
         (int Width, int Height) renderSize,
         CancellationToken cancellationToken)

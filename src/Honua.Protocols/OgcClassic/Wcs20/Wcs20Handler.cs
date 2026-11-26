@@ -2057,8 +2057,8 @@ internal sealed partial class Wcs20Handler
         return TryResolveScaleSize(query, out width, out height, out error);
     }
 
-    // WCS 2.0 Scaling extension (SCALEFACTOR): a single positive factor scaling
-    // every spatial axis of the base grid uniformly, e.g. SCALEFACTOR=0.5.
+    // WCS 2.0 Scaling extension (SCALEFACTOR, OGC 12-039): a single positive factor scaling
+    // every spatial axis of the base grid uniformly, e.g. SCALEFACTOR=0.5 halves each axis.
     private static bool TryResolveScaleFactor(
         string value,
         int baseWidth,
@@ -2096,8 +2096,8 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    // WCS 2.0 Scaling extension (SCALEAXES): per-axis positive factors, e.g.
-    // SCALEAXES=x(0.5),y(2). Omitted axes keep their base size.
+    // WCS 2.0 Scaling extension (SCALEAXES, OGC 12-039): per-axis positive factors, e.g.
+    // SCALEAXES=x(0.5),y(2) halves x and doubles y. Omitted axes keep their base size.
     private static bool TryResolveScaleAxes(
         string value,
         int baseWidth,
