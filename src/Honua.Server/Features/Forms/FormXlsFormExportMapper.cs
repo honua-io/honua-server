@@ -58,7 +58,7 @@ internal sealed class FormXlsFormExportMapper
             : exported;
     }
 
-    private static XlsFormRow RestoreRules(XlsFormRow row, IReadOnlyDictionary<string, FormField> fields)
+    private static XlsFormRow RestoreRules(XlsFormRow row, Dictionary<string, FormField> fields)
     {
         if (row.Cells.GetValueOrDefault("type") == "begin_group"
             || !row.Cells.TryGetValue("name", out var name)

@@ -120,7 +120,7 @@ public sealed partial class FormPackageValidatorTests
     {
         var published = PublishedXlsPackage(XlsRelevancePackage());
         var hidden = CreateSubmissionRequest(FormSubmissionOperations.Update, targetFeatureId: 42,
-            values: new() { ["count"] = Json("0") }, includeGeometry: false);
+            values: new() { ["count"] = Json("0") });
 
         var validation = await CreateValidator().ValidateAndNormalizeSubmissionAsync(published, hidden);
 
