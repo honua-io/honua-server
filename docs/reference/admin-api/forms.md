@@ -10,7 +10,7 @@ resources:
 
 Reference for Forms: author Forms in XLSForm workbooks or JSON. Import creates an editable Draft; validate it against the target Layer, go live with an immutable Released Version, export the Released Version back to XLSForm, and reopen a Released Version as a new Draft. Field clients fetch Released Form Versions and submit data against them.
 
-All routes require admin authentication, including runtime fetch and submission. Field deployments with non-admin collectors need a scoped runtime authorization path before enabling published forms for those users. Submissions additionally require edit permission on the target Service/Layer. See [Authentication](../../guides/secure/authentication.md).
+Authoring and publishing require admin authentication. Runtime requests require an authenticated identity. Fetching a Released Version, its offline policy, or its compatibility manifest requires query access to the target Service/Layer. Submitting a form requires permission for the requested edit operation on the target Service/Layer. An API key with both `read:<service>/<layer>` and `write:<service>/<layer>` grants can fetch and submit forms for that Layer. See [Authentication](../../guides/secure/authentication.md).
 
 Also available in Honua Console — UI guide coming soon.
 
