@@ -947,8 +947,8 @@ public sealed class OgcClassicWmsTests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue").And.Contain("nosuchfield");
-        content.Should().NotContain("NoApplicableCode");
+        content.Should().Contain("InvalidParameterValue").And.Contain("Invalid FILTER expression.");
+        content.Should().NotContain("nosuchfield").And.NotContain("NoApplicableCode");
     }
 
     [IntegrationTest]
@@ -976,8 +976,8 @@ public sealed class OgcClassicWmsTests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue").And.Contain("numeric");
-        content.Should().NotContain("NoApplicableCode");
+        content.Should().Contain("InvalidParameterValue").And.Contain("Invalid FILTER expression.");
+        content.Should().NotContain("numeric").And.NotContain("NoApplicableCode");
     }
 
     private Task<HttpResponseMessage> GetFeatureInfoWithFilterAsync(string filter)

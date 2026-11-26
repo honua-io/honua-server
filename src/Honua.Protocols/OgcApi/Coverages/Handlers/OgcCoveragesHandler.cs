@@ -488,7 +488,7 @@ internal sealed partial class OgcCoveragesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, queryError);
             }
 
-            var (scaledQuery, scalingError) = await ApplyCoverageScalingStepAsync(
+            var (scaledQuery, renderSize, scalingError) = await ApplyCoverageScalingStepAsync(
                 context,
                 new CoverageScalingInput
                 {
@@ -515,7 +515,7 @@ internal sealed partial class OgcCoveragesHandler
 
             var (renderLease, capacityError) = await TryAcquireCoverageRenderLeaseAsync(
                 context,
-                (rasterQuery, resolution.Raster!.Value),
+                renderSize,
                 cancellationToken).ConfigureAwait(false);
             if (capacityError is not null)
             {
@@ -1340,7 +1340,7 @@ internal sealed partial class OgcCoveragesHandler
             }
 
             var requestedPixelSize = new PixelSize { Width = pixelWidth, Height = pixelHeight };
-            var validationError = await ValidateDerivedScaleSizeAsync(
+            var (renderSize, validationError) = await ValidateDerivedScaleSizeAsync(
                     context,
                     raster,
                     supportedCrs,
@@ -1354,7 +1354,7 @@ internal sealed partial class OgcCoveragesHandler
                 return ScalingResult.Failure(validationError);
             }
 
-            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
+            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize }, renderSize);
         }
 
         var scaleFactor = OgcCommonUtilities.GetQueryValue(context.Request, "scale-factor");
@@ -1378,7 +1378,7 @@ internal sealed partial class OgcCoveragesHandler
                 Width = nativePixelSize.Value.Width * factor,
                 Height = nativePixelSize.Value.Height * factor
             };
-            var validationError = await ValidateDerivedScaleSizeAsync(
+            var (renderSize, validationError) = await ValidateDerivedScaleSizeAsync(
                     context,
                     raster,
                     supportedCrs,
@@ -1392,7 +1392,7 @@ internal sealed partial class OgcCoveragesHandler
                 return ScalingResult.Failure(validationError);
             }
 
-            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
+            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize }, renderSize);
         }
 
         var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size")
@@ -1404,85 +1404,16 @@ internal sealed partial class OgcCoveragesHandler
                 return ScalingResult.Failure($"scale-size must be width,height or axis size pairs such as x(512),y(512), with values from 1 to {MaxScaleSize.ToString(CultureInfo.InvariantCulture)}.");
             }
 
-            return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
+            return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height }, (Math.Max(1, width), Math.Max(1, height)));
         }
 
-        if (query.ClipRegion is { } nativeClip &&
-            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
-        {
-            var nativeSizeError = await ValidateNativeSubsetSizeAsync(raster, storageSrid, nativeClip, cancellationToken)
-                .ConfigureAwait(false);
-            if (nativeSizeError is not null)
-            {
-                return ScalingResult.Failure(nativeSizeError);
-            }
-        }
-
-        // No scaling parameters were supplied, so the coverage is exported at native
-        // resolution and fully buffered in memory. Apply the same MaxScaleSize cap as
-        // the scaled paths to a full-extent export so a plain GET of a very large
-        // raster cannot allocate an unbounded encoded image.
-        if (!query.ClipRegion.HasValue &&
-            raster.Width > 0 &&
-            raster.Height > 0 &&
-            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
-        {
-            return ScalingResult.Failure(
-                $"Coverage native size exceeds {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on an axis. Use subset or bbox to select a smaller area, or resolution, scale-factor, or scale-size to downsample the output.");
-        }
-
-        return ScalingResult.Successful(query);
-    }
-
-    private async ValueTask<string?> ValidateNativeSubsetSizeAsync(
-        RasterInfo raster,
-        int storageSrid,
-        RasterClipRegion clip,
-        CancellationToken cancellationToken)
-    {
-        var error = $"Native subset must not exceed {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Select a smaller subset or use scale-size to bound the output.";
-        if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
-            raster.Width <= 0 || raster.Height <= 0 ||
-            // codeql[cs/equality-on-floats]: exact zero shear means an axis-aligned grid; a tolerance would serve a rotated grid as north-up
-            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
-        {
-            // A rotated or unknown native grid cannot safely establish the output
-            // window from its envelope. Explicit scaling still provides a bound.
-            return error;
-        }
-
-        var nativeWidth = extent.XMax - extent.XMin;
-        var nativeHeight = extent.YMax - extent.YMin;
-        if (!IsFinitePositive(nativeWidth) || !IsFinitePositive(nativeHeight))
-        {
-            return error;
-        }
-
-        var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
-        var clipSrid = clip.Srid ?? storageSrid;
-        var bounds = clipSrid == storageSrid
-            ? (MinX: envelope.MinX, MinY: envelope.MinY, MaxX: envelope.MaxX, MaxY: envelope.MaxY)
-            : await _coordinateTransformService.TransformExtentAsync(
-                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
-                clipSrid, storageSrid, cancellationToken).ConfigureAwait(false);
-        if (!bounds.HasValue)
-        {
-            return error;
-        }
-
-        // Clip to the native footprint first (including an omitted/unrestricted
-        // axis), then round outward to bound every possibly touched grid cell.
-        var minX = Math.Clamp(bounds.Value.MinX, extent.XMin, extent.XMax);
-        var maxX = Math.Clamp(bounds.Value.MaxX, extent.XMin, extent.XMax);
-        var minY = Math.Clamp(bounds.Value.MinY, extent.YMin, extent.YMax);
-        var maxY = Math.Clamp(bounds.Value.MaxY, extent.YMin, extent.YMax);
-        var width = Math.Ceiling((maxX - extent.XMin) / nativeWidth * raster.Width) -
-                    Math.Floor((minX - extent.XMin) / nativeWidth * raster.Width);
-        var height = Math.Ceiling((maxY - extent.YMin) / nativeHeight * raster.Height) -
-                     Math.Floor((minY - extent.YMin) / nativeHeight * raster.Height);
-        return !double.IsFinite(width) || !double.IsFinite(height) || width > MaxScaleSize || height > MaxScaleSize
-            ? error
-            : null;
+        var (unscaledRenderSize, unscaledError) = await ValidateUnscaledCoverageSizeAsync(
+                (raster, storageSrid, query.ClipRegion),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return unscaledError is not null
+            ? ScalingResult.Failure(unscaledError)
+            : ScalingResult.Successful(query, unscaledRenderSize);
     }
 
     private static bool TryParseResolution(string value, out double pixelWidth, out double pixelHeight)
@@ -1558,7 +1489,7 @@ internal sealed partial class OgcCoveragesHandler
                parsed is > 0 and <= MaxScaleSize;
     }
 
-    private async ValueTask<string?> ValidateDerivedScaleSizeAsync(
+    private async ValueTask<((int Width, int Height) RenderSize, string? Error)> ValidateDerivedScaleSizeAsync(
         HttpContext context,
         RasterInfo raster,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
@@ -1569,33 +1500,27 @@ internal sealed partial class OgcCoveragesHandler
     {
         if (!IsFinitePositive(pixelSize.Width) || !IsFinitePositive(pixelSize.Height))
         {
-            return "resolution and scale-factor must resolve to positive finite pixel sizes.";
+            return (default, "resolution and scale-factor must resolve to positive finite pixel sizes.");
         }
 
         var scaleExtentSize = await ResolveRequestedScaleExtentSizeAsync(
-                context,
-                raster,
-                supportedCrs,
-                storageSrid,
-                query,
-                cancellationToken)
-            .ConfigureAwait(false);
+                context, raster, supportedCrs, storageSrid, query, cancellationToken).ConfigureAwait(false);
         if (!scaleExtentSize.HasValue)
         {
-            return "resolution and scale-factor require coverage extent or pixel size metadata.";
+            return (default, "resolution and scale-factor require coverage extent or pixel size metadata.");
         }
 
-        var outputWidth = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Width / pixelSize.Width));
-        var outputHeight = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Height / pixelSize.Height));
-        if (!IsFinitePositive(outputWidth) ||
-            !IsFinitePositive(outputHeight) ||
-            outputWidth > MaxScaleSize ||
-            outputHeight > MaxScaleSize)
+        var (outputWidth, outputHeight) = await ResolveDerivedOutputDimensionsAsync(
+                (raster, storageSrid, query),
+                (scaleExtentSize.Value.Width, scaleExtentSize.Value.Height, pixelSize),
+                cancellationToken).ConfigureAwait(false);
+        if (!IsFinitePositive(outputWidth) || !IsFinitePositive(outputHeight) ||
+            outputWidth > MaxScaleSize || outputHeight > MaxScaleSize)
         {
-            return $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.";
+            return (default, $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.");
         }
 
-        return null;
+        return (((int)outputWidth, (int)outputHeight), null);
     }
 
     private async ValueTask<(double Width, double Height)?> ResolveRequestedScaleExtentSizeAsync(
@@ -1942,11 +1867,13 @@ internal sealed partial class OgcCoveragesHandler
         where TProjection : class
         => [.. await RequestFanOut.SelectAsync(source, projector, cancellationToken).ConfigureAwait(false)];
 
-    private readonly record struct ScalingResult(bool Success, RasterQuery Query, string Error)
+    private readonly record struct ScalingResult(RasterQuery Query, (int Width, int Height) RenderSize, string Error)
     {
-        public static ScalingResult Successful(RasterQuery query) => new(true, query, string.Empty);
+        public bool Success => string.IsNullOrEmpty(Error);
 
-        public static ScalingResult Failure(string error) => new(false, default, error);
+        public static ScalingResult Successful(RasterQuery query, (int Width, int Height) renderSize) => new(query, renderSize, string.Empty);
+
+        public static ScalingResult Failure(string error) => new(default, default, error);
     }
 
     private readonly record struct CoverageFormat(RasterFormat Format, string ContentType, string QueryValue);
