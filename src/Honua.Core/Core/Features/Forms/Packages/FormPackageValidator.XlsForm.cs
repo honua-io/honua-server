@@ -27,7 +27,7 @@ public sealed partial class FormPackageValidator
         return scopes;
     }
 
-    private static void ValidateXlsExpressions(FormPackageDocument package, List<FormValidationIssue> issues)
+    internal static void ValidateXlsExpressions(FormPackageDocument package, List<FormValidationIssue> issues)
     {
         var scopes = GetXlsScopes(package);
         var parentFields = new HashSet<string>(StringComparer.Ordinal);

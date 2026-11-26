@@ -73,6 +73,23 @@ public sealed class FormXlsFormMapperTests
     }
 
     [UnitTest]
+    public void ToPackage_UsesRuntimeFunctionsAndRejectsUnsupportedExpressions()
+    {
+        var package = Import(
+            Row(2, "select_multiple status", "status"),
+            Row(3, "text", "name", "constraint", "string-length(.) >= 3"),
+            Row(4, "calculate", "total", "calculation", "if(selected(${status}, 'open'), 2, 0)"));
+        package.Fields[1].ConstraintExpression.Should().Be("string-length(.) >= 3");
+        package.Fields[2].CalculatedExpression.Should().Be("if(selected(${status}, 'open'), 2, 0)");
+
+        var invalid = FormXlsFormImportMapper.ToPackage(
+            Workbook(Row(2, "text", "name", "constraint", "unsupported(.)")), Target);
+        invalid.Value.Should().BeNull();
+        invalid.Diagnostics.Should().ContainSingle()
+            .Which.Should().Match<XlsFormDiagnostic>(issue => issue.RowNumber == 2 && issue.Column == "constraint");
+    }
+
+    [UnitTest]
     public void ToPackage_RuntimeQuestions_KeepTheirSubmissionBindings()
     {
         var package = Import(
@@ -101,7 +118,7 @@ public sealed class FormXlsFormMapperTests
             Row(6, "text", "note"),
             Row(7, "end_repeat"));
 
-        var result = FormXlsFormImportMapper.ToPackage(Convert(workbook), workbook, Target);
+        var result = FormXlsFormImportMapper.ToPackage(workbook, Target);
 
         result.Value.Should().BeNull();
         result.Diagnostics.Select(static diagnostic => (diagnostic.Sheet, diagnostic.RowNumber, diagnostic.Column)).Should().Equal(
@@ -120,7 +137,7 @@ public sealed class FormXlsFormMapperTests
 
         var exported = XlsFormConverter.Export(FormXlsFormExportMapper.ToDefinition(Published(package)).Value!);
         exported.Diagnostics.Should().BeEmpty();
-        var reimported = FormXlsFormImportMapper.ToPackage(XlsFormConverter.Import(exported.Value!).Value!, exported.Value!, Target);
+        var reimported = FormXlsFormImportMapper.ToPackage(exported.Value!, Target);
 
         reimported.Value!.Fields.Should().BeEquivalentTo(package.Fields, static options => options
             .Using<JsonElement>(static context => context.Subject.GetRawText().Should().Be(context.Expectation.GetRawText()))
@@ -169,16 +186,9 @@ public sealed class FormXlsFormMapperTests
     private static FormPackageDocument Import(params XlsFormRow[] survey)
     {
         var workbook = Workbook(survey);
-        var result = FormXlsFormImportMapper.ToPackage(Convert(workbook), workbook, Target);
+        var result = FormXlsFormImportMapper.ToPackage(workbook, Target);
         result.Diagnostics.Should().BeEmpty();
         return result.Value!;
-    }
-
-    private static FormDefinition Convert(XlsFormWorkbook workbook)
-    {
-        var imported = XlsFormConverter.Import(workbook);
-        imported.Diagnostics.Should().BeEmpty();
-        return imported.Value!;
     }
 
     private static FormPackageVersion Published(FormPackageDocument package) => new()
