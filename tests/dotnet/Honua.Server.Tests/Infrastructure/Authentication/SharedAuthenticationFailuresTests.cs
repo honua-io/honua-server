@@ -28,7 +28,7 @@ public sealed class SharedAuthenticationFailuresTests
     });
 
     [UnitTest]
-    public async Task PolledRefusal_RefusesASourceThisInstanceNeverSawFail()
+    public async Task PollAsync_RemoteRefusalForPreviouslyUnseenSource_RefusesTheSource()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(4);
@@ -45,7 +45,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public void CompletedCheck_PreservesTheDeadlineOfARefusalLearnedDuringTheCheck()
+    public void EndAttempt_SharedRefusalArrivesDuringCredentialCheck_PreservesTheSharedDeadline()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var limiter = CreateLimiter(shared);
@@ -74,7 +74,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Poll_SubtractsTheTimeSinceTheLedgerSample()
+    public async Task PollAsync_DelayedLedgerResponse_SubtractsTimeSinceTheSample()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(2);
@@ -94,7 +94,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Write_DropsARefusalThatExpiresBeforeTheResultArrives()
+    public async Task RecordAsync_RefusalExpiresBeforeTheResultArrives_DiscardsTheRefusal()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(2);
@@ -115,7 +115,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Admission_CountsOnlyPendingFailuresWithinTheWindow()
+    public async Task ForAdmission_PendingFailureExpiresDuringWrite_CountsOnlyUnexpiredFailures()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         using var sync = CreateSync(shared);
@@ -141,7 +141,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task SharedTotal_CountsTowardTheThresholdOnThisInstance()
+    public async Task TryBeginAttempt_SharedFailuresLeaveOneSlot_AdmitsOnlyOneInFlightAttempt()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>())
@@ -160,7 +160,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task UnreachableLedger_LeavesThePerInstanceLimiterCounting()
+    public async Task RefusalFor_LedgerUnavailableAndLocalThresholdReached_ReportsLocalRefusal()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>())
@@ -184,7 +184,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public void OutOfOrderSnapshots_PreserveTheCurrentRefusal()
+    public void Apply_OlderSnapshotArrivesAfterCurrentRefusal_PreservesCurrentRefusal()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var now = _clock.GetUtcNow();
@@ -199,7 +199,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public void Validator_RefusesAPollIntervalAboveOneMinute()
+    public void Validate_PollIntervalAboveOneMinute_RejectsTheInterval()
     {
         var options = new AuthenticationFailureLimiterOptions { SharedPollInterval = TimeSpan.FromMinutes(2) };
 
@@ -208,7 +208,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Shutdown_DrainsQueuedFailures()
+    public async Task StopAsync_QueuedFailureWriteStillPending_DrainsTheQueueAndStopsAcceptingFailures()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var recordedAt = _clock.GetUtcNow().AddSeconds(-10);
@@ -238,7 +238,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task LedgerCancellation_LeavesPollingAvailable()
+    public async Task PollAsync_LedgerCancelsFirstRead_AppliesRefusalOnNextPoll()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var now = _clock.GetUtcNow();
@@ -257,7 +257,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public void Validator_RefusesAPollIntervalBelowOneMillisecond()
+    public void Validate_PollIntervalBelowOneMillisecond_RejectsTheInterval()
     {
         var options = new AuthenticationFailureLimiterOptions { SharedPollInterval = TimeSpan.FromTicks(1) };
 
@@ -266,7 +266,7 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task SharedRefusalExpiry_ResetsEarlierLocalFailuresAndUsesElapsedTime()
+    public async Task TryBeginAttempt_SharedRefusalExpiresByElapsedTime_AdmitsWithoutEarlierFailures()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var duration = TimeSpan.FromMinutes(1);

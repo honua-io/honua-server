@@ -22,7 +22,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     private const string Source = "198.51.100.7";
 
     [IntegrationTest]
-    public async Task Ledger_AggregatesRecordedFailuresFromTwoInstances()
+    public async Task RecordFailureAsync_FailuresFromTwoInstances_AggregatesThemIntoOneRefusal()
     {
         await using var harness = await CreateHarnessAsync();
         var taskA = new Node(harness, Policy(threshold: 4));
@@ -38,7 +38,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task RefusalWrittenOnTaskA_TakesEffectOnRunningTaskB_AfterPolling()
+    public async Task StartAsync_AnotherInstanceWritesARefusal_ObservesItOnNextPoll()
     {
         await using var harness = await CreateHarnessAsync();
         var pollInterval = TimeSpan.FromMilliseconds(500);
@@ -76,7 +76,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Restart_KeepsARefusalThatIsInForce()
+    public async Task StartAsync_RefusalIsAlreadyInForce_RestoresRefusalOnStartup()
     {
         await using var harness = await CreateHarnessAsync();
         await new Node(harness, Policy(threshold: 2)).FailAsync(Source, 2);
@@ -89,7 +89,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task SuccessfulAndUncountedAttempts_WriteNothing()
+    public async Task EndAttempt_OutcomeIsNotCounted_WritesNothing()
     {
         await using var harness = await CreateHarnessAsync();
         var node = new Node(harness, Policy(threshold: 2));
@@ -107,7 +107,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Store_KeepsOnlyADigestOfTheSource()
+    public async Task RecordFailureAsync_FailureHasASource_StoresOnlyTheDigest()
     {
         await using var harness = await CreateHarnessAsync();
         await new Node(harness, Policy(threshold: 5)).FailAsync(Source, 1);
@@ -119,7 +119,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Sweep_EvictsOldUnrefusedWindowsToReachTheRetentionTarget()
+    public async Task DeleteExpiredAsync_RetentionTargetDrops_EvictsUnrefusedWindows()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 1);
@@ -141,7 +141,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_ReclaimsAnExpiredSlotAndBoundsConcurrentAdmissions()
+    public async Task RecordFailureAsync_ConcurrentAdmissionsFillTheLimit_RequiresAnExpiredSlotForANewSource()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 1);
@@ -171,7 +171,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_KeepsTheSameExpiryForWritesInAnActiveCountingWindow()
+    public async Task RecordFailureAsync_ExistingCountingWindowIsActive_PreservesItsExpiry()
     {
         await using var harness = await CreateHarnessAsync();
         var ledger = harness.CreateAuthenticationFailureLedger(Policy(threshold: 2));
@@ -189,7 +189,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_CombinesConcurrentWritesInOneCountingWindow()
+    public async Task RecordFailureAsync_ConcurrentWritesForOneSource_UsesOneCountingWindow()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 5);
@@ -206,7 +206,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_SkipsAFailureThatAgesOutWhileWaitingForTheWriteLock()
+    public async Task RecordFailureAsync_FailureAgesOutWhileWaitingForWriteLock_SkipsTheWrite()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 3);
