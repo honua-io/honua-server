@@ -31,7 +31,7 @@ on:
       postgis_image:
         description: Digest-pinned multi-arch PostGIS image for amd64 and arm64 runs
         required: false
-        default: 'imresamu/postgis:17-3.5@sha256:1e7839db1a45cd1198d81caac3b665554ef97aaf30970c8855fe74a52c9d6bf5'
+        default: 'imresamu/postgis:17-3.5@sha256:35fe7dceda62bfe7d2965b0ba78d915ff9f901b5e0466d633ecc58421b5b5210'
         type: string
 
 permissions:
