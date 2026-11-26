@@ -747,7 +747,7 @@ public static partial class OidcAuthenticationExtensions
             };
         });
 
-        ConfigureJwtBearerBackchannel(builder, discoveryAuthorities, oidcOptions.RequireHttps);
+        ConfigureJwtBearerBackchannel(builder, discoveryAuthorities, oidcOptions);
     }
 
     private static List<string> CollectDiscoveryAuthorities(OidcAuthenticationOptions oidcOptions)
@@ -784,7 +784,7 @@ public static partial class OidcAuthenticationExtensions
     private static void ConfigureJwtBearerBackchannel(
         AuthenticationBuilder builder,
         List<string> discoveryAuthorities,
-        bool requireHttps)
+        OidcAuthenticationOptions oidcOptions)
     {
         if (discoveryAuthorities.Count == 0)
         {
@@ -794,14 +794,19 @@ public static partial class OidcAuthenticationExtensions
         builder.Services.AddOptions<JwtBearerOptions>(JwtBearerScheme)
             .Configure<IServiceProvider>((options, serviceProvider) =>
             {
-                var allowPrivate = OidcBackchannelHttpHandler.AllowsPrivateNetworks(
-                    serviceProvider.GetService<IHostEnvironment>());
-                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.Create(allowPrivate);
+                var environment = serviceProvider.GetService<IHostEnvironment>();
+                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.CreateForEnvironment(environment);
                 if (discoveryAuthorities.Count > 1 && options.ConfigurationManager is null)
                 {
-                    var manager = new MultiAuthorityConfigurationManager(
-                        discoveryAuthorities,
-                        new OidcBackchannelPolicy(requireHttps, allowPrivate));
+                    var policy = oidcOptions.RequireHttps
+                        ? DiscoveryEndpointPolicy.Strict
+                        : DiscoveryEndpointPolicy.AllowHttp;
+                    if (OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment))
+                    {
+                        policy |= DiscoveryEndpointPolicy.AllowPrivateNetworks;
+                    }
+
+                    var manager = new MultiAuthorityConfigurationManager(discoveryAuthorities, policy);
                     options.ConfigurationManager = manager;
                     manager.BindIssuerSigningKeys(options.TokenValidationParameters);
                 }
@@ -812,7 +817,7 @@ public static partial class OidcAuthenticationExtensions
     {
         builder.Services.AddOptions<OpenIdConnectOptions>(scheme)
             .Configure<IServiceProvider>(static (options, serviceProvider) =>
-                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.Create(
+                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.CreateForEnvironment(
                     serviceProvider.GetService<IHostEnvironment>()));
     }
 

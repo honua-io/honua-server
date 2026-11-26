@@ -16,16 +16,24 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public sealed class OidcBackchannelHttpHandlerTests
 {
     [UnitTheory]
-    [InlineData("Development", true)]
-    [InlineData("Test", true)]
-    [InlineData("Production", false)]
-    [InlineData("Staging", false)]
-    [InlineData(null, false)]
-    public void AllowsPrivateNetworks_MatchesEnvironmentPolicy(string? environmentName, bool expected)
+    [InlineData("Development")]
+    [InlineData("Test")]
+    public void AllowsPrivateNetworks_DevelopmentAndTestEnvironments_ReturnsTrue(string environmentName)
+    {
+        var environment = new StubHostEnvironment(environmentName);
+
+        OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData(null)]
+    public void AllowsPrivateNetworks_NonDevelopmentEnvironments_ReturnsFalse(string? environmentName)
     {
         IHostEnvironment? environment = environmentName is null ? null : new StubHostEnvironment(environmentName);
 
-        OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment).Should().Be(expected);
+        OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment).Should().BeFalse();
     }
 
     [UnitTheory]
@@ -34,10 +42,9 @@ public sealed class OidcBackchannelHttpHandlerTests
     [InlineData("10.0.0.5")]
     [InlineData("192.168.1.10")]
     [InlineData("::1")]
-    public async Task Create_ProductionMode_BlocksPrivateLoopbackAndMetadataAddresses(string resolvedAddress)
+    public async Task CreatePublicOnlyClient_BlocksPrivateLoopbackAndMetadataAddresses(string resolvedAddress)
     {
-        using var client = OidcBackchannelHttpHandler.CreateClient(
-            allowPrivateNetworks: false,
+        using var client = OidcBackchannelHttpHandler.CreatePublicOnlyClient(
             hostAddressResolver: (_, _) => Task.FromResult(new[] { IPAddress.Parse(resolvedAddress) }));
 
         var act = () => client.GetAsync("https://idp.example.test/.well-known/openid-configuration");
@@ -47,11 +54,11 @@ public sealed class OidcBackchannelHttpHandlerTests
     }
 
     [UnitTest]
-    public async Task Create_DevelopmentMode_PermitsLoopbackAndRefusesRedirects()
+    public async Task CreateClient_DevelopmentPermitsLoopbackAndRefusesRedirects_ProductionBlocksLoopback()
     {
         using var listener = new LocalRedirectAndDiscoveryServer();
-        using var devClient = OidcBackchannelHttpHandler.CreateClient(allowPrivateNetworks: true);
-        using var prodClient = OidcBackchannelHttpHandler.CreateClient(allowPrivateNetworks: false);
+        using var devClient = OidcBackchannelHttpHandler.CreateClientAllowingPrivateNetworks();
+        using var prodClient = OidcBackchannelHttpHandler.CreatePublicOnlyClient();
 
         using var devOk = await devClient.GetAsync(listener.OkUrl);
         devOk.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -68,10 +75,8 @@ public sealed class OidcBackchannelHttpHandlerTests
     public async Task MultiAuthorityAndCache_ProductionMode_RefuseLoopbackAndRedirectDiscovery()
     {
         using var listener = new LocalRedirectAndDiscoveryServer();
-        using var prodMulti = new MultiAuthorityConfigurationManager(
-            [listener.BaseUrl],
-            new OidcBackchannelPolicy(RequireHttps: false, AllowPrivateNetworks: false));
-        using var prodCache = new OidcConfigurationManagerCache(allowPrivateNetworks: false);
+        using var prodMulti = new MultiAuthorityConfigurationManager([listener.BaseUrl], DiscoveryEndpointPolicy.AllowHttp);
+        using var prodCache = OidcConfigurationManagerCache.CreatePublicOnly();
 
         var multiAct = () => prodMulti.GetConfigurationAsync(CancellationToken.None);
         var cacheAct = () => prodCache
@@ -81,7 +86,7 @@ public sealed class OidcBackchannelHttpHandlerTests
         await multiAct.Should().ThrowAsync<Exception>();
         await cacheAct.Should().ThrowAsync<Exception>();
 
-        using var devCache = new OidcConfigurationManagerCache(allowPrivateNetworks: true);
+        using var devCache = OidcConfigurationManagerCache.CreateAllowingPrivateNetworks();
         var redirectAct = () => devCache
             .GetOrCreate(listener.RedirectUrl, requireHttps: false)
             .GetConfigurationAsync(CancellationToken.None);
@@ -90,7 +95,7 @@ public sealed class OidcBackchannelHttpHandlerTests
 
         using var devMulti = new MultiAuthorityConfigurationManager(
             [listener.BaseUrl],
-            new OidcBackchannelPolicy(RequireHttps: false, AllowPrivateNetworks: true));
+            DiscoveryEndpointPolicy.AllowHttp | DiscoveryEndpointPolicy.AllowPrivateNetworks);
         var config = await devMulti.GetConfigurationAsync(CancellationToken.None);
         config.Issuer.Should().Be(listener.BaseUrl);
     }

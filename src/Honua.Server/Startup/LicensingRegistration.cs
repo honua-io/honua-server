@@ -55,12 +55,11 @@ internal static class LicensingRegistration
             "identity-provider-test",
             HttpResiliencePolicies.FastApiDefaults,
             configureHandler: PublicHealthCheckHttpHandler.Create);
-        var allowPrivateOidcNetworks = OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment);
         services.AddResilientHttpClient(
             "AdminAuthOidc",
             "admin-auth-oidc",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: () => OidcBackchannelHttpHandler.Create(allowPrivateOidcNetworks));
+            configureHandler: () => OidcBackchannelHttpHandler.CreateForEnvironment(environment));
 
         return services;
     }

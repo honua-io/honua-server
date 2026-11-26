@@ -13,7 +13,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Exports;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -38,20 +37,21 @@ namespace Honua.Server.Tests.Features.Admin.Exports;
 [SecurityTest]
 public sealed class ExportAdminTenantIsolationTests
 {
-    private const string TenantA = "tenant-a";
-    private const string TenantB = "tenant-b";
-    private const string ServiceA = "svc-a";
-    private const string ServiceB = "svc-b";
-    private const string ResourceA = "res-a";
-    private const string ResourceB = "res-b";
     private const string ExportA = "alpha-export";
     private const string ExportB = "beta-export";
     private const string ExportVersionId = "20261113T062701Z";
 
+    private readonly record struct CallerIdentity(string TenantId, string Role, TenantContextSource Source);
+
+    private readonly record struct SeedExportSpec(string ExportId, string ServiceId, string ResourceId);
+
+    private readonly record struct CompletedExportJobSpec(string JobId, string ExportId, string ServiceId);
+
     [UnitTest]
     public async Task ListAsync_TenantAdmin_ReturnsOnlyOwnTenantExportsAndPaginatesCleanly()
     {
-        var fixture = await ExportTenantHarness.CreateAsync(TenantB, "admin", multiTenancyEnabled: true);
+        var fixture = await ExportTenantHarness.CreateAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantB, "admin", TenantContextSource.Claim));
 
         var result = await fixture.ListAsync();
 
@@ -63,7 +63,8 @@ public sealed class ExportAdminTenantIsolationTests
     [UnitTest]
     public async Task GetAsync_TenantAdmin_AllowsOwnExportAndHidesForeignTenantExport()
     {
-        var fixture = await ExportTenantHarness.CreateAsync(TenantA, "admin", multiTenancyEnabled: true);
+        var fixture = await ExportTenantHarness.CreateAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantA, "admin", TenantContextSource.Claim));
 
         var own = await fixture.GetAsync(ExportA);
         var foreign = await fixture.GetAsync(ExportB);
@@ -75,21 +76,22 @@ public sealed class ExportAdminTenantIsolationTests
     [UnitTest]
     public async Task CreateAsync_TenantAdmin_BlocksForeignLayerAndForeignExportIdCollision()
     {
-        var fixture = await ExportTenantHarness.CreateAsync(TenantA, "admin", multiTenancyEnabled: true);
+        var fixture = await ExportTenantHarness.CreateAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantA, "admin", TenantContextSource.Claim));
 
         var foreignLayer = await fixture.CreateAsync(new ExportCreateRequest
         {
-            Source = new ExportSourceRequest { Kind = "layer", ServiceId = ServiceB, LayerId = 0 },
+            Source = new ExportSourceRequest { Kind = "layer", ServiceId = TwoTenantGraphFixture.ServiceB, LayerId = 0 },
             ExportId = "stolen-export",
         });
         var collidingId = await fixture.CreateAsync(new ExportCreateRequest
         {
-            Source = new ExportSourceRequest { Kind = "layer", ServiceId = ServiceA, LayerId = 0 },
+            Source = new ExportSourceRequest { Kind = "layer", ServiceId = TwoTenantGraphFixture.ServiceA, LayerId = 0 },
             ExportId = ExportB,
         });
         var ownLayer = await fixture.CreateAsync(new ExportCreateRequest
         {
-            Source = new ExportSourceRequest { Kind = "layer", ServiceId = ServiceA, LayerId = 0 },
+            Source = new ExportSourceRequest { Kind = "layer", ServiceId = TwoTenantGraphFixture.ServiceA, LayerId = 0 },
             ExportId = "tenant-a-new-export",
         });
 
@@ -97,14 +99,17 @@ public sealed class ExportAdminTenantIsolationTests
         StatusOf(collidingId).Should().Be(StatusCodes.Status409Conflict);
         StatusOf(ownLayer).Should().Be(StatusCodes.Status202Accepted);
         await fixture.TileJobs.Received(1).SubmitAsync(
-            Arg.Is<TileOperationSubmission>(submission => submission.TenantId == TenantA && submission.Request.ExportId == "tenant-a-new-export"),
+            Arg.Is<TileOperationSubmission>(submission =>
+                submission.TenantId == TwoTenantGraphFixture.TenantA &&
+                submission.Request.ExportId == "tenant-a-new-export"),
             Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     public async Task DeleteAsync_TenantAdmin_RefusesForeignExportAndUnpublishesOwnExport()
     {
-        var fixture = await ExportTenantHarness.CreateAsync(TenantA, "admin", multiTenancyEnabled: true);
+        var fixture = await ExportTenantHarness.CreateAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantA, "admin", TenantContextSource.Claim));
         var pointerKeyB = ExportStore.Create(fixture.Storage.Storage.Object, fixture.StorageOptions, ExportB).PointerKey;
         var pointerKeyA = ExportStore.Create(fixture.Storage.Storage.Object, fixture.StorageOptions, ExportA).PointerKey;
 
@@ -119,20 +124,25 @@ public sealed class ExportAdminTenantIsolationTests
         payload.Data!.Status.Should().Be(ExportResponse.Unpublished);
     }
 
-    [UnitTheory]
-    [InlineData("platform_admin", true)]
-    [InlineData("admin", false)]
-    public async Task AllOperations_PlatformAdminAndSingleTenantAdmin_SucceedAcrossTenants(
-        string role,
-        bool multiTenancyEnabled)
+    [UnitTest]
+    public async Task AllOperations_PlatformAdmin_SucceedAcrossTenants()
+        => await AssertCrossTenantOperationsSucceedAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantA, "platform_admin", TenantContextSource.Claim));
+
+    [UnitTest]
+    public async Task AllOperations_SingleTenantAdmin_SucceedAcrossTenants()
+        => await AssertCrossTenantOperationsSucceedAsync(
+            new CallerIdentity(TwoTenantGraphFixture.TenantA, "admin", TenantContextSource.Default));
+
+    private static async Task AssertCrossTenantOperationsSucceedAsync(CallerIdentity caller)
     {
-        var fixture = await ExportTenantHarness.CreateAsync(TenantA, role, multiTenancyEnabled);
+        var fixture = await ExportTenantHarness.CreateAsync(caller);
 
         var list = await fixture.ListAsync();
         var get = await fixture.GetAsync(ExportB);
         var create = await fixture.CreateAsync(new ExportCreateRequest
         {
-            Source = new ExportSourceRequest { Kind = "layer", ServiceId = ServiceB, LayerId = 0 },
+            Source = new ExportSourceRequest { Kind = "layer", ServiceId = TwoTenantGraphFixture.ServiceB, LayerId = 0 },
             ExportId = "cross-tenant-export",
         });
         var delete = await fixture.DeleteAsync(ExportB);
@@ -156,73 +166,41 @@ public sealed class ExportAdminTenantIsolationTests
 
         public required ITileCacheJobService TileJobs { get; init; }
 
-        public static async Task<ExportTenantHarness> CreateAsync(
-            string callerTenant,
-            string role,
-            bool multiTenancyEnabled)
+        private sealed record ExportHarnessStores
+        {
+            public required FakePublicStorage Storage { get; init; }
+
+            public required CloudStorageOptions StorageOptions { get; init; }
+
+            public required InMemoryExecutionJobStore JobStore { get; init; }
+
+            public required ITileCacheJobService TileJobs { get; init; }
+        }
+
+        public static async Task<ExportTenantHarness> CreateAsync(CallerIdentity caller)
         {
             var storageOptions = new CloudStorageOptions();
-            var storage = new FakePublicStorage();
-            storage.Storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((string key, CancellationToken _) =>
-                    storage.Objects.TryGetValue(key, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
-
-            await SeedExportAsync(storage, storageOptions, ExportA, ServiceA, ResourceA);
-            await SeedExportAsync(storage, storageOptions, ExportB, ServiceB, ResourceB);
-
-            var jobStore = new InMemoryExecutionJobStore();
-            await jobStore.TryCreateAsync(CreateJob("job-a", TenantA));
-            await jobStore.TryCreateAsync(CreateJob("job-b", TenantB));
-
-            var tileJobs = Substitute.For<ITileCacheJobService>();
-            tileJobs.ListAsync(Arg.Any<TileOperationListScope>(), Arg.Any<CancellationToken>())
-                .Returns([CompletedExportJob("job-a", ExportA, ServiceA, 0), CompletedExportJob("job-b", ExportB, ServiceB, 0)]);
-            tileJobs.SubmitAsync(Arg.Any<TileOperationSubmission>(), Arg.Any<CancellationToken>())
-                .Returns("export-job-new");
-
-            var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
-            graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(BuildTwoTenantSnapshot());
-            var tenant = Substitute.For<ITenantContext>();
-            tenant.TenantId.Returns(callerTenant);
-            tenant.Source.Returns(multiTenancyEnabled ? TenantContextSource.Claim : TenantContextSource.Default);
-
-            var catalog = new ExportCatalog(new ExportCatalogDependencies
+            var stores = new ExportHarnessStores
             {
-                Storage = storage.Storage.Object,
-                Options = Options.Create(storageOptions),
-                Jobs = tileJobs,
-            });
-
-            var services = new ServiceCollection()
-                .AddLogging()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
-                .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator())
-                .AddSingleton(graphProvider)
-                .AddSingleton(catalog)
-                .AddSingleton(tileJobs)
-                .AddSingleton<IExecutionJobStore>(jobStore)
-                .AddSingleton(tenant)
-                .AddSingleton(Options.Create(new LimitsOptions()))
-                .AddSingleton(Options.Create(new TenantContextOptions
-                {
-                    Enabled = multiTenancyEnabled,
-                    DefaultTenantId = "public",
-                }))
-                .BuildServiceProvider();
-
+                Storage = await CreateSeededStorageAsync(storageOptions),
+                StorageOptions = storageOptions,
+                JobStore = await CreateSeededJobStoreAsync(),
+                TileJobs = CreateTileJobsMock(),
+            };
+            var services = BuildServices(caller, stores);
             var context = new DefaultHttpContext
             {
                 RequestServices = services,
                 User = new ClaimsPrincipal(new ClaimsIdentity(
-                    [new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim(ClaimTypes.Role, role)],
+                    [new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim(ClaimTypes.Role, caller.Role)],
                     "Test")),
             };
             return new ExportTenantHarness
             {
                 HttpContext = context,
-                Storage = storage,
-                StorageOptions = storageOptions,
-                TileJobs = tileJobs,
+                Storage = stores.Storage,
+                StorageOptions = stores.StorageOptions,
+                TileJobs = stores.TileJobs,
             };
         }
 
@@ -238,6 +216,73 @@ public sealed class ExportAdminTenantIsolationTests
         public Task<IResult> DeleteAsync(string exportId)
             => InvokeAsync("DeleteAsync", [exportId, HttpContext, CancellationToken.None]);
 
+        private static async Task<FakePublicStorage> CreateSeededStorageAsync(CloudStorageOptions storageOptions)
+        {
+            var storage = new FakePublicStorage();
+            storage.Storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string key, CancellationToken _) =>
+                    storage.Objects.TryGetValue(key, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
+
+            await SeedExportAsync(storage, storageOptions,
+                new SeedExportSpec(ExportA, TwoTenantGraphFixture.ServiceA, TwoTenantGraphFixture.ResourceA));
+            await SeedExportAsync(storage, storageOptions,
+                new SeedExportSpec(ExportB, TwoTenantGraphFixture.ServiceB, TwoTenantGraphFixture.ResourceB));
+            return storage;
+        }
+
+        private static async Task<InMemoryExecutionJobStore> CreateSeededJobStoreAsync()
+        {
+            var jobStore = new InMemoryExecutionJobStore();
+            await jobStore.TryCreateAsync(CreateJob("job-a", TwoTenantGraphFixture.TenantA));
+            await jobStore.TryCreateAsync(CreateJob("job-b", TwoTenantGraphFixture.TenantB));
+            return jobStore;
+        }
+
+        private static ITileCacheJobService CreateTileJobsMock()
+        {
+            var tileJobs = Substitute.For<ITileCacheJobService>();
+            tileJobs.ListAsync(Arg.Any<TileOperationListScope>(), Arg.Any<CancellationToken>())
+                .Returns([
+                    CompletedExportJob(new CompletedExportJobSpec("job-a", ExportA, TwoTenantGraphFixture.ServiceA)),
+                    CompletedExportJob(new CompletedExportJobSpec("job-b", ExportB, TwoTenantGraphFixture.ServiceB))
+                ]);
+            tileJobs.SubmitAsync(Arg.Any<TileOperationSubmission>(), Arg.Any<CancellationToken>())
+                .Returns("export-job-new");
+            return tileJobs;
+        }
+
+        private static ServiceProvider BuildServices(CallerIdentity caller, ExportHarnessStores stores)
+        {
+            var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+            graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>())
+                .Returns(TwoTenantGraphFixture.BuildSnapshot("\"export-tenant-isolation\""));
+            var tenant = Substitute.For<ITenantContext>();
+            tenant.TenantId.Returns(caller.TenantId);
+            tenant.Source.Returns(caller.Source);
+            var catalog = new ExportCatalog(new ExportCatalogDependencies
+            {
+                Storage = stores.Storage.Storage.Object,
+                Options = Options.Create(stores.StorageOptions),
+                Jobs = stores.TileJobs,
+            });
+            return new ServiceCollection()
+                .AddLogging()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+                .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator())
+                .AddSingleton(graphProvider)
+                .AddSingleton(catalog)
+                .AddSingleton(stores.TileJobs)
+                .AddSingleton<IExecutionJobStore>(stores.JobStore)
+                .AddSingleton(tenant)
+                .AddSingleton(Options.Create(new LimitsOptions()))
+                .AddSingleton(Options.Create(new TenantContextOptions
+                {
+                    Enabled = caller.Source != TenantContextSource.Default,
+                    DefaultTenantId = "public",
+                }))
+                .BuildServiceProvider();
+        }
+
         private static Task<IResult> InvokeAsync(string methodName, object?[] args)
         {
             var method = typeof(ExportAdminEndpoints).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -247,20 +292,18 @@ public sealed class ExportAdminTenantIsolationTests
         private static async Task SeedExportAsync(
             FakePublicStorage storage,
             CloudStorageOptions options,
-            string exportId,
-            string serviceId,
-            string resourceId)
+            SeedExportSpec spec)
         {
-            var store = ExportStore.Create(storage.Storage.Object, options, exportId);
-            var pointer = new ExportPointer(exportId, ExportVersionId, $"{ExportVersionId}/collection.json", DateTimeOffset.UtcNow);
+            var store = ExportStore.Create(storage.Storage.Object, options, spec.ExportId);
+            var pointer = new ExportPointer(spec.ExportId, ExportVersionId, $"{ExportVersionId}/collection.json", DateTimeOffset.UtcNow);
             storage.Objects[store.PointerKey] = JsonSerializer.SerializeToUtf8Bytes(pointer, ExportVersionJsonContext.Default.ExportPointer);
 
             var template = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
                 "docs", "gis", "schemas", "export-collection.v1", "maui-county-parcels.json"));
             var node = JsonNode.Parse(template)!.AsObject();
-            node["id"] = exportId;
-            node["honua:source"]!["service"] = serviceId;
-            node["honua:source"]!["layer"] = resourceId;
+            node["id"] = spec.ExportId;
+            node["honua:source"]!["service"] = spec.ServiceId;
+            node["honua:source"]!["layer"] = spec.ResourceId;
             storage.Objects[store.VersionKey(ExportVersionId, ExportCollectionDocument.FileName)] =
                 Encoding.UTF8.GetBytes(node.ToJsonString());
         }
@@ -281,68 +324,11 @@ public sealed class ExportAdminTenantIsolationTests
             },
         };
 
-        private static TileOperationProgress CompletedExportJob(string jobId, string exportId, string serviceId, int layerId)
-            => TileOperationProgress.CreateInitial(jobId, TileCacheExecutionSpecBuilder.ExportOperation, serviceId, layerId, "WebMercatorQuad") with
+        private static TileOperationProgress CompletedExportJob(CompletedExportJobSpec spec)
+            => TileOperationProgress.CreateInitial(spec.JobId, TileCacheExecutionSpecBuilder.ExportOperation, spec.ServiceId, 0, "WebMercatorQuad") with
             {
-                ExportId = exportId,
+                ExportId = spec.ExportId,
                 Status = OperationStatus.Completed,
-            };
-
-        private static MetadataV2GraphSnapshot BuildTwoTenantSnapshot()
-        {
-            var serviceA = CreateService(ServiceA, TenantA);
-            var serviceB = CreateService(ServiceB, TenantB);
-            var resourceA = CreateResource(ResourceA, "bind-a", TenantA);
-            var resourceB = CreateResource(ResourceB, "bind-b", TenantB);
-            var bindingA = CreateBinding("bind-a", ResourceA, 101, TenantA);
-            var bindingB = CreateBinding("bind-b", ResourceB, 202, TenantB);
-            var pubA = CreatePublication("pub-a", ServiceA, ResourceA, "bind-a", TenantA);
-            var pubB = CreatePublication("pub-b", ServiceB, ResourceB, "bind-b", TenantB);
-
-            return new MetadataV2GraphSnapshot(
-                new MetadataV2Graph
-                {
-                    Revision = 1,
-                    Services = [serviceA, serviceB],
-                    Resources = [resourceA, resourceB],
-                    StorageBindings = [bindingA, bindingB],
-                    Publications = [pubA, pubB],
-                },
-                "\"export-tenant-isolation\"",
-                DateTimeOffset.UnixEpoch);
-        }
-
-        private static MetadataV2Service CreateService(string id, string tenant) => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id, Tenant = tenant },
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-        };
-
-        private static MetadataV2Object CreateResource(string id, string bindingId, string tenant) => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id, Tenant = tenant },
-            StorageBindingIds = [bindingId],
-            PrimaryStorageBindingId = bindingId,
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-        };
-
-        private static MetadataV2StorageBinding CreateBinding(string id, string resourceId, int storageLayerId, string tenant) => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id, Tenant = tenant },
-            ResourceId = resourceId,
-            StorageLayerId = storageLayerId,
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-        };
-
-        private static MetadataV2Layer CreatePublication(
-            string id, string serviceId, string resourceId, string bindingId, string tenant) => new()
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id, Tenant = tenant },
-                ServiceId = serviceId,
-                ResourceId = resourceId,
-                StorageBindingId = bindingId,
-                LayerIndex = 0,
-                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             };
     }
 }

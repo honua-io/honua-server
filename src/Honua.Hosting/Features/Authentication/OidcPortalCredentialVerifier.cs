@@ -7,6 +7,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -22,16 +23,24 @@ internal sealed class OidcConfigurationManagerCache : IDisposable
     private readonly HttpClient _httpClient;
 
     public OidcConfigurationManagerCache()
-        : this(allowPrivateNetworks: false)
+        : this(OidcBackchannelHttpHandler.CreatePublicOnlyClient())
     {
     }
 
-    internal OidcConfigurationManagerCache(
-        bool allowPrivateNetworks,
-        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+    private OidcConfigurationManagerCache(HttpClient httpClient)
     {
-        _httpClient = OidcBackchannelHttpHandler.CreateClient(allowPrivateNetworks, hostAddressResolver);
+        _httpClient = httpClient;
     }
+
+    internal static OidcConfigurationManagerCache CreateForEnvironment(IHostEnvironment? environment)
+        => new(OidcBackchannelHttpHandler.CreateClientForEnvironment(environment));
+
+    internal static OidcConfigurationManagerCache CreateAllowingPrivateNetworks()
+        => new(OidcBackchannelHttpHandler.CreateClientAllowingPrivateNetworks());
+
+    internal static OidcConfigurationManagerCache CreatePublicOnly(
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+        => new(OidcBackchannelHttpHandler.CreatePublicOnlyClient(hostAddressResolver));
 
     public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
         string metadataAddress,

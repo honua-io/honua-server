@@ -61,9 +61,12 @@ internal static partial class AdminAuthEndpoints
 
     private readonly record struct AdminDiscoveryFetchRequest(string Authority, DiscoveryEndpointPolicy Policy);
 
-    private static DiscoveryEndpointPolicy BuildAuthorityDiscoveryPolicy(HttpContext context, bool requireHttps)
+    private static DiscoveryEndpointPolicy BuildAuthorityDiscoveryPolicy(
+        HttpContext context, RedirectHttpsPolicy httpsPolicy)
     {
-        var policy = requireHttps ? DiscoveryEndpointPolicy.Strict : DiscoveryEndpointPolicy.AllowHttp;
+        var policy = httpsPolicy == RedirectHttpsPolicy.RequireHttps
+            ? DiscoveryEndpointPolicy.Strict
+            : DiscoveryEndpointPolicy.AllowHttp;
         if (ResolveDiscoveryNetworkPolicy(context) == DiscoveryNetworkPolicy.AllowPrivate)
         {
             policy |= DiscoveryEndpointPolicy.AllowPrivateNetworks;
@@ -225,7 +228,7 @@ internal static partial class AdminAuthEndpoints
 
         var discoveryPolicy = BuildAuthorityDiscoveryPolicy(
             logoutContext.HttpContext,
-            logoutContext.HttpsPolicy == RedirectHttpsPolicy.RequireHttps);
+            logoutContext.HttpsPolicy);
         var discovery = await GetDiscoveryDocumentAsync(
             logoutContext.HttpClientFactory,
             new AdminDiscoveryFetchRequest(logoutContext.Provider.Authority!, discoveryPolicy),

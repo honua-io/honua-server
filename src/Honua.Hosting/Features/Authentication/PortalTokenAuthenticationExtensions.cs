@@ -111,8 +111,8 @@ public static class PortalTokenAuthenticationExtensions
         // that concrete type and its cache even when an operator already supplied
         // IPortalCredentialVerifier; skipping them makes /sharing/rest/oauth2/authorize
         // fail during activation. The custom verifier still wins the interface.
-        services.TryAddSingleton(static provider => new OidcConfigurationManagerCache(
-            OidcBackchannelHttpHandler.AllowsPrivateNetworks(provider.GetService<IHostEnvironment>())));
+        services.TryAddSingleton(static provider => OidcConfigurationManagerCache.CreateForEnvironment(
+            provider.GetService<IHostEnvironment>()));
         services.TryAddScoped<AdminPortalCredentialVerifier>();
         services.TryAddScoped<OidcPortalCredentialVerifier>();
 
@@ -201,10 +201,10 @@ public static class PortalTokenAuthenticationExtensions
 
         services.AddHttpClient(PortalOAuthBroker.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(static provider =>
-                OidcBackchannelHttpHandler.Create(provider.GetService<IHostEnvironment>()));
+                OidcBackchannelHttpHandler.CreateForEnvironment(provider.GetService<IHostEnvironment>()));
         services.AddHttpClient(ClientCredentialsFederationService.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(static provider =>
-                OidcBackchannelHttpHandler.Create(provider.GetService<IHostEnvironment>()));
+                OidcBackchannelHttpHandler.CreateForEnvironment(provider.GetService<IHostEnvironment>()));
     }
 
     private static PortalOAuthBrokerDependencies CreatePortalOAuthBrokerDependencies(IServiceProvider services) => new()

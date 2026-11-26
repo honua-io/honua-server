@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -16,16 +17,17 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
     private volatile IReadOnlyDictionary<string, IReadOnlyList<SecurityKey>> _keysByIssuer =
         new Dictionary<string, IReadOnlyList<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
 
-    public MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, bool requireHttps)
-        : this(authorities, new OidcBackchannelPolicy(requireHttps))
-    {
-    }
-
-    internal MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, OidcBackchannelPolicy policy)
+    internal MultiAuthorityConfigurationManager(
+        IReadOnlyCollection<string> authorities,
+        DiscoveryEndpointPolicy policy,
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
         ArgumentNullException.ThrowIfNull(authorities);
 
-        _httpClient = OidcBackchannelHttpHandler.CreateClient(policy.AllowPrivateNetworks, policy.HostAddressResolver);
+        var requireHttps = (policy & DiscoveryEndpointPolicy.AllowHttp) == 0;
+        _httpClient = (policy & DiscoveryEndpointPolicy.AllowPrivateNetworks) != 0
+            ? OidcBackchannelHttpHandler.CreateClientAllowingPrivateNetworks()
+            : OidcBackchannelHttpHandler.CreatePublicOnlyClient(hostAddressResolver);
         _inner = authorities
             .Where(static authority => !string.IsNullOrWhiteSpace(authority))
             .Select(authority => (
@@ -33,7 +35,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
                 Manager: new ConfigurationManager<OpenIdConnectConfiguration>(
                     authority.Trim().TrimEnd('/') + "/.well-known/openid-configuration",
                     new OpenIdConnectConfigurationRetriever(),
-                    new HttpDocumentRetriever(_httpClient) { RequireHttps = policy.RequireHttps })))
+                    new HttpDocumentRetriever(_httpClient) { RequireHttps = requireHttps })))
             .ToArray();
     }
 
