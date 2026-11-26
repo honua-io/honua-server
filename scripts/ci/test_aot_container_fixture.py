@@ -42,11 +42,11 @@ class AotContainerFixtureTests(unittest.TestCase):
             call.docker(postgres),
             call.database(session.pg_container, 90),
             call.docker(app),
-            call.readiness(session.base_url, 90),
+            call.readiness(session.base_url, 90, session.app_container),
             call.docker(stop),
             *(call.seed(session.pg_container, path) for path in fixture.SEED_SQL_PATHS),
             call.docker(start),
-            call.readiness(session.base_url, 90),
+            call.readiness(session.base_url, 90, session.app_container),
         ])
 
     def test_interrupted_start_removes_the_containers_and_network(self) -> None:

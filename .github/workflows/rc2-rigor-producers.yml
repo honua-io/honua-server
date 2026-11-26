@@ -33,6 +33,15 @@ on:
         required: false
         default: 'imresamu/postgis:17-3.5@sha256:35fe7dceda62bfe7d2965b0ba78d915ff9f901b5e0466d633ecc58421b5b5210'
         type: string
+      mode:
+        description: Which rigor producer jobs to run (all, soak-only, or parity-only)
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - soak-only
+          - parity-only
 
 permissions:
   contents: read
@@ -44,6 +53,7 @@ concurrency:
 
 jobs:
   aot-parity:
+    if: inputs.mode != 'soak-only'
     name: AOT runtime parity (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -107,6 +117,7 @@ jobs:
           if-no-files-found: error
 
   emit-aot-multiarch-proof:
+    if: inputs.mode != 'soak-only'
     name: Emit RC2 multi-arch AOT proof
     needs: [aot-parity]
     runs-on: ubuntu-24.04
@@ -161,6 +172,7 @@ jobs:
           if-no-files-found: error
 
   aot-memory-soak:
+    if: inputs.mode != 'parity-only'
     name: Memory-capped Native AOT soak (1 GiB, swap disabled)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
