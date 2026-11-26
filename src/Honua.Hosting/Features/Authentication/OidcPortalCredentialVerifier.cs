@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Security;
@@ -16,31 +15,30 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal sealed class OidcConfigurationManagerCache : IDisposable
+internal sealed class OidcConfigurationManagerCache
 {
     private readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _managers =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly HttpClient _httpClient;
+    private readonly Func<HttpClient> _httpClientProvider;
 
     public OidcConfigurationManagerCache()
-        : this(OidcBackchannelHttpHandler.CreatePublicOnlyClient())
+        : this(OidcBackchannelHttpHandler.GetSharedPublicOnlyClient)
     {
     }
 
-    private OidcConfigurationManagerCache(HttpClient httpClient)
+    private OidcConfigurationManagerCache(Func<HttpClient> httpClientProvider)
     {
-        _httpClient = httpClient;
+        _httpClientProvider = httpClientProvider;
     }
 
     internal static OidcConfigurationManagerCache CreateForEnvironment(IHostEnvironment? environment)
-        => new(OidcBackchannelHttpHandler.CreateClientForEnvironment(environment));
+        => new(() => OidcBackchannelHttpHandler.GetSharedClientForEnvironment(environment));
 
     internal static OidcConfigurationManagerCache CreateAllowingPrivateNetworks()
-        => new(OidcBackchannelHttpHandler.CreateClientAllowingPrivateNetworks());
+        => new(OidcBackchannelHttpHandler.GetSharedClientAllowingPrivateNetworks);
 
-    internal static OidcConfigurationManagerCache CreatePublicOnly(
-        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
-        => new(OidcBackchannelHttpHandler.CreatePublicOnlyClient(hostAddressResolver));
+    internal static OidcConfigurationManagerCache CreatePublicOnly()
+        => new(OidcBackchannelHttpHandler.GetSharedPublicOnlyClient);
 
     public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
         string metadataAddress,
@@ -50,10 +48,8 @@ internal sealed class OidcConfigurationManagerCache : IDisposable
             new ConfigurationManager<OpenIdConnectConfiguration>(
                 addr,
                 new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever(_httpClient) { RequireHttps = requireHttps }));
+                new HttpDocumentRetriever(_httpClientProvider()) { RequireHttps = requireHttps }));
     }
-
-    public void Dispose() => _httpClient.Dispose();
 }
 
 // The compatibility password parameter carries an existing OIDC token, so the server does not use an IdP resource-owner password grant.

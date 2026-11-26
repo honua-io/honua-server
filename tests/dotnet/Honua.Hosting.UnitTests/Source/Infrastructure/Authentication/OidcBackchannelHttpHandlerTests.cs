@@ -75,8 +75,8 @@ public sealed class OidcBackchannelHttpHandlerTests
     public async Task MultiAuthorityAndCache_ProductionMode_RefuseLoopbackAndRedirectDiscovery()
     {
         using var listener = new LocalRedirectAndDiscoveryServer();
-        using var prodMulti = new MultiAuthorityConfigurationManager([listener.BaseUrl], DiscoveryEndpointPolicy.AllowHttp);
-        using var prodCache = OidcConfigurationManagerCache.CreatePublicOnly();
+        var prodMulti = new MultiAuthorityConfigurationManager([listener.BaseUrl], DiscoveryEndpointPolicy.AllowHttp);
+        var prodCache = OidcConfigurationManagerCache.CreatePublicOnly();
 
         var multiAct = () => prodMulti.GetConfigurationAsync(CancellationToken.None);
         var cacheAct = () => prodCache
@@ -86,14 +86,14 @@ public sealed class OidcBackchannelHttpHandlerTests
         await multiAct.Should().ThrowAsync<Exception>();
         await cacheAct.Should().ThrowAsync<Exception>();
 
-        using var devCache = OidcConfigurationManagerCache.CreateAllowingPrivateNetworks();
+        var devCache = OidcConfigurationManagerCache.CreateAllowingPrivateNetworks();
         var redirectAct = () => devCache
             .GetOrCreate(listener.RedirectUrl, requireHttps: false)
             .GetConfigurationAsync(CancellationToken.None);
         await redirectAct.Should().ThrowAsync<Exception>();
         listener.RedirectTargetHits.Should().Be(0, "OIDC discovery must never follow 3xx redirects");
 
-        using var devMulti = new MultiAuthorityConfigurationManager(
+        var devMulti = new MultiAuthorityConfigurationManager(
             [listener.BaseUrl],
             DiscoveryEndpointPolicy.AllowHttp | DiscoveryEndpointPolicy.AllowPrivateNetworks);
         var config = await devMulti.GetConfigurationAsync(CancellationToken.None);
@@ -134,7 +134,7 @@ public sealed class OidcBackchannelHttpHandlerTests
 
         public LocalRedirectAndDiscoveryServer()
         {
-            var probe = new TcpListener(IPAddress.Loopback, 0);
+            using var probe = new TcpListener(IPAddress.Loopback, 0);
             probe.Start();
             var port = ((IPEndPoint)probe.LocalEndpoint).Port;
             probe.Stop();
@@ -223,11 +223,9 @@ public sealed class OidcBackchannelHttpHandlerTests
                 await response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
                 response.Close();
             }
-            catch (HttpListenerException)
+            catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException)
             {
-            }
-            catch (ObjectDisposedException)
-            {
+                // Listener closed during test teardown.
             }
         }
     }

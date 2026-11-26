@@ -19,8 +19,20 @@ internal static class OidcBackchannelHttpHandler
         "The OIDC destination resolves to a private, loopback, or unresolvable network address, which is not allowed.",
         "Unable to connect to the OIDC destination.");
 
+    private static readonly Lazy<HttpClient> SharedPublicClient = new(() => CreatePublicOnlyClient());
+    private static readonly Lazy<HttpClient> SharedPrivateNetworkClient = new(CreateClientAllowingPrivateNetworks);
+
     internal static bool AllowsPrivateNetworks(IHostEnvironment? environment)
         => environment is not null && (environment.IsDevelopment() || environment.IsEnvironment("Test"));
+
+    internal static HttpClient GetSharedClientForEnvironment(IHostEnvironment? environment)
+        => AllowsPrivateNetworks(environment)
+            ? SharedPrivateNetworkClient.Value
+            : SharedPublicClient.Value;
+
+    internal static HttpClient GetSharedPublicOnlyClient() => SharedPublicClient.Value;
+
+    internal static HttpClient GetSharedClientAllowingPrivateNetworks() => SharedPrivateNetworkClient.Value;
 
     internal static SocketsHttpHandler CreateForEnvironment(IHostEnvironment? environment)
         => AllowsPrivateNetworks(environment)
@@ -45,9 +57,6 @@ internal static class OidcBackchannelHttpHandler
         handler.ConnectTimeout = TimeSpan.FromSeconds(10);
         return handler;
     }
-
-    internal static HttpClient CreateClientForEnvironment(IHostEnvironment? environment)
-        => CreateWrappedClient(() => CreateForEnvironment(environment));
 
     internal static HttpClient CreateClientAllowingPrivateNetworks()
         => CreateWrappedClient(CreateAllowingPrivateNetworks);
