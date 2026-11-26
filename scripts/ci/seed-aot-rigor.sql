@@ -29,8 +29,8 @@ BEGIN
             'metadata', jsonb_build_object('id', 'svc-cng-ogc', 'name', 'cng-ogc', 'title', 'CNG OGC and OData'),
             'serviceType', 'ogc-api-features',
             'publicationIds', jsonb_build_array('pub-cng-ogc-1000', 'pub-cng-odata-1000'),
-            'protocols', jsonb_build_array('OgcFeatures', 'OgcTiles', 'OData'),
-            'enabledProtocols', jsonb_build_array('OgcFeatures', 'OgcTiles', 'OData'));
+            'protocols', jsonb_build_array('OgcFeatures', 'OGC-API-Tiles', 'OData'),
+            'enabledProtocols', jsonb_build_array('OgcFeatures', 'OGC-API-Tiles', 'OData'));
         snapshot_document := jsonb_set(snapshot_document, '{services}',
             snapshot_document->'services' || jsonb_build_array(ogc_service));
         snapshot_document := jsonb_set(snapshot_document, '{publications}',

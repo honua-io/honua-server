@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any
 
@@ -301,6 +302,33 @@ def _write_json(path: Path, doc: dict[str, Any]) -> None:
     path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
 
 
+def verify_candidate_image_identity(
+    server_sha: str,
+    server_digest: str,
+    arch_target: tuple[str, str],
+) -> None:
+    """Verify index-to-platform digest membership and pulled image revision label."""
+    arch, platform_digest = arch_target
+    raw = subprocess.check_output(
+        ["docker", "buildx", "imagetools", "inspect", f"ghcr.io/honua-io/honua-server@{server_digest}", "--raw"]
+    )
+    doc = json.loads(raw)
+    matches = [
+        m["digest"]
+        for m in doc.get("manifests", [])
+        if m.get("platform", {}).get("os") == "linux" and m.get("platform", {}).get("architecture") == arch
+    ]
+    if platform_digest not in matches:
+        raise ValueError(f"index {server_digest} does not contain {arch} digest {platform_digest}; found {matches}")
+    image = f"ghcr.io/honua-io/honua-server@{platform_digest}"
+    rev = subprocess.check_output(
+        ["docker", "image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image],
+        text=True,
+    ).strip()
+    if rev != server_sha:
+        raise ValueError(f"image {image} revision {rev!r} does not match server_sha {server_sha!r}")
+
+
 def _add_common_args(cmd: argparse.ArgumentParser) -> None:
     cmd.add_argument("--server-sha", required=True)
     cmd.add_argument("--image-digest", required=True)
@@ -312,6 +340,11 @@ def _add_common_args(cmd: argparse.ArgumentParser) -> None:
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="kind", required=True)
+    verify = sub.add_parser("verify-image")
+    verify.add_argument("--server-sha", required=True)
+    verify.add_argument("--image-digest", required=True)
+    verify.add_argument("--arch", choices=("amd64", "arm64"), required=True)
+    verify.add_argument("--platform-digest", required=True)
     for name in ("aot-multiarch", "aot-soak", "postgis-upgrade", "gis-clients-proxy", "tenant-isolation"):
         cmd = sub.add_parser(name)
         _add_common_args(cmd)
@@ -333,6 +366,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point returning 0 on valid proof emission and 1 otherwise."""
     args = _parse_args(argv)
+    if args.kind == "verify-image":
+        verify_candidate_image_identity(args.server_sha, args.image_digest, (args.arch, args.platform_digest))
+        return 0
     identity = CandidateIdentity(args.server_sha, args.image_digest, args.lock_digest, args.observed_at)
     if args.kind == "aot-multiarch":
         proof = build_aot_multiarch_proof(
