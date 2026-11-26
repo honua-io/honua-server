@@ -24,15 +24,7 @@ public sealed partial class FormPackageValidator
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(field.Label))
-            {
-                AddError(issues, "fieldLabelRequired", $"Field '{field.FieldId}' requires a label.", field.FieldId);
-            }
-
-            if (!string.IsNullOrWhiteSpace(field.SectionId) && !sectionIds.Contains(field.SectionId))
-            {
-                AddError(issues, "sectionNotFound", $"Field '{field.FieldId}' references unknown section '{field.SectionId}'.", field.FieldId);
-            }
+            ValidateFieldIdentity(field, sectionIds, issues);
 
             if (UsesVirtualFieldBinding(package, field))
             {
@@ -56,6 +48,20 @@ public sealed partial class FormPackageValidator
         }
 
         ValidateVisibilityCycles(package.Fields, issues);
+    }
+
+    private static void ValidateFieldIdentity(
+        FormFieldDefinition field, HashSet<string> sectionIds, List<FormValidationIssue> issues)
+    {
+        if (string.IsNullOrWhiteSpace(field.Label))
+        {
+            AddError(issues, "fieldLabelRequired", $"Field '{field.FieldId}' requires a label.", field.FieldId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(field.SectionId) && !sectionIds.Contains(field.SectionId))
+        {
+            AddError(issues, "sectionNotFound", $"Field '{field.FieldId}' references unknown section '{field.SectionId}'.", field.FieldId);
+        }
     }
 
     private static bool UsesVirtualFieldBinding(FormPackageDocument package, FormFieldDefinition field)
