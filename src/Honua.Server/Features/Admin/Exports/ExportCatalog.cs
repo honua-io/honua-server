@@ -168,72 +168,37 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     private async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
         ExportStore store, string exportId, CancellationToken cancellationToken)
     {
-        var pointer = await TryReadPointerAsync(store, exportId, cancellationToken).ConfigureAwait(false);
+        var pointer = await TryReadDocumentAsync(
+            exportId, ExportStore.PointerFileName, () => store.ReadPointerAsync(cancellationToken)).ConfigureAwait(false);
         var version = pointer is not null
-            ? await TryReadCollectionAsync(store, pointer, cancellationToken).ConfigureAwait(false)
+            ? await TryReadDocumentAsync(
+                pointer.ExportId,
+                $"{pointer.Version}/{ExportCollectionDocument.FileName}",
+                () => store.ReadCollectionAsync(pointer, cancellationToken)).ConfigureAwait(false)
             : null;
-        version ??= await TryFindAnyStoredVersionAsync(store, exportId, cancellationToken).ConfigureAwait(false);
+        version ??= await TryReadDocumentAsync(
+            exportId, ExportCollectionDocument.FileName, () => store.FindAnyStoredVersionAsync(cancellationToken)).ConfigureAwait(false);
         if (version is not null)
         {
             return (version.SourceLayer.Service, version.SourceLayer.Layer);
         }
 
-        var existing = await TryReadUnpublishedAsync(store, exportId, cancellationToken).ConfigureAwait(false);
+        var existing = await TryReadDocumentAsync(
+            exportId, ExportStore.UnpublishedFileName, () => store.ReadUnpublishedAsync(cancellationToken)).ConfigureAwait(false);
         return existing is not null ? (existing.ServiceId, existing.LayerId) : (string.Empty, string.Empty);
     }
 
-    private async Task<ExportPointer?> TryReadPointerAsync(
-        ExportStore store, string exportId, CancellationToken cancellationToken)
+    private async Task<T?> TryReadDocumentAsync<T>(
+        string exportId, string documentName, Func<Task<T?>> read)
+        where T : class
     {
         try
         {
-            return await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+            return await read().ConfigureAwait(false);
         }
         catch (JsonException ex)
         {
-            LogUnreadableDocument(logger, exportId, ExportStore.PointerFileName, ex);
-            return null;
-        }
-    }
-
-    private async Task<ExportVersion?> TryReadCollectionAsync(
-        ExportStore store, ExportPointer pointer, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            LogUnreadableDocument(logger, pointer.ExportId, $"{pointer.Version}/{ExportCollectionDocument.FileName}", ex);
-            return null;
-        }
-    }
-
-    private async Task<ExportVersion?> TryFindAnyStoredVersionAsync(
-        ExportStore store, string exportId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            LogUnreadableDocument(logger, exportId, ExportCollectionDocument.FileName, ex);
-            return null;
-        }
-    }
-
-    private async Task<ExportUnpublishedMarker?> TryReadUnpublishedAsync(
-        ExportStore store, string exportId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            LogUnreadableDocument(logger, exportId, ExportStore.UnpublishedFileName, ex);
+            LogUnreadableDocument(logger, exportId, documentName, ex);
             return null;
         }
     }
@@ -285,9 +250,13 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     private async Task<ExportVersion?> ReadCurrentAsync(
         ExportStore store, string exportId, CancellationToken cancellationToken)
     {
-        var pointer = await TryReadPointerAsync(store, exportId, cancellationToken).ConfigureAwait(false);
+        var pointer = await TryReadDocumentAsync(
+            exportId, ExportStore.PointerFileName, () => store.ReadPointerAsync(cancellationToken)).ConfigureAwait(false);
         return pointer?.ExportId == exportId
-            ? await TryReadCollectionAsync(store, pointer, cancellationToken).ConfigureAwait(false)
+            ? await TryReadDocumentAsync(
+                pointer.ExportId,
+                $"{pointer.Version}/{ExportCollectionDocument.FileName}",
+                () => store.ReadCollectionAsync(pointer, cancellationToken)).ConfigureAwait(false)
             : null;
     }
 
@@ -341,26 +310,15 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         var described = new List<ExportVersionResponse>();
         foreach (var versionId in state.VersionIds.Where(id => id != state.Current?.Version))
         {
-            var version = await TryReadVersionAsync(state, versionId, cancellationToken).ConfigureAwait(false);
+            var version = await TryReadDocumentAsync(
+                state.ExportId,
+                $"{versionId}/{ExportCollectionDocument.FileName}",
+                () => state.Store.ReadVersionAsync(versionId, cancellationToken)).ConfigureAwait(false);
             described.AddRange(version is null ? [] : [Version(version, baseUrl)]);
         }
 
         described.AddRange(state.Current is null ? [] : [Version(state.Current, baseUrl)]);
         return described;
-    }
-
-    private async Task<ExportVersion?> TryReadVersionAsync(
-        ExportState state, string versionId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await state.Store.ReadVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            LogUnreadableDocument(logger, state.ExportId, $"{versionId}/{ExportCollectionDocument.FileName}", ex);
-            return null;
-        }
     }
 
     internal static ExportVersionResponse Version(ExportVersion version, string baseUrl)
