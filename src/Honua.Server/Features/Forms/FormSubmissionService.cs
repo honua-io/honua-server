@@ -103,16 +103,18 @@ internal sealed class FormSubmissionService
         var targetMetadata = await _targetMetadataResolver.ResolveAsync(packageVersion.Package.Target, context.RequestAborted)
             .ConfigureAwait(false);
         if (targetMetadata.Service is null ||
+            targetMetadata.Publication is null ||
             targetMetadata.Resource is null ||
-            targetMetadata.StorageLayerId is not int storageLayerId)
+            targetMetadata.StorageLayerId is not int storageLayerId ||
+            !TenantScopeHelpers.IsTenantVisible(context, targetMetadata.Publication, targetMetadata.Resource, targetMetadata.Service))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, "Target service or layer for the form package was not found.");
         }
 
-        var authorizationFailure = await RequireTargetWriteAccessAsync(
+        var authorizationFailure = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
-            targetMetadata,
-            targetMetadata.Service.Metadata.Name,
+            targetMetadata.Resource,
+            targetMetadata.Service,
             MapSubmissionOperation(request.Operation),
             context.RequestAborted).ConfigureAwait(false);
         if (authorizationFailure is not null)
@@ -370,43 +372,6 @@ internal sealed class FormSubmissionService
 
         return await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private static async Task<IResult?> RequireTargetWriteAccessAsync(
-        HttpContext context,
-        FormTargetMetadataResolution target,
-        string fallbackServiceId,
-        AuthorizationOperation operation,
-        CancellationToken cancellationToken)
-    {
-        var (service, _, resource, _) = target;
-        if (resource is not null)
-        {
-            // Per-operation authorization (BH3-001/BH3-014): a form submission maps to
-            // Insert (create) / Update / Delete based on the submission operation, so a grant
-            // for one cannot authorize another.
-            return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                resource,
-                service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        // Service-scoped fallbacks: no resource to run a per-operation resource check against, so
-        // the coarse service data-editor gate applies.
-        if (service is not null)
-        {
-            return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
-                context,
-                service,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
-            context,
-            fallbackServiceId,
-            cancellationToken).ConfigureAwait(false);
     }
 
     // Maps a form submission operation to its canonical authorization operation

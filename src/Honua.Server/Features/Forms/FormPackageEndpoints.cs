@@ -92,7 +92,7 @@ internal static class FormPackageEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Forms")
-            .RequireAdminAuthorization();
+            .RequireAuthorization();
 
         runtime.MapGet("/{formId}", HandleGetRuntimeCurrent)
             .WithName("GetReleasedForm")

@@ -193,7 +193,7 @@ internal sealed class FormPackageLifecycleService
         activity?.SetTag("honua.form_id", formId);
 
         var current = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted).ConfigureAwait(false);
-        if (current is null)
+        if (current is null || !await FormRuntimeAccess.CanReadAsync(context, current).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, $"Published form package '{formId}' was not found.");
         }
@@ -202,6 +202,10 @@ internal sealed class FormPackageLifecycleService
         if (clientVersion is { } requested && requested != current.Version)
         {
             client = await _store.GetVersionAsync(formId, requested, context.RequestAborted).ConfigureAwait(false);
+            if (client is not null && !await FormRuntimeAccess.CanReadAsync(context, client).ConfigureAwait(false))
+            {
+                client = null;
+            }
         }
 
         var manifest = BuildCompatibilityManifest(formId, clientVersion, current, client);
@@ -326,7 +330,7 @@ internal sealed class FormPackageLifecycleService
     public async Task<IResult> GetRuntimeCurrentAsync(HttpContext context, string formId)
     {
         var version = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted).ConfigureAwait(false);
-        return version is null
+        return version is null || !await FormRuntimeAccess.CanReadAsync(context, version).ConfigureAwait(false)
             ? ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, $"Published form package '{formId}' was not found.")
             : WriteVersion(context, version, noStore: false);
     }
@@ -334,7 +338,7 @@ internal sealed class FormPackageLifecycleService
     public async Task<IResult> GetRuntimeVersionAsync(HttpContext context, string formId, int version)
     {
         var packageVersion = await _store.GetVersionAsync(formId, version, context.RequestAborted).ConfigureAwait(false);
-        if (packageVersion is null || !string.Equals(packageVersion.Status, FormPackageStatus.Published, StringComparison.OrdinalIgnoreCase))
+        if (packageVersion is null || !await FormRuntimeAccess.CanReadAsync(context, packageVersion).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, $"Published form package '{formId}' version {version} was not found.");
         }

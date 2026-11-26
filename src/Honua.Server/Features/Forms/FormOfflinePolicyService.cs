@@ -40,7 +40,7 @@ internal sealed class FormOfflinePolicyService
 
         var packageVersion = await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, context.RequestAborted)
             .ConfigureAwait(false);
-        if (packageVersion is null)
+        if (packageVersion is null || !await FormRuntimeAccess.CanReadAsync(context, packageVersion).ConfigureAwait(false))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, $"Published form package '{formId}' was not found.");
         }
