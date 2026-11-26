@@ -72,7 +72,7 @@ def _seed_cng_fixtures(session: DockerSession, boot_timeout: float) -> None:
     for sql_path in SEED_SQL_PATHS:
         _apply_seed_sql(session.pg_container, sql_path)
     _run_docker_checked(["start", session.app_container])
-    _wait_for_ready(session.base_url, boot_timeout)
+    _wait_for_ready(session.base_url, boot_timeout, session.app_container)
 
 
 def start_container_stack(
