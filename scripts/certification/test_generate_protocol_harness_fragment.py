@@ -304,6 +304,60 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             self.assertEqual(row["test_ids"], row["evidence_receipt"]["identity"]["test_ids"])
             self.assertIsNone(row["image_digest"])
 
+    def test_terrain_contract_covers_advertised_operations_in_the_owning_project(self):
+        value = module.load_contract(CONTRACT)
+        rows = [row for row in value["assignments"] if row["capability_key"] == "serve.terrain-quantized-mesh"]
+        self.assertEqual(2, len(rows))
+        catalog = json.loads((REPOSITORY_ROOT / "docs/gis/data/feature-catalog.json").read_text())["entries"]
+        selected = module.test_filter(value, "Honua.Server.Tests").split("|")
+        for row in rows:
+            self.assertEqual("terrain-rgb-tiles", row["surface"])
+            self.assertIn("positive", row["scenario_facets"])
+            self.assertIn("negative", row["scenario_facets"])
+            matches = [entry for entry in catalog if entry["method"] + " " + entry["route"] == row["operation"]
+                       and entry["proof_ledger_surface"] == row["surface"]
+                       and entry["capability"] == "serve.terrain-quantized-mesh"]
+            self.assertEqual(1, len(matches))
+            proving = set(matches[0]["proving_tests"])
+            for test_id in row["test_ids"]:
+                self.assertEqual("Honua.Server.Tests", module.test_project(test_id))
+                self.assertIn("FullyQualifiedName~" + test_id, selected)
+                self.assertTrue(any(item.endswith("." + test_id) for item in proving))
+                class_name, method = test_id.split(".")
+                path = REPOSITORY_ROOT / "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain" / (class_name + ".cs")
+                self.assertIn("public async Task " + method + "()", path.read_text())
+        self.assertEqual("source-test-host", value["deployment_target"])
+
+    def test_terrain_fragment_retains_failed_operation_and_refuses_missing_results(self):
+        value = module.load_contract(CONTRACT)
+        value["assignments"] = [row for row in value["assignments"] if row["capability_key"] == "serve.terrain-quantized-mesh"]
+        expected = {test_id for row in value["assignments"] for test_id in row["test_ids"]}
+        failed = "TerrainAuthorizationTests.GetTerrainQuantizedMeshTile_AnonymousDataset_WithoutCredentials_IsServed"
+        results = [(test_id, "Failed" if test_id == failed else "Passed") for test_id in sorted(expected)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "server.trx"
+            path.write_text(trx(results, summary="Failed", counters={
+                "total": len(results), "executed": len(results), "passed": len(results) - 1,
+                "failed": 1, "notExecuted": 0,
+            }))
+            outcomes = module.parse_trx(path, expected)
+            path.write_text(trx([(test_id, "Passed") for test_id in sorted(expected - {failed})]))
+            with self.assertRaisesRegex(ValueError, "missing governed test results"):
+                module.parse_trx(path, expected)
+        args = Namespace(
+            source_sha="a" * 40, producer_source_sha="a" * 40,
+            image_digest="sha256:" + "c" * 64,
+            candidate_cut_at="2026-08-21T00:00:00Z", started_at="2026-08-21T01:00:00Z",
+            completed_at="2026-08-21T01:01:00Z", generated_at="2026-08-21T01:02:00Z",
+        )
+        observations = build_fixture(value, outcomes, args)["observations"]
+        self.assertEqual(2, len(observations))
+        for row in observations:
+            expected_result = "fail" if row["operation"].endswith(".terrain") else "pass"
+            self.assertEqual(expected_result, row["result"])
+            self.assertEqual(row["test_ids"], row["evidence_receipt"]["identity"]["test_ids"])
+            self.assertIsNone(row["image_digest"])
+
     def test_exact_pass_is_bound_to_test_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "results.trx"

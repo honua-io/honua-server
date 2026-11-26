@@ -1,6 +1,6 @@
 {
   "schema": "honua.server-protocol-harness-assignments/v1",
-  "revision": "2026-11-24.1",
+  "revision": "2026-11-26.1",
   "tracking_issue": "https://github.com/honua-io/honua-server/issues/3388",
   "canonical_client": "Honua server public protocol integration harness",
   "client_lane": "server-protocol-harness",
@@ -383,6 +383,37 @@
       "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
       "test_ids": ["FeatureServerQueryDateBinsTests.QueryDateBins_CalendarBin_ReturnsBins"],
       "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.terrain-quantized-mesh",
+      "surface": "terrain-rgb-tiles",
+      "operation": "GET /terrain/{datasetId}/layer.json",
+      "test_ids": [
+        "TerrainEndpointTests.GetTerrainLayerJson_WithRasterFixture_ReturnsQuantizedMeshMetadataAndCrossLinks",
+        "TerrainEndpointTests.GetTerrainLayerJson_WithUnknownDataset_ReturnsNotFound"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "media-schema"
+      ]
+    },
+    {
+      "capability_key": "serve.terrain-quantized-mesh",
+      "surface": "terrain-rgb-tiles",
+      "operation": "GET /terrain/{datasetId}/{z}/{x}/{y}.terrain",
+      "test_ids": [
+        "TerrainEndpointTests.GetTerrainQuantizedMeshTile_WithRegisteredDem_ReturnsDecodableGzippedMesh",
+        "TerrainEndpointTests.GetTerrainQuantizedMeshTile_WithOctVertexNormalsAcceptHeader_ReturnsNormalsExtension",
+        "TerrainEndpointTests.GetTerrainQuantizedMeshTile_WithInvalidTmsCoordinates_ReturnsBadRequest",
+        "TerrainAuthorizationTests.GetTerrainQuantizedMeshTile_AnonymousDataset_WithoutCredentials_IsServed"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "media-schema"
+      ]
     },
     {
       "capability_key": "serve.wps",
