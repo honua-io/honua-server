@@ -880,6 +880,7 @@
         "type": "Project",
         "dependencies": {
           "Honua.Core.Abstractions": "[2026.1.1, )",
+          "Honua.Sdk.Field": "[5.0.1, )",
           "Honua.Sdk.GeoServices": "[1.10.4, )",
           "Microsoft.Extensions.Http.Polly": "[11.0.0, )",
           "Polly": "[8.6.6, )",
