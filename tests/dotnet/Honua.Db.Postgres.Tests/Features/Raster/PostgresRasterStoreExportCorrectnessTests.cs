@@ -1,10 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
-using System.Data.Common;
 using FluentAssertions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
@@ -12,7 +9,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -110,7 +106,7 @@ public sealed class PostgresRasterStoreExportCorrectnessTests(PostgresFixture fi
 
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
-            new FixtureConnectionProvider(fixture.DataSource),
+            new PostgresRasterMapRendererTests.FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
             FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
@@ -234,46 +230,5 @@ public sealed class PostgresRasterStoreExportCorrectnessTests(PostgresFixture fi
             new Coordinate(box.MinX, box.MaxY),
             new Coordinate(box.MinX, box.MinY)
         ]));
-    }
-
-    private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
-    {
-        public string GetConnectionString() => dataSource.ConnectionString;
-
-        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-            => await dataSource.OpenConnectionAsync(cancellationToken);
-
-        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
-            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
-            CancellationToken cancellationToken = default)
-        {
-            var connection = await OpenConnectionAsync(cancellationToken);
-            try
-            {
-                var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
-                return (connection, transaction);
-            }
-            catch
-            {
-                await connection.DisposeAsync();
-                throw;
-            }
-        }
-
-        public async Task<T> ExecuteWithDeadlockRetryAsync<T>(
-            Func<Task<T>> operation,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return await operation();
-        }
-
-        public async Task ExecuteWithDeadlockRetryAsync(
-            Func<Task> operation,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await operation();
-        }
     }
 }
