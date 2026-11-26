@@ -118,7 +118,7 @@ public sealed partial class FormPackageValidator
         if (FormXlsFormExpressions.IsEnabled(package) &&
             !OperationEquals(request.Operation, FormSubmissionOperations.Delete) && issues.Count == 0)
         {
-            NormalizeXlsSubmission(package, request, target.Resource, issues);
+            NormalizeXlsSubmission(package, new(request, target.Resource), issues);
         }
 
         ValidateSubmissionPolicy(package, request, target.Resource, issues);

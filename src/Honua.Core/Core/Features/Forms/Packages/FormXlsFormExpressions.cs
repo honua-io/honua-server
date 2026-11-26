@@ -21,133 +21,161 @@ internal static partial class FormXlsFormExpressions
     [GeneratedRegex("""(?<![\w-])selected\s*\(\s*(\$\{[A-Za-z_][A-Za-z0-9_-]*\}|\.)\s*,\s*('(?:''|[^'])*')\s*\)""", RegexOptions.CultureInvariant)]
     private static partial Regex Selected();
 
-    internal static bool TryCompile(
-        string expression,
-        IReadOnlySet<string> allowedFields,
-        bool allowSelf,
-        out string compiled)
+    internal static string? Compile(string expression, IReadOnlySet<string> allowedFields)
+        => Compile(expression, new ExpressionScope(allowedFields, false));
+
+    internal static string? CompileConstraint(string expression, IReadOnlySet<string> allowedFields)
+        => Compile(expression, new ExpressionScope(allowedFields, true));
+
+    private sealed record ExpressionScope(IReadOnlySet<string> AllowedFields, bool AllowsCurrentAnswer)
     {
-        compiled = string.Empty;
+        internal bool Allows(Match token) =>
+            (token.Value != "." || AllowsCurrentAnswer) &&
+            (!token.Groups["field"].Success || AllowedFields.Contains(token.Groups["field"].Value));
+    }
+
+    private static string? Compile(string expression, ExpressionScope scope)
+    {
         if (expression.Length is 0 or > 4000)
         {
-            return false;
+            return null;
         }
 
         var position = 0;
-        var depth = 0;
-        var parts = new List<string>();
-        var calls = new Stack<(string? Function, int Arguments)>();
-        string? pendingFunction = null;
-        string? previousToken = null;
+        var normalizer = new TokenNormalizer();
         foreach (Match token in Tokens().Matches(expression))
         {
-            if (token.Index != position)
+            if (token.Index != position || !scope.Allows(token) || !normalizer.Append(token))
             {
-                return false;
+                return null;
             }
-
             position += token.Length;
-            if (token.Groups["field"].Success && !allowedFields.Contains(token.Groups["field"].Value))
-            {
-                return false;
-            }
+        }
 
+        return position == expression.Length && normalizer.IsComplete
+            ? ValidateNormalizedExpression(normalizer.GetExpression())
+            : null;
+    }
+
+    private static string? ValidateNormalizedExpression(string normalized)
+    {
+        var selectedTokens = Tokens().Matches(normalized)
+            .Where(static token => token.Groups["name"].Success && token.Value == "selected")
+            .Select(static token => token.Index).ToHashSet();
+        var compiled = Selected().Replace(normalized, match => selectedTokens.Contains(match.Index)
+            ? $"contains(concat(' ', {match.Groups[1].Value}, ' '), concat(' ', {match.Groups[2].Value}, ' '))"
+            : match.Value);
+        if (Tokens().Matches(compiled).Any(static token => token.Groups["name"].Success && token.Value == "selected"))
+        {
+            return null;
+        }
+
+        // The SDK parses both arms. The guard checks syntax without evaluating fabricated answers.
+        return ExpressionEvaluator.EvaluateDetailed($"if(false, ({compiled}), true)", null).Succeeded ? compiled : null;
+    }
+
+    private sealed class TokenNormalizer
+    {
+        private readonly List<string> _parts = [];
+        private readonly Stack<(string? Function, int Arguments)> _calls = new();
+        private string? _pendingFunction;
+        private string? _previousToken;
+
+        internal bool IsComplete => _calls.Count == 0 && _pendingFunction is null or "true" or "false";
+
+        internal string GetExpression() => string.Concat(_parts);
+
+        internal bool Append(Match token)
+        {
             if (token.Groups["space"].Success)
             {
-                parts.Add(token.Value);
-                continue;
+                _parts.Add(token.Value);
+                return true;
             }
 
-            if (pendingFunction is not null && token.Value != "(" && pendingFunction is not ("true" or "false"))
+            if (token.Value != "(")
+            {
+                if (_pendingFunction is not (null or "true" or "false"))
+                {
+                    return false;
+                }
+                _pendingFunction = null;
+            }
+
+            var accepted = token.Value switch
+            {
+                "(" => OpenCall(),
+                "," => AddArgument(),
+                ")" => CloseCall(),
+                _ => AppendOperand(token)
+            };
+            _previousToken = token.Value;
+            return accepted;
+        }
+
+        private bool OpenCall()
+        {
+            if (_calls.Count >= 32)
+            {
+                return false;
+            }
+            _calls.Push((_pendingFunction, 0));
+            _pendingFunction = null;
+            _parts.Add("(");
+            return true;
+        }
+
+        private bool AddArgument()
+        {
+            if (!_calls.TryPop(out var call) || call.Function is null)
+            {
+                return false;
+            }
+            _calls.Push((call.Function, call.Arguments + 1));
+            _parts.Add(",");
+            return true;
+        }
+
+        private bool CloseCall()
+        {
+            if (!_calls.TryPop(out var call))
             {
                 return false;
             }
 
-            if (token.Value != "(" && pendingFunction is ("true" or "false"))
-            {
-                pendingFunction = null;
-            }
-
-            if (token.Value == "(" && ++depth > 32 || token.Value == ")" && --depth < 0)
+            var argumentCount = _previousToken == "(" ? 0 : call.Arguments + 1;
+            if (call.Function is not null && !HasSupportedArity(call.Function, argumentCount))
             {
                 return false;
             }
 
-            switch (token.Value)
+            if (call.Function is "true" or "false")
             {
-                case "(":
-                    calls.Push((pendingFunction, 0));
-                    pendingFunction = null;
-                    break;
-                case ",":
-                    if (!calls.TryPop(out var call) || call.Function is null)
-                    {
-                        return false;
-                    }
-                    calls.Push((call.Function, call.Arguments + 1));
-                    break;
-                case ")":
-                    var completed = calls.Pop();
-                    var argumentCount = previousToken == "(" ? 0 : completed.Arguments + 1;
-                    if (completed.Function is not null && !HasSupportedArity(completed.Function, argumentCount))
-                    {
-                        return false;
-                    }
-                    if (completed.Function is "true" or "false")
-                    {
-                        // The SDK represents booleans as literals.
-                        while (parts[^1] != "(")
-                        {
-                            parts.RemoveAt(parts.Count - 1);
-                        }
-                        parts.RemoveAt(parts.Count - 1);
-                        previousToken = ")";
-                        continue;
-                    }
-                    break;
-                default:
-                    if (token.Groups["name"].Success && token.Value is not ("and" or "or" or "not" or "div" or "mod"))
-                    {
-                        pendingFunction = token.Value;
-                    }
-                    break;
+                var start = _parts.LastIndexOf("(");
+                _parts.RemoveRange(start, _parts.Count - start);
             }
-
-            if (token.Value == "." && !allowSelf)
+            else
             {
-                return false;
+                _parts.Add(")");
             }
+            return true;
+        }
 
-            previousToken = token.Value;
-            parts.Add(token.Value switch
+        private bool AppendOperand(Match token)
+        {
+            if (token.Groups["name"].Success && token.Value is not ("and" or "or" or "not" or "div" or "mod"))
+            {
+                _pendingFunction = token.Value;
+            }
+            _parts.Add(token.Value switch
             {
                 "div" => "/",
                 "mod" => "%",
                 _ when token.Value[0] == '"' => "'" + token.Value[1..^1].Replace("'", "''", StringComparison.Ordinal) + "'",
                 _ => token.Value
             });
+            return true;
         }
-
-        if (position != expression.Length || depth != 0 || pendingFunction is not (null or "true" or "false"))
-        {
-            return false;
-        }
-
-        var normalized = string.Concat(parts);
-        var selectedTokens = Tokens().Matches(normalized)
-            .Where(static token => token.Groups["name"].Success && token.Value == "selected")
-            .Select(static token => token.Index).ToHashSet();
-        compiled = Selected().Replace(normalized, match => selectedTokens.Contains(match.Index)
-            ? $"contains(concat(' ', {match.Groups[1].Value}, ' '), concat(' ', {match.Groups[2].Value}, ' '))"
-            : match.Value);
-        if (Tokens().Matches(compiled).Any(static token => token.Groups["name"].Success && token.Value == "selected"))
-        {
-            return false;
-        }
-
-        // The SDK parses both arms before evaluation. A false guard lets us validate the
-        // syntax without evaluating expressions against fabricated input values.
-        return ExpressionEvaluator.EvaluateDetailed($"if(false, ({compiled}), true)", null).Succeeded;
     }
 
     private static bool HasSupportedArity(string function, int count) => function switch
@@ -171,24 +199,22 @@ internal static partial class FormXlsFormExpressions
         _ => null
     };
 
-    internal static bool TryEvaluateBoolean(string expression, IReadOnlyDictionary<string, object?> context, out bool value)
+    internal static bool? EvaluateBoolean(string expression, IReadOnlyDictionary<string, object?> context)
     {
         var result = ExpressionEvaluator.EvaluateDetailed($"if(({expression}), true, false)", context);
-        value = result.Value is true;
-        return result.Succeeded;
+        return result.Succeeded ? result.Value is true : null;
     }
 
-    internal static bool TryCalculate(
-        string expression, string? fieldType, IReadOnlyDictionary<string, object?> context, out JsonElement value)
+    internal static JsonElement? Calculate(
+        string expression, string? fieldType, IReadOnlyDictionary<string, object?> context)
     {
         var result = ExpressionEvaluator.EvaluateDetailed(expression, context);
-        value = default;
         if (!result.Succeeded)
         {
-            return false;
+            return null;
         }
 
-        value = result.Value switch
+        return result.Value switch
         {
             null => JsonSerializer.SerializeToElement<string?>(null, FormPackageJsonContext.Default.String),
             string text => JsonSerializer.SerializeToElement(text, FormPackageJsonContext.Default.String),
@@ -202,8 +228,7 @@ internal static partial class FormXlsFormExpressions
                 => JsonSerializer.SerializeToElement(number.ToString(CultureInfo.InvariantCulture), FormPackageJsonContext.Default.String),
             double number when double.IsFinite(number)
                 => JsonSerializer.SerializeToElement(number, FormPackageJsonContext.Default.Double),
-            _ => default
+            _ => null
         };
-        return value.ValueKind != JsonValueKind.Undefined;
     }
 }
