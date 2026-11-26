@@ -134,6 +134,19 @@ class EmitRc2RigorProofTests(unittest.TestCase):
         })
         self.assertEqual(proxy["corsOnErrorCodes"], [400, 401, 402, 403, 429])
 
+    def test_gis_proxy_proof_excludes_unqualified_optional_client(self) -> None:
+        clients = {
+            name: {"status": "PASS", "evidence": f"{name} ok"}
+            for name in emitter.REQUIRED_CLIENTS
+        }
+        clients["optional-client"] = {"status": "FAIL", "evidence": "could not load layer"}
+        proof = emitter.build_gis_clients_proxy_proof(self.identity, {
+            "clients": clients,
+            "corsOnErrorCodes": sorted(emitter.REQUIRED_CORS_ERROR_CODES),
+            **{flag: True for flag in emitter.CLIENT_PROXY_FLAGS},
+        })
+        self.assertEqual(set(proof["clients"]), emitter.REQUIRED_CLIENTS)
+
     def test_tenant_isolation_proof_and_fail_closed(self) -> None:
         base_obs = {
             "singleTenantConsoleZero403": True,

@@ -261,7 +261,10 @@ def build_gis_clients_proxy_proof(
         raise ValueError(f"proxy observation failed required flags: {', '.join(missing)}")
     return {
         **header,
-        "clients": {name: {"status": "PASS", "evidence": str(clients[name]["evidence"]).strip()} for name in sorted(clients)},
+        "clients": {
+            name: {"status": "PASS", "evidence": str(clients[name]["evidence"]).strip()}
+            for name in sorted(REQUIRED_CLIENTS)
+        },
         "corsOnErrorCodes": cors_codes,
         **{flag: True for flag in CLIENT_PROXY_FLAGS},
     }
