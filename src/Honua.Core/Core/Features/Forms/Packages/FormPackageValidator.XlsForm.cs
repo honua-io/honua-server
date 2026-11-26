@@ -27,7 +27,10 @@ public sealed partial class FormPackageValidator
         return scopes;
     }
 
-    private sealed record XlsSubmissionTarget(FormSubmissionRequest Request, MetadataV2Object Resource);
+    private sealed record XlsSubmissionTarget(FormSubmissionRequest Request, MetadataV2Object Resource)
+    {
+        public bool RequireVirtualAnswers { get; init; } = true;
+    }
 
     private static void NormalizeXlsSubmission(
         FormPackageDocument package, XlsSubmissionTarget target, List<FormValidationIssue> issues)
@@ -42,7 +45,11 @@ public sealed partial class FormPackageValidator
             AddError(issues, "fieldNotInPackage", $"Submitted answer '{key}' is not defined at the top level.", key);
         }
 
-        var root = NormalizeXlsScope(mainFields, new(request.Values, new(StringComparer.Ordinal), issues) { Submission = request });
+        var root = NormalizeXlsScope(mainFields, new(request.Values, new(StringComparer.Ordinal), issues)
+        {
+            Submission = request,
+            RequireVirtualAnswers = target.RequireVirtualAnswers
+        });
         foreach (var field in mainFields.Where(static field => !IsXlsLocation(field) && !IsAttachmentField(field)))
         {
             root.TryAdd(field.FieldId!, null);
@@ -163,6 +170,7 @@ public sealed partial class FormPackageValidator
         List<FormValidationIssue> Issues)
     {
         public FormSubmissionRequest? Submission { get; init; }
+        public bool RequireVirtualAnswers { get; init; }
 
         public HashSet<string> Allowed { get; } = Context.Keys.ToHashSet(StringComparer.Ordinal);
     }
@@ -195,7 +203,7 @@ public sealed partial class FormPackageValidator
             {
                 AddError(issues, "xlsFormUnexpectedAnswer", "Send visible location and media answers in their dedicated submission properties.", id);
             }
-            else if (visible && field.Required && !supplied)
+            else if (scope.RequireVirtualAnswers && visible && field.Required && !supplied)
             {
                 AddError(issues, "requiredFieldMissing", $"Required field '{id}' is missing.", id);
             }

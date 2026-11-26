@@ -144,6 +144,42 @@ public sealed partial class FormPackageValidatorTests
         values["category"].GetRawText().Should().Be("[{}]");
     }
 
+    [UnitTest]
+    public async Task ValidateRecordAsync_ComputesDerivedAnswersWithoutRequiringSubmissionGeometry()
+    {
+        var package = JsonSerializer.Deserialize("""
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Inspection",
+              "expressionLanguage": "xlsform",
+              "target": { "serviceId": "test", "layerId": 0 },
+              "sections": [{ "sectionId": "main", "label": "Main", "fieldIds": ["count", "name", "gps"] }],
+              "fields": [
+                { "fieldId": "count", "type": "integer", "targetField": "count", "sectionId": "main",
+                  "calculatedExpression": "2" },
+                { "fieldId": "name", "type": "text", "targetField": "name", "sectionId": "main",
+                  "required": true, "relevanceExpression": "${count} = 2" },
+                { "fieldId": "gps", "type": "location", "sectionId": "main", "required": true }
+              ]
+            }
+            """, FormPackageJsonContext.Default.FormPackageDocument)!;
+        var published = PublishedXlsPackage(package);
+        var validator = CreateValidator();
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        var missing = await validator.ValidateRecordAsync(published, (values, []));
+        missing.Issues.Should().ContainSingle(issue => issue.Code == "requiredFieldMissing").Which.FieldId.Should().Be("name");
+
+        values["name"] = Json("\"capture\"");
+        var complete = await validator.ValidateRecordAsync(published, (values, []));
+        complete.IsValid.Should().BeTrue("{0}", string.Join(", ", complete.Issues));
+        values.Should().NotContainKey("count");
+
+        var submission = CreateSubmissionRequest(FormSubmissionOperations.Create, values: values, includeGeometry: false);
+        var submitted = await validator.ValidateAndNormalizeSubmissionAsync(published, submission);
+        submitted.Issues.Should().Contain(issue => issue.Code == "requiredFieldMissing" && issue.FieldId == "gps");
+    }
+
     private static FormPackageVersion PublishedXlsPackage(FormPackageDocument package, string status = FormPackageStatus.Published)
         => new()
         {
