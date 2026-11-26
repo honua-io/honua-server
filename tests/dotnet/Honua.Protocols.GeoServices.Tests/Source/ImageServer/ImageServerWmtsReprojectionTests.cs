@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Net;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.ImageServer;
@@ -93,6 +94,8 @@ public sealed class ImageServerWmtsReprojectionTests
                             }
                         }
 
+                        var outsidePixel = row == rows[0] ? 1 : 256;
+                        var samples = new List<PixelSample>();
                         for (var sourceRow = 0; sourceRow < 3; sourceRow++)
                         {
                             for (var sourceCol = 0; sourceCol < 4; sourceCol++)
@@ -109,59 +112,27 @@ public sealed class ImageServerWmtsReprojectionTests
 
                                 var pixelCol = 1 + (int)Math.Floor((x - (originX + col * span)) / (span / 256));
                                 var pixelRow = 1 + (int)Math.Floor(((originY - row * span) - y) / (span / 256));
-                                await using var pixel = connection.CreateCommand();
-                                pixel.CommandText = format == "png"
-                                    ? "SELECT ST_Value(r, 1, @col, @row), ST_Value(r, 2, @col, @row) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;"
-                                    : "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @col, @row);";
-                                pixel.Parameters.AddWithValue("data", data);
-                                pixel.Parameters.AddWithValue("col", pixelCol);
-                                pixel.Parameters.AddWithValue("row", pixelRow);
-                                var expected = SourceValues[sourceRow, sourceCol];
-                                if (format == "png")
-                                {
-                                    await using var pixelReader = await pixel.ExecuteReaderAsync();
-                                    (await pixelReader.ReadAsync()).Should().BeTrue();
-                                    pixelReader.GetDouble(0).Should().Be(expected ?? 0,
-                                        $"source cell r{sourceRow}c{sourceCol} must retain its grayscale value, including valid zero");
-                                    pixelReader.GetDouble(1).Should().Be(expected.HasValue ? 255 : 0,
-                                        $"source cell r{sourceRow}c{sourceCol} must retain its independent validity alpha");
-                                }
-                                else
-                                {
-                                    var actual = await pixel.ExecuteScalarAsync();
-                                    if (expected is { } value)
-                                    {
-                                        actual.Should().Be(value, $"source cell r{sourceRow}c{sourceCol} must survive reprojection, including valid zero");
-                                    }
-                                    else
-                                    {
-                                        actual.Should().Be(DBNull.Value, "the source NoData cell must remain NoData");
-                                    }
-                                }
-                                checkedCells++;
+                                samples.Add(new PixelSample(new Pixel(pixelCol, pixelRow), new Pixel(sourceCol, sourceRow)));
                             }
                         }
 
-                        // Northern tiles' top-left and southern tiles' bottom-right are outside
-                        // the fixture footprint. Padding must not stretch a source cell over them.
-                        var outsidePixel = row == rows[0] ? 1 : 256;
-                        await using var outside = connection.CreateCommand();
-                        outside.CommandText = format == "png"
-                            ? "SELECT ST_Value(r, 1, @pixel, @pixel), ST_Value(r, 2, @pixel, @pixel) FROM (SELECT ST_FromGDALRaster(@data) r) decoded;"
-                            : "SELECT ST_Value(ST_FromGDALRaster(@data), 1, @pixel, @pixel);";
-                        outside.Parameters.AddWithValue("data", data);
-                        outside.Parameters.AddWithValue("pixel", outsidePixel);
-                        if (format == "png")
+                        await using var pixels = connection.CreateCommand();
+                        pixels.CommandText = PixelQuery(format);
+                        pixels.Parameters.AddWithValue("data", data);
+                        pixels.Parameters.AddWithValue("columns", samples.Select(sample => sample.Tile.Column).Append(outsidePixel).ToArray());
+                        pixels.Parameters.AddWithValue("rows", samples.Select(sample => sample.Tile.Row).Append(outsidePixel).ToArray());
+                        await using var pixelReader = await pixels.ExecuteReaderAsync();
+                        foreach (var sample in samples)
                         {
-                            await using var outsideReader = await outside.ExecuteReaderAsync();
-                            (await outsideReader.ReadAsync()).Should().BeTrue();
-                            outsideReader.GetDouble(0).Should().Be(0, "uncovered grayscale padding has no source data");
-                            outsideReader.GetDouble(1).Should().Be(0, "uncovered padding must be transparent");
+                            (await pixelReader.ReadAsync()).Should().BeTrue();
+                            AssertSourcePixel(pixelReader, sample, format);
+                            checkedCells++;
                         }
-                        else
-                        {
-                            (await outside.ExecuteScalarAsync()).Should().Be(DBNull.Value);
-                        }
+
+                        // The final sample is in the tile padding, outside the fixture footprint.
+                        (await pixelReader.ReadAsync()).Should().BeTrue();
+                        AssertPaddingPixel(pixelReader, format);
+                        (await pixelReader.ReadAsync()).Should().BeFalse();
                     }
                 }
                 checkedCells.Should().Be(12, "all eleven valid cells and the NoData cell must be checked");
@@ -171,6 +142,55 @@ public sealed class ImageServerWmtsReprojectionTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private readonly record struct Pixel(int Column, int Row);
+
+    private readonly record struct PixelSample(Pixel Tile, Pixel Source);
+
+    private static string PixelQuery(string format)
+    {
+        var bands = format == "png"
+            ? "ST_Value(r, 1, pixel_col, pixel_row), ST_Value(r, 2, pixel_col, pixel_row)"
+            : "ST_Value(r, 1, pixel_col, pixel_row)";
+        return $"""
+            WITH decoded AS MATERIALIZED (SELECT ST_FromGDALRaster(@data) r)
+            SELECT {bands}
+            FROM decoded
+            CROSS JOIN unnest(@columns, @rows) WITH ORDINALITY AS samples(pixel_col, pixel_row, sample_index)
+            ORDER BY sample_index;
+            """;
+    }
+
+    private static void AssertSourcePixel(DbDataReader reader, PixelSample sample, string format)
+    {
+        var expected = SourceValues[sample.Source.Row, sample.Source.Column];
+        var cell = $"source cell r{sample.Source.Row}c{sample.Source.Column}";
+        if (format == "png")
+        {
+            reader.GetDouble(0).Should().Be(expected ?? 0, $"{cell} must retain its grayscale value, including valid zero");
+            reader.GetDouble(1).Should().Be(expected.HasValue ? 255 : 0, $"{cell} must retain its independent validity alpha");
+        }
+        else if (expected is { } value)
+        {
+            reader.GetDouble(0).Should().Be(value, $"{cell} must survive reprojection, including valid zero");
+        }
+        else
+        {
+            reader.IsDBNull(0).Should().BeTrue("the source NoData cell must remain NoData");
+        }
+    }
+
+    private static void AssertPaddingPixel(DbDataReader reader, string format)
+    {
+        if (format == "png")
+        {
+            reader.GetDouble(0).Should().Be(0, "uncovered grayscale padding has no source data");
+            reader.GetDouble(1).Should().Be(0, "uncovered padding must be transparent");
+            return;
+        }
+
+        reader.IsDBNull(0).Should().BeTrue();
     }
 
     private static double ProjectLatitude(double latitude)

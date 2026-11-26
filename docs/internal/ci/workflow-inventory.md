@@ -1382,6 +1382,14 @@ existing budgets.
 No workflow, shard selection, runner count, required check or aggregate dependency
 changes are made.
 
+### ImageServer WMTS reprojection pixel sampling
+
+`ImageServerWmtsReprojectionTests` reads the source-cell and padding samples
+together for each tile. The pixel query decodes the returned raster once and
+preserves the sample order. Tile requests, dimension and band checks, source
+values, NoData and padding coverage stay in the raster rendering shard for
+affected PRs and in the twice-daily full trunk runs.
+
 ### ImageServer mosaic default host lifetime
 
 `ImageServerMosaicIntegrationTests` retains the default web host through a
