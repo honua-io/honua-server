@@ -233,7 +233,7 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = payload.RootElement;
         root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
-        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+        root.GetProperty("detail").GetString().Should().Be("spec could not be read.");
     }
 
     [IntegrationTest]
@@ -391,7 +391,7 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = payload.RootElement;
         root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
-        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+        root.GetProperty("detail").GetString().Should().Be("spec could not be read.");
     }
 
     [IntegrationTheory]
