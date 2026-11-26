@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
@@ -25,15 +26,15 @@ public static class StartupDatabaseResilience
 
         // AggregateException fans out to multiple inner failures; treat the group as transient only
         // when every leaf is transient (a single permanent failure makes the whole thing fatal).
-        // Handle it explicitly rather than walking its first InnerException, which would otherwise
-        // mask a permanent sibling failure.
-        if (exception is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
-        {
-            return aggregate.InnerExceptions.All(IsTransientConnectivityError);
-        }
-
+        // Check at every level of traversal so a wrapped AggregateException cannot hide a permanent
+        // sibling behind its first inner exception.
         for (var current = exception; current is not null; current = current.InnerException)
         {
+            if (current is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
+            {
+                return aggregate.InnerExceptions.All(IsTransientConnectivityError);
+            }
+
             if (IsTransientSingle(current))
             {
                 return true;
@@ -43,39 +44,78 @@ public static class StartupDatabaseResilience
         return false;
     }
 
-    private static bool IsTransientSingle(Exception exception)
+    // Request-path classifier: matches transient Npgsql connectivity/resource failures only so
+    // non-database TimeoutException/SocketException and permanent TLS/protocol errors keep their
+    // existing HTTP mappings.
+    public static bool IsTransientDatabaseConnectivityError(Exception? exception)
     {
-        // TimeoutException and socket failures are always transient.
-        var typeName = exception.GetType().FullName ?? exception.GetType().Name;
-        if (typeName is "System.TimeoutException"
-            || typeName == "System.Net.Sockets.SocketException")
+        if (exception is null)
         {
-            return true;
+            return false;
         }
 
-        // Npgsql's transient flag and SQLSTATE are read without taking a hard reference on the
-        // provider: the connection-string resolver lives in Core, but Npgsql does not. A
-        // PostgresException carries a public string SqlState; NpgsqlException exposes a bool
-        // IsTransient. We surface both via the documented message conventions below and the
-        // SQLSTATE scan so this helper stays provider-agnostic and AOT-friendly.
-        if (typeName == "Npgsql.NpgsqlException" || typeName == "Npgsql.PostgresException")
+        // First walk for wrapped aggregates and authoritative server SQLSTATEs (e.g. an
+        // NpgsqlException wrapping PostgresException 28P01 must stay non-transient).
+        for (var current = exception; current is not null; current = current.InnerException)
         {
-            var sqlState = TryReadSqlState(exception);
-            if (sqlState is not null && IsTransientSqlState(sqlState))
+            if (current is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
             {
-                return true;
+                return aggregate.InnerExceptions.All(IsTransientDatabaseConnectivityError);
             }
 
-            // A bare NpgsqlException without a PostgreSQL SQLSTATE is almost always a
-            // network/availability problem (host unreachable, connection refused, broken pipe).
-            if (typeName == "Npgsql.NpgsqlException" && sqlState is null)
+            if (IsPostgresException(current))
             {
-                return true;
+                return IsTransientSqlState(TryReadSqlState(current));
+            }
+        }
+
+        // No SQLSTATE: trust DbException.IsTransient on bare NpgsqlException so timeouts,
+        // socket/IO failures, and pool exhaustion return 503 while TLS/certificate/protocol
+        // failures (IsTransient == false) stay 500.
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (IsBareNpgsqlException(current))
+            {
+                return current is DbException dbException && dbException.IsTransient;
             }
         }
 
         return false;
     }
+
+    private static bool IsTransientSingle(Exception exception)
+    {
+        // TimeoutException and socket failures are always transient on the startup path.
+        var typeName = exception.GetType().FullName ?? exception.GetType().Name;
+        if (typeName is "System.TimeoutException" or "System.Net.Sockets.SocketException")
+        {
+            return true;
+        }
+
+        return IsTransientNpgsqlException(exception);
+    }
+
+    private static bool IsTransientNpgsqlException(Exception exception)
+    {
+        if (IsPostgresException(exception))
+        {
+            return IsTransientSqlState(TryReadSqlState(exception));
+        }
+
+        if (IsBareNpgsqlException(exception))
+        {
+            var sqlState = TryReadSqlState(exception);
+            return !string.IsNullOrEmpty(sqlState) ? IsTransientSqlState(sqlState) : true;
+        }
+
+        return false;
+    }
+
+    private static bool IsPostgresException(Exception exception)
+        => (exception.GetType().FullName ?? exception.GetType().Name) == "Npgsql.PostgresException";
+
+    private static bool IsBareNpgsqlException(Exception exception)
+        => (exception.GetType().FullName ?? exception.GetType().Name) == "Npgsql.NpgsqlException";
 
     public static bool IsTransientSqlState(string? sqlState)
     {
@@ -160,13 +200,14 @@ public static class StartupDatabaseResilience
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2075:'this' argument does not satisfy 'DynamicallyAccessedMemberTypes' in call to 'System.Type.GetProperty(String)'",
-        Justification = "Best-effort cold-startup read of PostgresException.SqlState by name, used only to classify transient DB errors for degraded start without a compile-time Npgsql dependency in Core. If the property is trimmed away the lookup returns null and the failure is treated as non-transient — the safe default — so the access is correctness-neutral under trimming/AOT.")]
+        Justification = "Real Npgsql exceptions inherit DbException and read DbException.SqlState directly without reflection; the GetProperty fallback is only for synthetic non-DbException test doubles and safely yields null if trimmed.")]
     private static string? TryReadSqlState(Exception exception)
     {
-        // PostgresException exposes a public string SqlState property. Reading it via the runtime
-        // property avoids a compile-time dependency on Npgsql from Core. Reflection here runs only
-        // on the cold startup path (never in request hot paths); a trimmed-away property simply
-        // yields null, which is treated as a non-transient error (the safe default).
+        if (exception is DbException dbException)
+        {
+            return dbException.SqlState;
+        }
+
         var property = exception.GetType().GetProperty("SqlState");
         return property?.GetValue(exception) as string;
     }

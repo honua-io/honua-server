@@ -6,23 +6,16 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Startup;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
-using Honua.TestKit.Mixins;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -104,7 +97,7 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         // to stay applicable to the database it just produced, not only to the migrated one.
         await ExecuteAsync(connectionString, seedSql);
 
-        await using var factory = CreateHost(connectionString, licensed: true);
+        await using var factory = MigratedPostgresTestHost.CreateLicensed(connectionString);
 
         // No dev-auth bypass. The lane's `invoke` helper defaults to `authenticated=True` and
         // sends the cert admin key on every serving call (scripts/cloud/lambda-certification.py),
@@ -169,7 +162,7 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         // identical request against an unlicensed host over this same seed and schema so the cause
         // is pinned to licensing, and so the wire shape the lane has to diagnose — HTTP 200 with the
         // whole refusal in the body — cannot drift without a test saying so.
-        await using (var unlicensed = CreateHost(connectionString, licensed: false))
+        await using (var unlicensed = MigratedPostgresTestHost.Create(connectionString))
         {
             using var unlicensedClient = unlicensed.CreateClient();
             unlicensedClient.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
@@ -263,56 +256,6 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
             ServicePath + "/query?f=json&where=1%3D1&returnCountOnly=true");
         finalCount.RootElement.GetProperty("count").GetInt32().Should().Be(10);
     }
-
-    private static WebApplicationFactory<Program> CreateHost(string connectionString, bool licensed)
-        => ConfiguredWebApplicationFactory.Create(
-            builder =>
-            {
-                // Keep the real startup runner enabled over the populated migrated database.
-                // Query and write assertions below therefore exercise the shipped schema and
-                // journal reconciliation, independently of the hand-mirrored server.yaml fixture.
-                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                // The certified image registers the production provider composition
-                // (InfrastructureCompositionRoot). A Test host skips it unless it opts in, and
-                // this host has no WebAppFixture wiring to stand in for it, so opt in explicitly
-                // rather than depend on the factory's environment default.
-                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
-                            connectionString,
-                            new Dictionary<string, string?>
-                            {
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
-                                ["HONUA_SKIP_MIGRATIONS"] = "false"
-                            })));
-                builder.ConfigureTestServices(services =>
-                {
-                    services.RemoveAll<IDatabaseMigrationRunner>();
-                    services.AddSingleton<IDatabaseMigrationRunner>(new PostgresDatabaseMigrationRunner(
-                        new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
-                        ServerCoreSchemaMigrations.Manifest));
-                });
-
-                if (!licensed)
-                {
-                    return;
-                }
-
-                // The standing cert function carries a license; this in-process host does not, so
-                // grant the same edition here. Nothing else about the seed contract depends on
-                // licensing — the fixture reads are Community surfaces.
-                builder.ConfigureTestServices(services =>
-                {
-                    var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
-                    services.RemoveAll<ILicenseEntitlementService>();
-                    services.RemoveAll<ILicenseStatusProvider>();
-                    services.AddSingleton<ILicenseEntitlementService>(license);
-                    services.AddSingleton<ILicenseStatusProvider>(license);
-                });
-            },
-            "Test");
 
     private static async Task<JsonDocument> GetJsonAsync(HttpClient client, string path)
     {

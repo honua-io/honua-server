@@ -2,14 +2,17 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Progress;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -18,6 +21,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Polly.CircuitBreaker;
 using ValidationException = Honua.Core.Exceptions.ValidationException;
 
@@ -57,40 +61,16 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                         app.Run(async context =>
                         {
                             var path = context.Request.Path.Value;
-
-                            // Handle different exception types based on path
-                            if (path != null)
+                            if (path is not null)
                             {
-                                if (path.Contains("throw-argument"))
-                                    throw new ArgumentException("Invalid argument provided");
-                                if (path.Contains("throw-unauthorized"))
-                                    throw new UnauthorizedAccessException("Access denied");
-                                if (path.Contains("throw-timeout"))
-                                    throw new TimeoutException("Operation timed out");
-                                if (path.Contains("throw-cancelled"))
-                                    throw new OperationCanceledException("Operation timed out");
-                                if (path.Contains("throw-circuit"))
-                                    throw new BrokenCircuitException("Circuit is open");
-                                if (path.Contains("throw-notfound"))
-                                    throw new ResourceNotFoundException("Resource missing");
-                                if (path.Contains("throw-conflict"))
-                                    throw new ResourceConflictException("Resource conflict");
-                                if (path.Contains("throw-validation"))
-                                    throw new ValidationException("Field 'name' is required.", ["Missing required field: name"]);
-                                if (path.Contains("throw-unavailable"))
-                                    throw new ServiceUnavailableException("Database connection failed", 30);
-                                if (path.Contains("throw-auth-invalid"))
-                                    throw new InvalidOperationException("IDX20803: Unable to obtain configuration from issuer metadata endpoint.");
                                 if (path.Contains("throw-started"))
                                 {
                                     await context.Response.StartAsync();
                                     await context.Response.WriteAsync("partial");
                                     ThrowResponseStartedException();
                                 }
-                                if (path.Contains("throw-general"))
-                                    throw new InvalidOperationException("Something went wrong");
-                                if (path.Contains("throw-unhandled"))
-                                    throw new NotImplementedException("This is not implemented");
+
+                                ThrowForTestPath(path);
                             }
 
                             await context.Response.WriteAsync("OK");
@@ -408,12 +388,99 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.Contains("Retry-After").Should().BeFalse();
 
         var content = await response.Content.ReadAsStringAsync();
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
         problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+    }
+
+    [UnitTest]
+    public async Task GlobalExceptionMiddleware_DistributedProgressStateUnavailableException_ReturnsRetryable503()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-progress-unavailable");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.Contains("Retry-After").Should().BeFalse();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+    }
+
+    [UnitTheory]
+    [InlineData("/throw-npgsql-refused")]
+    [InlineData("/throw-npgsql-pool-exhausted")]
+    [InlineData("/throw-postgres-53300")]
+    [InlineData("/throw-postgres-57p01")]
+    public async Task GlobalExceptionMiddleware_DatabaseConnectivityFailure_ReturnsRetryable503AndLogsWarning(string path)
+    {
+        _logger.LogEntries.Clear();
+
+        // Act
+        var response = await _client.GetAsync(path);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.GetValues("Retry-After").Should().ContainSingle().Which.Should().Be("5");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("db.internal");
+        content.Should().NotContain("secret");
+        content.Should().NotContain("127.0.0.1:5432");
+
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+        problemDetails.GetProperty("retryAfterSeconds").GetInt32().Should().Be(5);
+
+        _logger.LogEntries.Should().ContainSingle(entry => entry.EventId.Id == 5021 && entry.LogLevel == LogLevel.Warning);
+        _logger.LogEntries.Should().NotContain(entry => entry.EventId.Id == 5005);
+    }
+
+    [UnitTest]
+    public async Task GlobalExceptionMiddleware_GeoServicesPath_DatabaseUnavailable_ReturnsGeoServicesRetryable503()
+    {
+        // Act
+        var response = await _client.GetAsync("/rest/services/throw-npgsql-refused");
+
+        // Assert
+        await response.AssertGeoServicesErrorAsync(503);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.GetValues("Retry-After").Should().ContainSingle().Which.Should().Be("5");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        error.Should().NotBeNull();
+        error!.Error.Code.Should().Be(503);
+        error.Error.Retryable.Should().BeTrue();
+        error.Error.RetryAfterSeconds.Should().Be(5);
+    }
+
+    [UnitTest]
+    public async Task GlobalExceptionMiddleware_PermanentPostgresException_Remains500WithoutRetryableHeader()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-postgres-42601");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Headers.Contains("Honua-Retryable").Should().BeFalse();
+        response.Headers.Contains("Retry-After").Should().BeFalse();
     }
 
     [Fact]
@@ -462,6 +529,41 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
     private static void ThrowResponseStartedException()
         => throw new InvalidOperationException("The response has already started, the error handler will not be executed.");
+
+    private static void ThrowForTestPath(string path)
+    {
+        var exception = CreateExceptionForPath(path);
+        if (exception is not null)
+        {
+            throw exception;
+        }
+    }
+
+    private static Exception? CreateExceptionForPath(string path) => path switch
+    {
+        _ when path.Contains("throw-argument") => new ArgumentException("Invalid argument provided"),
+        _ when path.Contains("throw-unauthorized") => new UnauthorizedAccessException("Access denied"),
+        _ when path.Contains("throw-timeout") => new TimeoutException("Operation timed out"),
+        _ when path.Contains("throw-cancelled") => new OperationCanceledException("Operation timed out"),
+        _ when path.Contains("throw-circuit") => new BrokenCircuitException("Circuit is open"),
+        _ when path.Contains("throw-progress-unavailable") => new DistributedProgressStateUnavailableException("Shared progress store unreachable"),
+        _ when path.Contains("throw-npgsql-refused") => new NpgsqlException("Failed to connect to 127.0.0.1:5432", new SocketException((int)SocketError.ConnectionRefused)),
+        _ when path.Contains("throw-npgsql-pool-exhausted") => new NpgsqlException("The connection pool has been exhausted.", new TimeoutException("Pool timeout")),
+        _ when path.Contains("throw-postgres-53300") => BuildPostgresException("53300", "Host=db.internal;Password=secret; too_many_connections"),
+        _ when path.Contains("throw-postgres-57p01") => BuildPostgresException("57P01", "terminating connection due to administrator command"),
+        _ when path.Contains("throw-postgres-42601") => BuildPostgresException("42601", "syntax error at or near SELECT"),
+        _ when path.Contains("throw-notfound") => new ResourceNotFoundException("Resource missing"),
+        _ when path.Contains("throw-conflict") => new ResourceConflictException("Resource conflict"),
+        _ when path.Contains("throw-validation") => new ValidationException("Field 'name' is required.", ["Missing required field: name"]),
+        _ when path.Contains("throw-unavailable") => new ServiceUnavailableException("Database connection failed", 30),
+        _ when path.Contains("throw-auth-invalid") => new InvalidOperationException("IDX20803: Unable to obtain configuration from issuer metadata endpoint."),
+        _ when path.Contains("throw-general") => new InvalidOperationException("Something went wrong"),
+        _ when path.Contains("throw-unhandled") => new NotImplementedException("This is not implemented"),
+        _ => null
+    };
+
+    private static PostgresException BuildPostgresException(string sqlState, string message)
+        => new(messageText: message, severity: "ERROR", invariantSeverity: "ERROR", sqlState: sqlState);
 
     private sealed class TestLogger<T> : ILogger<T>
     {

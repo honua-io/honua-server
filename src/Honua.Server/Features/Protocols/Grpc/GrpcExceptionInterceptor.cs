@@ -138,7 +138,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
             var machineCode = grpcStatusCode == StatusCode.ResourceExhausted
                 ? BackpressureMetadata.RateLimitExceededCode
                 : BackpressureMetadata.ServiceUnavailableCode;
-            var retryAfterSeconds = (exception as ServiceUnavailableException)?.RetryAfterSeconds;
+            var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception);
             return new RpcException(
                 new Status(grpcStatusCode, mapping.Detail),
                 BuildBackpressureTrailers(context, machineCode, retryAfterSeconds));

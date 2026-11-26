@@ -298,7 +298,8 @@ internal static class FeatureRegistrationExtensions
                 Options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Features.Infrastructure.Domain.CloudStorageOptions>>(),
                 Jobs = provider.GetRequiredService<Honua.Server.Features.Admin.TileOperations.ITileCacheJobService>(),
                 PublicRevocation = provider.GetService<Honua.Server.Features.Admin.Exports.PublicExportRevocationService>(),
-                PublicState = provider.GetService<Honua.Server.Features.Admin.Exports.IPublicExportStateStore>()
+                PublicState = provider.GetService<Honua.Server.Features.Admin.Exports.IPublicExportStateStore>(),
+                Logger = provider.GetService<Microsoft.Extensions.Logging.ILogger<Honua.Server.Features.Admin.Exports.ExportCatalog>>()
             }));
         services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
         // Lets a protocol assembly advertise a published COG without referencing the
