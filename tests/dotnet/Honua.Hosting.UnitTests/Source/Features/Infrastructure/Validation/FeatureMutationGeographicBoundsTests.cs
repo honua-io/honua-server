@@ -108,6 +108,20 @@ public sealed class FeatureMutationGeographicBoundsTests
         result.IsValid.Should().BeTrue();
     }
 
+    [UnitTest]
+    public async Task ValidateGeometryAsync_NonDegreeGeographicLayerWithGradCoordinates_IsNotRejectedByDegreeBounds()
+    {
+        var validator = CreateValidator();
+        var ntfParisGrads = new MetadataV2SpatialReference { Srid = 4807, Crs = "EPSG:4807", IsGeographic = true };
+
+        var result = await validator.ValidateGeometryAsync(
+            Resource(ntfParisGrads, MetadataV2GeometryType.Point),
+            Wkb("POINT (2.5 95)"),
+            CancellationToken.None);
+
+        result.IsValid.Should().BeTrue();
+    }
+
     private static FeatureMutationValidator CreateValidator()
     {
         var geometryValidator = Substitute.For<IGeometryValidator>();

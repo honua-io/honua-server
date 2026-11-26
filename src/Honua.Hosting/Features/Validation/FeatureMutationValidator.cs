@@ -39,13 +39,12 @@ internal sealed class FeatureMutationValidator
     {
         ArgumentNullException.ThrowIfNull(resource);
         var layerSrid = resource.ReadSrid();
-        var isGeographic = layerSrid is int srid
-            && (GeographicSridClassifier.IsGeographicSrid(srid)
-                || resource.Spatial?.SpatialReference?.IsGeographic == true);
+        // Restrict degree bounds and antimeridian cutting to known degree-based geographic SRIDs
+        // so non-degree geographic CRSs (such as grad-based EPSG:4807) are not misjudged as degrees.
         return ValidateGeometryAsync(
             geometry,
             ResolveLayerGeometryType(resource),
-            isGeographic ? layerSrid : null,
+            layerSrid is int srid && GeographicSridClassifier.IsGeographicSrid(srid) ? srid : null,
             cancellationToken);
     }
 

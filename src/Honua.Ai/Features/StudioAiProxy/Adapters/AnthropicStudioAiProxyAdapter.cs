@@ -583,7 +583,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         public JsonElement? ResolveToolArguments()
         {
             var streamed = ToolArgsBuffer?.ToString();
-            if (!string.IsNullOrWhiteSpace(streamed))
+            if (streamed is { Length: > 0 })
             {
                 return TryParseObject(streamed);
             }

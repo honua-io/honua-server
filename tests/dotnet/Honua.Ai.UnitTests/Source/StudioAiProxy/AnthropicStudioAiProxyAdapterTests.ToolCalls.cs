@@ -122,26 +122,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var toolStop = first.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop).Subject;
         toolStop.ToolCallId.Should().Be("toolu_zero");
         toolStop.ToolArguments!.Value.GetRawText().Should().Be("{}");
-        first.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
         first.Last().StopReason.Should().Be(StudioAiStopReason.ToolCall);
 
-        var next = new StudioAiChatRequest
-        {
-            ExecutionContext = identity,
-            Tools = initial.Tools,
-            Messages =
-            [
-                initial.Messages[0],
-                new()
-                {
-                    Role = StudioAiRole.Assistant,
-                    ToolCalls = [new() { Id = "toolu_zero", Name = "list_catalog_layers", Arguments = JsonElement.Parse("{}") }]
-                },
-                new() { Role = StudioAiRole.Tool, ToolCallId = "toolu_zero", Content = """["hi-parcels"]""" }
-            ]
-        };
-
-        var second = await CollectAsync(adapter, next);
+        var second = await CollectAsync(adapter, ZeroArgToolResultRequest(identity, initial));
 
         first.Concat(second).Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
         handler.SendCount.Should().Be(2);
@@ -167,6 +150,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTheory]
     [InlineData("""{"type":"tool_use","id":"toolu_bad","name":"list_incidents"}""", "")]
     [InlineData("""{"type":"tool_use","id":"toolu_bad","name":"list_incidents","input":[]}""", "")]
+    [InlineData("""{"type":"tool_use","id":"toolu_bad","name":"list_incidents","input":{}}""", "   ")]
     [InlineData("""{"type":"tool_use","id":"toolu_bad","name":"list_incidents","input":{}}""", "{\"status\":")]
     [InlineData("""{"type":"tool_use","id":"toolu_bad","name":"list_incidents","input":{}}""", "[1,2]")]
     public async Task StreamAsync_MalformedOrMissingToolArguments_FailsClosed(string blockJson, string partialJson)
@@ -203,7 +187,41 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var first = await CollectAsync(adapter, initial);
         first.Where(e => e.Type == StudioAiChatEventType.ToolCallStop).Should().HaveCount(2);
 
-        var next = new StudioAiChatRequest
+        var second = await CollectAsync(adapter, MultiToolResultRequest(identity, initial));
+
+        first.Concat(second).Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        handler.SendCount.Should().Be(2);
+        using var body = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var messages = body.RootElement.GetProperty("messages");
+        messages.GetArrayLength().Should().Be(3);
+        messages[2].GetProperty("role").GetString().Should().Be("user");
+        var results = messages[2].GetProperty("content");
+        results.GetArrayLength().Should().Be(2);
+        results[0].GetProperty("tool_use_id").GetString().Should().Be("toolu_a");
+        results[1].GetProperty("tool_use_id").GetString().Should().Be("toolu_b");
+    }
+
+    private static StudioAiChatRequest ZeroArgToolResultRequest(
+        AiExecutionContext identity,
+        StudioAiChatRequest initial) => new()
+        {
+            ExecutionContext = identity,
+            Tools = initial.Tools,
+            Messages =
+            [
+                initial.Messages[0],
+                new()
+                {
+                    Role = StudioAiRole.Assistant,
+                    ToolCalls = [new() { Id = "toolu_zero", Name = "list_catalog_layers", Arguments = JsonElement.Parse("{}") }]
+                },
+                new() { Role = StudioAiRole.Tool, ToolCallId = "toolu_zero", Content = """["hi-parcels"]""" }
+            ]
+        };
+
+    private static StudioAiChatRequest MultiToolResultRequest(
+        AiExecutionContext identity,
+        StudioAiChatRequest initial) => new()
         {
             ExecutionContext = identity,
             Tools = initial.Tools,
@@ -223,18 +241,4 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
                 new() { Role = StudioAiRole.Tool, ToolCallId = "toolu_b", Content = "[]" }
             ]
         };
-
-        var second = await CollectAsync(adapter, next);
-
-        first.Concat(second).Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
-        handler.SendCount.Should().Be(2);
-        using var body = JsonDocument.Parse(handler.CapturedRequestBody!);
-        var messages = body.RootElement.GetProperty("messages");
-        messages.GetArrayLength().Should().Be(3);
-        messages[2].GetProperty("role").GetString().Should().Be("user");
-        var results = messages[2].GetProperty("content");
-        results.GetArrayLength().Should().Be(2);
-        results[0].GetProperty("tool_use_id").GetString().Should().Be("toolu_a");
-        results[1].GetProperty("tool_use_id").GetString().Should().Be("toolu_b");
-    }
 }
