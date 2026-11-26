@@ -103,9 +103,7 @@ internal sealed class AuthenticationFailureLimiter(
         {
             _sources.TryGetValue(key.Source, out var window);
             window?.Release(key.Credential);
-            if (outcome != AuthenticationAttemptOutcome.Failed
-                || window?.IsRefused(now) is true
-                || SharedRefusal(key.Source, now) is not null)
+            if (outcome != AuthenticationAttemptOutcome.Failed || IsRefused(key.Source, window, now))
             {
                 if (window is not null)
                 {
@@ -139,6 +137,9 @@ internal sealed class AuthenticationFailureLimiter(
             return _sources.TryGetValue(source, out var window) && window.IsRefused(now) ? window.RefusedUntil : null;
         }
     }
+
+    private bool IsRefused(string source, FailureWindow? window, DateTimeOffset now)
+        => window?.IsRefused(now) is true || SharedRefusal(source, now) is not null;
 
     private DateTimeOffset? SharedRefusal(string source, DateTimeOffset now)
         => Shared?.For(source, now) is { } window && window.IsRefused(now) ? window.RefusedUntil : null;
