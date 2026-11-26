@@ -89,7 +89,7 @@ def start_container_stack(
         _start_postgis_container(session.network, session.pg_container, postgis_image)
         _wait_for_postgis(session.pg_container, options.boot_timeout)
         _start_app_container(session, image, options)
-        _wait_for_ready(session.base_url, options.boot_timeout)
+        _wait_for_ready(session.base_url, options.boot_timeout, session.app_container)
         _seed_cng_fixtures(session, options.boot_timeout)
         return session
     except (Exception, KeyboardInterrupt):
@@ -156,14 +156,28 @@ def _is_endpoint_ready(url: str) -> bool:
         return False
 
 
-def _wait_for_ready(base_url: str, timeout: float) -> None:
+def _raise_if_exited(container_name: str) -> None:
+    if not container_name:
+        return
+    inspect = _run_docker_unchecked(
+        ["inspect", "--format", "{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", container_name]
+    )
+    state = inspect.stdout.strip()
+    if inspect.returncode == 0 and not state.startswith("running "):
+        tail = "\n".join(read_container_logs(container_name).strip().splitlines()[-25:])
+        raise RuntimeError(f"NativeAOT container {container_name} exited early ({state}):\n{tail}")
+
+
+def _wait_for_ready(base_url: str, timeout: float, container_name: str = "") -> None:
     deadline = time.monotonic() + timeout
     url = base_url.rstrip("/") + "/healthz/ready"
     while time.monotonic() < deadline:
         if _is_endpoint_ready(url):
             return
+        _raise_if_exited(container_name)
         time.sleep(1.0)
-    raise RuntimeError(f"NativeAOT server at {url} did not become ready within {timeout}s")
+    tail = "\n".join(read_container_logs(container_name).strip().splitlines()[-25:]) if container_name else ""
+    raise RuntimeError(f"NativeAOT server at {url} did not become ready within {timeout}s\n{tail}")
 
 
 def stop_container_stack(session: DockerSession) -> str:
