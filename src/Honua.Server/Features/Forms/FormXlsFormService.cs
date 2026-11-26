@@ -70,7 +70,7 @@ internal sealed class FormXlsFormService
         }
 
         var mapped = FormXlsFormExportMapper.ToDefinition(version);
-        var exported = mapped.Value is null ? null : XlsFormConverter.Export(mapped.Value);
+        var exported = mapped.Value is null ? null : FormXlsFormExportMapper.ToWorkbook(version, mapped.Value);
         if (exported?.Value is null)
         {
             var diagnostics = exported?.Diagnostics ?? mapped.Diagnostics;
