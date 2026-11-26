@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Resilience;
 public sealed class DatabaseOutageRecoveryIntegrationTests
 {
     private const string PostgisImage = "postgis/postgis:18-3.6";
-    private const string FeatureQueryBase = "/rest/services/test_service/FeatureServer/0/query?f=json&returnCountOnly=true&where=";
+    private const string FeatureQueryPath = "/rest/services/test_service/FeatureServer/0/query?f=json&returnCountOnly=true&where=1%3D1";
     private const string AdminExportPath = "/api/v1/admin/services/test_service/layers/0/export?format=csv";
 
     [IntegrationTest]
@@ -41,7 +41,7 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
-        await AssertHealthyCountAsync(client, "1%3D1");
+        await AssertHealthyCountAsync(client);
 
         await container.StopAsync();
         await AssertOutageResponsesAsync(client);
@@ -82,9 +82,9 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
         await ExecuteAsync(connectionString, seedSql);
     }
 
-    private static async Task AssertHealthyCountAsync(HttpClient client, string whereClause)
+    private static async Task AssertHealthyCountAsync(HttpClient client)
     {
-        using var response = await client.GetAsync(FeatureQueryBase + whereClause);
+        using var response = await client.GetAsync(FeatureQueryPath);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
         using var document = JsonDocument.Parse(payload);
@@ -93,7 +93,7 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
 
     private static async Task AssertOutageResponsesAsync(HttpClient client)
     {
-        using var geoResponse = await client.GetAsync(FeatureQueryBase + "2%3D2");
+        using var geoResponse = await client.GetAsync(FeatureQueryPath);
         await geoResponse.AssertGeoServicesErrorAsync(503);
         geoResponse.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
         geoResponse.Headers.Contains("Retry-After").Should().BeTrue();
@@ -115,7 +115,7 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < deadline)
         {
-            using var response = await client.GetAsync(FeatureQueryBase + "3%3D3");
+            using var response = await client.GetAsync(FeatureQueryPath);
             var payload = await response.Content.ReadAsStringAsync();
             if (response.StatusCode == HttpStatusCode.OK && !payload.Contains("\"error\"", StringComparison.Ordinal))
             {
@@ -127,7 +127,7 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
             await Task.Delay(250);
         }
 
-        await AssertHealthyCountAsync(client, "3%3D3");
+        await AssertHealthyCountAsync(client);
     }
 
     private static async Task ExecuteAsync(string connectionString, string sql)
