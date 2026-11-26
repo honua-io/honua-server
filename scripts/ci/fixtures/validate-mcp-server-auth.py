@@ -238,16 +238,28 @@ def exercise_smoke_script(skip, smoke):
         }).check_returncode()
         assert "fixture-sdk-override" in summary.read_text()
 
-        for script, expected in (("echo smoke-started", 0), ("echo smoke-started && sleep 60", 124)):
-            package.write_text(json.dumps({"scripts": {"test:llm-smoke": script}}))
-            output.unlink()
-            run_script(detect_command, root, {"GITHUB_OUTPUT": str(output)}).check_returncode()
-            assert "smoke=true" in output.read_text().splitlines()
-            result = run_script(smoke_command, mcp, {"MCP_SMOKE_TIMEOUT": "2s"})
-            assert "smoke-started" in result.stdout.splitlines(), result.stderr
-            assert result.returncode == expected, (result.returncode, result.stderr)
+        package.write_text(json.dumps({"scripts": {"test:llm-smoke": "echo smoke-started"}}))
+        output.unlink()
+        run_script(detect_command, root, {"GITHUB_OUTPUT": str(output)}).check_returncode()
+        assert "smoke=true" in output.read_text().splitlines()
+        result = run_script(smoke_command, mcp, {"MCP_SMOKE_TIMEOUT": "10s"})
+        result.check_returncode()
+        assert "smoke-started" in result.stdout.splitlines(), result.stderr
 
+        exercise_smoke_timeout(smoke_command, root, mcp)
         exercise_forced_smoke_termination(smoke_command, root, mcp)
+
+
+def exercise_smoke_timeout(smoke_command, root, mcp):
+    # Keep npm startup latency outside the short timeout used to test SIGTERM.
+    sleeping_npm = root / "npm"
+    sleeping_npm.write_text("#!/bin/sh\necho smoke-started\nexec sleep 60\n")
+    sleeping_npm.chmod(0o755)
+    result = run_script(smoke_command, mcp, {
+        "MCP_SMOKE_TIMEOUT": "2s", "PATH": f"{root}:{os.environ['PATH']}",
+    })
+    assert "smoke-started" in result.stdout.splitlines(), result.stderr
+    assert result.returncode == 124, (result.returncode, result.stderr)
 
 
 def exercise_forced_smoke_termination(smoke_command, root, mcp):
