@@ -12,8 +12,12 @@
          (docker/Dockerfile.aot), which cannot contain either provider, publishes with
          -p:InvariantGlobalization=true on a base without ICU. -->
     <InvariantGlobalization>false</InvariantGlobalization>
-    <OptimizationPreference>Speed</OptimizationPreference>
-    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <!-- ARM64 B/BL direct branches have a signed +/-128 MiB range and ilc pre-resolves
+         intra-__managedcode branches without thunks, so ARM64 AOT optimizes for size. -->
+    <OptimizationPreference Condition="'$(OptimizationPreference)' == '' and '$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-arm64'))">Size</OptimizationPreference>
+    <OptimizationPreference Condition="'$(OptimizationPreference)' == ''">Speed</OptimizationPreference>
+    <IlcOptimizationPreference Condition="'$(IlcOptimizationPreference)' == ''">$(OptimizationPreference)</IlcOptimizationPreference>
+    <IlcFoldIdenticalMethodBodies Condition="'$(IlcFoldIdenticalMethodBodies)' == '' and '$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-arm64'))">true</IlcFoldIdenticalMethodBodies>
     <StripSymbols>true</StripSymbols>
     <DefaultItemExcludes>$(DefaultItemExcludes);publish/**</DefaultItemExcludes>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
